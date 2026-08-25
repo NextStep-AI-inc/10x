@@ -76,7 +76,7 @@ private struct ProviderUsageLimitView: View {
                 Text("\(percentage)%")
                     .fontWeight(.semibold)
 
-                Text(limit.resetWindow)
+                Text(ProviderUsageAccessibility.displayReset(limit.resetWindow))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     .frame(minWidth: 40, alignment: .trailing)
             }
@@ -126,15 +126,30 @@ enum ProviderUsageAccessibility {
         percentage: Int,
         reset: String
     ) -> String {
-        let resetPhrase = reset.hasPrefix("in ") ? reset : "in \(reset)"
+        let resetDescription: String
+        if let resetValue = resetValue(reset) {
+            let resetPhrase = resetValue.hasPrefix("in ") ? resetValue : "in \(resetValue)"
+            resetDescription = "resets \(resetPhrase)"
+        } else {
+            resetDescription = "reset unavailable"
+        }
         return [
             provider,
             account,
             allowance,
             "\(min(max(percentage, 0), 100)) percent remaining",
-            "resets \(resetPhrase)",
+            resetDescription,
         ]
         .compactMap { $0 }
         .joined(separator: ", ")
+    }
+
+    static func displayReset(_ reset: String) -> String {
+        resetValue(reset) ?? "Reset unavailable"
+    }
+
+    private static func resetValue(_ reset: String) -> String? {
+        let value = reset.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }

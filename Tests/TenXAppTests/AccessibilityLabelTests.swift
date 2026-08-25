@@ -25,3 +25,13 @@ import Testing
         reset: "5 days"
     ) == "Cursor, tanner@example.com, Cursor Models, 50 percent remaining, resets in 5 days")
 }
+
+@Test func providerUsageLabelNamesUnavailableResetWhenWindowIsMissing() {
+    #expect(ProviderUsageAccessibility.limitLabel(
+        provider: "Cursor",
+        account: nil,
+        allowance: "Cursor Models",
+        percentage: 50,
+        reset: ""
+    ) == "Cursor, Cursor Models, 50 percent remaining, reset unavailable")
+}
