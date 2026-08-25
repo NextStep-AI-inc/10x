@@ -49,5 +49,5 @@ func assertSnapshot<Content: View>(
         return
     }
     let reference = try Data(contentsOf: referenceURL)
-    #expect(actual == reference)
+    #expect(actual.elementsEqual(reference))
 }

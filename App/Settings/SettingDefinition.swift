@@ -27,6 +27,7 @@ struct SettingDefinition: Identifiable, Equatable {
     let key: String
     let displayLabel: String
     var value: JSONValue?
+    let defaultValue: JSONValue?
     let type: SettingValueType
     let description: String
     let category: SettingsCategory

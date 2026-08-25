@@ -24,13 +24,6 @@ actor OmpConfigService {
             key: key)
     }
 
-    func reset(key: String) async throws {
-        _ = try await perform(
-            arguments: ["config", "reset", key],
-            action: "reset",
-            key: key)
-    }
-
     func path() async throws -> String {
         let data = try await perform(arguments: ["config", "path"], action: "path")
         return String(decoding: data, as: UTF8.self)

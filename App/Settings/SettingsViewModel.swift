@@ -48,16 +48,6 @@ final class SettingsViewModel {
         }
     }
 
-    func reset(_ definition: SettingDefinition) async {
-        keyErrors[definition.key] = nil
-        do {
-            try await service.reset(key: definition.key)
-            await load()
-        } catch {
-            keyErrors[definition.key] = error.localizedDescription
-        }
-    }
-
     func error(for key: String) -> String? {
         keyErrors[key]
     }

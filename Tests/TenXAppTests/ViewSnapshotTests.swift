@@ -67,6 +67,6 @@ private struct SnapshotConfigRunner: OmpConfigRunning {
         if arguments == ["config", "path"] {
             return Data("/Users/example/.omp/agent\n".utf8)
         }
-        return Data(#"{"autoResume":{"value":false,"type":"boolean","description":"Automatically resume the most recent session"},"advisor.enabled":{"value":true,"type":"boolean","description":"Pair a second model that reviews each turn"},"providers.openai-codex.codeMode":{"value":"off","type":"enum","description":"Route compatible models through code mode"},"tools.outputMaxColumns":{"value":768,"type":"number","description":"Per-line output width"},"approval.mode":{"value":"ask","type":"enum","description":"Require approval before commands"}}"#.utf8)
+        return Data(#"{"autoResume":{"value":false,"default":false,"type":"boolean","description":"Automatically resume the most recent session"},"advisor.enabled":{"value":true,"default":false,"type":"boolean","description":"Pair a second model that reviews each turn"},"providers.openai-codex.codeMode":{"value":"off","default":"off","type":"enum","description":"Route compatible models through code mode"},"tools.outputMaxColumns":{"value":768,"default":512,"type":"number","description":"Per-line output width"},"approval.mode":{"value":"ask","default":"ask","type":"enum","description":"Require approval before commands"}}"#.utf8)
     }
 }

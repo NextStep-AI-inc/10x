@@ -15,6 +15,7 @@ struct SettingsCatalog: Equatable {
                 key: key,
                 displayLabel: displayLabel(for: key),
                 value: isSecret ? nil : source["value"],
+                defaultValue: isSecret ? nil : source["default"],
                 type: SettingValueType(rawValue: source["type"]?.stringValue ?? "unknown"),
                 description: source["description"]?.stringValue ?? "",
                 category: category(for: key),

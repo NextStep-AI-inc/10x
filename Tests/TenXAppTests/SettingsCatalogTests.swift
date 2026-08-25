@@ -4,10 +4,15 @@ import Testing
 
 @Test func catalogCategorizesDynamicOMPSettingsAndProtectsSecrets() {
     let source: JSONValue = .object([
-        "autoResume": setting(.bool(false), type: "boolean", description: "Automatically resume"),
+        "autoResume": setting(
+            .bool(false),
+            defaultValue: .bool(true),
+            type: "boolean",
+            description: "Automatically resume"),
         "advisor.enabled": setting(.bool(true), type: "boolean", description: "Pair a reviewer"),
         "providers.openai-codex.codeMode": setting(.string("off"), type: "enum", description: "Codex mode"),
         "auth.broker.token": .object([
+            "default": .string("must-not-display"),
             "type": .string("string"),
             "description": .string("Authentication value"),
         ]),
@@ -17,11 +22,13 @@ import Testing
     let catalog = SettingsCatalog.build(from: source)
 
     #expect(catalog.definition(key: "autoResume")?.category == .general)
+    #expect(catalog.definition(key: "autoResume")?.defaultValue == .bool(true))
     #expect(catalog.definition(key: "advisor.enabled")?.category == .agent)
     #expect(catalog.definition(key: "providers.openai-codex.codeMode")?.category == .models)
     #expect(catalog.definition(key: "auth.broker.token")?.category == .integrations)
     #expect(catalog.definition(key: "auth.broker.token")?.isSecret == true)
     #expect(catalog.definition(key: "auth.broker.token")?.value == nil)
+    #expect(catalog.definition(key: "auth.broker.token")?.defaultValue == nil)
     #expect(catalog.definition(key: "unmapped.futureKey")?.category == .advanced)
     #expect(catalog.definition(key: "unmapped.futureKey")?.displayLabel == "Unmapped Future Key")
 }
@@ -38,10 +45,17 @@ import Testing
     #expect(catalog.filter(query: "reviewer").map(\.key) == ["advisor.enabled"])
 }
 
-private func setting(_ value: JSONValue, type: String, description: String) -> JSONValue {
-    .object([
+private func setting(
+    _ value: JSONValue,
+    defaultValue: JSONValue? = nil,
+    type: String,
+    description: String
+) -> JSONValue {
+    var object: [String: JSONValue] = [
         "value": value,
         "type": .string(type),
         "description": .string(description),
-    ])
+    ]
+    object["default"] = defaultValue
+    return .object(object)
 }

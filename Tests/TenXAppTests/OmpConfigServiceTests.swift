@@ -10,14 +10,12 @@ import Testing
     let list = try await service.list()
     #expect(list["autoResume"]?["value"]?.boolValue == false)
     try await service.set(key: "advisor.enabled", value: .bool(false))
-    try await service.reset(key: "advisor.enabled")
     let path = try await service.path()
 
     #expect(path == "/tmp/omp/config.json")
     #expect(await runner.calls == [
         ["config", "list", "--json"],
         ["config", "set", "advisor.enabled", "false"],
-        ["config", "reset", "advisor.enabled"],
         ["config", "path"],
     ])
 }

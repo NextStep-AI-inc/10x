@@ -18,12 +18,21 @@ struct SettingControlView: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             control
-            Button("Reset") {
-                Task { await model.reset(definition) }
+            if let defaultValue = definition.defaultValue {
+                Button {
+                    Task { await model.save(definition, value: defaultValue) }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.uturn.backward")
+                        Text(Self.defaultLabel(defaultValue))
+                            .font(TenXTypography.mono(size: 10))
+                    }
+                }
+                .buttonStyle(GhostActionStyle())
+                .help("Set to default: \(Self.defaultLabel(defaultValue))")
+                .accessibilityLabel(
+                    "Set \(definition.displayLabel) to default \(Self.defaultLabel(defaultValue))")
             }
-            .buttonStyle(GhostActionStyle(
-                color: TenXPalette.color(TenXPalette.signalRedHex)))
-            .accessibilityLabel("Reset \(definition.displayLabel)")
         }
         .onChange(of: definition.value) { _, value in
             draftText = Self.textValue(value)
@@ -148,6 +157,10 @@ struct SettingControlView: View {
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(value) else { return "" }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func defaultLabel(_ value: JSONValue) -> String {
+        value.stringValue == "" ? "\"\"" : textValue(value)
     }
 
     private static func arrayValues(_ value: JSONValue?) -> [String] {
