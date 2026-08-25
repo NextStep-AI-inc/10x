@@ -1,6 +1,7 @@
 # Provider Usage Wheels
 
-**Status:** Interaction approved; awaiting written-spec review  
+**Status:** Approved for implementation planning
+
 **Date:** 2026-08-25  
 **Platform:** macOS 15+, Swift 6.1, SwiftUI  
 **Builds on:** `2026-08-25-provider-setup-usage-design.md`
