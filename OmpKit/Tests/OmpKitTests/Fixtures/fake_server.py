@@ -6,6 +6,7 @@
   silent    — ready, then never answers anything (timeout testing)
   slow-exit — basic behavior, then waits briefly after stdin closes
   noisy     — like basic, but emits unknown frames + setWidget before each response
+  activity-lifecycle — scripted provider/config/runtime events for controller activity tests
 """
 import base64
 import json
@@ -61,6 +62,9 @@ while True:
 
 STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
          "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
+if mode == "activity-lifecycle":
+    STATE = {"model": {"id": "initial-model", "provider": "initial-provider"},
+             "isStreaming": True, "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
 reverse_commands = []
 
 for line in sys.stdin:
@@ -137,6 +141,18 @@ for line in sys.stdin:
     elif ctype == "prompt":
         emit({"id": cid, "type": "response", "command": "prompt", "success": True,
               "data": {"agentInvoked": True}})
+        if mode == "activity-lifecycle":
+            emit({"type": "agent_start"})
+            time.sleep(0.2)
+            emit({"type": "config_update", "model": {
+                "id": "updated-model", "provider": "updated-provider"}})
+            time.sleep(0.2)
+            emit({"type": "config_update", "thinkingLevel": "medium"})
+            time.sleep(0.2)
+            emit({"type": "config_update", "model": {"id": "provider-less-model"}})
+            time.sleep(0.2)
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+            continue
         if mode == "burst":
             for index in range(100):
                 emit({"type": "message_update", "index": index})

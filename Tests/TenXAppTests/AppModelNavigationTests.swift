@@ -290,7 +290,7 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     try Data(content.utf8).write(to: url)
 }
 
-private func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws -> URL {
+func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws -> URL {
     let repository = URL(filePath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
