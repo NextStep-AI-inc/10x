@@ -1,6 +1,6 @@
 # 10x Computer Use and Agent Desktop
 
-**Status:** Approved design; awaiting written-spec review  
+**Status:** Approved
 **Date:** 2026-08-25  
 **Platform:** macOS 15+, Swift 6.1, SwiftUI  
 **Integration baseline:** OMP 18.0.4 (`@oh-my-pi/pi-coding-agent`), RPC protocol v2
