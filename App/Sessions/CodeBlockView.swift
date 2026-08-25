@@ -9,7 +9,7 @@ struct CodeBlockView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text(language?.uppercased() ?? "CODE")
-                    .font(TenXTypography.mono(size: 9, weight: .medium))
+                    .font(TenXTypography.mono(size: 10, weight: .medium))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 Spacer()
                 Button("Copy") { copy() }

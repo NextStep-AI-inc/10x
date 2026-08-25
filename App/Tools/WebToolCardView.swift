@@ -15,7 +15,8 @@ struct WebToolCardView: View {
                     BoundedToolOutputView(
                         text: summary,
                         lineLimit: 6,
-                        font: TenXTypography.body(size: 11))
+                        font: TenXTypography.body(size: 11),
+                        isDisclosureAlwaysAvailable: true)
                 } else if content.results.isEmpty, presentation.phase == .complete {
                     Text("No output")
                         .font(TenXTypography.body(size: 11))
@@ -36,7 +37,8 @@ struct WebToolCardView: View {
                                     text: summary,
                                     lineLimit: 2,
                                     font: TenXTypography.body(size: 10),
-                                    color: TenXPalette.color(TenXPalette.mutedTextHex))
+                                    color: TenXPalette.color(TenXPalette.mutedTextHex),
+                                    isDisclosureAlwaysAvailable: true)
                             }
                         }
                     }
