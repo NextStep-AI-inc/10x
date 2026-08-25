@@ -60,9 +60,9 @@ actor ProviderManagementService: ProviderManaging {
         case ready(ProviderRPCClientBox)
     }
 
-    nonisolated let events: AsyncStream<ExtensionUIRequest>
+    nonisolated let events: AsyncStream<ProviderLoginEvent>
 
-    private let eventContinuation: AsyncStream<ExtensionUIRequest>.Continuation
+    private let eventContinuation: AsyncStream<ProviderLoginEvent>.Continuation
     private let configuration: RpcClientConfiguration
     private let clientFactory: ClientFactory
     private let startupWaiterObserver: @Sendable () async -> Void
@@ -71,6 +71,7 @@ actor ProviderManagementService: ProviderManaging {
     private var clientGeneration = 0
     private var staleStartupIDs: Set<UUID> = []
     private var isLoginInProgress = false
+    private var activeLoginGeneration: Int?
 
     init<Client: ProviderRPCClient>(
         executableURL: URL,
@@ -85,7 +86,7 @@ actor ProviderManagementService: ProviderManaging {
             ProviderRPCClientBox(await clientFactory(configuration))
         }
         self.startupWaiterObserver = startupWaiterObserver
-        (events, eventContinuation) = AsyncStream<ExtensionUIRequest>.makeStream()
+        (events, eventContinuation) = AsyncStream<ProviderLoginEvent>.makeStream()
     }
 
     init(executableURL: URL) {
@@ -97,7 +98,7 @@ actor ProviderManagementService: ProviderManaging {
             ProviderRPCClientBox(RpcClient(configuration: configuration))
         }
         self.startupWaiterObserver = {}
-        (events, eventContinuation) = AsyncStream<ExtensionUIRequest>.makeStream()
+        (events, eventContinuation) = AsyncStream<ProviderLoginEvent>.makeStream()
     }
 
     func providers() async throws -> [ProviderLoginProvider] {
@@ -106,10 +107,16 @@ actor ProviderManagementService: ProviderManaging {
         return try parseProviders(response.data)
     }
 
-    func login(providerID: String) async throws {
+    func login(providerID: String, generation: Int) async throws {
         guard !isLoginInProgress else { throw ProviderManagementServiceError.loginInProgress }
         isLoginInProgress = true
-        defer { isLoginInProgress = false }
+        activeLoginGeneration = generation
+        defer {
+            isLoginInProgress = false
+            if activeLoginGeneration == generation {
+                activeLoginGeneration = nil
+            }
+        }
 
         let client = try await clientForRequest()
         _ = try await client.send(.login(providerID: providerID), timeout: .seconds(600))
@@ -192,18 +199,27 @@ actor ProviderManagementService: ProviderManaging {
     private func startForwarding(events: AsyncStream<RpcFrame>) {
         eventForwarder?.cancel()
         let continuation = eventContinuation
-        eventForwarder = Task {
+        eventForwarder = Task { [weak self] in
             for await frame in events {
                 guard !Task.isCancelled else { return }
                 if case .extensionUIRequest(let request) = frame {
-                    continuation.yield(request)
+                    await self?.forward(request, to: continuation)
                 }
             }
         }
     }
 
+    private func forward(
+        _ request: ExtensionUIRequest,
+        to continuation: AsyncStream<ProviderLoginEvent>.Continuation
+    ) {
+        guard let generation = activeLoginGeneration else { return }
+        continuation.yield(ProviderLoginEvent(request: request, generation: generation))
+    }
+
     private func closeClient() async {
         clientGeneration += 1
+        activeLoginGeneration = nil
         eventForwarder?.cancel()
         eventForwarder = nil
         let state = clientState

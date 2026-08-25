@@ -47,6 +47,10 @@ import Testing
 @Test func providerSetupRequiredSnapshot() async throws {
     let model = providerTestModel(providers: [
         ProviderLoginProvider(
+            id: "openai-codex", name: "ChatGPT", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "anthropic", name: "Claude", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
             id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
@@ -57,6 +61,48 @@ import Testing
         ProviderSetupView(model: model, onContinue: {}),
         name: "provider-setup-required",
         size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func providerSetupStarterSnapshots() async throws {
+    try await assertProviderSetupStarterSnapshot(
+        id: "openai-codex",
+        name: "ChatGPT",
+        snapshotName: "provider-setup-starter-chatgpt")
+    try await assertProviderSetupStarterSnapshot(
+        id: "anthropic",
+        name: "Claude",
+        snapshotName: "provider-setup-starter-claude")
+    try await assertProviderSetupStarterSnapshot(
+        id: "cursor",
+        name: "Cursor",
+        snapshotName: "provider-setup-starter-cursor")
+    try await assertProviderSetupStarterSnapshot(
+        id: "google-gemini-cli",
+        name: "Gemini CLI",
+        snapshotName: "provider-setup-starter-google-cloud")
+}
+
+@MainActor
+@Test func providerSetupLoadingSnapshot() async throws {
+    let loadingGate = LoadGate()
+    let service = FakeProviderService(providers: [])
+    await service.enqueueProviderGate(loadingGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    let loading = Task { await model.load() }
+    await loadingGate.waitForStart()
+
+    try assertSnapshot(
+        ProviderSetupView(model: model, onContinue: {}),
+        name: "provider-setup-loading",
+        size: CGSize(width: 760, height: 560))
+
+    await loadingGate.release()
+    await loading.value
 }
 
 @MainActor
@@ -109,7 +155,7 @@ import Testing
     let service = FakeProviderService(providers: [
         ProviderLoginProvider(
             id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
-    ])
+    ], loginError: .loginFailed)
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: FakeUsageService(snapshot: .empty),
@@ -117,16 +163,81 @@ import Testing
         now: { Date(timeIntervalSince1970: 100) },
         formatTime: { _ in "4:00 PM" })
     await model.load()
-    await service.emit(ExtensionUIRequest(
-        id: "failed-login",
-        method: "notify",
-        payload: .object(["message": .string("Couldn’t connect to Cursor.")])) )
-    await waitForModelState { model.loginMessage == "Connection needs attention." }
+    let provider = try #require(model.providers.first)
+    await model.login(provider)
 
     try assertSnapshot(
         ProviderSetupView(model: model, onContinue: {}),
         name: "provider-setup-login-failure",
         size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func providerSetupActiveLoginAndCancelSnapshots() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
+
+    try assertSnapshot(
+        ProviderSetupView(model: model, onContinue: {}),
+        name: "provider-setup-active-login",
+        size: CGSize(width: 760, height: 560))
+
+    await model.cancelLogin()
+    try assertSnapshot(
+        ProviderSetupView(model: model, onContinue: {}),
+        name: "provider-setup-login-cancelled",
+        size: CGSize(width: 760, height: 560))
+
+    await loginGate.release()
+    await login.value
+}
+
+@MainActor
+@Test func providerSetupInputSheetSnapshotDuringActiveLogin() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
+    await service.emit(ExtensionUIRequest(
+        id: "paste-code",
+        method: "input",
+        payload: .object([
+            "title": .string("Paste the code"),
+            "placeholder": .string("Authorization code"),
+        ])))
+    await waitForModelState { model.sheetRequest?.id == "paste-code" }
+    let request = try #require(model.sheetRequest)
+
+    try assertSnapshot(
+        ExtensionInputSheet(request: request, onSubmit: { _ in }, onCancel: {}),
+        name: "provider-setup-input-sheet",
+        size: CGSize(width: 576, height: 280))
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
 }
 
 @MainActor
@@ -156,6 +267,52 @@ import Testing
     try assertSnapshot(
         ProvidersView(model: model),
         name: "provider-connections",
+        size: CGSize(width: 1180, height: 760))
+}
+
+@MainActor
+@Test func providerConnectionsActiveLoginSnapshot() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(
+        providers: providerWorkspaceProviders,
+        loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try providerWorkspaceSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+    let provider = try #require(model.providers.first(where: { $0.id == "anthropic" }))
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-connections-active-login",
+        size: CGSize(width: 1180, height: 760))
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
+}
+
+@MainActor
+@Test func providerConnectionsFailureSnapshot() async throws {
+    let service = FakeProviderService(
+        providers: providerWorkspaceProviders,
+        loginError: .loginFailed)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try providerWorkspaceSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+    let provider = try #require(model.providers.first(where: { $0.id == "anthropic" }))
+    await model.login(provider)
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-connections-failure",
         size: CGSize(width: 1180, height: 760))
 }
 
@@ -223,11 +380,59 @@ import Testing
 }
 
 @MainActor
+@Test func fullShellExpandedRailOverflowSnapshot() async throws {
+    let providerModel = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: fullShellProviders),
+        usageService: FakeUsageService(snapshot: try fullShellUsageSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: "/tmp/10x-full-shell-snapshot",
+            directoryHint: .isDirectory)),
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    model.sessions = fullShellSessions
+    let railExpansion = RailExpansionModel()
+    railExpansion.pointerEntered()
+
+    try assertSnapshot(
+        AppShellView(model: model, railExpansion: railExpansion),
+        name: "full-shell-expanded-rail-overflow",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
 private func providerWorkspaceModel() throws -> ProviderManagementViewModel {
     providerTestModel(
         providers: providerWorkspaceProviders,
         snapshot: try providerWorkspaceSnapshot(),
         now: { Date(timeIntervalSince1970: 1_787_675_746) })
+}
+
+@MainActor
+private func assertProviderSetupStarterSnapshot(
+    id: String,
+    name: String,
+    snapshotName: String
+) async throws {
+    let model = providerTestModel(providers: [
+        ProviderLoginProvider(id: id, name: name, isAvailable: true, isAuthenticated: false),
+    ])
+    await model.load()
+
+    try assertSnapshot(
+        ProviderSetupView(model: model, onContinue: {}),
+        name: snapshotName,
+        size: CGSize(width: 760, height: 560))
+}
+
+private struct SnapshotOmpLocator: OmpLocating {
+    func locate(preferredURL: URL?) async -> OmpInstallation? {
+        OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test")
+    }
 }
 
 private func providerUsageRailAccount(
@@ -264,6 +469,24 @@ private let providerWorkspaceProviders = [
         id: "local", name: "Local Provider", isAvailable: false, isAuthenticated: false),
 ]
 
+private let fullShellProviders = [
+    ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ProviderLoginProvider(id: "anthropic", name: "Claude", isAvailable: true, isAuthenticated: true),
+    ProviderLoginProvider(id: "openai-codex", name: "ChatGPT", isAvailable: true, isAuthenticated: true),
+]
+
+private let fullShellSessions: [SessionMetadata] = (0..<28).map { index in
+    SessionMetadata(
+        path: "/tmp/full-shell-session-\(index).jsonl",
+        sessionId: "full-shell-\(index)",
+        cwd: "/tmp/full-shell-project",
+        title: "Provider usage review \(index + 1)",
+        created: Date(timeIntervalSince1970: TimeInterval(index)),
+        modified: Date(timeIntervalSince1970: TimeInterval(index)),
+        sizeBytes: 1_024,
+        status: .complete)
+}
+
 private func providerWorkspaceSnapshot() throws -> OmpUsageSnapshot {
     try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data(#"""
     {
@@ -280,6 +503,33 @@ private func providerWorkspaceSnapshot() throws -> OmpUsageSnapshot {
       }],
       "accountsWithoutUsage":[{"provider":"github-copilot","email":"work@example.com"}],
       "disabledCredentials":[{"id":2,"provider":"anthropic","type":"oauth","cause":"refresh failed","email":"old@example.com","disabledAtMs":1787616419000}]
+    }
+    """#.utf8))
+}
+
+private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
+    try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data(#"""
+    {
+      "generatedAt":1787675745954,
+      "reports":[
+        {"provider":"cursor","fetchedAt":1787675745599,"limits":[
+          {"id":"cursor:models","label":"Models","scope":{"provider":"cursor"},"window":{"id":"monthly","label":"Monthly","resetsAt":1788061624000},"amount":{"remainingFraction":0.5,"unit":"percent"}},
+          {"id":"cursor:fast","label":"Fast requests","scope":{"provider":"cursor"},"window":{"id":"daily","label":"Daily","resetsAt":1787700000000},"amount":{"remainingFraction":0.3,"unit":"percent"}},
+          {"id":"cursor:slow","label":"Slow requests","scope":{"provider":"cursor"},"window":{"id":"daily","label":"Daily","resetsAt":1787700000000},"amount":{"remainingFraction":0.7,"unit":"percent"}}
+        ],"metadata":{"email":"cursor@example.com"}},
+        {"provider":"anthropic","fetchedAt":1787675745599,"limits":[
+          {"id":"anthropic:weekly","label":"Weekly","scope":{"provider":"anthropic"},"window":{"id":"weekly","label":"Weekly","resetsAt":1788061624000},"amount":{"remainingFraction":0.4,"unit":"percent"}},
+          {"id":"anthropic:five-hour","label":"5 hour","scope":{"provider":"anthropic"},"window":{"id":"five-hour","label":"5 hour","resetsAt":1787700000000},"amount":{"remainingFraction":0.2,"unit":"percent"}},
+          {"id":"anthropic:sonnet","label":"Sonnet","scope":{"provider":"anthropic"},"window":{"id":"daily","label":"Daily","resetsAt":1787700000000},"amount":{"remainingFraction":0.8,"unit":"percent"}}
+        ],"metadata":{"email":"claude@example.com"}},
+        {"provider":"openai-codex","fetchedAt":1787675745599,"limits":[
+          {"id":"openai:five-hour","label":"5 hour","scope":{"provider":"openai-codex"},"window":{"id":"five-hour","label":"5 hour","resetsAt":1788061624000},"amount":{"remainingFraction":0.5,"unit":"percent"}},
+          {"id":"openai:weekly","label":"Weekly","scope":{"provider":"openai-codex"},"window":{"id":"weekly","label":"Weekly","resetsAt":1787700000000},"amount":{"remainingFraction":0.6,"unit":"percent"}},
+          {"id":"openai:priority","label":"Priority","scope":{"provider":"openai-codex"},"window":{"id":"daily","label":"Daily","resetsAt":1787700000000},"amount":{"remainingFraction":0.9,"unit":"percent"}}
+        ],"metadata":{"email":"chatgpt@example.com"}}
+      ],
+      "accountsWithoutUsage":[],
+      "disabledCredentials":[]
     }
     """#.utf8))
 }

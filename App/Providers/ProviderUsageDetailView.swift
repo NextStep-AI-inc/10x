@@ -37,7 +37,7 @@ struct ProviderUsageDetailView: View {
         VStack(alignment: .leading, spacing: 0) {
             sectionHeader(group.name)
             ForEach(group.accounts) { account in
-                accountSection(account)
+                accountSection(account, providerName: group.name)
             }
             ForEach(group.credentialIssues) { issue in
                 credentialIssueRow(issue)
@@ -79,7 +79,10 @@ struct ProviderUsageDetailView: View {
     }
 
     @ViewBuilder
-    private func accountSection(_ account: ProviderUsageAccount) -> some View {
+    private func accountSection(
+        _ account: ProviderUsageAccount,
+        providerName: String
+    ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(account.label)
                 .font(TenXTypography.body(size: 13, weight: .medium))
@@ -87,7 +90,10 @@ struct ProviderUsageDetailView: View {
 
             if account.isUsageAvailable {
                 ForEach(account.limits) { limit in
-                    ProviderUsageLimitDetailView(providerName: account.label, limit: limit)
+                    ProviderUsageLimitDetailView(
+                        providerName: providerName,
+                        accountName: account.label,
+                        limit: limit)
                 }
                 ForEach(account.amounts) { amount in
                     Text("\(formattedAmount(amount.value)) \(amount.unit) used")
@@ -204,8 +210,9 @@ struct ProviderUsageDetailGroup: Identifiable, Equatable, Sendable {
     }
 }
 
-private struct ProviderUsageLimitDetailView: View {
+struct ProviderUsageLimitDetailView: View {
     let providerName: String
+    let accountName: String?
     let limit: ProviderUsageLimit
 
     var body: some View {
@@ -241,8 +248,12 @@ private struct ProviderUsageLimitDetailView: View {
     }
 
     private var accessibilityDescription: String {
-        let reset = limit.detailReset.map { ", resets \($0)" } ?? ""
-        return "\(providerName), \(limit.label), \(min(max(limit.percentage, 0), 100)) percent remaining\(reset)"
+        ProviderUsageDetailAccessibility.limitLabel(
+            provider: providerName,
+            account: accountName,
+            allowance: limit.label,
+            percentage: limit.percentage,
+            reset: limit.detailReset ?? "")
     }
 
     private var toneColor: Color {
@@ -254,5 +265,22 @@ private struct ProviderUsageLimitDetailView: View {
         case .exhausted:
             TenXPalette.color(TenXPalette.signalRedHex)
         }
+    }
+}
+
+enum ProviderUsageDetailAccessibility {
+    static func limitLabel(
+        provider: String,
+        account: String?,
+        allowance: String,
+        percentage: Int,
+        reset: String
+    ) -> String {
+        ProviderUsageAccessibility.limitLabel(
+            provider: provider,
+            account: account,
+            allowance: allowance,
+            percentage: percentage,
+            reset: reset)
     }
 }

@@ -67,7 +67,7 @@ struct ProviderConnectionsView: View {
                 ProviderConnectionRowView(
                     provider: provider,
                     credentialIssue: credentialIssues.first(where: { $0.providerID == provider.id }),
-                    isConnecting: activeLoginProviderID == provider.id,
+                    activeLoginProviderID: activeLoginProviderID,
                     loginMessage: loginMessageProviderID == provider.id ? loginMessage : nil,
                     onConnect: { onConnect(provider) },
                     onCancel: onCancel)

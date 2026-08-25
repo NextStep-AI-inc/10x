@@ -4,26 +4,33 @@ import Testing
 @testable import TenXApp
 
 actor FakeProviderService: ProviderManaging {
-    nonisolated let events: AsyncStream<ExtensionUIRequest>
+    nonisolated let events: AsyncStream<ProviderLoginEvent>
 
-    private let continuation: AsyncStream<ExtensionUIRequest>.Continuation
+    private let continuation: AsyncStream<ProviderLoginEvent>.Continuation
     private var storedProviders: [ProviderLoginProvider]
     private var providerError: (any Error & Sendable)?
-    private let loginGate: LoginGate?
+    private var loginError: FakeProviderError?
+    private var loginGates: [LoginGate]
+    private let shutdownGate: LoadGate?
     private var providerGates: [LoadGate] = []
     private(set) var providerLoadCount = 0
     private(set) var loginIDs: [String] = []
     private(set) var responses: [(String, [String: JSONValue])] = []
     private(set) var cancelCount = 0
+    private(set) var shutdownCount = 0
 
     init(
         providers: [ProviderLoginProvider],
         providerError: (any Error & Sendable)? = nil,
-        loginGate: LoginGate? = nil
+        loginError: FakeProviderError? = nil,
+        loginGate: LoginGate? = nil,
+        shutdownGate: LoadGate? = nil
     ) {
         storedProviders = providers
         self.providerError = providerError
-        self.loginGate = loginGate
+        self.loginError = loginError
+        self.loginGates = loginGate.map { [$0] } ?? []
+        self.shutdownGate = shutdownGate
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .unbounded)
     }
 
@@ -37,10 +44,12 @@ actor FakeProviderService: ProviderManaging {
         return result
     }
 
-    func login(providerID: String) async throws {
+    func login(providerID: String, generation: Int) async throws {
         loginIDs.append(providerID)
-        await loginGate?.started()
-        await loginGate?.waitForRelease()
+        let gate = loginGates.isEmpty ? nil : loginGates.removeFirst()
+        await gate?.started()
+        await gate?.waitForRelease()
+        if let loginError { throw loginError }
         storedProviders = storedProviders.map { provider in
             guard provider.id == providerID else { return provider }
             return ProviderLoginProvider(
@@ -49,7 +58,7 @@ actor FakeProviderService: ProviderManaging {
                 isAvailable: provider.isAvailable,
                 isAuthenticated: true)
         }
-        await loginGate?.completed()
+        await gate?.completed()
     }
 
     func respond(requestID: String, body: [String: JSONValue]) async throws {
@@ -61,15 +70,22 @@ actor FakeProviderService: ProviderManaging {
     }
 
     func shutdown() async {
+        shutdownCount += 1
         continuation.finish()
+        await shutdownGate?.started()
+        await shutdownGate?.waitForRelease()
     }
 
-    func emit(_ request: ExtensionUIRequest) {
-        continuation.yield(request)
+    func emit(_ request: ExtensionUIRequest, generation: Int = 1) {
+        continuation.yield(ProviderLoginEvent(request: request, generation: generation))
     }
 
     func enqueueProviderGate(_ gate: LoadGate) {
         providerGates.append(gate)
+    }
+
+    func enqueueLoginGate(_ gate: LoginGate) {
+        loginGates.append(gate)
     }
 
     func setProviders(_ providers: [ProviderLoginProvider]) {
@@ -165,6 +181,7 @@ actor LoadGate {
 
 enum FakeProviderError: Error, Sendable {
     case discoveryFailed
+    case loginFailed
 }
 
 actor FakeUsageService: OmpUsageLoading {

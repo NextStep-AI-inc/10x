@@ -1,6 +1,11 @@
 import Foundation
 import OmpKit
 
+struct ProviderLoginEvent: Sendable {
+    let request: ExtensionUIRequest
+    let generation: Int
+}
+
 protocol ProviderRPCClient: Sendable {
     var events: AsyncStream<RpcFrame> { get }
 
@@ -13,10 +18,10 @@ protocol ProviderRPCClient: Sendable {
 extension RpcClient: ProviderRPCClient {}
 
 protocol ProviderManaging: Sendable {
-    var events: AsyncStream<ExtensionUIRequest> { get }
+    var events: AsyncStream<ProviderLoginEvent> { get }
 
     func providers() async throws -> [ProviderLoginProvider]
-    func login(providerID: String) async throws
+    func login(providerID: String, generation: Int) async throws
     func respond(requestID: String, body: [String: JSONValue]) async throws
     func cancelLogin() async
     func shutdown() async

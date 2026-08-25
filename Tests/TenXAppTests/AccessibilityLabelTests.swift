@@ -45,3 +45,13 @@ import Testing
         reset: "  \n\t "
     ) == "Cursor, Cursor Models, 50 percent remaining, reset unavailable")
 }
+
+@Test func providerUsageDetailLabelIncludesProviderAndAccountLikeTheRail() {
+    #expect(ProviderUsageDetailAccessibility.limitLabel(
+        provider: "Cursor",
+        account: "tanner@example.com",
+        allowance: "Cursor Models",
+        percentage: 50,
+        reset: "Aug 30, 9:00 AM"
+    ) == "Cursor, tanner@example.com, Cursor Models, 50 percent remaining, resets in Aug 30, 9:00 AM")
+}

@@ -1,9 +1,88 @@
 import SwiftUI
 
+enum ProviderConnectionAction: Equatable, Sendable {
+    case cancel
+    case connected
+    case unavailable
+    case retry
+    case reconnect
+    case connect
+}
+
+struct ProviderConnectionRowPresentation: Equatable, Sendable {
+    let status: String?
+    let action: ProviderConnectionAction
+    let isActionDisabled: Bool
+    let accessibilityLabel: String
+
+    static func make(
+        provider: ProviderLoginProvider,
+        hasCredentialIssue: Bool,
+        activeLoginProviderID: String?,
+        loginMessage: String?
+    ) -> ProviderConnectionRowPresentation {
+        let isConnecting = activeLoginProviderID == provider.id
+        let action: ProviderConnectionAction
+        if isConnecting {
+            action = .cancel
+        } else if provider.isAuthenticated {
+            action = .connected
+        } else if !provider.isAvailable {
+            action = .unavailable
+        } else if loginMessage != nil {
+            action = .retry
+        } else if hasCredentialIssue {
+            action = .reconnect
+        } else {
+            action = .connect
+        }
+
+        let status: String?
+        if !provider.isAvailable {
+            status = "Unavailable"
+        } else if isConnecting {
+            status = "Connecting…"
+        } else if let loginMessage {
+            status = loginMessage
+        } else if provider.isAuthenticated {
+            status = "Connected"
+        } else if hasCredentialIssue {
+            status = "Reconnect to update usage."
+        } else {
+            status = nil
+        }
+
+        let isActionDisabled = activeLoginProviderID != nil
+            && action != .cancel
+            && action != .connected
+            && action != .unavailable
+        let accessibilityLabel: String
+        switch action {
+        case .cancel:
+            accessibilityLabel = "Cancel \(provider.name) connection"
+        case .retry:
+            accessibilityLabel = "Retry \(provider.name) connection"
+        case .reconnect:
+            accessibilityLabel = "Reconnect \(provider.name)"
+        case .connect:
+            accessibilityLabel = "Connect \(provider.name)"
+        case .unavailable:
+            accessibilityLabel = "\(provider.name) unavailable"
+        case .connected:
+            accessibilityLabel = "\(provider.name) connected"
+        }
+        return ProviderConnectionRowPresentation(
+            status: status,
+            action: action,
+            isActionDisabled: isActionDisabled,
+            accessibilityLabel: accessibilityLabel)
+    }
+}
+
 struct ProviderConnectionRowView: View {
     let provider: ProviderLoginProvider
     let credentialIssue: ProviderCredentialIssue?
-    let isConnecting: Bool
+    let activeLoginProviderID: String?
     let loginMessage: String?
     let onConnect: () -> Void
     let onCancel: () -> Void
@@ -29,7 +108,7 @@ struct ProviderConnectionRowView: View {
 
     @ViewBuilder
     private var status: some View {
-        if isConnecting {
+        if presentation.action == .cancel {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
@@ -39,45 +118,50 @@ struct ProviderConnectionRowView: View {
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Connecting \(provider.name)")
-        } else if let loginMessage {
-            Text(loginMessage)
+        } else if let status = presentation.status {
+            Text(status)
                 .font(TenXTypography.body(size: 12))
-                .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
-        } else if provider.isAuthenticated {
-            Text("Connected")
-                .font(TenXTypography.body(size: 12))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-        } else if credentialIssue != nil {
-            Text("Reconnect to update usage.")
-                .font(TenXTypography.body(size: 12))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-        } else if !provider.isAvailable {
-            Text("Unavailable")
-                .font(TenXTypography.body(size: 12))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .foregroundStyle(presentation.action == .retry
+                    ? TenXPalette.color(TenXPalette.signalRedHex)
+                    : TenXPalette.color(TenXPalette.mutedTextHex))
         }
     }
 
     @ViewBuilder
     private var action: some View {
-        if isConnecting {
+        switch presentation.action {
+        case .cancel:
             Button("Cancel", action: onCancel)
                 .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
-                .accessibilityLabel("Cancel \(provider.name) connection")
-        } else if provider.isAuthenticated {
+                .accessibilityLabel(presentation.accessibilityLabel)
+        case .connected:
             Text("Connected")
                 .font(TenXTypography.body(size: 12, weight: .medium))
                 .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-        } else if credentialIssue != nil {
-            Button("Reconnect", action: onConnect)
+        case .unavailable:
+            EmptyView()
+        case .retry, .reconnect, .connect:
+            Button(actionTitle, action: onConnect)
                 .buttonStyle(GhostActionStyle())
-                .disabled(!provider.isAvailable)
-                .accessibilityLabel("Reconnect \(provider.name)")
-        } else {
-            Button("Connect", action: onConnect)
-                .buttonStyle(GhostActionStyle())
-                .disabled(!provider.isAvailable)
-                .accessibilityLabel("Connect \(provider.name)")
+                .disabled(presentation.isActionDisabled)
+                .accessibilityLabel(presentation.accessibilityLabel)
+        }
+    }
+
+    private var presentation: ProviderConnectionRowPresentation {
+        ProviderConnectionRowPresentation.make(
+            provider: provider,
+            hasCredentialIssue: credentialIssue != nil,
+            activeLoginProviderID: activeLoginProviderID,
+            loginMessage: loginMessage)
+    }
+
+    private var actionTitle: String {
+        switch presentation.action {
+        case .retry: "Retry"
+        case .reconnect: "Reconnect"
+        case .connect: "Connect"
+        case .cancel, .connected, .unavailable: ""
         }
     }
 }

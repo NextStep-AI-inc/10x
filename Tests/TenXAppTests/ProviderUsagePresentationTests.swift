@@ -42,6 +42,56 @@ import Testing
     #expect(exhausted.tone == .exhausted)
 }
 
+@Test func usagePresentationUsesEveryIdentityFieldToDistinguishAccounts() throws {
+    let snapshot = try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data(#"""
+    {
+      "generatedAt":1,
+      "reports":[
+        {"provider":"cursor","fetchedAt":1,"limits":[{"id":"a","label":"Models","scope":{"provider":"cursor"},"amount":{"remainingFraction":0.5,"unit":"percent"}}],"metadata":{"email":"team@example.com","accountId":"team","projectId":"project","orgId":"org-a","orgName":"Design"}},
+        {"provider":"cursor","fetchedAt":1,"limits":[{"id":"b","label":"Models","scope":{"provider":"cursor"},"amount":{"remainingFraction":0.5,"unit":"percent"}}],"metadata":{"email":"team@example.com","accountId":"team","projectId":"project","orgId":"org-b","orgName":"Engineering"}},
+        {"provider":"cursor","fetchedAt":1,"limits":[{"id":"c","label":"Models","scope":{"provider":"cursor"},"amount":{"remainingFraction":0.5,"unit":"percent"}}],"metadata":{"email":"team@example.com","accountId":"team","projectId":"project","enterpriseUrl":"https://enterprise.example.com"}}
+      ],
+      "accountsWithoutUsage":[],
+      "disabledCredentials":[]
+    }
+    """#.utf8))
+
+    let presentation = ProviderUsagePresentation.make(
+        snapshot: snapshot,
+        providerNames: ["cursor": "Cursor"],
+        now: Date(timeIntervalSince1970: 1))
+    let accounts = try #require(presentation.providers.first?.accounts)
+
+    #expect(Set(accounts.map(\.id)).count == 3)
+    #expect(accounts.map(\.label) == [
+        "team@example.com (Design)",
+        "team@example.com (Engineering)",
+        "team@example.com (https://enterprise.example.com)",
+    ])
+}
+
+@Test func remainingFractionUsesTheDocumentedPrecedenceAndClamps() throws {
+    let cases = [
+        ("explicit remaining", #"{"remainingFraction":0.25,"usedFraction":0.1,"used":1,"limit":10,"unit":"percent"}"#, 25),
+        ("used fraction", #"{"usedFraction":0.25,"unit":"percent"}"#, 75),
+        ("used and limit", #"{"used":25,"limit":100,"unit":"requests"}"#, 75),
+        ("percent fallback", #"{"used":25,"unit":"percent"}"#, 75),
+        ("high clamp", #"{"remainingFraction":1.25,"unit":"percent"}"#, 100),
+        ("low clamp", #"{"usedFraction":1.25,"unit":"percent"}"#, 0),
+    ]
+
+    for testCase in cases {
+        let snapshot = try usageSnapshot(amount: testCase.1)
+        let presentation = ProviderUsagePresentation.make(
+            snapshot: snapshot,
+            providerNames: ["cursor": "Cursor"],
+            now: Date(timeIntervalSince1970: 1))
+        let percentage = try #require(presentation.providers.first?.accounts.first?.limits.first?.percentage)
+
+        #expect(percentage == testCase.2, "\(testCase.0) should retain \(testCase.2) percent")
+    }
+}
+
 @Test func usageDetailGroupsEveryAccountStateUnderOneProvider() {
     let identity = ProviderUsageAccountIdentity(
         email: "team@example.com",
@@ -87,4 +137,24 @@ import Testing
     #expect(groups[0].providerID == "anthropic")
     #expect(groups[0].accounts.map(\.label) == ["team@example.com", "work@example.com"])
     #expect(groups[0].credentialIssues.map(\.id) == ["anthropic:2"])
+}
+
+private func usageSnapshot(amount: String) throws -> OmpUsageSnapshot {
+    try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data("""
+    {
+      "generatedAt":1,
+      "reports":[{
+        "provider":"cursor",
+        "fetchedAt":1,
+        "limits":[{
+          "id":"cursor:limit",
+          "label":"Models",
+          "scope":{"provider":"cursor"},
+          "amount":\(amount)
+        }]
+      }],
+      "accountsWithoutUsage":[],
+      "disabledCredentials":[]
+    }
+    """.utf8))
 }

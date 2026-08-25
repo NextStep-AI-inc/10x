@@ -109,7 +109,12 @@ final class AppModel {
     }
 
     private func install(preferredURL: URL?) async {
-        guard let installation = await dependencies.ompLocator.locate(preferredURL: preferredURL) else {
+        let locatedInstallation = await dependencies.ompLocator.locate(preferredURL: preferredURL)
+        if let providerModel {
+            await providerModel.shutdown()
+        }
+
+        guard let installation = locatedInstallation else {
             exitTask?.cancel()
             self.installation = nil
             processManager = nil
@@ -128,8 +133,15 @@ final class AppModel {
         self.providerModel = providerModel
         watchUnexpectedExits(from: processManager)
         setupError = nil
-        await providerModel.load()
-        route = providerModel.hasAuthenticatedProvider ? .newSession : .providerSetup
+        route = .providerSetup
+        Task { [weak providerModel] in
+            await providerModel?.loadUsage()
+        }
+        await providerModel.loadProviders()
+        guard self.providerModel === providerModel else { return }
+        if providerModel.hasAuthenticatedProvider {
+            route = .newSession
+        }
     }
 
     private func watchUnexpectedExits(from processManager: SessionProcessManager) {

@@ -64,7 +64,10 @@ struct ProviderUsagePresentation: Equatable, Sendable {
                 label: accountLabel(
                     email: credential.email,
                     accountID: credential.accountId,
-                    projectID: nil),
+                    projectID: nil,
+                    enterpriseURL: nil,
+                    orgID: credential.orgId,
+                    orgName: credential.orgName),
                 type: credential.type,
                 disabledAt: date(fromMilliseconds: credential.disabledAtMs))
         }
@@ -98,7 +101,13 @@ struct ProviderUsagePresentation: Equatable, Sendable {
         }
         return ProviderUsageAccount(
             id: accountID(providerID: report.provider, identity: identity, limits: report.limits),
-            label: accountLabel(email: identity.email, accountID: identity.accountID, projectID: identity.projectID),
+            label: accountLabel(
+                email: identity.email,
+                accountID: identity.accountID,
+                projectID: identity.projectID,
+                enterpriseURL: identity.enterpriseURL,
+                orgID: identity.orgID,
+                orgName: identity.orgName),
             identity: identity,
             limits: limits,
             amounts: amounts,
@@ -119,7 +128,10 @@ struct ProviderUsagePresentation: Equatable, Sendable {
             label: accountLabel(
                 email: identity.email,
                 accountID: identity.accountId,
-                projectID: identity.projectId),
+                projectID: identity.projectId,
+                enterpriseURL: identity.enterpriseUrl,
+                orgID: identity.orgId,
+                orgName: identity.orgName),
             identity: presentationIdentity,
             limits: [],
             amounts: [],
@@ -127,7 +139,7 @@ struct ProviderUsagePresentation: Equatable, Sendable {
             isUsageAvailable: false)
     }
 
-    private static func remainingFraction(_ amount: OmpUsageAmount) -> Double? {
+    static func remainingFraction(_ amount: OmpUsageAmount) -> Double? {
         if let remaining = amount.remainingFraction { return clamp(remaining) }
         if let used = amount.usedFraction { return clamp(1 - used) }
         if let used = amount.used, let limit = amount.limit, limit > 0 {
@@ -148,16 +160,43 @@ struct ProviderUsagePresentation: Equatable, Sendable {
         identity: ProviderUsageAccountIdentity,
         limits: [OmpUsageLimit]
     ) -> String {
-        let discriminator = identity.email
-            ?? identity.accountID
-            ?? identity.projectID
-            ?? limits.first?.id
-            ?? "connected-account"
+        let identityValues: [String] = [
+            identity.email,
+            identity.accountID,
+            identity.projectID,
+            identity.enterpriseURL,
+            identity.orgID,
+            identity.orgName,
+        ].compactMap { value -> String? in
+            guard let value, !value.isEmpty else { return nil }
+            return "\(value.utf8.count):\(value)"
+        }
+        let discriminator = identityValues.isEmpty
+            ? limits.first?.id ?? "connected-account"
+            : identityValues.joined(separator: "|")
         return "\(providerID):\(discriminator)"
     }
 
-    private static func accountLabel(email: String?, accountID: String?, projectID: String?) -> String {
-        email ?? accountID ?? projectID ?? "Connected account"
+    private static func accountLabel(
+        email: String?,
+        accountID: String?,
+        projectID: String?,
+        enterpriseURL: String?,
+        orgID: String?,
+        orgName: String?
+    ) -> String {
+        let primary = email ?? accountID ?? projectID
+        let organization = orgName ?? orgID ?? enterpriseURL
+        switch (primary, organization) {
+        case let (primary?, organization?):
+            return "\(primary) (\(organization))"
+        case let (primary?, nil):
+            return primary
+        case let (nil, organization?):
+            return organization
+        case (nil, nil):
+            return "Connected account"
+        }
     }
 
     private static func date(fromMilliseconds milliseconds: Int64) -> Date {

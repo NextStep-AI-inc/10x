@@ -9,18 +9,22 @@ enum ProviderWorkspaceSection: Equatable, Sendable {
 }
 
 private struct ProviderServiceBox: Sendable {
-    let events: AsyncStream<ExtensionUIRequest>
+    let events: AsyncStream<ProviderLoginEvent>
     let providers: @Sendable () async throws -> [ProviderLoginProvider]
-    let login: @Sendable (String) async throws -> Void
+    let login: @Sendable (String, Int) async throws -> Void
     let respond: @Sendable (String, [String: JSONValue]) async throws -> Void
     let cancelLogin: @Sendable () async -> Void
+    let shutdown: @Sendable () async -> Void
 
     init<Service: ProviderManaging>(_ service: Service) {
         events = service.events
         providers = { try await service.providers() }
-        login = { providerID in try await service.login(providerID: providerID) }
+        login = { providerID, generation in
+            try await service.login(providerID: providerID, generation: generation)
+        }
         respond = { requestID, body in try await service.respond(requestID: requestID, body: body) }
         cancelLogin = { await service.cancelLogin() }
+        shutdown = { await service.shutdown() }
     }
 }
 
@@ -115,6 +119,14 @@ final class ProviderManagementViewModel {
         await refresh()
     }
 
+    func loadProviders() async {
+        await refreshProviders(forceFresh: false)
+    }
+
+    func loadUsage() async {
+        await refreshUsage(forceFresh: false)
+    }
+
     func refresh() async {
         await refresh(forceFresh: false)
     }
@@ -145,7 +157,7 @@ final class ProviderManagementViewModel {
         sheetRequest = nil
 
         do {
-            try await providerService.login(provider.id)
+            try await providerService.login(provider.id, generation)
             guard generation == loginGeneration else { return }
             await refresh(forceFresh: true)
             guard generation == loginGeneration else { return }
@@ -163,6 +175,14 @@ final class ProviderManagementViewModel {
         loginGeneration += 1
         clearLoginState()
         await providerService.cancelLogin()
+    }
+
+    func shutdown() async {
+        let task = eventTask
+        eventTask = nil
+        task?.cancel()
+        await providerService.shutdown()
+        await task?.value
     }
 
     func respond(to request: ExtensionUIState, with response: ExtensionUIResponse) async {
@@ -273,17 +293,19 @@ final class ProviderManagementViewModel {
         }
     }
 
-    private func consumeEvents(from events: AsyncStream<ExtensionUIRequest>) {
+    private func consumeEvents(from events: AsyncStream<ProviderLoginEvent>) {
         eventTask?.cancel()
         eventTask = Task { [weak self] in
-            for await request in events {
+            for await event in events {
                 guard let self, !Task.isCancelled else { return }
-                self.consume(request)
+                self.consume(event)
             }
         }
     }
 
-    private func consume(_ request: ExtensionUIRequest) {
+    private func consume(_ event: ProviderLoginEvent) {
+        guard event.generation == loginGeneration, activeLoginProviderID != nil else { return }
+        let request = event.request
         guard let state = ExtensionUIRouter.parse(request) else { return }
 
         switch state {

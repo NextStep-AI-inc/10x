@@ -3,7 +3,12 @@ import SwiftUI
 struct AppShellView: View {
     let model: AppModel
 
-    @State private var railExpansion = RailExpansionModel()
+    @State private var railExpansion: RailExpansionModel
+
+    init(model: AppModel, railExpansion: RailExpansionModel = RailExpansionModel()) {
+        self.model = model
+        _railExpansion = State(initialValue: railExpansion)
+    }
 
     var body: some View {
         Group {

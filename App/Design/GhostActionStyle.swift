@@ -12,17 +12,18 @@ private struct GhostActionBody: View {
     let configuration: ButtonStyle.Configuration
     let color: Color
 
+    @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
 
     var body: some View {
         configuration.label
             .font(TenXTypography.body(size: 12, weight: .medium))
-            .foregroundStyle(color)
+            .foregroundStyle(isEnabled ? color : TenXPalette.color(TenXPalette.mutedTextHex))
             .padding(.horizontal, 9)
             .frame(minHeight: 28)
-            .background(isHovering ? TenXPalette.color(TenXPalette.hoverNeutralHex) : .clear)
+            .background(isEnabled && isHovering ? TenXPalette.color(TenXPalette.hoverNeutralHex) : .clear)
             .contentShape(Rectangle())
-            .opacity(configuration.isPressed ? 0.68 : 1)
-            .onHover { isHovering = $0 }
+            .opacity(isEnabled ? (configuration.isPressed ? 0.68 : 1) : 0.55)
+            .onHover { isHovering = isEnabled && $0 }
     }
 }

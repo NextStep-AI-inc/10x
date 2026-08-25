@@ -60,24 +60,37 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
         executableURL: URL(fileURLWithPath: "/tmp/omp"),
         clientFactory: { _ in fake })
 
-    try await service.login(providerID: "cursor")
+    try await service.login(providerID: "cursor", generation: 1)
 
     #expect(await fake.commands == [
         ProviderCommand(command: .login(providerID: "cursor"), timeout: .seconds(600)),
     ])
 }
 
-@Test func providerServiceForwardsLoginExtensionRequests() async throws {
-    let fake = FakeProviderRPCClient(responses: [providerListResponse])
+@Test func providerServiceForwardsExtensionRequestsOnlyForTheActiveLogin() async throws {
+    let loginGate = StartGate()
+    let fake = FakeProviderRPCClient(
+        responses: [providerListResponse, loginResponse],
+        loginGate: loginGate)
     let service = ProviderManagementService(
         executableURL: URL(fileURLWithPath: "/tmp/omp"),
         clientFactory: { _ in fake })
     _ = try await service.providers()
 
+    await fake.emit(RpcFrame.extensionUIRequest(ExtensionUIRequest(
+        id: "unsolicited",
+        method: "open_url",
+        payload: .object(["launchUrl": .string("https://example.com/unsolicited")]))))
+    for _ in 0..<20 { await Task.yield() }
     let eventTask = Task { await service.events.first { _ in true } }
+    let loginTask = Task { try await service.login(providerID: "cursor", generation: 7) }
+    await loginGate.waitForStart()
     await fake.emit(openURLFrame)
 
-    #expect(await eventTask.value?.method == "open_url")
+    #expect(await eventTask.value?.request.id == "open")
+    #expect(await eventTask.value?.generation == 7)
+    await loginGate.release()
+    _ = try await loginTask.value
 }
 
 @Test func providerServiceCancelsAndRecreatesTheDedicatedClient() async throws {
@@ -90,14 +103,11 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
 
     _ = try await service.providers()
     await service.cancelLogin()
-    let eventTask = Task { await service.events.first { _ in true } }
     _ = try await service.providers()
-    await second.emit(openURLFrame)
 
     #expect(await first.shutdownCount == 1)
     #expect(await second.startCount == 1)
     #expect(await pool.callCount == 2)
-    #expect(await eventTask.value?.method == "open_url")
 }
 
 @Test func providerServiceForwardsExtensionResponsesWithoutWaitingForAResponse() async throws {
@@ -222,6 +232,7 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
     private var responses: [RpcResponse]
     private let startGate: StartGate?
+    private let loginGate: StartGate?
     private let startFailure: ProviderTestError?
 
     private(set) var startCount = 0
@@ -232,10 +243,12 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
     init(
         responses: [RpcResponse],
         startGate: StartGate? = nil,
+        loginGate: StartGate? = nil,
         startFailure: ProviderTestError? = nil
     ) {
         self.responses = responses
         self.startGate = startGate
+        self.loginGate = loginGate
         self.startFailure = startFailure
         (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream()
     }
@@ -254,6 +267,10 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
 
     func send(_ command: RpcCommand, timeout: Duration?) async throws -> RpcResponse {
         commands.append(ProviderCommand(command: command, timeout: timeout))
+        if command.type == "login" {
+            await loginGate?.started()
+            await loginGate?.waitForRelease()
+        }
         return responses.removeFirst()
     }
 

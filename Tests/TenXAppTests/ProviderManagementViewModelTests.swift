@@ -57,13 +57,20 @@ import Testing
 
 @MainActor
 @Test func providerModelRoutesInputAndRespondsWithExactBody() async throws {
-    let service = FakeProviderService(providers: [])
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
 
+    await model.load()
+    let provider = try #require(model.providers.first)
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
     await service.emit(ExtensionUIRequest(
         id: "input",
         method: "input",
@@ -80,6 +87,10 @@ import Testing
     #expect(response.0 == "input")
     #expect(response.1 == ["value": .string("confirmed-code")])
     #expect(model.sheetRequest == nil)
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
 }
 
 @MainActor
@@ -142,13 +153,23 @@ import Testing
 
 @MainActor
 @Test func providerModelCancelDelegatesAndClearsTransientState() async {
-    let service = FakeProviderService(providers: [])
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
 
+    await model.load()
+    guard let provider = model.providers.first else {
+        Issue.record("Expected a provider")
+        return
+    }
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
     await service.emit(ExtensionUIRequest(
         id: "input",
         method: "input",
@@ -161,17 +182,30 @@ import Testing
     #expect(model.activeLoginProviderID == nil)
     #expect(model.sheetRequest == nil)
     #expect(model.loginMessage == nil)
+
+    await loginGate.release()
+    await login.value
 }
 
 @MainActor
 @Test func providerModelAppliesLoginNotificationsAndRemoteRequestCancellation() async {
-    let service = FakeProviderService(providers: [])
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
 
+    await model.load()
+    guard let provider = model.providers.first else {
+        Issue.record("Expected a provider")
+        return
+    }
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
     await service.emit(ExtensionUIRequest(
         id: "input",
         method: "input",
@@ -189,7 +223,59 @@ import Testing
     await waitForModelState { model.sheetRequest == nil }
 
     #expect(model.loginMessage == "Connection needs attention.")
-    #expect(model.loginMessageProviderID == nil)
+    #expect(model.loginMessageProviderID == "cursor")
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
+}
+
+@MainActor
+@Test func providerModelRejectsStaleExtensionRequestsAfterLoginCancellation() async throws {
+    let firstLoginGate = LoginGate()
+    let secondLoginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: firstLoginGate)
+    await service.enqueueLoginGate(secondLoginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+
+    let firstLogin = Task { await model.login(provider) }
+    await firstLoginGate.waitForStart()
+    await model.cancelLogin()
+    await firstLoginGate.release()
+    await firstLogin.value
+
+    let secondLogin = Task { await model.login(provider) }
+    await secondLoginGate.waitForStart()
+    await service.emit(
+        ExtensionUIRequest(
+            id: "stale-input",
+            method: "input",
+            payload: .object(["title": .string("Stale")])
+        ),
+        generation: 1)
+    for _ in 0..<20 { await Task.yield() }
+    #expect(model.sheetRequest == nil)
+
+    await service.emit(
+        ExtensionUIRequest(
+            id: "current-input",
+            method: "input",
+            payload: .object(["title": .string("Current")])
+        ),
+        generation: 3)
+    await waitForModelState { model.sheetRequest?.id == "current-input" }
+
+    await model.cancelLogin()
+    await secondLoginGate.release()
+    await secondLogin.value
 }
 
 @MainActor
