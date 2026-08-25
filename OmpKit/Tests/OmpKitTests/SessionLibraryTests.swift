@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Darwin
 @testable import OmpKit
 
 /// Writes a minimal session file whose LAST message line drives the classifier.
@@ -164,6 +165,135 @@ private func makeTempRoot(_ label: String) -> URL {
     #expect(fired)
 }
 
+@Test func watcherSignalsOnNewArchivedFile() async throws {
+    let container = makeTempRoot("archive-watch")
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    try FileManager.default.createDirectory(at: archiveRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+    let stream = library.changes
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        try? writeSession(
+            at: archiveRoot.appendingPathComponent("-x/archived.jsonl"),
+            id: "archived", cwd: "/x", lastMessage: userLast)
+    }
+    defer { writer.cancel() }
+
+    let fired = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(fired)
+}
+
+@Test func watcherSignalsWhenAnArchivedSessionIsAppended() async throws {
+    let container = makeTempRoot("archive-append-watch")
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let file = archiveRoot.appendingPathComponent("-x/archived.jsonl")
+    try writeSession(at: file, id: "archived", cwd: "/x", lastMessage: userLast)
+    defer { try? FileManager.default.removeItem(at: container) }
+
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+    let stream = library.changes
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let handle = try? FileHandle(forWritingTo: file) else { return }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(("\n" + completeLast + "\n").utf8))
+        try? handle.close()
+    }
+    defer { writer.cancel() }
+
+    let fired = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(fired)
+}
+
+@Test func archiveRefreshesWatchersForItsNewDestination() async throws {
+    let container = makeTempRoot("post-archive-watch")
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let activeFile = activeRoot.appendingPathComponent("-x/session.jsonl")
+    try writeSession(at: activeFile, id: "session", cwd: "/x", lastMessage: userLast)
+    defer { try? FileManager.default.removeItem(at: container) }
+
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+    let stream = library.changes
+    let report = await library.archive(paths: [activeFile.path])
+    #expect(report.failures.isEmpty)
+    let archiveSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(archiveSignal)
+    let archivedFile = try #require(await library.listArchived().first).path
+
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let handle = try? FileHandle(forWritingTo: URL(filePath: archivedFile)) else { return }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(("\n" + completeLast + "\n").utf8))
+        try? handle.close()
+    }
+    defer { writer.cancel() }
+    let appendSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(appendSignal)
+}
+
+@Test func listingExcludesSymlinkedTranscriptFiles() async throws {
+    let container = makeTempRoot("symlink-listing")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let outsideFile = container.appendingPathComponent("outside/session.jsonl")
+    let linkedFile = activeRoot.appendingPathComponent("-x/linked.jsonl")
+    try writeSession(at: outsideFile, id: "outside", cwd: "/outside", lastMessage: completeLast)
+    try FileManager.default.createDirectory(
+        at: linkedFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: linkedFile, withDestinationURL: outsideFile)
+
+    let library = SessionLibrary(root: activeRoot)
+
+    #expect(await library.listAll().isEmpty)
+}
+
+@Test func watcherIgnoresOutsideTargetOfSymlinkedTranscript() async throws {
+    let container = makeTempRoot("symlink-watch")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let outsideFile = container.appendingPathComponent("outside/session.jsonl")
+    let linkedFile = activeRoot.appendingPathComponent("-x/linked.jsonl")
+    try writeSession(at: outsideFile, id: "outside", cwd: "/outside", lastMessage: userLast)
+    try FileManager.default.createDirectory(
+        at: linkedFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: linkedFile, withDestinationURL: outsideFile)
+
+    let library = SessionLibrary(root: activeRoot)
+    let stream = library.changes
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let handle = try? FileHandle(forWritingTo: outsideFile) else { return }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(("\n" + completeLast + "\n").utf8))
+        try? handle.close()
+    }
+    defer { writer.cancel() }
+
+    let fired = await withTimeout(.seconds(1)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(!fired)
+}
+
 @Test func corruptFilesAreSkippedThenRescannedAfterChanging() async throws {
     let root = makeTempRoot("negative-cache")
     let bucket = root.appendingPathComponent("-x")
@@ -185,4 +315,245 @@ private func makeTempRoot(_ label: String) -> URL {
 @Test func missingRootYieldsEmptyList() async {
     let library = SessionLibrary(root: makeTempRoot("absent"))
     #expect(await library.listAll().isEmpty)
+}
+
+@Test func archivesAndRestoresAResultWithoutChangingItsRelativePath() async throws {
+    let container = makeTempRoot("archive-restore")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let activeFile = activeRoot.appendingPathComponent("-tmp-project/session.jsonl")
+    try writeSession(
+        at: activeFile,
+        id: "archive-me",
+        cwd: "/tmp/project",
+        lastMessage: completeLast)
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let archiveReport = await library.archive(paths: [activeFile.path])
+    #expect(archiveReport.failures.isEmpty)
+    #expect(await library.listAll().isEmpty)
+    let archived = await library.listArchived()
+    #expect(archived.map(\.sessionId) == ["archive-me"])
+    #expect(archived.map { Array(URL(filePath: $0.path).pathComponents.suffix(2)) }
+        == [["-tmp-project", "session.jsonl"]])
+
+    let restoreReport = await library.restore(paths: archived.map(\.path))
+    #expect(restoreReport.failures.isEmpty)
+    #expect(await library.listArchived().isEmpty)
+    let restored = await library.listAll()
+    #expect(restored.map { Array(URL(filePath: $0.path).pathComponents.suffix(2)) }
+        == [["-tmp-project", "session.jsonl"]])
+}
+
+@Test func restoreNeverOverwritesAnActiveTranscript() async throws {
+    let container = makeTempRoot("restore-conflict")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let relativePath = "-tmp-project/session.jsonl"
+    let activeFile = activeRoot.appendingPathComponent(relativePath)
+    let archivedFile = archiveRoot.appendingPathComponent(relativePath)
+    try writeSession(at: activeFile, id: "active", cwd: "/tmp/project", lastMessage: completeLast)
+    try writeSession(at: archivedFile, id: "archived", cwd: "/tmp/project", lastMessage: completeLast)
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let report = await library.restore(paths: [archivedFile.path])
+
+    #expect(report.succeededPaths.isEmpty)
+    #expect(report.failures == [SessionMutationFailure(
+        path: archivedFile.path,
+        reason: .destinationExists)])
+    #expect(FileManager.default.fileExists(atPath: activeFile.path))
+    #expect(FileManager.default.fileExists(atPath: archivedFile.path))
+}
+
+@Test func deleteRemovesOnlySuppliedTranscriptsAndNeverTheProjectDirectory() async throws {
+    let container = makeTempRoot("delete-safety")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let projectRoot = container.appendingPathComponent("source-project")
+    let keptSource = projectRoot.appendingPathComponent("Keep.swift")
+    try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
+    try Data("struct Keep {}".utf8).write(to: keptSource)
+    let first = activeRoot.appendingPathComponent("-source-project/first.jsonl")
+    let second = activeRoot.appendingPathComponent("-source-project/second.jsonl")
+    try writeSession(at: first, id: "first", cwd: projectRoot.path, lastMessage: completeLast)
+    try writeSession(at: second, id: "second", cwd: projectRoot.path, lastMessage: completeLast)
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let report = await library.delete(paths: [first.path])
+
+    #expect(report.succeededPaths == [first.path])
+    #expect(report.failures.isEmpty)
+    #expect(!FileManager.default.fileExists(atPath: first.path))
+    #expect(FileManager.default.fileExists(atPath: second.path))
+    #expect(FileManager.default.fileExists(atPath: keptSource.path))
+}
+
+@Test func deleteReportsInvalidAndMissingTranscriptPaths() async throws {
+    let container = makeTempRoot("delete-failures")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let sourceFile = container.appendingPathComponent("source-project/keep.jsonl")
+    let missingTranscript = activeRoot.appendingPathComponent("-source-project/missing.jsonl")
+    try FileManager.default.createDirectory(
+        at: sourceFile.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    try Data("keep".utf8).write(to: sourceFile)
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let report = await library.delete(paths: [sourceFile.path, missingTranscript.path])
+
+    #expect(report.succeededPaths.isEmpty)
+    #expect(report.failures == [
+        SessionMutationFailure(path: sourceFile.path, reason: .invalidPath),
+        SessionMutationFailure(path: missingTranscript.path, reason: .missingSource),
+    ])
+    #expect(FileManager.default.fileExists(atPath: sourceFile.path))
+}
+
+@Test func mutationsRejectJSONLDirectories() async throws {
+    let container = makeTempRoot("directory-safety")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let archiveDirectory = activeRoot.appendingPathComponent("-bucket/archive.jsonl")
+    let restoreDirectory = archiveRoot.appendingPathComponent("-bucket/restore.jsonl")
+    let deleteDirectory = activeRoot.appendingPathComponent("-bucket/delete.jsonl")
+    for directory in [archiveDirectory, restoreDirectory, deleteDirectory] {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("keep".utf8).write(to: directory.appendingPathComponent("sentinel"))
+    }
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let archiveReport = await library.archive(paths: [archiveDirectory.path])
+    let restoreReport = await library.restore(paths: [restoreDirectory.path])
+    let deleteReport = await library.delete(paths: [deleteDirectory.path])
+
+    #expect(archiveReport.failures == [SessionMutationFailure(
+        path: archiveDirectory.path, reason: .invalidPath)])
+    #expect(restoreReport.failures == [SessionMutationFailure(
+        path: restoreDirectory.path, reason: .invalidPath)])
+    #expect(deleteReport.failures == [SessionMutationFailure(
+        path: deleteDirectory.path, reason: .invalidPath)])
+    for directory in [archiveDirectory, restoreDirectory, deleteDirectory] {
+        #expect(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("sentinel").path))
+    }
+}
+
+@Test func mutationsRejectSymlinkedBucketsThatEscapeCollectionRoots() async throws {
+    let container = makeTempRoot("bucket-symlink-safety")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let outsideRoot = container.appendingPathComponent("outside")
+    let archiveTarget = outsideRoot.appendingPathComponent("archive-source/session.jsonl")
+    let restoreTarget = outsideRoot.appendingPathComponent("restore-source/session.jsonl")
+    let deleteTarget = outsideRoot.appendingPathComponent("delete-source/session.jsonl")
+    try writeSession(at: archiveTarget, id: "archive", cwd: "/outside", lastMessage: completeLast)
+    try writeSession(at: restoreTarget, id: "restore", cwd: "/outside", lastMessage: completeLast)
+    try writeSession(at: deleteTarget, id: "delete", cwd: "/outside", lastMessage: completeLast)
+    try FileManager.default.createDirectory(at: activeRoot, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: archiveRoot, withIntermediateDirectories: true)
+    let archiveBucket = activeRoot.appendingPathComponent("-archive-link")
+    let restoreBucket = archiveRoot.appendingPathComponent("-restore-link")
+    let deleteBucket = activeRoot.appendingPathComponent("-delete-link")
+    try FileManager.default.createSymbolicLink(
+        at: archiveBucket, withDestinationURL: archiveTarget.deletingLastPathComponent())
+    try FileManager.default.createSymbolicLink(
+        at: restoreBucket, withDestinationURL: restoreTarget.deletingLastPathComponent())
+    try FileManager.default.createSymbolicLink(
+        at: deleteBucket, withDestinationURL: deleteTarget.deletingLastPathComponent())
+    let archivePath = archiveBucket.appendingPathComponent("session.jsonl").path
+    let restorePath = restoreBucket.appendingPathComponent("session.jsonl").path
+    let deletePath = deleteBucket.appendingPathComponent("session.jsonl").path
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let archiveReport = await library.archive(paths: [archivePath])
+    let restoreReport = await library.restore(paths: [restorePath])
+    let deleteReport = await library.delete(paths: [deletePath])
+
+    #expect(archiveReport.failures == [SessionMutationFailure(
+        path: archivePath, reason: .invalidPath)])
+    #expect(restoreReport.failures == [SessionMutationFailure(
+        path: restorePath, reason: .invalidPath)])
+    #expect(deleteReport.failures == [SessionMutationFailure(
+        path: deletePath, reason: .invalidPath)])
+    #expect(FileManager.default.fileExists(atPath: archiveTarget.path))
+    #expect(FileManager.default.fileExists(atPath: restoreTarget.path))
+    #expect(FileManager.default.fileExists(atPath: deleteTarget.path))
+}
+
+@Test func mutationsRejectSymlinkedTranscriptFiles() async throws {
+    let container = makeTempRoot("file-symlink-safety")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let outsideRoot = container.appendingPathComponent("outside")
+    let archiveTarget = outsideRoot.appendingPathComponent("archive.jsonl")
+    let restoreTarget = outsideRoot.appendingPathComponent("restore.jsonl")
+    let deleteTarget = outsideRoot.appendingPathComponent("delete.jsonl")
+    try writeSession(at: archiveTarget, id: "archive", cwd: "/outside", lastMessage: completeLast)
+    try writeSession(at: restoreTarget, id: "restore", cwd: "/outside", lastMessage: completeLast)
+    try writeSession(at: deleteTarget, id: "delete", cwd: "/outside", lastMessage: completeLast)
+    let archiveLink = activeRoot.appendingPathComponent("-bucket/archive.jsonl")
+    let restoreLink = archiveRoot.appendingPathComponent("-bucket/restore.jsonl")
+    let deleteLink = activeRoot.appendingPathComponent("-bucket/delete.jsonl")
+    for link in [archiveLink, restoreLink, deleteLink] {
+        try FileManager.default.createDirectory(
+            at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+    }
+    try FileManager.default.createSymbolicLink(at: archiveLink, withDestinationURL: archiveTarget)
+    try FileManager.default.createSymbolicLink(at: restoreLink, withDestinationURL: restoreTarget)
+    try FileManager.default.createSymbolicLink(at: deleteLink, withDestinationURL: deleteTarget)
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let archiveReport = await library.archive(paths: [archiveLink.path])
+    let restoreReport = await library.restore(paths: [restoreLink.path])
+    let deleteReport = await library.delete(paths: [deleteLink.path])
+
+    #expect(archiveReport.failures == [SessionMutationFailure(
+        path: archiveLink.path, reason: .invalidPath)])
+    #expect(restoreReport.failures == [SessionMutationFailure(
+        path: restoreLink.path, reason: .invalidPath)])
+    #expect(deleteReport.failures == [SessionMutationFailure(
+        path: deleteLink.path, reason: .invalidPath)])
+    for path in [archiveLink.path, restoreLink.path, deleteLink.path,
+                 archiveTarget.path, restoreTarget.path, deleteTarget.path] {
+        #expect(FileManager.default.fileExists(atPath: path))
+    }
+}
+
+@Test func deleteNeverRecursivelyRemovesADirectorySwappedAfterValidation() async throws {
+    let container = makeTempRoot("delete-swap-safety")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let bucket = activeRoot.appendingPathComponent("-bucket")
+    try FileManager.default.createDirectory(at: bucket, withIntermediateDirectories: true)
+    let transcript = bucket.appendingPathComponent("session.jsonl")
+    let swapDirectory = bucket.appendingPathComponent("swap")
+    let sentinel = swapDirectory.appendingPathComponent("sentinel")
+    try Data("transcript".utf8).write(to: transcript)
+    try FileManager.default.createDirectory(at: swapDirectory, withIntermediateDirectories: true)
+    try Data("keep".utf8).write(to: sentinel)
+    let library = SessionLibrary(
+        root: activeRoot,
+        archiveRoot: archiveRoot,
+        unlinkItem: { path in
+            guard renamex_np(path, swapDirectory.path, UInt32(RENAME_SWAP)) == 0 else { return -1 }
+            return unlink(path)
+        })
+
+    let report = await library.delete(paths: [transcript.path])
+
+    #expect(report.failures == [SessionMutationFailure(
+        path: transcript.path,
+        reason: .fileOperationFailed)])
+    #expect(FileManager.default.fileExists(
+        atPath: transcript.appendingPathComponent("sentinel").path))
 }

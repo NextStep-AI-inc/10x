@@ -19,6 +19,23 @@ private final class ConfigurationCapture: @unchecked Sendable {
     }
 }
 
+private final class CompletionFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    func markCompleted() {
+        lock.lock()
+        value = true
+        lock.unlock()
+    }
+
+    func isCompleted() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 private func capturingManager(
     _ capture: ConfigurationCapture, mode: String = "basic"
 ) -> SessionProcessManager {
@@ -116,6 +133,62 @@ private func fakeManager(mode: String = "basic") -> SessionProcessManager {
     #expect(await manager.handle(for: "/tmp/gone.jsonl") != nil)
     await manager.close(sessionPath: "/tmp/gone.jsonl")
     #expect(await manager.handle(for: "/tmp/gone.jsonl") == nil)
+}
+
+@Test func closeCancelsAnInflightOpenBeforeItCanRegisterAHandle() async throws {
+    let capture = ConfigurationCapture()
+    let completion = CompletionFlag()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        capture.append(configuration)
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "never-ready"]
+        fake.rawArgv = true
+        fake.cwd = nil
+        fake.startupTimeout = .milliseconds(800)
+        return RpcClient(configuration: fake)
+    })
+    let openTask = Task {
+        defer { completion.markCompleted() }
+        return try? await manager.open(sessionPath: "/tmp/opening.jsonl", cwd: "/tmp")
+    }
+    while capture.snapshot().isEmpty { await Task.yield() }
+
+    await manager.close(sessionPath: "/tmp/opening.jsonl")
+    try await Task.sleep(for: .milliseconds(200))
+
+    #expect(completion.isCompleted())
+    #expect(await manager.handle(for: "/tmp/opening.jsonl") == nil)
+    _ = await openTask.value
+}
+
+@Test func closeOfAnInflightOpenDoesNotDiscardANewerOpenForTheSamePath() async throws {
+    let capture = ConfigurationCapture()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        capture.append(configuration)
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        let mode = capture.snapshot().count == 1 ? "never-ready" : "basic"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
+        fake.rawArgv = true
+        fake.cwd = nil
+        fake.startupTimeout = .milliseconds(800)
+        return RpcClient(configuration: fake)
+    })
+    let path = "/tmp/reopened.jsonl"
+    let staleOpen = Task { try? await manager.open(sessionPath: path, cwd: "/tmp") }
+    while capture.snapshot().isEmpty { await Task.yield() }
+
+    let closeTask = Task { await manager.close(sessionPath: path) }
+    try await Task.sleep(for: .milliseconds(20))
+    let reopened = try? await manager.open(sessionPath: path, cwd: "/tmp")
+    await closeTask.value
+
+    #expect(await staleOpen.value == nil)
+    #expect(reopened != nil)
+    #expect(capture.snapshot().count == 2)
+    #expect(await manager.handle(for: path)?.client === reopened?.client)
+    await manager.closeAll()
 }
 
 @Test func distinctPathsGetDistinctChildren() async throws {

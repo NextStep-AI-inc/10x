@@ -474,6 +474,68 @@ import Testing
 }
 
 @MainActor
+@Test func expandedOverflowRailSnapshot() throws {
+    let (model, expansion) = snapshotOverflowRail()
+
+    try assertSnapshot(
+        FloatingRailView(model: model, expansion: expansion),
+        name: "shell-rail-overflow-expanded",
+        size: CGSize(width: 220, height: 360))
+}
+
+@MainActor
+@Test func archivedSessionsEmptySnapshot() throws {
+    let model = AppModel()
+    model.archivedSessions = []
+
+    try assertSnapshot(
+        ArchivedSessionsView(model: model),
+        name: "archived-sessions-empty")
+}
+
+@MainActor
+@Test func archivedSessionsPopulatedSnapshot() throws {
+    let model = AppModel()
+    model.archivedSessions = [
+        snapshotSession(
+            path: "/sessions/archived-shell.jsonl",
+            cwd: "/tmp/10x",
+            title: "Refine session management",
+            modified: 1_787_601_600),
+        snapshotSession(
+            path: "/sessions/archived-untitled.jsonl",
+            cwd: "/tmp/10x",
+            title: "",
+            modified: 1_787_515_200),
+        snapshotSession(
+            path: "/sessions/archived-nextstep.jsonl",
+            cwd: "/tmp/NextStep",
+            title: "Review course navigation",
+            modified: 1_787_428_800),
+    ]
+
+    try assertSnapshot(
+        ArchivedSessionsView(model: model),
+        name: "archived-sessions-populated")
+}
+
+@MainActor
+@Test func sessionDeletionConfirmationSnapshot() throws {
+    let request = SessionDeletionRequest.session(snapshotSession(
+        path: "/sessions/delete-me.jsonl",
+        cwd: "/tmp/10x",
+        title: "Refine session management",
+        modified: 1_787_601_600))
+
+    try assertSnapshot(
+        SessionDeletionConfirmationView(
+            request: request,
+            onCancel: {},
+            onDelete: {}),
+        name: "session-deletion-confirmation")
+}
+
+@MainActor
 private func compactTranscriptController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
     let user = TranscriptMessage(
@@ -636,6 +698,28 @@ private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
     model.route = .session("/sessions/selected.jsonl")
     let expansion = RailExpansionModel()
     if isExpanded { expansion.pointerEntered() }
+    return (model, expansion)
+}
+
+@MainActor
+private func snapshotOverflowRail() -> (AppModel, RailExpansionModel) {
+    let model = AppModel()
+    model.sessions = (1...7).map { index in
+        snapshotSession(
+            path: "/sessions/overflow-\(index).jsonl",
+            cwd: "/tmp/10x",
+            title: "Session \(index)",
+            modified: TimeInterval(100 - index))
+    } + [
+        snapshotSession(
+            path: "/sessions/nextstep-overflow.jsonl",
+            cwd: "/tmp/NextStep",
+            title: "Review navigation",
+            modified: 10),
+    ]
+    model.route = .session("/sessions/overflow-1.jsonl")
+    let expansion = RailExpansionModel()
+    expansion.pointerEntered()
     return (model, expansion)
 }
 

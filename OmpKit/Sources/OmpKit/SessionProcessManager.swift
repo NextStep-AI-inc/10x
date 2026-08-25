@@ -18,9 +18,15 @@ public actor SessionProcessManager {
     private let clientFactory: ClientFactory
     private var handles: [String: Handle] = [:]
     private var exitWatchers: [String: Task<Void, Never>] = [:]
+
+    private struct Opening {
+        let id: UUID
+        let task: Task<Handle, any Error>
+    }
+
     /// Opens in flight, so concurrent callers for one session share a child
     /// instead of racing across the `await` in `open`.
-    private var opening: [String: Task<Handle, any Error>] = [:]
+    private var opening: [String: Opening] = [:]
 
     private let exitStream: AsyncStream<UnexpectedExit>
     private let exitContinuation: AsyncStream<UnexpectedExit>.Continuation
@@ -49,10 +55,11 @@ public actor SessionProcessManager {
     public func open(sessionPath: String, cwd: String) async throws -> Handle {
         if let existing = handles[sessionPath] { return existing }
         // Join an open already under way rather than spawning a second child.
-        if let inFlight = opening[sessionPath] { return try await inFlight.value }
+        if let inFlight = opening[sessionPath] { return try await inFlight.task.value }
 
         let factory = clientFactory
         let executable = executable
+        let openingID = UUID()
         let task = Task { () throws -> Handle in
             var configuration = RpcClientConfiguration()
             configuration.executable = executable
@@ -62,16 +69,21 @@ public actor SessionProcessManager {
             try await client.start()
             return Handle(sessionPath: sessionPath, client: client)
         }
-        opening[sessionPath] = task
+        opening[sessionPath] = Opening(id: openingID, task: task)
 
         do {
             let handle = try await task.value
+            guard opening[sessionPath]?.id == openingID else {
+                throw CancellationError()
+            }
             opening.removeValue(forKey: sessionPath)
             handles[sessionPath] = handle
             watchForExit(handle)
             return handle
         } catch {
-            opening.removeValue(forKey: sessionPath)
+            if opening[sessionPath]?.id == openingID {
+                opening.removeValue(forKey: sessionPath)
+            }
             throw error
         }
     }
@@ -96,13 +108,19 @@ public actor SessionProcessManager {
     }
 
     public func close(sessionPath: String) async {
-        guard let handle = handles.removeValue(forKey: sessionPath) else { return }
+        let inFlight = opening.removeValue(forKey: sessionPath)
+        inFlight?.task.cancel()
+        let handle = handles.removeValue(forKey: sessionPath)
         exitWatchers.removeValue(forKey: sessionPath)?.cancel()
-        await handle.client.shutdown()
+        if let handle { await handle.client.shutdown() }
+        if let opened = try? await inFlight?.task.value {
+            await opened.client.shutdown()
+        }
     }
 
     public func closeAll() async {
-        for path in handles.keys { await close(sessionPath: path) }
+        let paths = Set(handles.keys).union(opening.keys)
+        for path in paths { await close(sessionPath: path) }
     }
 
     public func handle(for sessionPath: String) -> Handle? { handles[sessionPath] }

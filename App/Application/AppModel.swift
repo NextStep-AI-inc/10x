@@ -10,9 +10,13 @@ final class AppModel {
     var selectedProjectURL: URL?
     var setupError: String?
     var sessions: [SessionMetadata] = []
+    var archivedSessions: [SessionMetadata] = []
+    var pendingDeletion: SessionDeletionRequest?
+    var sessionActionError: String?
     var providerUsages: [ProviderUsageProvider] = []
     var isSearchPresented = false
     private(set) var settingsFocusTarget: SettingsFocusTarget?
+    private(set) var isSessionMutationInFlight = false
     private(set) var activeSession: SessionController?
     private(set) var processManager: SessionProcessManager?
     private(set) var settingsModel: SettingsViewModel?
@@ -22,6 +26,7 @@ final class AppModel {
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
+    @ObservationIgnored private var archivedReloadGeneration = 0
 
     init(
         dependencies: AppDependencies = .live,
@@ -38,6 +43,7 @@ final class AppModel {
     func bootstrap() async {
         await install(preferredURL: nil)
         await reloadSessions()
+        await reloadArchivedSessions()
     }
 
     func useOmp(at url: URL) async {
@@ -48,12 +54,14 @@ final class AppModel {
     }
 
     func chooseProject(_ url: URL) {
+        guard !isSessionMutationInFlight else { return }
         selectedProjectURL = url.standardizedFileURL
         activeSession = nil
         route = .newSession
     }
 
     func openSettings(focus: SettingsFocusTarget? = nil) {
+        guard !isSessionMutationInFlight else { return }
         settingsFocusTarget = focus
         route = .settings
         Task { await settingsModel?.load() }
@@ -64,11 +72,19 @@ final class AppModel {
     }
 
     func openNewSession() {
+        guard !isSessionMutationInFlight else { return }
         activeSession = nil
         route = .newSession
     }
 
+    func openArchivedSessions() {
+        guard !isSessionMutationInFlight else { return }
+        route = .archivedSessions
+        Task { await reloadArchivedSessions() }
+    }
+
     func openSearch() {
+        guard !isSessionMutationInFlight else { return }
         isSearchPresented = true
     }
 
@@ -77,12 +93,14 @@ final class AppModel {
     }
 
     func openSearchResult(_ result: SearchResult) {
+        guard !isSessionMutationInFlight else { return }
         guard let metadata = sessions.first(where: { $0.path == result.sessionPath }) else { return }
         closeSearch()
         openSession(metadata)
     }
 
     func openSession(_ metadata: SessionMetadata) {
+        guard !isSessionMutationInFlight else { return }
         if !metadata.cwd.isEmpty {
             selectedProjectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
                 .standardizedFileURL
@@ -95,6 +113,7 @@ final class AppModel {
     }
 
     func startNewSession(prompt: String) {
+        guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
         let controller = SessionController(processManager: processManager)
         controller.draft = prompt
@@ -109,6 +128,148 @@ final class AppModel {
 
     func reloadSessions() async {
         sessions = await dependencies.sessionLibrary.listAll()
+    }
+
+    func reloadArchivedSessions() async {
+        archivedReloadGeneration &+= 1
+        let generation = archivedReloadGeneration
+        let sessions = await dependencies.sessionLibrary.listArchived()
+        guard generation == archivedReloadGeneration else { return }
+        archivedSessions = sessions
+    }
+
+    func requestDeleteSession(_ metadata: SessionMetadata) {
+        pendingDeletion = .session(metadata)
+    }
+
+    func requestDeleteProject(_ group: ProjectSessionGroup) {
+        pendingDeletion = .project(group)
+    }
+
+    func cancelDeletion() {
+        pendingDeletion = nil
+    }
+
+    func dismissSessionActionError() {
+        sessionActionError = nil
+    }
+
+    func archiveSession(_ metadata: SessionMetadata) async {
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
+        await mutateActive(
+            paths: [metadata.path],
+            action: "archive",
+            subject: sessionDisplayName(metadata)) {
+                await dependencies.sessionLibrary.archive(paths: [metadata.path])
+            }
+    }
+
+    func archiveProject(_ group: ProjectSessionGroup) async {
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
+        let paths = group.sessions.map(\.path)
+        await mutateActive(
+            paths: paths,
+            action: "archive",
+            subject: "\(group.displayName) sessions") {
+                await dependencies.sessionLibrary.archive(paths: paths)
+            }
+    }
+
+    func restoreSession(_ metadata: SessionMetadata) async {
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
+        invalidateArchivedSessionReloads()
+        await finish(
+            await dependencies.sessionLibrary.restore(paths: [metadata.path]),
+            action: "restore",
+            subject: sessionDisplayName(metadata))
+    }
+
+    func restoreProject(_ group: ProjectSessionGroup) async {
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
+        invalidateArchivedSessionReloads()
+        await finish(
+            await dependencies.sessionLibrary.restore(paths: group.sessions.map(\.path)),
+            action: "restore",
+            subject: "\(group.displayName) sessions")
+    }
+
+    func confirmDeletion() async {
+        guard let request = pendingDeletion, beginSessionMutation() else { return }
+        defer { endSessionMutation() }
+        pendingDeletion = nil
+        invalidateArchivedSessionReloads()
+        await closeActiveSessionIfNeeded(paths: request.paths)
+        await finish(
+            await dependencies.sessionLibrary.delete(paths: request.paths),
+            action: "delete",
+            subject: request.errorSubject)
+    }
+
+    private func mutateActive(
+        paths: [String],
+        action: String,
+        subject: String,
+        operation: () async -> SessionMutationReport
+    ) async {
+        invalidateArchivedSessionReloads()
+        await closeActiveSessionIfNeeded(paths: paths)
+        await finish(await operation(), action: action, subject: subject)
+    }
+
+    private func closeActiveSessionIfNeeded(paths: [String]) async {
+        let activePath = activeSession?.sessionPath
+        let routePath: String? = if case .session(let path) = route { path } else { nil }
+        let matchingPath: String? = if let activePath {
+            paths.contains(activePath) ? activePath : nil
+        } else if let routePath, paths.contains(routePath) {
+            routePath
+        } else {
+            nil
+        }
+        guard let matchingPath else { return }
+        let processManager = processManager
+        activeSession = nil
+        if routePath != nil { route = .newSession }
+        await processManager?.close(sessionPath: matchingPath)
+    }
+
+    private func finish(
+        _ report: SessionMutationReport,
+        action: String,
+        subject: String
+    ) async {
+        sessionActionError = nil
+        if !report.failures.isEmpty {
+            let count = report.failures.count
+            let unchangedFiles = count == 1
+                ? "file remains unchanged."
+                : "files remain unchanged."
+            sessionActionError = "Could not \(action) \(subject). \(count) session \(unchangedFiles)"
+        }
+        await reloadSessions()
+        await reloadArchivedSessions()
+    }
+
+    private func invalidateArchivedSessionReloads() {
+        archivedReloadGeneration &+= 1
+    }
+
+    private func beginSessionMutation() -> Bool {
+        guard !isSessionMutationInFlight else { return false }
+        isSessionMutationInFlight = true
+        return true
+    }
+
+    private func endSessionMutation() {
+        isSessionMutationInFlight = false
+    }
+
+    private func sessionDisplayName(_ metadata: SessionMetadata) -> String {
+        metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session"
     }
 
     private func install(preferredURL: URL?) async {
