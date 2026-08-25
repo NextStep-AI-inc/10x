@@ -5,6 +5,7 @@
   late-error— prompt acked ok, then error response with the same id
   silent    — ready, then never answers anything (timeout testing)
   slow-exit — basic behavior, then waits briefly after stdin closes
+  slow-turn — prompt starts an agent turn that finishes after two seconds
   noisy     — like basic, but emits unknown frames + setWidget before each response
   activity-lifecycle — scripted provider/config/runtime events for controller activity tests
 """
@@ -151,6 +152,11 @@ for line in sys.stdin:
             time.sleep(0.2)
             emit({"type": "config_update", "model": {"id": "provider-less-model"}})
             time.sleep(0.2)
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+            continue
+        if mode == "slow-turn":
+            emit({"type": "agent_start"})
+            time.sleep(2)
             emit({"type": "agent_end", "messages": [], "isTerminal": True})
             continue
         if mode == "burst":

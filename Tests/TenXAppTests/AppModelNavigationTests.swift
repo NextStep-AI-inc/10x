@@ -200,6 +200,105 @@ import Testing
 }
 
 @MainActor
+@Test func backgroundSessionActivityRemainsTrackedUntilItsTurnFinishes() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-background-activity-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "slow-turn")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    for _ in 0..<100 where model.providerActivityCounts["test"] != 1 {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    #expect(model.providerActivityCounts["test"] == 1)
+    model.openNewSession()
+    #expect(model.activeSession == nil)
+    #expect(model.route == .newSession)
+    #expect(model.providerActivityCounts["test"] == 1)
+    #expect(!model.isForegroundSessionGenerating)
+
+    for _ in 0..<150 where model.providerActivityCounts["test"] != nil {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(model.providerActivityCounts["test"] == nil)
+    if let manager = model.processManager {
+        await manager.closeAll()
+    }
+}
+
+@MainActor
+@Test func reopeningManagedSessionReusesItsController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-reused-controller-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let original = try #require(model.activeSession)
+
+    model.openNewSession()
+    model.openSession(navigationMetadata("/tmp/fake.jsonl"))
+    let reopened = try #require(model.activeSession)
+
+    #expect(reopened === original)
+    if let manager = model.processManager {
+        await manager.closeAll()
+    }
+}
+
+@MainActor
+@Test func nonSessionRoutesAreNotForegroundGeneratingWhileBackgroundActivityContinues() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-foreground-activity-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "slow-turn")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    for _ in 0..<100 where model.providerActivityCounts["test"] != 1 {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    #expect(model.isForegroundSessionGenerating)
+    model.openSettings()
+    #expect(!model.isForegroundSessionGenerating)
+    model.openProviders(.usage)
+    #expect(!model.isForegroundSessionGenerating)
+    model.openNewSession()
+    #expect(!model.isForegroundSessionGenerating)
+    model.openArchivedSessions()
+    #expect(!model.isForegroundSessionGenerating)
+    #expect(model.providerActivityCounts["test"] == 1)
+    if let manager = model.processManager {
+        await manager.closeAll()
+    }
+}
+
+@MainActor
 @Test func mutationLockDetachesBeforeCloseAndBlocksReentrantActions() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-mutation-lock-\(UUID().uuidString)")
