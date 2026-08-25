@@ -1,6 +1,8 @@
+import AppKit
 import Foundation
 import Observation
 import OmpKit
+import UserNotifications
 
 @MainActor
 @Observable
@@ -17,6 +19,10 @@ final class SessionController {
     private(set) var contextPercentage: Int?
     private(set) var queuedMessageCount = 0
     private(set) var sessionPath: String?
+    private(set) var extensionSheetRequest: ExtensionUIState?
+    private(set) var isRecoveryPresented = false
+    private(set) var isLogPresented = false
+    private(set) var logText = ""
     var draft = ""
     var streamingBehavior: StreamingBehavior? = .steer
 
@@ -24,7 +30,9 @@ final class SessionController {
     private var projectURL: URL?
     private var handle: SessionProcessManager.Handle?
     private var reducer = TranscriptReducer()
+    private var extensionRouter = ExtensionUIRouter()
     private var eventTask: Task<Void, Never>?
+    private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
 
     init(processManager: SessionProcessManager) {
         self.processManager = processManager
@@ -111,6 +119,7 @@ final class SessionController {
         eventTask?.cancel()
         await processManager.close(sessionPath: sessionPath)
         runtimeState = .loading
+        isRecoveryPresented = false
         do {
             let handle = try await processManager.open(
                 sessionPath: sessionPath,
@@ -123,6 +132,47 @@ final class SessionController {
 
     func selectStreamingBehavior(_ behavior: StreamingBehavior) {
         streamingBehavior = behavior
+    }
+
+    func respond(to state: ExtensionUIState, with response: ExtensionUIResponse) async {
+        guard let handle else { return }
+        do {
+            try await handle.client.sendRaw(.extensionUIResponse(id: state.id, body: response.body))
+            removeExtensionRequest(id: state.id)
+        } catch {
+            fail(error, function: "respondToExtensionUI")
+        }
+    }
+
+    func openURL(_ url: URL, requestID: String) {
+        NSWorkspace.shared.open(url)
+        removeExtensionRequest(id: requestID)
+    }
+
+    func copyURL(_ url: URL, requestID: String) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(url.absoluteString, forType: .string)
+        removeExtensionRequest(id: requestID)
+    }
+
+    func handleUnexpectedExit(code: Int32?, stderrTail: String) {
+        runtimeState = .stopped(code: code, stderrTail: stderrTail)
+        reducer.runtimeState = runtimeState
+        isRecoveryPresented = true
+        logText = stderrTail.isEmpty ? "OMP exited without stderr output." : stderrTail
+    }
+
+    func dismissRecovery() {
+        isRecoveryPresented = false
+    }
+
+    func openLog() {
+        isLogPresented = true
+    }
+
+    func dismissLog() {
+        isLogPresented = false
     }
 
     private func finishOpening(_ handle: SessionProcessManager.Handle) async throws {
@@ -162,7 +212,11 @@ final class SessionController {
         eventTask = Task { [weak self] in
             for await frame in client.events {
                 guard let self, !Task.isCancelled else { return }
-                self.reducer.consume(frame)
+                if case .extensionUIRequest(let request) = frame {
+                    self.consumeExtensionUI(request)
+                } else {
+                    self.reducer.consume(frame)
+                }
                 self.syncReducerState()
                 self.applyEventMetadata(frame)
             }
@@ -215,6 +269,73 @@ final class SessionController {
     private func syncReducerState() {
         items = reducer.items
         runtimeState = reducer.runtimeState
+    }
+
+    private func consumeExtensionUI(_ request: ExtensionUIRequest) {
+        guard let state = ExtensionUIRouter.parse(request) else { return }
+        extensionRouter.consume(request)
+
+        switch state {
+        case .confirm, .select:
+            reducer.upsertExtensionUI(state)
+            scheduleTimeout(for: state)
+        case .input, .editor:
+            extensionSheetRequest = state
+            scheduleTimeout(for: state)
+        case .cancel(_, let targetID):
+            removeExtensionRequest(id: targetID)
+        case .notification(_, let message, let level):
+            reducer.appendNotice(level: level, message: message)
+            postNotification(message: message)
+        case .title(_, let updatedTitle):
+            title = updatedTitle
+        case .setEditorText(_, let text):
+            draft = text
+            extensionRouter.clearEditorText()
+        case .openURL:
+            reducer.upsertExtensionUI(state)
+        case .status, .widget:
+            break
+        }
+    }
+
+    private func scheduleTimeout(for state: ExtensionUIState) {
+        let timeout: Int?
+        switch state {
+        case .confirm(_, _, _, let value),
+             .select(_, _, _, let value),
+             .input(_, _, _, let value):
+            timeout = value
+        default:
+            timeout = nil
+        }
+        guard let timeout, timeout > 0 else { return }
+        extensionTimeoutTasks[state.id]?.cancel()
+        extensionTimeoutTasks[state.id] = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(timeout)) }
+            catch { return }
+            guard let self else { return }
+            await self.respond(to: state, with: .cancelled(timedOut: true))
+        }
+    }
+
+    private func removeExtensionRequest(id: String) {
+        extensionTimeoutTasks.removeValue(forKey: id)?.cancel()
+        extensionRouter.removeRequest(id: id)
+        reducer.removeExtensionUI(id: id)
+        if extensionSheetRequest?.id == id { extensionSheetRequest = nil }
+        syncReducerState()
+    }
+
+    private func postNotification(message: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "10x"
+        content.body = message
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     private func fail(_ error: any Error, function: String) {

@@ -16,6 +16,7 @@ final class AppModel {
     private(set) var processManager: SessionProcessManager?
 
     @ObservationIgnored private let dependencies: AppDependencies
+    @ObservationIgnored private var exitTask: Task<Void, Never>?
 
     init(dependencies: AppDependencies = .live) {
         self.dependencies = dependencies
@@ -83,6 +84,7 @@ final class AppModel {
 
     private func install(preferredURL: URL?) async {
         guard let installation = await dependencies.ompLocator.locate(preferredURL: preferredURL) else {
+            exitTask?.cancel()
             self.installation = nil
             processManager = nil
             route = .setup
@@ -90,8 +92,24 @@ final class AppModel {
         }
 
         self.installation = installation
-        processManager = SessionProcessManager(executable: installation.executableURL.path)
+        let processManager = SessionProcessManager(executable: installation.executableURL.path)
+        self.processManager = processManager
+        watchUnexpectedExits(from: processManager)
         setupError = nil
         route = .newSession
+    }
+
+    private func watchUnexpectedExits(from processManager: SessionProcessManager) {
+        exitTask?.cancel()
+        exitTask = Task { [weak self] in
+            for await exit in processManager.unexpectedExits {
+                guard let self, !Task.isCancelled,
+                      self.activeSession?.sessionPath == exit.sessionPath
+                else { continue }
+                self.activeSession?.handleUnexpectedExit(
+                    code: exit.code,
+                    stderrTail: exit.stderrTail)
+            }
+        }
     }
 }

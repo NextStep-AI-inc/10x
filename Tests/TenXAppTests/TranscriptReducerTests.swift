@@ -69,6 +69,41 @@ import Testing
     #expect(reducer.runtimeState == .idle)
 }
 
+@Test func pairedToolResultMessageDoesNotDuplicateTheToolCard() throws {
+    var reducer = TranscriptReducer()
+
+    reducer.consume(try eventFrame("""
+        {"type":"tool_execution_start","toolCallId":"t1","toolName":"bash","args":{"command":"pwd"}}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"t1","toolName":"bash","result":{"content":[{"type":"text","text":"/tmp"}]},"isError":false}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"message_start","message":{"role":"toolResult","toolCallId":"t1","toolName":"bash","content":[{"type":"text","text":"/tmp"}],"isError":false}}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"role":"toolResult","toolCallId":"t1","toolName":"bash","content":[{"type":"text","text":"/tmp"}],"isError":false}}
+        """))
+
+    #expect(reducer.items.count == 1)
+    guard case .tool(let presentation) = reducer.items[0] else {
+        Issue.record("Expected one tool card")
+        return
+    }
+    #expect(presentation.name == "bash")
+}
+
+@Test func promptResultSettlesACommandOnlyTurn() throws {
+    var reducer = TranscriptReducer()
+    reducer.runtimeState = .streaming
+
+    reducer.consume(try eventFrame("""
+        {"type":"prompt_result","agentInvoked":false}
+        """))
+
+    #expect(reducer.runtimeState == .idle)
+}
+
 private func eventFrame(_ json: String) throws -> RpcFrame {
     try RpcFrame.decode(line: Data(json.utf8))
 }

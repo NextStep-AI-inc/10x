@@ -1,13 +1,13 @@
 import SwiftUI
 
 struct TranscriptView: View {
-    let items: [TranscriptItem]
+    let controller: SessionController
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 22) {
-                    ForEach(items) { item in
+                    ForEach(controller.items) { item in
                         itemView(item)
                             .id(item.id)
                     }
@@ -18,7 +18,7 @@ struct TranscriptView: View {
                 .frame(maxWidth: .infinity)
             }
             .scrollIndicators(.hidden)
-            .onChange(of: items.last?.id) { _, id in
+            .onChange(of: controller.items.last?.id) { _, id in
                 guard let id else { return }
                 withAnimation(.easeOut(duration: 0.15)) {
                     proxy.scrollTo(id, anchor: .bottom)
@@ -41,6 +41,23 @@ struct TranscriptView: View {
                 Spacer()
             }
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        case .tool(let presentation):
+            switch ToolCardRegistry.kind(for: presentation.name) {
+            case .generic:
+                GenericToolCardView(presentation: presentation)
+            }
+        case .extensionUI(let state):
+            ApprovalCardView(
+                state: state,
+                onRespond: { response in
+                    Task { await controller.respond(to: state, with: response) }
+                },
+                onOpenURL: { url in
+                    controller.openURL(url, requestID: state.id)
+                },
+                onCopyURL: { url in
+                    controller.copyURL(url, requestID: state.id)
+                })
         case .rawEvent:
             EmptyView()
         }
