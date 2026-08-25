@@ -57,10 +57,13 @@ The V1 must prove this loop end to end:
 The app has three persistent destinations and one primary hierarchy:
 
 ```text
+Shell controls
+├── Top-left: 10x wordmark (Settings)
+└── Top-right
+    ├── Search (modal)
+    └── New session
+
 Floating rail
-├── 10x wordmark (Settings)
-├── New session
-├── Search (modal)
 └── Projects
     ├── 10x
     │   ├── Bauhaus macOS interface
@@ -93,12 +96,13 @@ used in the NextStep LMS shell:
 - The wordmark is anchored at the top. A compact provider-allowance ledger may
   occupy the bottom when provider adapters have current quota data; there is no
   user profile control because usage belongs to each connected provider.
-- New Session, Search, project markers, and session markers form one
-  vertically centered stack. Every interactive item has a tooltip and
-  accessibility label.
+- Project markers and session markers form one vertically centered stack.
+  Every interactive item has a tooltip and accessibility label.
 - The 10x wordmark is the Settings control. It remains visually unchanged,
   uses a borderless hit target, and exposes “Open Settings” to hover and
   accessibility. There is no separate Settings gear in the centered stack.
+- Search and New Session are fixed, borderless icon controls in the top-right,
+  with Search placed before New Session. They do not move when the rail expands.
 - The collapsed stack uses a typographic index for every project and session.
   Projects use a two-character workspace code. Numbered sessions sit beneath
   their project on a thin indented connector spine. The selected session uses
@@ -191,7 +195,7 @@ The active-session canvas has four zones:
 
 ### Search modal
 
-Search opens over the current canvas from the rail or `⌘K`:
+Search opens over the current canvas from the top-right control or `⌘K`:
 
 - It never replaces the current session or creates a navigation destination.
 - A thin near-black perimeter isolates the modal; there is no shadow.

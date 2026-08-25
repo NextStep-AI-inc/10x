@@ -16,6 +16,11 @@ struct AppShellView: View {
                         .padding(.leading, 64)
                     FloatingRailView(model: model, expansion: railExpansion)
                 }
+                .overlay(alignment: .topTrailing) {
+                    ShellTopActionsView(model: model)
+                        .padding(.top, 16)
+                        .padding(.trailing, 18)
+                }
             }
         }
         .background(TenXPalette.color(TenXPalette.canvasHex))

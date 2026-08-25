@@ -37,13 +37,9 @@ struct FloatingRailView: View {
                 VStack(spacing: 0) {
                     Spacer(minLength: 18)
 
-                    VStack(alignment: .leading, spacing: 22) {
-                        actionStack
-
-                        if !items.isEmpty {
-                            sessionMap
-                                .frame(height: sessionMapHeight(availableHeight: proxy.size.height))
-                        }
+                    if !items.isEmpty {
+                        sessionMap
+                            .frame(height: sessionMapHeight(availableHeight: proxy.size.height))
                     }
 
                     Spacer(minLength: 18)
@@ -77,30 +73,6 @@ struct FloatingRailView: View {
         .accessibilityLabel("Application navigation")
     }
 
-    private var actionStack: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            railAction(
-                title: "New session",
-                systemImage: "plus",
-                focus: .newSession,
-                isSelected: model.route == .newSession
-            ) {
-                expansion.pointerEntered()
-                model.route = .newSession
-            }
-
-            railAction(
-                title: "Search",
-                systemImage: "magnifyingglass",
-                focus: .search
-            ) {
-                expansion.pointerEntered()
-                model.isSearchPresented = true
-            }
-
-        }
-    }
-
     private var sessionMap: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -126,39 +98,6 @@ struct FloatingRailView: View {
         let desiredHeight = CGFloat(items.count) * 26
         let maximumHeight = max(104, availableHeight * 0.58)
         return min(desiredHeight, maximumHeight)
-    }
-
-    private func railAction(
-        title: String,
-        systemImage: String,
-        focus: RailFocus,
-        isSelected: Bool = false,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 14, weight: .medium))
-                    .frame(width: 30, height: 30)
-                if expansion.isExpanded {
-                    Text(title)
-                        .font(TenXTypography.body(size: 12, weight: .medium))
-                        .lineLimit(1)
-                        .transition(.opacity)
-                }
-            }
-            .foregroundStyle(isSelected
-                ? TenXPalette.color(TenXPalette.cyanHex)
-                : TenXPalette.color(TenXPalette.nearBlackHex))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .focused($focusedItem, equals: focus)
-        .padding(.leading, 17)
-        .frame(height: 36)
-        .accessibilityLabel(title)
     }
 
     @ViewBuilder
@@ -232,8 +171,6 @@ struct FloatingRailView: View {
 }
 
 private enum RailFocus: Hashable {
-    case newSession
-    case search
     case settings
     case project(String)
     case session(String)
