@@ -1041,3 +1041,52 @@ and final 760-point transcript recapture were stopped after two Computer Use
 failures while the historical session was loading; the preserved transcript
 capture proves only its normal-width `Choose IDE` state. The spec remains
 incomplete and its status is intentionally unchanged.
+
+## Approved compact file-reference refinement
+
+The approved follow-up replaces the two-action row with one compact file
+control and broadens the filetype treatment:
+
+- [x] Bundle 29 vector marks covering the approved common language and file
+  groups, with a neutral document fallback.
+- [x] Keep the filename near-black and confine brand color to the filetype mark.
+- [x] Remove the repeated `Open in <IDE>` / `Choose IDE` transcript action.
+- [x] Route normal selection to the preferred IDE, or Preferred IDE Settings
+  when the preference is absent or unavailable.
+- [x] Route Option-selection to Reveal in Finder.
+- [x] Preserve System Default, selected IDE, Finder, and Copy in the context
+  menu.
+- [x] Keep Option-hover full-path disclosure and the shared assistant/tool
+  reference component.
+
+Fresh verification for this refinement:
+
+- The full Debug suite passed 142/142 at the uncommitted review state
+  (`/tmp/tenx-inline-final-debug.log`).
+- A clean universal Release build succeeded at
+  `/tmp/tenx-inline-final-release/Build/Products/Release/10x.app`
+  (`/tmp/tenx-inline-final-release.log`). Its warning scan found only the
+  unchanged AppIntents metadata warning.
+- The Release bundle contains 29 SVGs plus `ATTRIBUTION.md` in
+  `Contents/Resources/FileTypeIcons`.
+- The checked-in `file-type-icon-catalog.png` snapshot proves distinct Swift,
+  TypeScript, and React/TSX marks; the related mapping, fallback, bundle, and
+  snapshot tests are part of the 142-test pass.
+- The exact Release process PID 61810 opened a real OMP session that produced
+  three actionable references for `/tmp/tenx-inline-proof.swift`,
+  `/tmp/tenx-inline-proof.ts`, and `/tmp/tenx-inline-proof.tsx`. All three were
+  enabled 32-point controls with the Option-to-Finder accessibility hint.
+- With no IDE preference, selecting the Swift reference opened Settings with
+  Preferred IDE focused. After selecting Cursor and relaunching, the same
+  primary action made Cursor frontmost and exposed the
+  `tenx-inline-proof.swift` editor tab.
+- Option-selecting the TypeScript reference made Finder frontmost, opened the
+  `tmp` window, and selected `tenx-inline-proof.ts`.
+- The consolidated Release AX record is saved at
+  `/tmp/tenx-inline-filetype-release-ax.log`.
+
+Not verified in this refinement: a fresh Release screenshot could not be
+captured because `screencapture` was denied access to the display. Visual
+layout is covered by the inspected checked-in snapshots, while live Release
+behavior is covered by the AX record above. Full VoiceOver traversal and the
+existing launch-rejection edge case remain outside this follow-up.
