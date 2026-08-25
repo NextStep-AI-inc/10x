@@ -58,6 +58,53 @@ struct AgentDesktopCoordinator: Sendable {
         throw AgentDesktopProviderError.unavailable(unavailableKind, .missing)
     }
 
+    func listWindows(in prepared: PreparedAgentDesktop) async throws -> [AgentWindow] {
+        guard let provider = providers[prepared.provider] else {
+            throw AgentDesktopProviderError.unavailable(prepared.provider, .missing)
+        }
+        return try await provider.listWindows()
+    }
+
+    func watchWindows(in prepared: PreparedAgentDesktop) async throws -> AsyncStream<AgentWindowEvent> {
+        guard let provider = providers[prepared.provider] else {
+            throw AgentDesktopProviderError.unavailable(prepared.provider, .missing)
+        }
+        return try await provider.watchWindows()
+    }
+
+    func dedicatedWindowLauncher(
+        for prepared: PreparedAgentDesktop
+    ) throws -> DedicatedWindowLauncher {
+        guard let provider = providers[prepared.provider] else {
+            throw AgentDesktopProviderError.unavailable(prepared.provider, .missing)
+        }
+        return DedicatedWindowLauncher(provider: provider)
+    }
+
+    func cleanup(manifest: AgentDesktopManifest) async -> CleanupReport {
+        guard let provider = providers[manifest.provider],
+              let liveWindows = try? await provider.listWindows()
+        else {
+            return CleanupReport(
+                preservedApplicationNames: sanitizedApplicationNames(for: manifest.ownedWindows),
+                restoredWindowCount: 0)
+        }
+        let liveWindowIDs = Set(liveWindows.map(\.id))
+        var restoredWindowCount = 0
+        for window in manifest.ownedWindows where liveWindowIDs.contains(window.id) {
+            guard let originalWorkspaceID = window.originalWorkspaceID else { continue }
+            do {
+                try await provider.restore(windowID: window.id, to: originalWorkspaceID)
+                restoredWindowCount += 1
+            } catch {
+                continue
+            }
+        }
+        return CleanupReport(
+            preservedApplicationNames: sanitizedApplicationNames(for: manifest.ownedWindows),
+            restoredWindowCount: restoredWindowCount)
+    }
+
     @MainActor
     func probePreparedWorkspace(
         _ prepared: PreparedAgentDesktop,
@@ -86,5 +133,20 @@ struct AgentDesktopCoordinator: Sendable {
         case .hammerspoon: [.hammerspoon]
         case .backgroundOnly: [.background]
         }
+    }
+
+    private func sanitizedApplicationNames(for windows: [AgentOwnedWindow]) -> [String] {
+        Array(Set(windows.map { sanitizedApplicationName($0.applicationName) })).sorted()
+    }
+
+    private func sanitizedApplicationName(_ name: String) -> String {
+        let leaf = name.split(separator: "/").last.map(String.init) ?? "Application"
+        let allowed = leaf.unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0)
+                || CharacterSet.whitespaces.contains($0)
+                || "._-".unicodeScalars.contains($0)
+        }
+        let sanitized = String(String.UnicodeScalarView(allowed)).prefix(64)
+        return sanitized.isEmpty ? "Application" : String(sanitized)
     }
 }
