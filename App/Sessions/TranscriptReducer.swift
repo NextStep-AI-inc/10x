@@ -7,6 +7,7 @@ struct TranscriptReducer {
 
     private var inflightMessageID: String?
     private var pendingPersistenceIDs: Set<String> = []
+    private var pendingMessageFingerprints: [String: String] = [:]
     private var nextSyntheticID = 1
     private var toolReducer = ToolEventReducer()
     private var subagentReducer = SubagentEventReducer()
@@ -44,11 +45,13 @@ struct TranscriptReducer {
             guard let message = payload["message"] else { return }
             if consumeToolResult(message) { return }
             let id = inflightMessageID ?? messageID(message)
-            replaceOrAppend(.message(TranscriptMessage(
+            let finalMessage = TranscriptMessage(
                 id: id,
                 raw: message,
-                isFinal: true)))
+                isFinal: true)
+            replaceOrAppend(.message(finalMessage))
             pendingPersistenceIDs.insert(id)
+            pendingMessageFingerprints[id] = Self.fingerprint(finalMessage)
             inflightMessageID = nil
         case "notice":
             let id = syntheticID(prefix: "notice")
@@ -165,12 +168,14 @@ struct TranscriptReducer {
         }
         inflightMessageID = nil
         pendingPersistenceIDs = []
+        pendingMessageFingerprints = [:]
     }
 
     mutating func load(history: TranscriptHistory) {
         items = history.items
         inflightMessageID = nil
         pendingPersistenceIDs = []
+        pendingMessageFingerprints = [:]
     }
 
     mutating func ensureThreadStart(date: Date?) {
@@ -195,7 +200,12 @@ struct TranscriptReducer {
 
     mutating func reconcile(history: TranscriptHistory) {
         let persistedIDs = Set(history.items.map(\.id))
-        pendingPersistenceIDs.subtract(persistedIDs)
+        let resolvedMessageIDs = pendingMessageIDsPersisted(in: history)
+        let resolvedIDs = persistedIDs.union(resolvedMessageIDs)
+        pendingPersistenceIDs.subtract(resolvedIDs)
+        for id in resolvedIDs {
+            pendingMessageFingerprints.removeValue(forKey: id)
+        }
         let transient = items.filter { item in
             guard !persistedIDs.contains(item.id) else { return false }
             if pendingPersistenceIDs.contains(item.id) { return true }
@@ -367,6 +377,38 @@ struct TranscriptReducer {
             component.lowercased() == "gpt" ? "GPT" : component.capitalized
         }.joined(separator: "-")
         .replacingOccurrences(of: "-Sol", with: " Sol")
+    }
+
+    private mutating func pendingMessageIDsPersisted(
+        in history: TranscriptHistory
+    ) -> Set<String> {
+        var persistedCounts: [String: Int] = [:]
+        for item in history.items {
+            guard case .message(let message) = item else { continue }
+            persistedCounts[Self.fingerprint(message), default: 0] += 1
+        }
+
+        var resolved: Set<String> = []
+        for item in items {
+            guard case .message = item,
+                  let fingerprint = pendingMessageFingerprints[item.id],
+                  let count = persistedCounts[fingerprint],
+                  count > 0
+            else { continue }
+            resolved.insert(item.id)
+            persistedCounts[fingerprint] = count - 1
+        }
+        return resolved
+    }
+
+    private static func fingerprint(_ message: TranscriptMessage) -> String {
+        let timestamp = message.raw["timestamp"]?.doubleValue.map { String($0) } ?? ""
+        return [
+            message.role.rawValue,
+            timestamp,
+            message.stopReason ?? "",
+            message.visibleText,
+        ].joined(separator: "\u{1F}")
     }
 
     private mutating func messageID(_ message: JSONValue) -> String {

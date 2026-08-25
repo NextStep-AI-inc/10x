@@ -2,6 +2,7 @@ import SwiftUI
 
 struct WebToolCardView: View {
     let presentation: ToolPresentation
+    @State private var isShowingAllResults = false
 
     var body: some View {
         if let content = ToolContentExtractor.web(presentation) {
@@ -20,14 +21,16 @@ struct WebToolCardView: View {
                         .font(TenXTypography.body(size: 11))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 } else {
-                    ForEach(content.results) { result in
+                    ForEach(visibleResults(content.results)) { result in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(result.title)
                                 .font(TenXTypography.body(size: 11, weight: .semibold))
-                            Text(result.url)
-                                .font(TenXTypography.mono(size: 10))
-                                .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-                                .lineLimit(1)
+                            BoundedToolOutputView(
+                                text: result.url,
+                                lineLimit: 1,
+                                font: TenXTypography.mono(size: 10),
+                                color: TenXPalette.color(TenXPalette.cyanHex),
+                                isDisclosureAlwaysAvailable: true)
                             if let summary = result.summary {
                                 BoundedToolOutputView(
                                     text: summary,
@@ -37,10 +40,26 @@ struct WebToolCardView: View {
                             }
                         }
                     }
+                    if content.results.count > Self.compactResultLimit {
+                        Button(
+                            isShowingAllResults
+                                ? "Show fewer"
+                                : "Show \(content.results.count - Self.compactResultLimit) more"
+                        ) {
+                            isShowingAllResults.toggle()
+                        }
+                        .buttonStyle(GhostActionStyle())
+                    }
                 }
             }
         } else {
             GenericToolCardView(presentation: presentation)
         }
+    }
+
+    nonisolated static let compactResultLimit = 4
+
+    private func visibleResults(_ results: [WebToolResult]) -> [WebToolResult] {
+        isShowingAllResults ? results : Array(results.prefix(Self.compactResultLimit))
     }
 }

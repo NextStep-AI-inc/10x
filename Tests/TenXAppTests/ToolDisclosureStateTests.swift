@@ -47,6 +47,10 @@ import Testing
     #expect(BoundedToolOutputView.shouldOfferDisclosure(
         String(repeating: "wrapped output ", count: 80),
         lineLimit: 6))
+    #expect(BoundedToolOutputView.shouldOfferDisclosure(
+        "short text that can wrap in a narrow card",
+        lineLimit: 1,
+        isAlwaysAvailable: true))
 }
 
 private func tool(id: String, name: String, phase: ToolPhase) -> ToolPresentation {

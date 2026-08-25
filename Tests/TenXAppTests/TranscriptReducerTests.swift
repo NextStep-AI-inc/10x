@@ -193,10 +193,10 @@ import Testing
     #expect(reducer.items.contains { if case .notice = $0 { true } else { false } })
 }
 
-@Test func staleHistoryKeepsFinalLiveBoundariesUntilTheirStableIDsPersist() throws {
+@Test func staleHistoryKeepsFinalLiveBoundariesUntilTheirContentPersists() throws {
     var reducer = TranscriptReducer()
     reducer.consume(try eventFrame("""
-        {"type":"message_end","message":{"id":"live-message","role":"assistant","content":[{"type":"text","text":"Just finished"}]}}
+        {"type":"message_end","message":{"role":"assistant","timestamp":1787601604000,"content":[{"type":"text","text":"Just finished"}],"stopReason":"stop"}}
         """))
     reducer.consume(try eventFrame("""
         {"type":"tool_execution_end","toolCallId":"live-tool","toolName":"bash","result":{"content":[{"type":"text","text":"done"}]},"isError":false}
@@ -205,13 +205,17 @@ import Testing
     reducer.reconcile(history: TranscriptHistory(items: [
         .threadStart(id: "thread", date: .distantPast),
     ]))
-    #expect(reducer.items.contains { $0.id == "live-message" })
+    let liveMessageID = try #require(reducer.items.compactMap { item -> String? in
+        guard case .message(let message) = item else { return nil }
+        return message.id
+    }.first)
+    #expect(liveMessageID.hasPrefix("message-"))
     #expect(reducer.items.contains { $0.id == "live-tool" })
 
     let persistedMessage = TranscriptMessage(
-        id: "live-message",
+        id: "persisted-entry-id",
         raw: try message("""
-            {"role":"assistant","content":[{"type":"text","text":"Just finished"}]}
+            {"role":"assistant","timestamp":1787601604000,"content":[{"type":"text","text":"Just finished"}],"stopReason":"stop"}
             """),
         isFinal: true)
     let persistedTool = ToolPresentation(
@@ -230,7 +234,13 @@ import Testing
         .tool(persistedTool),
     ]))
 
-    #expect(reducer.items.filter { $0.id == "live-message" }.count == 1)
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.count == 1)
+    #expect(messages.first?.id == "persisted-entry-id")
+    #expect(!reducer.items.contains { $0.id == liveMessageID })
     #expect(reducer.items.filter { $0.id == "live-tool" }.count == 1)
 }
 

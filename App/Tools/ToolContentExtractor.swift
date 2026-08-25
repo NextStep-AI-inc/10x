@@ -118,7 +118,7 @@ enum ToolContentExtractor {
             .filter { !$0.isEmpty }
         return SearchToolContent(
             query: query,
-            matches: Array((detailMatches ?? outputMatches ?? []).prefix(20)))
+            matches: detailMatches ?? outputMatches ?? [])
     }
 
     static func task(_ presentation: ToolPresentation) -> TaskToolContent? {
@@ -177,7 +177,7 @@ enum ToolContentExtractor {
         }
         return WebToolContent(
             queryOrURL: query,
-            results: Array(results.prefix(8)),
+            results: results,
             summary: outputText(presentation.result))
     }
 

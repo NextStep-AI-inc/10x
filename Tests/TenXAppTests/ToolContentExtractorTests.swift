@@ -82,6 +82,27 @@ import Testing
     #expect(ToolContentExtractor.web(malformed) == nil)
 }
 
+@Test func searchAndWebExtractionRetainsEveryResultForDisclosure() throws {
+    let searchLines = (1...24).map { "App/File\($0).swift:\($0)" }.joined(separator: "\n")
+    let search = presentation(
+        name: "grep",
+        arguments: .object(["pattern": .string("Session")]),
+        result: result(text: searchLines))
+    #expect(ToolContentExtractor.search(search)?.matches.count == 24)
+
+    let webResults = (1...12).map { index in
+        JSONValue.object([
+            "title": .string("Result \(index)"),
+            "url": .string("https://example.com/results/\(index)"),
+        ])
+    }
+    let web = presentation(
+        name: "web_search",
+        arguments: .object(["query": .string("OMP")]),
+        result: .object(["details": .object(["results": .array(webResults)])]))
+    #expect(ToolContentExtractor.web(web)?.results.count == 12)
+}
+
 private func presentation(
     name: String,
     arguments: JSONValue,

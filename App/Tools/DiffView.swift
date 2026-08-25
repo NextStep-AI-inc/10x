@@ -17,7 +17,7 @@ struct DiffView: View {
                 Button("Copy patch") { copy(diff.raw) }
                     .buttonStyle(GhostActionStyle())
             }
-            .font(TenXTypography.mono(size: 9, weight: .semibold))
+            .font(TenXTypography.mono(size: 10, weight: .semibold))
 
             ForEach(Array(diff.files.enumerated()), id: \.offset) { fileIndex, file in
                 if fileIndex > 0 { Divider() }
@@ -50,7 +50,7 @@ struct DiffView: View {
     private func hunkView(_ hunk: UnifiedDiffHunk, idPrefix: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(hunk.header)
-                .font(TenXTypography.mono(size: 9, weight: .medium))
+                .font(TenXTypography.mono(size: 10, weight: .medium))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             ScrollView([.horizontal, .vertical]) {
                 VStack(alignment: .leading, spacing: 2) {

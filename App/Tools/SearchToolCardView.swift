@@ -18,12 +18,12 @@ struct SearchToolCardView: View {
                     Text("\(content.matches.count) matches")
                         .font(TenXTypography.mono(size: 10))
                         .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-                    ForEach(Array(content.matches.enumerated()), id: \.offset) { _, match in
-                        Text(match)
-                            .font(TenXTypography.mono(size: 10))
-                            .lineLimit(2)
-                            .textSelection(.enabled)
-                    }
+                    BoundedToolOutputView(
+                        text: content.matches.joined(separator: "\n"),
+                        lineLimit: 12,
+                        font: TenXTypography.mono(size: 10),
+                        isDisclosureAlwaysAvailable: content.matches.count > 1
+                            || (content.matches.first?.count ?? 0) > 80)
                 }
             }
         } else {

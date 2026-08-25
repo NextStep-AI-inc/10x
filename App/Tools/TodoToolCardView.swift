@@ -10,7 +10,7 @@ struct TodoToolCardView: View {
                 ForEach(items) { item in
                     HStack(alignment: .firstTextBaseline, spacing: 9) {
                         Text(item.isComplete ? "DONE" : item.status.uppercased())
-                            .font(TenXTypography.mono(size: 8, weight: .semibold))
+                            .font(TenXTypography.mono(size: 10, weight: .semibold))
                             .foregroundStyle(item.isComplete
                                 ? TenXPalette.color(TenXPalette.cyanHex)
                                 : TenXPalette.color(TenXPalette.yellowHex))
