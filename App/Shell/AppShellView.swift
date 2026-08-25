@@ -13,7 +13,7 @@ struct AppShellView: View {
                 ZStack(alignment: .leading) {
                     routeCanvas
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.leading, 64)
+                        .padding(.leading, railExpansion.contentLeadingInset)
                         .environment(model.idePreferenceStore)
                         .environment(\.fileOpenService, model.fileOpenService)
                         .environment(\.openIDEPreferences, OpenIDEPreferencesAction {

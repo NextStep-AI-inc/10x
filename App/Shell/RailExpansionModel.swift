@@ -6,6 +6,8 @@ import Observation
 final class RailExpansionModel {
     private(set) var isExpanded = false
 
+    var contentLeadingInset: CGFloat { isExpanded ? 220 : 64 }
+
     @ObservationIgnored private let collapseDelay: Duration
     @ObservationIgnored private var isPointerInside = false
     @ObservationIgnored private var hasKeyboardFocus = false

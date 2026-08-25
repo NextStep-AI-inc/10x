@@ -59,7 +59,7 @@ struct FloatingRailView: View {
                     .accessibilityHidden(!expansion.isExpanded)
             }
         }
-        .frame(width: expansion.isExpanded ? 220 : 64, alignment: .leading)
+        .frame(width: expansion.contentLeadingInset, alignment: .leading)
         .contentShape(Rectangle())
         .onChange(of: focusedItem) { _, value in
             expansion.focusChanged(value != nil)
