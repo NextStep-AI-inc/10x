@@ -287,6 +287,7 @@ struct FloatingRailView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focused($focusedItem, equals: direction == .up ? .scrollUp : .scrollDown)
         .accessibilityLabel(RailAccessibility.scrollLabel(direction))
     }
 
@@ -300,6 +301,8 @@ struct FloatingRailView: View {
 private enum RailFocus: Hashable {
     case settings
     case archived
+    case scrollUp
+    case scrollDown
     case project(String)
     case session(String)
     case disclosure(String)
