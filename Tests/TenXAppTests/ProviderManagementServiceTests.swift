@@ -133,6 +133,7 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
 
 @Test func providerServiceSharesOneStartupBeforeSendingRequests() async throws {
     let startGate = StartGate()
+    let requestProbe = RequestProbe()
     let fake = FakeProviderRPCClient(
         responses: [providerListResponse, providerListResponse],
         startGate: startGate)
@@ -142,8 +143,11 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
 
     let firstProviders = Task { try await service.providers() }
     await startGate.waitForStart()
-    let secondProviders = Task { try await service.providers() }
-    for _ in 0..<10 { await Task.yield() }
+    let secondProviders = Task {
+        await requestProbe.requestBegan()
+        return try await service.providers()
+    }
+    await requestProbe.waitForRequest()
 
     #expect(await fake.commands.isEmpty)
     #expect(await fake.startCount == 1)
@@ -173,6 +177,48 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
     #expect(await second.startCount == 1)
 }
 
+@Test func providerServiceShutsDownAClientWhoseStartupFails() async {
+    let fake = FakeProviderRPCClient(
+        responses: [],
+        startFailure: ProviderTestError.startFailed)
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    _ = await Task { try await service.providers() }.result
+
+    #expect(await fake.startCount == 1)
+    #expect(await fake.shutdownCount == 1)
+}
+
+@Test func providerServiceShutsDownACancelledSharedStartupOnlyOnce() async {
+    let startGate = StartGate()
+    let requestBarrier = RequestBarrier(participantCount: 2)
+    let fake = FakeProviderRPCClient(
+        responses: [providerListResponse, providerListResponse],
+        startGate: startGate)
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let firstProviders = Task {
+        await requestBarrier.arrive()
+        return try await service.providers()
+    }
+    let secondProviders = Task {
+        await requestBarrier.arrive()
+        return try await service.providers()
+    }
+    await requestBarrier.waitForAll()
+    await startGate.waitForStart()
+    await service.cancelLogin()
+    await startGate.release()
+    _ = await firstProviders.result
+    _ = await secondProviders.result
+
+    #expect(await fake.shutdownCount == 1)
+}
+
 private struct ProviderCommand: Sendable, Equatable {
     let command: RpcCommand
     let timeout: Duration?
@@ -183,15 +229,21 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
     private var responses: [RpcResponse]
     private let startGate: StartGate?
+    private let startFailure: ProviderTestError?
 
     private(set) var startCount = 0
     private(set) var commands: [ProviderCommand] = []
     private(set) var rawCommands: [RpcCommand] = []
     private(set) var shutdownCount = 0
 
-    init(responses: [RpcResponse], startGate: StartGate? = nil) {
+    init(
+        responses: [RpcResponse],
+        startGate: StartGate? = nil,
+        startFailure: ProviderTestError? = nil
+    ) {
         self.responses = responses
         self.startGate = startGate
+        self.startFailure = startFailure
         (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream()
     }
 
@@ -203,6 +255,7 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
             await startGate.started()
             await startGate.waitForRelease()
         }
+        if let startFailure { throw startFailure }
         return ReadyFrame(protocolVersion: 1)
     }
 
@@ -322,5 +375,53 @@ private actor FactoryGate {
         for waiter in waiters {
             waiter.resume()
         }
+    }
+}
+
+private enum ProviderTestError: Error {
+    case startFailed
+}
+
+private actor RequestProbe {
+    private var hasReceivedRequest = false
+    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func requestBegan() {
+        hasReceivedRequest = true
+        let waiters = requestWaiters
+        requestWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    func waitForRequest() async {
+        guard !hasReceivedRequest else { return }
+        await withCheckedContinuation { requestWaiters.append($0) }
+    }
+}
+
+private actor RequestBarrier {
+    private let participantCount: Int
+    private var arrivedCount = 0
+    private var allArrivedWaiters: [CheckedContinuation<Void, Never>] = []
+
+    init(participantCount: Int) {
+        self.participantCount = participantCount
+    }
+
+    func arrive() {
+        arrivedCount += 1
+        guard arrivedCount == participantCount else { return }
+        let waiters = allArrivedWaiters
+        allArrivedWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    func waitForAll() async {
+        guard arrivedCount < participantCount else { return }
+        await withCheckedContinuation { allArrivedWaiters.append($0) }
     }
 }
