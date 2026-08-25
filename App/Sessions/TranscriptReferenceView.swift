@@ -122,6 +122,7 @@ private struct FileTranscriptReferenceView: View {
 
     private var ideActionTitle: String {
         if case .available(let application) = idePreferenceStore.state {
+            guard resolvedReference.exists else { return "File unavailable" }
             return "Open in \(application.displayName)"
         }
         return "Choose IDE"
@@ -134,6 +135,9 @@ private struct FileTranscriptReferenceView: View {
 
     private var ideAccessibilityLabel: String {
         if case .available(let application) = idePreferenceStore.state {
+            guard resolvedReference.exists else {
+                return "File unavailable for \(application.displayName), \(resolvedReference.fullPathLabel)"
+            }
             return "Open \(resolvedReference.compactLabel) in \(application.displayName), \(resolvedReference.fullPathLabel)"
         }
         return "Choose an IDE for \(resolvedReference.fullPathLabel)"
@@ -145,7 +149,8 @@ private struct FileTranscriptReferenceView: View {
         do {
             try fileOpenService.openWithSystemDefault(url)
         } catch {
-            Self.logger.error("[FileReferences:openWithSystemDefault] Could not open file")
+            Self.logger.error(
+                "[FileReferences:openWithSystemDefault] Could not open file — path=\(resolvedReference.fullPathLabel, privacy: .private(mask: .hash)), error=\(String(describing: error), privacy: .private)")
             showError("Couldn’t open \(resolvedReference.compactLabel)")
         }
     }
@@ -166,7 +171,8 @@ private struct FileTranscriptReferenceView: View {
             do {
                 try await fileOpenService.open(url, in: application)
             } catch {
-                Self.logger.error("[FileReferences:openInIDE] Could not open file in preferred application")
+                Self.logger.error(
+                    "[FileReferences:openInIDE] Could not open file — application=\(application.displayName, privacy: .public), path=\(resolvedReference.fullPathLabel, privacy: .private(mask: .hash)), error=\(String(describing: error), privacy: .private)")
                 showError("Couldn’t open in \(application.displayName)")
             }
         }

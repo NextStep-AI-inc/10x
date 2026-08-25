@@ -113,7 +113,7 @@ import Testing
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("Missing file")
+                Text("Missing file · disabled actions")
                     .font(TenXTypography.body(size: 11, weight: .semibold))
                 TranscriptReferenceView(reference: .file(
                     path: "App/Sessions/RemovedView.swift",
@@ -124,8 +124,10 @@ import Testing
             VStack(alignment: .leading, spacing: 6) {
                 Text("Full path")
                     .font(TenXTypography.body(size: 11, weight: .semibold))
-                FileReferenceLabel(reference: fullReference, showsFullPath: true)
-                    .frame(width: 430, alignment: .leading)
+                FlowLayout(spacing: 2) {
+                    FileReferenceLabel(reference: fullReference, showsFullPath: true)
+                }
+                .frame(width: 430, alignment: .leading)
             }
 
             VStack(alignment: .leading, spacing: 6) {

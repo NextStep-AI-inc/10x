@@ -37,7 +37,11 @@ struct FlowLayout: Layout {
         var x: CGFloat = 0
 
         for index in subviews.indices {
-            let size = subviews[index].sizeThatFits(.unspecified)
+            let measuredSize = subviews[index].sizeThatFits(
+                ProposedViewSize(width: proposal.width, height: nil))
+            let size = CGSize(
+                width: min(measuredSize.width, maximumWidth),
+                height: measuredSize.height)
             if x > 0, x + size.width > maximumWidth {
                 rows.append(row)
                 row = Row(y: row.y + row.height + spacing, height: 0, items: [])
