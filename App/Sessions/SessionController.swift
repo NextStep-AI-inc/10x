@@ -157,6 +157,9 @@ final class SessionController {
         for task in extensionTimeoutTasks.values { task.cancel() }
         extensionTimeoutTasks.removeAll()
         await computerUse.stopComputerUse()
+        // A failed forced shutdown still owns a live process. Its exit event is
+        // responsible for releasing the computer-use resources.
+        guard !computerUse.isAwaitingConfirmedProcessExit else { return }
         if let sessionPath {
             await processManager.close(sessionPath: sessionPath)
         }
@@ -166,6 +169,7 @@ final class SessionController {
     func restart() async {
         guard let projectURL, let sessionPath else { return }
         await teardown()
+        guard !computerUse.isAwaitingConfirmedProcessExit else { return }
         runtimeState = .loading
         isRecoveryPresented = false
         do {

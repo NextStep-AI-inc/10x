@@ -121,9 +121,6 @@ public actor LineTransport {
         process.terminationHandler = { proc in
             exitContinuation.yield(proc.terminationStatus)
             exitContinuation.finish()
-            // The child's final frames may still be sitting in the pipe when it
-            // exits; drain them before ending the stream or they are lost.
-            drainer.finish()
         }
 
         do {
@@ -188,7 +185,7 @@ public actor LineTransport {
             for pid in descendants.reversed() { kill(pid, SIGKILL) }
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
-        let exited = await waitForExit(until: deadline)
+        let exited = await waitForExit(until: deadline, descendants: descendants)
         if exited { finishStreams() }
         return exited
     }
@@ -217,17 +214,26 @@ public actor LineTransport {
         try? stdinPipe.fileHandleForWriting.close()
     }
 
-    private func waitForExit(until deadline: ContinuousClock.Instant) async -> Bool {
+    private func waitForExit(
+        until deadline: ContinuousClock.Instant,
+        descendants: [pid_t] = []
+    ) async -> Bool {
         while ContinuousClock.now < deadline {
-            if !process.isRunning { return true }
+            if hasExited(descendants: descendants) { return true }
             try? await Task.sleep(for: .milliseconds(20))
         }
-        return !process.isRunning
+        return hasExited(descendants: descendants)
+    }
+
+    private func hasExited(descendants: [pid_t]) -> Bool {
+        guard !process.isRunning else { return false }
+        if let processGroupID, killpg(processGroupID, 0) == 0 { return false }
+        return descendants.allSatisfy { kill($0, 0) != 0 }
     }
 
     private func finishStreams() {
         stderrPipe.fileHandleForReading.readabilityHandler = nil
-        stdoutDrainer?.finish()
+        stdoutDrainer?.finish(discardingPendingData: true)
         exitContinuation.finish()
     }
 
@@ -311,17 +317,19 @@ private final class StdoutDrainer: @unchecked Sendable {
         }
     }
 
-    func finish() {
+    func finish(discardingPendingData: Bool = false) {
         lock.lock()
         defer { lock.unlock() }
         guard !finished else { return }
         finished = true
         handle.readabilityHandler = nil
-        if let remaining = try? handle.readToEnd(), !remaining.isEmpty {
+        if !discardingPendingData,
+           let remaining = try? handle.readToEnd(), !remaining.isEmpty {
             for line in buffer.append(remaining, maxLineBytes: maxLineBytes) {
                 continuation.yield(line)
             }
         }
+        if discardingPendingData { try? handle.close() }
         continuation.finish()
     }
 }

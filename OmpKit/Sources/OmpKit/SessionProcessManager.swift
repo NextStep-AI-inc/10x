@@ -118,10 +118,13 @@ private actor SessionComputerUseRPC: ComputerUseRPC {
     func setHostTools(_ definitions: [HostToolDefinition]) async throws {
         let response = try await client.send(.setHostTools(definitions))
         let expected = definitions.map(\.name)
-        guard let reported = response.data?["toolNames"]?.arrayValue?.compactMap(\.stringValue),
-              reported.count == expected.count,
-              Set(reported) == Set(expected)
+        guard let values = response.data?["toolNames"]?.arrayValue,
+              values.allSatisfy({ $0.stringValue != nil })
         else {
+            throw RpcClientError.startupFailed("host tool registration was malformed")
+        }
+        let reported = values.compactMap(\.stringValue)
+        guard reported.count == expected.count, Set(reported) == Set(expected) else {
             throw RpcClientError.startupFailed("host tool registration was malformed")
         }
     }

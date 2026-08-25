@@ -215,7 +215,10 @@ import Testing
     controller.attach(rpc: rpc, sessionPath: "/tmp/session-delayed-prepare.jsonl")
 
     let enabling = Task { await controller.enable() }
-    try? await Task.sleep(for: .milliseconds(20))
+    for _ in 0..<20 where !log.values.contains("desktop.prepare.started") {
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(log.values.contains("desktop.prepare.started"))
     await controller.stopComputerUse()
     await enabling.value
 
@@ -238,6 +241,42 @@ import Testing
 
     #expect(!log.values.contains("rpc.hostTools"))
     #expect(controller.phase == .off)
+}
+
+@MainActor @Test func stopWaitsForAnInFlightEnableBeforeReversingRemoteAuthorization() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log, nonCancellingEnableDelay: .milliseconds(120))
+    let controller = ComputerUseController(
+        sessionID: "session-stateful-enable", lifecycle: .recording(log), preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-stateful-enable.jsonl")
+
+    let enabling = Task { await controller.enable() }
+    try? await Task.sleep(for: .milliseconds(20))
+    await controller.stopComputerUse()
+    await enabling.value
+
+    let remote = await rpc.remoteSnapshot()
+    #expect(remote.enabled == false)
+    #expect(remote.toolNames == [])
+    #expect(log.values.last == "registry.release")
+}
+
+@MainActor @Test func unconfirmedForcedShutdownRetainsComputerResourcesForTheExitOwner() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log, disableError: TestFailure.failed)
+    let controller = ComputerUseController(
+        sessionID: "session-unconfirmed-stop", lifecycle: .recording(log), preference: .automatic)
+    controller.attach(
+        rpc: rpc,
+        sessionPath: "/tmp/session-unconfirmed-stop.jsonl",
+        terminateProcess: { _ in false })
+    await controller.enable()
+
+    await controller.stopComputerUse()
+
+    #expect(controller.isAwaitingConfirmedProcessExit)
+    #expect(!log.values.contains("lease.release"))
+    #expect(!log.values.contains("registry.release"))
 }
 
 @MainActor @Test func structuredAvailabilityRefreshReissuesRequireHandoffAuthorization() async {
@@ -308,13 +347,19 @@ private enum TestFailure: Error { case failed }
 private actor ControllerRPC: ComputerUseRPC {
     private let log: LifecycleLog
     private let enableError: (any Error)?
+    private let disableError: (any Error)?
     private let enableDelay: Duration?
+    private let nonCancellingEnableDelay: Duration?
     private let reportedState: ComputerUseRPCState
+    private var remoteEnabled = false
+    private var remoteToolNames: [String] = []
 
-    init(log: LifecycleLog, enableError: (any Error)? = nil, enableDelay: Duration? = nil, state: ComputerUseRPCState = ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff)) {
+    init(log: LifecycleLog, enableError: (any Error)? = nil, disableError: (any Error)? = nil, enableDelay: Duration? = nil, nonCancellingEnableDelay: Duration? = nil, state: ComputerUseRPCState = ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff)) {
         self.log = log
         self.enableError = enableError
+        self.disableError = disableError
         self.enableDelay = enableDelay
+        self.nonCancellingEnableDelay = nonCancellingEnableDelay
         reportedState = state
     }
 
@@ -337,7 +382,10 @@ private actor ControllerRPC: ComputerUseRPC {
     func setComputerUse(enabled: Bool, policy: ComputerForegroundPolicy) async throws -> ComputerUseRPCState {
         await log.append(enabled ? "rpc.enable" : "rpc.disable")
         if enabled, let enableDelay { try await Task.sleep(for: enableDelay) }
+        if enabled, let nonCancellingEnableDelay { try? await Task.sleep(for: nonCancellingEnableDelay) }
         if enabled, let enableError { throw enableError }
+        if !enabled, let disableError { throw disableError }
+        remoteEnabled = enabled
         return ComputerUseRPCState(enabled: enabled, foregroundPolicy: policy)
     }
 
@@ -352,6 +400,7 @@ private actor ControllerRPC: ComputerUseRPC {
 
     func setHostTools(_ definitions: [HostToolDefinition]) async throws {
         await log.append(definitions.isEmpty ? "rpc.hostTools.clear" : "rpc.hostTools")
+        remoteToolNames = definitions.map(\.name)
     }
 
     func sendHostToolResult(id: String, result: JSONValue, isError: Bool) async throws {
@@ -359,6 +408,10 @@ private actor ControllerRPC: ComputerUseRPC {
     }
 
     func abort() async throws { await log.append("rpc.abort") }
+
+    func remoteSnapshot() -> (enabled: Bool, toolNames: [String]) {
+        (remoteEnabled, remoteToolNames)
+    }
 }
 
 private extension ComputerUseControllerLifecycle {
@@ -394,6 +447,7 @@ private func delayedPrepareLifecycle(_ log: LifecycleLog) -> ComputerUseControll
         acquireLease: { _ in log.append("lease.acquire") },
         releaseLease: { log.append("lease.release") },
         prepare: { _ in
+            log.append("desktop.prepare.started")
             try await Task.sleep(for: .milliseconds(120))
             log.append("desktop.prepare")
             return PreparedAgentDesktop(provider: .aeroSpace, workspaceID: "workspace", capabilities: .isolated)

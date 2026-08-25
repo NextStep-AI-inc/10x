@@ -57,11 +57,13 @@ final class ComputerUseController: ComputerUseStopping {
     private(set) var isolation: AgentDesktopProviderKind?
     private(set) var cleanupReport: CleanupReport?
     private(set) var safetyMode: ComputerUseSafetyMode = .focusIsolated
+    private(set) var isAwaitingConfirmedProcessExit = false
 
     private let sessionID: String
     private let lifecycle: ComputerUseControllerLifecycle
     private let coordinator: AgentDesktopCoordinator?
     private let preference: AgentDesktopPreference
+    private let cancellationBag = TaskCancellationBag()
     private var rpc: (any ComputerUseRPC)?
     private var terminateProcess: (@Sendable (ContinuousClock.Instant) async -> Bool)?
     private var preparedDesktop: PreparedAgentDesktop?
@@ -70,6 +72,9 @@ final class ComputerUseController: ComputerUseStopping {
     private var stopTask: Task<Void, Never>?
     private var watcherTask: Task<Void, Never>?
     private var hostCalls: [String: Task<Void, Never>] = [:]
+    private var remoteMutations: [UUID: Task<Void, Never>] = [:]
+    /// Retained after a bounded Stop returns so leases are not released early.
+    private var resourceCleanupTask: Task<Void, Never>?
     private var hostResultsSent: Set<String> = []
     private var cancelledHostCallIDs: Set<String> = []
     private var lifecycleGeneration = 0
@@ -95,16 +100,10 @@ final class ComputerUseController: ComputerUseStopping {
         self.preference = preference
     }
 
-    deinit {
-        MainActor.assumeIsolated {
-            watcherTask?.cancel()
-            for task in hostCalls.values { task.cancel() }
-        }
-    }
-
     func attach(rpc: any ComputerUseRPC, sessionPath: String, terminateProcess: @escaping @Sendable (ContinuousClock.Instant) async -> Bool = { _ in false }) {
         self.rpc = rpc
         self.terminateProcess = terminateProcess
+        isAwaitingConfirmedProcessExit = false
     }
 
     func attachAndReconcile(rpc: any ComputerUseRPC, sessionPath: String, terminateProcess: @escaping @Sendable (ContinuousClock.Instant) async -> Bool = { _ in false }) async {
@@ -157,13 +156,17 @@ final class ComputerUseController: ComputerUseStopping {
             switch safetyMode {
             case .focusIsolated:
                 computerMutationAttempted = true
-                let state = try await rpc.setComputerUse(enabled: true, policy: .requireHandoff)
+                let state = try await runRemoteMutation {
+                    try await rpc.setComputerUse(enabled: true, policy: .requireHandoff)
+                }
                 guard isCurrentEnable(operation) else { return }
                 guard state.enabled, state.foregroundPolicy == .requireHandoff else { throw ComputerUseControllerError.ompUnavailable }
                 try await requireAvailableComputer(rpc)
                 guard isCurrentEnable(operation) else { return }
                 hostToolsMutationAttempted = true
-                try await rpc.setHostTools([AgentDesktopHostTool.definition])
+                try await runRemoteMutation {
+                    try await rpc.setHostTools([AgentDesktopHostTool.definition])
+                }
                 guard isCurrentEnable(operation) else { return }
                 let probe = try await lifecycle.probe(prepared) { try await rpc.probeComputerUse(target: $0, verificationText: $1) }
                 guard isCurrentEnable(operation) else { return }
@@ -171,12 +174,14 @@ final class ComputerUseController: ComputerUseStopping {
                 needsHandoff = !probe.captureSucceeded || probe.backgroundInputSucceeded != true
             case .legacyBestEffort:
                 computerMutationAttempted = true
-                try await rpc.setLegacyComputerUse(enabled: true)
+                try await runRemoteMutation { try await rpc.setLegacyComputerUse(enabled: true) }
                 guard isCurrentEnable(operation) else { return }
                 try await requireAvailableModel(rpc, requiresEnabledComputerState: false)
                 guard isCurrentEnable(operation) else { return }
                 hostToolsMutationAttempted = true
-                try await rpc.setHostTools([AgentDesktopHostTool.definition])
+                try await runRemoteMutation {
+                    try await rpc.setHostTools([AgentDesktopHostTool.definition])
+                }
                 guard isCurrentEnable(operation) else { return }
             }
             guard isCurrentEnable(operation) else { return }
@@ -212,6 +217,7 @@ final class ComputerUseController: ComputerUseStopping {
               || hasRegistryActivation || preparedDesktop != nil || manifest != nil
         else { return }
         lifecycleGeneration += 1
+        isAwaitingConfirmedProcessExit = false
         watcherTask?.cancel()
         watcherTask = nil
         _ = await cancelAndSettleHostCalls(deadline: ContinuousClock.now.advanced(by: Self.stopLimit))
@@ -235,10 +241,16 @@ final class ComputerUseController: ComputerUseStopping {
         }
         guard hostCalls[call.id] == nil, !hostResultsSent.contains(call.id) else { return }
         let generation = lifecycleGeneration
-        hostCalls[call.id] = Task { @MainActor [weak self, hostTool] in
-            let outcome = await hostTool.handle(call, in: preparedDesktop, manifest: manifest)
+        let task = Task { @MainActor [weak self, hostTool] in
+            let outcome = await withTaskCancellationHandler {
+                await hostTool.handle(call, in: preparedDesktop, manifest: manifest)
+            } onCancel: {
+                Task { await hostTool.cancel(callID: call.id) }
+            }
             await self?.finishHostCall(call.id, outcome: outcome, generation: generation)
         }
+        hostCalls[call.id] = task
+        cancellationBag.insert(task)
     }
 
     func handleHostToolCancel(targetID: String) {
@@ -274,7 +286,9 @@ final class ComputerUseController: ComputerUseStopping {
                 try await requireAvailableComputer(rpc)
                 guard isCurrentEnabledOperation(operation) else { return }
                 computerMutationAttempted = true
-                let state = try await rpc.setComputerUse(enabled: true, policy: .requireHandoff)
+                let state = try await runRemoteMutation {
+                    try await rpc.setComputerUse(enabled: true, policy: .requireHandoff)
+                }
                 guard isCurrentEnabledOperation(operation), state.enabled,
                       state.foregroundPolicy == .requireHandoff
                 else { throw ComputerUseControllerError.ompUnavailable }
@@ -311,8 +325,8 @@ final class ComputerUseController: ComputerUseStopping {
         watcherTask = nil
         let deadline = ContinuousClock.now.advanced(by: Self.stopLimit)
         let stopped = await disableRemoteComputerUse(deadline: deadline)
-        if stopped { await releaseResources() } else { _ = await terminateAndRelease(deadline: deadline) }
-        return stopped
+        if stopped { return await releaseResources(deadline: deadline) }
+        return await terminateAndRelease(deadline: deadline)
     }
 
     private func performStop() async {
@@ -322,6 +336,11 @@ final class ComputerUseController: ComputerUseStopping {
         watcherTask?.cancel()
         watcherTask = nil
         let deadline = ContinuousClock.now.advanced(by: Self.stopLimit)
+        guard await settleRemoteMutations(deadline: deadline) else {
+            _ = await terminateAndRelease(deadline: deadline)
+            phase = unavailablePhase()
+            return
+        }
         let hostsSettled = await cancelAndSettleHostCalls(deadline: deadline)
         let callStopped = await abortAndWaitForComputerTool(deadline: deadline)
         let remoteStopped: Bool
@@ -330,8 +349,13 @@ final class ComputerUseController: ComputerUseStopping {
         } else {
             remoteStopped = false
         }
-        if remoteStopped { await releaseResources(); phase = .off }
-        else { _ = await terminateAndRelease(deadline: deadline); phase = unavailablePhase() }
+        if remoteStopped {
+            if await releaseResources(deadline: deadline) { phase = .off }
+            else { phase = unavailablePhase() }
+        } else {
+            _ = await terminateAndRelease(deadline: deadline)
+            phase = unavailablePhase()
+        }
     }
 
     private func cancelAndSettleHostCalls(deadline: ContinuousClock.Instant) async -> Bool {
@@ -366,17 +390,28 @@ final class ComputerUseController: ComputerUseStopping {
         guard let rpc else { return !computerMutationAttempted && !hostToolsMutationAttempted }
         var safe = true
         if hostToolsMutationAttempted {
-            do { try await bounded(deadline: deadline) { try await rpc.setHostTools([]) }; hostToolsMutationAttempted = false }
+            do {
+                try await bounded(deadline: deadline) {
+                    try await self.runRemoteMutation { try await rpc.setHostTools([]) }
+                }
+                hostToolsMutationAttempted = false
+            }
             catch { safe = false }
         }
         if computerMutationAttempted {
             do {
                 switch safetyMode {
                 case .focusIsolated:
-                    let state = try await bounded(deadline: deadline) { try await rpc.setComputerUse(enabled: false, policy: .requireHandoff) }
+                    let state = try await bounded(deadline: deadline) {
+                        try await self.runRemoteMutation {
+                            try await rpc.setComputerUse(enabled: false, policy: .requireHandoff)
+                        }
+                    }
                     guard !state.enabled, state.foregroundPolicy == .requireHandoff else { throw ComputerUseControllerError.ompUnavailable }
                 case .legacyBestEffort:
-                    try await bounded(deadline: deadline) { try await rpc.setLegacyComputerUse(enabled: false) }
+                    try await bounded(deadline: deadline) {
+                        try await self.runRemoteMutation { try await rpc.setLegacyComputerUse(enabled: false) }
+                    }
                 }
                 computerMutationAttempted = false
             } catch { safe = false }
@@ -387,11 +422,67 @@ final class ComputerUseController: ComputerUseStopping {
     private func terminateAndRelease(deadline: ContinuousClock.Instant) async -> Bool {
         guard let terminateProcess,
               await terminateProcess(deadline)
-        else { return false }
+        else {
+            isAwaitingConfirmedProcessExit = true
+            return false
+        }
+        isAwaitingConfirmedProcessExit = false
         computerMutationAttempted = false
         hostToolsMutationAttempted = false
-        await releaseResources()
+        return await releaseResources(deadline: deadline)
+    }
+
+    private func runRemoteMutation<T: Sendable>(
+        _ operation: @escaping @MainActor () async throws -> T
+    ) async throws -> T {
+        let id = UUID()
+        let stream = AsyncThrowingStream<T, Error>.makeStream()
+        let task = Task { @MainActor in
+            do {
+                stream.continuation.yield(try await operation())
+                stream.continuation.finish()
+            } catch {
+                stream.continuation.finish(throwing: error)
+            }
+        }
+        remoteMutations[id] = task
+        defer { remoteMutations.removeValue(forKey: id) }
+        var iterator = stream.stream.makeAsyncIterator()
+        guard let result = try await iterator.next() else {
+            throw ComputerUseControllerError.stopTimedOut
+        }
+        return result
+    }
+
+    private func settleRemoteMutations(deadline: ContinuousClock.Instant) async -> Bool {
+        for task in remoteMutations.values { task.cancel() }
+        while !remoteMutations.isEmpty {
+            guard ContinuousClock.now < deadline else { return false }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
         return true
+    }
+
+    private func releaseResources(deadline: ContinuousClock.Instant) async -> Bool {
+        if let resourceCleanupTask {
+            do {
+                try await bounded(deadline: deadline) { await resourceCleanupTask.value }
+                return true
+            } catch {
+                return false
+            }
+        }
+        let task = Task { @MainActor in
+            await self.releaseResources()
+            self.resourceCleanupTask = nil
+        }
+        resourceCleanupTask = task
+        do {
+            try await bounded(deadline: deadline) { await task.value }
+            return true
+        } catch {
+            return false
+        }
     }
 
     private func releaseResources() async {
@@ -453,6 +544,7 @@ final class ComputerUseController: ComputerUseStopping {
                 await MainActor.run { [weak self] in self?.manifest?.apply(event) }
             }
         }
+        if let watcherTask { cancellationBag.insert(watcherTask) }
     }
 
     private func bounded<T: Sendable>(deadline: ContinuousClock.Instant, operation: @escaping @Sendable () async throws -> T) async throws -> T {
@@ -504,4 +596,22 @@ private enum ComputerUseControllerError: Error {
     case permissionDenied
     case isolationUnavailable
     case stopTimedOut
+}
+
+private final class TaskCancellationBag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tasks: [Task<Void, Never>] = []
+
+    func insert(_ task: Task<Void, Never>) {
+        lock.lock()
+        tasks.append(task)
+        lock.unlock()
+    }
+
+    deinit {
+        lock.lock()
+        let pending = tasks
+        lock.unlock()
+        for task in pending { task.cancel() }
+    }
 }

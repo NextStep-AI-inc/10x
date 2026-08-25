@@ -134,6 +134,8 @@ for line in sys.stdin:
         tool_names = [tool.get("name") for tool in cmd.get("tools", []) if isinstance(tool, dict)]
         if mode == "host-tools-wrong":
             tool_names = ["wrong_tool"]
+        elif mode == "host-tools-mixed":
+            tool_names = ["agent_desktop", 7]
         elif mode == "host-tools-malformed":
             emit({"id": cid, "type": "response", "command": ctype, "success": True,
                   "data": {}})

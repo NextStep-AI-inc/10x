@@ -68,6 +68,7 @@ public actor RpcClient {
     private var nextRequestNumber = 1
     private var reassembler: ChunkReassembler
     private var readerTask: Task<Void, Never>?
+    private var exitTask: Task<Void, Never>?
     private var started = false
     private var terminated = false
 
@@ -217,7 +218,9 @@ public actor RpcClient {
         let exited = await transport.shutdown(deadline: deadline)
         if exited {
             readerTask?.cancel()
+            exitTask?.cancel()
             readerTask = nil
+            exitTask = nil
             finishStreams()
         }
         return exited
@@ -235,7 +238,9 @@ public actor RpcClient {
             stderrTail: await transport.stderrSnapshot())
         _ = await transport.shutdown()
         readerTask?.cancel()
+        exitTask?.cancel()
         readerTask = nil
+        exitTask = nil
         finishStreams()
     }
 
@@ -256,6 +261,13 @@ public actor RpcClient {
                 await self.handle(line: line)
             }
             await self.handleStreamEnd()
+        }
+        exitTask = Task { [weak self] in
+            guard let self else { return }
+            for await _ in self.transport.onExit {
+                await self.handleProcessExit()
+                return
+            }
         }
     }
 
@@ -349,7 +361,11 @@ public actor RpcClient {
     }
 
     private func handleStreamEnd() async {
-        if terminated {
+        eventContinuation.finish()
+    }
+
+    private func handleProcessExit() async {
+        guard !terminated else {
             finishStreams()
             return
         }
@@ -357,7 +373,8 @@ public actor RpcClient {
         failAllPending(
             exitCode: await transport.exitStatus,
             stderrTail: await transport.stderrSnapshot())
-        finishStreams()
+        terminationContinuation.yield(())
+        terminationContinuation.finish()
     }
 
     private func failAllPending(exitCode: Int32?, stderrTail: String) {

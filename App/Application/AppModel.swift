@@ -20,6 +20,7 @@ final class AppModel {
     @ObservationIgnored private var exitTask: Task<Void, Never>?
     @ObservationIgnored private var sessionTransitionTask: Task<Void, Never>?
     @ObservationIgnored private var transitioningSession: SessionController?
+    @ObservationIgnored private var pendingSafetySessions: [SessionController] = []
     @ObservationIgnored private var sessionTransitionGeneration = 0
 
     init(dependencies: AppDependencies = .live) {
@@ -159,6 +160,8 @@ final class AppModel {
                     owner = self.activeSession
                 } else if self.transitioningSession?.sessionPath == exit.sessionPath {
                     owner = self.transitioningSession
+                } else if let pending = self.pendingSafetySessions.first(where: { $0.sessionPath == exit.sessionPath }) {
+                    owner = pending
                 } else {
                     owner = nil
                 }
@@ -166,6 +169,7 @@ final class AppModel {
                 await owner.handleUnexpectedExit(
                     code: exit.code,
                     stderrTail: exit.stderrTail)
+                self.pendingSafetySessions.removeAll { $0 === owner }
             }
         }
     }
@@ -182,6 +186,9 @@ final class AppModel {
             guard let self,
                   self.transitioningSession === retiring
             else { return }
+            if let retiring, retiring.computerUse.isAwaitingConfirmedProcessExit {
+                self.pendingSafetySessions.append(retiring)
+            }
             self.transitioningSession = nil
         }
         return sessionTransitionTask

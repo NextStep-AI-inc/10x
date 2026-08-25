@@ -234,7 +234,7 @@ func legacyComputerCommandRejectsAnyUnverifiedResponse(mode: String) async throw
     await manager.closeAll()
 }
 
-@Test(arguments: ["host-tools-wrong", "host-tools-malformed"])
+@Test(arguments: ["host-tools-wrong", "host-tools-malformed", "host-tools-mixed"])
 func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async throws {
     let manager = computerContractManager(mode: mode)
     let handle = try await manager.open(sessionPath: "/tmp/host-tools-\(mode).jsonl", cwd: "/tmp")
