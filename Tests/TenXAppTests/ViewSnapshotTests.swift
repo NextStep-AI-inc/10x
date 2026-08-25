@@ -200,6 +200,46 @@ import Testing
         size: CGSize(width: 800, height: 330))
 }
 
+@MainActor
+@Test func structuredDiffSnapshot() throws {
+    let longLine = "let title = \"" + String(repeating: "structured-transcript-", count: 10) + "\""
+    let patch = """
+    diff --git a/App/Transcript.swift b/App/Transcript.swift
+    --- a/App/Transcript.swift
+    +++ b/App/Transcript.swift
+    @@ -1,10 +1,10 @@
+     import SwiftUI
+     struct Transcript {
+     let id: String
+     let role: String
+     let model: String
+     let mode: String
+     let date: Date
+     let state: State
+    -let title = "Old transcript"
+    +\(longLine)
+    diff --git a/App/Palette.swift b/App/Palette.swift
+    --- a/App/Palette.swift
+    +++ b/App/Palette.swift
+    @@ -4,2 +4,2 @@
+    -let addition = Color.green
+    +let addition = Color.cyan
+     let removal = Color.red
+    """
+    let presentation = ToolPresentation(
+        id: "diff-tool",
+        name: "edit",
+        arguments: .object(["path": .string("/tmp/Transcript.swift")]),
+        result: .object(["details": .object(["diff": .string(patch)])]),
+        phase: .complete,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 1.7))
+    try assertSnapshot(
+        EditToolCardView(presentation: presentation).frame(width: 720),
+        name: "activity-structured-diff",
+        size: CGSize(width: 800, height: 650))
+}
+
 private struct SnapshotConfigRunner: OmpConfigRunning {
     func run(arguments: [String]) async throws -> Data {
         if arguments == ["config", "path"] {

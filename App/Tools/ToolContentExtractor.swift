@@ -15,6 +15,7 @@ struct BashToolContent: Equatable {
 struct EditToolContent: Equatable {
     let path: String
     let diff: String
+    let unifiedDiff: UnifiedDiff?
     let additions: Int
     let removals: Int
 }
@@ -98,6 +99,7 @@ enum ToolContentExtractor {
         return EditToolContent(
             path: path,
             diff: diff,
+            unifiedDiff: UnifiedDiffParser.parse(diff, fallbackPath: path),
             additions: additions,
             removals: removals)
     }

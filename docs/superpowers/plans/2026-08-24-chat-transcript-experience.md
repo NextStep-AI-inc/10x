@@ -167,14 +167,14 @@
 - Modify: `Tests/TenXAppTests/ToolContentExtractorTests.swift`
 - Modify: `Tests/TenXAppTests/SnapshotTests.swift`
 
-- [ ] Add failing tests for multi-file patches, hunks, line-number progression,
+- [x] Add failing tests for multi-file patches, hunks, line-number progression,
   no-newline markers, malformed input, and unchanged-run compaction.
-- [ ] Implement a single-pass unified diff parser and structured rows with old
+- [x] Implement a single-pass unified diff parser and structured rows with old
   and new line numbers. Keep raw patch text for copy/fallback.
-- [ ] Render file/hunk hierarchy, cyan additions, red removals, collapsed long
+- [x] Render file/hunk hierarchy, cyan additions, red removals, collapsed long
   context, horizontal scrolling, Copy patch, and Open file.
-- [ ] Record compact/expanded/multi-file/long-line snapshots.
-- [ ] Commit: `feat(chat): render structured diffs`
+- [x] Record compact/expanded/multi-file/long-line snapshots.
+- [x] Commit: `feat(chat): render structured diffs`
 
 ## Task 8: Integrate transcript states and polish accessibility
 

@@ -26,6 +26,7 @@ import Testing
         ])]))
     #expect(ToolContentExtractor.edit(edit)?.additions == 1)
     #expect(ToolContentExtractor.edit(edit)?.removals == 1)
+    #expect(ToolContentExtractor.edit(edit)?.unifiedDiff?.files.first?.path == "/tmp/App.swift")
 
     let search = presentation(
         name: "grep",
