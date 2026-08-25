@@ -47,6 +47,23 @@ public actor SessionLibrary {
         case missing
     }
 
+    private struct ValidatedSessionPath {
+        let url: URL
+        let relativePath: String
+    }
+
+    private enum SessionPathValidation {
+        case valid(ValidatedSessionPath)
+        case missing
+        case invalid
+    }
+
+    private enum DestinationValidation {
+        case available(URL)
+        case exists
+        case invalid
+    }
+
     private let root: URL
     private let archiveRoot: URL
     private var cache: [CacheKey: CacheValue] = [:]
@@ -137,20 +154,19 @@ public actor SessionLibrary {
         let fileManager = FileManager.default
 
         for path in paths {
-            let isActive = relativeSessionPath(path, under: root) != nil
-            let isArchived = relativeSessionPath(path, under: archiveRoot) != nil
-            guard isActive || isArchived else {
-                failures.append(SessionMutationFailure(path: path, reason: .invalidPath))
-                continue
-            }
-            guard fileManager.fileExists(atPath: path) else {
-                failures.append(SessionMutationFailure(path: path, reason: .missingSource))
+            let validation = validateSessionPathUnderEitherRoot(path)
+            guard case .valid(let source) = validation else {
+                let reason: SessionMutationFailureReason = switch validation {
+                case .missing: .missingSource
+                case .invalid, .valid: .invalidPath
+                }
+                failures.append(SessionMutationFailure(path: path, reason: reason))
                 continue
             }
             do {
-                try fileManager.removeItem(atPath: path)
+                try fileManager.removeItem(at: source.url)
                 succeeded.append(path)
-                invalidateCache(paths: [path])
+                invalidateCache(paths: [source.url.path])
             } catch {
                 failures.append(SessionMutationFailure(path: path, reason: .fileOperationFailed))
             }
@@ -158,6 +174,19 @@ public actor SessionLibrary {
         refreshWatchers()
         emitChange()
         return SessionMutationReport(succeededPaths: succeeded, failures: failures)
+    }
+
+    private func validateSessionPathUnderEitherRoot(_ path: String) -> SessionPathValidation {
+        let activeValidation = validateSessionPath(path, under: root)
+        let archivedValidation = validateSessionPath(path, under: archiveRoot)
+        switch (activeValidation, archivedValidation) {
+        case (.valid(let source), _), (_, .valid(let source)):
+            return .valid(source)
+        case (.missing, _), (_, .missing):
+            return .missing
+        case (.invalid, .invalid):
+            return .invalid
+        }
     }
 
     private func move(paths: [String], from sourceRoot: URL, to destinationRoot: URL)
@@ -167,27 +196,33 @@ public actor SessionLibrary {
         let fileManager = FileManager.default
 
         for path in paths {
-            guard let relativePath = relativeSessionPath(path, under: sourceRoot) else {
-                failures.append(SessionMutationFailure(path: path, reason: .invalidPath))
+            let sourceValidation = validateSessionPath(path, under: sourceRoot)
+            guard case .valid(let source) = sourceValidation else {
+                let reason: SessionMutationFailureReason = switch sourceValidation {
+                case .missing: .missingSource
+                case .invalid, .valid: .invalidPath
+                }
+                failures.append(SessionMutationFailure(path: path, reason: reason))
                 continue
             }
-            let source = URL(filePath: path).standardizedFileURL
-            let destination = destinationRoot.appending(path: relativePath)
-            guard fileManager.fileExists(atPath: source.path) else {
-                failures.append(SessionMutationFailure(path: path, reason: .missingSource))
-                continue
-            }
-            guard !fileManager.fileExists(atPath: destination.path) else {
-                failures.append(SessionMutationFailure(path: path, reason: .destinationExists))
+            let destinationValidation = validateDestination(
+                relativePath: source.relativePath,
+                under: destinationRoot)
+            guard case .available(let destination) = destinationValidation else {
+                let reason: SessionMutationFailureReason = switch destinationValidation {
+                case .exists: .destinationExists
+                case .invalid, .available: .invalidPath
+                }
+                failures.append(SessionMutationFailure(path: path, reason: reason))
                 continue
             }
             do {
                 try fileManager.createDirectory(
                     at: destination.deletingLastPathComponent(),
                     withIntermediateDirectories: true)
-                try fileManager.moveItem(at: source, to: destination)
+                try fileManager.moveItem(at: source.url, to: destination)
                 succeeded.append(path)
-                invalidateCache(paths: [source.path, destination.path])
+                invalidateCache(paths: [source.url.path, destination.path])
             } catch {
                 failures.append(SessionMutationFailure(path: path, reason: .fileOperationFailed))
             }
@@ -197,15 +232,78 @@ public actor SessionLibrary {
         return SessionMutationReport(succeededPaths: succeeded, failures: failures)
     }
 
-    private func relativeSessionPath(_ path: String, under collectionRoot: URL) -> String? {
-        let rootComponents = collectionRoot.standardizedFileURL.pathComponents
-        let file = URL(filePath: path).standardizedFileURL
-        let fileComponents = file.pathComponents
-        guard file.pathExtension == "jsonl",
-              fileComponents.starts(with: rootComponents),
-              fileComponents.count == rootComponents.count + 2
-        else { return nil }
-        return fileComponents.dropFirst(rootComponents.count).joined(separator: "/")
+    private func validateSessionPath(
+        _ path: String,
+        under collectionRoot: URL
+    ) -> SessionPathValidation {
+        let lexicalRoot = collectionRoot.standardizedFileURL
+        let candidate = URL(filePath: path).standardizedFileURL
+        let rootComponents = lexicalRoot.pathComponents
+        let candidateComponents = candidate.pathComponents
+        guard candidate.pathExtension == "jsonl",
+              candidateComponents.starts(with: rootComponents),
+              candidateComponents.count == rootComponents.count + 2
+        else { return .invalid }
+
+        let fileKeys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey]
+        guard let fileValues = try? candidate.resourceValues(forKeys: fileKeys) else {
+            return .missing
+        }
+        guard fileValues.isRegularFile == true, fileValues.isSymbolicLink != true else {
+            return .invalid
+        }
+
+        let bucket = candidate.deletingLastPathComponent()
+        let bucketKeys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
+        guard let bucketValues = try? bucket.resourceValues(forKeys: bucketKeys),
+              bucketValues.isDirectory == true,
+              bucketValues.isSymbolicLink != true
+        else { return .invalid }
+
+        let resolvedRoot = lexicalRoot.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedCandidate = candidate.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedRootComponents = resolvedRoot.pathComponents
+        let resolvedCandidateComponents = resolvedCandidate.pathComponents
+        guard resolvedCandidateComponents.starts(with: resolvedRootComponents),
+              resolvedCandidateComponents.count == resolvedRootComponents.count + 2
+        else { return .invalid }
+
+        let relativePath = resolvedCandidateComponents
+            .dropFirst(resolvedRootComponents.count)
+            .joined(separator: "/")
+        return .valid(ValidatedSessionPath(
+            url: resolvedCandidate,
+            relativePath: relativePath))
+    }
+
+    private func validateDestination(
+        relativePath: String,
+        under collectionRoot: URL
+    ) -> DestinationValidation {
+        let resolvedRoot = collectionRoot.resolvingSymlinksInPath().standardizedFileURL
+        let destination = resolvedRoot.appending(path: relativePath).standardizedFileURL
+        let rootComponents = resolvedRoot.pathComponents
+        let destinationComponents = destination.pathComponents
+        guard destination.pathExtension == "jsonl",
+              destinationComponents.starts(with: rootComponents),
+              destinationComponents.count == rootComponents.count + 2
+        else { return .invalid }
+
+        if (try? destination.resourceValues(forKeys: [.isSymbolicLinkKey])) != nil {
+            return .exists
+        }
+
+        let bucket = destination.deletingLastPathComponent()
+        if let bucketValues = try? bucket.resourceValues(
+            forKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+        ), bucketValues.isDirectory != true || bucketValues.isSymbolicLink == true {
+            return .invalid
+        }
+        let resolvedBucket = bucket.resolvingSymlinksInPath().standardizedFileURL
+        guard resolvedBucket.pathComponents.starts(with: rootComponents),
+              resolvedBucket.pathComponents.count == rootComponents.count + 1
+        else { return .invalid }
+        return .available(destination)
     }
 
     private func invalidateCache(paths: [String]) {
