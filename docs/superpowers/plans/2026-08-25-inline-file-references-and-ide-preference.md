@@ -952,15 +952,19 @@ Report the worktree path, branch, commit SHAs, verified evidence, skipped checks
 
 ## Verification evidence
 
-Verified on `codex/inline-file-references` through `0c1b476` in the explicit
+Verified on `codex/inline-file-references` through `4fbf3c5` in the explicit
 Release bundle at
 `.build/DerivedData-inline-file-references/Build/Products/Release/10x.app`.
 The final binary SHA-256 was
-`b4459a20cb203f2cc4ee406e14cbd0dbe096745519be61a88021a54d61c9c398`.
+`6f388ec1020c3f84fc375b2da463d97183da0e8072983d91b06d5ba13bf74d65`.
 
 - The independent correctness reviewer reran the pre-fix head `6654704` and
   passed 123/123 tests. After Fix Round 1, the fresh full suite passed 131/131
   at `0c1b476` (`/tmp/10x-inline-fix1-post-focusable-full.log`).
+- Fix Round 2 observed the adjacent-absolute-path regression RED, then passed
+  133/133 tests at `4fbf3c5` (`/tmp/10x-inline-fix2-code-final.log`). Plain
+  `/tmp/one.swift /tmp/two.swift` paths remain two references without reopening
+  the whitespace-prefix safety defect.
 - Parser, Settings-query handoff, accessibility-announcement, missing-file
   action, contrast, Preferred IDE semantics, and rail-motion regressions were
   observed RED before their fixes. The final full suite covers each regression.
@@ -968,6 +972,11 @@ The final binary SHA-256 was
   `BUILD SUCCEEDED` (`/tmp/10x-inline-fix1-final-release.log`). The former
   `NSOpenPanel` actor-isolation and boxed-optional `NSApp` warnings are absent;
   only the unchanged AppIntents metadata warning remains.
+- The Fix Round 2 clean Release build also exited 0 with `CLEAN SUCCEEDED` and
+  `BUILD SUCCEEDED` (`/tmp/10x-inline-fix2-release.log`). Its warning scan again
+  found only the unchanged AppIntents metadata warning. PID 13040 from that
+  exact bundle remained alive and exposed a visible 10x standard window before
+  the two historical-session capture attempts.
 - Accessibility targeted the exact Release process. PID 94221 exposed an
   `AXStandardWindow` measuring exactly 760×882 points after relaunch
   (`/tmp/10x-inline-fix1-final-ax-bounds.log`); this measurement is from the AX
@@ -982,9 +991,13 @@ The final binary SHA-256 was
   `/Users/tannerpham/CS Projects/.../MessageBubbleView.swift:1`. The exact file
   and backtick references remained actionable, while no unrelated
   `/Users/tannerpham/CS` prefix action was rendered.
-- Missing-file UI retained `Open in Cursor` in its selected-IDE state, disabled
-  the action, displayed the SF Symbol unavailable affordance, and exposed
-  `Unavailable` in accessibility without visible replacement copy.
+- Automated interaction and snapshot coverage verifies that selected-IDE
+  missing-file UI retains `Open in Cursor`, disables the action, displays the
+  SF Symbol unavailable affordance, and exposes `Unavailable` in accessibility
+  without visible replacement copy.
+- Pressed ghost actions now use a 0.97 scale affordance without changing
+  foreground opacity. The rendered-state helper measures 4.555:1 cyan contrast
+  over the hover surface; disabled actions remain muted and ignore hover/press.
 - The exact Release app previously completed the system-default, installed IDE,
   custom application, persistence, harmless file-open, disclosure-independence,
   and context-menu-order checks recorded in the Task 6 report.
@@ -998,13 +1011,14 @@ Each Release capture is unique and captioned by the state it proves:
   IDE native focus ring visible after the nonmatching-query handoff.
 - `docs/superpowers/evidence/2026-08-25-inline-file-references-release/release-transcript-references.png`
   — live assistant/tool references, compact Read/Edit/Write headers, darkened
-  interactive cyan, and the disabled missing-file action.
+  interactive cyan, and the disabled missing-file `Choose IDE` state with no
+  preferred IDE selected.
 
 Not verified: Option-held full-path rendering, clipboard contents after
 `Copy Reference`, an unavailable selected application in the exact Release
 bundle, the four-second launch-rejection/VoiceOver experience, and complete
-keyboard traversal at both widths. A final 760-point transcript recapture was
-also stopped after two Computer Use timeouts while the historical session was
-loading; the preserved transcript capture is from the same final code but its
-normal-width state. The spec remains incomplete and its status is intentionally
-unchanged.
+keyboard traversal at both widths. A selected-IDE missing-file Release recapture
+and final 760-point transcript recapture were stopped after two Computer Use
+failures while the historical session was loading; the preserved transcript
+capture proves only its normal-width `Choose IDE` state. The spec remains
+incomplete and its status is intentionally unchanged.
