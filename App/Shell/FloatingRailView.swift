@@ -172,6 +172,9 @@ struct FloatingRailView: View {
                 title: metadata.title ?? "Untitled session",
                 project: groupName(for: metadata),
                 state: metadata.status.rawValue.capitalized))
+
+        case .disclosure:
+            EmptyView()
         }
     }
 
