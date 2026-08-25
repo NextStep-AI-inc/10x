@@ -177,8 +177,17 @@ final class AppModel {
     }
 
     private func closeActiveSessionIfNeeded(paths: [String]) async {
-        guard case .session(let path) = route, paths.contains(path) else { return }
-        await processManager?.close(sessionPath: path)
+        guard case .session(let routePath) = route else { return }
+        let activePath = activeSession?.sessionPath
+        let matchingPath: String? = if let activePath, paths.contains(activePath) {
+            activePath
+        } else if paths.contains(routePath) {
+            routePath
+        } else {
+            nil
+        }
+        guard let matchingPath else { return }
+        await processManager?.close(sessionPath: matchingPath)
         activeSession = nil
         route = .newSession
     }
@@ -188,6 +197,7 @@ final class AppModel {
         action: String,
         subject: String
     ) async {
+        sessionActionError = nil
         if !report.failures.isEmpty {
             let count = report.failures.count
             let unchangedFiles = count == 1

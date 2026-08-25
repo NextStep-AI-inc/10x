@@ -131,6 +131,62 @@ import Testing
         == "Could not archive Session. 1 session file remains unchanged.")
 }
 
+@MainActor
+@Test func successfulMutationClearsAnEarlierActionError() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-cleared-error-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: MissingOmpLocator(),
+        sessionLibrary: library))
+    let missing = navigationMetadata(
+        activeRoot.appendingPathComponent("bucket/missing.jsonl").path)
+    await model.archiveSession(missing)
+    #expect(model.sessionActionError != nil)
+    let file = activeRoot.appendingPathComponent("bucket/success.jsonl")
+    try writeNavigationSession(at: file, id: "success", cwd: "/tmp/project")
+    await model.reloadSessions()
+    let session = try #require(model.sessions.first)
+
+    await model.archiveSession(session)
+
+    #expect(model.sessionActionError == nil)
+}
+
+@MainActor
+@Test func archivingANewSessionUsesTheControllerTranscriptPath() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-new-session-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let library = SessionLibrary(root: container.appendingPathComponent("sessions"))
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: library))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let manager = try #require(model.processManager)
+    #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") != nil)
+
+    await model.archiveSession(navigationMetadata("/tmp/fake.jsonl"))
+
+    #expect(model.route == .newSession)
+    #expect(model.activeSession == nil)
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") == nil)
+    await manager.closeAll()
+}
+
 private func navigationMetadata(_ path: String) -> SessionMetadata {
     SessionMetadata(
         path: path,
@@ -154,6 +210,29 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     try Data(content.utf8).write(to: url)
 }
 
+private func makeNavigationExecutable(in directory: URL) throws -> URL {
+    let repository = URL(filePath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let fixture = repository
+        .appendingPathComponent("OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py")
+    let executable = directory.appendingPathComponent("fake-omp")
+    try FileManager.default.copyItem(at: fixture, to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    return executable
+}
+
 private struct MissingOmpLocator: OmpLocating {
     func locate(preferredURL: URL?) async -> OmpInstallation? { nil }
+}
+
+private struct FixedOmpLocator: OmpLocating {
+    let executableURL: URL
+
+    func locate(preferredURL: URL?) async -> OmpInstallation? {
+        OmpInstallation(executableURL: executableURL, version: "test")
+    }
 }
