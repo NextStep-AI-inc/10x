@@ -11,6 +11,13 @@ import Testing
     #expect(TranscriptReference.extract(from: "Ignore words/with/slashes and relative/file.swift:2") == [])
 }
 
+@Test func codeAndMarkdownRejectRelativePathsWithEmptyExtensions() {
+    #expect(TranscriptReference.extract(from: "`App/.gitignore`") == [])
+    #expect(TranscriptReference.extract(from: "`App/Foo.`") == [])
+    #expect(TranscriptReference.extract(from: "[Foo](App/.gitignore)") == [])
+    #expect(TranscriptReference.extract(from: "[Foo](App/Foo.)") == [])
+}
+
 @Test func extractsCodeMarkdownAndPlainReferencesWithoutDuplicates() {
     let references = TranscriptReference.extract(from: """
     See `/Users/tannerpham/CS Projects/10x/App/Foo.swift:42`, then [the docs](https://example.com/guide?q=swift).

@@ -101,7 +101,7 @@ enum TranscriptReference: Equatable, Hashable {
     private static func isRelativeFilePath(_ path: String) -> Bool {
         if path.hasPrefix("./") || path.hasPrefix("../") { return true }
         guard path.contains("/") else { return false }
-        return URL(filePath: path).lastPathComponent.contains(".")
+        return !URL(filePath: path).pathExtension.isEmpty
     }
 
     private static func lineSuffix(in path: String) -> (path: String, line: Int?) {
