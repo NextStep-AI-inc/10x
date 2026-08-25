@@ -1382,3 +1382,10 @@ The repository currently has no Git remote, so report that a draft PR could not 
 - Not verified: completing a real OAuth login, because that changes external account authentication.
 - For Tanner to test: connect one disconnected provider, complete browser or pasted-code authorization, confirm Continue enables, relaunch, and confirm the provider remains connected.
 - Coordination: no Git remote is configured, so no draft PR was opened, pushed, merged, or marked ready.
+
+#### Task 9 Fix Round 1 verification notes (2026-08-25)
+
+- Fixed the rail-collapse transition defect in `7951ec3`: removed the rail's independent 0.2-second implicit animation. The 64/220-point rail width, labels, and `AppShellView` canvas inset now all snap on the same `RailExpansionModel.isExpanded` update, with no transition left that can transiently overlap the canvas.
+- Regression evidence: the existing `contentInsetMatchesTheExpandedRailWidth` behavior test passed. A timing assertion is not exposed by the SwiftUI test harness; no brittle source-text test was added. `-only-testing:10xTests/RailExpansionModelTests` was rejected because that is not a scheme member, while `-only-testing:TenXAppTests` and the unfiltered app command each passed all 137 tests.
+- Fresh verification: standalone `swift test` passed 126 OmpKit tests with 2 existing opt-in skips; the full app suite passed 137 tests with no skips; clean Release build passed.
+- Rebuilt Release PID 63956 is visibly rendered and alive. Repeated Settings/Providers and expanded-rail Usage interactions showed the rebuilt Connections, Usage, and rail surfaces with no overlap. Screenshots at the existing Task 9 paths were replaced from this rebuilt process. Connect and Reconnect were not selected.
