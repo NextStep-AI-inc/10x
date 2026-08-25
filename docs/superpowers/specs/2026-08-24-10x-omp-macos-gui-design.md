@@ -213,7 +213,10 @@ Settings uses the approved **continuous form** organization:
 - Horizontal category anchors jump to sections in the same document.
 - Search filters the same document in place and may match display name,
   description, or exact OMP key.
-- Changes save immediately. Reset is available per setting and per section.
+- Changes save immediately. When OMP exposes a setting default, the control
+  shows that formatted value beside a small return icon as a borderless cyan
+  action. Selecting it writes the shown value through the normal set path;
+  there is no separate Reset label or reset-only interaction.
 - Restart requirements are shown inline in yellow before the user leaves the
   relevant setting.
 
@@ -245,9 +248,12 @@ Control selection follows OMP metadata:
 | `array` | Add/remove list editor |
 | `record` | Key/value editor with a raw JSON fallback |
 
-Reads use `omp config list --json`; writes use `omp config set KEY VALUE...`;
-resets use `omp config reset KEY`. The service also exposes `omp config path`
-so the UI can show which configuration root is active.
+Reads use `omp config list --json`, whose non-credential entries include a
+read-only `default` field when the schema defines one. Writes, including the
+default-value action, use `omp config set KEY VALUE...`. Credential defaults
+are never emitted, and older OMP versions without `default` simply omit the
+action. The service also exposes `omp config path` so the UI can show which
+configuration root is active.
 
 ### Setup and recovery
 
