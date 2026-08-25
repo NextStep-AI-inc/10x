@@ -43,6 +43,22 @@ struct TranscriptView: View {
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
         case .tool(let presentation):
             switch ToolCardRegistry.kind(for: presentation.name) {
+            case .read:
+                ReadToolCardView(presentation: presentation)
+            case .bash:
+                BashToolCardView(presentation: presentation)
+            case .edit:
+                EditToolCardView(presentation: presentation)
+            case .write:
+                WriteToolCardView(presentation: presentation)
+            case .search:
+                SearchToolCardView(presentation: presentation)
+            case .task:
+                TaskToolCardView(presentation: presentation)
+            case .todo:
+                TodoToolCardView(presentation: presentation)
+            case .web:
+                WebToolCardView(presentation: presentation)
             case .generic:
                 GenericToolCardView(presentation: presentation)
             }

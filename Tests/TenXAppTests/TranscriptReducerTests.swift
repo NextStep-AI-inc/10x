@@ -104,6 +104,30 @@ import Testing
     #expect(reducer.runtimeState == .idle)
 }
 
+@Test func historicalToolCallsKeepArgumentsAndMergeTheirResults() throws {
+    var reducer = TranscriptReducer()
+    reducer.load(messages: [
+        try message("""
+            {"role":"assistant","content":[{"type":"toolCall","id":"t1","name":"bash","arguments":{"command":"pwd"}}]}
+            """),
+        try message("""
+            {"role":"toolResult","toolCallId":"t1","toolName":"bash","content":[{"type":"text","text":"/tmp"}],"isError":false}
+            """),
+    ])
+
+    #expect(reducer.items.count == 1)
+    guard case .tool(let tool) = reducer.items[0] else {
+        Issue.record("Expected one historical tool card")
+        return
+    }
+    #expect(tool.arguments["command"]?.stringValue == "pwd")
+    #expect(tool.result?["content"]?.arrayValue?.first?["text"]?.stringValue == "/tmp")
+}
+
 private func eventFrame(_ json: String) throws -> RpcFrame {
     try RpcFrame.decode(line: Data(json.utf8))
+}
+
+private func message(_ json: String) throws -> JSONValue {
+    try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
 }

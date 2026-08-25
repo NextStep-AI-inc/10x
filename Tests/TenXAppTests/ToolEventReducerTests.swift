@@ -30,6 +30,19 @@ import Testing
     #expect(ToolCardRegistry.kind(for: "future_mcp_tool") == .generic)
 }
 
+@Test func priorityToolsResolveToTheirBespokeCards() {
+    #expect(ToolCardRegistry.kind(for: "read") == .read)
+    #expect(ToolCardRegistry.kind(for: "bash") == .bash)
+    #expect(ToolCardRegistry.kind(for: "edit") == .edit)
+    #expect(ToolCardRegistry.kind(for: "write") == .write)
+    #expect(ToolCardRegistry.kind(for: "grep") == .search)
+    #expect(ToolCardRegistry.kind(for: "glob") == .search)
+    #expect(ToolCardRegistry.kind(for: "task") == .task)
+    #expect(ToolCardRegistry.kind(for: "todo") == .todo)
+    #expect(ToolCardRegistry.kind(for: "web_search") == .web)
+    #expect(ToolCardRegistry.kind(for: "browser") == .web)
+}
+
 private func payload(_ json: String) throws -> JSONValue {
     guard case .event(_, let payload) = try RpcFrame.decode(line: Data(json.utf8)) else {
         throw TestPayloadError.notAnEvent

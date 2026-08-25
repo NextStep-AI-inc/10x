@@ -59,16 +59,59 @@ struct TranscriptReducer {
     }
 
     mutating func load(messages: [JSONValue]) {
-        items = messages.enumerated().map { index, message in
-            if let presentation = Self.toolResultPresentation(message) {
-                return .tool(presentation)
+        items = []
+        for (index, message) in messages.enumerated() {
+            if let result = Self.toolResultPresentation(message) {
+                if let itemIndex = items.firstIndex(where: { $0.id == result.id }),
+                   case .tool(var existing) = items[itemIndex] {
+                    existing.result = message
+                    existing.phase = result.phase
+                    existing.endDate = result.endDate
+                    items[itemIndex] = .tool(existing)
+                } else {
+                    items.append(.tool(result))
+                }
+                continue
             }
-            return .message(
-                id: message["id"]?.stringValue ?? "history-\(index)",
-                message: message,
-                isFinal: true)
+
+            let visibleText = Self.visibleMessageText(message)
+            if message["role"]?.stringValue == "user" || !visibleText.isEmpty {
+                items.append(.message(
+                    id: message["id"]?.stringValue ?? "history-\(index)",
+                    message: message,
+                    isFinal: true))
+            }
+            items.append(contentsOf: Self.toolCallPresentations(message).map(TranscriptItem.tool))
         }
         inflightMessageID = nil
+    }
+
+    private static func toolCallPresentations(_ message: JSONValue) -> [ToolPresentation] {
+        let timestamp = message["timestamp"]?.doubleValue.map {
+            Date(timeIntervalSince1970: $0 / 1_000)
+        } ?? Date()
+        return message["content"]?.arrayValue?.compactMap { block in
+            guard block["type"]?.stringValue == "toolCall",
+                  let id = block["id"]?.stringValue ?? block["toolCallId"]?.stringValue,
+                  let name = block["name"]?.stringValue ?? block["toolName"]?.stringValue
+            else { return nil }
+            return ToolPresentation(
+                id: id,
+                name: name,
+                arguments: block["arguments"] ?? block["args"] ?? .object([:]),
+                result: nil,
+                phase: .running,
+                startDate: timestamp,
+                endDate: nil)
+        } ?? []
+    }
+
+    private static func visibleMessageText(_ message: JSONValue) -> String {
+        if let content = message["content"]?.stringValue { return content }
+        return message["content"]?.arrayValue?.compactMap { block in
+            guard block["type"]?.stringValue == "text" else { return nil }
+            return block["text"]?.stringValue
+        }.joined(separator: "\n") ?? ""
     }
 
     private mutating func consumeToolResult(_ message: JSONValue) -> Bool {
