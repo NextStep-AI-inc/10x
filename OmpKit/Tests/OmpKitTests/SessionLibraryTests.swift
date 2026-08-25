@@ -186,3 +186,101 @@ private func makeTempRoot(_ label: String) -> URL {
     let library = SessionLibrary(root: makeTempRoot("absent"))
     #expect(await library.listAll().isEmpty)
 }
+
+@Test func archivesAndRestoresAResultWithoutChangingItsRelativePath() async throws {
+    let container = makeTempRoot("archive-restore")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let activeFile = activeRoot.appendingPathComponent("-tmp-project/session.jsonl")
+    try writeSession(
+        at: activeFile,
+        id: "archive-me",
+        cwd: "/tmp/project",
+        lastMessage: completeLast)
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let archiveReport = await library.archive(paths: [activeFile.path])
+    #expect(archiveReport.failures.isEmpty)
+    #expect(await library.listAll().isEmpty)
+    let archived = await library.listArchived()
+    #expect(archived.map(\.sessionId) == ["archive-me"])
+    #expect(archived.map { Array(URL(filePath: $0.path).pathComponents.suffix(2)) }
+        == [["-tmp-project", "session.jsonl"]])
+
+    let restoreReport = await library.restore(paths: archived.map(\.path))
+    #expect(restoreReport.failures.isEmpty)
+    #expect(await library.listArchived().isEmpty)
+    let restored = await library.listAll()
+    #expect(restored.map { Array(URL(filePath: $0.path).pathComponents.suffix(2)) }
+        == [["-tmp-project", "session.jsonl"]])
+}
+
+@Test func restoreNeverOverwritesAnActiveTranscript() async throws {
+    let container = makeTempRoot("restore-conflict")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let relativePath = "-tmp-project/session.jsonl"
+    let activeFile = activeRoot.appendingPathComponent(relativePath)
+    let archivedFile = archiveRoot.appendingPathComponent(relativePath)
+    try writeSession(at: activeFile, id: "active", cwd: "/tmp/project", lastMessage: completeLast)
+    try writeSession(at: archivedFile, id: "archived", cwd: "/tmp/project", lastMessage: completeLast)
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let report = await library.restore(paths: [archivedFile.path])
+
+    #expect(report.succeededPaths.isEmpty)
+    #expect(report.failures == [SessionMutationFailure(
+        path: archivedFile.path,
+        reason: .destinationExists)])
+    #expect(FileManager.default.fileExists(atPath: activeFile.path))
+    #expect(FileManager.default.fileExists(atPath: archivedFile.path))
+}
+
+@Test func deleteRemovesOnlySuppliedTranscriptsAndNeverTheProjectDirectory() async throws {
+    let container = makeTempRoot("delete-safety")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let projectRoot = container.appendingPathComponent("source-project")
+    let keptSource = projectRoot.appendingPathComponent("Keep.swift")
+    try FileManager.default.createDirectory(at: projectRoot, withIntermediateDirectories: true)
+    try Data("struct Keep {}".utf8).write(to: keptSource)
+    let first = activeRoot.appendingPathComponent("-source-project/first.jsonl")
+    let second = activeRoot.appendingPathComponent("-source-project/second.jsonl")
+    try writeSession(at: first, id: "first", cwd: projectRoot.path, lastMessage: completeLast)
+    try writeSession(at: second, id: "second", cwd: projectRoot.path, lastMessage: completeLast)
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let report = await library.delete(paths: [first.path])
+
+    #expect(report.succeededPaths == [first.path])
+    #expect(report.failures.isEmpty)
+    #expect(!FileManager.default.fileExists(atPath: first.path))
+    #expect(FileManager.default.fileExists(atPath: second.path))
+    #expect(FileManager.default.fileExists(atPath: keptSource.path))
+}
+
+@Test func deleteReportsInvalidAndMissingTranscriptPaths() async throws {
+    let container = makeTempRoot("delete-failures")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let sourceFile = container.appendingPathComponent("source-project/keep.jsonl")
+    let missingTranscript = activeRoot.appendingPathComponent("-source-project/missing.jsonl")
+    try FileManager.default.createDirectory(
+        at: sourceFile.deletingLastPathComponent(),
+        withIntermediateDirectories: true)
+    try Data("keep".utf8).write(to: sourceFile)
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+
+    let report = await library.delete(paths: [sourceFile.path, missingTranscript.path])
+
+    #expect(report.succeededPaths.isEmpty)
+    #expect(report.failures == [
+        SessionMutationFailure(path: sourceFile.path, reason: .invalidPath),
+        SessionMutationFailure(path: missingTranscript.path, reason: .missingSource),
+    ])
+    #expect(FileManager.default.fileExists(atPath: sourceFile.path))
+}
