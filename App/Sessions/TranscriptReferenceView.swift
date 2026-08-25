@@ -2,6 +2,36 @@ import AppKit
 import os
 import SwiftUI
 
+struct FileReferenceIDEActionPresentation {
+    let title: String
+    let isEnabled: Bool
+    let showsUnavailableSymbol: Bool
+    let accessibilityLabel: String
+
+    static func make(
+        preference: IDEPreferenceState,
+        reference: ResolvedFileReference
+    ) -> FileReferenceIDEActionPresentation {
+        switch preference {
+        case .available(let application):
+            let action = "Open in \(application.displayName)"
+            return FileReferenceIDEActionPresentation(
+                title: action,
+                isEnabled: reference.exists,
+                showsUnavailableSymbol: !reference.exists,
+                accessibilityLabel: reference.exists
+                    ? "Open \(reference.compactLabel) in \(application.displayName), \(reference.fullPathLabel)"
+                    : "Open \(reference.compactLabel) in \(application.displayName), Unavailable, \(reference.fullPathLabel)")
+        case .none, .unavailable:
+            return FileReferenceIDEActionPresentation(
+                title: "Choose IDE",
+                isEnabled: true,
+                showsUnavailableSymbol: false,
+                accessibilityLabel: "Choose an IDE for \(reference.fullPathLabel)")
+        }
+    }
+}
+
 struct TranscriptReferenceView: View {
     let reference: TranscriptReference
 
@@ -37,6 +67,7 @@ private struct FileTranscriptReferenceView: View {
     @Environment(\.fileOpenService) private var fileOpenService
     @Environment(\.fileReferenceBaseURL) private var baseURL
     @Environment(\.openIDEPreferences) private var openIDEPreferences
+    @Environment(\.accessibilityAnnouncer) private var accessibilityAnnouncer
     @State private var isHovering = false
     @State private var isOptionPressed = false
     @State private var errorStatus: String?
@@ -92,11 +123,19 @@ private struct FileTranscriptReferenceView: View {
     }
 
     private var ideAction: some View {
-        Button(ideActionTitle, action: performIDEAction)
+        Button(action: performIDEAction) {
+            HStack(spacing: 4) {
+                Text(ideActionPresentation.title)
+                if ideActionPresentation.showsUnavailableSymbol {
+                    Image(systemName: "exclamationmark.circle")
+                        .accessibilityHidden(true)
+                }
+            }
+        }
             .buttonStyle(GhostActionStyle())
             .frame(minHeight: 32)
-            .disabled(isIDEOpenAction && !resolvedReference.exists)
-            .accessibilityLabel(ideAccessibilityLabel)
+            .disabled(!ideActionPresentation.isEnabled)
+            .accessibilityLabel(ideActionPresentation.accessibilityLabel)
     }
 
     @ViewBuilder
@@ -116,31 +155,14 @@ private struct FileTranscriptReferenceView: View {
 
     private var fileColor: Color {
         TenXPalette.color(resolvedReference.exists
-            ? TenXPalette.cyanHex
+            ? TenXPalette.interactiveCyanHex
             : TenXPalette.mutedTextHex)
     }
 
-    private var ideActionTitle: String {
-        if case .available(let application) = idePreferenceStore.state {
-            guard resolvedReference.exists else { return "File unavailable" }
-            return "Open in \(application.displayName)"
-        }
-        return "Choose IDE"
-    }
-
-    private var isIDEOpenAction: Bool {
-        if case .available = idePreferenceStore.state { return true }
-        return false
-    }
-
-    private var ideAccessibilityLabel: String {
-        if case .available(let application) = idePreferenceStore.state {
-            guard resolvedReference.exists else {
-                return "File unavailable for \(application.displayName), \(resolvedReference.fullPathLabel)"
-            }
-            return "Open \(resolvedReference.compactLabel) in \(application.displayName), \(resolvedReference.fullPathLabel)"
-        }
-        return "Choose an IDE for \(resolvedReference.fullPathLabel)"
+    private var ideActionPresentation: FileReferenceIDEActionPresentation {
+        FileReferenceIDEActionPresentation.make(
+            preference: idePreferenceStore.state,
+            reference: resolvedReference)
     }
 
     private func openWithSystemDefault() {
@@ -198,13 +220,7 @@ private struct FileTranscriptReferenceView: View {
     private func showError(_ message: String) {
         clearErrorTask?.cancel()
         errorStatus = message
-        NSAccessibility.post(
-            element: NSApp,
-            notification: .announcementRequested,
-            userInfo: [
-                .announcement: message,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ])
+        accessibilityAnnouncer.announce(message)
         clearErrorTask = Task {
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }

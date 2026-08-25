@@ -45,3 +45,11 @@ import Testing
         .file(path: "/tmp/file.swift", line: 9),
     ])
 }
+
+@Test func plainAbsolutePathWithWhitespaceContinuationNeverUsesItsPrefix() {
+    let references = TranscriptReference.extract(from: """
+    Open /Users/tannerpham/CS Projects/.worktrees/10x/App/Sessions/MessageBubbleView.swift:1 next.
+    """)
+
+    #expect(references.isEmpty)
+}

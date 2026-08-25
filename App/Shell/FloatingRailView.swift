@@ -6,7 +6,6 @@ struct FloatingRailView: View {
     let expansion: RailExpansionModel
 
     @FocusState private var focusedItem: RailFocus?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var groups: [ProjectSessionGroup] {
         ProjectSessionGrouper.groups(model.sessions)
@@ -71,7 +70,6 @@ struct FloatingRailView: View {
                 expansion.pointerExited()
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: expansion.isExpanded)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Application navigation")
     }

@@ -4,6 +4,7 @@ struct AppShellView: View {
     let model: AppModel
 
     @State private var railExpansion = RailExpansionModel()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
@@ -21,6 +22,7 @@ struct AppShellView: View {
                         })
                     FloatingRailView(model: model, expansion: railExpansion)
                 }
+                .animation(railAnimation, value: railExpansion.isExpanded)
                 .overlay(alignment: .topTrailing) {
                     ShellTopActionsView(model: model)
                         .padding(.top, 16)
@@ -37,6 +39,11 @@ struct AppShellView: View {
             }
         }
         .background(TenXPalette.color(TenXPalette.canvasHex))
+    }
+
+    private var railAnimation: Animation? {
+        RailExpansionTransition.animationDuration(reduceMotion: reduceMotion)
+            .map { .easeInOut(duration: $0) }
     }
 
     @ViewBuilder

@@ -31,3 +31,17 @@ import Testing
     #expect(PreferredIDESettingRowView.valueLabel(for: .available(cursor)) == "Cursor")
     #expect(PreferredIDESettingRowView.valueLabel(for: .unavailable(displayName: "Cursor")) == "Cursor · Unavailable")
 }
+
+@MainActor
+@Test func preferredIDEMenuSemanticsExposeItsLabelAndCurrentSelection() {
+    let cursor = IDEApplication(
+        displayName: "Cursor",
+        url: URL(filePath: "/Applications/Cursor.app"),
+        source: .custom)
+
+    let semantics = PreferredIDESettingRowView.accessibilitySemantics(
+        for: .available(cursor))
+
+    #expect(semantics.label == "Preferred IDE")
+    #expect(semantics.value == "Cursor")
+}

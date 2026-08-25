@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 
+enum RailExpansionTransition {
+    static func animationDuration(reduceMotion: Bool) -> TimeInterval? {
+        reduceMotion ? nil : 0.2
+    }
+}
+
 @MainActor
 @Observable
 final class RailExpansionModel {

@@ -38,6 +38,9 @@ struct SettingsView: View {
         .task {
             if model.settingCount == 0 { await model.load() }
         }
+        .onChange(of: focusTarget, initial: true) { _, target in
+            model.prepareForFocus(target)
+        }
         .background {
             Button("") { isSearchFocused = true }
                 .keyboardShortcut("f", modifiers: .command)
@@ -75,7 +78,7 @@ struct SettingsView: View {
                     .textFieldStyle(.plain)
                     .font(TenXTypography.body(size: 14))
                     .focused($isSearchFocused)
-                    .accessibilityLabel("Search all OMP settings")
+            .accessibilityLabel("Search all settings")
             }
             .padding(.bottom, 9)
             .overlay(alignment: .bottom) {

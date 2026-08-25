@@ -71,6 +71,16 @@ import Testing
     #expect(model.error(for: "shellPath") == "Choose an executable shell file, such as /bin/zsh.")
 }
 
+@MainActor
+@Test func preferredIDEFocusClearsAQueryThatWouldHideTheRow() {
+    let model = SettingsViewModel(service: OmpConfigService(runner: FakeConfigRunner()))
+    model.query = "sleep prevention"
+
+    model.prepareForFocus(.preferredIDE)
+
+    #expect(model.query.isEmpty)
+}
+
 @Test func configErrorsNeverIncludeTheSecretValue() async {
     let service = OmpConfigService(runner: FailingConfigRunner())
     do {

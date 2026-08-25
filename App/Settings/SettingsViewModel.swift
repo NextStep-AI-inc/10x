@@ -67,4 +67,9 @@ final class SettingsViewModel {
     func error(for key: String) -> String? {
         keyErrors[key]
     }
+
+    func prepareForFocus(_ target: SettingsFocusTarget?) {
+        guard target == .preferredIDE else { return }
+        query = ""
+    }
 }

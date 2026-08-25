@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct GhostActionStyle: ButtonStyle {
-    var color = TenXPalette.color(TenXPalette.cyanHex)
+    var color = TenXPalette.color(TenXPalette.interactiveCyanHex)
 
     func makeBody(configuration: Configuration) -> some View {
         GhostActionBody(configuration: configuration, color: color)

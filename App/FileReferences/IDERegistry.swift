@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import UniformTypeIdentifiers
 
+@MainActor
 struct IDERegistry {
     private struct KnownIDE {
         let displayName: String
@@ -17,10 +18,10 @@ struct IDERegistry {
         KnownIDE(displayName: "Sublime Text", bundleIdentifier: "com.sublimetext.4"),
     ]
 
-    private let installedApplicationsProvider: () -> [IDEApplication]
-    private let chooseApplicationProvider: () -> IDEApplication?
-    private let selectionProvider: (IDEApplication) throws -> IDESelection
-    private let resolveProvider: (IDESelection) -> IDEApplication?
+    private let installedApplicationsProvider: @MainActor () -> [IDEApplication]
+    private let chooseApplicationProvider: @MainActor () -> IDEApplication?
+    private let selectionProvider: @MainActor (IDEApplication) throws -> IDESelection
+    private let resolveProvider: @MainActor (IDESelection) -> IDEApplication?
 
     init() {
         self.init(
@@ -31,10 +32,10 @@ struct IDERegistry {
     }
 
     init(
-        installedApplications: @escaping () -> [IDEApplication],
-        chooseApplication: @escaping () -> IDEApplication?,
-        selection: @escaping (IDEApplication) throws -> IDESelection,
-        resolve: @escaping (IDESelection) -> IDEApplication?
+        installedApplications: @escaping @MainActor () -> [IDEApplication],
+        chooseApplication: @escaping @MainActor () -> IDEApplication?,
+        selection: @escaping @MainActor (IDEApplication) throws -> IDESelection,
+        resolve: @escaping @MainActor (IDESelection) -> IDEApplication?
     ) {
         installedApplicationsProvider = installedApplications
         chooseApplicationProvider = chooseApplication

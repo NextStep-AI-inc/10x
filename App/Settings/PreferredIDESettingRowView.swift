@@ -58,6 +58,8 @@ struct PreferredIDESettingRowView: View {
                 .menuStyle(.borderlessButton)
                 .focused($focusedControl, equals: .preferredIDE)
                 .frame(width: 300, alignment: .trailing)
+                .accessibilityLabel(Self.accessibilitySemantics(for: store.state).label)
+                .accessibilityValue(Self.accessibilitySemantics(for: store.state).value)
             }
 
             if let saveError {
@@ -76,6 +78,12 @@ struct PreferredIDESettingRowView: View {
         case .available(let application): application.displayName
         case .unavailable(let displayName): "\(displayName) · Unavailable"
         }
+    }
+
+    nonisolated static func accessibilitySemantics(
+        for state: IDEPreferenceState
+    ) -> (label: String, value: String) {
+        (label: "Preferred IDE", value: valueLabel(for: state))
     }
 
     nonisolated static func matches(query: String, applicationName: String?) -> Bool {
