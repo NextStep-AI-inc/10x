@@ -62,6 +62,81 @@ import Testing
     try assertSnapshot(SettingsView(model: model), name: "continuous-settings")
 }
 
+@MainActor
+@Test func userMessageSnapshot() throws {
+    let message = TranscriptMessage(
+        id: "user-message",
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Make the transcript compact, but keep every useful detail available."),
+        ]),
+        timestamp: Date(timeIntervalSince1970: 1_787_601_600),
+        isFinal: true)
+    try assertSnapshot(
+        MessageBubbleView(message: message).frame(width: 720),
+        name: "chat-user-message",
+        size: CGSize(width: 800, height: 220))
+}
+
+@MainActor
+@Test func richAssistantMessageSnapshot() throws {
+    let message = TranscriptMessage(
+        id: "assistant-message",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("""
+            # Transcript ready
+
+            The agent view now keeps **routine work compact** while preserving the detail you need.
+
+            - Actual model and mode attribution
+            - Structured code with copy
+            - Actionable [documentation](https://example.com/docs)
+
+            > Changes stay quiet until they need attention.
+
+            ```swift
+            let state = TranscriptState.compact
+            render(state, references: true)
+            ```
+            """),
+        ]),
+        timestamp: Date(timeIntervalSince1970: 1_787_601_600),
+        attribution: TranscriptResponseAttribution(
+            provider: "openai-codex",
+            model: "gpt-5.6-sol",
+            mode: "design",
+            agent: nil,
+            modelRole: nil),
+        isFinal: true)
+    try assertSnapshot(
+        MessageBubbleView(message: message).frame(width: 720),
+        name: "chat-rich-assistant",
+        size: CGSize(width: 800, height: 560))
+}
+
+@MainActor
+@Test func longWrappingMessageSnapshot() throws {
+    let longValue = String(repeating: "unbroken-segment-", count: 38)
+    let message = TranscriptMessage(
+        id: "long-message",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("The output stays inside the transcript:\n\n\(longValue)\n\n`/tmp/missing-example.swift:42`"),
+        ]),
+        attribution: TranscriptResponseAttribution(
+            provider: nil,
+            model: "claude-sonnet-4-6",
+            mode: nil,
+            agent: nil,
+            modelRole: nil),
+        isFinal: true)
+    try assertSnapshot(
+        MessageBubbleView(message: message).frame(width: 520),
+        name: "chat-long-wrapping",
+        size: CGSize(width: 600, height: 420))
+}
+
 private struct SnapshotConfigRunner: OmpConfigRunning {
     func run(arguments: [String]) async throws -> Data {
         if arguments == ["config", "path"] {

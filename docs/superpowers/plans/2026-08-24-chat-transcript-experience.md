@@ -117,16 +117,16 @@
 - Create: `Tests/TenXAppTests/MessageContentParserTests.swift`
 - Modify: `Tests/TenXAppTests/SnapshotTests.swift`
 
-- [ ] Add failing parser tests for paragraphs, headings, lists, quotes, fenced
+- [x] Add failing parser tests for paragraphs, headings, lists, quotes, fenced
   code/language, unmatched fences, and long unbroken content.
-- [ ] Implement block parsing and native SwiftUI rendering with SF Pro/SF Mono,
+- [x] Implement block parsing and native SwiftUI rendering with SF Pro/SF Mono,
   selection, code copy, links, bounded horizontal code scrolling, and local
   reference actions.
-- [ ] Add response metadata for model, mode/agent, timestamp, streaming, and
+- [x] Add response metadata for model, mode/agent, timestamp, streaming, and
   terminal errors. Show it once per response.
-- [ ] Record focused snapshots for user, assistant, code, long wrapping, and
+- [x] Record focused snapshots for user, assistant, code, long wrapping, and
   references; compare them to the spec before accepting.
-- [ ] Commit: `feat(chat): render rich agent messages`
+- [x] Commit: `feat(chat): render rich agent messages`
 
 ## Task 6: Unify compact and expanded activity
 
