@@ -233,3 +233,32 @@ func legacyComputerCommandRejectsAnyUnverifiedResponse(mode: String) async throw
 
     await manager.closeAll()
 }
+
+@Test(arguments: ["host-tools-wrong", "host-tools-malformed"])
+func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async throws {
+    let manager = computerContractManager(mode: mode)
+    let handle = try await manager.open(sessionPath: "/tmp/host-tools-\(mode).jsonl", cwd: "/tmp")
+
+    await #expect(throws: (any Error).self) {
+        try await handle.computerUseRPC.setHostTools([
+            HostToolDefinition(name: "agent_desktop", description: "test", parameters: .object([:])),
+        ])
+    }
+
+    await manager.closeAll()
+}
+
+@Test func deadlineForceCloseRetainsTheHandleUntilTheChildActuallyExits() async throws {
+    let manager = computerContractManager(mode: "silent")
+    let handle = try await manager.open(sessionPath: "/tmp/hung-close.jsonl", cwd: "/tmp")
+    let started = ContinuousClock.now
+
+    let confirmed = await manager.forceClose(
+        sessionPath: handle.sessionPath,
+        deadline: started)
+
+    #expect(confirmed == false)
+    #expect(await manager.handle(for: handle.sessionPath) != nil)
+    try await Task.sleep(for: .milliseconds(150))
+    #expect(await manager.handle(for: handle.sessionPath) == nil)
+}

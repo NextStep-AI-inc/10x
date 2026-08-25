@@ -231,8 +231,8 @@ final class SessionController {
         await computerUse.attachAndReconcile(
             rpc: handle.computerUseRPC,
             sessionPath: path,
-            terminateProcess: { [processManager] in
-                await processManager.forceClose(sessionPath: path)
+            terminateProcess: { [processManager] deadline in
+                await processManager.forceClose(sessionPath: path, deadline: deadline)
             })
 
         let state = try await handle.client.send(.getState())

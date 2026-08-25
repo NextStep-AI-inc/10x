@@ -203,17 +203,24 @@ public actor RpcClient {
         get async { await transport.exitStatus }
     }
 
-    public func shutdown() async {
+    /// Returns only after termination is confirmed, or `false` at the caller's
+    /// deadline. A false result intentionally leaves termination observation
+    /// alive so the owner can release resources once death is real.
+    @discardableResult
+    public func shutdown(deadline: ContinuousClock.Instant? = nil) async -> Bool {
         if !terminated {
             terminated = true
             failAllPending(
                 exitCode: await transport.exitStatus,
                 stderrTail: await transport.stderrSnapshot())
         }
-        await transport.shutdown()
-        readerTask?.cancel()
-        readerTask = nil
-        finishStreams()
+        let exited = await transport.shutdown(deadline: deadline)
+        if exited {
+            readerTask?.cancel()
+            readerTask = nil
+            finishStreams()
+        }
+        return exited
     }
 
     /// A corrupted frame stream cannot be trusted for anything that follows, so
@@ -226,7 +233,7 @@ public actor RpcClient {
         failAllPending(
             exitCode: await transport.exitStatus,
             stderrTail: await transport.stderrSnapshot())
-        await transport.shutdown()
+        _ = await transport.shutdown()
         readerTask?.cancel()
         readerTask = nil
         finishStreams()
@@ -342,7 +349,10 @@ public actor RpcClient {
     }
 
     private func handleStreamEnd() async {
-        guard !terminated else { return }
+        if terminated {
+            finishStreams()
+            return
+        }
         terminated = true
         failAllPending(
             exitCode: await transport.exitStatus,

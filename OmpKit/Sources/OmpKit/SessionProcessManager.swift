@@ -116,7 +116,14 @@ private actor SessionComputerUseRPC: ComputerUseRPC {
     }
 
     func setHostTools(_ definitions: [HostToolDefinition]) async throws {
-        _ = try await client.send(.setHostTools(definitions))
+        let response = try await client.send(.setHostTools(definitions))
+        let expected = definitions.map(\.name)
+        guard let reported = response.data?["toolNames"]?.arrayValue?.compactMap(\.stringValue),
+              reported.count == expected.count,
+              Set(reported) == Set(expected)
+        else {
+            throw RpcClientError.startupFailed("host tool registration was malformed")
+        }
     }
 
     func sendHostToolResult(id: String, result: JSONValue, isError: Bool) async throws {
@@ -153,6 +160,8 @@ public actor SessionProcessManager {
     private let clientFactory: ClientFactory
     private var handles: [String: Handle] = [:]
     private var exitWatchers: [String: Task<Void, Never>] = [:]
+    /// A normal close may race the termination watcher; it is never a crash.
+    private var intentionalCloses: Set<String> = []
     /// Opens in flight, so concurrent callers for one session share a child
     /// instead of racing across the `await` in `open`.
     private var opening: [String: Task<Handle, any Error>] = [:]
@@ -231,15 +240,27 @@ public actor SessionProcessManager {
     }
 
     public func close(sessionPath: String) async {
-        guard let handle = handles.removeValue(forKey: sessionPath) else { return }
-        exitWatchers.removeValue(forKey: sessionPath)?.cancel()
-        await handle.client.shutdown()
+        guard handles[sessionPath] != nil else { return }
+        intentionalCloses.insert(sessionPath)
+        _ = await forceClose(
+            sessionPath: sessionPath,
+            deadline: ContinuousClock.now.advanced(by: .seconds(3)))
     }
 
     /// Closes a child whose remote authorization state could not be confirmed.
     /// This remains deliberately narrower than exposing its `RpcClient`.
-    public func forceClose(sessionPath: String) async {
-        await close(sessionPath: sessionPath)
+    @discardableResult
+    public func forceClose(
+        sessionPath: String,
+        deadline: ContinuousClock.Instant
+    ) async -> Bool {
+        guard let handle = handles[sessionPath] else { return true }
+        let isDead = await handle.client.shutdown(deadline: deadline)
+        guard isDead else { return false }
+        handles.removeValue(forKey: sessionPath)
+        exitWatchers.removeValue(forKey: sessionPath)?.cancel()
+        intentionalCloses.remove(sessionPath)
+        return true
     }
 
     public func closeAll() async {
@@ -263,6 +284,7 @@ public actor SessionProcessManager {
         else { return }
         handles.removeValue(forKey: handle.sessionPath)
         exitWatchers.removeValue(forKey: handle.sessionPath)
+        guard intentionalCloses.remove(handle.sessionPath) == nil else { return }
         exitContinuation.yield(UnexpectedExit(
             sessionPath: handle.sessionPath,
             code: await handle.client.exitCode,

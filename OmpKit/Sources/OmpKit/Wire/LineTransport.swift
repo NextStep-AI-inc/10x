@@ -156,16 +156,24 @@ public actor LineTransport {
 
     public func stderrSnapshot() -> String { stderrLog.snapshot() }
 
-    /// Close stdin, then escalate: 1 s to exit, SIGTERM, 1 s more, SIGKILL.
-    public func shutdown() async {
-        guard started else { return }
+    /// Close stdin and escalate until the supplied deadline. `true` means the
+    /// child is confirmed dead; callers must retain ownership on `false`.
+    @discardableResult
+    public func shutdown(
+        deadline: ContinuousClock.Instant? = nil
+    ) async -> Bool {
+        guard started else { return true }
+        let deadline = deadline ?? ContinuousClock.now.advanced(by: .seconds(3))
         // Capture descendants while the leader still owns them. Foundation's
         // Process does not guarantee a fresh process group on every launch, so
         // this is the fallback when setpgid raced with exec.
         let descendants = processGroupID == nil
             ? Self.descendantPIDs(of: process.processIdentifier) : []
         closeStdin()
-        _ = await waitForExit(timeout: .seconds(1))
+        // The leader can exit on EOF while a descendant still holds stdout.
+        // Continue through group teardown so `finishStreams()` cannot block on
+        // that inherited descriptor.
+        _ = await waitForExit(until: min(deadline, ContinuousClock.now.advanced(by: .seconds(1))))
 
         if let processGroupID {
             killpg(processGroupID, SIGTERM)
@@ -173,15 +181,16 @@ public actor LineTransport {
             for pid in descendants.reversed() { kill(pid, SIGTERM) }
             if process.isRunning { process.terminate() }
         }
-        _ = await waitForExit(timeout: .seconds(1))
+        _ = await waitForExit(until: min(deadline, ContinuousClock.now.advanced(by: .seconds(1))))
         if let processGroupID {
             killpg(processGroupID, SIGKILL)
         } else {
             for pid in descendants.reversed() { kill(pid, SIGKILL) }
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
-        _ = await waitForExit(timeout: .seconds(1))
-        finishStreams()
+        let exited = await waitForExit(until: deadline)
+        if exited { finishStreams() }
+        return exited
     }
 
     /// Foundation's `Process` needs a concrete path, so a bare name like `omp`
@@ -208,8 +217,7 @@ public actor LineTransport {
         try? stdinPipe.fileHandleForWriting.close()
     }
 
-    private func waitForExit(timeout: Duration) async -> Bool {
-        let deadline = ContinuousClock.now + timeout
+    private func waitForExit(until deadline: ContinuousClock.Instant) async -> Bool {
         while ContinuousClock.now < deadline {
             if !process.isRunning { return true }
             try? await Task.sleep(for: .milliseconds(20))

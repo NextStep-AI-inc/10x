@@ -97,7 +97,7 @@ import Testing
     await controller.enable()
     log.reset()
 
-    await controller.handleHostToolCall(HostToolCall(
+    controller.handleHostToolCall(HostToolCall(
         id: "unknown", toolCallID: "unknown-tool", name: "other_tool", arguments: .object([:])))
     try? await Task.sleep(for: .milliseconds(25))
 
@@ -119,11 +119,11 @@ import Testing
     await controller.enable(safetyMode: .legacyBestEffort)
     log.reset()
 
-    await controller.handleHostToolCall(HostToolCall(
+    controller.handleHostToolCall(HostToolCall(
         id: "borrow", toolCallID: "tool-borrow", name: "agent_desktop",
         arguments: .object(["action": .string("borrow"), "windowId": .string("window-1")])))
-    await controller.handleHostToolCancel(targetID: "cancelled")
-    await controller.handleHostToolCall(HostToolCall(
+    controller.handleHostToolCancel(targetID: "cancelled")
+    controller.handleHostToolCall(HostToolCall(
         id: "cancelled", toolCallID: "tool-cancelled", name: "agent_desktop",
         arguments: .object(["action": .string("borrow"), "windowId": .string("window-1")])))
     try? await Task.sleep(for: .milliseconds(50))
@@ -206,6 +206,97 @@ import Testing
     ])
 }
 
+@MainActor @Test func stopDuringDelayedPrepareReleasesTheLateDesktopWithoutEnablingOMP() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let lifecycle = delayedPrepareLifecycle(log)
+    let controller = ComputerUseController(
+        sessionID: "session-delayed-prepare", lifecycle: lifecycle, preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-delayed-prepare.jsonl")
+
+    let enabling = Task { await controller.enable() }
+    try? await Task.sleep(for: .milliseconds(20))
+    await controller.stopComputerUse()
+    await enabling.value
+
+    #expect(log.values.contains("desktop.release"))
+    #expect(!log.values.contains("rpc.enable"))
+    #expect(controller.phase == .off)
+}
+
+@MainActor @Test func stopDuringDelayedEnableCannotRegisterToolsOrReviveReadyState() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log, enableDelay: .milliseconds(120))
+    let controller = ComputerUseController(
+        sessionID: "session-delayed-enable", lifecycle: .recording(log), preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-delayed-enable.jsonl")
+
+    let enabling = Task { await controller.enable() }
+    try? await Task.sleep(for: .milliseconds(20))
+    await controller.stopComputerUse()
+    await enabling.value
+
+    #expect(!log.values.contains("rpc.hostTools"))
+    #expect(controller.phase == .off)
+}
+
+@MainActor @Test func structuredAvailabilityRefreshReissuesRequireHandoffAuthorization() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let controller = ComputerUseController(
+        sessionID: "session-refresh", lifecycle: .recording(log), preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-refresh.jsonl")
+    await controller.enable()
+    log.reset()
+
+    await controller.refreshAvailability()
+
+    #expect(controller.phase == .ready)
+    #expect(log.values == ["rpc.availability", "rpc.enable"])
+}
+
+@MainActor @Test func legacyAvailabilityRefreshFailsClosedRatherThanClaimingModelSupport() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let controller = ComputerUseController(
+        sessionID: "session-legacy-refresh", lifecycle: .recording(log), preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-legacy-refresh.jsonl")
+    await controller.enable(safetyMode: .legacyBestEffort)
+
+    await controller.refreshAvailability()
+
+    #expect(controller.phase == .unavailable(
+        message: "Computer use stopped because its session could not be secured",
+        isBestEffortAvailable: false))
+}
+
+@MainActor @Test func controllerDeinitCancelsItsManifestWatcher() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let provider = DeinitWatcherProvider()
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    var controller: ComputerUseController? = ComputerUseController(
+        registry: ComputerUseRegistry(),
+        lease: ComputerUseLease(directory: directory),
+        coordinator: AgentDesktopCoordinator(providers: [provider]),
+        preference: .backgroundOnly)
+    controller?.attach(rpc: rpc, sessionPath: "/tmp/session-deinit.jsonl")
+    await controller?.enable(safetyMode: .legacyBestEffort)
+    #expect(controller?.phase == .ready)
+
+    weak var releasedController = controller
+    controller = nil
+    for _ in 0..<20 {
+        if await provider.watcherDidTerminate() { break }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+
+    #expect(releasedController == nil)
+    #expect(await provider.watcherDidTerminate())
+}
+
 private enum TestFailure: Error { case failed }
 
 @MainActor private final class LifecycleLog {
@@ -217,11 +308,13 @@ private enum TestFailure: Error { case failed }
 private actor ControllerRPC: ComputerUseRPC {
     private let log: LifecycleLog
     private let enableError: (any Error)?
+    private let enableDelay: Duration?
     private let reportedState: ComputerUseRPCState
 
-    init(log: LifecycleLog, enableError: (any Error)? = nil, state: ComputerUseRPCState = ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff)) {
+    init(log: LifecycleLog, enableError: (any Error)? = nil, enableDelay: Duration? = nil, state: ComputerUseRPCState = ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff)) {
         self.log = log
         self.enableError = enableError
+        self.enableDelay = enableDelay
         reportedState = state
     }
 
@@ -243,6 +336,7 @@ private actor ControllerRPC: ComputerUseRPC {
 
     func setComputerUse(enabled: Bool, policy: ComputerForegroundPolicy) async throws -> ComputerUseRPCState {
         await log.append(enabled ? "rpc.enable" : "rpc.disable")
+        if enabled, let enableDelay { try await Task.sleep(for: enableDelay) }
         if enabled, let enableError { throw enableError }
         return ComputerUseRPCState(enabled: enabled, foregroundPolicy: policy)
     }
@@ -292,6 +386,26 @@ private extension ComputerUseControllerLifecycle {
     }
 }
 
+@MainActor
+private func delayedPrepareLifecycle(_ log: LifecycleLog) -> ComputerUseControllerLifecycle {
+    ComputerUseControllerLifecycle(
+        activate: { _ in log.append("registry.activate") },
+        release: { _ in log.append("registry.release") },
+        acquireLease: { _ in log.append("lease.acquire") },
+        releaseLease: { log.append("lease.release") },
+        prepare: { _ in
+            try await Task.sleep(for: .milliseconds(120))
+            log.append("desktop.prepare")
+            return PreparedAgentDesktop(provider: .aeroSpace, workspaceID: "workspace", capabilities: .isolated)
+        },
+        probe: { _, _ in probeResult() },
+        cleanup: { _ in
+            log.append("desktop.cleanup")
+            return CleanupReport(preservedApplicationNames: [], restoredWindowCount: 0)
+        },
+        releaseDesktop: { _ in log.append("desktop.release") })
+}
+
 private func probeResult() -> ComputerProbeResult {
     ComputerProbeResult(json: .object([
         "capabilities": .object([
@@ -328,4 +442,38 @@ private actor ControllerHostProvider: AgentDesktopProvider {
     func restore(windowID: String, to workspaceID: String) async throws {}
     func openVisibly(workspaceID: String) async throws {}
     func release(workspaceID: String) async {}
+}
+
+private actor DeinitWatcherProvider: AgentDesktopProvider {
+    nonisolated let kind: AgentDesktopProviderKind = .background
+    private var continuation: AsyncStream<AgentWindowEvent>.Continuation?
+    private var watcherTerminated = false
+
+    func probe() async -> ProviderProbe {
+        ProviderProbe(availability: .healthy, integrationVersion: nil, capabilities: .background)
+    }
+
+    func prepare(sessionToken: String) async throws -> PreparedAgentDesktop {
+        PreparedAgentDesktop(provider: kind, workspaceID: nil, capabilities: .background)
+    }
+
+    func listWindows() async throws -> [AgentWindow] { [] }
+
+    func watchWindows() async throws -> AsyncStream<AgentWindowEvent> {
+        let stream = AsyncStream<AgentWindowEvent> { continuation in
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.recordWatcherTermination() }
+            }
+            self.continuation = continuation
+        }
+        return stream
+    }
+
+    func move(windowID: String, to workspaceID: String) async throws {}
+    func restore(windowID: String, to workspaceID: String) async throws {}
+    func openVisibly(workspaceID: String) async throws {}
+    func release(workspaceID: String) async {}
+
+    func watcherDidTerminate() -> Bool { watcherTerminated }
+    private func recordWatcherTermination() { watcherTerminated = true }
 }

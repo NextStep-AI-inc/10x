@@ -63,7 +63,7 @@ final class ComputerUseController: ComputerUseStopping {
     private let coordinator: AgentDesktopCoordinator?
     private let preference: AgentDesktopPreference
     private var rpc: (any ComputerUseRPC)?
-    private var terminateProcess: (@Sendable () async -> Void)?
+    private var terminateProcess: (@Sendable (ContinuousClock.Instant) async -> Bool)?
     private var preparedDesktop: PreparedAgentDesktop?
     private var manifest: AgentDesktopManifest?
     private var hostTool: AgentDesktopHostTool?
@@ -95,12 +95,19 @@ final class ComputerUseController: ComputerUseStopping {
         self.preference = preference
     }
 
-    func attach(rpc: any ComputerUseRPC, sessionPath: String, terminateProcess: @escaping @Sendable () async -> Void = {}) {
+    deinit {
+        MainActor.assumeIsolated {
+            watcherTask?.cancel()
+            for task in hostCalls.values { task.cancel() }
+        }
+    }
+
+    func attach(rpc: any ComputerUseRPC, sessionPath: String, terminateProcess: @escaping @Sendable (ContinuousClock.Instant) async -> Bool = { _ in false }) {
         self.rpc = rpc
         self.terminateProcess = terminateProcess
     }
 
-    func attachAndReconcile(rpc: any ComputerUseRPC, sessionPath: String, terminateProcess: @escaping @Sendable () async -> Void = {}) async {
+    func attachAndReconcile(rpc: any ComputerUseRPC, sessionPath: String, terminateProcess: @escaping @Sendable (ContinuousClock.Instant) async -> Bool = { _ in false }) async {
         attach(rpc: rpc, sessionPath: sessionPath, terminateProcess: terminateProcess)
         let deadline = ContinuousClock.now.advanced(by: Self.stopLimit)
         do {
@@ -108,15 +115,15 @@ final class ComputerUseController: ComputerUseStopping {
             guard state.enabled else { phase = .off; return }
             computerMutationAttempted = true
             if await disableRemoteComputerUse(deadline: deadline) { phase = .off }
-            else { await terminateAndRelease(); phase = unavailablePhase() }
+            else { _ = await terminateAndRelease(deadline: deadline); phase = unavailablePhase() }
         } catch {
             guard Self.isUnknownComputerCommand(error) else {
-                await terminateAndRelease(); phase = unavailablePhase(); return
+                _ = await terminateAndRelease(deadline: deadline); phase = unavailablePhase(); return
             }
             safetyMode = .legacyBestEffort
             computerMutationAttempted = true
             if await disableRemoteComputerUse(deadline: deadline) { phase = .off }
-            else { await terminateAndRelease(); phase = unavailablePhase() }
+            else { _ = await terminateAndRelease(deadline: deadline); phase = unavailablePhase() }
         }
     }
 
@@ -124,13 +131,21 @@ final class ComputerUseController: ComputerUseStopping {
         guard phase == .off, let rpc else { return }
         self.safetyMode = safetyMode
         phase = .preparing
+        let operation = lifecycleGeneration
         do {
             await lifecycle.activate(self)
             hasRegistryActivation = true
+            guard isCurrentEnable(operation) else { await releaseResources(); return }
             try await lifecycle.acquireLease(sessionID)
             hasLease = true
+            guard isCurrentEnable(operation) else { await releaseResources(); return }
             let requestedPreference: AgentDesktopPreference = safetyMode == .legacyBestEffort ? .backgroundOnly : preference
             let prepared = try await lifecycle.prepare(requestedPreference)
+            guard isCurrentEnable(operation) else {
+                await lifecycle.releaseDesktop(prepared)
+                await releaseResources()
+                return
+            }
             guard safetyMode == .legacyBestEffort || prepared.capabilities.canIsolate else {
                 throw ComputerUseControllerError.isolationUnavailable
             }
@@ -143,23 +158,32 @@ final class ComputerUseController: ComputerUseStopping {
             case .focusIsolated:
                 computerMutationAttempted = true
                 let state = try await rpc.setComputerUse(enabled: true, policy: .requireHandoff)
+                guard isCurrentEnable(operation) else { return }
                 guard state.enabled, state.foregroundPolicy == .requireHandoff else { throw ComputerUseControllerError.ompUnavailable }
                 try await requireAvailableComputer(rpc)
+                guard isCurrentEnable(operation) else { return }
                 hostToolsMutationAttempted = true
                 try await rpc.setHostTools([AgentDesktopHostTool.definition])
+                guard isCurrentEnable(operation) else { return }
                 let probe = try await lifecycle.probe(prepared) { try await rpc.probeComputerUse(target: $0, verificationText: $1) }
+                guard isCurrentEnable(operation) else { return }
                 guard probe.capabilities.isReady else { throw ComputerUseControllerError.permissionDenied }
                 needsHandoff = !probe.captureSucceeded || probe.backgroundInputSucceeded != true
             case .legacyBestEffort:
                 computerMutationAttempted = true
                 try await rpc.setLegacyComputerUse(enabled: true)
+                guard isCurrentEnable(operation) else { return }
                 try await requireAvailableModel(rpc, requiresEnabledComputerState: false)
+                guard isCurrentEnable(operation) else { return }
                 hostToolsMutationAttempted = true
                 try await rpc.setHostTools([AgentDesktopHostTool.definition])
+                guard isCurrentEnable(operation) else { return }
             }
+            guard isCurrentEnable(operation) else { return }
             phase = needsHandoff ? .needsHandoff(target: "Agent Desktop", reason: "Background capture or input is unavailable") : .ready
             startManifestWatcher()
         } catch {
+            guard isCurrentEnable(operation) else { return }
             let stopped = await rollbackEnable()
             phase = stopped
                 ? .unavailable(message: "Computer use could not start", isBestEffortAvailable: safetyMode == .focusIsolated && Self.isLegacyBestEffortAvailable(error))
@@ -184,6 +208,9 @@ final class ComputerUseController: ComputerUseStopping {
     }
 
     func handleProcessTerminated() async {
+        guard computerMutationAttempted || hostToolsMutationAttempted || hasLease
+              || hasRegistryActivation || preparedDesktop != nil || manifest != nil
+        else { return }
         lifecycleGeneration += 1
         watcherTask?.cancel()
         watcherTask = nil
@@ -240,12 +267,25 @@ final class ComputerUseController: ComputerUseStopping {
 
     func refreshAvailability() async {
         guard isLocallyEnabled, let rpc else { return }
+        let operation = lifecycleGeneration
         do {
             switch safetyMode {
-            case .focusIsolated: try await requireAvailableComputer(rpc)
-            case .legacyBestEffort: try await requireAvailableModel(rpc, requiresEnabledComputerState: false)
+            case .focusIsolated:
+                try await requireAvailableComputer(rpc)
+                guard isCurrentEnabledOperation(operation) else { return }
+                computerMutationAttempted = true
+                let state = try await rpc.setComputerUse(enabled: true, policy: .requireHandoff)
+                guard isCurrentEnabledOperation(operation), state.enabled,
+                      state.foregroundPolicy == .requireHandoff
+                else { throw ComputerUseControllerError.ompUnavailable }
+            case .legacyBestEffort:
+                // Legacy prompt mode cannot authoritatively prove model support.
+                throw ComputerUseControllerError.ompUnavailable
             }
-        } catch { await failClosed() }
+        } catch {
+            guard isCurrentEnabledOperation(operation) else { return }
+            await failClosed()
+        }
     }
 
     private var isLocallyEnabled: Bool {
@@ -257,12 +297,21 @@ final class ComputerUseController: ComputerUseStopping {
 
     private var isControlling: Bool { if case .controlling = phase { true } else { false } }
 
+    private func isCurrentEnable(_ operation: Int) -> Bool {
+        operation == lifecycleGeneration && phase == .preparing
+    }
+
+    private func isCurrentEnabledOperation(_ operation: Int) -> Bool {
+        operation == lifecycleGeneration && isLocallyEnabled
+    }
+
     private func rollbackEnable() async -> Bool {
         lifecycleGeneration += 1
         watcherTask?.cancel()
         watcherTask = nil
-        let stopped = await disableRemoteComputerUse(deadline: ContinuousClock.now.advanced(by: Self.stopLimit))
-        if stopped { await releaseResources() } else { await terminateAndRelease() }
+        let deadline = ContinuousClock.now.advanced(by: Self.stopLimit)
+        let stopped = await disableRemoteComputerUse(deadline: deadline)
+        if stopped { await releaseResources() } else { _ = await terminateAndRelease(deadline: deadline) }
         return stopped
     }
 
@@ -282,7 +331,7 @@ final class ComputerUseController: ComputerUseStopping {
             remoteStopped = false
         }
         if remoteStopped { await releaseResources(); phase = .off }
-        else { await terminateAndRelease(); phase = unavailablePhase() }
+        else { _ = await terminateAndRelease(deadline: deadline); phase = unavailablePhase() }
     }
 
     private func cancelAndSettleHostCalls(deadline: ContinuousClock.Instant) async -> Bool {
@@ -335,11 +384,14 @@ final class ComputerUseController: ComputerUseStopping {
         return safe && !computerMutationAttempted && !hostToolsMutationAttempted
     }
 
-    private func terminateAndRelease() async {
-        await terminateProcess?()
+    private func terminateAndRelease(deadline: ContinuousClock.Instant) async -> Bool {
+        guard let terminateProcess,
+              await terminateProcess(deadline)
+        else { return false }
         computerMutationAttempted = false
         hostToolsMutationAttempted = false
         await releaseResources()
+        return true
     }
 
     private func releaseResources() async {

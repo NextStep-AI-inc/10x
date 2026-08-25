@@ -132,6 +132,12 @@ for line in sys.stdin:
         }})
     elif ctype == "set_host_tools":
         tool_names = [tool.get("name") for tool in cmd.get("tools", []) if isinstance(tool, dict)]
+        if mode == "host-tools-wrong":
+            tool_names = ["wrong_tool"]
+        elif mode == "host-tools-malformed":
+            emit({"id": cid, "type": "response", "command": ctype, "success": True,
+                  "data": {}})
+            continue
         emit({"id": cid, "type": "response", "command": ctype, "success": True,
               "data": {"toolNames": tool_names}})
     elif ctype == "idless_error":
