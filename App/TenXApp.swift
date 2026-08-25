@@ -7,6 +7,7 @@ struct TenXApp: App {
     var body: some Scene {
         WindowGroup {
             AppShellView(model: model)
+            .frame(minWidth: 760, minHeight: 560)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .task { await model.bootstrap() }
         }

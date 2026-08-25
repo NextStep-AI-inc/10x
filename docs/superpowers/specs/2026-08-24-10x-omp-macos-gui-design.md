@@ -87,15 +87,19 @@ The shell uses a custom transparent rail, based on the interaction already
 used in the NextStep LMS shell:
 
 - Collapsed width: 64 points.
-- Expanded width: 200 points.
+- Expanded width: 220 points.
 - It floats directly on the white window canvas: no rail fill, material,
   divider, blur, or shadow.
 - The wordmark is anchored at the top and the profile control at the bottom.
-- New Session, Search, and Settings icons remain vertically centered when
-  collapsed. Every icon has a tooltip and accessibility label.
-- Hover or keyboard focus expands the rail, reveals labels, and exposes the
-  project/session hierarchy.
-- The main canvas shifts with the rail; the rail never overlays the workspace.
+- New Session, Search, Settings, project markers, and session markers form one
+  vertically centered stack. Every interactive item has a tooltip and
+  accessibility label.
+- The collapsed stack preserves an angular marker for every project and session;
+  the selected session uses cyan instead of adding a container.
+- Hover or keyboard focus expands the same stack horizontally, keeping each
+  marker in place while its label appears.
+- The rail floats over the shared white canvas. Expanding it never creates a
+  full-height panel, background, focus enclosure, or shift in the main canvas.
 - Expansion uses a short native ease. Collapse waits 300 ms so crossing from
   the icon rail into a session row does not dismiss it.
 - The expanded hierarchy is scrollable. “Show all projects” expands or scrolls

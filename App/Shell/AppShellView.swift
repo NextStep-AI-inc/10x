@@ -10,10 +10,11 @@ struct AppShellView: View {
             if model.route == .setup {
                 SetupView(model: model)
             } else {
-                HStack(spacing: 0) {
-                    FloatingRailView(model: model, expansion: railExpansion)
+                ZStack(alignment: .leading) {
                     routeCanvas
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.leading, 64)
+                    FloatingRailView(model: model, expansion: railExpansion)
                 }
             }
         }
