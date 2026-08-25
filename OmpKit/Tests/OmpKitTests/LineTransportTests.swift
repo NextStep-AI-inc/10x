@@ -330,7 +330,7 @@ func withTimeout<T: Sendable>(
         arguments: ["python3", fixtureURL("fake_server.py").path, "basic"],
         currentDirectory: nil,
         environment: nil,
-        trackerDidPoll: { polls.increment() })
+        trackerDidPoll: { _ in polls.increment() })
     try await transport.start()
     #expect(await waitUntil { polls.value >= 2 })
 
@@ -349,7 +349,7 @@ func withTimeout<T: Sendable>(
             arguments: [],
             currentDirectory: nil,
             environment: nil,
-            trackerDidPoll: { polls.increment() })
+            trackerDidPoll: { _ in polls.increment() })
         weakTransport.value = transport
         try await transport.start()
     }

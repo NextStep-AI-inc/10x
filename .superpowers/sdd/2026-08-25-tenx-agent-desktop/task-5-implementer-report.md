@@ -405,3 +405,60 @@ Status: DONE
 
 - No manual UI walkthrough was run because round 7 changes only process
   certification and shutdown sequencing; it changes no UI or user-facing copy.
+
+## Round 8 follow-up
+
+Status: DONE
+
+- `ProcessTreeTracker` now produces observation completeness and certified
+  termination from one bounded scan. `refresh` and `isTerminated` are wrappers
+  over that result instead of `isTerminated` starting a second refresh and
+  leader lookup.
+- Each `LineTransport.hasExited` poll performs exactly one certification scan:
+  a running Foundation process records the live tree, while an exited leader
+  asks the tracker for the single scan's termination result. A confirmed
+  graceful or TERM-phase exit completes shutdown immediately rather than
+  starting later signal phases that can no longer add evidence.
+- The existing process seam now supplies the tracker clock, and the existing
+  tracker-poll hook is forwarded through the internal RPC test initializer.
+  This permits a deterministic manager regression without wall-clock sleeps:
+  it kills the leader immediately after a complete anchored poll, advances the
+  tracker clock during dead snapshots, and verifies a later valid poll emits
+  the matching-generation exit and removes the handle.
+
+### Round 8 TDD evidence
+
+- With the old redundant `hasExited` refresh restored, the deterministic
+  manager regression failed in 3.435 seconds: no exit event arrived and the
+  old handle remained retained. The first scan consumed the sub-deadline and
+  the second entry invalidated its previously complete certificate.
+- With the single-observation implementation restored, the same regression
+  passed in 0.048 seconds. The matching handle generation was emitted, the
+  manager removed the handle, and confirmation remained valid on the later
+  shutdown poll.
+- The related certification, detached-grandchild, bounded-reader, and tracker
+  lifecycle selection passed: 7 tests in 2.728 seconds.
+
+### Round 8 verification
+
+- `swift test --package-path OmpKit`: 165 tests passed in 2.751 seconds.
+- `xcodebuild -project 10x.xcodeproj -scheme 10x -destination
+  'platform=macOS,arch=arm64' -derivedDataPath /tmp/tenx-round8-app test`:
+  174 tests passed in 4.320 seconds; `** TEST SUCCEEDED **`.
+- `xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release
+  -destination 'generic/platform=macOS' -derivedDataPath
+  /tmp/tenx-round8-release CODE_SIGNING_ALLOWED=NO build`: succeeded;
+  `lipo -archs` reported `x86_64 arm64`.
+- `ruby scripts/generate_xcodeproj.rb` completed with no generated project
+  diff. `git diff --check` completed without errors.
+
+The first full OmpKit run exposed interference from the regression's initial
+blocking `Thread.sleep` clock simulation: the unrelated one-second trailing
+frame test missed its deadline under parallel load while passing alone. The
+fixture now advances an injected monotonic tracker clock without blocking an
+executor thread; the final complete run passed.
+
+### Not verified
+
+- No manual UI walkthrough was run because round 8 changes only process-tree
+  observation and shutdown sequencing; it changes no UI or user-facing copy.

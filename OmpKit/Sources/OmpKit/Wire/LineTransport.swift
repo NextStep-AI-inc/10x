@@ -103,6 +103,23 @@ struct ProcessOperations: Sendable {
     let groupPIDs: @Sendable (pid_t) -> ProcessPIDList
     let signalProcess: @Sendable (pid_t, Int32) -> Void
     let signalGroup: @Sendable (pid_t, Int32) -> Void
+    let now: @Sendable () -> ContinuousClock.Instant
+
+    init(
+        snapshot: @escaping @Sendable (pid_t) -> ProcessSnapshot?,
+        childPIDs: @escaping @Sendable (pid_t) -> ProcessPIDList,
+        groupPIDs: @escaping @Sendable (pid_t) -> ProcessPIDList,
+        signalProcess: @escaping @Sendable (pid_t, Int32) -> Void,
+        signalGroup: @escaping @Sendable (pid_t, Int32) -> Void,
+        now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
+    ) {
+        self.snapshot = snapshot
+        self.childPIDs = childPIDs
+        self.groupPIDs = groupPIDs
+        self.signalProcess = signalProcess
+        self.signalGroup = signalGroup
+        self.now = now
+    }
 
     static let live = ProcessOperations(
         snapshot: { pid in
@@ -171,10 +188,16 @@ struct ProcessTreeTracker: Sendable {
 
     @discardableResult
     mutating func refresh(until deadline: ContinuousClock.Instant) -> Bool {
+        observe(until: deadline).isComplete
+    }
+
+    private mutating func observe(
+        until deadline: ContinuousClock.Instant
+    ) -> (isComplete: Bool, isTerminated: Bool) {
         var isComplete = true
-        guard ContinuousClock.now < deadline else {
+        guard operations.now() < deadline else {
             hasCompleteObservation = false
-            return false
+            return (false, false)
         }
         let liveLeader = exactSnapshot(for: leader)
         var sawLiveOriginalIdentity = liveLeader != nil
@@ -182,9 +205,9 @@ struct ProcessTreeTracker: Sendable {
         // Prune dead and reused identities. If the deadline interrupts this
         // pass, unchecked entries remain so termination cannot be confirmed.
         for identity in Array(descendants.values) {
-            guard ContinuousClock.now < deadline else {
+            guard operations.now() < deadline else {
                 invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
-                return false
+                return (false, false)
             }
             if operations.snapshot(identity.pid)?.identity == identity {
                 sawLiveOriginalIdentity = true
@@ -193,9 +216,9 @@ struct ProcessTreeTracker: Sendable {
             }
         }
 
-        guard ContinuousClock.now < deadline else {
+        guard operations.now() < deadline else {
             invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity)
-            return false
+            return (false, false)
         }
         var pendingParents: [pid_t] = []
         if liveLeader != nil { pendingParents.append(leader.pid) }
@@ -203,16 +226,16 @@ struct ProcessTreeTracker: Sendable {
         var visited = Set(pendingParents)
 
         while let parent = pendingParents.popLast() {
-            guard ContinuousClock.now < deadline else {
+            guard operations.now() < deadline else {
                 invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
-                return false
+                return (false, false)
             }
             let children = operations.childPIDs(parent)
             isComplete = isComplete && children.isComplete
             for pid in children.pids where visited.insert(pid).inserted {
-                guard ContinuousClock.now < deadline else {
+                guard operations.now() < deadline else {
                     invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
-                    return false
+                    return (false, false)
                 }
                 guard let child = operations.snapshot(pid), child.parentPID == parent else { continue }
                 sawLiveOriginalIdentity = true
@@ -229,16 +252,16 @@ struct ProcessTreeTracker: Sendable {
             processGroupID: processGroupID,
             deadline: deadline
         ) {
-            guard ContinuousClock.now < deadline else {
+            guard operations.now() < deadline else {
                 invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
-                return false
+                return (false, false)
             }
             let members = operations.groupPIDs(processGroupID)
             isComplete = isComplete && members.isComplete
             for pid in members.pids where pid != leader.pid {
-                guard ContinuousClock.now < deadline else {
+                guard operations.now() < deadline else {
                     invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
-                    return false
+                    return (false, false)
                 }
                 guard let member = operations.snapshot(pid),
                       member.processGroupID == processGroupID
@@ -252,13 +275,15 @@ struct ProcessTreeTracker: Sendable {
                 }
             }
         }
-        let completed = isComplete && ContinuousClock.now < deadline
+        let completed = isComplete && operations.now() < deadline
         if completed, sawLiveOriginalIdentity {
             hasCompleteObservation = true
         } else if !completed {
             invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
         }
-        return completed
+        return (
+            completed,
+            completed && hasCompleteObservation && liveLeader == nil && descendants.isEmpty)
     }
 
     @discardableResult
@@ -267,26 +292,26 @@ struct ProcessTreeTracker: Sendable {
         until deadline: ContinuousClock.Instant
     ) -> Bool {
         let isComplete = refresh(until: deadline)
-        guard ContinuousClock.now < deadline else { return false }
+        guard operations.now() < deadline else { return false }
 
         var didSignalGroup = false
         if let processGroupID,
            hasOriginalGroupAnchor(
                processGroupID: processGroupID,
                deadline: deadline) {
-            guard ContinuousClock.now < deadline else { return false }
+            guard operations.now() < deadline else { return false }
             operations.signalGroup(processGroupID, signal)
             didSignalGroup = true
         }
 
         let identities = [leader] + descendants.values
         for identity in identities {
-            guard ContinuousClock.now < deadline else { return false }
+            guard operations.now() < deadline else { return false }
             guard let current = exactSnapshot(for: identity) else {
                 if identity != leader { descendants.removeValue(forKey: identity.pid) }
                 continue
             }
-            guard ContinuousClock.now < deadline else { return false }
+            guard operations.now() < deadline else { return false }
             if !didSignalGroup || current.processGroupID != processGroupID {
                 operations.signalProcess(identity.pid, signal)
             }
@@ -295,12 +320,7 @@ struct ProcessTreeTracker: Sendable {
     }
 
     mutating func isTerminated(until deadline: ContinuousClock.Instant) -> Bool {
-        guard refresh(until: deadline) else { return false }
-        guard hasCompleteObservation else { return false }
-        guard ContinuousClock.now < deadline else { return false }
-        let liveLeader = exactSnapshot(for: leader)
-        guard ContinuousClock.now < deadline, liveLeader == nil else { return false }
-        return descendants.isEmpty
+        observe(until: deadline).isTerminated
     }
 
     private func exactSnapshot(for identity: ProcessIdentity) -> ProcessSnapshot? {
@@ -317,7 +337,7 @@ struct ProcessTreeTracker: Sendable {
         processGroupID: pid_t,
         deadline: ContinuousClock.Instant
     ) -> Bool {
-        guard ContinuousClock.now < deadline else { return false }
+        guard operations.now() < deadline else { return false }
         if let currentLeader = operations.snapshot(leader.pid) {
             // A different start time means the leader PID, and potentially its
             // numeric process-group ID, has been reused. Never group-signal it.
@@ -325,7 +345,7 @@ struct ProcessTreeTracker: Sendable {
             if currentLeader.processGroupID == processGroupID { return true }
         }
         for identity in descendants.values {
-            guard ContinuousClock.now < deadline else { return false }
+            guard operations.now() < deadline else { return false }
             if exactSnapshot(for: identity)?.processGroupID == processGroupID { return true }
         }
         return false
@@ -355,7 +375,7 @@ public actor LineTransport {
     private var stdoutDrainer: StdoutDrainer?
     private var descendantTrackerTask: Task<Void, Never>?
     private let processOperations: ProcessOperations
-    private let trackerDidPoll: @Sendable () -> Void
+    private let trackerDidPoll: @Sendable (ContinuousClock.Instant) -> Void
 
     /// Read from the process itself so a crash reports its real code, not just
     /// exits observed on the shutdown path.
@@ -397,7 +417,7 @@ public actor LineTransport {
         self.currentDirectory = currentDirectory
         self.environment = environment
         processOperations = .live
-        trackerDidPoll = {}
+        trackerDidPoll = { _ in }
         lineByteBudget = QueuedByteBudget(limit: Self.maxBufferedLineBytes)
         (lineStream, lineContinuation) = AsyncThrowingStream<ByteCounted<Data>, any Error>.makeStream(
             bufferingPolicy: .bufferingOldest(Self.maxBufferedLines))
@@ -411,7 +431,7 @@ public actor LineTransport {
         currentDirectory: URL?,
         environment: [String: String]?,
         processOperations: ProcessOperations = .live,
-        trackerDidPoll: @escaping @Sendable () -> Void
+        trackerDidPoll: @escaping @Sendable (ContinuousClock.Instant) -> Void
     ) {
         self.executable = executable
         self.arguments = arguments
@@ -549,10 +569,16 @@ public actor LineTransport {
         // Continue through group teardown so `finishStreams()` cannot block on
         // that inherited descriptor. Divide a short caller deadline between
         // graceful, TERM, and KILL phases instead of spending all of it here.
-        _ = await waitForExit(until: shutdownPhaseDeadline(deadline, phasesRemaining: 3))
+        if await waitForExit(until: shutdownPhaseDeadline(deadline, phasesRemaining: 3)) {
+            finishStreams(discardingPendingData: wasLeaderRunning)
+            return true
+        }
 
         processTreeTracker?.signal(SIGTERM, until: deadline)
-        _ = await waitForExit(until: shutdownPhaseDeadline(deadline, phasesRemaining: 2))
+        if await waitForExit(until: shutdownPhaseDeadline(deadline, phasesRemaining: 2)) {
+            finishStreams(discardingPendingData: wasLeaderRunning)
+            return true
+        }
         processTreeTracker?.signal(SIGKILL, until: deadline)
         let exited = await waitForExit(until: deadline)
         if exited { finishStreams(discardingPendingData: wasLeaderRunning) }
@@ -604,8 +630,10 @@ public actor LineTransport {
     }
 
     private func hasExited(until deadline: ContinuousClock.Instant) -> Bool {
-        processTreeTracker?.refresh(until: deadline)
-        guard !process.isRunning else { return false }
+        guard !process.isRunning else {
+            processTreeTracker?.refresh(until: deadline)
+            return false
+        }
         return processTreeTracker?.isTerminated(until: deadline) ?? true
     }
 
@@ -613,8 +641,9 @@ public actor LineTransport {
     private func recordDescendants(
         until deadline: ContinuousClock.Instant = ContinuousClock.now.advanced(by: .milliseconds(10))
     ) -> Bool {
-        trackerDidPoll()
-        return processTreeTracker?.refresh(until: deadline) ?? true
+        let completed = processTreeTracker?.refresh(until: deadline) ?? true
+        trackerDidPoll(deadline)
+        return completed
     }
 
     private func finishStreams(discardingPendingData: Bool) {

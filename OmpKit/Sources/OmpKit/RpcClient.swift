@@ -136,7 +136,8 @@ public actor RpcClient {
         configuration: RpcClientConfiguration,
         beforeHandlingLine: @escaping @Sendable (Data) async -> Void,
         maxBufferedEventBytes: Int = RpcClient.maxBufferedEventBytes,
-        processOperations: ProcessOperations = .live
+        processOperations: ProcessOperations = .live,
+        trackerDidPoll: @escaping @Sendable (ContinuousClock.Instant) -> Void = { _ in }
     ) {
         self.configuration = configuration
         self.beforeHandlingLine = beforeHandlingLine
@@ -147,7 +148,7 @@ public actor RpcClient {
             currentDirectory: configuration.cwd,
             environment: configuration.environment,
             processOperations: processOperations,
-            trackerDidPoll: {})
+            trackerDidPoll: trackerDidPoll)
         self.reassembler = ChunkReassembler()
         (eventStream, eventContinuation) = AsyncStream<ByteCounted<RpcFrame>>.makeStream(
             bufferingPolicy: .bufferingOldest(Self.maxBufferedEvents))

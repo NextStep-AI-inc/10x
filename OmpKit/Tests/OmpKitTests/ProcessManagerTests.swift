@@ -446,6 +446,39 @@ func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async thr
     #expect(await manager.handle(for: handle.sessionPath) == nil)
 }
 
+@Test func oneTerminationObservationLetsManagerReportDelayedNaturalExit() async throws {
+    let processes = DelayedDeadProcessTable(deadSnapshotClockStep: .milliseconds(300))
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var updated = configuration
+        updated.executable = "/usr/bin/env"
+        updated.extraArguments = [
+            "python3", fixtureURL("fake_server.py").path, "basic",
+        ]
+        updated.rawArgv = true
+        updated.cwd = nil
+        return RpcClient(
+            configuration: updated,
+            beforeHandlingLine: { _ in },
+            processOperations: processes.operations,
+            trackerDidPoll: { processes.didCompletePoll(until: $0) })
+    })
+    let exits = manager.unexpectedExits
+    let capturedExits = UnexpectedExitCapture()
+    let observer = Task {
+        for await exit in exits { await capturedExits.append(exit) }
+    }
+    defer { observer.cancel() }
+    let handle = try await manager.open(
+        sessionPath: "/tmp/single-termination-observation.jsonl",
+        cwd: "/tmp")
+    processes.armTermination()
+
+    #expect(await waitForClientExit(handle.client))
+    #expect(await waitForCapturedExit(capturedExits))
+    #expect(await capturedExits.first?.generation == handle.generation)
+    #expect(await manager.handle(for: handle.sessionPath) == nil)
+}
+
 private func waitForFixtureChild(heartbeat: URL) async -> pid_t? {
     let pidFile = URL(fileURLWithPath: heartbeat.path + ".pid")
     return await withTimeout(.seconds(2)) {
@@ -561,6 +594,74 @@ private actor UnexpectedExitCapture {
     func append(_ value: SessionProcessManager.UnexpectedExit) { values.append(value) }
     var count: Int { values.count }
     var first: SessionProcessManager.UnexpectedExit? { values.first }
+}
+
+private final class DelayedDeadProcessTable: @unchecked Sendable {
+    private let lock = NSLock()
+    private let deadSnapshotClockStep: Duration
+    private var leaderPID: pid_t?
+    private var isLeaderVisible = true
+    private var isTerminationArmed = false
+    private var remainingDelayedDeadSnapshots = 0
+    private var clockOffset = Duration.zero
+
+    init(deadSnapshotClockStep: Duration) {
+        self.deadSnapshotClockStep = deadSnapshotClockStep
+    }
+
+    func armTermination() {
+        lock.withLock { isTerminationArmed = true }
+    }
+
+    func didCompletePoll(until deadline: ContinuousClock.Instant) {
+        let pid: pid_t? = lock.withLock {
+            if isTerminationArmed {
+                isTerminationArmed = false
+                isLeaderVisible = false
+                return leaderPID
+            }
+            if !isLeaderVisible,
+               remainingDelayedDeadSnapshots == 0,
+               ContinuousClock.now.duration(to: deadline) > .seconds(1) {
+                remainingDelayedDeadSnapshots = 4
+            }
+            return nil
+        }
+        if let pid { kill(pid, SIGKILL) }
+    }
+
+    var operations: ProcessOperations {
+        return ProcessOperations(
+            snapshot: { [self, deadSnapshotClockStep] pid in
+                lock.withLock { () -> ProcessSnapshot? in
+                    if leaderPID == nil { leaderPID = pid }
+                    guard pid == leaderPID, isLeaderVisible else {
+                        if remainingDelayedDeadSnapshots > 0 {
+                            remainingDelayedDeadSnapshots -= 1
+                            clockOffset += deadSnapshotClockStep
+                        }
+                        return nil
+                    }
+                    return ProcessSnapshot(
+                        identity: .init(pid: pid, startSeconds: 1, startMicroseconds: 0),
+                        parentPID: 1,
+                        processGroupID: pid)
+                }
+            },
+            childPIDs: { _ in .init(pids: [], isComplete: true) },
+            groupPIDs: { [self] group in
+                lock.withLock {
+                    return .init(
+                        pids: isLeaderVisible && group == leaderPID ? [group] : [],
+                        isComplete: true)
+                }
+            },
+            signalProcess: { _, _ in },
+            signalGroup: { _, _ in },
+            now: { [self] in
+                ContinuousClock.now.advanced(by: lock.withLock { clockOffset })
+            })
+    }
 }
 
 private func waitForClientExit(_ client: RpcClient) async -> Bool {
