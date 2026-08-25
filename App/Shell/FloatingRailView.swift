@@ -23,7 +23,7 @@ struct FloatingRailView: View {
     }
 
     private var providers: [ProviderUsageProvider] {
-        model.providerModel?.railProviders ?? []
+        model.providerModel?.dockProviders ?? []
     }
 
     var body: some View {
