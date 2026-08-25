@@ -166,22 +166,39 @@ private func computerContractClient() -> RpcClient {
         parameters: .object(["type": .string("object")])
     )
     let tools = try JSONValue.decode(from: RpcCommand.setHostTools([definition]).encodedLine(id: "tools-1"))
-    #expect(tools["tools"]?.arrayValue?.first?["name"]?.stringValue == "agent_desktop")
+    #expect(tools == .object([
+        "id": .string("tools-1"),
+        "type": .string("set_host_tools"),
+        "tools": .array([.object([
+            "name": .string("agent_desktop"),
+            "description": .string("Launch a dedicated app window"),
+            "parameters": .object(["type": .string("object")]),
+        ])]),
+    ]))
 
+    let partialResult: JSONValue = .object(["content": .array([])])
     let partial = try JSONValue.decode(from: RpcCommand.hostToolUpdate(
-        id: "host-1", partialResult: .object(["content": .array([])])
+        id: "host-1", partialResult: partialResult
     ).encodedLine(id: "ignored"))
-    #expect(partial["type"]?.stringValue == "host_tool_update")
-    #expect(partial["id"]?.stringValue == "host-1")
+    #expect(partial == .object([
+        "id": .string("host-1"),
+        "type": .string("host_tool_update"),
+        "partialResult": partialResult,
+    ]))
 
+    let resultValue: JSONValue = .object([
+        "content": .array([.object(["type": .string("text"), "text": .string("done")])]),
+    ])
     let result = try JSONValue.decode(from: RpcCommand.hostToolResult(
-        id: "host-1", result: .object(["content": .array([.object(["type": .string("text"), "text": .string("done")])])]),
+        id: "host-1", result: resultValue,
         isError: false
     ).encodedLine(id: "ignored"))
-    #expect(result["type"]?.stringValue == "host_tool_result")
-    #expect(result["id"]?.stringValue == "host-1")
-    #expect(result["result"]?["content"]?.arrayValue?.first?["text"]?.stringValue == "done")
-    #expect(result["isError"]?.boolValue == false)
+    #expect(result == .object([
+        "id": .string("host-1"),
+        "type": .string("host_tool_result"),
+        "result": resultValue,
+        "isError": .bool(false),
+    ]))
 }
 
 @Test func computerForegroundHandoffResponseEchoesTheUIRequestID() throws {
@@ -220,8 +237,59 @@ private func computerContractClient() -> RpcClient {
     _ = try await legacy.start()
     let legacyState = try await legacy.send(.getState())
     #expect(ComputerUseRPCState(json: legacyState.data?["computerUse"]) == nil)
-    await #expect(throws: RpcClientError.self) {
+    do {
         _ = try await legacy.send(.setComputerUse(enabled: true, foregroundPolicy: .requireHandoff))
+        Issue.record("expected an unknown-command failure")
+    } catch let error as RpcClientError {
+        guard case .commandFailed(let command, let message, let code) = error else {
+            Issue.record("wrong legacy downgrade error: \(error)")
+            await legacy.shutdown()
+            return
+        }
+        #expect(command == "set_computer_use")
+        #expect(message == "Unknown command: set_computer_use")
+        #expect(code == nil)
+    } catch {
+        Issue.record("wrong legacy downgrade error: \(error)")
     }
     await legacy.shutdown()
+}
+
+@Test func hostToolFramesTraverseClientEvents() async throws {
+    let client = makeClient(mode: "host-tool-events")
+    let stream = client.events
+    let driver = Task {
+        _ = try? await client.start()
+        _ = try? await client.send(.getState())
+    }
+    defer { driver.cancel() }
+
+    let frames = await withTimeout(.seconds(1)) { () -> [RpcFrame] in
+        var frames: [RpcFrame] = []
+        for await frame in stream {
+            if case .hostToolCall = frame { frames.append(frame) }
+            if case .hostToolCancel = frame { frames.append(frame) }
+            if frames.count == 2 { break }
+        }
+        return frames
+    } ?? []
+
+    guard frames.count == 2,
+          case .hostToolCall(let call) = frames[0],
+          case .hostToolCancel(let cancelID, let targetID) = frames[1]
+    else {
+        Issue.record("Expected host-tool call and cancel frames")
+        await client.shutdown()
+        return
+    }
+    #expect(call.id == "host-1")
+    #expect(call.toolCallID == "tool-1")
+    #expect(call.name == "agent_desktop")
+    #expect(call.arguments == .object([
+        "action": .string("launch"),
+        "application": .string("TextEdit"),
+    ]))
+    #expect(cancelID == "cancel-1")
+    #expect(targetID == "host-1")
+    await client.shutdown()
 }

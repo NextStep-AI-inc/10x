@@ -107,9 +107,10 @@ public struct ComputerProbeResult: Sendable, Equatable {
 
 /// One outbound stdin frame.
 ///
-/// Commands carry a generated request id so responses can be correlated;
-/// `extension_ui_response` is the exception — its `id` echoes the UI request
-/// being answered, and it gets no response of its own.
+/// Request commands carry a generated id so responses can be correlated.
+/// Reply frames (`extension_ui_response`, `host_tool_update`, and
+/// `host_tool_result`) instead echo an existing UI or host-tool correlation id
+/// and receive no response of their own.
 public struct RpcCommand: Sendable, Equatable {
     public let type: String
     public let fields: [String: JSONValue]

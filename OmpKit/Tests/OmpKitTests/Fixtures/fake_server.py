@@ -5,6 +5,7 @@
   late-error— prompt acked ok, then error response with the same id
   silent    — ready, then never answers anything (timeout testing)
   noisy     — like basic, but emits unknown frames + setWidget before each response
+  host-tool-events — emits correlated host_tool_call and host_tool_cancel on get_state
 
 Pass --computer-contract to emulate the complete computer-use safety contract.
 """
@@ -139,6 +140,11 @@ for line in sys.stdin:
     elif ctype == "get_state":
         if mode == "noisy":
             emit({"type": "notice", "level": "info", "message": "before response", "source": "fake"})
+        if mode == "host-tool-events":
+            emit({"type": "host_tool_call", "id": "host-1", "toolCallId": "tool-1",
+                  "toolName": "agent_desktop",
+                  "arguments": {"action": "launch", "application": "TextEdit"}})
+            emit({"type": "host_tool_cancel", "id": "cancel-1", "targetId": "host-1"})
         if mode == "chunked":
             large_state = {**STATE, "padding": "x" * 1048576}
             payload = json.dumps(
