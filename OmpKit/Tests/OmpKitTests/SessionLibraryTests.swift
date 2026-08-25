@@ -64,6 +64,24 @@ private func makeTempRoot(_ label: String) -> URL {
     #expect(SessionStatusClassifier.classify(tail: tail) == .complete)
 }
 
+@Test func classifierCoversEveryContractStatusAndTrailingPartialLine() {
+    let cases: [(String, SessionStatus)] = [
+        (#"{"role":"assistant","stopReason":"error","content":"x"}"#, .error),
+        (#"{"role":"assistant","stopReason":"length","content":"x"}"#, .interrupted),
+        (#"{"role":"toolResult","content":"x"}"#, .interrupted),
+        (#"{"role":"custom","content":"x"}"#, .unknown),
+    ]
+    for (json, expected) in cases {
+        let message = try? JSONValue.decode(from: Data(json.utf8))
+        #expect(message.map { SessionStatusClassifier.classify(message: $0) } == expected)
+    }
+
+    let tail = Data((completeLast + "\n" + #"{"type":"message","message":{"role":"assistant""#).utf8)
+    #expect(SessionStatusClassifier.classify(tail: tail) == .complete)
+    let headerOnly = Data(#"{"type":"session","id":"x"}"#.utf8)
+    #expect(SessionStatusClassifier.classify(tail: headerOnly) == .unknown)
+}
+
 @Test func cacheInvalidatesOnTitleSlotRewrite() async throws {
     let root = makeTempRoot("cache")
     defer { try? FileManager.default.removeItem(at: root) }
@@ -119,6 +137,49 @@ private func makeTempRoot(_ label: String) -> URL {
         return false
     } ?? false
     #expect(fired)
+}
+
+@Test func watcherSignalsWhenAnExistingSessionIsAppended() async throws {
+    let root = makeTempRoot("append-watch")
+    let file = root.appendingPathComponent("-x/2026-01-01T00-00-00-000Z_n1.jsonl")
+    try writeSession(at: file, id: "n1", cwd: "/x", lastMessage: userLast)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let library = SessionLibrary(root: root)
+    _ = await library.listAll()
+    let stream = library.changes
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let handle = try? FileHandle(forWritingTo: file) else { return }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(("\n" + completeLast + "\n").utf8))
+        try? handle.close()
+    }
+    defer { writer.cancel() }
+
+    let fired = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(fired)
+}
+
+@Test func corruptFilesAreSkippedThenRescannedAfterChanging() async throws {
+    let root = makeTempRoot("negative-cache")
+    let bucket = root.appendingPathComponent("-x")
+    try FileManager.default.createDirectory(at: bucket, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let corrupt = bucket.appendingPathComponent("broken.jsonl")
+    try Data("not json\n".utf8).write(to: corrupt)
+    try Data("ignored\n".utf8).write(to: bucket.appendingPathComponent("x.jsonl.bak"))
+    try Data("ignored\n".utf8).write(to: bucket.appendingPathComponent("x.jsonl.gz"))
+
+    let library = SessionLibrary(root: root)
+    #expect(await library.listAll().isEmpty)
+    try await Task.sleep(for: .milliseconds(20))
+    try writeSession(at: corrupt, id: "repaired", cwd: "/x", lastMessage: completeLast)
+    let repaired = await library.listAll()
+    #expect(repaired.map(\.sessionId) == ["repaired"])
 }
 
 @Test func missingRootYieldsEmptyList() async {

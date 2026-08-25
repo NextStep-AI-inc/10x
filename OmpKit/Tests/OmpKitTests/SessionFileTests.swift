@@ -47,10 +47,59 @@ func fixtureSessionV3(title: String = "Fixture") -> Data {
 }
 
 @Test func emptySlotTitleClearsHeaderTitle() throws {
-    let withTitle = #"{"type":"session","version":3,"id":"x","timestamp":"t","cwd":"/c","title":"stale"}"#
+    let withTitle = #"{"type":"session","version":3,"id":"x","timestamp":"t","cwd":"/c","title":"stale","titleSource":"auto"}"#
     let data = Data((makeTitleSlotLine(title: "") + "\n" + withTitle + "\n").utf8)
     let parsed = try SessionFileParser.parse(data: data)
     #expect(parsed.header.title == nil)   // an empty slot deletes the header title
+    #expect(parsed.header.titleSource == nil)
+}
+
+@Test func v1CompactionIndexMigratesToSyntheticEntryId() throws {
+    let v1 = Data("""
+    {"type":"session","id":"old","timestamp":"t","cwd":"/x"}
+    {"type":"message","timestamp":"t1","message":{"role":"user","content":"a"}}
+    {"type":"message","timestamp":"t2","message":{"role":"assistant","content":"b"}}
+    {"type":"compaction","timestamp":"t3","summary":"summary","firstKeptEntryIndex":1}
+    """.utf8)
+    let parsed = try SessionFileParser.parse(data: v1)
+    guard case .compaction(_, _, let firstKeptEntryId) = parsed.entries[2] else {
+        Issue.record("expected compaction"); return
+    }
+    #expect(firstKeptEntryId == parsed.entries[0].base.id)
+}
+
+@Test func salvagesAHeaderCutMidLine() throws {
+    let history = String(repeating: #""/a/very/long/previous/session/file","#, count: 200)
+    let header = #"{"type":"session","id":"long","cwd":"/tmp/a\"b","timestamp":"t","version": 3,"previousSessionFiles":["#
+        + history
+    let (_, parsed) = try SessionFileParser.parseHeader(prefix: Data(header.utf8).prefix(4096))
+    #expect(parsed.id == "long")
+    #expect(parsed.cwd == #"/tmp/a"b"#)
+    #expect(parsed.version == 3)
+}
+
+@Test func truncatedHeaderWithoutAnIdIsRejected() {
+    let prefix = Data((#"{"type":"session","padding":""# + String(repeating: "x", count: 5000)).utf8)
+        .prefix(4096)
+    #expect(throws: SessionFileError.invalidHeader) {
+        _ = try SessionFileParser.parseHeader(prefix: prefix)
+    }
+}
+
+@Test func loneSurrogateDoesNotDropAnInteriorSessionEntry() throws {
+    let data = Data(#"""
+    {"type":"session","version":3,"id":"s","timestamp":"t","cwd":"/x"}
+    {"type":"message","id":"a","parentId":null,"timestamp":"t1","message":{"role":"user","content":"before"}}
+    {"type":"message","id":"b","parentId":"a","timestamp":"t2","message":{"role":"assistant","content":"bad \uD800 text"}}
+    {"type":"message","id":"c","parentId":"b","timestamp":"t3","message":{"role":"user","content":"after"}}
+    """#.utf8)
+    let parsed = try SessionFileParser.parse(data: data)
+    #expect(parsed.entries.count == 3)
+    #expect(SessionTree.activePath(of: parsed).map(\.base.id) == ["a", "b", "c"])
+    guard case .message(_, let message) = parsed.entries[1] else {
+        Issue.record("expected message"); return
+    }
+    #expect(message["content"]?.stringValue == "bad � text")
 }
 
 @Test func headerTitleSurvivesWhenNoSlotPresent() throws {

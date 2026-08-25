@@ -15,10 +15,16 @@ public actor SessionLibrary {
         let size: Int
     }
 
+    private enum CacheValue {
+        case metadata(SessionMetadata)
+        case missing
+    }
+
     private let root: URL
-    private var cache: [CacheKey: SessionMetadata?] = [:]
-    private var watchers: [DispatchSourceFileSystemObject] = []
+    private var cache: [CacheKey: CacheValue] = [:]
+    private var watchers: [String: DispatchSourceFileSystemObject] = [:]
     private var watching = false
+    private var debounceTask: Task<Void, Never>?
 
     private let changeStream: AsyncStream<Void>
     private let changeContinuation: AsyncStream<Void>.Continuation
@@ -40,7 +46,11 @@ public actor SessionLibrary {
             bufferingPolicy: .bufferingNewest(1))
     }
 
-    deinit { changeContinuation.finish() }
+    deinit {
+        debounceTask?.cancel()
+        for watcher in watchers.values { watcher.cancel() }
+        changeContinuation.finish()
+    }
 
     /// Signals that the session tree changed. Starts watching on first use.
     public nonisolated var changes: AsyncStream<Void> {
@@ -82,10 +92,19 @@ public actor SessionLibrary {
 
         let key = CacheKey(
             path: url.path, mtime: modified.timeIntervalSince1970, size: size)
-        if let cached = cache[key] { return cached }
+        if let cached = cache[key] {
+            switch cached {
+            case .metadata(let metadata): return metadata
+            case .missing: return nil
+            }
+        }
 
         let metadata = read(url, modified: modified, size: size)
-        cache[key] = metadata
+        cache = cache.filter { $0.key.path != url.path }
+        cache[key] = metadata.map(CacheValue.metadata) ?? .missing
+        if cache.count > 4096 {
+            cache.removeValue(forKey: cache.keys.first!)
+        }
         return metadata
     }
 
@@ -121,26 +140,57 @@ public actor SessionLibrary {
     private func startWatchingIfNeeded() {
         guard !watching else { return }
         watching = true
-        watch(root)
-        if let buckets = try? FileManager.default.contentsOfDirectory(
+        refreshWatchers()
+    }
+
+    private func refreshWatchers() {
+        let fileManager = FileManager.default
+        var desired: [URL] = []
+        if fileManager.fileExists(atPath: root.path) { desired.append(root) }
+        if let buckets = try? fileManager.contentsOfDirectory(
             at: root, includingPropertiesForKeys: [.isDirectoryKey], options: []) {
             for bucket in buckets where
                 (try? bucket.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-                watch(bucket)
+                desired.append(bucket)
+                if let files = try? fileManager.contentsOfDirectory(
+                    at: bucket, includingPropertiesForKeys: [.isRegularFileKey], options: []) {
+                    desired += files.filter { $0.pathExtension == "jsonl" }
+                }
             }
         }
+
+        let desiredPaths = Set(desired.map(\.path))
+        for path in watchers.keys where !desiredPaths.contains(path) {
+            watchers.removeValue(forKey: path)?.cancel()
+        }
+        for url in desired where watchers[url.path] == nil { watch(url) }
     }
 
-    private func watch(_ directory: URL) {
-        let descriptor = open(directory.path, O_EVTONLY)
+    private func watch(_ url: URL) {
+        let descriptor = open(url.path, O_EVTONLY)
         guard descriptor >= 0 else { return }
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor, eventMask: [.write, .rename, .delete],
             queue: DispatchQueue.global())
-        let continuation = changeContinuation
-        source.setEventHandler { continuation.yield(()) }
+        source.setEventHandler { [weak self] in
+            Task { await self?.handleWatchEvent() }
+        }
         source.setCancelHandler { close(descriptor) }
         source.resume()
-        watchers.append(source)
+        watchers[url.path] = source
+    }
+
+    private func handleWatchEvent() {
+        refreshWatchers()
+        debounceTask?.cancel()
+        debounceTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(100)) }
+            catch { return }
+            await self?.emitChange()
+        }
+    }
+
+    private func emitChange() {
+        changeContinuation.yield(())
     }
 }

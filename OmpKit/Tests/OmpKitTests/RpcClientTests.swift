@@ -2,12 +2,18 @@ import Testing
 import Foundation
 @testable import OmpKit
 
-func makeClient(mode: String) -> RpcClient {
+func makeClient(
+    mode: String,
+    startupTimeout: Duration = .seconds(30),
+    requestTimeout: Duration = .seconds(30)
+) -> RpcClient {
     var cfg = RpcClientConfiguration()
     cfg.executable = "/usr/bin/env"
     cfg.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
     cfg.rawArgv = true   // extraArguments become the full argv — no omp flags prepended
     cfg.noSession = true
+    cfg.startupTimeout = startupTimeout
+    cfg.requestTimeout = requestTimeout
     return RpcClient(configuration: cfg)
 }
 
@@ -86,7 +92,7 @@ func makeClient(mode: String) -> RpcClient {
     let c = makeClient(mode: "noisy")
     let stream = c.events
     let driver = Task {
-        try? await c.start()
+        _ = try? await c.start()
         _ = try? await c.send(.getState())
     }
     defer { driver.cancel() }
@@ -110,16 +116,19 @@ func makeClient(mode: String) -> RpcClient {
 }
 
 @Test func eofFailsPendingRequests() async throws {
-    let c = makeClient(mode: "silent")
+    let c = makeClient(mode: "eof-on-get-state")
     _ = try await c.start()
     let pending = Task { try await c.send(.getState(), timeout: .seconds(10)) }
-    try await Task.sleep(for: .milliseconds(100))
-    await c.shutdown()   // closes stdin → fake exits → EOF
     let result = await pending.result
     guard case .failure(let error) = result else {
         Issue.record("expected the pending request to fail on EOF"); return
     }
-    #expect(error is RpcClientError)
+    guard case .processExited(let code, let stderr) = error as? RpcClientError else {
+        Issue.record("wrong error: \(error)"); return
+    }
+    #expect(code == 5)
+    #expect(stderr.contains("eof-on-get-state"))
+    await c.shutdown()
 }
 
 @Test func sendBeforeStartThrows() async {
@@ -128,7 +137,7 @@ func makeClient(mode: String) -> RpcClient {
 }
 
 @Test func concurrentRequestsCorrelateByIdNotOrder() async throws {
-    let c = makeClient(mode: "basic")
+    let c = makeClient(mode: "reverse")
     _ = try await c.start()
     async let a: RpcResponse = c.send(.getState())
     async let b: RpcResponse = c.send(RpcCommand(type: "get_session_stats"))
@@ -137,6 +146,101 @@ func makeClient(mode: String) -> RpcClient {
     #expect(results[0].command == "get_state")
     #expect(results[1].command == "get_session_stats")
     #expect(results[2].command == "get_available_models")
+    await c.shutdown()
+}
+
+@Test func idlessErrorCorrelatesByUniqueCommand() async throws {
+    let c = makeClient(mode: "basic")
+    _ = try await c.start()
+    do {
+        _ = try await c.send(RpcCommand(type: "idless_error"))
+        Issue.record("expected command failure")
+    } catch let error as RpcClientError {
+        guard case .commandFailed(let command, let message, _) = error else {
+            Issue.record("wrong error: \(error)"); await c.shutdown(); return
+        }
+        #expect(command == "idless_error")
+        #expect(message == "idless failure")
+    }
+    await c.shutdown()
+}
+
+@Test func idlessParseErrorCorrelatesToSolePendingRequest() async throws {
+    let c = makeClient(mode: "parse-error")
+    _ = try await c.start()
+    do {
+        _ = try await c.send(.getState())
+        Issue.record("expected parse failure")
+    } catch let error as RpcClientError {
+        guard case .commandFailed(let command, _, _) = error else {
+            Issue.record("wrong error: \(error)"); await c.shutdown(); return
+        }
+        #expect(command == "parse")
+    }
+    await c.shutdown()
+}
+
+@Test func malformedStartupFrameFailsImmediatelyAndReapsChild() async {
+    let c = makeClient(mode: "malformed-startup", startupTimeout: .seconds(5))
+    let clock = ContinuousClock()
+    let started = clock.now
+    await #expect(throws: RpcClientError.self) { _ = try await c.start() }
+    #expect(clock.now - started < .seconds(2))
+    #expect(await c.exitCode != nil)
+}
+
+@Test func prematureChunkIsTerminal() async {
+    let c = makeClient(mode: "premature-chunk", startupTimeout: .seconds(5))
+    let clock = ContinuousClock()
+    let started = clock.now
+    await #expect(throws: RpcClientError.self) { _ = try await c.start() }
+    #expect(clock.now - started < .seconds(2))
+    #expect(await c.protocolErrors.first?.remoteError?.contains("before protocol negotiation") == true)
+}
+
+@Test func runtimeDecoderFailureFailsPendingWithoutTimeout() async throws {
+    let c = makeClient(mode: "malformed-runtime", requestTimeout: .seconds(5))
+    _ = try await c.start()
+    let clock = ContinuousClock()
+    let started = clock.now
+    do {
+        _ = try await c.send(.getState())
+        Issue.record("expected process exit")
+    } catch let error as RpcClientError {
+        guard case .processExited = error else {
+            Issue.record("wrong error: \(error)"); return
+        }
+    } catch {
+        Issue.record("wrong error: \(error)")
+    }
+    #expect(clock.now - started < .seconds(2))
+}
+
+@Test func failedNegotiationReapsChild() async {
+    let c = makeClient(mode: "negotiation-fails", requestTimeout: .seconds(2))
+    await #expect(throws: RpcClientError.self) { _ = try await c.start() }
+    #expect(await c.exitCode != nil)
+}
+
+@Test func mismatchedTransportLimitsStayOnProtocolV1() async throws {
+    let c = makeClient(mode: "wrong-limits")
+    _ = try await c.start()
+    #expect(await c.negotiatedProtocolVersion == 1)
+    let response = try await c.send(.getState())
+    #expect(response.success)
+    await c.shutdown()
+}
+
+@Test func cancelledRequestDoesNotHangOrLeakAContinuation() async throws {
+    let c = makeClient(mode: "silent", requestTimeout: .seconds(10))
+    _ = try await c.start()
+    let request = Task { try await c.send(.getState()) }
+    request.cancel()
+    let result = await withTimeout(.seconds(2)) { await request.result }
+    guard case .failure(let error)? = result else {
+        Issue.record("cancelled request did not finish"); await c.shutdown(); return
+    }
+    #expect(error is CancellationError)
     await c.shutdown()
 }
 

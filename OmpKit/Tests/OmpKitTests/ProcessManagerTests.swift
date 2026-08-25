@@ -2,6 +2,37 @@ import Testing
 import Foundation
 @testable import OmpKit
 
+private final class ConfigurationCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [RpcClientConfiguration] = []
+
+    func append(_ value: RpcClientConfiguration) {
+        lock.lock()
+        values.append(value)
+        lock.unlock()
+    }
+
+    func snapshot() -> [RpcClientConfiguration] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
+private func capturingManager(
+    _ capture: ConfigurationCapture, mode: String = "basic"
+) -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        capture.append(configuration)
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+}
+
 private func fakeManager(mode: String = "basic") -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var c = configuration
@@ -17,6 +48,45 @@ private func fakeManager(mode: String = "basic") -> SessionProcessManager {
     let first = try await manager.open(sessionPath: "/tmp/s.jsonl", cwd: "/tmp")
     let second = try await manager.open(sessionPath: "/tmp/s.jsonl", cwd: "/tmp")
     #expect(first.client === second.client)
+    await manager.closeAll()
+}
+
+@Test func concurrentOpenSharesOneChild() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture)
+    async let first = manager.open(sessionPath: "/tmp/shared.jsonl", cwd: "/tmp/project")
+    async let second = manager.open(sessionPath: "/tmp/shared.jsonl", cwd: "/tmp/project")
+    let handles = try await [first, second]
+    #expect(handles[0].client === handles[1].client)
+    #expect(capture.snapshot().count == 1)
+    await manager.closeAll()
+}
+
+@Test func managerForwardsResumePathAndWorkingDirectory() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture)
+    _ = try await manager.open(
+        sessionPath: "/tmp/session.jsonl", cwd: "/tmp/project")
+    let configuration = capture.snapshot().first
+    #expect(configuration?.resumeSessionPath == "/tmp/session.jsonl")
+    #expect(configuration?.cwd?.path == "/tmp/project")
+    #expect(configuration?.rawArgv == false)
+    #expect(configuration?.resolvedArguments == [
+        "--mode", "rpc", "--no-title", "-r", "/tmp/session.jsonl",
+    ])
+    await manager.closeAll()
+}
+
+@Test func openNewForwardsWorkingDirectoryAndUsesUniqueFallbackKeys() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture, mode: "no-session-file")
+    let first = try await manager.openNew(projectDirectory: "/tmp/project")
+    let second = try await manager.openNew(projectDirectory: "/tmp/project")
+    #expect(first.sessionPath != second.sessionPath)
+    let configurations = capture.snapshot()
+    #expect(configurations.count == 2)
+    #expect(configurations.allSatisfy { $0.cwd?.path == "/tmp/project" })
+    #expect(configurations.allSatisfy { $0.resumeSessionPath == nil })
     await manager.closeAll()
 }
 
@@ -37,21 +107,39 @@ private func fakeManager(mode: String = "basic") -> SessionProcessManager {
 }
 
 @Test func unexpectedExitIsSurfaced() async throws {
-    let manager = fakeManager()
+    let manager = fakeManager(mode: "crash-after-negotiation")
     let handle = try await manager.open(sessionPath: "/tmp/dies.jsonl", cwd: "/tmp")
     let stream = manager.unexpectedExits
 
-    let killer = Task {
-        try? await Task.sleep(for: .milliseconds(150))
-        await handle.client.shutdown()   // dies behind the manager's back
-    }
-    defer { killer.cancel() }
-
-    let path = await withTimeout(.seconds(5)) { () -> String? in
-        for await exit in stream { return exit.sessionPath }
+    let event = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
+        for await exit in stream { return exit }
         return nil
     } ?? nil
-    #expect(path == "/tmp/dies.jsonl")
+    #expect(event?.sessionPath == "/tmp/dies.jsonl")
+    #expect(event?.code == 7)
+    #expect(event?.stderrTail.contains("crash-after-negotiation") == true)
+    #expect(await manager.handle(for: handle.sessionPath) == nil)
+    await manager.closeAll()
+}
+
+@Test func managerDoesNotConsumeApplicationEvents() async throws {
+    let manager = fakeManager(mode: "burst")
+    let handle = try await manager.open(sessionPath: "/tmp/burst.jsonl", cwd: "/tmp")
+    let stream = handle.client.events
+    let driver = Task {
+        _ = try? await handle.client.send(.prompt(message: "go", streamingBehavior: nil))
+    }
+    defer { driver.cancel() }
+
+    let count = await withTimeout(.seconds(5)) { () -> Int in
+        var count = 0
+        for await frame in stream {
+            if case .event(let type, _) = frame, type == "message_update" { count += 1 }
+            if count == 100 { break }
+        }
+        return count
+    } ?? 0
+    #expect(count == 100)
     await manager.closeAll()
 }
 

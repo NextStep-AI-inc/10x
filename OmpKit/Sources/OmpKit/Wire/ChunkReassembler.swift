@@ -9,16 +9,24 @@ public enum ChunkError: Error, Equatable, Sendable {
     case interleaved
     case tooLarge(byteLength: Int, cap: Int)
     case invalidCount(Int)
+    case invalidIndex(Int)
+    case invalidByteLength(Int)
     case badBase64
     case lengthMismatch(declared: Int, actual: Int)
     case notUTF8
+    case invalidChunkId
+    /// One chunk's decoded payload exceeded the per-chunk transport limit.
+    case payloadTooLarge(bytes: Int, cap: Int)
+    /// Accumulated bytes passed the declared total before the sequence ended.
+    case overrun(received: Int, declared: Int)
 }
 
 /// Reassembles `rpc_chunk` sequences into whole frames (protocol v2).
 ///
 /// omp emits oversized stdout objects as an uninterrupted run of base64 chunks.
 /// The run must arrive contiguously and in order; any deviation is a protocol
-/// violation rather than something to repair, so every check resets to idle.
+/// violation rather than something to repair. The owning client treats every
+/// violation as terminal, so an open sequence stays poisoned after a failure.
 public struct ChunkReassembler: Sendable {
     private struct Sequence {
         let chunkId: String
@@ -28,11 +36,39 @@ public struct ChunkReassembler: Sendable {
         var buffer: Data
     }
 
+    /// omp's advertised transport limits.
+    public static let maxPhysicalFrameBytes = 1_048_576
+    public static let maxReassembledFrameBytes = 67_108_864
+    public static let chunkPayloadBytes = 262_144
+    /// ceil(maxReassembled / chunkPayload)
+    public static let maxChunkCount = 256
+
+    private let minimumReassembledBytes: Int
     private let maxReassembledBytes: Int
+    private let maxChunkPayloadBytes: Int
+    private let maxChunkCount: Int
     private var sequence: Sequence?
 
-    public init(maxReassembledBytes: Int = 67_108_864) {
+    /// Defaults mirror omp's transport limits. Tests override them to exercise
+    /// the same rules on small payloads.
+    public init(maxReassembledBytes: Int = ChunkReassembler.maxReassembledFrameBytes) {
+        self.init(
+            minimumReassembledBytes: ChunkReassembler.maxPhysicalFrameBytes,
+            maxReassembledBytes: maxReassembledBytes,
+            maxChunkPayloadBytes: ChunkReassembler.chunkPayloadBytes,
+            maxChunkCount: ChunkReassembler.maxChunkCount)
+    }
+
+    init(
+        minimumReassembledBytes: Int,
+        maxReassembledBytes: Int,
+        maxChunkPayloadBytes: Int,
+        maxChunkCount: Int
+    ) {
+        self.minimumReassembledBytes = minimumReassembledBytes
         self.maxReassembledBytes = maxReassembledBytes
+        self.maxChunkPayloadBytes = maxChunkPayloadBytes
+        self.maxChunkCount = maxChunkCount
     }
 
     public var isReassembling: Bool { sequence != nil }
@@ -40,30 +76,43 @@ public struct ChunkReassembler: Sendable {
     /// Feeds one chunk. Returns the completed payload on the final chunk of a
     /// sequence, `nil` while more are expected.
     public mutating func ingest(_ chunk: RpcChunk) throws -> Data? {
-        do {
-            return try ingestChecked(chunk)
-        } catch {
-            sequence = nil
-            throw error
-        }
+        try ingestChecked(chunk)
     }
 
     /// Must be called for every non-chunk frame: a sequence in flight may not be
     /// interrupted by other output.
     public mutating func noteNonChunkFrame() throws {
         guard sequence == nil else {
-            sequence = nil
             throw ChunkError.interleaved
         }
     }
 
     private mutating func ingestChecked(_ chunk: RpcChunk) throws -> Data? {
+        guard !chunk.chunkId.isEmpty, chunk.chunkId.utf16.count <= 128 else {
+            throw ChunkError.invalidChunkId
+        }
+        guard chunk.count >= 2, chunk.count <= maxChunkCount else {
+            throw ChunkError.invalidCount(chunk.count)
+        }
+        guard chunk.index >= 0, chunk.index < chunk.count else {
+            throw ChunkError.invalidIndex(chunk.index)
+        }
+        guard chunk.byteLength >= minimumReassembledBytes else {
+            throw ChunkError.invalidByteLength(chunk.byteLength)
+        }
+        guard chunk.byteLength <= maxReassembledBytes else {
+            throw ChunkError.tooLarge(byteLength: chunk.byteLength, cap: maxReassembledBytes)
+        }
+        guard !chunk.data.isEmpty,
+              let decoded = Data(base64Encoded: chunk.data),
+              decoded.base64EncodedString() == chunk.data
+        else { throw ChunkError.badBase64 }
+        guard decoded.count <= maxChunkPayloadBytes else {
+            throw ChunkError.payloadTooLarge(bytes: decoded.count, cap: maxChunkPayloadBytes)
+        }
+
         if sequence == nil {
             guard chunk.index == 0 else { throw ChunkError.invalidStart(index: chunk.index) }
-            guard chunk.count >= 1 else { throw ChunkError.invalidCount(chunk.count) }
-            guard chunk.byteLength >= 0, chunk.byteLength <= maxReassembledBytes else {
-                throw ChunkError.tooLarge(byteLength: chunk.byteLength, cap: maxReassembledBytes)
-            }
             sequence = Sequence(
                 chunkId: chunk.chunkId, count: chunk.count, byteLength: chunk.byteLength,
                 nextIndex: 0, buffer: Data())
@@ -82,9 +131,13 @@ public struct ChunkReassembler: Sendable {
         guard chunk.index == current.nextIndex else {
             throw ChunkError.outOfOrder(expected: current.nextIndex, got: chunk.index)
         }
-        guard let decoded = Data(base64Encoded: chunk.data) else { throw ChunkError.badBase64 }
-
         current.buffer.append(decoded)
+        // Check the running total, not just the final size: otherwise a lying
+        // sequence can buffer without bound before the last chunk arrives.
+        guard current.buffer.count <= current.byteLength else {
+            throw ChunkError.overrun(
+                received: current.buffer.count, declared: current.byteLength)
+        }
         current.nextIndex += 1
         sequence = current
 
@@ -94,10 +147,10 @@ public struct ChunkReassembler: Sendable {
             throw ChunkError.lengthMismatch(
                 declared: current.byteLength, actual: current.buffer.count)
         }
+        sequence = nil
         guard String(data: current.buffer, encoding: .utf8) != nil else {
             throw ChunkError.notUTF8
         }
-        sequence = nil
         return current.buffer
     }
 }

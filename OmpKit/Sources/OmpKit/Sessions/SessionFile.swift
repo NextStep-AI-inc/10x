@@ -79,7 +79,21 @@ public enum SessionFileParser {
                     parentId: object["parentId"]?.stringValue,
                     timestamp: object["timestamp"]?.stringValue ?? "")
             }
-            entries.append(entry(type: type, base: base, object: object, raw: .object(object)))
+            var parsedEntry = entry(type: type, base: base, object: object, raw: .object(object))
+            if needsSyntheticIds,
+               case .compaction(let compactionBase, let summary, _) = parsedEntry,
+               let sourceIndex = object["firstKeptEntryIndex"]?.intValue {
+                // v1 indices address the complete JSONL array, including the
+                // session header at index zero. Parsed entries omit that line.
+                let entryIndex = sourceIndex - 1
+                if entries.indices.contains(entryIndex) {
+                    parsedEntry = .compaction(
+                        base: compactionBase,
+                        summary: summary,
+                        firstKeptEntryId: entries[entryIndex].base.id)
+                }
+            }
+            entries.append(parsedEntry)
         }
 
         return ParsedSessionFile(
@@ -169,7 +183,10 @@ public enum SessionFileParser {
             timestamp: object["timestamp"]?.stringValue ?? "",
             version: object["version"]?.intValue,
             title: folded.title,
-            titleSource: folded.source ?? object["titleSource"]?.stringValue,
+            // A cleared title has no source; keeping the header's would describe
+            // a title that no longer exists.
+            titleSource: folded.title == nil
+                ? nil : (folded.source ?? object["titleSource"]?.stringValue),
             parentSession: object["parentSession"]?.stringValue)
     }
 
@@ -197,7 +214,8 @@ public enum SessionFileParser {
             timestamp: stringProperty("timestamp", in: text) ?? "",
             version: intProperty("version", in: text),
             title: folded.title,
-            titleSource: folded.source,
+            titleSource: folded.title == nil
+                ? nil : (folded.source ?? stringProperty("titleSource", in: text)),
             parentSession: stringProperty("parentSession", in: text))
     }
 
@@ -224,10 +242,12 @@ public enum SessionFileParser {
     }
 
     private static func intProperty(_ key: String, in text: String) -> Int? {
-        guard let range = text.range(of: "\"\(key)\":") ?? text.range(of: "\"\(key)\": ") else {
+        guard let range = text.range(of: "\"\(key)\":") else {
             return nil
         }
-        let digits = text[range.upperBound...].prefix { $0.isNumber }
+        let digits = text[range.upperBound...]
+            .drop(while: { $0.isWhitespace })
+            .prefix { $0.isNumber }
         return Int(digits)
     }
 
@@ -240,7 +260,7 @@ public enum SessionFileParser {
     }
 
     private static func decodeObject(_ line: Data) -> [String: JSONValue]? {
-        guard let value = try? JSONDecoder().decode(JSONValue.self, from: line) else { return nil }
+        guard let value = try? JSONValue.decode(from: line) else { return nil }
         return value.objectValue
     }
 }

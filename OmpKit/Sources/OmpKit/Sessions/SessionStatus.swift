@@ -46,7 +46,7 @@ enum SessionStatusClassifier {
         let lines = tail.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true)
         for line in lines.reversed() {
             guard line.first == UInt8(ascii: "{") else { continue }
-            guard let object = try? JSONDecoder().decode(JSONValue.self, from: Data(line)),
+            guard let object = try? JSONValue.decode(from: Data(line)),
                   object["type"]?.stringValue == "message",
                   let message = object["message"]
             else { continue }

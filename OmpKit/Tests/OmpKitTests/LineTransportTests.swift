@@ -82,19 +82,89 @@ func withTimeout<T: Sendable>(
 @Test func exitStreamFiresWhenProcessEnds() async throws {
     let t = makeFakeTransport(mode: "basic")
     try await t.start()
-    let exited = await withTimeout(.seconds(10)) {
-        async let code = { () -> Int32? in
+    let exited = await withTimeout(.seconds(10)) { () -> Int32 in
+        async let code = { () -> Int32 in
             for await c in t.onExit { return c }
-            return nil
+            return Int32.min
         }()
         await t.shutdown()
         return await code
     }
-    #expect(exited != nil)
+    #expect(exited == 0)
 }
 
 @Test func spawnFailureIsReported() async {
     let t = LineTransport(executable: "/nonexistent/binary/xyz", arguments: [],
                           currentDirectory: nil, environment: nil)
     await #expect(throws: (any Error).self) { try await t.start() }
+}
+
+@Test func lineBufferReassemblesSplitReadsAndStripsCRLF() {
+    let buffer = LineBuffer()
+    #expect(buffer.append(Data(#"{"a":"hel"# .utf8), maxLineBytes: 100).isEmpty)
+    let completed = buffer.append(
+        Data("lo\"}\r\n\n{\"b\":2}\r\n".utf8), maxLineBytes: 100)
+    #expect(completed.map { String(decoding: $0, as: UTF8.self) } == [
+        #"{"a":"hello"}"#, #"{"b":2}"#,
+    ])
+}
+
+@Test func lineBufferDropsOneOverflowingLineThenResynchronizes() {
+    let buffer = LineBuffer()
+    #expect(buffer.append(Data(repeating: UInt8(ascii: "x"), count: 9), maxLineBytes: 8).isEmpty)
+    let completed = buffer.append(Data("tail\n{\"ok\":true}\n".utf8), maxLineBytes: 8)
+    #expect(completed.map { String(decoding: $0, as: UTF8.self) } == [#"{"ok":true}"#])
+}
+
+@Test func shutdownUnblocksAFullStdinPipe() async throws {
+    let transport = LineTransport(
+        executable: "/bin/sleep", arguments: ["60"],
+        currentDirectory: nil, environment: nil)
+    try await transport.start()
+    let writer = Task { try await transport.write(Data(repeating: 0x61, count: 1_048_576)) }
+    try await Task.sleep(for: .milliseconds(100))
+    let clock = ContinuousClock()
+    let started = clock.now
+    await transport.shutdown()
+    #expect(clock.now - started < .seconds(3))
+    _ = await writer.result
+}
+
+@Test func shutdownKillsGrandchildrenAfterTheLeaderExitsOnEOF() async throws {
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("ompkit-heartbeat-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let transport = LineTransport(
+        executable: "/usr/bin/env",
+        arguments: ["python3", fixtureURL("fake_server.py").path, "grandchild", root.path],
+        currentDirectory: nil, environment: nil)
+    try await transport.start()
+
+    let before = await withTimeout(.seconds(2)) { () -> Int in
+        while !Task.isCancelled {
+            let count = (try? Data(contentsOf: root))?.count ?? 0
+            if count > 0 { return count }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return 0
+    } ?? 0
+    #expect(before > 0)
+    await transport.shutdown()
+    try await Task.sleep(for: .milliseconds(300))
+    let after = (try? Data(contentsOf: root))?.count ?? 0
+    try await Task.sleep(for: .milliseconds(300))
+    let settled = (try? Data(contentsOf: root))?.count ?? 0
+    #expect(after == settled)
+}
+
+@Test func drainsTrailingFramesWhenChildExits() async throws {
+    let transport = makeFakeTransport(mode: "burst-exit")
+    try await transport.start()
+    let lines = await withTimeout(.seconds(5)) { () -> [Data] in
+        var lines: [Data] = []
+        for await line in transport.lines { lines.append(line) }
+        return lines
+    } ?? []
+    #expect(lines.count == 201)  // ready + 200 notices
+    #expect(await transport.exitStatus == 0)
 }

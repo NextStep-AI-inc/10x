@@ -58,7 +58,13 @@ public actor RpcClient {
     private let configuration: RpcClientConfiguration
     private let transport: LineTransport
 
-    private var pending: [String: CheckedContinuation<RpcResponse, any Error>] = [:]
+    private struct PendingRequest {
+        let command: String
+        let continuation: CheckedContinuation<RpcResponse, any Error>
+        var timeoutTask: Task<Void, Never>?
+    }
+
+    private var pending: [String: PendingRequest] = [:]
     private var nextRequestNumber = 1
     private var reassembler: ChunkReassembler
     private var readerTask: Task<Void, Never>?
@@ -67,10 +73,17 @@ public actor RpcClient {
 
     private let eventStream: AsyncStream<RpcFrame>
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
+    /// Separate from `events` so observers watching for the child's death do not
+    /// consume frames the UI needs — an AsyncStream has a single consumer.
+    private let terminationStream: AsyncStream<Void>
+    private let terminationContinuation: AsyncStream<Void>.Continuation
     private var readyContinuation: CheckedContinuation<ReadyFrame, any Error>?
+    private var readyTimeoutTask: Task<Void, Never>?
     /// The ready frame can arrive before `start()` registers its continuation,
     /// so it is held here and handed to whoever asks next.
     private var receivedReady: ReadyFrame?
+    private var protocolV2Enabled = false
+    private var streamsFinished = false
 
     public private(set) var negotiatedProtocolVersion = 1
     public private(set) var protocolErrors: [RpcProtocolError] = []
@@ -86,11 +99,19 @@ public actor RpcClient {
         self.reassembler = ChunkReassembler()
         (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream(
             bufferingPolicy: .unbounded)
+        (terminationStream, terminationContinuation) = AsyncStream<Void>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
     }
 
     /// Every frame that is not a command response: session events, extension UI
     /// requests, notices, and anything a future omp introduces.
+    ///
+    /// Single-consumer, like any AsyncStream — one owner should iterate it.
     public nonisolated var events: AsyncStream<RpcFrame> { eventStream }
+
+    /// Finishes when the child process is gone, for whatever reason. Watch this
+    /// rather than `events` to observe termination without stealing frames.
+    public nonisolated var termination: AsyncStream<Void> { terminationStream }
 
     /// Spawns the child, waits for its ready frame, and negotiates protocol v2
     /// when the server advertises it.
@@ -99,35 +120,36 @@ public actor RpcClient {
         guard !started else { throw RpcClientError.startupFailed("already started") }
         started = true
 
+        do {
+            return try await performStart()
+        } catch {
+            // Never leave a spawned child behind on a failed startup.
+            await shutdown()
+            throw error
+        }
+    }
+
+    private func performStart() async throws -> ReadyFrame {
         try await transport.start()
         startReader()
 
-        let ready = try await withThrowingTaskGroup(of: ReadyFrame.self) { group in
-            group.addTask { [self] in
-                try await withCheckedThrowingContinuation { continuation in
-                    Task { await self.setReadyContinuation(continuation) }
-                }
-            }
-            group.addTask { [timeout = configuration.startupTimeout] in
-                try await Task.sleep(for: timeout)
-                throw RpcClientError.timeout(command: "ready")
-            }
-            do {
-                let first = try await group.next()!
-                group.cancelAll()
-                return first
-            } catch {
-                await self.failReady(with: error)
-                group.cancelAll()
-                throw error
-            }
-        }
+        let ready = try await waitForReady()
 
-        if ready.supportedProtocolVersions?.contains(2) == true {
+        // Only negotiate v2 when the server's transport limits match the ones
+        // this client enforces; a server with different bounds would produce
+        // sequences the reassembler is not configured for, so v1 is safer.
+        let limitsMatch = ready.maxFrameBytes == ChunkReassembler.maxPhysicalFrameBytes
+            && ready.maxReassembledFrameBytes == ChunkReassembler.maxReassembledFrameBytes
+        if ready.supportedProtocolVersions?.contains(2) == true, limitsMatch {
+            // The negotiation response itself may be chunked. Permit chunks
+            // only after the peer advertised v2 with the exact shared bounds.
+            protocolV2Enabled = true
             let response = try await send(.negotiateProtocol(version: 2))
-            if let version = response.data?["protocolVersion"]?.intValue {
-                negotiatedProtocolVersion = version
+            guard let version = response.data?["protocolVersion"]?.intValue, version == 2 else {
+                throw RpcClientError.startupFailed(
+                    "server accepted negotiate_protocol without confirming v2")
             }
+            negotiatedProtocolVersion = version
         }
         return ready
     }
@@ -140,28 +162,31 @@ public actor RpcClient {
         nextRequestNumber += 1
         let line = try command.encodedLine(id: id)
 
-        return try await withThrowingTaskGroup(of: RpcResponse.self) { group in
-            group.addTask { [self] in
-                try await withCheckedThrowingContinuation { continuation in
-                    Task { await self.register(id: id, continuation: continuation, line: line) }
+        let requestTimeout = timeout ?? configuration.requestTimeout
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                pending[id] = PendingRequest(
+                    command: command.type,
+                    continuation: continuation,
+                    timeoutTask: nil)
+                let timeoutTask = Task { [weak self] in
+                    do { try await Task.sleep(for: requestTimeout) }
+                    catch { return }
+                    await self?.failPending(
+                        id: id,
+                        with: RpcClientError.timeout(command: command.type))
+                }
+                pending[id]?.timeoutTask = timeoutTask
+                Task { [weak self] in
+                    await self?.write(line, for: id)
                 }
             }
-            group.addTask { [timeout = timeout ?? configuration.requestTimeout] in
-                try await Task.sleep(for: timeout)
-                throw RpcClientError.timeout(command: command.type)
-            }
-            do {
-                let first = try await group.next()!
-                group.cancelAll()
-                return first
-            } catch {
-                // Resume the waiting continuation with the same error rather than
-                // dropping it: an unresumed continuation would hang the group,
-                // which awaits its children as the scope exits.
-                await self.failPending(id: id, with: error)
-                group.cancelAll()
-                throw error
-            }
+        } onCancel: {
+            Task { await self.failPending(id: id, with: CancellationError()) }
         }
     }
 
@@ -173,16 +198,46 @@ public actor RpcClient {
 
     public func stderrSnapshot() async -> String { await transport.stderrSnapshot() }
 
+    /// The child's exit code once it has exited, nil while it is running.
+    public var exitCode: Int32? {
+        get async { await transport.exitStatus }
+    }
+
     public func shutdown() async {
-        guard !terminated else { return }
-        terminated = true
+        if !terminated {
+            terminated = true
+            failAllPending(
+                exitCode: await transport.exitStatus,
+                stderrTail: await transport.stderrSnapshot())
+        }
         await transport.shutdown()
         readerTask?.cancel()
         readerTask = nil
+        finishStreams()
+    }
+
+    /// A corrupted frame stream cannot be trusted for anything that follows, so
+    /// the session is torn down rather than silently continuing with a partial
+    /// transcript.
+    private func poison(reason: String) async {
+        record(RpcProtocolError(command: nil, requestId: nil, remoteError: reason))
+        guard !terminated else { return }
+        terminated = true
         failAllPending(
             exitCode: await transport.exitStatus,
             stderrTail: await transport.stderrSnapshot())
+        await transport.shutdown()
+        readerTask?.cancel()
+        readerTask = nil
+        finishStreams()
+    }
+
+    private func finishStreams() {
+        guard !streamsFinished else { return }
+        streamsFinished = true
         eventContinuation.finish()
+        terminationContinuation.yield(())
+        terminationContinuation.finish()
     }
 
     // MARK: - Reader
@@ -190,33 +245,33 @@ public actor RpcClient {
     private func startReader() {
         readerTask = Task { [weak self] in
             guard let self else { return }
-            for await line in await self.transport.lines {
+            for await line in self.transport.lines {
                 await self.handle(line: line)
             }
             await self.handleStreamEnd()
         }
     }
 
-    private func handle(line: Data) {
+    private func handle(line: Data) async {
         let frame: RpcFrame
         do {
             frame = try RpcFrame.decode(line: line)
         } catch {
-            // A malformed line is recoverable per the protocol: record and move on.
-            record(RpcProtocolError(
-                command: nil, requestId: nil,
-                remoteError: "undecodable frame: \(error)"))
+            await poison(reason: "undecodable frame: \(error)")
             return
         }
 
         if case .chunk(let chunk) = frame {
+            guard protocolV2Enabled else {
+                await poison(reason: "chunk received before protocol negotiation")
+                return
+            }
             do {
                 if let payload = try reassembler.ingest(chunk) {
-                    handle(line: payload)
+                    await handle(line: payload)
                 }
             } catch {
-                record(RpcProtocolError(
-                    command: nil, requestId: nil, remoteError: "chunk violation: \(error)"))
+                await poison(reason: "chunk violation: \(error)")
             }
             return
         }
@@ -224,13 +279,15 @@ public actor RpcClient {
         do {
             try reassembler.noteNonChunkFrame()
         } catch {
-            record(RpcProtocolError(
-                command: nil, requestId: nil, remoteError: "chunk sequence interrupted"))
+            await poison(reason: "chunk sequence interrupted")
+            return
         }
 
         switch frame {
         case .ready(let ready):
             if let readyContinuation {
+                readyTimeoutTask?.cancel()
+                readyTimeoutTask = nil
                 readyContinuation.resume(returning: ready)
                 self.readyContinuation = nil
             } else {
@@ -247,9 +304,24 @@ public actor RpcClient {
     }
 
     private func deliver(_ response: RpcResponse) {
-        guard let id = response.id, let continuation = pending.removeValue(forKey: id) else {
-            // No one is waiting: a late failure for an already-acked async
-            // command, or an unknown-command reply with no id.
+        var request = response.id.flatMap { pending.removeValue(forKey: $0) }
+
+        // omp answers an unrecognized command with `id: undefined`, so an
+        // id-less failure still belongs to a waiter — match it by command name
+        // rather than leaving the caller to time out.
+        if request == nil, response.id == nil, !response.success {
+            let matching = pending.filter { $0.value.command == response.command }
+            if matching.count == 1, let key = matching.first?.key {
+                request = pending.removeValue(forKey: key)
+            } else if response.command == "parse", pending.count == 1,
+                      let key = pending.first?.key {
+                request = pending.removeValue(forKey: key)
+            }
+        }
+
+        guard let request else {
+            // Nobody is waiting: typically a late failure for a prompt that was
+            // already acknowledged.
             if !response.success {
                 record(RpcProtocolError(
                     command: response.command, requestId: response.id,
@@ -257,10 +329,12 @@ public actor RpcClient {
             }
             return
         }
+        request.timeoutTask?.cancel()
+
         if response.success {
-            continuation.resume(returning: response)
+            request.continuation.resume(returning: response)
         } else {
-            continuation.resume(throwing: RpcClientError.commandFailed(
+            request.continuation.resume(throwing: RpcClientError.commandFailed(
                 command: response.command,
                 error: response.error ?? "unknown error",
                 code: response.code))
@@ -269,19 +343,24 @@ public actor RpcClient {
 
     private func handleStreamEnd() async {
         guard !terminated else { return }
+        terminated = true
         failAllPending(
             exitCode: await transport.exitStatus,
             stderrTail: await transport.stderrSnapshot())
-        eventContinuation.finish()
+        finishStreams()
     }
 
     private func failAllPending(exitCode: Int32?, stderrTail: String) {
-        for (_, continuation) in pending {
-            continuation.resume(throwing: RpcClientError.processExited(
+        let outstanding = pending
+        pending.removeAll()
+        for (_, request) in outstanding {
+            request.timeoutTask?.cancel()
+            request.continuation.resume(throwing: RpcClientError.processExited(
                 code: exitCode, stderrTail: stderrTail))
         }
-        pending.removeAll()
         if let readyContinuation {
+            readyTimeoutTask?.cancel()
+            readyTimeoutTask = nil
             readyContinuation.resume(throwing: RpcClientError.processExited(
                 code: exitCode, stderrTail: stderrTail))
             self.readyContinuation = nil
@@ -297,41 +376,54 @@ public actor RpcClient {
 
     // MARK: - Continuation plumbing
 
-    private func setReadyContinuation(_ continuation: CheckedContinuation<ReadyFrame, any Error>) {
-        if let receivedReady {
-            self.receivedReady = nil
-            continuation.resume(returning: receivedReady)
-            return
+    private func waitForReady() async throws -> ReadyFrame {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                if let receivedReady {
+                    self.receivedReady = nil
+                    continuation.resume(returning: receivedReady)
+                    return
+                }
+                guard !terminated else {
+                    continuation.resume(throwing: RpcClientError.processExited(
+                        code: nil, stderrTail: ""))
+                    return
+                }
+                readyContinuation = continuation
+                readyTimeoutTask = Task { [weak self, timeout = configuration.startupTimeout] in
+                    do { try await Task.sleep(for: timeout) }
+                    catch { return }
+                    await self?.failReady(with: RpcClientError.timeout(command: "ready"))
+                }
+            }
+        } onCancel: {
+            Task { await self.failReady(with: CancellationError()) }
         }
-        guard !terminated else {
-            continuation.resume(throwing: RpcClientError.processExited(
-                code: nil, stderrTail: ""))
-            return
-        }
-        readyContinuation = continuation
     }
 
-    private func register(
-        id: String,
-        continuation: CheckedContinuation<RpcResponse, any Error>,
-        line: Data
-    ) async {
-        pending[id] = continuation
+    private func write(_ line: Data, for id: String) async {
         do {
             try await transport.write(line)
         } catch {
-            pending.removeValue(forKey: id)
-            continuation.resume(throwing: RpcClientError.processExited(
+            failPending(id: id, with: RpcClientError.processExited(
                 code: await transport.exitStatus,
                 stderrTail: await transport.stderrSnapshot()))
         }
     }
 
     private func failPending(id: String, with error: any Error) {
-        pending.removeValue(forKey: id)?.resume(throwing: error)
+        guard let request = pending.removeValue(forKey: id) else { return }
+        request.timeoutTask?.cancel()
+        request.continuation.resume(throwing: error)
     }
 
     private func failReady(with error: any Error) {
+        readyTimeoutTask?.cancel()
+        readyTimeoutTask = nil
         readyContinuation?.resume(throwing: error)
         readyContinuation = nil
     }

@@ -134,7 +134,7 @@ public enum RpcFrame: Sendable, Equatable {
     case event(type: String, payload: JSONValue)
 
     public static func decode(line: Data) throws -> RpcFrame {
-        let value = try JSONDecoder().decode(JSONValue.self, from: line)
+        let value = try JSONValue.decode(from: line)
         guard case .object(let object) = value else { throw RpcFrameError.notAnObject }
         guard let type = object["type"]?.stringValue else { throw RpcFrameError.missingType }
 

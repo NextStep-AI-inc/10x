@@ -15,6 +15,31 @@ public enum JSONValue: Sendable, Equatable, Codable {
     case array([JSONValue])
     case object([String: JSONValue])
 
+    /// Foundation rejects lone UTF-16 surrogate escapes even though modern
+    /// JavaScript producers preserve them in otherwise valid JSON. Replace
+    /// only unpaired escapes with U+FFFD, while keeping valid pairs and literal
+    /// `\\uXXXX` text intact. Invalid UTF-8 bytes follow the reference client
+    /// and are decoded as replacement characters before the final attempt.
+    static func decode(from data: Data) throws -> JSONValue {
+        let lossyUTF8 = Data(String(decoding: data, as: UTF8.self).utf8)
+        let candidates = [
+            data,
+            replacingLoneSurrogates(in: data),
+            replacingLoneSurrogates(in: lossyUTF8),
+        ]
+        var firstError: (any Error)?
+        var previous: Data?
+        for candidate in candidates where candidate != previous {
+            do { return try JSONDecoder().decode(JSONValue.self, from: candidate) }
+            catch {
+                if firstError == nil { firstError = error }
+            }
+            previous = candidate
+        }
+        throw firstError ?? DecodingError.dataCorrupted(
+            .init(codingPath: [], debugDescription: "Invalid JSON"))
+    }
+
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
         if container.decodeNil() {
@@ -99,4 +124,63 @@ public enum JSONValue: Sendable, Equatable, Codable {
         guard case .object(let o) = self else { return nil }
         return o[key]
     }
+}
+
+private func replacingLoneSurrogates(in data: Data) -> Data {
+    let bytes = Array(data)
+    let replacement: [UInt8] = [0x5C, 0x75, 0x46, 0x46, 0x46, 0x44] // \\uFFFD
+    var output: [UInt8] = []
+    output.reserveCapacity(bytes.count)
+    var index = 0
+    var precedingBackslashes = 0
+
+    while index < bytes.count {
+        guard bytes[index] == 0x5C else {
+            output.append(bytes[index])
+            precedingBackslashes = 0
+            index += 1
+            continue
+        }
+        guard precedingBackslashes.isMultiple(of: 2),
+              let codeUnit = unicodeEscape(in: bytes, at: index)
+        else {
+            output.append(bytes[index])
+            precedingBackslashes += 1
+            index += 1
+            continue
+        }
+
+        if (0xD800...0xDBFF).contains(codeUnit),
+           let low = unicodeEscape(in: bytes, at: index + 6),
+           (0xDC00...0xDFFF).contains(low) {
+            output.append(contentsOf: bytes[index..<(index + 12)])
+            index += 12
+        } else if (0xD800...0xDFFF).contains(codeUnit) {
+            output.append(contentsOf: replacement)
+            index += 6
+        } else {
+            output.append(contentsOf: bytes[index..<(index + 6)])
+            index += 6
+        }
+        precedingBackslashes = 0
+    }
+    return Data(output)
+}
+
+private func unicodeEscape(in bytes: [UInt8], at index: Int) -> UInt16? {
+    guard index >= 0, index + 5 < bytes.count,
+          bytes[index] == 0x5C, bytes[index + 1] == 0x75
+    else { return nil }
+    var value: UInt16 = 0
+    for byte in bytes[(index + 2)...(index + 5)] {
+        let nibble: UInt16
+        switch byte {
+        case 0x30...0x39: nibble = UInt16(byte - 0x30)
+        case 0x41...0x46: nibble = UInt16(byte - 0x41 + 10)
+        case 0x61...0x66: nibble = UInt16(byte - 0x61 + 10)
+        default: return nil
+        }
+        value = value * 16 + nibble
+    }
+    return value
 }

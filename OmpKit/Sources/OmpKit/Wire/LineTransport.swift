@@ -24,7 +24,19 @@ public actor LineTransport {
 
     private var started = false
     private var stdinClosed = false
-    private(set) public var exitStatus: Int32?
+    private var processGroupID: pid_t?
+    private var stdoutDrainer: StdoutDrainer?
+
+    /// Read from the process itself so a crash reports its real code, not just
+    /// exits observed on the shutdown path.
+    public var exitStatus: Int32? {
+        guard started, !process.isRunning else { return nil }
+        return process.terminationStatus
+    }
+
+    /// stdin writes block when the child stops draining the pipe, so they run
+    /// off the actor to avoid wedging every other call.
+    private let writeQueue = DispatchQueue(label: "sh.omp.ompkit.stdin")
 
     private let lineStream: AsyncStream<Data>
     private let lineContinuation: AsyncStream<Data>.Continuation
@@ -73,24 +85,26 @@ public actor LineTransport {
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        _ = fcntl(stdinPipe.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
         if let currentDirectory { process.currentDirectoryURL = currentDirectory }
         if let environment {
             process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
         }
 
-        let buffer = self.buffer
         let lineContinuation = self.lineContinuation
-        let maxLineBytes = Self.maxLineBytes
+        let drainer = StdoutDrainer(
+            handle: stdoutPipe.fileHandleForReading,
+            buffer: buffer,
+            continuation: lineContinuation,
+            maxLineBytes: Self.maxLineBytes)
+        stdoutDrainer = drainer
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             if data.isEmpty {
-                handle.readabilityHandler = nil
-                lineContinuation.finish()
+                drainer.finish()
                 return
             }
-            for line in buffer.append(data, maxLineBytes: maxLineBytes) {
-                lineContinuation.yield(line)
-            }
+            drainer.ingest(data)
         }
 
         let stderrLog = self.stderrLog
@@ -107,7 +121,9 @@ public actor LineTransport {
         process.terminationHandler = { proc in
             exitContinuation.yield(proc.terminationStatus)
             exitContinuation.finish()
-            lineContinuation.finish()
+            // The child's final frames may still be sitting in the pipe when it
+            // exits; drain them before ending the stream or they are lost.
+            drainer.finish()
         }
 
         do {
@@ -116,15 +132,25 @@ public actor LineTransport {
             throw TransportError.spawnFailed(error.localizedDescription)
         }
         started = true
+        let pid = process.processIdentifier
+        if setpgid(pid, pid) == 0 || getpgid(pid) == pid {
+            processGroupID = pid
+        }
     }
 
-    public func write(_ line: Data) throws {
+    public func write(_ line: Data) async throws {
         guard started else { throw TransportError.notStarted }
         guard !stdinClosed, process.isRunning else { throw TransportError.closed }
-        do {
-            try stdinPipe.fileHandleForWriting.write(contentsOf: line)
-        } catch {
-            throw TransportError.closed
+        let handle = stdinPipe.fileHandleForWriting
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+            writeQueue.async {
+                do {
+                    try handle.write(contentsOf: line)
+                    continuation.resume()
+                } catch {
+                    continuation.resume(throwing: TransportError.closed)
+                }
+            }
         }
     }
 
@@ -133,12 +159,27 @@ public actor LineTransport {
     /// Close stdin, then escalate: 1 s to exit, SIGTERM, 1 s more, SIGKILL.
     public func shutdown() async {
         guard started else { return }
+        // Capture descendants while the leader still owns them. Foundation's
+        // Process does not guarantee a fresh process group on every launch, so
+        // this is the fallback when setpgid raced with exec.
+        let descendants = processGroupID == nil
+            ? Self.descendantPIDs(of: process.processIdentifier) : []
         closeStdin()
+        _ = await waitForExit(timeout: .seconds(1))
 
-        if await waitForExit(timeout: .seconds(1)) { finishStreams(); return }
-        if process.isRunning { process.terminate() }
-        if await waitForExit(timeout: .seconds(1)) { finishStreams(); return }
-        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        if let processGroupID {
+            killpg(processGroupID, SIGTERM)
+        } else {
+            for pid in descendants.reversed() { kill(pid, SIGTERM) }
+            if process.isRunning { process.terminate() }
+        }
+        _ = await waitForExit(timeout: .seconds(1))
+        if let processGroupID {
+            killpg(processGroupID, SIGKILL)
+        } else {
+            for pid in descendants.reversed() { kill(pid, SIGKILL) }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
         _ = await waitForExit(timeout: .seconds(1))
         finishStreams()
     }
@@ -170,29 +211,38 @@ public actor LineTransport {
     private func waitForExit(timeout: Duration) async -> Bool {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
-            if !process.isRunning {
-                exitStatus = process.terminationStatus
-                return true
-            }
+            if !process.isRunning { return true }
             try? await Task.sleep(for: .milliseconds(20))
         }
-        if !process.isRunning {
-            exitStatus = process.terminationStatus
-            return true
-        }
-        return false
+        return !process.isRunning
     }
 
     private func finishStreams() {
-        stdoutPipe.fileHandleForReading.readabilityHandler = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
-        lineContinuation.finish()
+        stdoutDrainer?.finish()
         exitContinuation.finish()
+    }
+
+    private static func descendantPIDs(of parent: pid_t) -> [pid_t] {
+        let query = Process()
+        let output = Pipe()
+        query.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        query.arguments = ["-P", String(parent)]
+        query.standardOutput = output
+        query.standardError = FileHandle.nullDevice
+        guard (try? query.run()) != nil else { return [] }
+        query.waitUntilExit()
+        let text = String(
+            decoding: (try? output.fileHandleForReading.readToEnd()) ?? Data(),
+            as: UTF8.self)
+        let direct = text.split(whereSeparator: \Character.isWhitespace)
+            .compactMap { pid_t($0) }
+        return direct + direct.flatMap { descendantPIDs(of: $0) }
     }
 }
 
 /// Accumulates stdout bytes and splits complete lines off the front.
-private final class LineBuffer: @unchecked Sendable {
+final class LineBuffer: @unchecked Sendable {
     private var storage = Data()
     private var overflowing = false
     private let lock = NSLock()
@@ -219,6 +269,52 @@ private final class LineBuffer: @unchecked Sendable {
             overflowing = true
         }
         return lines
+    }
+}
+
+/// Serializes callback reads and the final drain so stdout is consumed exactly
+/// once, even when EOF and Process.terminationHandler arrive together.
+private final class StdoutDrainer: @unchecked Sendable {
+    private let handle: FileHandle
+    private let buffer: LineBuffer
+    private let continuation: AsyncStream<Data>.Continuation
+    private let maxLineBytes: Int
+    private let lock = NSLock()
+    private var finished = false
+
+    init(
+        handle: FileHandle,
+        buffer: LineBuffer,
+        continuation: AsyncStream<Data>.Continuation,
+        maxLineBytes: Int
+    ) {
+        self.handle = handle
+        self.buffer = buffer
+        self.continuation = continuation
+        self.maxLineBytes = maxLineBytes
+    }
+
+    func ingest(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return }
+        for line in buffer.append(data, maxLineBytes: maxLineBytes) {
+            continuation.yield(line)
+        }
+    }
+
+    func finish() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return }
+        finished = true
+        handle.readabilityHandler = nil
+        if let remaining = try? handle.readToEnd(), !remaining.isEmpty {
+            for line in buffer.append(remaining, maxLineBytes: maxLineBytes) {
+                continuation.yield(line)
+            }
+        }
+        continuation.finish()
     }
 }
 

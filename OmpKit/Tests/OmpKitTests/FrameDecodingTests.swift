@@ -78,3 +78,25 @@ let noticeLine = #"{"type":"notice","level":"info","message":"xd://: mounted","s
     #expect(v["i"]?.intValue == 1)
     #expect(v["i"]?.boolValue == nil)
 }
+
+@Test func loneSurrogateEscapesAreReplacedWithoutDroppingTheFrame() throws {
+    let line = Data(#"{"type":"notice","message":"before \uD800 after"}"#.utf8)
+    guard case .event(_, let payload) = try RpcFrame.decode(line: line) else {
+        Issue.record("not an event"); return
+    }
+    #expect(payload["message"]?.stringValue == "before � after")
+}
+
+@Test func validSurrogatePairsAndEscapedBackslashesRemainIntact() throws {
+    let pair = Data(#"{"type":"notice","message":"\uD83D\uDE00"}"#.utf8)
+    guard case .event(_, let pairedPayload) = try RpcFrame.decode(line: pair) else {
+        Issue.record("not an event"); return
+    }
+    #expect(pairedPayload["message"]?.stringValue == "😀")
+
+    let literal = Data(#"{"type":"notice","message":"\\uD800"}"#.utf8)
+    guard case .event(_, let literalPayload) = try RpcFrame.decode(line: literal) else {
+        Issue.record("not an event"); return
+    }
+    #expect(literalPayload["message"]?.stringValue == #"\uD800"#)
+}
