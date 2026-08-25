@@ -90,12 +90,16 @@ used in the NextStep LMS shell:
 - Expanded width: 220 points.
 - It floats directly on the white window canvas: no rail fill, material,
   divider, blur, or shadow.
-- The wordmark is anchored at the top and the profile control at the bottom.
+- The wordmark is anchored at the top. A compact provider-allowance ledger may
+  occupy the bottom when provider adapters have current quota data; there is no
+  user profile control because usage belongs to each connected provider.
 - New Session, Search, Settings, project markers, and session markers form one
   vertically centered stack. Every interactive item has a tooltip and
   accessibility label.
-- The collapsed stack preserves an angular marker for every project and session;
-  the selected session uses cyan instead of adding a container.
+- The collapsed stack uses a typographic index for every project and session.
+  Projects use a two-character workspace code. Numbered sessions sit beneath
+  their project on a thin indented connector spine. The selected session uses
+  cyan instead of adding a container.
 - Hover or keyboard focus expands the same stack horizontally, keeping each
   marker in place while its label appears.
 - The rail floats over the shared white canvas. Expanding it never creates a
@@ -106,6 +110,12 @@ used in the NextStep LMS shell:
   this hierarchy; it never navigates to a Projects page.
 - The selected project/session is indicated with cyan text plus selection
   semantics, not a status dot or a large filled tile.
+- Each provider allowance is one compact unit: allowance name, percentage, and
+  reset window share one line directly above a three-point usage bar. The UI
+  supports any number of named limits per provider, including five-hour,
+  weekly, Spark, and model-family limits. “Left” is not repeated beside the
+  percentage. OMP does not expose account-wide provider quotas, so normal builds
+  show this ledger only when provider-specific adapters supply real values.
 
 The supplied `/Users/tannerpham/Downloads/10x.svg` is the rail wordmark. The
 supplied `/Users/tannerpham/Documents/10x Logo.icon/` package is the canonical

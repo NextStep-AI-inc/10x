@@ -10,6 +10,7 @@ final class AppModel {
     var selectedProjectURL: URL?
     var setupError: String?
     var sessions: [SessionMetadata] = []
+    var providerUsages: [ProviderUsageProvider] = []
     var isSearchPresented = false
     private(set) var processManager: SessionProcessManager?
 

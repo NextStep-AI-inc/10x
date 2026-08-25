@@ -38,8 +38,15 @@ struct FloatingRailView: View {
                 }
             }
 
-            profile
-                .padding(.bottom, 18)
+            if !model.providerUsages.isEmpty {
+                ProviderUsageLedgerView(providers: model.providerUsages)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 18)
+                    .frame(height: usageLedgerHeight)
+                    .opacity(expansion.isExpanded ? 1 : 0)
+                    .allowsHitTesting(expansion.isExpanded)
+                    .accessibilityHidden(!expansion.isExpanded)
+            }
         }
         .frame(width: expansion.isExpanded ? 220 : 64, alignment: .leading)
         .contentShape(Rectangle())
@@ -102,22 +109,9 @@ struct FloatingRailView: View {
         .scrollIndicators(.hidden)
     }
 
-    private var profile: some View {
-        HStack(spacing: 12) {
-            Text("TP")
-                .font(TenXTypography.body(size: 10, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 30, height: 30)
-                .background(TenXPalette.color(TenXPalette.nearBlackHex))
-                .clipShape(Circle())
-            if expansion.isExpanded {
-                Text("Tanner Pham")
-                    .font(TenXTypography.body(size: 12, weight: .medium))
-                    .lineLimit(1)
-                    .transition(.opacity)
-            }
-        }
-        .padding(.leading, 17)
+    private var usageLedgerHeight: CGFloat {
+        let limitCount = model.providerUsages.reduce(0) { $0 + $1.limits.count }
+        return min(210, CGFloat(48 + model.providerUsages.count * 28 + limitCount * 21))
     }
 
     private var selectedSessionPath: String? {
@@ -175,7 +169,10 @@ struct FloatingRailView: View {
                 }
             } label: {
                 HStack(spacing: 12) {
-                    ProjectMarker()
+                    RailTreeMarker(
+                        label: item.markerLabel,
+                        position: item.treePosition,
+                        isSelected: false)
                         .frame(width: 30, height: 22)
                     if expansion.isExpanded {
                         Text(group.displayName)
@@ -202,7 +199,10 @@ struct FloatingRailView: View {
                 model.openSession(metadata)
             } label: {
                 HStack(spacing: 12) {
-                    SessionMarker(isSelected: item.isSelected)
+                    RailTreeMarker(
+                        label: item.markerLabel,
+                        position: item.treePosition,
+                        isSelected: item.isSelected)
                         .frame(width: 30, height: 22)
                     if expansion.isExpanded {
                         Text(metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session")
@@ -236,39 +236,46 @@ private enum RailFocus: Hashable {
     case session(String)
 }
 
-private struct ProjectMarker: View {
-    var body: some View {
-        Canvas { context, size in
-            var path = Path()
-            let inset: CGFloat = 8
-            let length: CGFloat = 6
-
-            path.move(to: CGPoint(x: inset, y: inset + length))
-            path.addLine(to: CGPoint(x: inset, y: inset))
-            path.addLine(to: CGPoint(x: inset + length, y: inset))
-            path.move(to: CGPoint(x: size.width - inset - length, y: size.height - inset))
-            path.addLine(to: CGPoint(x: size.width - inset, y: size.height - inset))
-            path.addLine(to: CGPoint(x: size.width - inset, y: size.height - inset - length))
-
-            context.stroke(
-                path,
-                with: .color(TenXPalette.color(TenXPalette.nearBlackHex)),
-                lineWidth: 1)
-        }
-        .accessibilityHidden(true)
-    }
-}
-
-private struct SessionMarker: View {
+private struct RailTreeMarker: View {
+    let label: String
+    let position: RailPresentationItem.TreePosition
     let isSelected: Bool
 
     var body: some View {
-        Rectangle()
-            .fill(isSelected
-                ? TenXPalette.color(TenXPalette.cyanHex)
-                : TenXPalette.color(TenXPalette.nearBlackHex))
-            .frame(width: isSelected ? 18 : 12, height: isSelected ? 2 : 1)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityHidden(true)
+        ZStack(alignment: .leading) {
+            if position != .root {
+                Canvas { context, size in
+                    var path = Path()
+                    let spineX: CGFloat = 4
+                    let midY = size.height / 2
+
+                    path.move(to: CGPoint(x: spineX, y: 0))
+                    path.addLine(to: CGPoint(
+                        x: spineX,
+                        y: position == .terminalChild ? midY : size.height))
+                    path.move(to: CGPoint(x: spineX, y: midY))
+                    path.addLine(to: CGPoint(x: 10, y: midY))
+
+                    context.stroke(
+                        path,
+                        with: .color(markerColor.opacity(isSelected ? 1 : 0.5)),
+                        lineWidth: 1)
+                }
+                .frame(width: 11)
+            }
+
+            Text(label)
+                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .foregroundStyle(markerColor)
+                .frame(width: position == .root ? 30 : 17, alignment: .center)
+                .offset(x: position == .root ? 0 : 12)
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var markerColor: Color {
+        if isSelected { return TenXPalette.color(TenXPalette.cyanHex) }
+        if position == .root { return TenXPalette.color(TenXPalette.nearBlackHex) }
+        return TenXPalette.color(TenXPalette.mutedTextHex)
     }
 }
