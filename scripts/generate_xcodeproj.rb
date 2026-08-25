@@ -39,6 +39,10 @@ fonts = app_group.new_file("App/Resources/Fonts")
 fonts.last_known_file_type = "folder"
 app.resources_build_phase.add_file_reference(fonts)
 
+hammerspoon = app_group.new_file("App/Resources/Hammerspoon")
+hammerspoon.last_known_file_type = "folder"
+app.resources_build_phase.add_file_reference(hammerspoon)
+
 snapshot_path = File.join(root, "Tests/TenXAppTests/ReferenceImages")
 if File.directory?(snapshot_path)
   reference = test_group.new_file("Tests/TenXAppTests/ReferenceImages")

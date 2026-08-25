@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "AD9E126CE4852C38F78ABC1A1112BF8D"
+               BlueprintIdentifier = "472253A9F6B5BFA7A474CEA383369534"
                BuildableName = "10x.app"
                BlueprintName = "10x"
                ReferencedContainer = "container:10x.xcodeproj">
@@ -32,7 +32,7 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "09514DB2B0B88D1F4A598BC4FB7AB402"
+               BlueprintIdentifier = "AEA38F196E92D6F94CBFDFD5BD818EA3"
                BuildableName = "TenXAppTests.xctest"
                BlueprintName = "TenXAppTests"
                ReferencedContainer = "container:10x.xcodeproj">
