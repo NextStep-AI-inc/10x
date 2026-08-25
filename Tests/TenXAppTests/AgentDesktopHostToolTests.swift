@@ -2,6 +2,48 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func resolverAcceptsAnInstalledBundleIdentifier() {
+    let resolver = WorkspaceApplicationResolver(catalog: StaticApplicationCatalog(applications: [
+        AgentInstalledApplication(
+            bundleIdentifier: "com.example.writer",
+            localizedDisplayName: "Écriture",
+            bundleName: "Writer"),
+    ]))
+
+    #expect(resolver.resolve(application: "com.example.writer")
+        == AgentApplication(bundleIdentifier: "com.example.writer", strategy: .newInstance))
+}
+
+@Test func resolverAcceptsAnInstalledLocalizedDisplayName() {
+    let resolver = WorkspaceApplicationResolver(catalog: StaticApplicationCatalog(applications: [
+        AgentInstalledApplication(
+            bundleIdentifier: "com.example.writer",
+            localizedDisplayName: "Écriture",
+            bundleName: "Writer"),
+    ]))
+
+    #expect(resolver.resolve(application: "ecriture")
+        == AgentApplication(bundleIdentifier: "com.example.writer", strategy: .newInstance))
+}
+
+@Test func resolverAcceptsAnInstalledBundleName() {
+    let resolver = WorkspaceApplicationResolver(catalog: StaticApplicationCatalog(applications: [
+        AgentInstalledApplication(
+            bundleIdentifier: "com.example.writer",
+            localizedDisplayName: "Écriture",
+            bundleName: "Writer"),
+    ]))
+
+    #expect(resolver.resolve(application: "writer")
+        == AgentApplication(bundleIdentifier: "com.example.writer", strategy: .newInstance))
+}
+
+@Test func resolverRejectsAnUnavailableApplication() {
+    let resolver = WorkspaceApplicationResolver(catalog: StaticApplicationCatalog(applications: []))
+
+    #expect(resolver.resolve(application: "not-installed") == nil)
+}
+
 @Test func hostToolBorrowsOnlyACurrentlyEnumeratedWindowWithoutMovingIt() async {
     let provider = HostToolProvider(windows: [
         AgentWindow(id: "auth-window", processID: 8, app: "Safari", workspaceID: "desktop-two"),
@@ -28,7 +70,7 @@ import Testing
     #expect(await provider.movedWindowIDs().isEmpty)
 }
 
-@Test func hostToolCancellationReturnsOneErrorAndDropsALateLaunchClaim() async {
+@Test func hostToolCancellationReturnsOneErrorAndRetainsALateLaunchClaimForCleanup() async {
     let provider = HostToolProvider(windows: [])
     let coordinator = AgentDesktopCoordinator(providers: [provider])
     let launcher = BlockingDedicatedWindowLauncher()
@@ -67,9 +109,50 @@ import Testing
     let outcome = await launch.value
 
     #expect(outcome.isError)
-    #expect(outcome.manifest.ownedWindows.isEmpty)
+    #expect(outcome.manifest.ownedWindows.map(\.id) == ["late-window"])
     #expect(outcome.result["content"]?.arrayValue?.first?["text"]?.stringValue
         == "[AgentDesktopHostTool:handle] Launch cancelled — {request: sanitized}")
+}
+
+@Test func hostToolCancellationKeepsAnAlreadyMovedWindowForCleanup() async {
+    let provider = HostToolProvider(windows: [
+        AgentWindow(id: "moved-window", processID: 9, app: "TextEdit", workspaceID: "10x-session"),
+    ])
+    let coordinator = AgentDesktopCoordinator(providers: [provider])
+    let launcher = MovedThenBlockingDedicatedWindowLauncher(provider: provider)
+    let tool = AgentDesktopHostTool(
+        coordinator: coordinator,
+        launcher: launcher,
+        applicationResolver: StaticApplicationResolver())
+    let call = HostToolCall(
+        id: "host-moved",
+        toolCallID: "tool-moved",
+        name: "agent_desktop",
+        arguments: .object([
+            "action": .string("launch"),
+            "application": .string("TextEdit"),
+        ]))
+    let prepared = PreparedAgentDesktop(
+        provider: .aeroSpace,
+        workspaceID: "10x-session",
+        capabilities: .isolated)
+    let launch = Task {
+        await tool.handle(
+            call,
+            in: prepared,
+            manifest: AgentDesktopManifest(prepared: prepared))
+    }
+
+    await launcher.waitUntilMoved()
+    await tool.cancel(callID: "host-moved")
+    await launcher.finish()
+    let outcome = await launch.value
+    let cleanup = await coordinator.cleanup(manifest: outcome.manifest)
+
+    #expect(outcome.isError)
+    #expect(outcome.manifest.ownedWindows.map(\.id) == ["moved-window"])
+    #expect(cleanup.restoredWindowCount == 1)
+    #expect(await provider.restoredWindowIDs() == ["moved-window"])
 }
 
 @Test func hostToolRecordsAmbiguousLaunchesWithoutClaimingAWindow() async {
@@ -141,6 +224,7 @@ private actor HostToolProvider: AgentDesktopProvider {
     nonisolated let kind: AgentDesktopProviderKind = .aeroSpace
     private let windows: [AgentWindow]
     private var movedIDs: [String] = []
+    private var restoredIDs: [String] = []
 
     init(windows: [AgentWindow]) {
         self.windows = windows
@@ -159,11 +243,12 @@ private actor HostToolProvider: AgentDesktopProvider {
         AsyncStream { continuation in continuation.finish() }
     }
     func move(windowID: String, to workspaceID: String) async throws { movedIDs.append(windowID) }
-    func restore(windowID: String, to workspaceID: String) async throws {}
+    func restore(windowID: String, to workspaceID: String) async throws { restoredIDs.append(windowID) }
     func openVisibly(workspaceID: String) async throws {}
     func release(workspaceID: String) async {}
 
     func movedWindowIDs() -> [String] { movedIDs }
+    func restoredWindowIDs() -> [String] { restoredIDs }
 }
 
 private struct EmptyDedicatedWindowLauncher: DedicatedWindowLaunching {
@@ -233,8 +318,58 @@ private actor BlockingAmbiguousDedicatedWindowLauncher: DedicatedWindowLaunching
     }
 }
 
+private actor MovedThenBlockingDedicatedWindowLauncher: DedicatedWindowLaunching {
+    private let provider: HostToolProvider
+    private var completion: CheckedContinuation<Void, Never>?
+    private var movedContinuation: CheckedContinuation<Void, Never>?
+    private var hasMoved = false
+
+    init(provider: HostToolProvider) {
+        self.provider = provider
+    }
+
+    func launch(_ application: AgentApplication, in desktop: PreparedAgentDesktop) async throws -> WindowLaunchResult {
+        try await provider.move(windowID: "moved-window", to: "10x-session")
+        hasMoved = true
+        movedContinuation?.resume()
+        movedContinuation = nil
+        await withCheckedContinuation { continuation in
+            completion = continuation
+        }
+        return WindowLaunchResult(
+            processID: 9,
+            ownedWindows: [AgentOwnedWindow(AgentWindow(
+                id: "moved-window",
+                processID: 9,
+                app: "TextEdit",
+                workspaceID: "desktop-one"))])
+    }
+
+    func waitUntilMoved() async {
+        guard !hasMoved else { return }
+        await withCheckedContinuation { continuation in
+            movedContinuation = continuation
+        }
+    }
+
+    func finish() {
+        completion?.resume()
+        completion = nil
+    }
+}
+
 private struct StaticApplicationResolver: AgentApplicationResolving {
     func resolve(application: String) -> AgentApplication? {
         AgentApplication(bundleIdentifier: "com.apple.TextEdit", strategy: .newInstance)
     }
+}
+
+private struct StaticApplicationCatalog: AgentApplicationCatalog {
+    let applications: [AgentInstalledApplication]
+
+    func application(bundleIdentifier: String) -> AgentInstalledApplication? {
+        applications.first { $0.bundleIdentifier == bundleIdentifier }
+    }
+
+    func installedApplications() -> [AgentInstalledApplication] { applications }
 }

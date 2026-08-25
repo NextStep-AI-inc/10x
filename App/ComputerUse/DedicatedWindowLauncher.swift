@@ -62,13 +62,16 @@ protocol DedicatedWindowLaunching: Sendable {
 struct DedicatedWindowLauncher: Sendable {
     private let provider: any AgentDesktopProvider
     private let applicationLauncher: any AgentApplicationLaunching
+    private let quiescenceInterval: Duration
 
     init(
         provider: any AgentDesktopProvider,
-        applicationLauncher: any AgentApplicationLaunching = WorkspaceApplicationLauncher()
+        applicationLauncher: any AgentApplicationLaunching = WorkspaceApplicationLauncher(),
+        quiescenceInterval: Duration = .seconds(1)
     ) {
         self.provider = provider
         self.applicationLauncher = applicationLauncher
+        self.quiescenceInterval = quiescenceInterval
     }
 
     func launch(
@@ -77,9 +80,18 @@ struct DedicatedWindowLauncher: Sendable {
     ) async throws -> WindowLaunchResult {
         let before = Set(try await provider.listWindows().map(\.id))
         let events = try await provider.watchWindows()
+        let eventMonitor = AgentWindowEventMonitor()
+        let watcherTask = Task {
+            for await event in events {
+                await eventMonitor.record(event)
+            }
+        }
+        defer { watcherTask.cancel() }
 
         let process = try await applicationLauncher.launch(application)
-        let after = try await waitForStableWindows(events: events, after: before)
+        let after = try await waitForStableWindows(
+            eventMonitor: eventMonitor,
+            after: before)
         let created = after.filter { !before.contains($0.id) }
         guard !created.isEmpty else { throw DedicatedWindowLaunchError.noNewWindow }
 
@@ -98,27 +110,27 @@ struct DedicatedWindowLauncher: Sendable {
     }
 
     private func waitForStableWindows(
-        events: AsyncStream<AgentWindowEvent>,
+        eventMonitor: AgentWindowEventMonitor,
         after before: Set<String>
     ) async throws -> [AgentWindow] {
-        let watcherTask = Task {
-            for await _ in events {
-                if Task.isCancelled { return }
-            }
-        }
-        defer { watcherTask.cancel() }
-
         let clock = ContinuousClock()
         let deadline = clock.now + .seconds(5)
-        var previousNewWindowIDs: Set<String>?
+        var newWindowIDs = Set<String>()
+        var eventRevision = await eventMonitor.revision()
+        var lastChange = clock.now
         while clock.now < deadline {
             try Task.checkCancellation()
             let windows = try await provider.listWindows()
-            let newWindowIDs = Set(windows.map(\.id)).subtracting(before)
-            if !newWindowIDs.isEmpty, newWindowIDs == previousNewWindowIDs {
+            let currentNewWindowIDs = Set(windows.map(\.id)).subtracting(before)
+            let currentEventRevision = await eventMonitor.revision()
+            if currentNewWindowIDs != newWindowIDs || currentEventRevision != eventRevision {
+                newWindowIDs = currentNewWindowIDs
+                eventRevision = currentEventRevision
+                lastChange = clock.now
+            }
+            if !newWindowIDs.isEmpty, clock.now - lastChange >= quiescenceInterval {
                 return windows
             }
-            previousNewWindowIDs = newWindowIDs.isEmpty ? nil : newWindowIDs
             try await Task.sleep(for: .milliseconds(100))
         }
         throw DedicatedWindowLaunchError.noNewWindow
@@ -126,3 +138,13 @@ struct DedicatedWindowLauncher: Sendable {
 }
 
 extension DedicatedWindowLauncher: DedicatedWindowLaunching {}
+
+private actor AgentWindowEventMonitor {
+    private var changeRevision = 0
+
+    func record(_ event: AgentWindowEvent) {
+        changeRevision += 1
+    }
+
+    func revision() -> Int { changeRevision }
+}

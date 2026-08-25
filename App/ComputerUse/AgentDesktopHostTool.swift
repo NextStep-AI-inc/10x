@@ -6,39 +6,99 @@ protocol AgentApplicationResolving: Sendable {
     func resolve(application: String) -> AgentApplication?
 }
 
+struct AgentInstalledApplication: Sendable, Equatable {
+    let bundleIdentifier: String
+    let localizedDisplayName: String?
+    let bundleName: String?
+}
+
+protocol AgentApplicationCatalog: Sendable {
+    func application(bundleIdentifier: String) -> AgentInstalledApplication?
+    func installedApplications() -> [AgentInstalledApplication]
+}
+
 struct WorkspaceApplicationResolver: AgentApplicationResolving {
+    private let catalog: any AgentApplicationCatalog
+
+    init(catalog: any AgentApplicationCatalog = WorkspaceApplicationCatalog()) {
+        self.catalog = catalog
+    }
+
     func resolve(application: String) -> AgentApplication? {
         let requestedApplication = application.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !requestedApplication.isEmpty else { return nil }
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: requestedApplication),
-           let bundle = Bundle(url: url),
-           let bundleIdentifier = bundle.bundleIdentifier {
-            return AgentApplication(bundleIdentifier: bundleIdentifier, strategy: .newInstance)
+        if let application = catalog.application(bundleIdentifier: requestedApplication) {
+            return dedicatedApplication(for: application)
         }
-        for directory in applicationDirectories {
-            guard let applicationURLs = try? FileManager.default.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: nil)
-            else { continue }
-            for url in applicationURLs where url.pathExtension == "app" {
-                guard let bundle = Bundle(url: url),
-                      let bundleIdentifier = bundle.bundleIdentifier
-                else { continue }
-                let displayName = url.deletingPathExtension().lastPathComponent
-                if displayName.compare(requestedApplication, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame {
-                    return AgentApplication(bundleIdentifier: bundleIdentifier, strategy: .newInstance)
-                }
+        for application in catalog.installedApplications() {
+            let names = [application.localizedDisplayName, application.bundleName].compactMap { $0 }
+            if names.contains(where: { matches($0, requestedApplication) }) {
+                return dedicatedApplication(for: application)
             }
         }
         return nil
     }
 
-    private var applicationDirectories: [URL] {
-        [
-            URL(filePath: "/Applications", directoryHint: .isDirectory),
-            URL(filePath: "/System/Applications", directoryHint: .isDirectory),
-            FileManager.default.homeDirectoryForCurrentUser.appending(path: "Applications", directoryHint: .isDirectory),
-        ]
+    private func dedicatedApplication(for application: AgentInstalledApplication) -> AgentApplication {
+        AgentApplication(bundleIdentifier: application.bundleIdentifier, strategy: .newInstance)
+    }
+
+    private func matches(_ name: String, _ requestedApplication: String) -> Bool {
+        name.compare(
+            requestedApplication,
+            options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
+}
+
+struct WorkspaceApplicationCatalog: AgentApplicationCatalog {
+    func application(bundleIdentifier: String) -> AgentInstalledApplication? {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
+            return nil
+        }
+        return installedApplication(at: url)
+    }
+
+    func installedApplications() -> [AgentInstalledApplication] {
+        let directories = FileManager.default.urls(for: .applicationDirectory, in: .allDomainsMask)
+        return directories
+            .flatMap(applicationURLs(in:))
+            .compactMap(installedApplication(at:))
+    }
+
+    private func applicationURLs(in directory: URL) -> [URL] {
+        var pendingDirectories = [(directory, 0)]
+        var applications: [URL] = []
+        while let (currentDirectory, depth) = pendingDirectories.popLast() {
+            guard let children = try? FileManager.default.contentsOfDirectory(
+                at: currentDirectory,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles])
+            else { continue }
+            for child in children {
+                if child.pathExtension == "app" {
+                    applications.append(child)
+                } else if depth < 2,
+                          (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+                    pendingDirectories.append((child, depth + 1))
+                }
+            }
+        }
+        return applications
+    }
+
+    private func installedApplication(at url: URL) -> AgentInstalledApplication? {
+        guard let bundle = Bundle(url: url), let bundleIdentifier = bundle.bundleIdentifier else {
+            return nil
+        }
+        return AgentInstalledApplication(
+            bundleIdentifier: bundleIdentifier,
+            localizedDisplayName: localizedValue(for: "CFBundleDisplayName", in: bundle),
+            bundleName: localizedValue(for: "CFBundleName", in: bundle))
+    }
+
+    private func localizedValue(for key: String, in bundle: Bundle) -> String? {
+        let value = bundle.localizedString(forKey: key, value: nil, table: nil)
+        return value == key ? nil : value
     }
 }
 
@@ -156,11 +216,11 @@ actor AgentDesktopHostTool {
 
         do {
             let launchResult = try await task.value
-            guard !cancelledCallIDs.contains(call.id) else {
-                return failure("Launch cancelled", manifest: manifest)
-            }
             var updatedManifest = manifest
             updatedManifest.claim(launchResult)
+            guard !cancelledCallIDs.contains(call.id) else {
+                return failure("Launch cancelled", manifest: updatedManifest)
+            }
             let applicationName = launchResult.ownedWindows.first?.applicationName ?? "Application"
             return success(
                 applicationName: applicationName,

@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TenXApp
 
@@ -49,6 +50,39 @@ import Testing
     #expect(await provider.movedWindowIDs().isEmpty)
 }
 
+@Test func launcherDoesNotMoveAWindowBeforeTheNewWindowSetIsQuiescent() async {
+    let provider = LaunchingWindowProvider(snapshots: [
+        [AgentWindow(id: "existing", processID: 7, app: "TextEdit", workspaceID: "desktop-one")],
+        [
+            AgentWindow(id: "existing", processID: 7, app: "TextEdit", workspaceID: "desktop-one"),
+            AgentWindow(id: "new-one", processID: 9, app: "TextEdit", workspaceID: "desktop-one"),
+        ],
+        [
+            AgentWindow(id: "existing", processID: 7, app: "TextEdit", workspaceID: "desktop-one"),
+            AgentWindow(id: "new-one", processID: 9, app: "TextEdit", workspaceID: "desktop-one"),
+        ],
+        [
+            AgentWindow(id: "existing", processID: 7, app: "TextEdit", workspaceID: "desktop-one"),
+            AgentWindow(id: "new-one", processID: 9, app: "TextEdit", workspaceID: "desktop-one"),
+            AgentWindow(id: "new-two", processID: 8, app: "TextEdit", workspaceID: "desktop-one"),
+        ],
+    ])
+    let launcher = DedicatedWindowLauncher(
+        provider: provider,
+        applicationLauncher: StaticApplicationLauncher(processID: 9))
+
+    await #expect(throws: DedicatedWindowLaunchError.ambiguousNewWindows) {
+        try await launcher.launch(
+            AgentApplication(bundleIdentifier: "com.apple.TextEdit", strategy: .newInstance),
+            in: PreparedAgentDesktop(
+                provider: .aeroSpace,
+                workspaceID: "10x-session",
+                capabilities: .isolated))
+    }
+
+    #expect(await provider.movedWindowIDs().isEmpty)
+}
+
 @Test func launcherWaitsForANewWindowToAppearAfterTheLaunch() async throws {
     let provider = LaunchingWindowProvider(snapshots: [
         [AgentWindow(id: "existing", processID: 7, app: "TextEdit", workspaceID: "desktop-one")],
@@ -70,6 +104,26 @@ import Testing
             capabilities: .isolated))
 
     #expect(result.ownedWindows.map(\.id) == ["new"])
+}
+
+@Test func launcherStopsTheHammerspoonWatcherWhenApplicationLaunchFails() async throws {
+    let runner = LaunchFailureWatchingDesktopRunner()
+    let provider = HammerspoonProvider(executable: URL(filePath: "/bin/true"), runner: runner)
+    let launcher = DedicatedWindowLauncher(
+        provider: provider,
+        applicationLauncher: FailingApplicationLauncher())
+
+    await #expect(throws: LaunchFailure.self) {
+        try await launcher.launch(
+            AgentApplication(bundleIdentifier: "com.apple.TextEdit", strategy: .newInstance),
+            in: PreparedAgentDesktop(
+                provider: .hammerspoon,
+                workspaceID: "1",
+                capabilities: .isolated))
+    }
+    try await Task.sleep(for: .milliseconds(100))
+
+    #expect(await runner.didStop())
 }
 
 private actor LaunchingWindowProvider: AgentDesktopProvider {
@@ -119,4 +173,29 @@ private struct StaticApplicationLauncher: AgentApplicationLaunching {
     func launch(_ application: AgentApplication) async throws -> AgentLaunchedProcess {
         AgentLaunchedProcess(processID: processID)
     }
+}
+
+private enum LaunchFailure: Error { case failed }
+
+private struct FailingApplicationLauncher: AgentApplicationLaunching {
+    func launch(_ application: AgentApplication) async throws -> AgentLaunchedProcess {
+        throw LaunchFailure.failed
+    }
+}
+
+private actor LaunchFailureWatchingDesktopRunner: AgentDesktopCommandRunning {
+    private var stopped = false
+
+    func run(executable: URL, arguments: [String], timeout: Duration) async throws -> AgentDesktopCommandOutput {
+        let command = arguments.last ?? ""
+        if command.contains("stopWatcher") {
+            stopped = true
+        }
+        if command.contains("listWindows") {
+            return .init(json: .array([]), exitStatus: 0)
+        }
+        return .init(json: .object(["ok": .bool(true)]), exitStatus: 0)
+    }
+
+    func didStop() -> Bool { stopped }
 }

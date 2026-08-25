@@ -25,8 +25,8 @@ after cancellation. Each increment was then made green.
 Verified:
 
 - `ruby scripts/generate_xcodeproj.rb && xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task4`
-  passed: 138 tests, `** TEST SUCCEEDED **`.
-- `xcodebuild build -configuration Release -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task4-release-build-final`
+  passed: 145 tests, `** TEST SUCCEEDED **`.
+- `xcodebuild build -configuration Release -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task4-release-review-fix`
   passed: `** BUILD SUCCEEDED **`.
 - `git diff --check` passed.
 
@@ -48,3 +48,23 @@ Not verified:
   automation was introduced.
 - Task 5 must retain the manifest and consume `watchWindows(in:)` while
   computer use is enabled; no persistence was added here.
+
+## Review fix round 1
+
+- Cancellation now retains a completed launch result in the returned manifest
+  before reporting the single cancellation error. The new race test performs a
+  move, cancels before the launch result returns, and proves cleanup restores
+  that still-live ID.
+- Launch claims now require a one-second quiescence interval. Both snapshot ID
+  changes and watcher events reset the interval, so a delayed second new window
+  produces ambiguity and no move.
+- The launcher starts its watcher consumer and installs its cancellation defer
+  immediately after `watchWindows()` returns. A Hammerspoon launch-failure test
+  confirms the stop seam is reached. Moving the consumer after the throwing
+  launch did not fail that test because `AsyncStream` deinitialization already
+  runs its termination handler; this reviewer concern could not be reproduced
+  as a distinct regression.
+- Application lookup now uses an injectable native catalog. Bundle identifiers
+  use `NSWorkspace`; localized display names and bundle names come from a
+  depth-bounded catalog of standard Application directories, without shell or
+  whole-disk scanning.
