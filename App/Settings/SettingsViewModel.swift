@@ -68,8 +68,10 @@ final class SettingsViewModel {
         keyErrors[key]
     }
 
-    func prepareForFocus(_ target: SettingsFocusTarget?) {
-        guard target == .preferredIDE else { return }
+    @discardableResult
+    func prepareForFocus(_ target: SettingsFocusTarget?) -> Bool {
+        guard target == .preferredIDE else { return false }
         query = ""
+        return true
     }
 }

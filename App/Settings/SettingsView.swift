@@ -39,7 +39,9 @@ struct SettingsView: View {
             if model.settingCount == 0 { await model.load() }
         }
         .onChange(of: focusTarget, initial: true) { _, target in
-            model.prepareForFocus(target)
+            if model.prepareForFocus(target) {
+                isSearchFocused = false
+            }
         }
         .background {
             Button("") { isSearchFocused = true }
@@ -212,9 +214,14 @@ struct SettingsView: View {
 
     private func focusPreferredIDEIfNeeded(proxy: ScrollViewProxy) {
         guard focusTarget == .preferredIDE else { return }
-        proxy.scrollTo(SettingsFocusTarget.preferredIDE, anchor: .center)
-        focusedControl = .preferredIDE
-        onFocusConsumed()
+        isSearchFocused = false
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo(SettingsFocusTarget.preferredIDE, anchor: .center)
+            focusedControl = .preferredIDE
+            await Task.yield()
+            onFocusConsumed()
+        }
     }
 
     private func sectionColor(_ category: SettingsCategory) -> Color {

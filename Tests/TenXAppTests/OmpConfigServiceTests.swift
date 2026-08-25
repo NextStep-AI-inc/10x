@@ -76,9 +76,10 @@ import Testing
     let model = SettingsViewModel(service: OmpConfigService(runner: FakeConfigRunner()))
     model.query = "sleep prevention"
 
-    model.prepareForFocus(.preferredIDE)
+    let shouldRelinquishSearchFocus = model.prepareForFocus(.preferredIDE)
 
     #expect(model.query.isEmpty)
+    #expect(shouldRelinquishSearchFocus)
 }
 
 @Test func configErrorsNeverIncludeTheSecretValue() async {
