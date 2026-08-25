@@ -10,11 +10,13 @@ enum ComputerUseLeaseError: Error, Equatable, Sendable {
     case openFailed
     case inUse
     case metadataWriteFailed
+    case unsafePath
+    case permissionSetupFailed
 }
 
 actor ComputerUseLease {
     private let lockURL: URL
-    private var descriptor: Int32 = -1
+    private var heldDescriptor: LockedDescriptor?
 
     init(directory: URL? = nil) {
         let lockDirectory = directory ?? Self.defaultDirectory
@@ -22,13 +24,13 @@ actor ComputerUseLease {
     }
 
     func acquire(sessionID: String) throws {
-        guard descriptor == -1 else {
+        guard heldDescriptor == nil else {
             return
         }
 
-        let newDescriptor = try openLockFile()
-        guard flock(newDescriptor, LOCK_EX | LOCK_NB) == 0 else {
-            _ = close(newDescriptor)
+        let descriptor = try openLockFile()
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            _ = close(descriptor)
             throw ComputerUseLeaseError.inUse
         }
 
@@ -37,24 +39,19 @@ actor ComputerUseLease {
                 ComputerUseLeaseOwner(
                     processID: getpid(),
                     sessionID: sanitizedSessionID(sessionID)),
-                to: newDescriptor)
+                to: descriptor)
         } catch {
-            _ = flock(newDescriptor, LOCK_UN)
-            _ = close(newDescriptor)
+            _ = flock(descriptor, LOCK_UN)
+            _ = close(descriptor)
             throw error
         }
 
-        descriptor = newDescriptor
+        heldDescriptor = LockedDescriptor(descriptor: descriptor)
     }
 
     func release() {
-        guard descriptor >= 0 else {
-            return
-        }
-
-        _ = flock(descriptor, LOCK_UN)
-        _ = close(descriptor)
-        descriptor = -1
+        heldDescriptor?.release()
+        heldDescriptor = nil
     }
 
     private static var defaultDirectory: URL {
@@ -63,21 +60,74 @@ actor ComputerUseLease {
     }
 
     private func openLockFile() throws -> Int32 {
-        do {
-            try FileManager.default.createDirectory(
-                at: lockURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true)
-        } catch {
+        let directoryDescriptor = try openLockDirectory()
+        defer { _ = close(directoryDescriptor) }
+
+        let descriptor = "computer-use.lock".withCString {
+            openat(directoryDescriptor, $0, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+        }
+        guard descriptor >= 0 else {
+            if errno == ELOOP {
+                throw ComputerUseLeaseError.unsafePath
+            }
             throw ComputerUseLeaseError.openFailed
         }
 
-        let newDescriptor = lockURL.path.withCString {
-            open($0, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
-        }
-        guard newDescriptor >= 0 else {
+        var information = stat()
+        guard fstat(descriptor, &information) == 0 else {
+            _ = close(descriptor)
             throw ComputerUseLeaseError.openFailed
         }
-        return newDescriptor
+        guard information.st_mode & S_IFMT == S_IFREG else {
+            _ = close(descriptor)
+            throw ComputerUseLeaseError.unsafePath
+        }
+        guard fchmod(descriptor, S_IRUSR | S_IWUSR) == 0 else {
+            _ = close(descriptor)
+            throw ComputerUseLeaseError.permissionSetupFailed
+        }
+        return descriptor
+    }
+
+    private func openLockDirectory() throws -> Int32 {
+        var information = stat()
+        let path = lockURL.deletingLastPathComponent().path
+        let didFindDirectory = path.withCString { lstat($0, &information) == 0 }
+        if !didFindDirectory {
+            guard errno == ENOENT else {
+                throw ComputerUseLeaseError.openFailed
+            }
+            do {
+                try FileManager.default.createDirectory(
+                    at: lockURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: S_IRWXU])
+            } catch {
+                throw ComputerUseLeaseError.openFailed
+            }
+            guard path.withCString({ lstat($0, &information) == 0 }) else {
+                throw ComputerUseLeaseError.openFailed
+            }
+        }
+
+        let descriptor = path.withCString {
+            open($0, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+        }
+        guard descriptor >= 0 else {
+            if errno != ELOOP && errno != ENOTDIR {
+                throw ComputerUseLeaseError.openFailed
+            }
+            throw ComputerUseLeaseError.unsafePath
+        }
+        guard fstat(descriptor, &information) == 0, information.st_mode & S_IFMT == S_IFDIR else {
+            _ = close(descriptor)
+            throw ComputerUseLeaseError.unsafePath
+        }
+        guard fchmod(descriptor, S_IRWXU) == 0 else {
+            _ = close(descriptor)
+            throw ComputerUseLeaseError.permissionSetupFailed
+        }
+        return descriptor
     }
 
     private func writeOwner(_ owner: ComputerUseLeaseOwner, to descriptor: Int32) throws {
@@ -108,5 +158,26 @@ actor ComputerUseLease {
         }
         let truncated = String(permitted.prefix(128))
         return truncated.isEmpty ? "unknown" : truncated
+    }
+}
+
+private final class LockedDescriptor {
+    private var descriptor: Int32
+
+    init(descriptor: Int32) {
+        self.descriptor = descriptor
+    }
+
+    func release() {
+        guard descriptor >= 0 else {
+            return
+        }
+        _ = flock(descriptor, LOCK_UN)
+        _ = close(descriptor)
+        descriptor = -1
+    }
+
+    deinit {
+        release()
     }
 }
