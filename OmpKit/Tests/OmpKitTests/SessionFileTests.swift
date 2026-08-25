@@ -62,10 +62,10 @@ func fixtureSessionV3(title: String = "Fixture") -> Data {
     {"type":"compaction","timestamp":"t3","summary":"summary","firstKeptEntryIndex":1}
     """.utf8)
     let parsed = try SessionFileParser.parse(data: v1)
-    guard case .compaction(_, _, let firstKeptEntryId) = parsed.entries[2] else {
+    guard case .compaction(_, let compaction) = parsed.entries[2] else {
         Issue.record("expected compaction"); return
     }
-    #expect(firstKeptEntryId == parsed.entries[0].base.id)
+    #expect(compaction.firstKeptEntryId == parsed.entries[0].base.id)
 }
 
 @Test func salvagesAHeaderCutMidLine() throws {
@@ -133,14 +133,75 @@ func fixtureSessionV3(title: String = "Fixture") -> Data {
 
 @Test func typedEntriesCarryTheirPayloads() throws {
     let parsed = try SessionFileParser.parse(data: fixtureSessionV3())
-    guard case .modelChange(_, let model) = parsed.entries[0] else {
+    guard case .modelChange(_, let selection) = parsed.entries[0] else {
         Issue.record("expected a model change"); return
     }
-    #expect(model == "anthropic/claude-opus-4-8")
+    #expect(selection.model == "anthropic/claude-opus-4-8")
 
     guard case .message(let base, let message) = parsed.entries[1] else {
         Issue.record("expected a message"); return
     }
     #expect(base.id == "aa11bb22")
     #expect(message["role"]?.stringValue == "user")
+}
+
+@Test func parsesDisplaySafeTimelineMetadata() throws {
+    let data = Data(#"""
+    {"type":"session","version":3,"id":"s","timestamp":"2026-08-24T20:00:00Z","cwd":"/x"}
+    {"type":"model_change","id":"a","parentId":null,"timestamp":"2026-08-24T20:00:01Z","model":"openai-codex/gpt-5.6-sol","role":"temporary","resolvedModelIsFallback":true}
+    {"type":"thinking_level_change","id":"b","parentId":"a","timestamp":"2026-08-24T20:00:02Z","thinkingLevel":"high","configured":"auto"}
+    {"type":"mode_change","id":"c","parentId":"b","timestamp":"2026-08-24T20:00:03Z","mode":"plan","data":{"planFilePath":"/tmp/plan.md"}}
+    {"type":"session_init","id":"d","parentId":"c","timestamp":"2026-08-24T20:00:04Z","systemPrompt":"must stay private","task":"Review transcript","tools":["read"],"agent":"reviewer","modelRole":"review","resolvedModel":"anthropic/claude-opus-4-8","readOnly":true,"advisor":"product"}
+    {"type":"branch_summary","id":"e","parentId":"d","timestamp":"2026-08-24T20:00:05Z","fromId":"a","summary":"Earlier work"}
+    {"type":"compaction","id":"f","parentId":"e","timestamp":"2026-08-24T20:00:06Z","summary":"Compact work","shortSummary":"Work","firstKeptEntryId":"c","tokensBefore":4000,"tokensAfter":900,"method":"snapcompact","warning":"Near limit"}
+    """#.utf8)
+
+    let entries = try SessionFileParser.parse(data: data).entries
+
+    guard case .modelChange(_, let model) = entries[0] else {
+        Issue.record("expected model metadata"); return
+    }
+    #expect(model.model == "openai-codex/gpt-5.6-sol")
+    #expect(model.role == "temporary")
+    #expect(model.resolvedModelIsFallback)
+
+    guard case .thinkingLevelChange(_, let thinking) = entries[1] else {
+        Issue.record("expected thinking metadata"); return
+    }
+    #expect(thinking.effective == "high")
+    #expect(thinking.configured == "auto")
+
+    guard case .modeChange(_, let mode) = entries[2] else {
+        Issue.record("expected mode metadata"); return
+    }
+    #expect(mode.mode == "plan")
+    #expect(mode.data?["planFilePath"]?.stringValue == "/tmp/plan.md")
+
+    guard case .sessionInit(_, let metadata) = entries[3] else {
+        Issue.record("expected session init metadata"); return
+    }
+    #expect(metadata.task == "Review transcript")
+    #expect(metadata.agent == "reviewer")
+    #expect(metadata.resolvedModel == "anthropic/claude-opus-4-8")
+    #expect(metadata.isReadOnly)
+    #expect(metadata.advisor == "product")
+
+    guard case .branchSummary(_, let branch) = entries[4] else {
+        Issue.record("expected branch summary"); return
+    }
+    #expect(branch.fromId == "a")
+    #expect(branch.summary == "Earlier work")
+
+    guard case .compaction(_, let compaction) = entries[5] else {
+        Issue.record("expected compaction metadata"); return
+    }
+    #expect(compaction.shortSummary == "Work")
+    #expect(compaction.tokensBefore == 4000)
+    #expect(compaction.tokensAfter == 900)
+    #expect(compaction.method == "snapcompact")
+    #expect(compaction.warning == "Near limit")
+
+    let encodedEntries = String(data: data, encoding: .utf8) ?? ""
+    #expect(encodedEntries.contains("must stay private"))
+    #expect(!String(describing: metadata).contains("must stay private"))
 }

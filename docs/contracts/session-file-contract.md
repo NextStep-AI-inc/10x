@@ -128,6 +128,13 @@ Exact fields per variant (all extend `SessionEntryBase`):
 | `"credential_pin"` | `provider: string`, `hash: string` (sha-256 of account+scope tuple; pseudonymous) |
 | `"reset_boundary"` | *(no payload — durable `/clear` marker; context rebuild starts after it, disk keeps full history)* |
 
+The Swift `SessionFileParser` exposes transcript-relevant metadata as typed
+values: model selection (including role/fallback), configured and effective
+thinking, mode changes, compaction counts/warnings, branch summaries, and a
+display-safe subset of `session_init`. The `session_init.systemPrompt` and
+execution schemas deliberately remain outside that typed display model; unknown
+entry kinds are still retained as raw values.
+
 ### 1.5 Versioning
 
 `version` on the header: absent ⇒ v1, else 2 or 3. `CURRENT_SESSION_VERSION = 3`. Migrations (`session-migrations.ts`, run in-memory on load — files on disk may remain old-version until rewritten):

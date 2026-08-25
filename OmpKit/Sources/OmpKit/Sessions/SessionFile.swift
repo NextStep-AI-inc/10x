@@ -81,7 +81,7 @@ public enum SessionFileParser {
             }
             var parsedEntry = entry(type: type, base: base, object: object, raw: .object(object))
             if needsSyntheticIds,
-               case .compaction(let compactionBase, let summary, _) = parsedEntry,
+               case .compaction(let compactionBase, let compaction) = parsedEntry,
                let sourceIndex = object["firstKeptEntryIndex"]?.intValue {
                 // v1 indices address the complete JSONL array, including the
                 // session header at index zero. Parsed entries omit that line.
@@ -89,8 +89,14 @@ public enum SessionFileParser {
                 if entries.indices.contains(entryIndex) {
                     parsedEntry = .compaction(
                         base: compactionBase,
-                        summary: summary,
-                        firstKeptEntryId: entries[entryIndex].base.id)
+                        value: SessionCompaction(
+                            summary: compaction.summary,
+                            shortSummary: compaction.shortSummary,
+                            firstKeptEntryId: entries[entryIndex].base.id,
+                            tokensBefore: compaction.tokensBefore,
+                            tokensAfter: compaction.tokensAfter,
+                            method: compaction.method,
+                            warning: compaction.warning))
                 }
             }
             entries.append(parsedEntry)
@@ -138,15 +144,51 @@ public enum SessionFileParser {
         case "message":
             return .message(base: base, message: object["message"] ?? .null)
         case "model_change":
-            return .modelChange(base: base, model: object["model"]?.stringValue ?? "")
+            return .modelChange(
+                base: base,
+                selection: SessionModelSelection(
+                    model: object["model"]?.stringValue ?? "",
+                    role: object["role"]?.stringValue,
+                    resolvedModelIsFallback: object["resolvedModelIsFallback"]?.boolValue == true))
         case "thinking_level_change":
             return .thinkingLevelChange(
-                base: base, thinkingLevel: object["thinkingLevel"]?.stringValue)
+                base: base,
+                selection: SessionThinkingSelection(
+                    effective: object["thinkingLevel"]?.stringValue,
+                    configured: object["configured"]?.stringValue))
         case "compaction":
             return .compaction(
                 base: base,
-                summary: object["summary"]?.stringValue ?? "",
-                firstKeptEntryId: object["firstKeptEntryId"]?.stringValue ?? "")
+                value: SessionCompaction(
+                    summary: object["summary"]?.stringValue ?? "",
+                    shortSummary: object["shortSummary"]?.stringValue,
+                    firstKeptEntryId: object["firstKeptEntryId"]?.stringValue ?? "",
+                    tokensBefore: object["tokensBefore"]?.intValue,
+                    tokensAfter: object["tokensAfter"]?.intValue,
+                    method: object["method"]?.stringValue,
+                    warning: object["warning"]?.stringValue))
+        case "branch_summary":
+            return .branchSummary(
+                base: base,
+                value: SessionBranchSummary(
+                    fromId: object["fromId"]?.stringValue ?? "",
+                    summary: object["summary"]?.stringValue ?? ""))
+        case "mode_change":
+            return .modeChange(
+                base: base,
+                selection: SessionModeSelection(
+                    mode: object["mode"]?.stringValue ?? "none",
+                    data: object["data"]))
+        case "session_init":
+            return .sessionInit(
+                base: base,
+                metadata: SessionInitMetadata(
+                    task: object["task"]?.stringValue ?? "",
+                    agent: object["agent"]?.stringValue,
+                    modelRole: object["modelRole"]?.stringValue,
+                    resolvedModel: object["resolvedModel"]?.stringValue,
+                    isReadOnly: object["readOnly"]?.boolValue == true,
+                    advisor: object["advisor"]?.stringValue))
         case "label":
             return .labelEntry(
                 base: base,

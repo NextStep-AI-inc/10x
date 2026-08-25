@@ -54,7 +54,14 @@ private func file(_ entries: [SessionEntry]) -> ParsedSessionFile {
     let b = node("b", "a")
     let compaction = SessionEntry.compaction(
         base: SessionEntryBase(id: "cmp", parentId: "b", timestamp: "t"),
-        summary: "earlier work", firstKeptEntryId: "c")
+        value: SessionCompaction(
+            summary: "earlier work",
+            shortSummary: nil,
+            firstKeptEntryId: "c",
+            tokensBefore: nil,
+            tokensAfter: nil,
+            method: nil,
+            warning: nil))
     let c = node("c", "cmp")
     let path = SessionTree.activePath(of: file([a, b, compaction, c]))
     guard let result = SessionTree.compactedPrefix(of: path) else {

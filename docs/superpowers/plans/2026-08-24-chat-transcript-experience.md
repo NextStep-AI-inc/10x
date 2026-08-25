@@ -29,14 +29,14 @@
 - Modify: `OmpKit/Tests/OmpKitTests/SessionFileTests.swift`
 - Modify: `docs/contracts/session-file-contract.md`
 
-- [ ] Add failing parser tests for model role/fallback, configured thinking,
+- [x] Add failing parser tests for model role/fallback, configured thinking,
   `mode_change`, display-safe `session_init`, branch summary, and compaction counts.
-- [ ] Run `swift test --filter SessionFileTests` and confirm the new assertions fail.
-- [ ] Add the minimum typed associated values and parsing needed for those entries;
+- [x] Run `swift test --filter SessionFileTests` and confirm the new assertions fail.
+- [x] Add the minimum typed associated values and parsing needed for those entries;
   preserve unknown raw entries and never surface `systemPrompt`.
-- [ ] Run the focused tests and then `swift test`; record only the known lifecycle
+- [x] Run the focused tests and then `swift test`; record only the known lifecycle
   baseline failure if it recurs.
-- [ ] Commit: `feat(ompkit): preserve transcript timeline metadata`
+- [x] Commit: `feat(ompkit): preserve transcript timeline metadata`
 
 ## Task 2: Normalize messages, annotations, and references
 
@@ -217,4 +217,3 @@
 - [ ] Update this plan's checkboxes and spec status with verified evidence.
 - [ ] Because no remote exists, report the reviewed branch and commits instead
   of pretending a draft PR exists. Do not merge without Tanner's instruction.
-

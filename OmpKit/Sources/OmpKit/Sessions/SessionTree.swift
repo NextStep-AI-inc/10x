@@ -47,11 +47,13 @@ public enum SessionTree {
             if case .compaction = $0 { return true }
             return false
         }) else { return nil }
-        guard case .compaction(_, let summary, let firstKeptEntryId) = path[compactionIndex] else {
+        guard case .compaction(_, let compaction) = path[compactionIndex] else {
             return nil
         }
-        let cutoff = path.firstIndex { $0.base.id == firstKeptEntryId } ?? compactionIndex
-        guard cutoff > 0 else { return (path[0..<0], summary) }
-        return (path[0..<cutoff], summary)
+        let cutoff = path.firstIndex {
+            $0.base.id == compaction.firstKeptEntryId
+        } ?? compactionIndex
+        guard cutoff > 0 else { return (path[0..<0], compaction.summary) }
+        return (path[0..<cutoff], compaction.summary)
     }
 }
