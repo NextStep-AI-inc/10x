@@ -299,10 +299,12 @@ struct ProviderUsageProvider: Identifiable, Equatable, Sendable {
         "openai-codex": "OAI",
         "cursor": "CUR",
         "google-gemini-cli": "GCA",
+        "github-copilot": "GHC",
     ]
 
     private static func fallbackAbbreviation(name: String, id: String) -> String {
-        let words = abbreviationWords(in: name)
+        let words = name.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
         var characters: [Character]
 
         switch words.count {
@@ -319,31 +321,11 @@ struct ProviderUsageProvider: Identifiable, Equatable, Sendable {
         if characters.count < 3 {
             characters.append(contentsOf: id.uppercased().filter { $0.isLetter || $0.isNumber })
         }
-        while characters.count < 3 {
-            characters.append("X")
+        var normalizedCharacters = String(characters).uppercased().filter { $0.isLetter || $0.isNumber }
+        while normalizedCharacters.count < 3 {
+            normalizedCharacters.append("X")
         }
-        return String(characters.prefix(3)).uppercased()
-    }
-
-    private static func abbreviationWords(in name: String) -> [String] {
-        var words: [String] = []
-        var word = ""
-
-        for character in name {
-            guard character.isLetter || character.isNumber else {
-                if !word.isEmpty { words.append(word) }
-                word = ""
-                continue
-            }
-            if character.isUppercase, word.last?.isLowercase == true {
-                words.append(word)
-                word = String(character)
-            } else {
-                word.append(character)
-            }
-        }
-        if !word.isEmpty { words.append(word) }
-        return words
+        return String(normalizedCharacters.prefix(3))
     }
 }
 
