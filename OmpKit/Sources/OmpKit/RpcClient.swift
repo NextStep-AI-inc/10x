@@ -49,6 +49,24 @@ public struct RpcClientConfiguration: Sendable {
     }
 }
 
+public struct RpcEventSequence: AsyncSequence, Sendable {
+    public typealias Element = RpcFrame
+
+    let stream: AsyncStream<ByteCounted<RpcFrame>>
+
+    public struct AsyncIterator: AsyncIteratorProtocol {
+        fileprivate var iterator: AsyncStream<ByteCounted<RpcFrame>>.Iterator
+
+        public mutating func next() async -> RpcFrame? {
+            await iterator.next()?.value
+        }
+    }
+
+    public func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(iterator: stream.makeAsyncIterator())
+    }
+}
+
 /// Speaks omp's newline-delimited RPC protocol over a spawned child process.
 ///
 /// Responses are matched to requests by id — never by arrival order, since omp
@@ -74,8 +92,9 @@ public actor RpcClient {
     private var terminated = false
     private var readerFinished = false
 
-    private let eventStream: AsyncStream<RpcFrame>
-    private let eventContinuation: AsyncStream<RpcFrame>.Continuation
+    private let eventStream: AsyncStream<ByteCounted<RpcFrame>>
+    private let eventContinuation: AsyncStream<ByteCounted<RpcFrame>>.Continuation
+    private let eventByteBudget: QueuedByteBudget
     /// Separate from `events` so observers watching for the child's death do not
     /// consume frames the UI needs — an AsyncStream has a single consumer.
     private let terminationStream: AsyncStream<Void>
@@ -92,17 +111,22 @@ public actor RpcClient {
     public private(set) var protocolErrors: [RpcProtocolError] = []
     private static let maxProtocolErrors = 128
     private static let maxBufferedEvents = 512
+    /// One maximum protocol-v2 frame plus one physical control frame may wait
+    /// for the consumer; cumulative decoded payloads stay bounded at 65 MiB.
+    static let maxBufferedEventBytes = ChunkReassembler.maxReassembledFrameBytes
+        + ChunkReassembler.maxPhysicalFrameBytes
 
     public init(configuration: RpcClientConfiguration) {
         self.configuration = configuration
         beforeHandlingLine = { _ in }
+        eventByteBudget = QueuedByteBudget(limit: Self.maxBufferedEventBytes)
         self.transport = LineTransport(
             executable: configuration.executable,
             arguments: configuration.resolvedArguments,
             currentDirectory: configuration.cwd,
             environment: configuration.environment)
         self.reassembler = ChunkReassembler()
-        (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream(
+        (eventStream, eventContinuation) = AsyncStream<ByteCounted<RpcFrame>>.makeStream(
             bufferingPolicy: .bufferingOldest(Self.maxBufferedEvents))
         (terminationStream, terminationContinuation) = AsyncStream<Void>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
@@ -110,17 +134,22 @@ public actor RpcClient {
 
     init(
         configuration: RpcClientConfiguration,
-        beforeHandlingLine: @escaping @Sendable (Data) async -> Void
+        beforeHandlingLine: @escaping @Sendable (Data) async -> Void,
+        maxBufferedEventBytes: Int = RpcClient.maxBufferedEventBytes,
+        processOperations: ProcessOperations = .live
     ) {
         self.configuration = configuration
         self.beforeHandlingLine = beforeHandlingLine
+        eventByteBudget = QueuedByteBudget(limit: maxBufferedEventBytes)
         self.transport = LineTransport(
             executable: configuration.executable,
             arguments: configuration.resolvedArguments,
             currentDirectory: configuration.cwd,
-            environment: configuration.environment)
+            environment: configuration.environment,
+            processOperations: processOperations,
+            trackerDidPoll: {})
         self.reassembler = ChunkReassembler()
-        (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream(
+        (eventStream, eventContinuation) = AsyncStream<ByteCounted<RpcFrame>>.makeStream(
             bufferingPolicy: .bufferingOldest(Self.maxBufferedEvents))
         (terminationStream, terminationContinuation) = AsyncStream<Void>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
@@ -130,7 +159,7 @@ public actor RpcClient {
     /// requests, notices, and anything a future omp introduces.
     ///
     /// Single-consumer, like any AsyncStream — one owner should iterate it.
-    public nonisolated var events: AsyncStream<RpcFrame> { eventStream }
+    public nonisolated var events: RpcEventSequence { RpcEventSequence(stream: eventStream) }
 
     /// Finishes when the child process is gone, for whatever reason. Watch this
     /// rather than `events` to observe termination without stealing frames.
@@ -348,17 +377,27 @@ public actor RpcClient {
             } else {
                 receivedReady = ready
             }
-            if case .dropped = eventContinuation.yield(frame) {
-                await poison(reason: "RPC event backlog overflow")
-            }
+            await enqueueEvent(frame, sourceByteCount: line.count)
         case .response(let response):
             deliver(response)
         case .chunk:
             break   // handled above
         case .extensionUIRequest, .hostToolCall, .hostToolCancel, .event:
-            if case .dropped = eventContinuation.yield(frame) {
-                await poison(reason: "RPC event backlog overflow")
-            }
+            await enqueueEvent(frame, sourceByteCount: line.count)
+        }
+    }
+
+    private func enqueueEvent(_ frame: RpcFrame, sourceByteCount: Int) async {
+        guard let queued = ByteCounted(
+            value: frame,
+            byteCount: sourceByteCount,
+            budget: eventByteBudget)
+        else {
+            await poison(reason: "RPC event byte backlog overflow")
+            return
+        }
+        if case .dropped = eventContinuation.yield(queued) {
+            await poison(reason: "RPC event backlog overflow")
         }
     }
 

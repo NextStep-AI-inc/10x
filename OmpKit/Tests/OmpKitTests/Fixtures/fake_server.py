@@ -57,6 +57,17 @@ if mode == "backlog-overflow":
         emit({"type": "notice", "backlog": index})
     time.sleep(30)
     raise SystemExit(0)
+if mode == "byte-backlog-overflow":
+    payload = "x" * 900000
+    for index in range(12):
+        emit({"type": "notice", "byteBacklog": index, "payload": payload})
+    sys.stderr.write("byte-backlog-complete\n")
+    sys.stderr.flush()
+    time.sleep(30)
+    raise SystemExit(0)
+if mode == "near-limit-line":
+    emit({"type": "notice", "payload": "x" * 1000000})
+    raise SystemExit(0)
 if mode == "grandchild":
     heartbeat = sys.argv[2]
     child = """
@@ -126,6 +137,20 @@ for line in sys.stdin:
         else:
             emit({"id": cid, "type": "response", "command": "negotiate_protocol",
                   "success": True, "data": {"protocolVersion": 2}})
+        if mode == "rpc-reassembled-byte-overflow":
+            for event_index in range(2):
+                payload = json.dumps(
+                    {"type": "notice", "eventIndex": event_index,
+                     "payload": "x" * 1100000},
+                    separators=(",", ":")).encode()
+                size = 262144
+                parts = [payload[i:i + size] for i in range(0, len(payload), size)]
+                for i, part in enumerate(parts):
+                    emit({"type": "rpc_chunk", "chunkId": f"event-{event_index}",
+                          "index": i, "count": len(parts), "byteLength": len(payload),
+                          "data": base64.b64encode(part).decode()})
+            time.sleep(30)
+            raise SystemExit(0)
         if mode == "leader-exit-grandchild":
             time.sleep(0.15)
             sys.stderr.write("leader-exit-grandchild\n")

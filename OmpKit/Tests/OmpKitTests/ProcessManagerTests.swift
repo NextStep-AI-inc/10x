@@ -166,6 +166,26 @@ private func grandchildManager(mode: String, heartbeat: URL) -> SessionProcessMa
     await manager.closeAll()
 }
 
+@Test func reopenedPathGetsANewGenerationAndOldExitKeepsItsGeneration() async throws {
+    let manager = fakeManager(mode: "crash-after-negotiation")
+    let exits = manager.unexpectedExits
+    let first = try await manager.open(
+        sessionPath: "/tmp/reopened-generation.jsonl",
+        cwd: "/tmp")
+
+    let oldExit = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
+        for await exit in exits { return exit }
+        return nil
+    } ?? nil
+    let second = try await manager.open(
+        sessionPath: first.sessionPath,
+        cwd: "/tmp")
+
+    #expect(oldExit?.generation == first.generation)
+    #expect(second.generation != first.generation)
+    await manager.closeAll()
+}
+
 @Test func managerDoesNotConsumeApplicationEvents() async throws {
     let manager = fakeManager(mode: "burst")
     let handle = try await manager.open(sessionPath: "/tmp/burst.jsonl", cwd: "/tmp")
@@ -330,6 +350,45 @@ func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async thr
     #expect(await manager.handle(for: handle.sessionPath) == nil)
 }
 
+@Test func incompleteLiveTreeObservationWithholdsExitUntilAnchoredRecovery() async throws {
+    let processes = CertificationProcessTable()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var updated = configuration
+        updated.executable = "/usr/bin/env"
+        updated.extraArguments = [
+            "python3", fixtureURL("fake_server.py").path, "crash-after-negotiation",
+        ]
+        updated.rawArgv = true
+        updated.cwd = nil
+        return RpcClient(
+            configuration: updated,
+            beforeHandlingLine: { _ in },
+            processOperations: processes.operations)
+    })
+    let exits = manager.unexpectedExits
+    let handle = try await manager.open(
+        sessionPath: "/tmp/incomplete-certification.jsonl",
+        cwd: "/tmp")
+
+    processes.setListsAreComplete(false)
+    #expect(await waitUntil { processes.incompleteReadCount > 0 })
+    #expect(await waitForClientExit(handle.client))
+    processes.removeLeader()
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(await manager.handle(for: handle.sessionPath) != nil)
+
+    processes.setListsAreComplete(true)
+    #expect(await waitUntil { processes.didObserveCompleteDescendantAnchor })
+    processes.removeDescendant()
+    let event = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
+        for await exit in exits { return exit }
+        return nil
+    } ?? nil
+
+    #expect(event?.generation == handle.generation)
+    #expect(await manager.handle(for: handle.sessionPath) == nil)
+}
+
 private func waitForFixtureChild(heartbeat: URL) async -> pid_t? {
     let pidFile = URL(fileURLWithPath: heartbeat.path + ".pid")
     return await withTimeout(.seconds(2)) {
@@ -353,4 +412,98 @@ private func terminateFixtureChild(heartbeat: URL) {
     }
     try? FileManager.default.removeItem(at: heartbeat)
     try? FileManager.default.removeItem(at: pidFile)
+}
+
+private final class CertificationProcessTable: @unchecked Sendable {
+    private let lock = NSLock()
+    private var leaderPID: pid_t?
+    private var isLeaderVisible = true
+    private var isDescendantVisible = true
+    private var listsAreComplete = true
+    private var incompleteReads = 0
+    private var observedCompleteDescendantAnchor = false
+
+    var operations: ProcessOperations {
+        ProcessOperations(
+            snapshot: { [self] pid in snapshot(pid) },
+            childPIDs: { [self] parent in listChildren(of: parent) },
+            groupPIDs: { [self] group in listGroup(group) },
+            signalProcess: { _, _ in },
+            signalGroup: { _, _ in })
+    }
+
+    func setListsAreComplete(_ isComplete: Bool) {
+        lock.withLock { listsAreComplete = isComplete }
+    }
+
+    func removeLeader() { lock.withLock { isLeaderVisible = false } }
+    func removeDescendant() { lock.withLock { isDescendantVisible = false } }
+
+    var incompleteReadCount: Int { lock.withLock { incompleteReads } }
+    var didObserveCompleteDescendantAnchor: Bool {
+        lock.withLock { observedCompleteDescendantAnchor }
+    }
+
+    private func snapshot(_ pid: pid_t) -> ProcessSnapshot? {
+        lock.withLock {
+            if leaderPID == nil { leaderPID = pid }
+            guard let leaderPID else { return nil }
+            if pid == leaderPID, isLeaderVisible {
+                return ProcessSnapshot(
+                    identity: .init(pid: pid, startSeconds: 1, startMicroseconds: 0),
+                    parentPID: 1,
+                    processGroupID: leaderPID)
+            }
+            let descendantPID = leaderPID + 100_000
+            if pid == descendantPID, isDescendantVisible {
+                return ProcessSnapshot(
+                    identity: .init(pid: pid, startSeconds: 1, startMicroseconds: 0),
+                    parentPID: leaderPID,
+                    processGroupID: leaderPID)
+            }
+            return nil
+        }
+    }
+
+    private func listChildren(of parent: pid_t) -> ProcessPIDList {
+        lock.withLock {
+            guard let leaderPID else { return .init(pids: [], isComplete: false) }
+            if !listsAreComplete { incompleteReads += 1 }
+            let pids = parent == leaderPID && isDescendantVisible
+                ? [leaderPID + 100_000] : []
+            return .init(pids: pids, isComplete: listsAreComplete)
+        }
+    }
+
+    private func listGroup(_ group: pid_t) -> ProcessPIDList {
+        lock.withLock {
+            guard let leaderPID, group == leaderPID else {
+                return .init(pids: [], isComplete: false)
+            }
+            if !listsAreComplete { incompleteReads += 1 }
+            if listsAreComplete, !isLeaderVisible, isDescendantVisible {
+                observedCompleteDescendantAnchor = true
+            }
+            var pids: [pid_t] = []
+            if isLeaderVisible { pids.append(leaderPID) }
+            if isDescendantVisible { pids.append(leaderPID + 100_000) }
+            return .init(pids: pids, isComplete: listsAreComplete)
+        }
+    }
+}
+
+private func waitForClientExit(_ client: RpcClient) async -> Bool {
+    for _ in 0..<150 {
+        if await client.exitCode != nil { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return false
+}
+
+private func waitUntil(_ condition: @escaping @Sendable () -> Bool) async -> Bool {
+    for _ in 0..<150 {
+        if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return false
 }

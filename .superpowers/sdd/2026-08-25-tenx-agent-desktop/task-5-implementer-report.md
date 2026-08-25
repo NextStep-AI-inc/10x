@@ -281,3 +281,78 @@ Status: DONE
 - No manual UI walkthrough was run because round 5 changes only process,
   protocol-backpressure, and controller ownership behavior; it changes no UI or
   user-facing copy.
+
+## Round 6 follow-up
+
+Status: DONE_WITH_CONCERNS
+
+- Process-tree termination certification is no longer sticky. Any later
+  incomplete, capped, interrupted, or deadline-bounded observation while an
+  original identity may still be live invalidates the prior certificate. Only
+  a subsequent complete observation anchored by the original leader or an
+  exact retained descendant can certify the tree again.
+- Every manager handle now has an immutable UUID generation carried in its
+  unexpected-exit event. `SessionController` and `AppModel` match the exact
+  originating manager and generation, so a buffered exit from an old process
+  cannot stop a new same-path process. Exit fan-out removes each notified owner
+  from current retiring storage immediately after its awaited notification,
+  including an active owner that became retiring through reentrancy.
+- Transport lines use an 8 MiB cumulative queued-byte budget. RPC events use a
+  65 MiB budget, sufficient for one maximum 64 MiB reassembled v2 event plus a
+  maximum 1 MiB physical control frame. Bytes are charged from the exact input
+  or reassembled `Data.count` before enqueue and released by a unique lease on
+  consumption, drop, or stream teardown. Count caps remain as a second bound;
+  either overflow fails closed rather than dropping a protocol frame.
+- Short transport shutdown deadlines are divided across graceful, TERM, and
+  KILL phases. This preserves the caller's deadline while ensuring the grace
+  phase cannot consume all time needed to reap an overflowed peer.
+
+### Round 6 TDD evidence
+
+- A complete process observation followed by an incomplete live-tree read
+  initially retained the old certificate and reported termination after the
+  leader disappeared. Tracker- and manager-level regressions now retain the
+  handle and suppress the event until a complete observation anchored by the
+  original descendant recovers certification and the descendant then exits.
+- An old same-path manager exit initially stopped the reopened active session.
+  Exact generation matching leaves the new controller untouched. A separate
+  gated cleanup test initially retained an active owner that moved to retiring
+  during an earlier notification; both old owners now deallocate and release
+  once.
+- Count-only transport and RPC queues initially accepted aggregate legal frames
+  above their byte budgets. Both now poison and shut down within their existing
+  deadlines. One near-physical-limit line and one maximum reassembled event
+  remain accepted, and the existing 200-frame trailing drain still passes.
+
+### Debugging note
+
+The first complete OmpKit run exposed that a one-second shutdown could spend
+its entire deadline waiting for graceful EOF before signaling an overflowed
+child. The focused test passed only when a broken pipe happened to end the
+fixture early. Dividing the existing deadline among shutdown phases made the
+behavior deterministic without increasing it; the next complete run passed.
+
+The first clean app run also exposed the pre-existing 50 ms scheduling sleep in
+`exactAgentDesktopBorrowAndCancellationRouteToTheRegisteredHostTool`: under
+parallel suite load neither host task ran before its assertion. The unchanged
+test passed in the next exact full run; this timing-sensitive test remains a
+suite concern outside the round-6 ownership changes.
+
+### Round 6 verification
+
+- `swift test --package-path OmpKit`: 162 tests passed in 2.809 seconds.
+- `xcodebuild -project 10x.xcodeproj -scheme 10x -destination
+  'platform=macOS,arch=arm64' -derivedDataPath /tmp/tenx-round6-app-final2
+  test`: 174 tests passed in 2.870 seconds; `** TEST SUCCEEDED **`.
+- `xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release
+  -destination 'generic/platform=macOS' -derivedDataPath
+  /tmp/tenx-round6-release-final2 CODE_SIGNING_ALLOWED=NO build`: succeeded;
+  `lipo -archs` reported `x86_64 arm64`.
+- `ruby scripts/generate_xcodeproj.rb` completed with no generated project
+  diff. `git diff --check` completed without errors.
+
+### Not verified
+
+- No manual UI walkthrough was run because round 6 changes lifecycle identity,
+  process certification, and protocol backpressure only; it changes no UI or
+  user-facing copy.

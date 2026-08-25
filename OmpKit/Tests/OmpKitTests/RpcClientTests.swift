@@ -6,7 +6,8 @@ func makeClient(
     mode: String,
     startupTimeout: Duration = .seconds(30),
     requestTimeout: Duration = .seconds(30),
-    beforeHandlingLine: @escaping @Sendable (Data) async -> Void = { _ in }
+    beforeHandlingLine: @escaping @Sendable (Data) async -> Void = { _ in },
+    maxBufferedEventBytes: Int? = nil
 ) -> RpcClient {
     var cfg = RpcClientConfiguration()
     cfg.executable = "/usr/bin/env"
@@ -15,9 +16,13 @@ func makeClient(
     cfg.noSession = true
     cfg.startupTimeout = startupTimeout
     cfg.requestTimeout = requestTimeout
-    return RpcClient(
-        configuration: cfg,
-        beforeHandlingLine: beforeHandlingLine)
+    if let maxBufferedEventBytes {
+        return RpcClient(
+            configuration: cfg,
+            beforeHandlingLine: beforeHandlingLine,
+            maxBufferedEventBytes: maxBufferedEventBytes)
+    }
+    return RpcClient(configuration: cfg, beforeHandlingLine: beforeHandlingLine)
 }
 
 @Test func startNegotiatesV2() async throws {
@@ -271,6 +276,63 @@ func makeClient(
     #expect(await client.exitCode != nil)
 }
 
+@Test func reassembledEventsCrossingTheByteBudgetPoisonTheConnection() async throws {
+    let client = makeClient(
+        mode: "rpc-reassembled-byte-overflow",
+        startupTimeout: .seconds(5),
+        maxBufferedEventBytes: 1_500_000)
+    _ = try await client.start()
+
+    #expect(await waitForProtocolError(client, containing: "byte backlog overflow"))
+    #expect(await waitForExit(client))
+    let started = ContinuousClock.now
+    #expect(await client.shutdown(
+        deadline: started.advanced(by: .seconds(1))))
+    #expect(ContinuousClock.now - started < .seconds(1.2))
+}
+
+@Test func rpcEventBudgetAcceptsOneMaximumReassembledFrame() async throws {
+    let budget = QueuedByteBudget(limit: RpcClient.maxBufferedEventBytes)
+    let storage = AsyncStream<ByteCounted<RpcFrame>>.makeStream(
+        bufferingPolicy: .bufferingOldest(512))
+    var control: ByteCounted<RpcFrame>? = ByteCounted(
+        value: .ready(ReadyFrame(protocolVersion: 2)),
+        byteCount: ChunkReassembler.maxPhysicalFrameBytes,
+        budget: budget)
+    storage.continuation.yield(try #require(control))
+    control = nil
+    let frame = RpcFrame.event(type: "notice", payload: .object([:]))
+    var queued: ByteCounted<RpcFrame>? = ByteCounted(
+        value: frame,
+        byteCount: ChunkReassembler.maxReassembledFrameBytes,
+        budget: budget)
+    if case .dropped = storage.continuation.yield(try #require(queued)) {
+        Issue.record("one maximum reassembled frame was rejected")
+    }
+    queued = nil
+
+    var iterator = RpcEventSequence(stream: storage.stream).makeAsyncIterator()
+    _ = await iterator.next()
+    let received = await iterator.next()
+    #expect(received == frame)
+    #expect(budget.usedBytes == 0)
+}
+
+@Test func queuedByteBudgetReleasesBufferedValuesWhenStreamStorageTerminates() {
+    let budget = QueuedByteBudget(limit: 10)
+
+    func enqueueAndDestroyStream() {
+        let storage = AsyncStream<ByteCounted<Int>>.makeStream(
+            bufferingPolicy: .bufferingOldest(1))
+        let queued = ByteCounted(value: 7, byteCount: 7, budget: budget)
+        if let queued { storage.continuation.yield(queued) }
+        #expect(budget.usedBytes == 7)
+    }
+
+    enqueueAndDestroyStream()
+    #expect(budget.usedBytes == 0)
+}
+
 @Test func naturalShutdownDoesNotAwaitABlockedReaderPastTheDeadline() async throws {
     let gate = AsyncGate()
     let client = makeClient(
@@ -369,6 +431,21 @@ private func waitForExit(_ client: RpcClient) async -> Bool {
     for _ in 0..<100 {
         if await client.exitCode != nil { return true }
         try? await Task.sleep(for: .milliseconds(10))
+    }
+    return false
+}
+
+private func waitForProtocolError(
+    _ client: RpcClient,
+    containing text: String
+) async -> Bool {
+    for _ in 0..<150 {
+        if await client.protocolErrors.contains(where: {
+            $0.remoteError?.contains(text) == true
+        }) {
+            return true
+        }
+        try? await Task.sleep(for: .milliseconds(20))
     }
     return false
 }

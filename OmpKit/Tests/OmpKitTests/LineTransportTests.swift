@@ -259,6 +259,43 @@ func withTimeout<T: Sendable>(
     #expect(!isTerminated)
 }
 
+@Test func laterIncompleteObservationInvalidatesPriorTerminationCertification() throws {
+    let leader = ProcessSnapshot(
+        identity: .init(pid: 450, startSeconds: 1, startMicroseconds: 0),
+        parentPID: 1,
+        processGroupID: 450)
+    let descendant = ProcessSnapshot(
+        identity: .init(pid: 451, startSeconds: 1, startMicroseconds: 0),
+        parentPID: 450,
+        processGroupID: 450)
+    let table = FakeProcessTable([leader, descendant])
+    var tracker = ProcessTreeTracker(
+        leader: leader,
+        processGroupID: 450,
+        operations: table.operations)
+    let initialRefresh = tracker.refresh(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(initialRefresh)
+
+    table.setListsAreComplete(false)
+    let incompleteRefresh = tracker.refresh(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(!incompleteRefresh)
+    table.replace([descendant])
+    let terminatedAfterIncompleteRefresh = tracker.isTerminated(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(!terminatedAfterIncompleteRefresh)
+
+    table.setListsAreComplete(true)
+    let recoveryRefresh = tracker.refresh(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(recoveryRefresh)
+    table.replace([])
+    let terminatedAfterRecovery = tracker.isTerminated(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(terminatedAfterRecovery)
+}
+
 @Test func descendantTrackerStopsPollingWhenTransportShutsDown() async throws {
     let polls = LockedCounter()
     let transport = LineTransport(
@@ -381,11 +418,64 @@ func withTimeout<T: Sendable>(
     #expect(ContinuousClock.now - started < .seconds(1.2))
 }
 
+@Test func cumulativeLineBytesOverflowBeforeTheFrameCountCap() async throws {
+    let transport = makeFakeTransport(mode: "byte-backlog-overflow")
+    try await transport.start()
+    _ = await withTimeout(.seconds(2)) { () -> Bool in
+        while await transport.exitStatus == nil {
+            if await transport.stderrSnapshot().contains("byte-backlog-complete") {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return true
+    }
+
+    let overflowed = await withTimeout(.seconds(2)) { () -> Bool in
+        do {
+            for try await _ in transport.lines {}
+            return false
+        } catch TransportError.backlogOverflow {
+            return true
+        } catch {
+            return false
+        }
+    }
+    let started = ContinuousClock.now
+    let stopped = await transport.shutdown(
+        deadline: started.advanced(by: .seconds(1)))
+
+    #expect(overflowed == true)
+    #expect(stopped)
+    #expect(ContinuousClock.now - started < .seconds(1.2))
+}
+
+@Test func oneNearPhysicalLimitLineIsDelivered() async throws {
+    let transport = makeFakeTransport(mode: "near-limit-line")
+    try await transport.start()
+
+    let lines = await withTimeout(.seconds(2)) { () -> [Data] in
+        var received: [Data] = []
+        do {
+            for try await line in transport.lines {
+                received.append(line)
+            }
+        } catch {
+            Issue.record("unexpected near-limit line failure: \(error)")
+        }
+        return received
+    } ?? []
+
+    #expect(lines.count == 2)
+    #expect(lines.last?.count == 1_000_030)
+    #expect(await transport.shutdown())
+}
+
 private final class FakeProcessTable: @unchecked Sendable {
     private let lock = NSLock()
     private var snapshots: [pid_t: ProcessSnapshot]
     private let snapshotDelay: Duration
-    private let listsAreComplete: Bool
+    private var listsAreComplete: Bool
     private var processSignals: [(pid_t, Int32)] = []
     private var groupSignals: [(pid_t, Int32)] = []
     private var snapshotCalls = 0
@@ -435,6 +525,10 @@ private final class FakeProcessTable: @unchecked Sendable {
         lock.withLock {
             snapshots = Dictionary(uniqueKeysWithValues: values.map { ($0.identity.pid, $0) })
         }
+    }
+
+    func setListsAreComplete(_ isComplete: Bool) {
+        lock.withLock { listsAreComplete = isComplete }
     }
 
     var signaledProcesses: [(pid_t, Int32)] { lock.withLock { processSignals } }

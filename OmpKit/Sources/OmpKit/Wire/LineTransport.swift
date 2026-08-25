@@ -8,6 +8,78 @@ public enum TransportError: Error, Sendable, Equatable {
     case backlogOverflow
 }
 
+/// A lock-backed byte budget whose leases follow queued values. Charging
+/// happens before enqueue; releasing a consumed, dropped, or torn-down value
+/// decrements the budget exactly once through the lease lifetime.
+final class QueuedByteBudget: @unchecked Sendable {
+    private let limit: Int
+    private let lock = NSLock()
+    private var used = 0
+
+    init(limit: Int) { self.limit = limit }
+
+    func reserve(_ byteCount: Int) -> QueuedByteLease? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard byteCount >= 0, byteCount <= limit - used else { return nil }
+        used += byteCount
+        return QueuedByteLease(budget: self, byteCount: byteCount)
+    }
+
+    fileprivate func release(_ byteCount: Int) {
+        lock.lock()
+        used -= byteCount
+        lock.unlock()
+    }
+
+    var usedBytes: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return used
+    }
+}
+
+final class QueuedByteLease: @unchecked Sendable {
+    private let budget: QueuedByteBudget
+    private let byteCount: Int
+
+    fileprivate init(budget: QueuedByteBudget, byteCount: Int) {
+        self.budget = budget
+        self.byteCount = byteCount
+    }
+
+    deinit { budget.release(byteCount) }
+}
+
+struct ByteCounted<Value: Sendable>: Sendable {
+    let value: Value
+    private let lease: QueuedByteLease
+
+    init?(value: Value, byteCount: Int, budget: QueuedByteBudget) {
+        guard let lease = budget.reserve(byteCount) else { return nil }
+        self.value = value
+        self.lease = lease
+    }
+}
+
+public struct LineSequence: AsyncSequence, Sendable {
+    public typealias Element = Data
+
+    fileprivate let stream: AsyncThrowingStream<ByteCounted<Data>, any Error>
+
+    public struct AsyncIterator: AsyncIteratorProtocol {
+        fileprivate var iterator: AsyncThrowingStream<ByteCounted<Data>, any Error>.Iterator
+
+        public mutating func next() async throws -> Data? {
+            try await iterator.next()?.value
+        }
+    }
+
+    public func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(iterator: stream.makeAsyncIterator())
+    }
+}
+
 struct ProcessIdentity: Hashable, Sendable {
     let pid: pid_t
     let startSeconds: UInt64
@@ -100,30 +172,47 @@ struct ProcessTreeTracker: Sendable {
     @discardableResult
     mutating func refresh(until deadline: ContinuousClock.Instant) -> Bool {
         var isComplete = true
+        guard ContinuousClock.now < deadline else { return false }
+        let liveLeader = exactSnapshot(for: leader)
+        var sawLiveOriginalIdentity = liveLeader != nil
 
         // Prune dead and reused identities. If the deadline interrupts this
         // pass, unchecked entries remain so termination cannot be confirmed.
         for identity in Array(descendants.values) {
-            guard ContinuousClock.now < deadline else { return false }
-            if operations.snapshot(identity.pid)?.identity != identity {
+            guard ContinuousClock.now < deadline else {
+                invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
+                return false
+            }
+            if operations.snapshot(identity.pid)?.identity == identity {
+                sawLiveOriginalIdentity = true
+            } else {
                 descendants.removeValue(forKey: identity.pid)
             }
         }
 
-        guard ContinuousClock.now < deadline else { return false }
-        let liveLeader = exactSnapshot(for: leader)
+        guard ContinuousClock.now < deadline else {
+            invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity)
+            return false
+        }
         var pendingParents: [pid_t] = []
         if liveLeader != nil { pendingParents.append(leader.pid) }
         pendingParents.append(contentsOf: descendants.keys)
         var visited = Set(pendingParents)
 
         while let parent = pendingParents.popLast() {
-            guard ContinuousClock.now < deadline else { return false }
+            guard ContinuousClock.now < deadline else {
+                invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
+                return false
+            }
             let children = operations.childPIDs(parent)
             isComplete = isComplete && children.isComplete
             for pid in children.pids where visited.insert(pid).inserted {
-                guard ContinuousClock.now < deadline else { return false }
+                guard ContinuousClock.now < deadline else {
+                    invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
+                    return false
+                }
                 guard let child = operations.snapshot(pid), child.parentPID == parent else { continue }
+                sawLiveOriginalIdentity = true
                 if descendants.count < Self.maximumTrackedProcesses {
                     descendants[pid] = child.identity
                     pendingParents.append(pid)
@@ -137,14 +226,21 @@ struct ProcessTreeTracker: Sendable {
             processGroupID: processGroupID,
             deadline: deadline
         ) {
-            guard ContinuousClock.now < deadline else { return false }
+            guard ContinuousClock.now < deadline else {
+                invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
+                return false
+            }
             let members = operations.groupPIDs(processGroupID)
             isComplete = isComplete && members.isComplete
             for pid in members.pids where pid != leader.pid {
-                guard ContinuousClock.now < deadline else { return false }
+                guard ContinuousClock.now < deadline else {
+                    invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
+                    return false
+                }
                 guard let member = operations.snapshot(pid),
                       member.processGroupID == processGroupID
                 else { continue }
+                sawLiveOriginalIdentity = true
                 if descendants.count < Self.maximumTrackedProcesses
                     || descendants[pid] != nil {
                     descendants[pid] = member.identity
@@ -154,7 +250,11 @@ struct ProcessTreeTracker: Sendable {
             }
         }
         let completed = isComplete && ContinuousClock.now < deadline
-        if completed, liveLeader != nil { hasCompleteObservation = true }
+        if completed, sawLiveOriginalIdentity {
+            hasCompleteObservation = true
+        } else if !completed {
+            invalidateCertification(ifTreeMayBeLive: sawLiveOriginalIdentity || !descendants.isEmpty)
+        }
         return completed
     }
 
@@ -204,6 +304,10 @@ struct ProcessTreeTracker: Sendable {
         guard let snapshot = operations.snapshot(identity.pid), snapshot.identity == identity
         else { return nil }
         return snapshot
+    }
+
+    private mutating func invalidateCertification(ifTreeMayBeLive: Bool) {
+        if ifTreeMayBeLive { hasCompleteObservation = false }
     }
 
     private func hasOriginalGroupAnchor(
@@ -261,8 +365,9 @@ public actor LineTransport {
     /// off the actor to avoid wedging every other call.
     private let writeQueue = DispatchQueue(label: "sh.omp.ompkit.stdin")
 
-    private let lineStream: AsyncThrowingStream<Data, any Error>
-    private let lineContinuation: AsyncThrowingStream<Data, any Error>.Continuation
+    private let lineStream: AsyncThrowingStream<ByteCounted<Data>, any Error>
+    private let lineContinuation: AsyncThrowingStream<ByteCounted<Data>, any Error>.Continuation
+    private let lineByteBudget: QueuedByteBudget
     private let exitStream: AsyncStream<Int32>
     private let exitContinuation: AsyncStream<Int32>.Continuation
 
@@ -275,6 +380,8 @@ public actor LineTransport {
     /// considered runaway.
     private static let maxLineBytes = 1_048_576 + 65_536
     private static let maxBufferedLines = 512
+    /// At most eight maximum-sized physical frames may await the RPC reader.
+    static let maxBufferedLineBytes = 8 * ChunkReassembler.maxPhysicalFrameBytes
 
     public init(
         executable: String,
@@ -288,7 +395,8 @@ public actor LineTransport {
         self.environment = environment
         processOperations = .live
         trackerDidPoll = {}
-        (lineStream, lineContinuation) = AsyncThrowingStream<Data, any Error>.makeStream(
+        lineByteBudget = QueuedByteBudget(limit: Self.maxBufferedLineBytes)
+        (lineStream, lineContinuation) = AsyncThrowingStream<ByteCounted<Data>, any Error>.makeStream(
             bufferingPolicy: .bufferingOldest(Self.maxBufferedLines))
         (exitStream, exitContinuation) = AsyncStream<Int32>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
@@ -308,14 +416,15 @@ public actor LineTransport {
         self.environment = environment
         self.processOperations = processOperations
         self.trackerDidPoll = trackerDidPoll
-        (lineStream, lineContinuation) = AsyncThrowingStream<Data, any Error>.makeStream(
+        lineByteBudget = QueuedByteBudget(limit: Self.maxBufferedLineBytes)
+        (lineStream, lineContinuation) = AsyncThrowingStream<ByteCounted<Data>, any Error>.makeStream(
             bufferingPolicy: .bufferingOldest(Self.maxBufferedLines))
         (exitStream, exitContinuation) = AsyncStream<Int32>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
     }
 
     /// Lines from the child's stdout. Finishes when stdout closes.
-    public nonisolated var lines: AsyncThrowingStream<Data, any Error> { lineStream }
+    public nonisolated var lines: LineSequence { LineSequence(stream: lineStream) }
 
     /// Fires once with the child's exit code.
     public nonisolated var onExit: AsyncStream<Int32> { exitStream }
@@ -342,6 +451,7 @@ public actor LineTransport {
             handle: stdoutPipe.fileHandleForReading,
             buffer: buffer,
             continuation: lineContinuation,
+            byteBudget: lineByteBudget,
             maxLineBytes: Self.maxLineBytes)
         stdoutDrainer = drainer
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -434,11 +544,12 @@ public actor LineTransport {
         closeStdin()
         // The leader can exit on EOF while a descendant still holds stdout.
         // Continue through group teardown so `finishStreams()` cannot block on
-        // that inherited descriptor.
-        _ = await waitForExit(until: min(deadline, ContinuousClock.now.advanced(by: .seconds(1))))
+        // that inherited descriptor. Divide a short caller deadline between
+        // graceful, TERM, and KILL phases instead of spending all of it here.
+        _ = await waitForExit(until: shutdownPhaseDeadline(deadline, phasesRemaining: 3))
 
         processTreeTracker?.signal(SIGTERM, until: deadline)
-        _ = await waitForExit(until: min(deadline, ContinuousClock.now.advanced(by: .seconds(1))))
+        _ = await waitForExit(until: shutdownPhaseDeadline(deadline, phasesRemaining: 2))
         processTreeTracker?.signal(SIGKILL, until: deadline)
         let exited = await waitForExit(until: deadline)
         if exited { finishStreams(discardingPendingData: wasLeaderRunning) }
@@ -467,6 +578,16 @@ public actor LineTransport {
         guard !stdinClosed else { return }
         stdinClosed = true
         try? stdinPipe.fileHandleForWriting.close()
+    }
+
+    private func shutdownPhaseDeadline(
+        _ deadline: ContinuousClock.Instant,
+        phasesRemaining: Int
+    ) -> ContinuousClock.Instant {
+        let now = ContinuousClock.now
+        guard now < deadline else { return deadline }
+        let phase = min(.seconds(1), now.duration(to: deadline) / phasesRemaining)
+        return now.advanced(by: phase)
     }
 
     private func waitForExit(
@@ -546,7 +667,8 @@ struct LineBufferOutput {
 private final class StdoutDrainer: @unchecked Sendable {
     private let handle: FileHandle
     private let buffer: LineBuffer
-    private let continuation: AsyncThrowingStream<Data, any Error>.Continuation
+    private let continuation: AsyncThrowingStream<ByteCounted<Data>, any Error>.Continuation
+    private let byteBudget: QueuedByteBudget
     private let maxLineBytes: Int
     private let lock = NSLock()
     private var finished = false
@@ -554,12 +676,14 @@ private final class StdoutDrainer: @unchecked Sendable {
     init(
         handle: FileHandle,
         buffer: LineBuffer,
-        continuation: AsyncThrowingStream<Data, any Error>.Continuation,
+        continuation: AsyncThrowingStream<ByteCounted<Data>, any Error>.Continuation,
+        byteBudget: QueuedByteBudget,
         maxLineBytes: Int
     ) {
         self.handle = handle
         self.buffer = buffer
         self.continuation = continuation
+        self.byteBudget = byteBudget
         self.maxLineBytes = maxLineBytes
     }
 
@@ -604,7 +728,15 @@ private final class StdoutDrainer: @unchecked Sendable {
     }
 
     private func yield(_ line: Data) -> Bool {
-        switch continuation.yield(line) {
+        guard let queued = ByteCounted(
+            value: line,
+            byteCount: line.count,
+            budget: byteBudget)
+        else {
+            fail(TransportError.backlogOverflow)
+            return false
+        }
+        switch continuation.yield(queued) {
         case .enqueued:
             return true
         case .dropped:

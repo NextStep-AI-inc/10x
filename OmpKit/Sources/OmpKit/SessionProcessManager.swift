@@ -147,11 +147,13 @@ private actor SessionComputerUseRPC: ComputerUseRPC {
 public actor SessionProcessManager {
     public struct Handle: Sendable {
         public let sessionPath: String
+        public let generation: UUID
         public let client: RpcClient
         public let computerUseRPC: any ComputerUseRPC
 
         init(sessionPath: String, client: RpcClient) {
             self.sessionPath = sessionPath
+            generation = UUID()
             self.client = client
             computerUseRPC = SessionComputerUseRPC(client: client)
         }
@@ -177,6 +179,7 @@ public actor SessionProcessManager {
 
     public struct UnexpectedExit: Sendable {
         public let sessionPath: String
+        public let generation: UUID
         public let code: Int32?
         public let stderrTail: String
     }
@@ -313,6 +316,7 @@ public actor SessionProcessManager {
         guard intentionalCloses.remove(handle.sessionPath) == nil else { return }
         exitContinuation.yield(UnexpectedExit(
             sessionPath: handle.sessionPath,
+            generation: handle.generation,
             code: await handle.client.exitCode,
             stderrTail: await handle.client.stderrSnapshot()))
     }

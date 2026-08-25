@@ -164,11 +164,11 @@ final class AppModel {
             for await exit in processManager.unexpectedExits {
                 guard let self, !Task.isCancelled else { continue }
                 let retiringOwners = self.retiringSessions.filter {
-                    $0.value.ownsProcess(from: processManager, sessionPath: exit.sessionPath)
+                    $0.value.ownsProcess(from: processManager, generation: exit.generation)
                 }
                 let activeOwner = self.activeSession?.ownsProcess(
                     from: processManager,
-                    sessionPath: exit.sessionPath) == true
+                    generation: exit.generation) == true
                     ? self.activeSession : nil
                 var owners = retiringOwners.map(\.value)
                 let retiringIDs = Set(retiringOwners.keys)
@@ -180,10 +180,10 @@ final class AppModel {
                     await owner.handleUnexpectedExit(
                         code: exit.code,
                         stderrTail: exit.stderrTail)
-                }
-                for (ownerID, owner) in retiringOwners
-                where self.retiringSessions[ownerID] === owner {
-                    self.retiringSessions.removeValue(forKey: ownerID)
+                    let ownerID = ObjectIdentifier(owner)
+                    if self.retiringSessions[ownerID] === owner {
+                        self.retiringSessions.removeValue(forKey: ownerID)
+                    }
                 }
                 if self.processManager !== processManager,
                    !self.retiringSessions.values.contains(where: {

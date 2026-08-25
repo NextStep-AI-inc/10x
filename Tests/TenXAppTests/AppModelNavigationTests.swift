@@ -137,13 +137,95 @@ import Testing
 }
 
 @MainActor
+@Test func bufferedOldExitDoesNotStopANewHandleForTheSamePath() async throws {
+    let cleanupGate = ModelCleanupGate()
+    let harness = ModelLifecycleHarness(
+        mode: "delayed-exit-on-disable",
+        cleanupGate: cleanupGate)
+    let model = harness.makeModel()
+    await model.bootstrap()
+
+    let blockerPath = "/tmp/model-buffer-blocker.jsonl"
+    model.openSession(modelSession(path: blockerPath))
+    let blocker = try #require(await waitForActiveSession(model, path: blockerPath))
+    await blocker.computerUse.enable()
+
+    let reopenedPath = "/tmp/model-buffered-old-exit.jsonl"
+    model.openSession(modelSession(path: reopenedPath))
+    let oldOwner = try #require(await waitForActiveSession(model, path: reopenedPath))
+    let manager = try #require(harness.managers.first)
+    let oldHandle = try #require(await manager.handle(for: reopenedPath))
+    #expect(await cleanupGate.waitUntilEntered())
+    await oldOwner.computerUse.enable()
+
+    model.openNewSession()
+    #expect(await waitForHandleRemoval(manager, path: reopenedPath))
+    model.openSession(modelSession(path: reopenedPath))
+    let newOwner = try #require(await waitForActiveSession(model, path: reopenedPath))
+    let newHandle = try #require(await manager.handle(for: reopenedPath))
+    #expect(newOwner !== oldOwner)
+    #expect(newHandle.generation != oldHandle.generation)
+    #expect(newOwner.ownsProcess(from: manager, generation: newHandle.generation))
+    #expect(!newOwner.ownsProcess(from: manager, generation: oldHandle.generation))
+    #expect(!newOwner.isRecoveryPresented)
+    cleanupGate.open()
+
+    #expect(await harness.waitForReleasedOwnerCount(2))
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(!newOwner.isRecoveryPresented)
+    if case .stopped = newOwner.runtimeState {
+        Issue.record("the buffered old-generation exit stopped the reopened handle")
+    }
+    await harness.closeManagers()
+}
+
+@MainActor
+@Test func exitFanoutRemovesAnActiveOwnerThatRetiresDuringEarlierCleanup() async throws {
+    let cleanupGate = ModelCleanupGate()
+    let harness = ModelLifecycleHarness(
+        mode: "multi-owner-delayed-exit",
+        cleanupGate: cleanupGate)
+    let model = harness.makeModel()
+    await model.bootstrap()
+
+    let path = "/tmp/model-reentrant-exit-owner.jsonl"
+    model.openSession(modelSession(path: path))
+    var ownerA: SessionController? = await waitForActiveSession(model, path: path)
+    await ownerA?.computerUse.enable()
+
+    model.openSession(modelSession(path: path))
+    var ownerB: SessionController? = await waitForActiveSession(model, path: path)
+    #expect(ownerB?.computerUse.isAwaitingConfirmedProcessExit == true)
+    #expect(await cleanupGate.waitUntilEntered())
+
+    model.openSession(modelSession(path: path))
+    let newOwner = try #require(await waitForActiveSession(model, path: path))
+    #expect(newOwner !== ownerB)
+    weak let weakOwnerA = ownerA
+    weak let weakOwnerB = ownerB
+    ownerA = nil
+    ownerB = nil
+    cleanupGate.open()
+
+    #expect(await harness.waitForReleasedOwnerCount(1))
+    #expect(await waitForDeallocation { weakOwnerA == nil && weakOwnerB == nil })
+    #expect(harness.logs[0].count("registry.release") == 1)
+    await harness.closeManagers()
+}
+
+@MainActor
 private final class ModelLifecycleHarness {
     private(set) var logs: [ModelLifecycleLog] = []
     private(set) var managers: [SessionProcessManager] = []
     private let mode: String
+    private let cleanupGate: ModelCleanupGate?
 
-    init(mode: String = "delayed-exit-on-disable") {
+    init(
+        mode: String = "delayed-exit-on-disable",
+        cleanupGate: ModelCleanupGate? = nil
+    ) {
         self.mode = mode
+        self.cleanupGate = cleanupGate
     }
 
     func makeModel() -> AppModel {
@@ -163,7 +245,7 @@ private final class ModelLifecycleHarness {
                 self?.logs.append(log)
                 let computerUse = ComputerUseController(
                     sessionID: UUID().uuidString,
-                    lifecycle: .modelLifecycle(log),
+                    lifecycle: .modelLifecycle(log, cleanupGate: self?.cleanupGate),
                     preference: .automatic)
                 return SessionController(
                     processManager: processManager,
@@ -184,6 +266,33 @@ private final class ModelLifecycleHarness {
 
     func closeManagers() async {
         for manager in managers { await manager.closeAll() }
+    }
+}
+
+@MainActor
+private final class ModelCleanupGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
+    private(set) var didEnter = false
+
+    func wait() async {
+        guard !isOpen else { return }
+        didEnter = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
+
+    func waitUntilEntered() async -> Bool {
+        for _ in 0..<150 {
+            if didEnter { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return false
     }
 }
 
@@ -245,6 +354,17 @@ private func waitForStoppedSession(_ controller: SessionController) async -> Boo
     return false
 }
 
+private func waitForHandleRemoval(
+    _ manager: SessionProcessManager,
+    path: String
+) async -> Bool {
+    for _ in 0..<150 {
+        if await manager.handle(for: path) == nil { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return false
+}
+
 @MainActor
 private func waitForDeallocation(_ condition: () -> Bool) async -> Bool {
     for _ in 0..<100 {
@@ -267,7 +387,10 @@ private func modelSession(path: String) -> SessionMetadata {
 }
 
 private extension ComputerUseControllerLifecycle {
-    static func modelLifecycle(_ log: ModelLifecycleLog) -> Self {
+    static func modelLifecycle(
+        _ log: ModelLifecycleLog,
+        cleanupGate: ModelCleanupGate? = nil
+    ) -> Self {
         Self(
             activate: { _ in log.append("registry.activate") },
             release: { _ in log.append("registry.release") },
@@ -282,6 +405,7 @@ private extension ComputerUseControllerLifecycle {
             },
             probe: { _, operation in try await operation(nil, nil) },
             cleanup: { _ in
+                await cleanupGate?.wait()
                 log.append("desktop.cleanup")
                 return CleanupReport(
                     preservedApplicationNames: [],

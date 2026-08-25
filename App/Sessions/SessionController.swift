@@ -83,8 +83,8 @@ final class SessionController {
         }
     }
 
-    func ownsProcess(from manager: SessionProcessManager, sessionPath: String) -> Bool {
-        processSessionPath(from: manager) == sessionPath
+    func ownsProcess(from manager: SessionProcessManager, generation: UUID) -> Bool {
+        processManager === manager && handle?.generation == generation
     }
 
     func usesProcessManager(_ manager: SessionProcessManager) -> Bool {
