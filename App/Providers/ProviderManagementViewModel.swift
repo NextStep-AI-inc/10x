@@ -67,6 +67,7 @@ final class ProviderManagementViewModel {
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var loginGeneration = 0
     @ObservationIgnored private var lastUsageSnapshot: OmpUsageSnapshot?
+    @ObservationIgnored private var usageFailureGeneration = 0
     @ObservationIgnored private var nextRefreshOperationID = 0
     @ObservationIgnored private var providerRefreshOperation: RefreshOperation?
     @ObservationIgnored private var usageRefreshOperation: RefreshOperation?
@@ -195,20 +196,21 @@ final class ProviderManagementViewModel {
     private func makeProviderRefreshOperation() -> RefreshOperation {
         nextRefreshOperationID += 1
         let id = nextRefreshOperationID
+        let failureGeneration = usageFailureGeneration
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.performProviderRefresh()
+            await self.performProviderRefresh(usageFailureGeneration: failureGeneration)
         }
         return RefreshOperation(id: id, task: task)
     }
 
-    private func performProviderRefresh() async {
+    private func performProviderRefresh(usageFailureGeneration: Int) async {
         isLoadingProviders = true
         defer { isLoadingProviders = false }
 
         do {
             providers = try await providerService.providers()
-            if let lastUsageSnapshot {
+            if usageFailureGeneration == self.usageFailureGeneration, let lastUsageSnapshot {
                 usage = usagePresentation(from: lastUsageSnapshot, at: lastUsageRefresh ?? now())
             }
             providerMessage = nil
@@ -257,6 +259,7 @@ final class ProviderManagementViewModel {
             lastUsageRefresh = refreshDate
             usageMessage = nil
         } catch {
+            usageFailureGeneration += 1
             usage = previousUsage
             if let lastUsageRefresh {
                 usageMessage = "Usage couldn’t be refreshed. Showing data from \(formatTime(lastUsageRefresh))."

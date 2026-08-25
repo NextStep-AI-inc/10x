@@ -249,6 +249,44 @@ import Testing
 }
 
 @MainActor
+@Test func providerModelKeepsExactUsagePresentationWhenFailingUsageCompletesBeforeDiscovery() async throws {
+    let snapshot = try usageSnapshotFixture()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let usage = FakeUsageService(snapshot: snapshot)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: usage,
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) },
+        formatTime: { _ in "4:00 PM" })
+    await model.load()
+    let presentation = model.usage
+    let providerGate = LoadGate()
+    let usageGate = LoadGate()
+    await service.setProviders([
+        ProviderLoginProvider(id: "cursor", name: "Cursor Updated", isAvailable: true, isAuthenticated: true),
+    ])
+    await service.enqueueProviderGate(providerGate)
+    await usage.enqueueLoadGate(usageGate)
+    await usage.setFailing(true)
+
+    let refresh = Task { await model.refresh() }
+    await providerGate.waitForStart()
+    await usageGate.waitForStart()
+    await usageGate.release()
+    await waitForModelState { model.usageMessage == "Usage couldn’t be refreshed. Showing data from 4:00 PM." }
+    #expect(model.usage == presentation)
+    await providerGate.release()
+    await refresh.value
+
+    #expect(model.providers.first?.name == "Cursor Updated")
+    #expect(model.usage == presentation)
+    #expect(model.usageMessage == "Usage couldn’t be refreshed. Showing data from 4:00 PM.")
+}
+
+@MainActor
 @Test func providerModelRefreshesOnlyAtTheFiveMinuteStalenessBoundary() async {
     let clock = MutableClock(date: Date(timeIntervalSince1970: 0))
     let usage = FakeUsageService(snapshot: .empty)
