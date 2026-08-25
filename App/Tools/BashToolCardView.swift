@@ -9,15 +9,14 @@ struct BashToolCardView: View {
                 Text(content.command)
                     .font(TenXTypography.mono(size: 10, weight: .semibold))
                     .textSelection(.enabled)
-                if !content.output.isEmpty {
-                    Text(content.output)
-                        .font(TenXTypography.mono(size: 10))
-                        .foregroundStyle(presentation.isError
-                            ? TenXPalette.color(TenXPalette.signalRedHex)
-                            : TenXPalette.color(TenXPalette.nearBlackHex))
-                        .lineLimit(12)
-                        .textSelection(.enabled)
-                }
+                BoundedToolOutputView(
+                    text: content.output,
+                    lineLimit: 12,
+                    emptyText: presentation.phase == .complete ? "No output" : nil,
+                    font: TenXTypography.mono(size: 10),
+                    color: TenXPalette.color(presentation.isError
+                        ? TenXPalette.signalRedHex
+                        : TenXPalette.nearBlackHex))
             }
         } else {
             GenericToolCardView(presentation: presentation)

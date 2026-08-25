@@ -176,7 +176,7 @@ import Testing
     reducer.appendNotice(level: "warning", message: "Keep this notice")
 
     let persistedMessage = TranscriptMessage(
-        id: "entry-1",
+        id: "live",
         raw: try message("""
             {"role":"assistant","content":[{"type":"text","text":"Persisted"}]}
             """),
@@ -191,6 +191,47 @@ import Testing
     #expect(reducer.items.filter { if case .message = $0 { true } else { false } }.count == 1)
     #expect(reducer.items.contains { $0.id == "running" })
     #expect(reducer.items.contains { if case .notice = $0 { true } else { false } })
+}
+
+@Test func staleHistoryKeepsFinalLiveBoundariesUntilTheirStableIDsPersist() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"live-message","role":"assistant","content":[{"type":"text","text":"Just finished"}]}}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"live-tool","toolName":"bash","result":{"content":[{"type":"text","text":"done"}]},"isError":false}
+        """))
+
+    reducer.reconcile(history: TranscriptHistory(items: [
+        .threadStart(id: "thread", date: .distantPast),
+    ]))
+    #expect(reducer.items.contains { $0.id == "live-message" })
+    #expect(reducer.items.contains { $0.id == "live-tool" })
+
+    let persistedMessage = TranscriptMessage(
+        id: "live-message",
+        raw: try message("""
+            {"role":"assistant","content":[{"type":"text","text":"Just finished"}]}
+            """),
+        isFinal: true)
+    let persistedTool = ToolPresentation(
+        id: "live-tool",
+        name: "bash",
+        arguments: .object([:]),
+        result: try message("""
+            {"role":"toolResult","toolCallId":"live-tool","content":[{"type":"text","text":"done"}]}
+            """),
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantPast)
+    reducer.reconcile(history: TranscriptHistory(items: [
+        .threadStart(id: "thread", date: .distantPast),
+        .message(persistedMessage),
+        .tool(persistedTool),
+    ]))
+
+    #expect(reducer.items.filter { $0.id == "live-message" }.count == 1)
+    #expect(reducer.items.filter { $0.id == "live-tool" }.count == 1)
 }
 
 @Test func fallbackHistoryCreatesOnlyOneThreadStart() {

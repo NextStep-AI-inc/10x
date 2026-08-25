@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TenXApp
 
@@ -67,4 +68,14 @@ import Testing
         timestamp: nil,
         isFinal: true,
         stopReason: "error").suffix(1) == ["Error"])
+}
+
+@Test func responseMetadataAccessibilityNamesTheFullDate() {
+    let label = ResponseMetadataView.accessibilityLabel(
+        attribution: .none,
+        timestamp: Date(timeIntervalSince1970: 1_787_601_600),
+        isFinal: true,
+        stopReason: nil)
+
+    #expect(label.contains("2026"))
 }

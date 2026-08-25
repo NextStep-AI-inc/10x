@@ -6,6 +6,7 @@ struct TranscriptReducer {
     var runtimeState: SessionRuntimeState = .idle
 
     private var inflightMessageID: String?
+    private var pendingPersistenceIDs: Set<String> = []
     private var nextSyntheticID = 1
     private var toolReducer = ToolEventReducer()
     private var subagentReducer = SubagentEventReducer()
@@ -47,6 +48,7 @@ struct TranscriptReducer {
                 id: id,
                 raw: message,
                 isFinal: true)))
+            pendingPersistenceIDs.insert(id)
             inflightMessageID = nil
         case "notice":
             let id = syntheticID(prefix: "notice")
@@ -110,6 +112,7 @@ struct TranscriptReducer {
             else { return }
             replaceOrAppend(.tool(presentation))
             if type == "tool_execution_end", let result = payload["result"] {
+                pendingPersistenceIDs.insert(id)
                 subagentReducer.attachResult(parentToolCallID: id, result: result)
                 for subagent in subagentReducer.presentations where
                     subagent.parentToolCallID == id {
@@ -145,11 +148,14 @@ struct TranscriptReducer {
                 } else {
                     items.append(.tool(result))
                 }
+                items.append(contentsOf: SubagentEventReducer.presentations(
+                    from: message,
+                    parentToolCallID: result.id).map(TranscriptItem.subagent))
                 continue
             }
 
             let visibleText = Self.visibleMessageText(message)
-            if message["role"]?.stringValue == "user" || !visibleText.isEmpty {
+            if Self.shouldKeepMessage(message, visibleText: visibleText) {
                 items.append(.message(TranscriptMessage(
                     id: message["id"]?.stringValue ?? "history-\(index)",
                     raw: message,
@@ -158,11 +164,13 @@ struct TranscriptReducer {
             items.append(contentsOf: Self.toolCallPresentations(message).map(TranscriptItem.tool))
         }
         inflightMessageID = nil
+        pendingPersistenceIDs = []
     }
 
     mutating func load(history: TranscriptHistory) {
         items = history.items
         inflightMessageID = nil
+        pendingPersistenceIDs = []
     }
 
     mutating func ensureThreadStart(date: Date?) {
@@ -187,8 +195,10 @@ struct TranscriptReducer {
 
     mutating func reconcile(history: TranscriptHistory) {
         let persistedIDs = Set(history.items.map(\.id))
+        pendingPersistenceIDs.subtract(persistedIDs)
         let transient = items.filter { item in
             guard !persistedIDs.contains(item.id) else { return false }
+            if pendingPersistenceIDs.contains(item.id) { return true }
             switch item {
             case .notice, .annotation, .subagent, .extensionUI, .rawEvent:
                 return true
@@ -247,8 +257,17 @@ struct TranscriptReducer {
         }.joined(separator: "\n") ?? ""
     }
 
+    private static func shouldKeepMessage(_ message: JSONValue, visibleText: String) -> Bool {
+        if message["role"]?.stringValue == "user" || !visibleText.isEmpty { return true }
+        guard message["role"]?.stringValue == "assistant",
+              let stopReason = message["stopReason"]?.stringValue?.lowercased()
+        else { return false }
+        return stopReason == "error" || stopReason == "aborted"
+    }
+
     private mutating func consumeToolResult(_ message: JSONValue) -> Bool {
         guard let incoming = Self.toolResultPresentation(message) else { return false }
+        pendingPersistenceIDs.insert(incoming.id)
         if let index = items.firstIndex(where: { $0.id == incoming.id }),
            case .tool(var existing) = items[index] {
             existing.result = message

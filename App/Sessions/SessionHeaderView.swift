@@ -11,7 +11,7 @@ struct SessionHeaderView: View {
                     .lineLimit(1)
                 if !controller.headerMetadata.displayLine.isEmpty {
                     Text(controller.headerMetadata.displayLine)
-                        .font(TenXTypography.mono(size: 9))
+                        .font(TenXTypography.mono(size: 10))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                         .lineLimit(1)
                 }

@@ -17,10 +17,98 @@ struct SubagentEventReducer {
     }
 
     mutating func attachResult(parentToolCallID: String, result: JSONValue) {
+        let authoritative = Self.presentations(
+            from: result,
+            parentToolCallID: parentToolCallID)
+        if !authoritative.isEmpty {
+            for presentation in authoritative {
+                if let index = presentations.firstIndex(where: {
+                    $0.id == presentation.id
+                        || ($0.parentToolCallID == parentToolCallID
+                            && $0.index == presentation.index)
+                }) {
+                    presentations[index] = Self.merged(
+                        existing: presentations[index],
+                        authoritative: presentation)
+                } else {
+                    presentations.append(presentation)
+                }
+            }
+            return
+        }
         for index in presentations.indices where
             presentations[index].parentToolCallID == parentToolCallID {
             presentations[index].result = result
         }
+    }
+
+    static func presentations(
+        from result: JSONValue,
+        parentToolCallID: String
+    ) -> [SubagentPresentation] {
+        let details = result["details"] ?? result["result"]?["details"]
+        return details?["results"]?.arrayValue?.compactMap { value in
+            guard let id = value["id"]?.stringValue else { return nil }
+            let resolved = model(value["resolvedModel"]?.stringValue)
+            return SubagentPresentation(
+                id: id,
+                index: value["index"]?.intValue ?? 0,
+                agent: value["agent"]?.stringValue ?? "subagent",
+                task: value["task"]?.stringValue ?? "Delegated task",
+                assignment: value["assignment"]?.stringValue,
+                description: value["description"]?.stringValue,
+                status: resultStatus(value),
+                sessionFile: value["sessionFile"]?.stringValue,
+                parentToolCallID: parentToolCallID,
+                actualModel: resolved.id,
+                thinkingLevel: resolved.thinking,
+                modelRole: value["modelRole"]?.stringValue,
+                isFallback: value["resolvedModelIsFallback"]?.boolValue ?? false,
+                currentTool: nil,
+                recentTools: [],
+                recentOutput: [],
+                toolCount: value["toolCount"]?.intValue ?? 0,
+                requests: value["requests"]?.intValue,
+                tokens: value["tokens"]?.intValue,
+                cost: value["cost"]?.doubleValue,
+                durationMilliseconds: value["durationMs"]?.doubleValue ?? 0,
+                result: value)
+        } ?? []
+    }
+
+    private static func merged(
+        existing: SubagentPresentation,
+        authoritative: SubagentPresentation
+    ) -> SubagentPresentation {
+        var value = authoritative
+        value.assignment = authoritative.assignment ?? existing.assignment
+        value.description = authoritative.description ?? existing.description
+        value.sessionFile = authoritative.sessionFile ?? existing.sessionFile
+        value.actualModel = authoritative.actualModel ?? existing.actualModel
+        value.thinkingLevel = authoritative.thinkingLevel ?? existing.thinkingLevel
+        value.modelRole = authoritative.modelRole ?? existing.modelRole
+        value.currentTool = nil
+        value.recentTools = existing.recentTools
+        value.recentOutput = existing.recentOutput
+        value.toolCount = max(authoritative.toolCount, existing.toolCount)
+        value.requests = authoritative.requests ?? existing.requests
+        value.tokens = authoritative.tokens ?? existing.tokens
+        value.cost = authoritative.cost ?? existing.cost
+        value.durationMilliseconds = max(
+            authoritative.durationMilliseconds,
+            existing.durationMilliseconds)
+        return value
+    }
+
+    private static func resultStatus(_ value: JSONValue) -> SubagentStatus {
+        if value["aborted"]?.boolValue == true { return .aborted }
+        if let exitCode = value["exitCode"]?.intValue, exitCode != 0 {
+            return .failed
+        }
+        if value["error"]?.stringValue?.isEmpty == false {
+            return .failed
+        }
+        return .completed
     }
 
     private mutating func consumeLifecycle(_ body: JSONValue) {

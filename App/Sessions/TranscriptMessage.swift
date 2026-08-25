@@ -31,7 +31,18 @@ struct TranscriptMessage: Identifiable, Equatable {
     let isFinal: Bool
     let stopReason: String?
 
-    var visibleText: String { Self.visibleText(from: raw) }
+    var visibleText: String {
+        let text = Self.visibleText(from: raw)
+        if !text.isEmpty { return text }
+        if let errorMessage = raw["errorMessage"]?.stringValue, !errorMessage.isEmpty {
+            return errorMessage
+        }
+        return switch stopReason?.lowercased() {
+        case "error": "Response failed."
+        case "aborted": "Response aborted."
+        default: ""
+        }
+    }
 
     init(
         id: String,
@@ -74,4 +85,3 @@ struct TranscriptMessage: Identifiable, Equatable {
         return Date(timeIntervalSince1970: milliseconds / 1_000)
     }
 }
-

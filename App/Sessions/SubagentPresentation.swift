@@ -58,6 +58,9 @@ struct SubagentPresentation: Identifiable, Equatable {
     var resultText: String? {
         guard let result else { return nil }
         if let text = result.stringValue { return text }
+        if let output = result["output"]?.stringValue, !output.isEmpty { return output }
+        if let error = result["error"]?.stringValue, !error.isEmpty { return error }
+        if let stderr = result["stderr"]?.stringValue, !stderr.isEmpty { return stderr }
         let text = result["content"]?.arrayValue?.compactMap { block in
             block["text"]?.stringValue
         }.joined(separator: "\n")

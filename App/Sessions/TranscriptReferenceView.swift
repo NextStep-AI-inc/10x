@@ -11,9 +11,13 @@ struct TranscriptReferenceView: View {
                 if FileManager.default.fileExists(atPath: path) { openFile(path) }
             }) {
                 Label(fileLabel(path: path, line: line), systemImage: "doc.text")
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 220, alignment: .leading)
             }
             .buttonStyle(GhostActionStyle(color: fileColor(path)))
             .contextMenu { copyButton(path + (line.map { ":\($0)" } ?? "")) }
+            .accessibilityLabel("File reference, \(path)\(line.map { ", line \($0)" } ?? "")")
             .accessibilityHint(FileManager.default.fileExists(atPath: path)
                 ? "Opens the referenced file"
                 : "File is unavailable; use the context menu to copy its path")
@@ -24,6 +28,7 @@ struct TranscriptReferenceView: View {
                 }
                 .buttonStyle(GhostActionStyle())
                 .contextMenu { copyButton(value) }
+                .accessibilityLabel("Web reference, \(label ?? value)")
             }
         }
     }

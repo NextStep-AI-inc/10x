@@ -222,7 +222,7 @@ final class SessionController {
         reducer.setReconciliationWarning(isPresented: didHistoryLoadFail)
         reducer.runtimeState = runtimeState
         syncReducerState()
-        try? await handle.client.send(.setSubagentSubscription(level: .progress))
+        _ = try? await handle.client.send(.setSubagentSubscription(level: .progress))
         consumeEvents(from: handle.client)
     }
 

@@ -81,6 +81,31 @@ import Testing
     #expect(subagents[0].resultText == "Cards built.")
 }
 
+@Test func taskFanOutAttachesEachAuthoritativeResultToItsOwnSubagent() throws {
+    var reducer = SubagentEventReducer()
+    reducer.consume(type: "subagent_progress", payload: try value("""
+        {"payload":{"index":0,"agent":"worker","task":"Build cards","parentToolCallId":"task-5","progress":{"id":"agent-a","status":"running","durationMs":400}}}
+        """))
+    reducer.consume(type: "subagent_progress", payload: try value("""
+        {"payload":{"index":1,"agent":"reviewer","task":"Review cards","parentToolCallId":"task-5","progress":{"id":"agent-b","status":"running","durationMs":500}}}
+        """))
+
+    reducer.attachResult(parentToolCallID: "task-5", result: try value("""
+        {"details":{"results":[
+          {"index":0,"id":"agent-a","agent":"worker","task":"Build cards","output":"Built.","exitCode":0,"durationMs":900,"tokens":1200,"requests":3,"resolvedModel":"openai-codex/gpt-5.6-terra:high"},
+          {"index":1,"id":"agent-b","agent":"reviewer","task":"Review cards","output":"One issue.","exitCode":1,"error":"Review failed","durationMs":1000,"resolvedModel":"anthropic/claude-opus-4-8"}
+        ]}}
+        """))
+
+    #expect(reducer.presentations.count == 2)
+    #expect(reducer.presentations[0].resultText == "Built.")
+    #expect(reducer.presentations[0].status == .completed)
+    #expect(reducer.presentations[0].actualModel == "gpt-5.6-terra")
+    #expect(reducer.presentations[0].thinkingLevel == "high")
+    #expect(reducer.presentations[1].resultText == "One issue.")
+    #expect(reducer.presentations[1].status == .failed)
+}
+
 private func value(_ json: String) throws -> JSONValue {
     try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
 }

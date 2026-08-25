@@ -18,6 +18,28 @@ struct ResponseMetadataView: View {
         }
         .font(TenXTypography.mono(size: 10))
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(Self.accessibilityLabel(
+            attribution: message.attribution,
+            timestamp: message.timestamp,
+            isFinal: message.isFinal,
+            stopReason: message.stopReason))
+    }
+
+    nonisolated static func accessibilityLabel(
+        attribution: TranscriptResponseAttribution,
+        timestamp: Date?,
+        isFinal: Bool,
+        stopReason: String?
+    ) -> String {
+        var values = labels(
+            attribution: attribution,
+            timestamp: nil,
+            isFinal: isFinal,
+            stopReason: stopReason)
+        if let timestamp {
+            values.append(timestamp.formatted(date: .complete, time: .shortened))
+        }
+        return values.joined(separator: ", ")
     }
 
     nonisolated static func labels(

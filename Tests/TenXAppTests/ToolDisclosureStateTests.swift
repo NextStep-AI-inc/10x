@@ -39,6 +39,16 @@ import Testing
     #expect(state.isExpanded(for: failed))
 }
 
+@Test func boundedToolOutputOffersDisclosureOnlyWhenContentMayBeClipped() {
+    #expect(!BoundedToolOutputView.shouldOfferDisclosure("one\ntwo", lineLimit: 3))
+    #expect(BoundedToolOutputView.shouldOfferDisclosure(
+        (1...13).map(String.init).joined(separator: "\n"),
+        lineLimit: 12))
+    #expect(BoundedToolOutputView.shouldOfferDisclosure(
+        String(repeating: "wrapped output ", count: 80),
+        lineLimit: 6))
+}
+
 private func tool(id: String, name: String, phase: ToolPhase) -> ToolPresentation {
     ToolPresentation(
         id: id,

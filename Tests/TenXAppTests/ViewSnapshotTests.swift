@@ -118,11 +118,13 @@ import Testing
 @MainActor
 @Test func longWrappingMessageSnapshot() throws {
     let longValue = String(repeating: "unbroken-segment-", count: 38)
+    let longReference = "/tmp/" + String(repeating: "nested-folder/", count: 8)
+        + "a-very-long-reference-name-that-must-not-overflow.swift:42"
     let message = TranscriptMessage(
         id: "long-message",
         raw: .object([
             "role": .string("assistant"),
-            "content": .string("The output stays inside the transcript:\n\n\(longValue)\n\n`/tmp/missing-example.swift:42`"),
+            "content": .string("The output stays inside the transcript:\n\n\(longValue)\n\n`\(longReference)`"),
         ]),
         attribution: TranscriptResponseAttribution(
             provider: nil,
@@ -144,7 +146,10 @@ import Testing
         name: "bash",
         arguments: .object(["command": .string("swift test --filter Transcript")]),
         result: .object(["content": .array([
-            .object(["type": .string("text"), "text": .string("Building transcript tests…")]),
+            .object([
+                "type": .string("text"),
+                "text": .string((1...14).map { "Test step \($0) passed" }.joined(separator: "\n")),
+            ]),
         ])]),
         phase: .running,
         startDate: Date(timeIntervalSince1970: 1),
@@ -166,7 +171,7 @@ import Testing
         }
         .frame(width: 720),
         name: "activity-running-error",
-        size: CGSize(width: 800, height: 430))
+        size: CGSize(width: 800, height: 520))
 }
 
 @MainActor

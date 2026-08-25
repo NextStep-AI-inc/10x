@@ -137,7 +137,7 @@ struct TranscriptView: View {
                 Spacer()
                 if let timestamp = annotation.timestamp {
                     Text(timestamp.formatted(date: .omitted, time: .shortened))
-                        .font(TenXTypography.mono(size: 9))
+                        .font(TenXTypography.mono(size: 10))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 }
             }

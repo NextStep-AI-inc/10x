@@ -16,7 +16,7 @@ struct SearchToolCardView: View {
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 } else {
                     Text("\(content.matches.count) matches")
-                        .font(TenXTypography.mono(size: 9))
+                        .font(TenXTypography.mono(size: 10))
                         .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
                     ForEach(Array(content.matches.enumerated()), id: \.offset) { _, match in
                         Text(match)

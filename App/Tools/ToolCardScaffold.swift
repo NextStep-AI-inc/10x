@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ToolCardScaffold<Content: View>: View {
@@ -34,7 +35,7 @@ struct ToolCardScaffold<Content: View>: View {
                             .font(TenXTypography.body(size: 12, weight: .semibold))
                         if let subtitle {
                             Text(subtitle)
-                                .font(TenXTypography.mono(size: 9))
+                                .font(TenXTypography.mono(size: 10))
                                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                                 .lineLimit(1)
                         }
@@ -43,7 +44,7 @@ struct ToolCardScaffold<Content: View>: View {
                             .font(TenXTypography.body(size: 10, weight: .medium))
                             .foregroundStyle(accentColor)
                         Text(presentation.durationLabel)
-                            .font(TenXTypography.mono(size: 9))
+                            .font(TenXTypography.mono(size: 10))
                             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     }
                     .contentShape(Rectangle())
@@ -87,5 +88,74 @@ struct ToolCardScaffold<Content: View>: View {
         TenXPalette.color(presentation.isError
             ? TenXPalette.signalRedHex
             : TenXPalette.cyanHex)
+    }
+}
+
+struct BoundedToolOutputView: View {
+    let text: String
+    let lineLimit: Int
+    let emptyText: String?
+    let font: Font
+    let color: Color
+    @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
+    @State private var isExpanded = false
+
+    init(
+        text: String,
+        lineLimit: Int,
+        emptyText: String? = nil,
+        font: Font,
+        color: Color = TenXPalette.color(TenXPalette.nearBlackHex)
+    ) {
+        self.text = text
+        self.lineLimit = lineLimit
+        self.emptyText = emptyText
+        self.font = font
+        self.color = color
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if text.isEmpty {
+            if let emptyText {
+                Text(emptyText)
+                    .font(font)
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(text)
+                    .font(font)
+                    .foregroundStyle(color)
+                    .lineLimit(isExpanded ? nil : lineLimit)
+                    .textSelection(.enabled)
+
+                HStack(spacing: 10) {
+                    if Self.shouldOfferDisclosure(text, lineLimit: lineLimit) {
+                        Button(isExpanded ? "Show less" : "Show all", action: toggle)
+                            .buttonStyle(GhostActionStyle())
+                    }
+                    Button("Copy", action: copy)
+                        .buttonStyle(GhostActionStyle())
+                }
+                .font(TenXTypography.body(size: 10, weight: .medium))
+            }
+        }
+    }
+
+    nonisolated static func shouldOfferDisclosure(_ text: String, lineLimit: Int) -> Bool {
+        text.split(separator: "\n", omittingEmptySubsequences: false).count > lineLimit
+            || text.count > lineLimit * 120
+    }
+
+    private func toggle() {
+        let update = { isExpanded.toggle() }
+        if isReduceMotionEnabled { update() }
+        else { withAnimation(.easeInOut(duration: 0.14), update) }
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }

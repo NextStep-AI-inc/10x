@@ -12,14 +12,14 @@ struct GenericToolCardView: View {
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 .textSelection(.enabled)
 
-            if let result = presentation.result {
-                Text(outputText(result))
-                    .font(TenXTypography.mono(size: 10))
-                    .foregroundStyle(presentation.isError
-                        ? TenXPalette.color(TenXPalette.signalRedHex)
-                        : TenXPalette.color(TenXPalette.nearBlackHex))
-                    .textSelection(.enabled)
-            }
+            BoundedToolOutputView(
+                text: presentation.result.map(outputText) ?? "",
+                lineLimit: 12,
+                emptyText: presentation.phase == .complete ? "No output" : nil,
+                font: TenXTypography.mono(size: 10),
+                color: TenXPalette.color(presentation.isError
+                    ? TenXPalette.signalRedHex
+                    : TenXPalette.nearBlackHex))
         }
     }
 

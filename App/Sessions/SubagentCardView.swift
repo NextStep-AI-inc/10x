@@ -23,7 +23,7 @@ struct SubagentCardView: View {
                     Spacer(minLength: 12)
                     if let model = presentation.actualModel {
                         Text(model)
-                            .font(TenXTypography.mono(size: 9))
+                            .font(TenXTypography.mono(size: 10))
                             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     }
                     Text(presentation.status.label)
@@ -59,7 +59,7 @@ struct SubagentCardView: View {
             let metadata = metadataText
             if !metadata.isEmpty {
                 Text(metadata)
-                    .font(TenXTypography.mono(size: 9))
+                    .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
             if let description = presentation.description,

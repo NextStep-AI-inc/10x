@@ -33,7 +33,7 @@ struct DiffView: View {
                     .font(TenXTypography.mono(size: 10, weight: .semibold))
                     .lineLimit(1)
                 Text("+\(file.additions) −\(file.removals)")
-                    .font(TenXTypography.mono(size: 9))
+                    .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 Spacer()
                 if let path = resolvedPath(for: file), FileManager.default.fileExists(atPath: path) {
@@ -68,7 +68,7 @@ struct DiffView: View {
                                 Button("Show \(count) unchanged lines") {
                                     revealedRuns.insert(runID)
                                 }
-                                .font(TenXTypography.mono(size: 9))
+                                .font(TenXTypography.mono(size: 10))
                                 .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
                                 .buttonStyle(.plain)
                                 .frame(minHeight: 24)

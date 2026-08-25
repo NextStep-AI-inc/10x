@@ -15,12 +15,11 @@ struct TaskToolCardView: View {
                     if let model = content.model { metadata(model) }
                     metadata(content.status)
                 }
-                if let progress = content.progress, !progress.isEmpty {
-                    Text(progress)
-                        .font(TenXTypography.body(size: 11))
-                        .lineLimit(5)
-                        .textSelection(.enabled)
-                }
+                BoundedToolOutputView(
+                    text: content.progress ?? "",
+                    lineLimit: 5,
+                    emptyText: presentation.phase == .complete ? "No output" : nil,
+                    font: TenXTypography.body(size: 11))
             }
         } else {
             GenericToolCardView(presentation: presentation)
@@ -29,7 +28,7 @@ struct TaskToolCardView: View {
 
     private func metadata(_ value: String) -> some View {
         Text(value)
-            .font(TenXTypography.mono(size: 9))
+            .font(TenXTypography.mono(size: 10))
             .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
     }
 }

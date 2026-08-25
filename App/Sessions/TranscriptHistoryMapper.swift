@@ -69,7 +69,9 @@ enum TranscriptHistoryMapper {
 
             let role = message["role"]?.stringValue
             let visibleText = TranscriptMessage.visibleText(from: message)
-            if role == "user" || !visibleText.isEmpty {
+            let isTerminalFailure = role == "assistant"
+                && ["error", "aborted"].contains(message["stopReason"]?.stringValue?.lowercased())
+            if role == "user" || !visibleText.isEmpty || isTerminalFailure {
                 items.append(.message(TranscriptMessage(
                     id: base.id,
                     raw: message,
@@ -103,6 +105,9 @@ enum TranscriptHistoryMapper {
             } else {
                 items.append(.tool(result))
             }
+            items.append(contentsOf: SubagentEventReducer.presentations(
+                from: message,
+                parentToolCallID: result.id).map(TranscriptItem.subagent))
         }
 
         mutating func appendAnnotation(_ annotation: TranscriptAnnotation) {

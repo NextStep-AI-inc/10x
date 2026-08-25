@@ -12,16 +12,15 @@ struct ReadToolCardView: View {
             ) {
                 HStack {
                     Text(content.summary)
-                        .font(TenXTypography.mono(size: 9))
+                        .font(TenXTypography.mono(size: 10))
                         .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
                     Spacer()
                 }
-                if !content.preview.isEmpty {
-                    Text(content.preview)
-                        .font(TenXTypography.mono(size: 10))
-                        .lineLimit(10)
-                        .textSelection(.enabled)
-                }
+                BoundedToolOutputView(
+                    text: content.preview,
+                    lineLimit: 10,
+                    emptyText: presentation.phase == .complete ? "No output" : nil,
+                    font: TenXTypography.mono(size: 10))
             }
         } else {
             GenericToolCardView(presentation: presentation)

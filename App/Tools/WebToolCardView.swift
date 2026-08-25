@@ -11,24 +11,29 @@ struct WebToolCardView: View {
                 subtitle: content.queryOrURL
             ) {
                 if content.results.isEmpty, let summary = content.summary {
-                    Text(summary)
+                    BoundedToolOutputView(
+                        text: summary,
+                        lineLimit: 6,
+                        font: TenXTypography.body(size: 11))
+                } else if content.results.isEmpty, presentation.phase == .complete {
+                    Text("No output")
                         .font(TenXTypography.body(size: 11))
-                        .lineLimit(6)
-                        .textSelection(.enabled)
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 } else {
                     ForEach(content.results) { result in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(result.title)
                                 .font(TenXTypography.body(size: 11, weight: .semibold))
                             Text(result.url)
-                                .font(TenXTypography.mono(size: 9))
+                                .font(TenXTypography.mono(size: 10))
                                 .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
                                 .lineLimit(1)
                             if let summary = result.summary {
-                                Text(summary)
-                                    .font(TenXTypography.body(size: 10))
-                                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                                    .lineLimit(2)
+                                BoundedToolOutputView(
+                                    text: summary,
+                                    lineLimit: 2,
+                                    font: TenXTypography.body(size: 10),
+                                    color: TenXPalette.color(TenXPalette.mutedTextHex))
                             }
                         }
                     }

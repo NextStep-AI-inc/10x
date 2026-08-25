@@ -122,6 +122,62 @@ import Testing
     #expect(annotations[3].detail == "12,000 → 2,400 tokens")
 }
 
+@Test func historyMapperRestoresPerAgentTaskResults() throws {
+    let header = SessionHeader(
+        id: "session-agents",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let entries: [SessionEntry] = [
+        .message(
+            base: historyBase("assistant-task", nil, 1),
+            message: try historyJSON(#"{"role":"assistant","content":[{"type":"toolCall","id":"task-1","name":"task","arguments":{"task":"Fan out"}}]}"#)),
+        .message(
+            base: historyBase("task-result", "assistant-task", 2),
+            message: try historyJSON(#"{"role":"toolResult","toolCallId":"task-1","toolName":"task","isError":false,"details":{"results":[{"index":0,"id":"agent-a","agent":"worker","task":"Build","output":"Built.","exitCode":0},{"index":1,"id":"agent-b","agent":"reviewer","task":"Review","output":"Approved.","exitCode":0}]}}"#)),
+    ]
+
+    let history = TranscriptHistoryMapper.map(header: header, path: entries)
+    let agents = history.items.compactMap { item -> SubagentPresentation? in
+        guard case .subagent(let presentation) = item else { return nil }
+        return presentation
+    }
+
+    #expect(agents.map(\.id) == ["agent-a", "agent-b"])
+    #expect(agents.map(\.resultText) == ["Built.", "Approved."])
+}
+
+@Test func historyMapperKeepsEmptyTerminalFailuresVisible() throws {
+    let header = SessionHeader(
+        id: "session-failures",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let entries: [SessionEntry] = [
+        .message(
+            base: historyBase("error", nil, 1),
+            message: try historyJSON(#"{"role":"assistant","content":[],"stopReason":"error","errorMessage":"Provider unavailable"}"#)),
+        .message(
+            base: historyBase("aborted", "error", 2),
+            message: try historyJSON(#"{"role":"assistant","content":[],"stopReason":"aborted"}"#)),
+    ]
+
+    let messages: [TranscriptMessage] = TranscriptHistoryMapper.map(
+        header: header,
+        path: entries).items.compactMap {
+        guard case .message(let message) = $0 else { return nil }
+        return message
+    }
+
+    #expect(messages.map(\.visibleText) == ["Provider unavailable", "Response aborted."])
+}
+
 private func historyBase(_ id: String, _ parentID: String?, _ second: Int) -> SessionEntryBase {
     SessionEntryBase(
         id: id,

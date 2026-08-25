@@ -11,14 +11,13 @@ struct WriteToolCardView: View {
                 subtitle: content.path
             ) {
                 Text(content.summary)
-                    .font(TenXTypography.mono(size: 9))
+                    .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-                if !content.preview.isEmpty {
-                    Text(content.preview)
-                        .font(TenXTypography.mono(size: 10))
-                        .lineLimit(8)
-                        .textSelection(.enabled)
-                }
+                BoundedToolOutputView(
+                    text: content.preview,
+                    lineLimit: 8,
+                    emptyText: presentation.phase == .complete ? "No output" : nil,
+                    font: TenXTypography.mono(size: 10))
             }
         } else {
             GenericToolCardView(presentation: presentation)
