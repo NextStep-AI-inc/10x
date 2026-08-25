@@ -50,6 +50,13 @@ import Testing
     #expect(MessageContentParser.parse(longPath) == [.paragraph(longPath)])
 }
 
+@Test func assistantTranscriptUsesReadableProseMetrics() {
+    #expect(MessageBlockView.proseFontSize == 15)
+    #expect(MessageBlockView.proseLineSpacing == 4)
+    #expect(MessageBubbleView.assistantContentSpacing == 14)
+    #expect(MessageBubbleView.assistantMaxWidth == 720)
+}
+
 @Test func responseMetadataNamesActualModelModeAgentAndState() {
     let attribution = TranscriptResponseAttribution(
         provider: "openai-codex",

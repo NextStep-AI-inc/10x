@@ -42,6 +42,22 @@ final class SettingsViewModel {
             try await service.set(key: definition.key, value: value)
             catalog.update(key: definition.key, value: value)
             return true
+        } catch OmpConfigServiceError.invalidShellPath {
+            keyErrors[definition.key] = "Choose an executable shell file, such as /bin/zsh."
+            return false
+        } catch {
+            keyErrors[definition.key] = error.localizedDescription
+            return false
+        }
+    }
+
+    @discardableResult
+    func restoreDefault(_ definition: SettingDefinition) async -> Bool {
+        keyErrors[definition.key] = nil
+        do {
+            let value = try await service.reset(key: definition.key)
+            catalog.update(key: definition.key, value: value)
+            return true
         } catch {
             keyErrors[definition.key] = error.localizedDescription
             return false
@@ -50,5 +66,12 @@ final class SettingsViewModel {
 
     func error(for key: String) -> String? {
         keyErrors[key]
+    }
+
+    @discardableResult
+    func prepareForFocus(_ target: SettingsFocusTarget?) -> Bool {
+        guard target == .preferredIDE else { return false }
+        query = ""
+        return true
     }
 }

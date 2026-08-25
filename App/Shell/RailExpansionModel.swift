@@ -1,10 +1,18 @@
 import Foundation
 import Observation
 
+enum RailExpansionTransition {
+    static func animationDuration(reduceMotion: Bool) -> TimeInterval? {
+        reduceMotion ? nil : 0.2
+    }
+}
+
 @MainActor
 @Observable
 final class RailExpansionModel {
     private(set) var isExpanded = false
+
+    var contentLeadingInset: CGFloat { isExpanded ? 220 : 64 }
 
     @ObservationIgnored private let collapseDelay: Duration
     @ObservationIgnored private var isPointerInside = false

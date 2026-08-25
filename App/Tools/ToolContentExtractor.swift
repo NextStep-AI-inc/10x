@@ -86,6 +86,7 @@ enum ToolContentExtractor {
         guard let path = firstString(
             in: presentation.arguments,
             keys: ["path", "filePath", "file_path", "absolutePath"])
+            ?? nestedString(in: presentation.result, paths: [["details", "path"]])
         else { return nil }
         let diff = nestedString(
             in: presentation.result,

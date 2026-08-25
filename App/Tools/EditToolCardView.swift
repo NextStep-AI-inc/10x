@@ -8,7 +8,7 @@ struct EditToolCardView: View {
             ToolCardScaffold(
                 presentation: presentation,
                 title: "Edit",
-                subtitle: content.path
+                fileReference: .file(path: content.path, line: nil)
             ) {
                 if let diff = content.unifiedDiff {
                     DiffView(diff: diff, fallbackPath: content.path)

@@ -5,6 +5,7 @@ struct ToolCardScaffold<Content: View>: View {
     let presentation: ToolPresentation
     let title: String
     let subtitle: String?
+    let fileReference: TranscriptReference?
     let content: Content
     @Environment(\.toolDisclosureState) private var disclosureState
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
@@ -14,46 +15,55 @@ struct ToolCardScaffold<Content: View>: View {
         presentation: ToolPresentation,
         title: String,
         subtitle: String? = nil,
+        fileReference: TranscriptReference? = nil,
         @ViewBuilder content: () -> Content
     ) {
         self.presentation = presentation
         self.title = title
         self.subtitle = subtitle
+        self.fileReference = fileReference
         self.content = content()
     }
 
     var body: some View {
         CornerCard(color: accentColor) {
             VStack(alignment: .leading, spacing: 10) {
-                Button(action: toggle) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(accentColor)
-                            .frame(width: 10)
-                        Text(title)
-                            .font(TenXTypography.body(size: 12, weight: .semibold))
-                        if let subtitle {
-                            Text(subtitle)
-                                .font(TenXTypography.mono(size: 10))
-                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                                .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Button(action: toggle) {
+                        HStack(spacing: 8) {
+                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(accentColor)
+                                .frame(width: 10)
+                            Text(title)
+                                .font(TenXTypography.body(size: 12, weight: .semibold))
+                            if fileReference == nil, let subtitle {
+                                Text(subtitle)
+                                    .font(TenXTypography.mono(size: 10))
+                                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                                    .lineLimit(1)
+                            }
                         }
-                        Spacer()
-                        Text(presentation.phase.label)
-                            .font(TenXTypography.body(size: 10, weight: .medium))
-                            .foregroundStyle(accentColor)
-                        Text(presentation.durationLabel)
-                            .font(TenXTypography.mono(size: 10))
-                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
-                    .frame(minHeight: 32)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(title), \(presentation.phase.label)")
+                    .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+                    .accessibilityHint(isExpanded ? "Collapses tool details" : "Expands tool details")
+
+                    if let fileReference {
+                        TranscriptReferenceView(reference: fileReference)
+                    }
+
+                    Spacer(minLength: 8)
+                    Text(presentation.phase.label)
+                        .font(TenXTypography.body(size: 10, weight: .medium))
+                        .foregroundStyle(accentColor)
+                    Text(presentation.durationLabel)
+                        .font(TenXTypography.mono(size: 10))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(title), \(presentation.phase.label)")
-                .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-                .accessibilityHint(isExpanded ? "Collapses tool details" : "Expands tool details")
 
                 if isExpanded {
                     content

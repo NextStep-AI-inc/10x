@@ -12,15 +12,27 @@ final class AppModel {
     var sessions: [SessionMetadata] = []
     var providerUsages: [ProviderUsageProvider] = []
     var isSearchPresented = false
+    private(set) var settingsFocusTarget: SettingsFocusTarget?
     private(set) var activeSession: SessionController?
     private(set) var processManager: SessionProcessManager?
     private(set) var settingsModel: SettingsViewModel?
+    let ideRegistry: IDERegistry
+    let idePreferenceStore: IDEPreferenceStore
+    let fileOpenService: FileOpenService
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
 
-    init(dependencies: AppDependencies = .live) {
+    init(
+        dependencies: AppDependencies = .live,
+        ideRegistry: IDERegistry = .init(),
+        preferenceDefaults: UserDefaults = .standard,
+        fileOpenService: FileOpenService = .live
+    ) {
         self.dependencies = dependencies
+        self.ideRegistry = ideRegistry
+        idePreferenceStore = IDEPreferenceStore(defaults: preferenceDefaults, registry: ideRegistry)
+        self.fileOpenService = fileOpenService
     }
 
     func bootstrap() async {
@@ -41,9 +53,14 @@ final class AppModel {
         route = .newSession
     }
 
-    func openSettings() {
+    func openSettings(focus: SettingsFocusTarget? = nil) {
+        settingsFocusTarget = focus
         route = .settings
         Task { await settingsModel?.load() }
+    }
+
+    func consumeSettingsFocus() {
+        settingsFocusTarget = nil
     }
 
     func openNewSession() {

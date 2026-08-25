@@ -28,7 +28,7 @@ final class SessionController {
 
     private let processManager: SessionProcessManager
     private let timelineLoader = SessionTimelineLoader()
-    private var projectURL: URL?
+    private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
     private var reducer = TranscriptReducer()
@@ -283,12 +283,20 @@ final class SessionController {
         reconciliationTask = Task { [weak self, timelineLoader] in
             guard let self, !Task.isCancelled else { return }
             do {
-                guard let history = try await timelineLoader.load(path: sessionPath),
-                      !Task.isCancelled
-                else { return }
-                self.reducer.reconcile(history: history)
-                self.reducer.setReconciliationWarning(isPresented: false)
-                self.syncReducerState()
+                for delay in [0, 100, 250, 500, 1_000] {
+                    if delay > 0 {
+                        try await Task.sleep(for: .milliseconds(delay))
+                    }
+                    guard !Task.isCancelled else { return }
+                    if let history = try await timelineLoader.load(path: sessionPath) {
+                        self.reducer.reconcile(history: history)
+                        self.reducer.setReconciliationWarning(isPresented: false)
+                        self.syncReducerState()
+                        if !self.reducer.hasPendingPersistence { return }
+                    }
+                }
+            } catch is CancellationError {
+                return
             } catch {
                 self.reducer.setReconciliationWarning(isPresented: true)
                 self.syncReducerState()

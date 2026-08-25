@@ -1,6 +1,23 @@
 import Testing
 @testable import TenXApp
 
+@Test func codeAndMarkdownAcceptRelativeFilesButPlainTextDoesNot() {
+    #expect(TranscriptReference.extract(from: "`App/Foo.swift:8`") == [
+        .file(path: "App/Foo.swift", line: 8),
+    ])
+    #expect(TranscriptReference.extract(from: "[Foo](App/Foo.swift)") == [
+        .file(path: "App/Foo.swift", line: nil),
+    ])
+    #expect(TranscriptReference.extract(from: "Ignore words/with/slashes and relative/file.swift:2") == [])
+}
+
+@Test func codeAndMarkdownRejectRelativePathsWithEmptyExtensions() {
+    #expect(TranscriptReference.extract(from: "`App/.gitignore`") == [])
+    #expect(TranscriptReference.extract(from: "`App/Foo.`") == [])
+    #expect(TranscriptReference.extract(from: "[Foo](App/.gitignore)") == [])
+    #expect(TranscriptReference.extract(from: "[Foo](App/Foo.)") == [])
+}
+
 @Test func extractsCodeMarkdownAndPlainReferencesWithoutDuplicates() {
     let references = TranscriptReference.extract(from: """
     See `/Users/tannerpham/CS Projects/10x/App/Foo.swift:42`, then [the docs](https://example.com/guide?q=swift).
@@ -29,3 +46,33 @@ import Testing
     ])
 }
 
+@Test func plainAbsolutePathWithWhitespaceContinuationNeverUsesItsPrefix() {
+    let references = TranscriptReference.extract(from: """
+    Open /Users/tannerpham/CS Projects/.worktrees/10x/App/Sessions/MessageBubbleView.swift:1 next.
+    """)
+
+    #expect(references.isEmpty)
+}
+
+@Test func adjacentPlainAbsolutePathsRemainSeparateReferences() {
+    let references = TranscriptReference.extract(from: "Compare /tmp/one.swift /tmp/two.swift")
+
+    #expect(references == [
+        .file(path: "/tmp/one.swift", line: nil),
+        .file(path: "/tmp/two.swift", line: nil),
+    ])
+}
+
+@Test func extensionBearingAbsolutePrefixWithWhitespaceContinuationIsRejected() {
+    let references = TranscriptReference.extract(from: "Open /tmp/one.swift child/file.swift")
+
+    #expect(references.isEmpty)
+}
+
+@Test func plainWebReferenceIgnoresFileWhitespaceContinuation() {
+    let references = TranscriptReference.extract(from: "See https://example.com child/file.swift")
+
+    #expect(references == [
+        .web(url: "https://example.com", label: nil),
+    ])
+}

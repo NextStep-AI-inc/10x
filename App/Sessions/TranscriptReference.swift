@@ -36,7 +36,7 @@ enum TranscriptReference: Equatable, Hashable {
             guard let destinationEnd = text[destinationStart...].firstIndex(of: ")") else { break }
             let label = String(text[text.index(after: openLabel)..<closeLabel])
             let destination = String(text[destinationStart..<destinationEnd])
-            if let reference = parse(destination, label: label.isEmpty ? nil : label) {
+            if let reference = parse(destination, label: label.isEmpty ? nil : label, allowsRelativeFile: true) {
                 result.append(LocatedReference(offset: openLabel, reference: reference))
             }
             cursor = text.index(after: destinationEnd)
@@ -51,7 +51,7 @@ enum TranscriptReference: Equatable, Hashable {
             let contentStart = text.index(after: open)
             guard let close = text[contentStart...].firstIndex(of: "`") else { break }
             let content = String(text[contentStart..<close])
-            if let reference = parse(content, label: nil) {
+            if let reference = parse(content, label: nil, allowsRelativeFile: true) {
                 result.append(LocatedReference(offset: open, reference: reference))
             }
             cursor = text.index(after: close)
@@ -74,23 +74,58 @@ enum TranscriptReference: Equatable, Hashable {
             var token = String(text[start..<cursor])
             token = token.trimmingCharacters(in: CharacterSet(charactersIn: "([{\"'"))
             token = token.trimmingCharacters(in: CharacterSet(charactersIn: ".,;!?)]}\"'"))
-            if let reference = parse(token, label: nil) {
+            if let reference = parse(token, label: nil, allowsRelativeFile: false) {
+                if case .file = reference,
+                   hasWhitespacePathContinuation(after: cursor, in: text)
+                {
+                    continue
+                }
                 result.append(LocatedReference(offset: start, reference: reference))
             }
         }
         return result
     }
 
-    private static func parse(_ candidate: String, label: String?) -> TranscriptReference? {
+    private static func hasWhitespacePathContinuation(
+        after index: String.Index,
+        in text: String
+    ) -> Bool {
+        var cursor = index
+        while cursor < text.endIndex, text[cursor].isWhitespace {
+            cursor = text.index(after: cursor)
+        }
+        let start = cursor
+        while cursor < text.endIndex, !text[cursor].isWhitespace {
+            cursor = text.index(after: cursor)
+        }
+        guard start < cursor else { return false }
+        let token = String(text[start..<cursor])
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".,;!?)]}\"'"))
+        guard !token.hasPrefix("/") else { return false }
+        return isRelativeFilePath(lineSuffix(in: token).path)
+    }
+
+    private static func parse(
+        _ candidate: String,
+        label: String?,
+        allowsRelativeFile: Bool
+    ) -> TranscriptReference? {
         let value = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasPrefix("https://") || value.hasPrefix("http://") {
             guard let url = URL(string: value), url.host != nil else { return nil }
             return .web(url: value, label: label)
         }
-        guard value.hasPrefix("/") else { return nil }
-
         let suffix = lineSuffix(in: value)
+        guard suffix.path.hasPrefix("/") || (allowsRelativeFile && isRelativeFilePath(suffix.path)) else {
+            return nil
+        }
         return .file(path: suffix.path, line: suffix.line)
+    }
+
+    private static func isRelativeFilePath(_ path: String) -> Bool {
+        if path.hasPrefix("./") || path.hasPrefix("../") { return true }
+        guard path.contains("/") else { return false }
+        return !URL(filePath: path).pathExtension.isEmpty
     }
 
     private static func lineSuffix(in path: String) -> (path: String, line: Int?) {
@@ -102,4 +137,3 @@ enum TranscriptReference: Equatable, Hashable {
         return (String(path[..<colon]), line)
     }
 }
-

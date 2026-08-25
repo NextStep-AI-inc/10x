@@ -58,8 +58,176 @@ import Testing
 @MainActor
 @Test func continuousSettingsSnapshot() async throws {
     let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
+    let suiteName = "TenXAppTests.SettingsSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let registry = IDERegistry.testing(applications: [:])
+    let store = IDEPreferenceStore(defaults: defaults, registry: registry)
     await model.load()
-    try assertSnapshot(SettingsView(model: model), name: "continuous-settings")
+    try assertSnapshot(
+        SettingsView(model: model, registry: registry, store: store),
+        name: "continuous-settings")
+}
+
+@MainActor
+@Test func fileTypeIconCatalogSnapshot() throws {
+    try assertSnapshot(
+        HStack(spacing: 24) {
+            VStack(spacing: 7) {
+                FileTypeIcon(path: "Feature.swift", isAvailable: true)
+                Text("Feature.swift")
+            }
+            VStack(spacing: 7) {
+                FileTypeIcon(path: "client.ts", isAvailable: true)
+                Text("client.ts")
+            }
+            VStack(spacing: 7) {
+                FileTypeIcon(path: "Component.tsx", isAvailable: true)
+                Text("Component.tsx")
+            }
+        }
+        .font(TenXTypography.body(size: 11))
+        .padding(18)
+        .background(Color.white),
+        name: "file-type-icon-catalog",
+        size: CGSize(width: 300, height: 90))
+}
+
+@MainActor
+@Test func fileReferenceStatesSnapshot() throws {
+    let suiteName = "TenXAppTests.FileReferenceStates.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let cursorURL = URL(filePath: "/Applications/Cursor.app")
+    let registry = IDERegistry.testing(applications: [
+        "com.todesktop.230313mzl4w4u92": cursorURL,
+    ])
+    let selectedStore = IDEPreferenceStore(defaults: defaults, registry: registry)
+    try selectedStore.select(#require(registry.installedApplications().first))
+
+    let emptySuiteName = "TenXAppTests.FileReferenceStates.Empty.\(UUID().uuidString)"
+    let emptyDefaults = try #require(UserDefaults(suiteName: emptySuiteName))
+    defer { emptyDefaults.removePersistentDomain(forName: emptySuiteName) }
+    let emptyStore = IDEPreferenceStore(defaults: emptyDefaults, registry: registry)
+
+    let fullReference = ResolvedFileReference(
+        originalPath: "App/FileReferences/FileReferenceLabel.swift",
+        line: 42,
+        url: URL(filePath: "/Users/example/Projects/10x/App/FileReferences/FileReferenceLabel.swift"),
+        exists: true)
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Selected IDE")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                TranscriptReferenceView(reference: .file(
+                    path: "App/Sessions/TranscriptView.swift",
+                    line: 42))
+                    .environment(selectedStore)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("No IDE")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                TranscriptReferenceView(reference: .file(
+                    path: "App/Sessions/TranscriptView.swift",
+                    line: nil))
+                    .environment(emptyStore)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Missing file · disabled actions")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                TranscriptReferenceView(reference: .file(
+                    path: "App/Sessions/RemovedView.swift",
+                    line: 8))
+                    .environment(selectedStore)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Full path")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                FlowLayout(spacing: 2) {
+                    FileReferenceLabel(reference: fullReference, showsFullPath: true)
+                }
+                .frame(width: 430, alignment: .leading)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Compact width")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                TranscriptReferenceView(reference: .file(
+                    path: "App/FileReferences/FileReferenceLabel.swift",
+                    line: 42))
+                    .environment(selectedStore)
+                    .frame(width: 250, alignment: .leading)
+            }
+        }
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 560, alignment: .leading),
+        name: "file-reference-states",
+        size: CGSize(width: 640, height: 520))
+}
+
+@MainActor
+@Test func activityFileReferencesSnapshot() throws {
+    let suiteName = "TenXAppTests.ActivityFileReferences.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let registry = IDERegistry.testing(applications: [
+        "com.todesktop.230313mzl4w4u92": URL(filePath: "/Applications/Cursor.app"),
+    ])
+    let store = IDEPreferenceStore(defaults: defaults, registry: registry)
+    try store.select(#require(registry.installedApplications().first))
+    let timestamp = Date(timeIntervalSince1970: 1)
+
+    let read = ToolPresentation(
+        id: "reference-read",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: snapshotTextResult("struct TranscriptView: View { … }"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.3))
+    let edit = ToolPresentation(
+        id: "reference-edit",
+        name: "edit",
+        arguments: .object(["path": .string("App/Sessions/ActiveSessionView.swift")]),
+        result: .object(["details": .object(["diff": .string("-old\n+new")])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.7))
+    let write = ToolPresentation(
+        id: "reference-write",
+        name: "write",
+        arguments: .object([
+            "path": .string("App/FileReferences/FileReferenceLabel.swift"),
+            "content": .string("import SwiftUI"),
+        ]),
+        result: snapshotTextResult("Wrote file"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.5))
+    let disclosureState = ToolDisclosureState()
+    disclosureState.collapseAll(ids: [read.id, edit.id, write.id])
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ReadToolCardView(presentation: read)
+            EditToolCardView(presentation: edit)
+            WriteToolCardView(presentation: write)
+            ReadToolCardView(presentation: read)
+                .frame(width: 360, alignment: .leading)
+        }
+        .environment(\.toolDisclosureState, disclosureState)
+        .environment(store)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 720, alignment: .leading),
+        name: "activity-file-references",
+        size: CGSize(width: 800, height: 520))
 }
 
 @MainActor
@@ -134,7 +302,9 @@ import Testing
             modelRole: nil),
         isFinal: true)
     try assertSnapshot(
-        MessageBubbleView(message: message).frame(width: 520),
+        MessageBubbleView(message: message)
+            .environment(snapshotEmptyIDEStore)
+            .frame(width: 520),
         name: "chat-long-wrapping",
         size: CGSize(width: 600, height: 420))
 }
@@ -240,7 +410,9 @@ import Testing
         startDate: Date(timeIntervalSince1970: 1),
         endDate: Date(timeIntervalSince1970: 1.7))
     try assertSnapshot(
-        EditToolCardView(presentation: presentation).frame(width: 720),
+        EditToolCardView(presentation: presentation)
+            .environment(snapshotEmptyIDEStore)
+            .frame(width: 720),
         name: "activity-structured-diff",
         size: CGSize(width: 800, height: 650))
 }
@@ -248,7 +420,8 @@ import Testing
 @MainActor
 @Test func fullTranscriptCompactWindowSnapshot() throws {
     try assertSnapshot(
-        ActiveSessionView(controller: compactTranscriptController()),
+        ActiveSessionView(controller: compactTranscriptController())
+            .environment(snapshotEmptyIDEStore),
         name: "chat-full-900",
         size: CGSize(width: 900, height: 700))
 }
@@ -256,7 +429,8 @@ import Testing
 @MainActor
 @Test func fullTranscriptWideWindowSnapshot() throws {
     try assertSnapshot(
-        ActiveSessionView(controller: wideTranscriptController()),
+        ActiveSessionView(controller: wideTranscriptController())
+            .environment(snapshotEmptyIDEStore),
         name: "chat-full-1440",
         size: CGSize(width: 1_440, height: 900))
 }
@@ -496,3 +670,23 @@ private struct SnapshotConfigRunner: OmpConfigRunning {
         return Data(#"{"autoResume":{"value":false,"default":false,"type":"boolean","description":"Automatically resume the most recent session"},"advisor.enabled":{"value":true,"default":false,"type":"boolean","description":"Pair a second model that reviews each turn"},"providers.openai-codex.codeMode":{"value":"off","default":"off","type":"enum","description":"Route compatible models through code mode"},"tools.outputMaxColumns":{"value":768,"default":512,"type":"number","description":"Per-line output width"},"approval.mode":{"value":"ask","default":"ask","type":"enum","description":"Require approval before commands"}}"#.utf8)
     }
 }
+
+private let snapshotProjectURL = URL(filePath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+
+private let snapshotFileOpenService = FileOpenService(
+    openDefault: { _ in },
+    openInApplication: { _, _ in },
+    reveal: { _ in },
+    startSecurityScope: { _ in false },
+    stopSecurityScope: { _ in })
+
+@MainActor
+private let snapshotEmptyIDEStore: IDEPreferenceStore = {
+    let suiteName = "TenXAppTests.ReferenceSnapshots"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    return IDEPreferenceStore(defaults: defaults, registry: .testing(applications: [:]))
+}()

@@ -244,6 +244,32 @@ import Testing
     #expect(reducer.items.filter { $0.id == "live-tool" }.count == 1)
 }
 
+@Test func persistedMarkdownReplacesEquivalentPlainLiveMessage() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"role":"assistant","timestamp":1787601604000,"content":[{"type":"text","text":"Verification completeRead card rendered"}],"stopReason":"stop"}}
+        """))
+    #expect(reducer.hasPendingPersistence)
+
+    let persistedMessage = TranscriptMessage(
+        id: "persisted-entry-id",
+        raw: try message(##"{"role":"assistant","timestamp":1787601604000,"content":[{"type":"text","text":"# Verification complete\n\n- Read card rendered"}],"stopReason":"stop"}"##),
+        isFinal: true)
+
+    reducer.reconcile(history: TranscriptHistory(items: [
+        .threadStart(id: "thread", date: .distantPast),
+        .message(persistedMessage),
+    ]))
+
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.id) == ["persisted-entry-id"])
+    #expect(messages.first?.visibleText == "# Verification complete\n\n- Read card rendered")
+    #expect(!reducer.hasPendingPersistence)
+}
+
 @Test func fallbackHistoryCreatesOnlyOneThreadStart() {
     var reducer = TranscriptReducer()
     let started = Date(timeIntervalSince1970: 1_787_601_600)

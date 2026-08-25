@@ -33,6 +33,7 @@ struct ActiveSessionView: View {
             .padding(.bottom, 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.fileReferenceBaseURL, controller.projectURL)
         .sheet(item: extensionSheetBinding) { request in
             ExtensionInputSheet(
                 request: request,

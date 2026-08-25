@@ -4,6 +4,7 @@ struct AppShellView: View {
     let model: AppModel
 
     @State private var railExpansion = RailExpansionModel()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
@@ -13,9 +14,15 @@ struct AppShellView: View {
                 ZStack(alignment: .leading) {
                     routeCanvas
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.leading, 64)
+                        .padding(.leading, railExpansion.contentLeadingInset)
+                        .environment(model.idePreferenceStore)
+                        .environment(\.fileOpenService, model.fileOpenService)
+                        .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
+                            model.openSettings(focus: .preferredIDE)
+                        })
                     FloatingRailView(model: model, expansion: railExpansion)
                 }
+                .animation(railAnimation, value: railExpansion.isExpanded)
                 .overlay(alignment: .topTrailing) {
                     ShellTopActionsView(model: model)
                         .padding(.top, 16)
@@ -32,6 +39,11 @@ struct AppShellView: View {
             }
         }
         .background(TenXPalette.color(TenXPalette.canvasHex))
+    }
+
+    private var railAnimation: Animation? {
+        RailExpansionTransition.animationDuration(reduceMotion: reduceMotion)
+            .map { .easeInOut(duration: $0) }
     }
 
     @ViewBuilder
@@ -51,7 +63,12 @@ struct AppShellView: View {
             }
         case .settings:
             if let settingsModel = model.settingsModel {
-                SettingsView(model: settingsModel)
+                SettingsView(
+                    model: settingsModel,
+                    registry: model.ideRegistry,
+                    store: model.idePreferenceStore,
+                    focusTarget: model.settingsFocusTarget,
+                    onFocusConsumed: model.consumeSettingsFocus)
             } else {
                 Text("OMP settings unavailable")
                     .font(TenXTypography.body(size: 13))

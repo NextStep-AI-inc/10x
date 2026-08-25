@@ -82,6 +82,23 @@ import Testing
     #expect(ToolContentExtractor.web(malformed) == nil)
 }
 
+@Test func cursorEditPayloadUsesResultPathWhenArgumentsOmitIt() throws {
+    let edit = presentation(
+        name: "edit",
+        arguments: .object([
+            "i": .string("Changing before to after"),
+            "input": .string("[.build/verification/ExistingProbe.swift#F72E]"),
+        ]),
+        result: .object(["details": .object([
+            "diff": .string("-old\n+new"),
+            "path": .string(".build/verification/ExistingProbe.swift"),
+        ])]))
+
+    let content = try #require(ToolContentExtractor.edit(edit))
+
+    #expect(content.path == ".build/verification/ExistingProbe.swift")
+}
+
 @Test func searchAndWebExtractionRetainsEveryResultForDisclosure() throws {
     let searchLines = (1...24).map { "App/File\($0).swift:\($0)" }.joined(separator: "\n")
     let search = presentation(

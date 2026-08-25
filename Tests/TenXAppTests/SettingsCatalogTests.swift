@@ -45,6 +45,19 @@ import Testing
     #expect(catalog.filter(query: "reviewer").map(\.key) == ["advisor.enabled"])
 }
 
+@Test func missingOMPDefaultsStillHaveHonestActionLabels() throws {
+    let source: JSONValue = .object([
+        "shellPath": setting(.string("20"), type: "string", description: ""),
+        "autoResume": setting(.bool(true), type: "boolean", description: "Automatically resume"),
+    ])
+    let catalog = SettingsCatalog.build(from: source)
+    let shellPath = try #require(catalog.definition(key: "shellPath"))
+    let autoResume = try #require(catalog.definition(key: "autoResume"))
+
+    #expect(SettingControlView.defaultActionLabel(for: shellPath) == "System shell")
+    #expect(SettingControlView.defaultActionLabel(for: autoResume) == "Default")
+}
+
 private func setting(
     _ value: JSONValue,
     defaultValue: JSONValue? = nil,
