@@ -15,3 +15,13 @@ import Testing
         scope: "This project"
     ) == "Always allow, This project")
 }
+
+@Test func railOverflowAccessibilityNamesActionsAndCounts() {
+    #expect(RailAccessibility.disclosureLabel(hiddenCount: 2, isExpanded: false)
+        == "Show 2 more sessions")
+    #expect(RailAccessibility.disclosureLabel(hiddenCount: 2, isExpanded: true)
+        == "Show recent 5 sessions")
+    #expect(RailAccessibility.hiddenSessionsLabel(2) == "2 more sessions")
+    #expect(RailAccessibility.scrollLabel(.up) == "Show earlier rail items")
+    #expect(RailAccessibility.scrollLabel(.down) == "Show later rail items")
+}

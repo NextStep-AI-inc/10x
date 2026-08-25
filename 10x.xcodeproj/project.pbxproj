@@ -127,6 +127,8 @@
 		F67E7DEC5585A17CDEA6D2767D76FDF9 /* SessionTimelineLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002BDDFBB64E5514DB062FEFE64761E5 /* SessionTimelineLoaderTests.swift */; };
 		F85CA13CD4F238E50A963C0204CE0E9D /* SessionHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DDF13863D8A193FC009C14B7AE604A9 /* SessionHeaderView.swift */; };
 		F89F0F5137D5D750F0E0F0D6CB9A4903 /* ProjectSessionGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EBC5749A357E0F3A23A19F5DB544CDF /* ProjectSessionGrouper.swift */; };
+		F0D4A10B5E5510DEC0DE0002 /* RailScrollNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0D4A10B5E5510DEC0DE0001 /* RailScrollNavigation.swift */; };
+		F0D4A10B5E5510DEC0DE0004 /* RailScrollNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0D4A10B5E5510DEC0DE0003 /* RailScrollNavigationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -257,6 +259,8 @@
 		F79595DE8A95AD6F155CC722CC6E68D0 /* UnifiedDiffParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UnifiedDiffParserTests.swift; path = Tests/TenXAppTests/UnifiedDiffParserTests.swift; sourceTree = "<group>"; };
 		F7C692E174C39B68C8E04BC299C3402E /* ApprovalAccessibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ApprovalAccessibility.swift; path = App/ExtensionUI/ApprovalAccessibility.swift; sourceTree = "<group>"; };
 		F80D3A96738C276470C01FBA05289877 /* MessageContentParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessageContentParserTests.swift; path = Tests/TenXAppTests/MessageContentParserTests.swift; sourceTree = "<group>"; };
+		F0D4A10B5E5510DEC0DE0001 /* RailScrollNavigation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailScrollNavigation.swift; path = App/Shell/RailScrollNavigation.swift; sourceTree = "<group>"; };
+		F0D4A10B5E5510DEC0DE0003 /* RailScrollNavigationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailScrollNavigationTests.swift; path = Tests/TenXAppTests/RailScrollNavigationTests.swift; sourceTree = "<group>"; };
 		FB62BB11B9B01DD27A24ADD86DB5B74B /* ReadToolCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ReadToolCardView.swift; path = App/Tools/ReadToolCardView.swift; sourceTree = "<group>"; };
 		FD5218EEBF9A4D16B8283FF3387B5FF6 /* ReferenceImages */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = ReferenceImages; path = Tests/TenXAppTests/ReferenceImages; sourceTree = "<group>"; };
 		FE34E771A1674FF5A3738AF62041E092 /* RailExpansionModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailExpansionModel.swift; path = App/Shell/RailExpansionModel.swift; sourceTree = "<group>"; };
@@ -351,6 +355,7 @@
 				3FACD4A7A9F3181ED9AE49B01BC081DB /* RailAccessibility.swift */,
 				FE34E771A1674FF5A3738AF62041E092 /* RailExpansionModel.swift */,
 				2FBE9AD84346B06AD7543B94BBEC8EED /* RailPresentation.swift */,
+				F0D4A10B5E5510DEC0DE0001 /* RailScrollNavigation.swift */,
 				1B5FF8CFBCF4A8DAF91E07C90B2394AF /* ShellTopActionsView.swift */,
 				4A40B0FABCEC52CF3A958568F5BB200B /* TenXApp.swift */,
 				05CB6A194B431CEE679CA7A74A9146EA /* BashToolCardView.swift */,
@@ -421,6 +426,7 @@
 				3B5A3E018A8553A1B3FD0F25BBAFA3A7 /* ProviderUsagePresentationTests.swift */,
 				81149AB92D56E264D55E6EC32F3C9AB7 /* RailExpansionModelTests.swift */,
 				26ACB74916853BC1B7FF38D0C0974EC8 /* RailPresentationTests.swift */,
+				F0D4A10B5E5510DEC0DE0003 /* RailScrollNavigationTests.swift */,
 				21EB97A905E22F72B682530497AABC53 /* SessionControllerTests.swift */,
 				249AA4742AB42CF3875D5BF8DD554B3B /* SessionHeaderMetadataTests.swift */,
 				5041E8AE9A3CBB9BEA49EF53F3DBE7C1 /* SessionSearchServiceTests.swift */,
@@ -614,6 +620,7 @@
 				EA9A314DA6D1601DE6DF9216B60EA655 /* RailAccessibility.swift in Sources */,
 				51D00FEDA20FD774EEA050E6D07853EA /* RailExpansionModel.swift in Sources */,
 				2D39D13309ED0607462626C709018BC3 /* RailPresentation.swift in Sources */,
+				F0D4A10B5E5510DEC0DE0002 /* RailScrollNavigation.swift in Sources */,
 				A58351031EC9773E02ECE58D06730729 /* ShellTopActionsView.swift in Sources */,
 				000CB3DA1DFB05B1AC381013257F8F53 /* TenXApp.swift in Sources */,
 				DDCC0C10B366779ACACE94FAF6B589B3 /* BashToolCardView.swift in Sources */,
@@ -654,6 +661,7 @@
 				39300040A46C327C233F84DD1F069494 /* ProviderUsagePresentationTests.swift in Sources */,
 				CB3F53D36B5935A7DA81348A0DE124FC /* RailExpansionModelTests.swift in Sources */,
 				A393508760A82500BAAA1E88ED8306CC /* RailPresentationTests.swift in Sources */,
+				F0D4A10B5E5510DEC0DE0004 /* RailScrollNavigationTests.swift in Sources */,
 				5D9F059DED42058820E3EF92A5F17CAE /* SessionControllerTests.swift in Sources */,
 				54A3DFF090FAC2978C5A18BE0093A9DC /* SessionHeaderMetadataTests.swift in Sources */,
 				3D76F6AFD14AF36A556C0E62EF86E344 /* SessionSearchServiceTests.swift in Sources */,

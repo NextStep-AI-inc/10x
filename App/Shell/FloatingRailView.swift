@@ -6,6 +6,9 @@ struct FloatingRailView: View {
     let expansion: RailExpansionModel
 
     @FocusState private var focusedItem: RailFocus?
+    @State private var expandedProjectIDs: Set<String> = []
+    @State private var scrollPosition = ScrollPosition()
+    @State private var scrollNavigation = RailScrollNavigation.zero
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var groups: [ProjectSessionGroup] {
@@ -13,7 +16,10 @@ struct FloatingRailView: View {
     }
 
     private var items: [RailPresentationItem] {
-        RailPresentation.items(groups: groups, selectedSessionPath: selectedSessionPath)
+        RailPresentation.items(
+            groups: groups,
+            selectedSessionPath: selectedSessionPath,
+            expandedProjectIDs: expansion.isExpanded ? expandedProjectIDs : [])
     }
 
     var body: some View {
@@ -36,18 +42,28 @@ struct FloatingRailView: View {
                 .accessibilityLabel("Open Settings")
                 .keyboardShortcut(",", modifiers: .command)
 
-            GeometryReader { proxy in
-                VStack(spacing: 0) {
-                    Spacer(minLength: 18)
+            sessionMap
+                .frame(maxHeight: .infinity)
 
-                    if !items.isEmpty {
-                        sessionMap
-                            .frame(height: sessionMapHeight(availableHeight: proxy.size.height))
+            Button(action: model.openArchivedSessions) {
+                HStack(spacing: 12) {
+                    Image(systemName: "archivebox")
+                        .frame(width: 34)
+                    if expansion.isExpanded {
+                        Text("Archived")
+                            .transition(.opacity)
                     }
-
-                    Spacer(minLength: 18)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .focused($focusedItem, equals: .archived)
+            .padding(.leading, 18)
+            .frame(height: 44)
+            .help("Archived sessions")
+            .accessibilityLabel("Archived sessions")
 
             if !model.providerUsages.isEmpty {
                 ProviderUsageLedgerView(providers: model.providerUsages)
@@ -85,6 +101,25 @@ struct FloatingRailView: View {
             }
         }
         .scrollIndicators(.hidden)
+        .scrollPosition($scrollPosition)
+        .onScrollGeometryChange(for: RailScrollNavigation.self) { geometry in
+            RailScrollNavigation(
+                offset: max(0, geometry.contentOffset.y + geometry.contentInsets.top),
+                contentHeight: geometry.contentSize.height,
+                viewportHeight: geometry.containerSize.height)
+        } action: { _, newValue in
+            scrollNavigation = newValue
+        }
+        .overlay(alignment: .top) {
+            if scrollNavigation.canScrollUp {
+                scrollChevron(.up)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if scrollNavigation.canScrollDown {
+                scrollChevron(.down)
+            }
+        }
     }
 
     private var usageLedgerHeight: CGFloat {
@@ -95,12 +130,6 @@ struct FloatingRailView: View {
     private var selectedSessionPath: String? {
         if case .session(let path) = model.route { return path }
         return nil
-    }
-
-    private func sessionMapHeight(availableHeight: CGFloat) -> CGFloat {
-        let desiredHeight = CGFloat(items.count) * 32
-        let maximumHeight = max(104, availableHeight * 0.58)
-        return min(desiredHeight, maximumHeight)
     }
 
     @ViewBuilder
@@ -137,6 +166,14 @@ struct FloatingRailView: View {
             .frame(height: 32)
             .help(group.projectURL.path)
             .accessibilityLabel(group.displayName)
+            .contextMenu {
+                Button("Archive Project Sessions", systemImage: "archivebox") {
+                    Task { await model.archiveProject(group) }
+                }
+                Button("Delete Project Sessions...", systemImage: "trash", role: .destructive) {
+                    model.requestDeleteProject(group)
+                }
+            }
 
         case .session(let metadata):
             Button {
@@ -172,10 +209,85 @@ struct FloatingRailView: View {
                 title: metadata.title ?? "Untitled session",
                 project: groupName(for: metadata),
                 state: metadata.status.rawValue.capitalized))
+            .contextMenu {
+                Button("Archive Session", systemImage: "archivebox") {
+                    Task { await model.archiveSession(metadata) }
+                }
+                Button("Delete Session...", systemImage: "trash", role: .destructive) {
+                    model.requestDeleteSession(metadata)
+                }
+            }
 
-        case .disclosure:
-            EmptyView()
+        case .disclosure(let disclosure):
+            if expansion.isExpanded {
+                Button {
+                    if disclosure.isExpanded {
+                        expandedProjectIDs.remove(disclosure.projectID)
+                    } else {
+                        expandedProjectIDs.insert(disclosure.projectID)
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        RailTreeMarker(
+                            label: "...",
+                            position: .terminalChild,
+                            isSelected: false)
+                            .frame(width: 34, height: 28)
+                        Text(disclosure.isExpanded
+                            ? "Show recent 5"
+                            : "Show \(disclosure.hiddenCount) more")
+                            .font(TenXTypography.body(size: 11))
+                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .focused($focusedItem, equals: .disclosure(disclosure.projectID))
+                .padding(.leading, 18)
+                .frame(height: 32)
+                .accessibilityLabel(RailAccessibility.disclosureLabel(
+                    hiddenCount: disclosure.hiddenCount,
+                    isExpanded: disclosure.isExpanded))
+            } else {
+                RailTreeMarker(
+                    label: "...",
+                    position: .terminalChild,
+                    isSelected: false)
+                    .frame(width: 34, height: 28)
+                    .padding(.leading, 18)
+                    .frame(height: 32)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(RailAccessibility.hiddenSessionsLabel(
+                        disclosure.hiddenCount))
+            }
         }
+    }
+
+    private func scrollChevron(_ direction: RailScrollDirection) -> some View {
+        Button {
+            let action = {
+                scrollPosition.scrollTo(y: scrollNavigation.target(for: direction))
+            }
+            if reduceMotion {
+                action()
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    action()
+                }
+            }
+        } label: {
+            Image(systemName: direction == .up ? "chevron.up" : "chevron.down")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .frame(maxWidth: .infinity)
+                .frame(height: 22)
+                .background(.white.opacity(0.9))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(RailAccessibility.scrollLabel(direction))
     }
 
     private func groupName(for metadata: SessionMetadata) -> String {
@@ -187,8 +299,10 @@ struct FloatingRailView: View {
 
 private enum RailFocus: Hashable {
     case settings
+    case archived
     case project(String)
     case session(String)
+    case disclosure(String)
 }
 
 private struct RailTreeMarker: View {
