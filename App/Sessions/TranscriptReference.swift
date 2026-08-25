@@ -74,9 +74,12 @@ enum TranscriptReference: Equatable, Hashable {
             var token = String(text[start..<cursor])
             token = token.trimmingCharacters(in: CharacterSet(charactersIn: "([{\"'"))
             token = token.trimmingCharacters(in: CharacterSet(charactersIn: ".,;!?)]}\"'"))
-            if let reference = parse(token, label: nil, allowsRelativeFile: false),
-               !hasWhitespacePathContinuation(after: cursor, in: text)
-            {
+            if let reference = parse(token, label: nil, allowsRelativeFile: false) {
+                if case .file = reference,
+                   hasWhitespacePathContinuation(after: cursor, in: text)
+                {
+                    continue
+                }
                 result.append(LocatedReference(offset: start, reference: reference))
             }
         }

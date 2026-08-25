@@ -68,3 +68,11 @@ import Testing
 
     #expect(references.isEmpty)
 }
+
+@Test func plainWebReferenceIgnoresFileWhitespaceContinuation() {
+    let references = TranscriptReference.extract(from: "See https://example.com child/file.swift")
+
+    #expect(references == [
+        .web(url: "https://example.com", label: nil),
+    ])
+}
