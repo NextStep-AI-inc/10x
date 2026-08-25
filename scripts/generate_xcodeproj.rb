@@ -87,6 +87,7 @@ tests.build_configurations.each do |configuration|
   })
 end
 
+project.predictabilize_uuids
 project.save
 
 scheme = Xcodeproj::XCScheme.new
