@@ -145,7 +145,92 @@ import Testing
 @Test func continuousSettingsSnapshot() async throws {
     let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
     await model.load()
-    try assertSnapshot(SettingsView(model: model), name: "continuous-settings")
+    try assertSnapshot(SettingsView(model: model, onOpenProviders: {}), name: "continuous-settings")
+}
+
+@MainActor
+@Test func providerConnectionsSnapshot() async throws {
+    let model = try providerWorkspaceModel()
+    await model.load()
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-connections",
+        size: CGSize(width: 1180, height: 760))
+}
+
+@MainActor
+@Test func providerUsageDetailSnapshot() async throws {
+    let model = try providerWorkspaceModel()
+    await model.load()
+    model.selectedSection = .usage
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-usage-detail",
+        size: CGSize(width: 1180, height: 760))
+}
+
+@MainActor
+@Test func providerUsageStaleSnapshot() async throws {
+    let providerService = FakeProviderService(providers: providerWorkspaceProviders)
+    let usageService = FakeUsageService(snapshot: try providerWorkspaceSnapshot())
+    let model = ProviderManagementViewModel(
+        providerService: providerService,
+        usageService: usageService,
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) },
+        formatTime: { _ in "9:35 AM" })
+    await model.load()
+    await usageService.setFailing(true)
+    await model.refresh()
+    model.selectedSection = .usage
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-usage-stale",
+        size: CGSize(width: 1180, height: 760))
+}
+
+@MainActor
+private func providerWorkspaceModel() throws -> ProviderManagementViewModel {
+    providerTestModel(
+        providers: providerWorkspaceProviders,
+        snapshot: try providerWorkspaceSnapshot(),
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+}
+
+private let providerWorkspaceProviders = [
+    ProviderLoginProvider(
+        id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ProviderLoginProvider(
+        id: "anthropic", name: "Anthropic", isAvailable: true, isAuthenticated: false),
+    ProviderLoginProvider(
+        id: "github-copilot", name: "GitHub Copilot", isAvailable: true, isAuthenticated: true),
+    ProviderLoginProvider(
+        id: "openai-codex", name: "ChatGPT", isAvailable: true, isAuthenticated: false),
+    ProviderLoginProvider(
+        id: "local", name: "Local Provider", isAvailable: false, isAuthenticated: false),
+]
+
+private func providerWorkspaceSnapshot() throws -> OmpUsageSnapshot {
+    try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data(#"""
+    {
+      "generatedAt":1787675745954,
+      "reports":[{
+        "provider":"cursor",
+        "fetchedAt":1787675745599,
+        "limits":[
+          {"id":"cursor:models","label":"Cursor Models","scope":{"provider":"cursor"},"window":{"id":"monthly","label":"Monthly","resetsAt":1788061624000},"amount":{"usedFraction":0.5,"unit":"percent"},"notes":["Shared across Cursor models."]},
+          {"id":"cursor:burst","label":"Burst requests","scope":{"provider":"cursor"},"window":{"id":"daily","label":"Daily","resetsAt":1787700000000},"amount":{"usedFraction":1,"unit":"percent"}},
+          {"id":"cursor:requests","label":"Requests","scope":{"provider":"cursor"},"amount":{"used":4,"unit":"requests"}}
+        ],
+        "metadata":{"email":"tanner@example.com"}
+      }],
+      "accountsWithoutUsage":[{"provider":"github-copilot","email":"work@example.com"}],
+      "disabledCredentials":[{"id":2,"provider":"anthropic","type":"oauth","cause":"refresh failed","email":"old@example.com","disabledAtMs":1787616419000}]
+    }
+    """#.utf8))
 }
 
 @MainActor

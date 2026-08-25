@@ -47,6 +47,11 @@ final class AppModel {
         Task { await settingsModel?.load() }
     }
 
+    func openProviders(_ section: ProviderWorkspaceSection) {
+        providerModel?.selectedSection = section
+        route = .providers(section)
+    }
+
     func openNewSession() {
         activeSession = nil
         route = .newSession

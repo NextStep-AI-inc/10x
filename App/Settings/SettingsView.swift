@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     let model: SettingsViewModel
+    let onOpenProviders: () -> Void
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
@@ -38,9 +39,14 @@ struct SettingsView: View {
                     .lineLimit(1)
             }
             Spacer()
-            Text("\(model.settingCount) settings")
-                .font(TenXTypography.mono(size: 10))
-                .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+            HStack(spacing: 12) {
+                Text("\(model.settingCount) settings")
+                    .font(TenXTypography.mono(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+                Button("Providers", action: onOpenProviders)
+                    .buttonStyle(GhostActionStyle())
+                    .accessibilityLabel("Open Providers")
+            }
         }
         .padding(.top, 62)
         .padding(.bottom, 22)

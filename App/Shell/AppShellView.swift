@@ -59,14 +59,22 @@ struct AppShellView: View {
             }
         case .settings:
             if let settingsModel = model.settingsModel {
-                SettingsView(model: settingsModel)
+                SettingsView(
+                    model: settingsModel,
+                    onOpenProviders: { model.openProviders(.connections) })
             } else {
                 Text("OMP settings unavailable")
                     .font(TenXTypography.body(size: 13))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
         case .providers:
-            EmptyView()
+            if let providerModel = model.providerModel {
+                ProvidersView(model: providerModel)
+            } else {
+                Text("Providers unavailable")
+                    .font(TenXTypography.body(size: 13))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
         }
     }
 }

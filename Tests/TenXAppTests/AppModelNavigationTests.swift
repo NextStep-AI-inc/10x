@@ -60,6 +60,38 @@ import Testing
 }
 
 @MainActor
+@Test func openProvidersSelectsTheRequestedWorkspaceSection() async {
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
+
+    await model.bootstrap()
+    model.openProviders(.usage)
+
+    #expect(model.route == .providers(.usage))
+    #expect(model.providerModel?.selectedSection == .usage)
+}
+
+@MainActor
+@Test func settingsProvidersActionOpensConnectionsWithoutChangingSettingsData() async throws {
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
+
+    await model.bootstrap()
+    let settingsModel = try #require(model.settingsModel)
+    let settingsCount = settingsModel.settingCount
+    model.openProviders(.connections)
+
+    #expect(model.route == .providers(.connections))
+    #expect(settingsModel.settingCount == settingsCount)
+}
+
+@MainActor
 @Test func providerDiscoveryFailureKeepsRequiredSetupVisible() async {
     let providerModel = providerTestModel(
         providers: [],
