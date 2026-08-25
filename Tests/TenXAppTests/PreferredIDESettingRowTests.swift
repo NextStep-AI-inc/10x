@@ -6,10 +6,18 @@ import Testing
 @Test func preferredIDERowSearchMatchesItsContentAndSelectedApplication() {
     #expect(PreferredIDESettingRowView.matches(query: "", applicationName: nil))
     #expect(PreferredIDESettingRowView.matches(query: "preferred", applicationName: nil))
-    #expect(!PreferredIDESettingRowView.matches(query: "editor", applicationName: nil))
+    #expect(PreferredIDESettingRowView.matches(query: "editor", applicationName: nil))
     #expect(PreferredIDESettingRowView.matches(query: "Missing IDE", applicationName: "Missing IDE"))
     #expect(!PreferredIDESettingRowView.matches(query: "unrelated", applicationName: "Cursor"))
     #expect(PreferredIDESettingRowView.matches(query: "Cursor", applicationName: "Cursor"))
+}
+
+@Test func preferredIDERowMatcherCanRunOutsideTheMainActor() async {
+    let matchesEditor = await Task.detached {
+        PreferredIDESettingRowView.matches(query: "editor", applicationName: nil)
+    }.value
+
+    #expect(matchesEditor)
 }
 
 @MainActor

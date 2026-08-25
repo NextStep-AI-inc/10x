@@ -51,13 +51,9 @@ struct PreferredIDESettingRowView: View {
                         saveError = nil
                     }
                 } label: {
-                    HStack(spacing: 6) {
-                        Text(Self.valueLabel(for: store.state))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 9, weight: .semibold))
-                    }
-                    .font(TenXTypography.body(size: 12))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                    Text(Self.valueLabel(for: store.state))
+                        .font(TenXTypography.body(size: 12))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                 }
                 .menuStyle(.borderlessButton)
                 .focused($focusedControl, equals: .preferredIDE)
@@ -74,7 +70,7 @@ struct PreferredIDESettingRowView: View {
         .accessibilityElement(children: .contain)
     }
 
-    static func valueLabel(for state: IDEPreferenceState) -> String {
+    nonisolated static func valueLabel(for state: IDEPreferenceState) -> String {
         switch state {
         case .none: "Choose IDE"
         case .available(let application): application.displayName
@@ -82,10 +78,10 @@ struct PreferredIDESettingRowView: View {
         }
     }
 
-    static func matches(query: String, applicationName: String?) -> Bool {
+    nonisolated static func matches(query: String, applicationName: String?) -> Bool {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return true }
-        return ["Preferred IDE", "Open file references in this application", applicationName]
+        return ["Preferred IDE", "editor", "Open file references in this application", applicationName]
             .compactMap { $0 }
             .contains { $0.localizedCaseInsensitiveContains(query) }
     }
