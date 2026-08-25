@@ -93,29 +93,29 @@ struct FloatingRailView: View {
     }
 
     private var sessionMap: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(items) { item in
-                    itemButton(item)
-                }
-            }
-        }
-        .scrollIndicators(.hidden)
-        .scrollPosition($scrollPosition)
-        .onScrollGeometryChange(for: RailScrollNavigation.self) { geometry in
-            RailScrollNavigation(
-                offset: max(0, geometry.contentOffset.y + geometry.contentInsets.top),
-                contentHeight: geometry.contentSize.height,
-                viewportHeight: geometry.containerSize.height)
-        } action: { _, newValue in
-            scrollNavigation = newValue
-        }
-        .overlay(alignment: .top) {
+        VStack(spacing: 0) {
             if scrollNavigation.canScrollUp {
                 scrollChevron(.up)
             }
-        }
-        .overlay(alignment: .bottom) {
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(items) { item in
+                        itemButton(item)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .scrollPosition($scrollPosition)
+            .onScrollGeometryChange(for: RailScrollNavigation.self) { geometry in
+                RailScrollNavigation(
+                    offset: max(0, geometry.contentOffset.y + geometry.contentInsets.top),
+                    contentHeight: geometry.contentSize.height,
+                    viewportHeight: geometry.containerSize.height)
+            } action: { _, newValue in
+                scrollNavigation = newValue
+            }
+
             if scrollNavigation.canScrollDown {
                 scrollChevron(.down)
             }
