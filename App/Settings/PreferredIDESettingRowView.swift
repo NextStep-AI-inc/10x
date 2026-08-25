@@ -56,6 +56,7 @@ struct PreferredIDESettingRowView: View {
                         .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                 }
                 .menuStyle(.borderlessButton)
+                .focusable()
                 .focused($focusedControl, equals: .preferredIDE)
                 .frame(width: 300, alignment: .trailing)
                 .accessibilityLabel(Self.accessibilitySemantics(for: store.state).label)
