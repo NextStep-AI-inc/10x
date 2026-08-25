@@ -47,7 +47,11 @@ final class SessionController {
         runtimeState: SessionRuntimeState,
         title: String = "Transcript",
         modelName: String = "GPT-5.6",
-        thinkingLevel: String = "High"
+        thinkingLevel: String = "High",
+        headerMetadata: SessionHeaderMetadata = SessionHeaderMetadata(
+            branch: "",
+            repo: "",
+            worktreePath: nil)
     ) {
         self.processManager = processManager
         self.items = previewItems
@@ -55,6 +59,7 @@ final class SessionController {
         self.title = title
         self.modelName = modelName
         self.thinkingLevel = thinkingLevel
+        self.headerMetadata = headerMetadata
     }
 
     var isComposerAvailable: Bool {

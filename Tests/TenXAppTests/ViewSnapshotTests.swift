@@ -262,6 +262,44 @@ import Testing
 }
 
 @MainActor
+@Test func activeSessionHeaderSnapshot() throws {
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .streaming,
+        title: "Active session",
+        headerMetadata: SessionHeaderMetadata(
+            branch: "codex/active-session-shell",
+            repo: "10x",
+            worktreePath: ".worktrees/active-session-shell"))
+
+    try assertSnapshot(
+        SessionHeaderView(controller: controller),
+        name: "active-session-header",
+        size: CGSize(width: 900, height: 80))
+}
+
+@MainActor
+@Test func collapsedRailSnapshot() throws {
+    let (model, expansion) = snapshotRail(isExpanded: false)
+
+    try assertSnapshot(
+        FloatingRailView(model: model, expansion: expansion),
+        name: "shell-rail-collapsed",
+        size: CGSize(width: 64, height: 620))
+}
+
+@MainActor
+@Test func expandedRailSnapshot() throws {
+    let (model, expansion) = snapshotRail(isExpanded: true)
+
+    try assertSnapshot(
+        FloatingRailView(model: model, expansion: expansion),
+        name: "shell-rail-expanded",
+        size: CGSize(width: 220, height: 620))
+}
+
+@MainActor
 private func compactTranscriptController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
     let user = TranscriptMessage(
@@ -399,6 +437,49 @@ private func wideTranscriptController() -> SessionController {
         ],
         runtimeState: .streaming,
         title: "Agent transcript")
+}
+
+@MainActor
+private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
+    let model = AppModel()
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/selected.jsonl",
+            cwd: "/tmp/10x",
+            title: "Improve active session shell",
+            modified: 30),
+        snapshotSession(
+            path: "/sessions/earlier.jsonl",
+            cwd: "/tmp/10x",
+            title: "Transcript experience",
+            modified: 20),
+        snapshotSession(
+            path: "/sessions/nextstep.jsonl",
+            cwd: "/tmp/NextStep",
+            title: "Review navigation",
+            modified: 10),
+    ]
+    model.route = .session("/sessions/selected.jsonl")
+    let expansion = RailExpansionModel()
+    if isExpanded { expansion.pointerEntered() }
+    return (model, expansion)
+}
+
+private func snapshotSession(
+    path: String,
+    cwd: String,
+    title: String,
+    modified: TimeInterval
+) -> SessionMetadata {
+    SessionMetadata(
+        path: path,
+        sessionId: path,
+        cwd: cwd,
+        title: title,
+        created: Date(timeIntervalSince1970: modified),
+        modified: Date(timeIntervalSince1970: modified),
+        sizeBytes: 10,
+        status: .complete)
 }
 
 private func snapshotTextResult(_ text: String) -> JSONValue {

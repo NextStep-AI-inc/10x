@@ -22,7 +22,7 @@ struct FloatingRailView: View {
                 expansion.pointerEntered()
                 model.openSettings()
             } label: {
-                BrandWordmark(width: expansion.isExpanded ? 42 : 34)
+                BrandWordmark(width: 34)
                     .frame(width: 44, height: 44, alignment: .leading)
                     .contentShape(Rectangle())
             }
@@ -98,7 +98,7 @@ struct FloatingRailView: View {
     }
 
     private func sessionMapHeight(availableHeight: CGFloat) -> CGFloat {
-        let desiredHeight = CGFloat(items.count) * 26
+        let desiredHeight = CGFloat(items.count) * 32
         let maximumHeight = max(104, availableHeight * 0.58)
         return min(desiredHeight, maximumHeight)
     }
@@ -118,10 +118,10 @@ struct FloatingRailView: View {
                         label: item.markerLabel,
                         position: item.treePosition,
                         isSelected: false)
-                        .frame(width: 30, height: 22)
+                        .frame(width: 34, height: 28)
                     if expansion.isExpanded {
                         Text(group.displayName)
-                            .font(TenXTypography.body(size: 11, weight: .semibold))
+                            .font(TenXTypography.body(size: 12, weight: .semibold))
                             .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                             .lineLimit(1)
                             .transition(.opacity)
@@ -133,8 +133,8 @@ struct FloatingRailView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .focused($focusedItem, equals: .project(group.id))
-            .padding(.leading, 17)
-            .frame(height: 26)
+            .padding(.leading, 18)
+            .frame(height: 32)
             .help(group.projectURL.path)
             .accessibilityLabel(group.displayName)
 
@@ -148,10 +148,10 @@ struct FloatingRailView: View {
                         label: item.markerLabel,
                         position: item.treePosition,
                         isSelected: item.isSelected)
-                        .frame(width: 30, height: 22)
+                        .frame(width: 34, height: 28)
                     if expansion.isExpanded {
                         Text(metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session")
-                            .font(TenXTypography.body(size: 11))
+                            .font(TenXTypography.body(size: 12))
                             .foregroundStyle(item.isSelected
                                 ? TenXPalette.color(TenXPalette.cyanHex)
                                 : TenXPalette.color(TenXPalette.mutedTextHex))
@@ -165,8 +165,8 @@ struct FloatingRailView: View {
             .buttonStyle(.plain)
             .focusEffectDisabled()
             .focused($focusedItem, equals: .session(metadata.path))
-            .padding(.leading, 17)
-            .frame(height: 26)
+            .padding(.leading, 18)
+            .frame(height: 32)
             .help(metadata.title ?? "Untitled session")
             .accessibilityLabel(RailAccessibility.sessionLabel(
                 title: metadata.title ?? "Untitled session",
@@ -217,9 +217,11 @@ private struct RailTreeMarker: View {
             }
 
             Text(label)
-                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(markerColor)
-                .frame(width: position == .root ? 30 : 17, alignment: .center)
+                .frame(
+                    width: position == .root ? 34 : 18,
+                    alignment: position == .root ? .leading : .center)
                 .offset(x: position == .root ? 0 : 12)
         }
         .accessibilityHidden(true)

@@ -1,17 +1,36 @@
 import Foundation
 
 struct SessionHeaderMetadata: Sendable, Equatable {
+    struct PresentationItem: Identifiable, Sendable, Equatable {
+        let systemImage: String
+        let accessibilityLabel: String
+        let value: String
+
+        var id: String { systemImage }
+    }
+
     let branch: String
     let repo: String
     let worktreePath: String?
 
-    var displayLine: String {
-        [branch, repo, worktreePath]
-            .compactMap { value in
-                guard let value, !value.isEmpty else { return nil }
-                return value
-            }
-            .joined(separator: " | ")
+    var presentationItems: [PresentationItem] {
+        [
+            branch.isEmpty ? nil : PresentationItem(
+                systemImage: "arrow.triangle.branch",
+                accessibilityLabel: "Branch",
+                value: branch),
+            repo.isEmpty ? nil : PresentationItem(
+                systemImage: "folder",
+                accessibilityLabel: "Folder",
+                value: repo),
+            worktreePath.flatMap { path in
+                path.isEmpty ? nil : PresentationItem(
+                    systemImage: "folder.badge.gearshape",
+                    accessibilityLabel: "Worktree",
+                    value: path)
+            },
+        ]
+        .compactMap { $0 }
     }
 
     static func resolve(projectURL: URL) async -> SessionHeaderMetadata {
