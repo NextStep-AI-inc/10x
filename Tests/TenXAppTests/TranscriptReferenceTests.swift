@@ -62,3 +62,9 @@ import Testing
         .file(path: "/tmp/two.swift", line: nil),
     ])
 }
+
+@Test func extensionBearingAbsolutePrefixWithWhitespaceContinuationIsRejected() {
+    let references = TranscriptReference.extract(from: "Open /tmp/one.swift child/file.swift")
+
+    #expect(references.isEmpty)
+}
