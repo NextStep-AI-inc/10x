@@ -8,7 +8,7 @@ struct WriteToolCardView: View {
             ToolCardScaffold(
                 presentation: presentation,
                 title: "Write",
-                subtitle: content.path
+                fileReference: .file(path: content.path, line: nil)
             ) {
                 Text(content.summary)
                     .font(TenXTypography.mono(size: 10))

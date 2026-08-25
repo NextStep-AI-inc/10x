@@ -28,7 +28,7 @@ final class SessionController {
 
     private let processManager: SessionProcessManager
     private let timelineLoader = SessionTimelineLoader()
-    private var projectURL: URL?
+    private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
     private var reducer = TranscriptReducer()

@@ -8,7 +8,7 @@ struct ReadToolCardView: View {
             ToolCardScaffold(
                 presentation: presentation,
                 title: "Read",
-                subtitle: content.path
+                fileReference: .file(path: content.path, line: nil)
             ) {
                 HStack {
                     Text(content.summary)

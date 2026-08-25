@@ -1,4 +1,5 @@
 import AppKit
+import os
 import SwiftUI
 
 struct TranscriptReferenceView: View {
@@ -7,20 +8,7 @@ struct TranscriptReferenceView: View {
     var body: some View {
         switch reference {
         case .file(let path, let line):
-            Button(action: {
-                if FileManager.default.fileExists(atPath: path) { openFile(path) }
-            }) {
-                Label(fileLabel(path: path, line: line), systemImage: "doc.text")
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: 220, alignment: .leading)
-            }
-            .buttonStyle(GhostActionStyle(color: fileColor(path)))
-            .contextMenu { copyButton(path + (line.map { ":\($0)" } ?? "")) }
-            .accessibilityLabel("File reference, \(path)\(line.map { ", line \($0)" } ?? "")")
-            .accessibilityHint(FileManager.default.fileExists(atPath: path)
-                ? "Opens the referenced file"
-                : "File is unavailable; use the context menu to copy its path")
+            FileTranscriptReferenceView(path: path, line: line)
         case .web(let value, let label):
             if let url = URL(string: value) {
                 Link(destination: url) {
@@ -33,24 +21,188 @@ struct TranscriptReferenceView: View {
         }
     }
 
-    private func fileLabel(path: String, line: Int?) -> String {
-        URL(filePath: path).lastPathComponent + (line.map { ":\($0)" } ?? "")
-    }
-
-    private func fileColor(_ path: String) -> Color {
-        FileManager.default.fileExists(atPath: path)
-            ? TenXPalette.color(TenXPalette.cyanHex)
-            : TenXPalette.color(TenXPalette.mutedTextHex)
-    }
-
-    private func openFile(_ path: String) {
-        NSWorkspace.shared.open(URL(filePath: path))
-    }
-
     private func copyButton(_ value: String) -> some View {
         Button("Copy reference") {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(value, forType: .string)
+        }
+    }
+}
+
+private struct FileTranscriptReferenceView: View {
+    let path: String
+    let line: Int?
+
+    @Environment(IDEPreferenceStore.self) private var idePreferenceStore
+    @Environment(\.fileOpenService) private var fileOpenService
+    @Environment(\.fileReferenceBaseURL) private var baseURL
+    @Environment(\.openIDEPreferences) private var openIDEPreferences
+    @State private var isHovering = false
+    @State private var isOptionPressed = false
+    @State private var errorStatus: String?
+    @State private var clearErrorTask: Task<Void, Never>?
+
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.tannerpham.tenx",
+        category: "FileReferences")
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    fileAction
+                    ideAction
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    fileAction
+                    ideAction
+                }
+            }
+            if let errorStatus {
+                Text(errorStatus)
+                    .font(TenXTypography.body(size: 10, weight: .medium))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                    .accessibilityLabel(errorStatus)
+            }
+        }
+        .onDisappear { clearErrorTask?.cancel() }
+    }
+
+    private var resolvedReference: ResolvedFileReference {
+        FileReferenceResolver().resolve(path: path, line: line, relativeTo: baseURL)
+    }
+
+    private var fileAction: some View {
+        Button(action: openWithSystemDefault) {
+            FileReferenceLabel(
+                reference: resolvedReference,
+                showsFullPath: isHovering && isOptionPressed)
+        }
+        .buttonStyle(GhostActionStyle(color: fileColor))
+        .disabled(!resolvedReference.exists)
+        .onHover { isHovering = $0 }
+        .onModifierKeysChanged(mask: .option, initial: true) { _, modifiers in
+            isOptionPressed = modifiers.contains(.option)
+        }
+        .contextMenu { contextMenu }
+        .accessibilityLabel("File reference, \(resolvedReference.fullPathLabel)")
+        .accessibilityHint(resolvedReference.exists
+            ? "Opens with the system default application"
+            : "File unavailable. Copy its reference from the context menu")
+    }
+
+    private var ideAction: some View {
+        Button(ideActionTitle, action: performIDEAction)
+            .buttonStyle(GhostActionStyle())
+            .frame(minHeight: 32)
+            .disabled(isIDEOpenAction && !resolvedReference.exists)
+            .accessibilityLabel(ideAccessibilityLabel)
+    }
+
+    @ViewBuilder
+    private var contextMenu: some View {
+        Button("Open with System Default", action: openWithSystemDefault)
+            .disabled(!resolvedReference.exists)
+        if case .available(let application) = idePreferenceStore.state {
+            Button("Open in \(application.displayName)") {
+                openInIDE(application)
+            }
+            .disabled(!resolvedReference.exists)
+        }
+        Button("Reveal in Finder", action: revealInFinder)
+            .disabled(!resolvedReference.exists)
+        Button("Copy Reference", action: copyReference)
+    }
+
+    private var fileColor: Color {
+        TenXPalette.color(resolvedReference.exists
+            ? TenXPalette.cyanHex
+            : TenXPalette.mutedTextHex)
+    }
+
+    private var ideActionTitle: String {
+        if case .available(let application) = idePreferenceStore.state {
+            return "Open in \(application.displayName)"
+        }
+        return "Choose IDE"
+    }
+
+    private var isIDEOpenAction: Bool {
+        if case .available = idePreferenceStore.state { return true }
+        return false
+    }
+
+    private var ideAccessibilityLabel: String {
+        if case .available(let application) = idePreferenceStore.state {
+            return "Open \(resolvedReference.compactLabel) in \(application.displayName), \(resolvedReference.fullPathLabel)"
+        }
+        return "Choose an IDE for \(resolvedReference.fullPathLabel)"
+    }
+
+    private func openWithSystemDefault() {
+        beginInteraction()
+        guard resolvedReference.exists, let url = resolvedReference.url else { return }
+        do {
+            try fileOpenService.openWithSystemDefault(url)
+        } catch {
+            Self.logger.error("[FileReferences:openWithSystemDefault] Could not open file")
+            showError("Couldn’t open \(resolvedReference.compactLabel)")
+        }
+    }
+
+    private func performIDEAction() {
+        beginInteraction()
+        guard case .available(let application) = idePreferenceStore.state else {
+            openIDEPreferences()
+            return
+        }
+        openInIDE(application)
+    }
+
+    private func openInIDE(_ application: IDEApplication) {
+        beginInteraction()
+        guard resolvedReference.exists, let url = resolvedReference.url else { return }
+        Task {
+            do {
+                try await fileOpenService.open(url, in: application)
+            } catch {
+                Self.logger.error("[FileReferences:openInIDE] Could not open file in preferred application")
+                showError("Couldn’t open in \(application.displayName)")
+            }
+        }
+    }
+
+    private func revealInFinder() {
+        beginInteraction()
+        guard resolvedReference.exists, let url = resolvedReference.url else { return }
+        fileOpenService.reveal(url)
+    }
+
+    private func copyReference() {
+        beginInteraction()
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(resolvedReference.originalReference, forType: .string)
+    }
+
+    private func beginInteraction() {
+        clearErrorTask?.cancel()
+        errorStatus = nil
+    }
+
+    private func showError(_ message: String) {
+        clearErrorTask?.cancel()
+        errorStatus = message
+        NSAccessibility.post(
+            element: NSApp,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: message,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ])
+        clearErrorTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            errorStatus = nil
         }
     }
 }
