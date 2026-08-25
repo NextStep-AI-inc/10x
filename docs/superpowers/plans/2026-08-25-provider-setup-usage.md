@@ -1293,7 +1293,7 @@ git commit -m "feat(providers): surface usage in the rail"
 - Consumes: the complete provider feature from Tasks 1-8.
 - Produces: green suites, a clean Release build, real read-only OMP evidence, screenshots from the real build, and an honest handoff.
 
-- [ ] **Step 1: Regenerate the project and confirm the worktree is clean except planned changes**
+- [x] **Step 1: Regenerate the project and confirm the worktree is clean except planned changes**
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -1303,7 +1303,7 @@ git status --short
 
 Expected: no whitespace errors and no unplanned files.
 
-- [ ] **Step 2: Run every automated test from fresh evidence**
+- [x] **Step 2: Run every automated test from fresh evidence**
 
 ```bash
 cd OmpKit && swift test
@@ -1313,7 +1313,7 @@ xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' test
 
 Expected: OmpKit and app suites PASS; record exact executed counts and skips.
 
-- [ ] **Step 3: Build Release**
+- [x] **Step 3: Build Release**
 
 ```bash
 xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' clean build
@@ -1321,7 +1321,7 @@ xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release -destinatio
 
 Expected: `** BUILD SUCCEEDED **`.
 
-- [ ] **Step 4: Verify live OMP data without changing authentication**
+- [x] **Step 4: Verify live OMP data without changing authentication**
 
 Use the resolved `/Users/tannerpham/.bun/bin/omp` only for read operations:
 
@@ -1345,7 +1345,7 @@ In the built app, verify:
 
 Capture built-app screenshots of Connections, Usage, and the expanded rail. The current real profile already has an authenticated provider, so use the SwiftUI snapshot for required setup and report that the routed setup screen was not live-verified. Do not add a test-mode product path solely to manufacture a screenshot.
 
-- [ ] **Step 6: Record the external-auth verification boundary**
+- [x] **Step 6: Record the external-auth verification boundary**
 
 State explicitly:
 
@@ -1354,7 +1354,7 @@ Not verified: completing a real OAuth login, because that changes external accou
 For Tanner to test: connect one disconnected provider, complete browser or pasted-code authorization, confirm Continue enables, relaunch, and confirm the provider remains connected.
 ```
 
-- [ ] **Step 7: Commit only verification-driven source changes**
+- [x] **Step 7: Commit only verification-driven source changes**
 
 If verification required a scoped fix, rerun the failing command and full affected suite, then commit:
 
@@ -1367,6 +1367,18 @@ git commit -m "fix(providers): correct verified provider UI defect"
 
 If no source changed, do not create an empty verification commit.
 
-- [ ] **Step 8: Update branch coordination state**
+- [x] **Step 8: Update branch coordination state**
 
 The repository currently has no Git remote, so report that a draft PR could not be opened. If a remote is added before execution finishes, push without force and open or update a draft PR using the committed spec and this plan as links. Do not merge or mark ready without Tanner's instruction and green CI.
+
+#### Task 9 verification notes (2026-08-25)
+
+- Preflight: regenerated `10x.xcodeproj`; `git diff --check` passed and the worktree was clean before verification.
+- Automated: `swift test` passed 126 OmpKit tests with 2 existing opt-in integration skips. `xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' test` passed 137 app tests with no skips after the verification fix.
+- Release: fresh `xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' clean build` passed. The separate Release process was visible and remained alive at PID 53024 after the walkthrough.
+- Live OMP: `/Users/tannerpham/.bun/bin/omp usage --json --redact` returned 1 Cursor report with 3 limits, 0 accounts without usage, and 2 disabled credentials. The built Providers workspace showed connected, missing-usage, and reconnect states without selecting Connect or Reconnect.
+- UI: default 1180×760 Connections, Usage, and expanded-rail screenshots are saved under `/Users/tannerpham/.codex/visualizations/2026/08/25/01a039c4-60b0-7fd3-8328-0e4672d1c53c`. Browse all showed 137 providers; search filtered Gemini; the rail scrolled and opened Usage. A live overlap between the expanded rail and canvas was fixed by sharing the 64/220-point content inset (`cd89630`).
+- Partial Step 5: live minimum-size resizing, keyboard-only section switching, focus-ring inspection, and reduced-motion behavior could not be confirmed with the available accessibility controls. Required setup was snapshot-only because the real profile was already authenticated.
+- Not verified: completing a real OAuth login, because that changes external account authentication.
+- For Tanner to test: connect one disconnected provider, complete browser or pasted-code authorization, confirm Continue enables, relaunch, and confirm the provider remains connected.
+- Coordination: no Git remote is configured, so no draft PR was opened, pushed, merged, or marked ready.
