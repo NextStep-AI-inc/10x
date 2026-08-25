@@ -64,7 +64,11 @@ public actor LineTransport {
 
     public func start() throws {
         guard !started else { return }
-        process.executableURL = URL(fileURLWithPath: executable)
+        guard let resolved = Self.resolveExecutable(executable, environment: environment) else {
+            throw TransportError.spawnFailed(
+                "\(executable) was not found on PATH")
+        }
+        process.executableURL = resolved
         process.arguments = arguments
         process.standardInput = stdinPipe
         process.standardOutput = stdoutPipe
@@ -137,6 +141,24 @@ public actor LineTransport {
         if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         _ = await waitForExit(timeout: .seconds(1))
         finishStreams()
+    }
+
+    /// Foundation's `Process` needs a concrete path, so a bare name like `omp`
+    /// is looked up on PATH the way a shell would.
+    static func resolveExecutable(
+        _ executable: String, environment: [String: String]?
+    ) -> URL? {
+        if executable.contains("/") {
+            let url = URL(fileURLWithPath: executable)
+            return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
+        }
+        let path = environment?["PATH"] ?? ProcessInfo.processInfo.environment["PATH"] ?? ""
+        for directory in path.split(separator: ":") {
+            let candidate = URL(fileURLWithPath: String(directory))
+                .appendingPathComponent(executable)
+            if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }
+        }
+        return nil
     }
 
     private func closeStdin() {
