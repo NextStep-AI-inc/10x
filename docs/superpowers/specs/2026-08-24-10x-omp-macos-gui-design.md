@@ -145,8 +145,8 @@ so builds do not depend on those external paths.
 
 The new-session canvas is intentionally sparse:
 
-- A centered Chillax title asks what to build.
-- A single isolated composer is the primary object.
+- The canvas remains blank above the composer, with no title or explanatory copy.
+- The shared active-session composer is pinned near the bottom of the canvas.
 - Project, execution mode, model, and thinking controls live as borderless
   ghost actions in the composer footer.
 - The send control is the only filled black action.

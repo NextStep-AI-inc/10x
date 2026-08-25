@@ -7,30 +7,19 @@ struct NewSessionView: View {
     @State private var draft = ""
 
     var body: some View {
-        VStack(spacing: 30) {
+        VStack(spacing: 0) {
             Spacer()
-
-            VStack(spacing: 8) {
-                Text("What should we build?")
-                    .font(TenXTypography.title(size: 38))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                Text("Choose a project and give 10x a clear outcome.")
-                    .font(TenXTypography.body(size: 13))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-            }
 
             ComposerView(
                 draft: $draft,
                 projectURL: model.selectedProjectURL,
                 onChooseProject: chooseProject,
                 onSend: {})
-            .frame(maxWidth: 680)
-
-            Spacer()
-                .frame(maxHeight: 250)
+            .frame(maxWidth: 780)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(42)
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28)
     }
 
     private func chooseProject() {

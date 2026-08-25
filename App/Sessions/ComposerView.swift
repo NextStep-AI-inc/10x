@@ -16,7 +16,7 @@ struct ComposerView: View {
                 .font(TenXTypography.body(size: 14))
                 .scrollContentBackground(.hidden)
                 .padding(16)
-                .frame(minHeight: 112)
+                .frame(height: 58)
                 .accessibilityLabel("Session prompt")
 
             HStack(spacing: 4) {
