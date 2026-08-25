@@ -48,19 +48,23 @@ struct ProviderUsagePresentation: Equatable, Sendable {
         }
 
         let providers = providerOrder.map { providerID in
-            ProviderUsageProvider(
+            let providerName = providerNames[providerID] ?? providerID
+            return ProviderUsageProvider(
                 id: providerID,
-                name: providerNames[providerID] ?? providerID,
+                name: ProviderLoginProvider.companyName(id: providerID, fallback: providerName),
                 accounts: accountsByProvider[providerID] ?? [])
         }
         let missingAccounts = snapshot.accountsWithoutUsage.map { identity in
             unavailableAccount(from: identity)
         }
         let credentialIssues = snapshot.disabledCredentials.map { credential in
-            ProviderCredentialIssue(
+            let providerName = providerNames[credential.provider] ?? credential.provider
+            return ProviderCredentialIssue(
                 id: "\(credential.provider):\(credential.id)",
                 providerID: credential.provider,
-                providerName: providerNames[credential.provider] ?? credential.provider,
+                providerName: ProviderLoginProvider.companyName(
+                    id: credential.provider,
+                    fallback: providerName),
                 label: accountLabel(
                     email: credential.email,
                     accountID: credential.accountId,
@@ -90,7 +94,7 @@ struct ProviderUsagePresentation: Equatable, Sendable {
             guard let fraction = Self.remainingFraction(limit.amount) else { return nil }
             return ProviderUsageLimit(
                 id: limit.id,
-                label: limit.label,
+                label: usageLimitLabel(providerID: report.provider, label: limit.label),
                 percentage: Int((fraction * 100).rounded()),
                 detailReset: Self.detailResetText(window: limit.window),
                 railReset: Self.railResetText(window: limit.window, now: now))
@@ -153,6 +157,15 @@ struct ProviderUsagePresentation: Equatable, Sendable {
 
     private static func clamp(_ value: Double) -> Double {
         min(max(value, 0), 1)
+    }
+
+    private static func usageLimitLabel(providerID: String, label: String) -> String {
+        guard providerID == "anthropic" else { return label }
+        let normalized = label.lowercased()
+        if normalized.contains("fable") { return "Fable" }
+        if normalized.contains("5 hour") { return "5 hour" }
+        if normalized.contains("7 day") || normalized.contains("weekly") { return "Weekly" }
+        return label
     }
 
     private static func accountID(

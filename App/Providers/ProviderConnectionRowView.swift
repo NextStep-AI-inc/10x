@@ -10,6 +10,7 @@ enum ProviderConnectionAction: Equatable, Sendable {
 }
 
 struct ProviderConnectionRowPresentation: Equatable, Sendable {
+    let companyName: String
     let status: String?
     let action: ProviderConnectionAction
     let isActionDisabled: Bool
@@ -56,27 +57,30 @@ struct ProviderConnectionRowPresentation: Equatable, Sendable {
             && action != .cancel
             && action != .connected
             && action != .unavailable
+        let companyName = provider.companyName
         let accessibilityLabel: String
         switch action {
         case .cancel:
-            accessibilityLabel = "Cancel \(provider.name) connection"
+            accessibilityLabel = "Cancel \(companyName) connection"
         case .retry:
-            accessibilityLabel = "Retry \(provider.name) connection"
+            accessibilityLabel = "Retry \(companyName) connection"
         case .reconnect:
-            accessibilityLabel = "Reconnect \(provider.name)"
+            accessibilityLabel = "Reconnect \(companyName)"
         case .connect:
-            accessibilityLabel = "Connect \(provider.name)"
+            accessibilityLabel = "Connect \(companyName)"
         case .unavailable:
-            accessibilityLabel = "\(provider.name) unavailable"
+            accessibilityLabel = "\(companyName) unavailable"
         case .connected:
-            accessibilityLabel = "\(provider.name) connected"
+            accessibilityLabel = "\(companyName) connected"
         }
         return ProviderConnectionRowPresentation(
+            companyName: companyName,
             status: status,
             action: action,
             isActionDisabled: isActionDisabled,
             accessibilityLabel: accessibilityLabel)
     }
+
 }
 
 struct ProviderConnectionRowView: View {
@@ -90,7 +94,7 @@ struct ProviderConnectionRowView: View {
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(provider.name)
+                Text(presentation.companyName)
                     .font(TenXTypography.body(size: 14, weight: .medium))
                     .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                 status
@@ -117,7 +121,7 @@ struct ProviderConnectionRowView: View {
             .font(TenXTypography.body(size: 12))
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Connecting \(provider.name)")
+            .accessibilityLabel("Connecting \(presentation.companyName)")
         } else if let status = presentation.status {
             Text(status)
                 .font(TenXTypography.body(size: 12))

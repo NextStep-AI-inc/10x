@@ -16,30 +16,26 @@ import Testing
         background: TenXPalette.canvasHex) >= 4.5)
 }
 
-@Test func pressedGhostActionPreservesContrastAndDisabledActionsDoNotReact() throws {
-    let pressed = GhostActionVisualState(
+@Test func ghostActionPreservesContrastAndDisabledActionsDoNotReact() throws {
+    let hovered = GhostActionVisualState(
         isEnabled: true,
-        isHovering: true,
-        isPressed: true)
-    let pressedBackground = try #require(pressed.backgroundHex)
-    let pressedForeground = composite(
+        isHovering: true)
+    let hoveredBackground = try #require(hovered.backgroundHex)
+    let hoveredForeground = composite(
         foreground: TenXPalette.interactiveCyanHex,
-        opacity: pressed.foregroundOpacity,
-        background: pressedBackground)
+        opacity: hovered.foregroundOpacity,
+        background: hoveredBackground)
 
     #expect(contrastRatio(
-        foreground: pressedForeground,
-        background: pressedBackground) >= 4.5)
-    #expect(pressed.scale < 1)
+        foreground: hoveredForeground,
+        background: hoveredBackground) >= 4.5)
 
     let disabled = GhostActionVisualState(
         isEnabled: false,
-        isHovering: true,
-        isPressed: true)
+        isHovering: true)
     #expect(disabled.foregroundOpacity == 1)
     #expect(disabled.usesMutedForeground)
     #expect(disabled.backgroundHex == nil)
-    #expect(disabled.scale == 1)
 }
 
 private func contrastRatio(foreground: Int, background: Int) -> Double {

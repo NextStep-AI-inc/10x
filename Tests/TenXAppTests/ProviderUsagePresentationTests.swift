@@ -42,6 +42,34 @@ import Testing
     #expect(exhausted.tone == .exhausted)
 }
 
+@Test func anthropicRailUsageUsesCompanyAndShortWindowNames() throws {
+    let snapshot = try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data(#"""
+    {
+      "generatedAt":1,
+      "reports":[{
+        "provider":"anthropic",
+        "fetchedAt":1,
+        "limits":[
+          {"id":"five-hour","label":"Claude 5 Hour","scope":{"provider":"anthropic"},"amount":{"remainingFraction":0.98,"unit":"percent"}},
+          {"id":"weekly","label":"Claude 7 Day","scope":{"provider":"anthropic"},"amount":{"remainingFraction":0.5,"unit":"percent"}},
+          {"id":"fable","label":"Claude 7 Day (Fable)","scope":{"provider":"anthropic"},"amount":{"remainingFraction":0.14,"unit":"percent"}}
+        ]
+      }],
+      "accountsWithoutUsage":[],
+      "disabledCredentials":[]
+    }
+    """#.utf8))
+
+    let presentation = ProviderUsagePresentation.make(
+        snapshot: snapshot,
+        providerNames: ["anthropic": "Anthropic (Claude Pro/Max)"],
+        now: Date(timeIntervalSince1970: 1))
+    let provider = try #require(presentation.railProviders.first)
+
+    #expect(provider.name == "Anthropic")
+    #expect(provider.limits.map(\.label) == ["5 hour", "Weekly", "Fable"])
+}
+
 @Test func usagePresentationUsesEveryIdentityFieldToDistinguishAccounts() throws {
     let snapshot = try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data(#"""
     {

@@ -11,17 +11,12 @@ struct GhostActionStyle: ButtonStyle {
 struct GhostActionVisualState: Equatable {
     let isEnabled: Bool
     let isHovering: Bool
-    let isPressed: Bool
 
     var usesMutedForeground: Bool { !isEnabled }
     var foregroundOpacity: Double { 1 }
 
     var backgroundHex: Int? {
         isEnabled && isHovering ? TenXPalette.hoverNeutralHex : nil
-    }
-
-    var scale: CGFloat {
-        isEnabled && isPressed ? 0.97 : 1
     }
 }
 
@@ -35,8 +30,7 @@ private struct GhostActionBody: View {
     var body: some View {
         let visualState = GhostActionVisualState(
             isEnabled: isEnabled,
-            isHovering: isHovering,
-            isPressed: configuration.isPressed)
+            isHovering: isHovering)
 
         configuration.label
             .font(TenXTypography.body(size: 12, weight: .medium))
@@ -48,18 +42,6 @@ private struct GhostActionBody: View {
             .background(visualState.backgroundHex.map(TenXPalette.color) ?? .clear)
             .contentShape(Rectangle())
             .opacity(visualState.foregroundOpacity)
-            .ghostActionPressedScale(visualState.scale)
             .onHover { isHovering = isEnabled && $0 }
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func ghostActionPressedScale(_ scale: CGFloat) -> some View {
-        if scale < 1 {
-            scaleEffect(scale)
-        } else {
-            self
-        }
     }
 }

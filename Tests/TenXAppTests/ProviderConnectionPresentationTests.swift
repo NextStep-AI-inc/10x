@@ -1,6 +1,29 @@
 import Testing
 @testable import TenXApp
 
+@Test func curatedProvidersUseCompanyNames() {
+    let providers = [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor (Claude, GPT, etc.)", isAvailable: true, isAuthenticated: true),
+        ProviderLoginProvider(
+            id: "openai-codex", name: "ChatGPT Plus/Pro (Codex Subscription)", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "anthropic", name: "Anthropic (Claude Pro/Max)", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "google-gemini-cli", name: "Google Cloud Code Assist (Gemini CLI)", isAvailable: true, isAuthenticated: false),
+    ]
+
+    let names = providers.map {
+        ProviderConnectionRowPresentation.make(
+            provider: $0,
+            hasCredentialIssue: false,
+            activeLoginProviderID: nil,
+            loginMessage: nil).companyName
+    }
+
+    #expect(names == ["Cursor", "OpenAI", "Anthropic", "Google"])
+}
+
 @Test func connectionRowsPrioritizeUnavailableAndDisableCompetingLogins() {
     let unavailable = ProviderLoginProvider(
         id: "cursor", name: "Cursor", isAvailable: false, isAuthenticated: false)
