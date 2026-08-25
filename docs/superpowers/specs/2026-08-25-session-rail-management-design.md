@@ -17,9 +17,11 @@ This work never modifies or deletes a project's source directory. Archived sessi
 
 ## Rail layout and navigation
 
-The wordmark remains fixed at the top. The session map becomes the flexible middle region instead of capping itself at 58 percent of available height. The Archived entry is pinned below that region and above the existing provider-usage area when usage data is present.
+The wordmark remains fixed at the top. The Archived entry remains pinned above the existing provider-usage area when usage data is present. Between them, the session map is content-sized and vertically centered by equal flexible spacers. Both spacers retain a minimum of 24 points, so the map never touches either pinned control.
 
-The session map remains a normal `ScrollView`. Light up and down chevrons overlay its top and bottom edges. A chevron appears only while content exists beyond that edge. Clicking one advances approximately four visible 32-point rows with the existing motion curve; trackpad, mouse-wheel, keyboard-focus, and direct-item navigation continue to scroll normally. Reduced-motion mode performs the same jump without animation.
+Short session maps use their natural row height and remain centered. Long maps may grow to the available middle height minus the two 24-point minimum spaces, then scroll. This replaces the former 58-percent cap without allowing the map to consume the entire middle region.
+
+The session map remains a normal `ScrollView`. Light up and down chevrons occupy dedicated strips immediately above or below the scroll viewport, never overlaying live rows. A chevron appears only while content exists beyond that edge. Clicking one advances approximately four visible 32-point rows with the existing motion curve; trackpad, mouse-wheel, keyboard-focus, and direct-item navigation continue to scroll normally. Reduced-motion mode performs the same jump without animation.
 
 Each project starts with its five newest sessions. When more exist:
 
@@ -94,6 +96,7 @@ Automated coverage will prove:
 - Confirmation copy and routing for both deletion scopes.
 - Open-session cleanup before archive or delete.
 - Accessibility labels for overflow controls, Archived navigation, and context actions.
-- Collapsed rail, expanded rail, expanded project, context-menu, confirmation, empty archive, and populated archive snapshots.
+- Collapsed rail, expanded rail, centered overflow rail, expanded project, context-menu, confirmation, empty archive, and populated archive snapshots.
+- Equal top and bottom spacing around short and overflowing session maps at short and tall window heights.
 
 Final verification requires the full macOS test suite, a Release build, and manual inspection of the real app at short and tall window heights in collapsed and expanded rail states.
