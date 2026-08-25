@@ -31,6 +31,7 @@ struct SessionDeletionConfirmationView: View {
                         Spacer()
                         Button("Cancel", action: onCancel)
                             .buttonStyle(GhostActionStyle())
+                            .keyboardShortcut(.cancelAction)
                             .focused($isCancelFocused)
                             .accessibilityFocused($isCancelAccessibilityFocused)
                         Button("Delete", action: onDelete)
