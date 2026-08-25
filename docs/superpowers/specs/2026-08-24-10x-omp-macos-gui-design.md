@@ -58,9 +58,9 @@ The app has three persistent destinations and one primary hierarchy:
 
 ```text
 Floating rail
+├── 10x wordmark (Settings)
 ├── New session
 ├── Search (modal)
-├── Settings
 └── Projects
     ├── 10x
     │   ├── Bauhaus macOS interface
@@ -93,9 +93,12 @@ used in the NextStep LMS shell:
 - The wordmark is anchored at the top. A compact provider-allowance ledger may
   occupy the bottom when provider adapters have current quota data; there is no
   user profile control because usage belongs to each connected provider.
-- New Session, Search, Settings, project markers, and session markers form one
+- New Session, Search, project markers, and session markers form one
   vertically centered stack. Every interactive item has a tooltip and
   accessibility label.
+- The 10x wordmark is the Settings control. It remains visually unchanged,
+  uses a borderless hit target, and exposes “Open Settings” to hover and
+  accessibility. There is no separate Settings gear in the centered stack.
 - The collapsed stack uses a typographic index for every project and session.
   Projects use a two-character workspace code. Numbered sessions sit beneath
   their project on a thin indented connector spine. The selected session uses

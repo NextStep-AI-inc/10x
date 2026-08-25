@@ -16,10 +16,22 @@ struct FloatingRailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            BrandWordmark(width: expansion.isExpanded ? 42 : 34)
+            Button {
+                expansion.pointerEntered()
+                model.openSettings()
+            } label: {
+                BrandWordmark(width: expansion.isExpanded ? 42 : 34)
+                    .frame(width: 44, height: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .focused($focusedItem, equals: .settings)
                 .frame(height: 44)
                 .padding(.leading, 15)
                 .padding(.top, 10)
+                .help("Open Settings")
+                .accessibilityLabel("Open Settings")
 
             GeometryReader { proxy in
                 VStack(spacing: 0) {
@@ -86,15 +98,6 @@ struct FloatingRailView: View {
                 model.isSearchPresented = true
             }
 
-            railAction(
-                title: "Settings",
-                systemImage: "gearshape",
-                focus: .settings,
-                isSelected: model.route == .settings
-            ) {
-                expansion.pointerEntered()
-                model.route = .settings
-            }
         }
     }
 

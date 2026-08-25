@@ -37,6 +37,10 @@ final class AppModel {
         route = .newSession
     }
 
+    func openSettings() {
+        route = .settings
+    }
+
     func openSession(_ metadata: SessionMetadata) {
         if !metadata.cwd.isEmpty {
             selectedProjectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
