@@ -53,6 +53,16 @@ final class AppModel {
         isSearchPresented = true
     }
 
+    func closeSearch() {
+        isSearchPresented = false
+    }
+
+    func openSearchResult(_ result: SearchResult) {
+        guard let metadata = sessions.first(where: { $0.path == result.sessionPath }) else { return }
+        closeSearch()
+        openSession(metadata)
+    }
+
     func openSession(_ metadata: SessionMetadata) {
         if !metadata.cwd.isEmpty {
             selectedProjectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)

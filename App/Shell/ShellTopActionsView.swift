@@ -10,6 +10,7 @@ struct ShellTopActionsView: View {
                 systemImage: "magnifyingglass",
                 isSelected: model.isSearchPresented,
                 perform: model.openSearch)
+                .keyboardShortcut("k", modifiers: .command)
             action(
                 title: "New session",
                 systemImage: "plus",

@@ -21,6 +21,14 @@ struct AppShellView: View {
                         .padding(.top, 16)
                         .padding(.trailing, 18)
                 }
+                .overlay {
+                    if model.isSearchPresented {
+                        SearchModalView(
+                            sessions: model.sessions,
+                            onOpen: model.openSearchResult,
+                            onClose: model.closeSearch)
+                    }
+                }
             }
         }
         .background(TenXPalette.color(TenXPalette.canvasHex))
