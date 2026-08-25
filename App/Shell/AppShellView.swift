@@ -19,7 +19,7 @@ struct AppShellView: View {
                 ZStack(alignment: .leading) {
                     routeCanvas
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.leading, 64)
+                        .padding(.leading, railExpansion.contentInset)
                     FloatingRailView(model: model, expansion: railExpansion)
                 }
                 .overlay(alignment: .topTrailing) {

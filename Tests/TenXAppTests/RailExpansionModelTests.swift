@@ -2,6 +2,17 @@ import Testing
 @testable import TenXApp
 
 @MainActor
+@Test func contentInsetMatchesTheExpandedRailWidth() {
+    let model = RailExpansionModel()
+
+    #expect(model.contentInset == 64)
+
+    model.pointerEntered()
+
+    #expect(model.contentInset == 220)
+}
+
+@MainActor
 @Test func railCollapsesAfterGracePeriod() async throws {
     let model = RailExpansionModel(collapseDelay: .milliseconds(300))
 
