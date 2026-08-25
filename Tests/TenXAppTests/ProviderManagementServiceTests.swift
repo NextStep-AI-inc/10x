@@ -174,8 +174,9 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
 
     let cancelledProviders = Task { try await service.providers() }
     await factoryGate.waitForFirstRequest()
-    await service.cancelLogin()
+    let cancellation = Task { await service.cancelLogin() }
     await factoryGate.release()
+    await cancellation.value
     _ = await cancelledProviders.result
 
     _ = try await service.providers()
@@ -214,11 +215,39 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
     await startGate.waitForStart()
     let secondProviders = Task { try await service.providers() }
     await startupWaiters.waitForAll()
-    await service.cancelLogin()
+    let cancellation = Task { await service.cancelLogin() }
+    await startGate.waitForCancellation()
     await startGate.release()
+    await cancellation.value
     _ = await firstProviders.result
     _ = await secondProviders.result
 
+    #expect(await fake.shutdownCount == 1)
+}
+
+@Test func providerServiceShutdownWaitsForCancellationResistantStartupCleanup() async throws {
+    let startGate = StartGate()
+    let fake = FakeProviderRPCClient(
+        responses: [providerListResponse],
+        startGate: startGate)
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+    let providers = Task { try await service.providers() }
+    await startGate.waitForStart()
+    let completion = CompletionProbe()
+
+    let shutdown = Task {
+        await service.shutdown()
+        await completion.finish()
+    }
+    await startGate.waitForCancellation()
+    try await Task.sleep(for: .milliseconds(50))
+
+    #expect(await completion.isFinished == false)
+    await startGate.release()
+    await shutdown.value
+    _ = await providers.result
     #expect(await fake.shutdownCount == 1)
 }
 
@@ -259,7 +288,11 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
         startCount += 1
         if let startGate {
             await startGate.started()
-            await startGate.waitForRelease()
+            await withTaskCancellationHandler {
+                await startGate.waitForRelease()
+            } onCancel: {
+                Task { await startGate.cancelled() }
+            }
         }
         if let startFailure { throw startFailure }
         return ReadyFrame(protocolVersion: 1)
@@ -313,8 +346,10 @@ private actor ProviderClientPool {
 
 private actor StartGate {
     private var hasStarted = false
+    private var isCancelled = false
     private var isReleased = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
     private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
     func started() {
@@ -331,6 +366,20 @@ private actor StartGate {
         await withCheckedContinuation { startWaiters.append($0) }
     }
 
+    func cancelled() {
+        isCancelled = true
+        let waiters = cancellationWaiters
+        cancellationWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    func waitForCancellation() async {
+        guard !isCancelled else { return }
+        await withCheckedContinuation { cancellationWaiters.append($0) }
+    }
+
     func waitForRelease() async {
         guard !isReleased else { return }
         await withCheckedContinuation { releaseWaiters.append($0) }
@@ -343,6 +392,14 @@ private actor StartGate {
         for waiter in waiters {
             waiter.resume()
         }
+    }
+}
+
+private actor CompletionProbe {
+    private(set) var isFinished = false
+
+    func finish() {
+        isFinished = true
     }
 }
 

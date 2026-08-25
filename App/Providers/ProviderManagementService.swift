@@ -69,7 +69,6 @@ actor ProviderManagementService: ProviderManaging {
     private var clientState: ClientState = .idle
     private var eventForwarder: Task<Void, Never>?
     private var clientGeneration = 0
-    private var staleStartupIDs: Set<UUID> = []
     private var isLoginInProgress = false
     private var activeLoginGeneration: Int?
 
@@ -174,7 +173,6 @@ actor ProviderManagementService: ProviderManaging {
             let client = try await startup.task.value
             guard startup.generation == clientGeneration else {
                 clearStarting(startup)
-                await shutdownStaleStartup(client, for: startup)
                 throw CancellationError()
             }
 
@@ -191,7 +189,6 @@ actor ProviderManagementService: ProviderManaging {
             }
         } catch {
             clearStarting(startup)
-            staleStartupIDs.remove(startup.id)
             throw error
         }
     }
@@ -229,8 +226,10 @@ actor ProviderManagementService: ProviderManaging {
         case .idle:
             break
         case .starting(let startup):
-            staleStartupIDs.insert(startup.id)
             startup.task.cancel()
+            if case .success(let client) = await startup.task.result {
+                await client.shutdown()
+            }
         case .ready(let client):
             await client.shutdown()
         }
@@ -239,11 +238,6 @@ actor ProviderManagementService: ProviderManaging {
     private func clearStarting(_ startup: Startup) {
         guard case .starting(let current) = clientState, current.id == startup.id else { return }
         clientState = .idle
-    }
-
-    private func shutdownStaleStartup(_ client: ProviderRPCClientBox, for startup: Startup) async {
-        guard staleStartupIDs.remove(startup.id) != nil else { return }
-        await client.shutdown()
     }
 
     private func parseProviders(_ data: JSONValue?) throws -> [ProviderLoginProvider] {
