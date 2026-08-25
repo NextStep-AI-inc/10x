@@ -265,6 +265,72 @@ import Testing
 }
 
 @MainActor
+@Test func reopeningTheSameSessionBeforeItsInitialOpenStartsReusesItsController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-rapid-reuse-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let metadata = navigationMetadata("/tmp/fake.jsonl")
+
+    model.openSession(metadata)
+    let original = try #require(model.activeSession)
+    model.openSession(metadata)
+
+    #expect(model.activeSession === original)
+    if let manager = model.processManager {
+        await manager.closeAll()
+    }
+}
+
+@MainActor
+@Test func unexpectedExitUpdatesARetainedBackgroundController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-background-exit-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "background-exit")
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let original = try #require(model.activeSession)
+    let manager = try #require(model.processManager)
+    for _ in 0..<100 where original.runtimeState != .streaming {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    #expect(original.runtimeState == .streaming)
+
+    model.openNewSession()
+    for _ in 0..<100 where !original.isRecoveryPresented {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let isStopped = switch original.runtimeState {
+    case .stopped:
+        true
+    default:
+        false
+    }
+
+    #expect(original.isRecoveryPresented)
+    #expect(isStopped)
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") == nil)
+    #expect(model.activeSession == nil)
+    await manager.closeAll()
+}
+
+@MainActor
 @Test func nonSessionRoutesAreNotForegroundGeneratingWhileBackgroundActivityContinues() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-foreground-activity-\(UUID().uuidString)")
@@ -366,11 +432,11 @@ private func navigationDependencies<Locator: OmpLocating>(
         })
 }
 
-private func navigationMetadata(_ path: String) -> SessionMetadata {
+private func navigationMetadata(_ path: String, cwd: String = "/tmp/Project") -> SessionMetadata {
     SessionMetadata(
         path: path,
         sessionId: path,
-        cwd: "/tmp/Project",
+        cwd: cwd,
         title: "Session",
         created: .distantPast,
         modified: .distantPast,

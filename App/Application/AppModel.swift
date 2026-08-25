@@ -39,6 +39,7 @@ final class AppModel {
     @ObservationIgnored private var exitTask: Task<Void, Never>?
     @ObservationIgnored private var archivedReloadGeneration = 0
     @ObservationIgnored private var managedSessions: [UUID: SessionController] = [:]
+    @ObservationIgnored private var managedSessionPaths: [String: UUID] = [:]
 
     init(
         dependencies: AppDependencies = .live,
@@ -132,15 +133,20 @@ final class AppModel {
                 .standardizedFileURL
         }
         guard let processManager else { return }
-        if let controller = managedSessions.values.first(where: { $0.sessionPath == metadata.path }) {
+        if let controller = managedController(for: metadata.path) {
             activeSession = controller
             route = .session(metadata.path)
             return
         }
-        let controller = makeSessionController(processManager: processManager)
+        let controller = makeSessionController(
+            processManager: processManager,
+            intendedSessionPath: metadata.path)
         activeSession = controller
         route = .session(metadata.path)
-        Task { await controller.openExisting(metadata) }
+        Task {
+            await controller.openExisting(metadata)
+            indexManagedSessionPath(for: controller)
+        }
     }
 
     func startNewSession(prompt: String) {
@@ -152,6 +158,7 @@ final class AppModel {
         route = .session("new:\(UUID().uuidString)")
         Task {
             await controller.openNew(projectURL: selectedProjectURL)
+            indexManagedSessionPath(for: controller)
             await controller.sendPrompt()
             await reloadSessions()
         }
@@ -253,16 +260,15 @@ final class AppModel {
 
     private func closeManagedSessions(paths: [String]) async {
         let routePath: String? = if case .session(let path) = route { path } else { nil }
+        let indexedIDs = Set(paths.compactMap { managedSessionPaths[$0] })
         let matchingControllers = managedSessions.values.filter { controller in
-            guard let sessionPath = controller.sessionPath else { return false }
-            return paths.contains(sessionPath)
+            indexedIDs.contains(controller.id) || controller.sessionPath.map(paths.contains) == true
         }
         let matchingIDs = Set(matchingControllers.map(\.id))
         let matchingPaths = Set(matchingControllers.compactMap(\.sessionPath))
 
         for controller in matchingControllers {
-            controller.stopActivityTracking()
-            managedSessions.removeValue(forKey: controller.id)
+            removeManagedSession(controller)
         }
         let didRemoveActiveSession = if let activeSession {
             matchingIDs.contains(activeSession.id)
@@ -359,12 +365,45 @@ final class AppModel {
         }
     }
 
-    private func makeSessionController(processManager: SessionProcessManager) -> SessionController {
+    private func makeSessionController(
+        processManager: SessionProcessManager,
+        intendedSessionPath: String? = nil
+    ) -> SessionController {
         let controller = SessionController(
             processManager: processManager,
             activityRegistry: sessionActivityRegistry)
         managedSessions[controller.id] = controller
+        if let intendedSessionPath {
+            managedSessionPaths[intendedSessionPath] = controller.id
+        }
         return controller
+    }
+
+    private func managedController(for sessionPath: String) -> SessionController? {
+        guard let controllerID = managedSessionPaths[sessionPath] else { return nil }
+        guard let controller = managedSessions[controllerID] else {
+            managedSessionPaths.removeValue(forKey: sessionPath)
+            return nil
+        }
+        return controller
+    }
+
+    private func indexManagedSessionPath(for controller: SessionController) {
+        guard managedSessions[controller.id] === controller,
+              let sessionPath = controller.sessionPath
+        else { return }
+        managedSessionPaths[sessionPath] = controller.id
+    }
+
+    private func removeManagedSession(_ controller: SessionController) {
+        controller.stopActivityTracking()
+        managedSessions.removeValue(forKey: controller.id)
+        let paths = managedSessionPaths.compactMap { entry in
+            entry.value == controller.id ? entry.key : nil
+        }
+        for path in paths {
+            managedSessionPaths.removeValue(forKey: path)
+        }
     }
 
     private func discardManagedSessions() async {
@@ -372,6 +411,7 @@ final class AppModel {
             controller.stopActivityTracking()
         }
         managedSessions.removeAll()
+        managedSessionPaths.removeAll()
         activeSession = nil
         exitTask?.cancel()
         exitTask = nil
@@ -384,11 +424,8 @@ final class AppModel {
         exitTask?.cancel()
         exitTask = Task { [weak self] in
             for await exit in processManager.unexpectedExits {
-                guard let self,
-                      !Task.isCancelled,
-                      let controller = self.managedSessions.values.first(
-                        where: { $0.sessionPath == exit.sessionPath })
-                else { continue }
+                guard let self, !Task.isCancelled else { return }
+                guard let controller = managedController(for: exit.sessionPath) else { continue }
                 controller.handleUnexpectedExit(
                     code: exit.code,
                     stderrTail: exit.stderrTail)

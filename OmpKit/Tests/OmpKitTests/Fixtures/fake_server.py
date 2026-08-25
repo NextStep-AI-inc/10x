@@ -6,6 +6,7 @@
   silent    — ready, then never answers anything (timeout testing)
   slow-exit — basic behavior, then waits briefly after stdin closes
   slow-turn — prompt starts an agent turn that finishes after two seconds
+  background-exit — starts a turn, then exits one second after accepting event subscription
   noisy     — like basic, but emits unknown frames + setWidget before each response
   activity-lifecycle — scripted provider/config/runtime events for controller activity tests
 """
@@ -171,6 +172,13 @@ for line in sys.stdin:
     elif ctype == "bad_command_test":
         emit({"id": cid, "type": "response", "command": "bad_command_test",
               "success": False, "error": "nope", "code": "test_code"})
+    elif mode == "background-exit" and ctype == "set_subagent_subscription":
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+        emit({"type": "agent_start"})
+        time.sleep(1)
+        sys.stderr.write("background-exit\n")
+        sys.stderr.flush()
+        raise SystemExit(7)
     else:
         emit({"id": cid, "type": "response", "command": ctype or "parse", "success": True})
 
