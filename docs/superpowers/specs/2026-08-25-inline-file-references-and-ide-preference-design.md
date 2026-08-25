@@ -7,11 +7,13 @@
 ## Goal
 
 Make file locations in the transcript useful without filling the interface with
-absolute paths. A file reference must expose two distinct actions:
+absolute paths or repetitive action labels. A file reference is one control:
 
-1. Select the file name to open the file with the macOS system default.
-2. Select the adjacent IDE action to open the file in the IDE chosen in 10x
-   Settings.
+1. Select the file name to open it in the IDE chosen in 10x Settings.
+2. Option-select the same control to reveal the file in Finder.
+
+If no usable IDE is selected, the normal action opens Settings with Preferred
+IDE focused. System Default remains available from the context menu.
 
 The same interaction must work for assistant references and file-oriented tool
 activity. The preferred IDE is an application preference owned by 10x, not an
@@ -23,9 +25,9 @@ OMP configuration value.
 
 - A shared inline file-reference component for assistant references and
   Read, Edit, and Write tool headers.
-- File icon, clean file name, and optional line suffix.
-- System-default opening from the primary file action.
-- A separate `Open in <IDE>` ghost action.
+- Branded filetype mark, clean file name, and optional line suffix.
+- Preferred-IDE opening from the primary file action.
+- Finder reveal from Option-select on the same action.
 - Full resolved path while Option is held over the file reference.
 - A searchable Preferred IDE row in the General section of Settings.
 - Detection of Xcode, Cursor, Visual Studio Code, Zed, Nova, and Sublime Text.
@@ -50,19 +52,18 @@ OMP configuration value.
 The default reference is one borderless row:
 
 ```text
-[file icon] RpcClient.swift:42    Open in Cursor
+[Swift mark] RpcClient.swift:42
 ```
 
 - The primary action uses the existing compact reference typography and a
-  native file symbol. It shows the basename plus a line suffix when one exists.
-- Selecting the primary action asks macOS to open the file with its registered
-  default application.
-- The IDE action is a cyan ghost action. Its label names the selected
-  application, such as `Open in Cursor` or `Open in Xcode`.
-- Before an IDE has been selected, the secondary action reads `Choose IDE`.
-  Selecting it opens Settings and moves keyboard focus to Preferred IDE.
-- If a previously selected application can no longer be resolved, the action
-  returns to `Choose IDE`. 10x does not silently change the preference.
+  bundled filetype mark. It shows the basename plus a line suffix when one
+  exists.
+- Selecting the primary action opens the file in the chosen IDE.
+- Before an IDE has been selected, or when the saved application is no longer
+  available, selecting the file opens Settings and moves keyboard focus to
+  Preferred IDE. 10x never substitutes another IDE.
+- Option-select reveals the file in Finder. The context menu preserves explicit
+  System Default, selected IDE, Finder, and Copy actions.
 - Holding Option while the pointer is over the primary action replaces the
   basename with the resolved absolute path. The path uses SF Mono and wraps at
   path separators inside the transcript column; it never widens the window.
@@ -71,9 +72,17 @@ The default reference is one borderless row:
   menu can copy the reference, so Option-hover is not the only way to obtain
   the location.
 
-The component uses the existing white, near-black, and cyan visual tokens. It
-adds no fill, border, pill, shadow, or decorative background. Hover, focus, and
-pressed states use the existing ghost-action treatment.
+The filename is near-black and filetype color is confined to the mark. Cyan is
+reserved for the existing interaction and structural accents rather than every
+file link. The component adds no fill, border, pill, shadow, or decorative
+background. Hover, focus, and pressed states use the existing ghost-action
+treatment.
+
+The bundled catalog recognizes Swift, TypeScript, React/TSX/JSX, JavaScript,
+Python, Rust, Go, Java, Kotlin, C, C++, Objective-C, C#, Ruby, PHP, Dart, Lua,
+Shell, HTML, CSS/Sass, JSON, Markdown, YAML, SQL, GraphQL, Vue, Svelte, and
+Astro. Unknown and extensionless files use a neutral document fallback. Missing
+files retain their mapped silhouette but use the muted token.
 
 ### Context menu
 
@@ -100,13 +109,11 @@ expanded headers. The disclosure control and file actions are siblings, not
 nested buttons:
 
 ```text
-[disclosure] Read    [file] RpcClient.swift    Open in Cursor    Complete
+[disclosure] Read    [Swift mark] RpcClient.swift    Complete
 ```
 
-Selecting the disclosure region expands or collapses the tool. Selecting a file
-action never changes disclosure state. When the three regions do not fit on one
-line, the IDE action moves beneath the file action while preserving reading and
-keyboard order.
+Selecting the disclosure region expands or collapses the tool. Selecting the
+file action never changes disclosure state.
 
 ### Settings
 
@@ -177,6 +184,9 @@ The file-opening service has four operations:
    `NSWorkspace` and the resolved application URL.
 4. Reveal the resolved URL in Finder.
 
+The primary control calls operation 3. Operation 4 is the Option-select route,
+and operations 2–4 remain explicit context-menu commands.
+
 When a custom application is selected, the service brackets the open operation
 with security-scoped resource access and releases that access after macOS
 accepts or rejects the request.
@@ -194,13 +204,13 @@ surface rather than introducing parallel transcript and tool variants. It owns:
 - compact and Option-expanded labels;
 - hover, keyboard, and modifier-key state;
 - existence and availability presentation;
-- primary, IDE, and context-menu actions;
+- primary, Option-select, and context-menu actions;
 - accessibility labels and hints.
 
 Its dependencies are supplied explicitly: the parsed reference, resolution
 base URL, file-opening service, IDE preference, and Settings navigation action.
-Web references keep their current browser-opening behavior and do not show an
-IDE action.
+Web references keep their current browser-opening behavior and do not use the
+file-opening modifier behavior.
 
 ### App integration
 
@@ -222,9 +232,9 @@ Session project/worktree URL
         ▼
 parsed file reference ──► FileOpenService ──► resolved local URL
         │                         │
-        │                         ├── primary action ──► system default
-        │                         ├── context menu ────► Finder / copy
-        │                         └── IDE action
+        │                         ├── primary action ──► preferred IDE
+        │                         ├── Option-select ───► Finder
+        │                         └── context menu ────► default / IDE / Finder / copy
         │                                  │
         ▼                                  ▼
 InlineFileReferenceView ◄──── IDEPreferenceStore ◄──── Settings
@@ -247,8 +257,8 @@ and availability without reloading the transcript.
 - A custom application bookmark that cannot be resolved is treated as an
   unavailable preference until the user chooses again.
 - A launch failure keeps the reference usable and temporarily adds a red inline
-  status: `Couldn’t open <file name>` for the system default or `Couldn’t open in
-  <application>` for the IDE action. The normal actions return after four
+  status: `Couldn’t open <file name>` for the system default context action or
+  `Couldn’t open in <application>` for the primary action. The normal actions return after four
   seconds or the next interaction, and VoiceOver announces the same result. No
   modal or persistent banner is added.
 - Internal errors follow the repository's traceable error format and do not put
@@ -256,12 +266,10 @@ and availability without reloading the transcript.
 
 ## Accessibility and keyboard behavior
 
-- The file and IDE actions are separate keyboard stops with 32-point minimum hit
-  targets.
-- The primary accessibility label includes `File reference`, the resolved full
-  path when available, and the line number.
-- The IDE action label states its full result, such as `Open RpcClient.swift in
-  Cursor`.
+- The file action is one keyboard stop with a 32-point minimum hit target.
+- Its accessibility label names the file, full resolved path, and selected IDE,
+  or states that Preferred IDE must be chosen.
+- Its accessibility hint explains Option-select for Finder.
 - Disclosure state belongs only to the tool disclosure control.
 - Option-hover is a visual enhancement. Copy, open, and full-path information
   remain available without a pointer or modifier key.
@@ -284,10 +292,11 @@ and availability without reloading the transcript.
 
 ### Real Release-build checks
 
-- Select a preferred IDE in Settings, return to a session, and verify every
-  visible file reference changes to `Open in <IDE>`.
-- Select the file name and verify macOS opens it with the system default.
-- Select the IDE action and verify the chosen application opens the file.
+- Select a preferred IDE in Settings, return to a session, and verify file
+  selection opens the chosen application without a separate action label.
+- Clear the IDE, select the file, and verify Preferred IDE receives focus.
+- Option-select the file and verify Finder reveals it.
+- Verify System Default remains available in the context menu.
 - Hold Option over a short and a long reference and verify the full path appears
   without horizontal clipping.
 - Verify an assistant reference and collapsed Read, Edit, and Write tool cards.
@@ -305,11 +314,15 @@ state.
 
 ## Acceptance criteria
 
-- File references show a file icon and clean name instead of a persistent full
-  path.
-- Selecting the clean name opens the resolved file through the macOS default.
+- File references show a branded filetype mark and clean name instead of a
+  persistent full path.
+- Selecting the clean name opens the resolved file in the selected IDE.
+- Without an available IDE, selecting the clean name focuses Preferred IDE in
+  Settings.
+- Option-selecting the clean name reveals the file in Finder.
 - Holding Option over the reference shows the full resolved path.
-- A separate ghost action opens the file in the user's selected IDE.
+- System Default and alternate actions remain in the context menu rather than
+  occupying the transcript row.
 - The selected IDE is configured in the continuous Settings form and persists
   across app launches.
 - Common installed IDEs are discovered, and another `.app` can be selected.

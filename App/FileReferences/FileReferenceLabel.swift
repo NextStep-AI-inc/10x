@@ -6,12 +6,14 @@ struct FileReferenceLabel: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "doc.text")
-                .font(.system(size: 11, weight: .medium))
+            FileTypeIcon(path: reference.originalPath, isAvailable: reference.exists)
             Text(label)
                 .font(showsFullPath
                     ? TenXTypography.mono(size: 11)
                     : TenXTypography.body(size: 12, weight: .medium))
+                .foregroundStyle(TenXPalette.color(reference.exists
+                    ? TenXPalette.nearBlackHex
+                    : TenXPalette.mutedTextHex))
                 .lineLimit(showsFullPath ? nil : 1)
                 .truncationMode(.middle)
                 .fixedSize(horizontal: false, vertical: true)

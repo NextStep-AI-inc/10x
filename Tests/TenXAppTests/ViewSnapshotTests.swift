@@ -70,6 +70,30 @@ import Testing
 }
 
 @MainActor
+@Test func fileTypeIconCatalogSnapshot() throws {
+    try assertSnapshot(
+        HStack(spacing: 24) {
+            VStack(spacing: 7) {
+                FileTypeIcon(path: "Feature.swift", isAvailable: true)
+                Text("Feature.swift")
+            }
+            VStack(spacing: 7) {
+                FileTypeIcon(path: "client.ts", isAvailable: true)
+                Text("client.ts")
+            }
+            VStack(spacing: 7) {
+                FileTypeIcon(path: "Component.tsx", isAvailable: true)
+                Text("Component.tsx")
+            }
+        }
+        .font(TenXTypography.body(size: 11))
+        .padding(18)
+        .background(Color.white),
+        name: "file-type-icon-catalog",
+        size: CGSize(width: 300, height: 90))
+}
+
+@MainActor
 @Test func fileReferenceStatesSnapshot() throws {
     let suiteName = "TenXAppTests.FileReferenceStates.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suiteName))

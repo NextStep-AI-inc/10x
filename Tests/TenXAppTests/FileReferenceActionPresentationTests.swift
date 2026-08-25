@@ -2,24 +2,57 @@ import Foundation
 import Testing
 @testable import TenXApp
 
-@Test func missingFileKeepsThePreferredIDEActionLabelAndExposesUnavailableState() {
-    let cursor = IDEApplication(
-        displayName: "Cursor",
-        url: URL(filePath: "/Applications/Cursor.app"),
-        source: .known(bundleIdentifier: "com.todesktop.230313mzl4w4u92"))
-    let reference = ResolvedFileReference(
-        originalPath: "Missing/NeverExists.swift",
+private let cursor = IDEApplication(
+    displayName: "Cursor",
+    url: URL(filePath: "/Applications/Cursor.app"),
+    source: .known(bundleIdentifier: "com.todesktop.230313mzl4w4u92"))
+
+private func reference(exists: Bool = true) -> ResolvedFileReference {
+    ResolvedFileReference(
+        originalPath: "App/Feature.swift",
         line: 7,
-        url: URL(filePath: "/tmp/Missing/NeverExists.swift"),
-        exists: false)
+        url: URL(filePath: "/tmp/App/Feature.swift"),
+        exists: exists)
+}
 
-    let presentation = FileReferenceIDEActionPresentation.make(
+@Test func normalFileActivationOpensThePreferredIDE() {
+    #expect(FileReferenceActivation.resolve(
         preference: .available(cursor),
-        reference: reference)
+        reference: reference(),
+        isOptionPressed: false
+    ) == .openInIDE(cursor))
+}
 
-    #expect(presentation.title == "Open in Cursor")
-    #expect(!presentation.isEnabled)
-    #expect(presentation.showsUnavailableSymbol)
-    #expect(presentation.accessibilityLabel ==
-        "Open NeverExists.swift:7 in Cursor, Unavailable, /tmp/Missing/NeverExists.swift:7")
+@Test func optionFileActivationRevealsTheFileInFinder() {
+    #expect(FileReferenceActivation.resolve(
+        preference: .available(cursor),
+        reference: reference(),
+        isOptionPressed: true
+    ) == .revealInFinder)
+}
+
+@Test func fileActivationWithoutAnIDEOpensPreferredIDESettings() {
+    #expect(FileReferenceActivation.resolve(
+        preference: .none,
+        reference: reference(),
+        isOptionPressed: false
+    ) == .openPreferences)
+    #expect(FileReferenceActivation.resolve(
+        preference: .unavailable(displayName: "Old IDE"),
+        reference: reference(),
+        isOptionPressed: false
+    ) == .openPreferences)
+}
+
+@Test func missingFileActivationRemainsUnavailable() {
+    #expect(FileReferenceActivation.resolve(
+        preference: .available(cursor),
+        reference: reference(exists: false),
+        isOptionPressed: false
+    ) == .unavailable)
+    #expect(FileReferenceActivation.resolve(
+        preference: .available(cursor),
+        reference: reference(exists: false),
+        isOptionPressed: true
+    ) == .unavailable)
 }

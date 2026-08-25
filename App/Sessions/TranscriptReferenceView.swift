@@ -2,36 +2,6 @@ import AppKit
 import os
 import SwiftUI
 
-struct FileReferenceIDEActionPresentation {
-    let title: String
-    let isEnabled: Bool
-    let showsUnavailableSymbol: Bool
-    let accessibilityLabel: String
-
-    static func make(
-        preference: IDEPreferenceState,
-        reference: ResolvedFileReference
-    ) -> FileReferenceIDEActionPresentation {
-        switch preference {
-        case .available(let application):
-            let action = "Open in \(application.displayName)"
-            return FileReferenceIDEActionPresentation(
-                title: action,
-                isEnabled: reference.exists,
-                showsUnavailableSymbol: !reference.exists,
-                accessibilityLabel: reference.exists
-                    ? "Open \(reference.compactLabel) in \(application.displayName), \(reference.fullPathLabel)"
-                    : "Open \(reference.compactLabel) in \(application.displayName), Unavailable, \(reference.fullPathLabel)")
-        case .none, .unavailable:
-            return FileReferenceIDEActionPresentation(
-                title: "Choose IDE",
-                isEnabled: true,
-                showsUnavailableSymbol: false,
-                accessibilityLabel: "Choose an IDE for \(reference.fullPathLabel)")
-        }
-    }
-}
-
 struct TranscriptReferenceView: View {
     let reference: TranscriptReference
 
@@ -79,16 +49,7 @@ private struct FileTranscriptReferenceView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: 2) {
-                    fileAction
-                    ideAction
-                }
-                VStack(alignment: .leading, spacing: 0) {
-                    fileAction
-                    ideAction
-                }
-            }
+            fileAction
             if let errorStatus {
                 Text(errorStatus)
                     .font(TenXTypography.body(size: 10, weight: .medium))
@@ -104,38 +65,20 @@ private struct FileTranscriptReferenceView: View {
     }
 
     private var fileAction: some View {
-        Button(action: openWithSystemDefault) {
+        Button(action: activateFileReference) {
             FileReferenceLabel(
                 reference: resolvedReference,
                 showsFullPath: isHovering && isOptionPressed)
         }
-        .buttonStyle(GhostActionStyle(color: fileColor))
+        .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
         .disabled(!resolvedReference.exists)
         .onHover { isHovering = $0 }
         .onModifierKeysChanged(mask: .option, initial: true) { _, modifiers in
             isOptionPressed = modifiers.contains(.option)
         }
         .contextMenu { contextMenu }
-        .accessibilityLabel("File reference, \(resolvedReference.fullPathLabel)")
-        .accessibilityHint(resolvedReference.exists
-            ? "Opens with the system default application"
-            : "File unavailable. Copy its reference from the context menu")
-    }
-
-    private var ideAction: some View {
-        Button(action: performIDEAction) {
-            HStack(spacing: 4) {
-                Text(ideActionPresentation.title)
-                if ideActionPresentation.showsUnavailableSymbol {
-                    Image(systemName: "exclamationmark.circle")
-                        .accessibilityHidden(true)
-                }
-            }
-        }
-            .buttonStyle(GhostActionStyle())
-            .frame(minHeight: 32)
-            .disabled(!ideActionPresentation.isEnabled)
-            .accessibilityLabel(ideActionPresentation.accessibilityLabel)
+        .accessibilityLabel(fileAccessibilityLabel)
+        .accessibilityHint(fileAccessibilityHint)
     }
 
     @ViewBuilder
@@ -153,16 +96,22 @@ private struct FileTranscriptReferenceView: View {
         Button("Copy Reference", action: copyReference)
     }
 
-    private var fileColor: Color {
-        TenXPalette.color(resolvedReference.exists
-            ? TenXPalette.interactiveCyanHex
-            : TenXPalette.mutedTextHex)
+    private var fileAccessibilityLabel: String {
+        guard resolvedReference.exists else {
+            return "File reference unavailable, \(resolvedReference.fullPathLabel)"
+        }
+        switch idePreferenceStore.state {
+        case .available(let application):
+            return "Open \(resolvedReference.compactLabel) in \(application.displayName), \(resolvedReference.fullPathLabel)"
+        case .none, .unavailable:
+            return "Choose an IDE for \(resolvedReference.fullPathLabel)"
+        }
     }
 
-    private var ideActionPresentation: FileReferenceIDEActionPresentation {
-        FileReferenceIDEActionPresentation.make(
-            preference: idePreferenceStore.state,
-            reference: resolvedReference)
+    private var fileAccessibilityHint: String {
+        resolvedReference.exists
+            ? "Hold Option while clicking to reveal in Finder"
+            : "Copy its reference from the context menu"
     }
 
     private func openWithSystemDefault() {
@@ -177,13 +126,22 @@ private struct FileTranscriptReferenceView: View {
         }
     }
 
-    private func performIDEAction() {
-        beginInteraction()
-        guard case .available(let application) = idePreferenceStore.state else {
+    private func activateFileReference() {
+        switch FileReferenceActivation.resolve(
+            preference: idePreferenceStore.state,
+            reference: resolvedReference,
+            isOptionPressed: isOptionPressed
+        ) {
+        case .openInIDE(let application):
+            openInIDE(application)
+        case .openPreferences:
+            beginInteraction()
             openIDEPreferences()
-            return
+        case .revealInFinder:
+            revealInFinder()
+        case .unavailable:
+            break
         }
-        openInIDE(application)
     }
 
     private func openInIDE(_ application: IDEApplication) {
