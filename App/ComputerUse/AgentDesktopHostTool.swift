@@ -51,6 +51,12 @@ struct WorkspaceApplicationResolver: AgentApplicationResolving {
 }
 
 struct WorkspaceApplicationCatalog: AgentApplicationCatalog {
+    private let applicationDirectories: [URL]
+
+    init(applicationDirectories: [URL] = FileManager.default.urls(for: .applicationDirectory, in: .allDomainsMask)) {
+        self.applicationDirectories = applicationDirectories
+    }
+
     func application(bundleIdentifier: String) -> AgentInstalledApplication? {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
             return nil
@@ -59,8 +65,7 @@ struct WorkspaceApplicationCatalog: AgentApplicationCatalog {
     }
 
     func installedApplications() -> [AgentInstalledApplication] {
-        let directories = FileManager.default.urls(for: .applicationDirectory, in: .allDomainsMask)
-        return directories
+        applicationDirectories
             .flatMap(applicationURLs(in:))
             .compactMap(installedApplication(at:))
     }
@@ -97,8 +102,8 @@ struct WorkspaceApplicationCatalog: AgentApplicationCatalog {
     }
 
     private func localizedValue(for key: String, in bundle: Bundle) -> String? {
-        let value = bundle.localizedString(forKey: key, value: nil, table: nil)
-        return value == key ? nil : value
+        (bundle.localizedInfoDictionary?[key] as? String)
+            ?? (bundle.infoDictionary?[key] as? String)
     }
 }
 

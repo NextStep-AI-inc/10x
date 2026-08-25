@@ -25,8 +25,8 @@ after cancellation. Each increment was then made green.
 Verified:
 
 - `ruby scripts/generate_xcodeproj.rb && xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task4`
-  passed: 145 tests, `** TEST SUCCEEDED **`.
-- `xcodebuild build -configuration Release -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task4-release-review-fix`
+  passed: 146 tests, `** TEST SUCCEEDED **`.
+- `xcodebuild build -configuration Release -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task4-release-catalog-metadata`
   passed: `** BUILD SUCCEEDED **`.
 - `git diff --check` passed.
 
@@ -68,3 +68,13 @@ Not verified:
   use `NSWorkspace`; localized display names and bundle names come from a
   depth-bounded catalog of standard Application directories, without shell or
   whole-disk scanning.
+
+## Review fix round 2
+
+- `WorkspaceApplicationCatalog` now reads `localizedInfoDictionary` first and
+  falls back to `infoDictionary` for `CFBundleDisplayName` and `CFBundleName`.
+  Its application-directory roots are injectable.
+- A temporary nested `.app` bundle test exercises the production traversal,
+  `Bundle` metadata reading, and resolver behavior using ordinary Info.plist
+  display and bundle-name fallback values. It does not depend on applications
+  installed on the test machine.

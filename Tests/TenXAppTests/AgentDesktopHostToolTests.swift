@@ -1,6 +1,32 @@
+import Foundation
 import OmpKit
 import Testing
 @testable import TenXApp
+
+@Test func workspaceCatalogReadsNestedBundleInfoMetadata() throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let applicationURL = root
+        .appending(path: "Utilities", directoryHint: .isDirectory)
+        .appending(path: "Writer.app", directoryHint: .isDirectory)
+    try writeApplicationBundle(
+        at: applicationURL,
+        bundleIdentifier: "com.example.writer",
+        displayName: "Ordinary Display Name",
+        bundleName: "Ordinary Bundle Name")
+
+    let catalog = WorkspaceApplicationCatalog(applicationDirectories: [root])
+    let resolver = WorkspaceApplicationResolver(catalog: catalog)
+
+    #expect(catalog.installedApplications() == [AgentInstalledApplication(
+        bundleIdentifier: "com.example.writer",
+        localizedDisplayName: "Ordinary Display Name",
+        bundleName: "Ordinary Bundle Name")])
+    #expect(resolver.resolve(application: "ordinary display name")
+        == AgentApplication(bundleIdentifier: "com.example.writer", strategy: .newInstance))
+    #expect(resolver.resolve(application: "ordinary bundle name")
+        == AgentApplication(bundleIdentifier: "com.example.writer", strategy: .newInstance))
+}
 
 @Test func resolverAcceptsAnInstalledBundleIdentifier() {
     let resolver = WorkspaceApplicationResolver(catalog: StaticApplicationCatalog(applications: [
@@ -372,4 +398,24 @@ private struct StaticApplicationCatalog: AgentApplicationCatalog {
     }
 
     func installedApplications() -> [AgentInstalledApplication] { applications }
+}
+
+private func writeApplicationBundle(
+    at applicationURL: URL,
+    bundleIdentifier: String,
+    displayName: String,
+    bundleName: String
+) throws {
+    let contentsURL = applicationURL.appending(path: "Contents", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+    let info = [
+        "CFBundleIdentifier": bundleIdentifier,
+        "CFBundleDisplayName": displayName,
+        "CFBundleName": bundleName,
+        "CFBundlePackageType": "APPL",
+        "CFBundleVersion": "1",
+        "CFBundleShortVersionString": "1.0",
+    ]
+    let data = try PropertyListEncoder().encode(info)
+    try data.write(to: contentsURL.appending(path: "Info.plist"))
 }
