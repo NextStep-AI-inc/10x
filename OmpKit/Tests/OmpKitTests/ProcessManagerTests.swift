@@ -43,12 +43,12 @@ private func fakeManager(mode: String = "basic") -> SessionProcessManager {
     })
 }
 
-private func computerContractManager() -> SessionProcessManager {
+private func computerContractManager(mode: String = "basic") -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var updated = configuration
         updated.executable = "/usr/bin/env"
         updated.extraArguments = [
-            "python3", fixtureURL("fake_server.py").path, "basic", "--computer-contract",
+            "python3", fixtureURL("fake_server.py").path, mode, "--computer-contract",
         ]
         updated.rawArgv = true
         return RpcClient(configuration: updated)
@@ -194,13 +194,42 @@ private func computerContractManager() -> SessionProcessManager {
     let handle = try await manager.open(sessionPath: "/tmp/computer.jsonl", cwd: "/tmp")
 
     let initial = try await handle.computerUseRPC.state()
+    let availability = try await handle.computerUseRPC.availability()
     let enabled = try await handle.computerUseRPC.setComputerUse(
         enabled: true, policy: .requireHandoff)
     let probe = try await handle.computerUseRPC.probeComputerUse(
         target: "window-1", verificationText: "ready")
 
     #expect(initial == ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff))
+    #expect(availability == ComputerUseAvailability(json: .object([
+        "model": .object(["id": .string("fake")]),
+        "computerUse": .object([
+            "enabled": .bool(false),
+            "foregroundPolicy": .string("require-handoff"),
+        ]),
+    ])))
     #expect(enabled == ComputerUseRPCState(enabled: true, foregroundPolicy: .requireHandoff))
     #expect(probe.capabilities.isReady)
+    await manager.closeAll()
+}
+
+@Test func legacyComputerCommandRequiresTheServerToDeclineAgentInvocation() async throws {
+    let manager = computerContractManager()
+    let handle = try await manager.open(sessionPath: "/tmp/legacy.jsonl", cwd: "/tmp")
+
+    try await handle.computerUseRPC.setLegacyComputerUse(enabled: true)
+
+    await manager.closeAll()
+}
+
+@Test(arguments: ["legacy-agent-invoked", "legacy-agent-missing", "legacy-command-error"])
+func legacyComputerCommandRejectsAnyUnverifiedResponse(mode: String) async throws {
+    let manager = computerContractManager(mode: mode)
+    let handle = try await manager.open(sessionPath: "/tmp/legacy-\(mode).jsonl", cwd: "/tmp")
+
+    await #expect(throws: (any Error).self) {
+        try await handle.computerUseRPC.setLegacyComputerUse(enabled: true)
+    }
+
     await manager.closeAll()
 }

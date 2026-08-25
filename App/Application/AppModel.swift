@@ -18,6 +18,9 @@ final class AppModel {
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionTransitionTask: Task<Void, Never>?
+    @ObservationIgnored private var transitioningSession: SessionController?
+    @ObservationIgnored private var sessionTransitionGeneration = 0
 
     init(dependencies: AppDependencies = .live) {
         self.dependencies = dependencies
@@ -37,7 +40,7 @@ final class AppModel {
 
     func chooseProject(_ url: URL) {
         selectedProjectURL = url.standardizedFileURL
-        activeSession = nil
+        retireActiveSessionInBackground()
         route = .newSession
     }
 
@@ -47,7 +50,7 @@ final class AppModel {
     }
 
     func openNewSession() {
-        activeSession = nil
+        retireActiveSessionInBackground()
         route = .newSession
     }
 
@@ -70,27 +73,53 @@ final class AppModel {
             selectedProjectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
                 .standardizedFileURL
         }
-        guard let processManager else { return }
-        let controller = SessionController(
-            processManager: processManager,
-            computerUseRegistry: dependencies.computerUseRegistry)
-        activeSession = controller
+        guard processManager != nil else { return }
+        let prior = beginSessionTransition()
+        let generation = sessionTransitionGeneration
         route = .session(metadata.path)
-        Task { await controller.openExisting(metadata) }
+        sessionTransitionTask = Task { [weak self] in
+            await prior?.value
+            guard let self,
+                  self.sessionTransitionGeneration == generation,
+                  let processManager = self.processManager
+            else { return }
+            let controller = SessionController(
+                processManager: processManager,
+                computerUseRegistry: self.dependencies.computerUseRegistry)
+            self.activeSession = controller
+            self.transitioningSession = nil
+            await controller.openExisting(metadata)
+            if self.sessionTransitionGeneration != generation {
+                await controller.teardown()
+                if self.activeSession === controller { self.activeSession = nil }
+            }
+        }
     }
 
     func startNewSession(prompt: String) {
-        guard let processManager, let selectedProjectURL else { return }
-        let controller = SessionController(
-            processManager: processManager,
-            computerUseRegistry: dependencies.computerUseRegistry)
-        controller.draft = prompt
-        activeSession = controller
+        guard processManager != nil, let selectedProjectURL else { return }
+        let prior = beginSessionTransition()
+        let generation = sessionTransitionGeneration
         route = .session("new:\(UUID().uuidString)")
-        Task {
+        sessionTransitionTask = Task { [weak self] in
+            await prior?.value
+            guard let self,
+                  self.sessionTransitionGeneration == generation,
+                  let processManager = self.processManager
+            else { return }
+            let controller = SessionController(
+                processManager: processManager,
+                computerUseRegistry: self.dependencies.computerUseRegistry)
+            controller.draft = prompt
+            self.activeSession = controller
+            self.transitioningSession = nil
             await controller.openNew(projectURL: selectedProjectURL)
             await controller.sendPrompt()
-            await reloadSessions()
+            await self.reloadSessions()
+            if self.sessionTransitionGeneration != generation {
+                await controller.teardown()
+                if self.activeSession === controller { self.activeSession = nil }
+            }
         }
     }
 
@@ -99,6 +128,8 @@ final class AppModel {
     }
 
     private func install(preferredURL: URL?) async {
+        await retireActiveSession()
+        if let processManager { await processManager.closeAll() }
         guard let installation = await dependencies.ompLocator.locate(preferredURL: preferredURL) else {
             exitTask?.cancel()
             self.installation = nil
@@ -122,13 +153,46 @@ final class AppModel {
         exitTask?.cancel()
         exitTask = Task { [weak self] in
             for await exit in processManager.unexpectedExits {
-                guard let self, !Task.isCancelled,
-                      self.activeSession?.sessionPath == exit.sessionPath
-                else { continue }
-                await self.activeSession?.handleUnexpectedExit(
+                guard let self, !Task.isCancelled else { continue }
+                let owner: SessionController?
+                if self.activeSession?.sessionPath == exit.sessionPath {
+                    owner = self.activeSession
+                } else if self.transitioningSession?.sessionPath == exit.sessionPath {
+                    owner = self.transitioningSession
+                } else {
+                    owner = nil
+                }
+                guard let owner else { continue }
+                await owner.handleUnexpectedExit(
                     code: exit.code,
                     stderrTail: exit.stderrTail)
             }
         }
+    }
+
+    private func beginSessionTransition() -> Task<Void, Never>? {
+        sessionTransitionGeneration += 1
+        let prior = sessionTransitionTask
+        let retiring = activeSession
+        activeSession = nil
+        transitioningSession = retiring
+        sessionTransitionTask = Task { [weak self] in
+            await prior?.value
+            await retiring?.teardown()
+            guard let self,
+                  self.transitioningSession === retiring
+            else { return }
+            self.transitioningSession = nil
+        }
+        return sessionTransitionTask
+    }
+
+    private func retireActiveSessionInBackground() {
+        _ = beginSessionTransition()
+    }
+
+    private func retireActiveSession() async {
+        let prior = beginSessionTransition()
+        await prior?.value
     }
 }

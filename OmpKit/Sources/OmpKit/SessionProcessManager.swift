@@ -5,6 +5,7 @@ import Foundation
 /// `RpcClient` that could send unrelated model commands.
 public protocol ComputerUseRPC: Sendable {
     func state() async throws -> ComputerUseRPCState
+    func availability() async throws -> ComputerUseAvailability
     func setComputerUse(
         enabled: Bool,
         policy: ComputerForegroundPolicy
@@ -17,6 +18,42 @@ public protocol ComputerUseRPC: Sendable {
     func setHostTools(_ definitions: [HostToolDefinition]) async throws
     func sendHostToolResult(id: String, result: JSONValue, isError: Bool) async throws
     func abort() async throws
+}
+
+/// The active model and computer authorization reported by `get_state`.
+///
+/// `dumpTools` is intentionally not used here. Code Mode may alter that export
+/// without changing the session's actual computer authorization.
+public struct ComputerUseAvailability: Sendable, Equatable {
+    public let hasActiveModel: Bool
+    public let computerUse: ComputerUseRPCState?
+
+    public init?(json: JSONValue?) {
+        guard let json,
+              Self.hasModel(json["model"])
+        else { return nil }
+        hasActiveModel = true
+        if let rawComputerUse = json["computerUse"] {
+            guard let state = ComputerUseRPCState(json: rawComputerUse) else { return nil }
+            computerUse = state
+        } else {
+            computerUse = nil
+        }
+    }
+
+    private static func hasModel(_ value: JSONValue?) -> Bool {
+        guard let value else { return false }
+        if let model = value.stringValue {
+            return !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        for key in ["id", "modelId", "name"] {
+            if let model = value[key]?.stringValue,
+               !model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return true
+            }
+        }
+        return false
+    }
 }
 
 private actor SessionComputerUseRPC: ComputerUseRPC {
@@ -34,6 +71,14 @@ private actor SessionComputerUseRPC: ComputerUseRPC {
         return state
     }
 
+    func availability() async throws -> ComputerUseAvailability {
+        let response = try await client.send(.getState())
+        guard let availability = ComputerUseAvailability(json: response.data) else {
+            throw RpcClientError.startupFailed("computer availability was malformed")
+        }
+        return availability
+    }
+
     func setComputerUse(
         enabled: Bool,
         policy: ComputerForegroundPolicy
@@ -48,10 +93,13 @@ private actor SessionComputerUseRPC: ComputerUseRPC {
     }
 
     func setLegacyComputerUse(enabled: Bool) async throws {
-        _ = try await client.send(RpcCommand(type: "prompt", fields: [
+        let response = try await client.send(RpcCommand(type: "prompt", fields: [
             "message": .string(enabled ? "/computer on" : "/computer off"),
             "agentInvoked": .bool(false),
         ]))
+        guard response.data?["agentInvoked"]?.boolValue == false else {
+            throw RpcClientError.startupFailed("legacy computer command was not accepted")
+        }
     }
 
     func probeComputerUse(
@@ -186,6 +234,12 @@ public actor SessionProcessManager {
         guard let handle = handles.removeValue(forKey: sessionPath) else { return }
         exitWatchers.removeValue(forKey: sessionPath)?.cancel()
         await handle.client.shutdown()
+    }
+
+    /// Closes a child whose remote authorization state could not be confirmed.
+    /// This remains deliberately narrower than exposing its `RpcClient`.
+    public func forceClose(sessionPath: String) async {
+        await close(sessionPath: sessionPath)
     }
 
     public func closeAll() async {

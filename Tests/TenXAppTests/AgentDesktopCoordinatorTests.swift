@@ -1,4 +1,5 @@
 import Testing
+import OmpKit
 @testable import TenXApp
 
 @Test func automaticSelectionUsesTheStrongestHealthyProvider() async throws {
@@ -76,6 +77,45 @@ import Testing
         provider: .aeroSpace, workspaceID: nil, capabilities: .isolated))
 
     #expect(await provider.recordedReleasedWorkspaces() == ["workspace"])
+}
+
+@MainActor @Test func captureFailureIsReturnedForControllerHandoff() async throws {
+    let provider = FakeAgentDesktopProvider(kind: .background, probe: .healthy)
+    let coordinator = AgentDesktopCoordinator(providers: [provider])
+    let prepared = PreparedAgentDesktop(
+        provider: .background, workspaceID: nil, capabilities: .background)
+
+    let result = try await coordinator.probePreparedWorkspace(prepared) { _, _ in
+        probeResult(captureSucceeded: false, backgroundInputSucceeded: true)
+    }
+
+    #expect(result.captureSucceeded == false)
+}
+
+@MainActor @Test func backgroundInputFailureIsReturnedForControllerHandoff() async throws {
+    let provider = FakeAgentDesktopProvider(kind: .aeroSpace, probe: .healthy)
+    let coordinator = AgentDesktopCoordinator(providers: [provider])
+    let prepared = PreparedAgentDesktop(
+        provider: .aeroSpace, workspaceID: nil, capabilities: .isolated)
+
+    let result = try await coordinator.probePreparedWorkspace(prepared) { _, _ in
+        probeResult(captureSucceeded: true, backgroundInputSucceeded: false)
+    }
+
+    #expect(result.backgroundInputSucceeded == false)
+}
+
+private func probeResult(captureSucceeded: Bool, backgroundInputSucceeded: Bool) -> ComputerProbeResult {
+    ComputerProbeResult(json: .object([
+        "capabilities": .object([
+            "backend": .string("fake"),
+            "capturePermission": .string("granted"),
+            "inputPermission": .string("granted"),
+            "axPermission": .string("granted"),
+        ]),
+        "captureSucceeded": .bool(captureSucceeded),
+        "backgroundInputSucceeded": .bool(backgroundInputSucceeded),
+    ]))!
 }
 
 private actor FakeAgentDesktopProvider: AgentDesktopProvider {

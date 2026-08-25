@@ -127,9 +127,11 @@ struct AgentDesktopCoordinator: Sendable {
             try await provider.move(windowID: target.windowID, to: workspaceID)
         }
         let result = try await probe(target.windowID, target.verificationText)
-        guard result.captureSucceeded,
-              !prepared.capabilities.canInputInBackground || result.backgroundInputSucceeded == true
-        else { throw AgentDesktopProviderError.probeFailed(prepared.provider) }
+        // A capability-valid false result is a behavioral result, not a
+        // provider failure. The controller presents the required handoff.
+        guard result.capabilities.isReady else {
+            throw AgentDesktopProviderError.probeFailed(prepared.provider)
+        }
         return result
     }
 

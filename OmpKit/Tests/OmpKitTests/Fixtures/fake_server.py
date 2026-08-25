@@ -174,8 +174,18 @@ for line in sys.stdin:
         else:
             emit({"id": cid, "type": "response", "command": "get_state", "success": True, "data": STATE})
     elif ctype == "prompt":
+        if mode == "legacy-agent-invoked":
+            prompt_data = {"agentInvoked": True}
+        elif mode == "legacy-agent-missing":
+            prompt_data = {}
+        elif mode == "legacy-command-error":
+            emit({"id": cid, "type": "response", "command": "prompt", "success": False,
+                  "error": "legacy command rejected"})
+            continue
+        else:
+            prompt_data = {"agentInvoked": False}
         emit({"id": cid, "type": "response", "command": "prompt", "success": True,
-              "data": {"agentInvoked": True}})
+              "data": prompt_data})
         if mode == "burst":
             for index in range(100):
                 emit({"type": "message_update", "index": index})

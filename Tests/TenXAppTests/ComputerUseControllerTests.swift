@@ -17,7 +17,7 @@ import Testing
     #expect(controller.phase == .ready)
     #expect(log.values == [
         "registry.activate", "lease.acquire", "desktop.prepare", "rpc.enable",
-        "rpc.hostTools", "rpc.probe", "desktop.probe",
+        "rpc.availability", "rpc.hostTools", "rpc.probe", "desktop.probe",
     ])
 }
 
@@ -36,7 +36,7 @@ import Testing
         message: "Computer use could not start", isBestEffortAvailable: false))
     #expect(log.values == [
         "registry.activate", "lease.acquire", "desktop.prepare", "rpc.enable",
-        "desktop.cleanup", "desktop.release", "lease.release", "registry.release",
+        "rpc.disable", "desktop.cleanup", "desktop.release", "lease.release", "registry.release",
     ])
 }
 
@@ -80,7 +80,9 @@ import Testing
     controller.handleToolEnded(.object(["toolName": .string("computer")]))
 
     #expect(elapsed <= .seconds(2.1))
-    #expect(controller.phase == .off)
+    #expect(controller.phase == .unavailable(
+        message: "Computer use stopped because its session could not be secured",
+        isBestEffortAvailable: false))
     #expect(log.values.contains("rpc.abort"))
 }
 
@@ -97,6 +99,7 @@ import Testing
 
     await controller.handleHostToolCall(HostToolCall(
         id: "unknown", toolCallID: "unknown-tool", name: "other_tool", arguments: .object([:])))
+    try? await Task.sleep(for: .milliseconds(25))
 
     #expect(log.values == ["rpc.hostResult.unknown.error"])
 }
@@ -123,10 +126,12 @@ import Testing
     await controller.handleHostToolCall(HostToolCall(
         id: "cancelled", toolCallID: "tool-cancelled", name: "agent_desktop",
         arguments: .object(["action": .string("borrow"), "windowId": .string("window-1")])))
+    try? await Task.sleep(for: .milliseconds(50))
 
-    #expect(log.values == [
+    #expect(Set(log.values) == Set([
         "rpc.hostResult.borrow.success", "rpc.hostResult.cancelled.error",
-    ])
+    ]))
+    #expect(log.values.count == 2)
 }
 
 @MainActor @Test func reopeningAnEnabledOMPComputerSessionDisablesItAndStaysOff() async {
@@ -155,7 +160,7 @@ import Testing
     await controller.handlePermissionLoss()
 
     #expect(controller.phase == .unavailable(
-        message: "Computer use stopped to keep this session safe", isBestEffortAvailable: false))
+        message: "Computer use stopped because its session could not be secured", isBestEffortAvailable: false))
 }
 
 @MainActor @Test func computerToolEventsMustMatchTheExactToolName() async {
@@ -170,6 +175,35 @@ import Testing
     #expect(controller.phase == .ready)
     controller.handleToolStarted(.object(["toolName": .string("computer"), "target": .string("TextEdit")]))
     #expect(controller.phase == .controlling(target: "TextEdit"))
+}
+
+@MainActor @Test func focusIsolationRejectsAPreparedBackgroundDesktop() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let lifecycle = ComputerUseControllerLifecycle(
+        activate: { _ in log.append("registry.activate") },
+        release: { _ in log.append("registry.release") },
+        acquireLease: { _ in log.append("lease.acquire") },
+        releaseLease: { log.append("lease.release") },
+        prepare: { _ in
+            log.append("desktop.prepare")
+            return PreparedAgentDesktop(
+                provider: .background, workspaceID: nil, capabilities: .background)
+        },
+        probe: { _, _ in probeResult() },
+        cleanup: { _ in CleanupReport(preservedApplicationNames: [], restoredWindowCount: 0) },
+        releaseDesktop: { _ in log.append("desktop.release") })
+    let controller = ComputerUseController(
+        sessionID: "session-isolation", lifecycle: lifecycle, preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-isolation.jsonl")
+
+    await controller.enable()
+
+    #expect(controller.phase == .unavailable(
+        message: "Computer use could not start", isBestEffortAvailable: false))
+    #expect(log.values == [
+        "registry.activate", "lease.acquire", "desktop.prepare", "lease.release", "registry.release",
+    ])
 }
 
 private enum TestFailure: Error { case failed }
@@ -194,6 +228,17 @@ private actor ControllerRPC: ComputerUseRPC {
     func state() async throws -> ComputerUseRPCState {
         await log.append("rpc.state")
         return reportedState
+    }
+
+    func availability() async throws -> ComputerUseAvailability {
+        await log.append("rpc.availability")
+        return ComputerUseAvailability(json: .object([
+            "model": .object(["id": .string("fake")]),
+            "computerUse": .object([
+                "enabled": .bool(true),
+                "foregroundPolicy": .string("require-handoff"),
+            ]),
+        ]))!
     }
 
     func setComputerUse(enabled: Bool, policy: ComputerForegroundPolicy) async throws -> ComputerUseRPCState {
@@ -232,7 +277,7 @@ private extension ComputerUseControllerLifecycle {
             prepare: { _ in
                 log.append("desktop.prepare")
                 return PreparedAgentDesktop(
-                    provider: .background, workspaceID: nil, capabilities: .background)
+                    provider: .aeroSpace, workspaceID: "workspace", capabilities: .isolated)
             },
             probe: { _, operation in
                 let result = try await operation(nil, nil)

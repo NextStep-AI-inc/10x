@@ -147,11 +147,25 @@ final class SessionController {
         }
     }
 
+    /// Releases computer authorization before the session process is replaced
+    /// or discarded. It is idempotent so navigation races share one cleanup.
+    func teardown() async {
+        eventTask?.cancel()
+        eventTask = nil
+        reconciliationTask?.cancel()
+        reconciliationTask = nil
+        for task in extensionTimeoutTasks.values { task.cancel() }
+        extensionTimeoutTasks.removeAll()
+        await computerUse.stopComputerUse()
+        if let sessionPath {
+            await processManager.close(sessionPath: sessionPath)
+        }
+        handle = nil
+    }
+
     func restart() async {
         guard let projectURL, let sessionPath else { return }
-        eventTask?.cancel()
-        reconciliationTask?.cancel()
-        await processManager.close(sessionPath: sessionPath)
+        await teardown()
         runtimeState = .loading
         isRecoveryPresented = false
         do {
@@ -191,7 +205,7 @@ final class SessionController {
     }
 
     func handleUnexpectedExit(code: Int32?, stderrTail: String) async {
-        await computerUse.failClosed()
+        await computerUse.handleProcessTerminated()
         runtimeState = .stopped(code: code, stderrTail: stderrTail)
         reducer.runtimeState = runtimeState
         isRecoveryPresented = true
@@ -213,9 +227,13 @@ final class SessionController {
     private func finishOpening(_ handle: SessionProcessManager.Handle) async throws {
         self.handle = handle
         sessionPath = handle.sessionPath
+        let path = handle.sessionPath
         await computerUse.attachAndReconcile(
             rpc: handle.computerUseRPC,
-            sessionPath: handle.sessionPath)
+            sessionPath: path,
+            terminateProcess: { [processManager] in
+                await processManager.forceClose(sessionPath: path)
+            })
 
         let state = try await handle.client.send(.getState())
         applyState(state.data)
@@ -270,9 +288,9 @@ final class SessionController {
                 case .extensionUIRequest(let request):
                     self.consumeExtensionUI(request)
                 case .hostToolCall(let call):
-                    await self.computerUse.handleHostToolCall(call)
+                    self.computerUse.handleHostToolCall(call)
                 case .hostToolCancel(_, let targetID):
-                    await self.computerUse.handleHostToolCancel(targetID: targetID)
+                    self.computerUse.handleHostToolCancel(targetID: targetID)
                 default:
                     self.reducer.consume(frame)
                 }
@@ -361,13 +379,7 @@ final class SessionController {
     }
 
     private func refreshComputerAvailability() async {
-        guard let handle else { return }
-        do {
-            let state = try await handle.computerUseRPC.state()
-            guard state.enabled else { return }
-        } catch {
-            await computerUse.failClosed()
-        }
+        await computerUse.refreshAvailability()
     }
 
     private func routeComputerToolEvent(_ frame: RpcFrame) {
