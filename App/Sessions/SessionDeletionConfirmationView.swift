@@ -1,0 +1,46 @@
+import SwiftUI
+
+struct SessionDeletionConfirmationView: View {
+    let request: SessionDeletionRequest
+    let onCancel: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.white.opacity(0.82)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture(perform: onCancel)
+
+            CornerCard(color: TenXPalette.color(TenXPalette.signalRedHex)) {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(request.title)
+                            .font(TenXTypography.accent(size: 20))
+                            .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                        Text(request.message)
+                            .font(TenXTypography.body(size: 13))
+                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    HStack(spacing: 10) {
+                        Spacer()
+                        Button("Cancel", action: onCancel)
+                            .buttonStyle(GhostActionStyle())
+                            .keyboardShortcut(.cancelAction)
+                        Button("Delete", action: onDelete)
+                            .buttonStyle(.borderedProminent)
+                            .tint(TenXPalette.color(TenXPalette.signalRedHex))
+                    }
+                }
+            }
+            .frame(width: 420)
+            .background(Color.white)
+            .contentShape(Rectangle())
+            .onTapGesture {}
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(request.title)
+    }
+}

@@ -4,7 +4,6 @@ struct AppShellView: View {
     let model: AppModel
 
     @State private var railExpansion = RailExpansionModel()
-    @State private var isConfirmingDeletion = false
 
     var body: some View {
         Group {
@@ -33,24 +32,15 @@ struct AppShellView: View {
             }
         }
         .background(TenXPalette.color(TenXPalette.canvasHex))
-        .confirmationDialog(
-            model.pendingDeletion?.title ?? "",
-            isPresented: deletionIsPresented,
-            titleVisibility: .visible,
-            presenting: model.pendingDeletion
-        ) { _ in
-            Button("Delete", role: .destructive) {
-                isConfirmingDeletion = true
-                Task {
-                    await model.confirmDeletion()
-                    isConfirmingDeletion = false
-                }
+        .overlay {
+            if let request = model.pendingDeletion {
+                SessionDeletionConfirmationView(
+                    request: request,
+                    onCancel: model.cancelDeletion,
+                    onDelete: {
+                        Task { await model.confirmDeletion() }
+                    })
             }
-            Button("Cancel", role: .cancel) {
-                model.cancelDeletion()
-            }
-        } message: { request in
-            Text(request.message)
         }
         .alert(
             "Session action failed",
@@ -63,16 +53,6 @@ struct AppShellView: View {
         } message: { message in
             Text(message)
         }
-    }
-
-    private var deletionIsPresented: Binding<Bool> {
-        Binding(
-            get: { model.pendingDeletion != nil },
-            set: { isPresented in
-                if !isPresented, !isConfirmingDeletion {
-                    model.cancelDeletion()
-                }
-            })
     }
 
     private var sessionActionErrorIsPresented: Binding<Bool> {
@@ -101,7 +81,7 @@ struct AppShellView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
         case .archivedSessions:
-            EmptyView()
+            ArchivedSessionsView(model: model)
         case .settings:
             if let settingsModel = model.settingsModel {
                 SettingsView(model: settingsModel)

@@ -310,6 +310,58 @@ import Testing
 }
 
 @MainActor
+@Test func archivedSessionsEmptySnapshot() throws {
+    let model = AppModel()
+    model.archivedSessions = []
+
+    try assertSnapshot(
+        ArchivedSessionsView(model: model),
+        name: "archived-sessions-empty")
+}
+
+@MainActor
+@Test func archivedSessionsPopulatedSnapshot() throws {
+    let model = AppModel()
+    model.archivedSessions = [
+        snapshotSession(
+            path: "/sessions/archived-shell.jsonl",
+            cwd: "/tmp/10x",
+            title: "Refine session management",
+            modified: 1_787_601_600),
+        snapshotSession(
+            path: "/sessions/archived-untitled.jsonl",
+            cwd: "/tmp/10x",
+            title: "",
+            modified: 1_787_515_200),
+        snapshotSession(
+            path: "/sessions/archived-nextstep.jsonl",
+            cwd: "/tmp/NextStep",
+            title: "Review course navigation",
+            modified: 1_787_428_800),
+    ]
+
+    try assertSnapshot(
+        ArchivedSessionsView(model: model),
+        name: "archived-sessions-populated")
+}
+
+@MainActor
+@Test func sessionDeletionConfirmationSnapshot() throws {
+    let request = SessionDeletionRequest.session(snapshotSession(
+        path: "/sessions/delete-me.jsonl",
+        cwd: "/tmp/10x",
+        title: "Refine session management",
+        modified: 1_787_601_600))
+
+    try assertSnapshot(
+        SessionDeletionConfirmationView(
+            request: request,
+            onCancel: {},
+            onDelete: {}),
+        name: "session-deletion-confirmation")
+}
+
+@MainActor
 private func compactTranscriptController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
     let user = TranscriptMessage(
