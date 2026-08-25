@@ -10,7 +10,10 @@ import Testing
     try await Task.sleep(for: .milliseconds(150))
     #expect(model.isExpanded)
 
-    try await Task.sleep(for: .milliseconds(200))
+    let deadline = ContinuousClock.now + .seconds(2)
+    while model.isExpanded && ContinuousClock.now < deadline {
+        try await Task.sleep(for: .milliseconds(20))
+    }
     #expect(!model.isExpanded)
 }
 

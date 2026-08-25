@@ -23,6 +23,7 @@ import Testing
 
     #expect(reducer.presentations.count == 1)
     #expect(reducer.presentations[0].result?["content"]?.arrayValue?.first?["text"]?.stringValue == "/tmp/project")
+    #expect(reducer.presentations[0].arguments["command"]?.stringValue == "pwd")
     #expect(reducer.presentations[0].phase == .complete)
 }
 

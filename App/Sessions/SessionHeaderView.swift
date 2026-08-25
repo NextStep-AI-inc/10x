@@ -22,6 +22,8 @@ struct SessionHeaderView: View {
                 Spacer()
                 Text(runtimeLabel)
                     .foregroundStyle(runtimeColor)
+                    .accessibilityLabel("Session status")
+                    .accessibilityValue(runtimeLabel)
                 Text(controller.modelName)
                 Text(controller.thinkingLevel)
                 if let contextPercentage = controller.contextPercentage {

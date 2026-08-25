@@ -1,3 +1,4 @@
+import OmpKit
 import SwiftUI
 
 struct FloatingRailView: View {
@@ -5,6 +6,7 @@ struct FloatingRailView: View {
     let expansion: RailExpansionModel
 
     @FocusState private var focusedItem: RailFocus?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var groups: [ProjectSessionGroup] {
         ProjectSessionGrouper.groups(model.sessions)
@@ -32,6 +34,7 @@ struct FloatingRailView: View {
                 .padding(.top, 10)
                 .help("Open Settings")
                 .accessibilityLabel("Open Settings")
+                .keyboardShortcut(",", modifiers: .command)
 
             GeometryReader { proxy in
                 VStack(spacing: 0) {
@@ -68,7 +71,7 @@ struct FloatingRailView: View {
                 expansion.pointerExited()
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: expansion.isExpanded)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: expansion.isExpanded)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Application navigation")
     }
@@ -165,8 +168,17 @@ struct FloatingRailView: View {
             .padding(.leading, 17)
             .frame(height: 26)
             .help(metadata.title ?? "Untitled session")
-            .accessibilityLabel(metadata.title ?? "Untitled session")
+            .accessibilityLabel(RailAccessibility.sessionLabel(
+                title: metadata.title ?? "Untitled session",
+                project: groupName(for: metadata),
+                state: metadata.status.rawValue.capitalized))
         }
+    }
+
+    private func groupName(for metadata: SessionMetadata) -> String {
+        groups.first(where: { group in
+            group.sessions.contains(where: { $0.path == metadata.path })
+        })?.displayName ?? "Unknown Project"
     }
 }
 

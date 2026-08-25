@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     let model: SettingsViewModel
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -16,6 +17,13 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity)
         .task {
             if model.settingCount == 0 { await model.load() }
+        }
+        .background {
+            Button("") { isSearchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+                .accessibilityHidden(true)
         }
     }
 
@@ -46,6 +54,8 @@ struct SettingsView: View {
                 TextField("Search all settings", text: Bindable(model).query)
                     .textFieldStyle(.plain)
                     .font(TenXTypography.body(size: 14))
+                    .focused($isSearchFocused)
+                    .accessibilityLabel("Search all OMP settings")
             }
             .padding(.bottom, 9)
             .overlay(alignment: .bottom) {

@@ -34,6 +34,8 @@ struct ToolCardScaffold<Content: View>: View {
                     Text(presentation.phase.label)
                         .font(TenXTypography.body(size: 10, weight: .medium))
                         .foregroundStyle(accentColor)
+                        .accessibilityLabel("Tool status")
+                        .accessibilityValue(presentation.phase.label)
                     Text(presentation.durationLabel)
                         .font(TenXTypography.mono(size: 9))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))

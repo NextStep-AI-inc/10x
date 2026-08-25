@@ -15,6 +15,8 @@ struct GenericToolCardView: View {
                     Text(phaseLabel)
                         .font(TenXTypography.body(size: 10, weight: .medium))
                         .foregroundStyle(accentColor)
+                        .accessibilityLabel("Tool status")
+                        .accessibilityValue(phaseLabel)
                     Text(durationLabel)
                         .font(TenXTypography.mono(size: 9))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))

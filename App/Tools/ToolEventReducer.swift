@@ -6,20 +6,20 @@ struct ToolEventReducer {
 
     mutating func consume(type: String, payload: JSONValue, at date: Date = Date()) {
         guard let id = payload["toolCallId"]?.stringValue else { return }
-        let name = payload["toolName"]?.stringValue ?? "Unknown tool"
-        let arguments = payload["args"] ?? .object([:])
+        let name = payload["toolName"]?.stringValue
+        let arguments = payload["args"]
 
         if let index = presentations.firstIndex(where: { $0.id == id }) {
-            presentations[index].name = name
-            presentations[index].arguments = arguments
+            if let name { presentations[index].name = name }
+            if let arguments { presentations[index].arguments = arguments }
             apply(type: type, payload: payload, date: date, at: index)
             return
         }
 
         var presentation = ToolPresentation(
             id: id,
-            name: name,
-            arguments: arguments,
+            name: name ?? "Unknown tool",
+            arguments: arguments ?? .object([:]),
             result: nil,
             phase: .running,
             startDate: date,

@@ -92,4 +92,8 @@ project.save
 scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(app)
 scheme.add_test_target(tests)
+scheme.test_action.should_use_launch_scheme_args_env = false
+scheme.test_action.environment_variables = Xcodeproj::XCScheme::EnvironmentVariables.new([
+  { key: "RECORD_SNAPSHOTS", value: "$(RECORD_SNAPSHOTS)" },
+])
 scheme.save_as(project_path, "10x", true)

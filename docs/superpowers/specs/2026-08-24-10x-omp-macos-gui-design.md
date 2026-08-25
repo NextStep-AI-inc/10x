@@ -1,6 +1,6 @@
 # 10x — Native macOS Workspace for OMP
 
-**Status:** Approved for implementation
+**Status:** Implemented and verified for V1
 **Date:** 2026-08-24
 **Tested against:** OMP 18.0.4 (`@oh-my-pi/pi-coding-agent`), RPC protocol v2
 **Platform:** macOS 15+, Swift 6.1, SwiftUI

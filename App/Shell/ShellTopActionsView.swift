@@ -16,6 +16,7 @@ struct ShellTopActionsView: View {
                 systemImage: "plus",
                 isSelected: model.route == .newSession,
                 perform: model.openNewSession)
+                .keyboardShortcut("n", modifiers: .command)
         }
     }
 

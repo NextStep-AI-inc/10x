@@ -32,6 +32,7 @@ struct ComposerView: View {
                 .frame(height: 58)
                 .disabled(!isAvailable)
                 .accessibilityLabel("Session prompt")
+                .accessibilityHint(composerModeLabel)
 
             HStack(spacing: 4) {
                 footerControls
@@ -103,6 +104,8 @@ struct ComposerView: View {
             controller.selectStreamingBehavior(behavior)
         }
         .buttonStyle(GhostActionStyle(color: behaviorColor(behavior, controller: controller)))
+        .accessibilityLabel("Composer mode, \(title)")
+        .accessibilityValue(controller.streamingBehavior == behavior ? "Selected" : "Not selected")
     }
 
     private func behaviorColor(
@@ -132,6 +135,18 @@ struct ComposerView: View {
         switch presentation {
         case .newSession: return "Start session"
         case .active: return "Send message"
+        }
+    }
+
+    private var composerModeLabel: String {
+        switch presentation {
+        case .newSession:
+            return "New session prompt"
+        case .active(let controller) where controller.runtimeState == .streaming:
+            let mode = controller.streamingBehavior == .followUp ? "Follow up" : "Steer"
+            return "Active session prompt, \(mode) mode"
+        case .active:
+            return "Active session prompt"
         }
     }
 
