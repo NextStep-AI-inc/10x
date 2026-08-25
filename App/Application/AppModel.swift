@@ -15,6 +15,7 @@ final class AppModel {
     private(set) var activeSession: SessionController?
     private(set) var processManager: SessionProcessManager?
     private(set) var settingsModel: SettingsViewModel?
+    private(set) var providerModel: ProviderManagementViewModel?
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
@@ -48,6 +49,11 @@ final class AppModel {
 
     func openNewSession() {
         activeSession = nil
+        route = .newSession
+    }
+
+    func completeProviderSetup() {
+        guard providerModel?.hasAuthenticatedProvider == true else { return }
         route = .newSession
     }
 
@@ -100,6 +106,7 @@ final class AppModel {
             self.installation = nil
             processManager = nil
             settingsModel = nil
+            providerModel = nil
             route = .setup
             return
         }
@@ -109,9 +116,12 @@ final class AppModel {
         self.processManager = processManager
         settingsModel = SettingsViewModel(service: OmpConfigService(
             runner: OmpConfigProcessRunner(executableURL: installation.executableURL)))
+        let providerModel = dependencies.makeProviderModel(installation.executableURL)
+        self.providerModel = providerModel
         watchUnexpectedExits(from: processManager)
         setupError = nil
-        route = .newSession
+        await providerModel.load()
+        route = providerModel.hasAuthenticatedProvider ? .newSession : .providerSetup
     }
 
     private func watchUnexpectedExits(from processManager: SessionProcessManager) {

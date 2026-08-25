@@ -1,3 +1,5 @@
+import Foundation
+import OmpKit
 import Testing
 @testable import TenXApp
 
@@ -29,4 +31,62 @@ import Testing
 
     #expect(model.isSearchPresented)
     #expect(model.route == .session("/tmp/session.jsonl"))
+}
+
+@MainActor
+@Test func bootstrapRequiresProviderWhenOMPHasNoAuthenticatedProvider() async {
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ])
+    let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
+
+    await model.bootstrap()
+
+    #expect(model.route == .providerSetup)
+}
+
+@MainActor
+@Test func bootstrapOpensNewSessionWhenAProviderIsAuthenticated() async {
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
+
+    await model.bootstrap()
+
+    #expect(model.route == .newSession)
+}
+
+@MainActor
+@Test func providerDiscoveryFailureKeepsRequiredSetupVisible() async {
+    let providerModel = providerTestModel(
+        providers: [],
+        providerError: FakeProviderError.discoveryFailed)
+    let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
+
+    await model.bootstrap()
+
+    #expect(model.route == .providerSetup)
+}
+
+private struct InstalledOmpLocator: OmpLocating {
+    func locate(preferredURL: URL?) async -> OmpInstallation? {
+        OmpInstallation(
+            executableURL: URL(filePath: "/tmp/omp"),
+            version: "test")
+    }
+}
+
+@MainActor
+private func testDependencies(
+    providerModel: ProviderManagementViewModel
+) -> AppDependencies {
+    AppDependencies(
+        ompLocator: InstalledOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: "/tmp/10x-provider-tests-empty",
+            directoryHint: .isDirectory)),
+        makeProviderModel: { _ in providerModel })
 }

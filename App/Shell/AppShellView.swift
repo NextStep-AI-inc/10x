@@ -9,6 +9,12 @@ struct AppShellView: View {
         Group {
             if model.route == .setup {
                 SetupView(model: model)
+            } else if model.route == .providerSetup {
+                if let providerModel = model.providerModel {
+                    ProviderSetupView(
+                        model: providerModel,
+                        onContinue: model.completeProviderSetup)
+                }
             } else {
                 ZStack(alignment: .leading) {
                     routeCanvas
@@ -39,6 +45,8 @@ struct AppShellView: View {
         switch model.route {
         case .setup:
             EmptyView()
+        case .providerSetup:
+            EmptyView()
         case .newSession:
             NewSessionView(model: model)
         case .session:
@@ -57,6 +65,8 @@ struct AppShellView: View {
                     .font(TenXTypography.body(size: 13))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
+        case .providers:
+            EmptyView()
         }
     }
 }

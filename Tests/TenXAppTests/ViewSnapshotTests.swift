@@ -44,6 +44,38 @@ import Testing
 }
 
 @MainActor
+@Test func providerSetupRequiredSnapshot() async throws {
+    let model = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
+    ])
+    await model.load()
+
+    try assertSnapshot(
+        ProviderSetupView(model: model, onContinue: {}),
+        name: "provider-setup-required",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func providerSetupConnectedSnapshot() async throws {
+    let model = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+        ProviderLoginProvider(
+            id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
+    ])
+    await model.load()
+
+    try assertSnapshot(
+        ProviderSetupView(model: model, onContinue: {}),
+        name: "provider-setup-connected",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
 @Test func runtimeRecoverySnapshot() throws {
     try assertSnapshot(
         RuntimeRecoveryView(
