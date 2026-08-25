@@ -127,10 +127,27 @@ for line in sys.stdin:
         sys.stderr.write("crash-after-switch\n")
         sys.stderr.flush()
         raise SystemExit(8)
+    if mode == "crash-after-switch-trigger" and ctype == "switch_session":
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+        while not os.path.exists(sys.argv[2]):
+            time.sleep(0.01)
+        sys.stderr.write("crash-after-switch-trigger\n")
+        sys.stderr.flush()
+        raise SystemExit(10)
+    if mode == "block-new-session" and ctype == "new_session":
+        open(sys.argv[3], "w", encoding="utf-8").close()
+        while not os.path.exists(sys.argv[2]):
+            time.sleep(0.01)
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+        continue
     if ctype == "idless_error":
         emit({"type": "response", "command": ctype, "success": False,
               "error": "idless failure"})
     elif ctype == "get_state":
+        if mode == "block-get-state":
+            open(sys.argv[3], "w", encoding="utf-8").close()
+            while not os.path.exists(sys.argv[2]):
+                time.sleep(0.01)
         if mode == "noisy":
             emit({"type": "notice", "level": "info", "message": "before response", "source": "fake"})
         if mode == "chunked":

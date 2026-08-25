@@ -1,10 +1,13 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import OmpKit
 
 actor WarmSleepGate {
     private var sleepers: [Duration: [UUID: CheckedContinuation<Void, any Error>]] = [:]
     private var sleepingWaiters: [Duration: [CheckedContinuation<Void, Never>]] = [:]
+    private var cancellationCounts: [Duration: Int] = [:]
+    private var cancellationWaiters: [Duration: [UUID: CheckedContinuation<Void, Never>]] = [:]
 
     func sleep(for duration: Duration) async throws {
         let id = UUID()
@@ -36,23 +39,59 @@ actor WarmSleepGate {
         for continuation in continuations { continuation.resume() }
     }
 
+    func waitUntilCancelled(for duration: Duration) async {
+        guard cancellationCounts[duration, default: 0] == 0 else { return }
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                cancellationWaiters[duration, default: [:]][id] = continuation
+            }
+        } onCancel: {
+            Task { await self.cancelCancellationWait(id: id, for: duration) }
+        }
+    }
+
     private func cancelSleep(id: UUID, for duration: Duration) {
         let continuation = sleepers[duration]?.removeValue(forKey: id)
         if sleepers[duration]?.isEmpty == true { sleepers.removeValue(forKey: duration) }
+        cancellationCounts[duration, default: 0] += 1
+        let waiters = cancellationWaiters.removeValue(forKey: duration).map { Array($0.values) } ?? []
+        for waiter in waiters { waiter.resume() }
         continuation?.resume(throwing: CancellationError())
+    }
+
+    private func cancelCancellationWait(id: UUID, for duration: Duration) {
+        cancellationWaiters[duration]?.removeValue(forKey: id)
+        if cancellationWaiters[duration]?.isEmpty == true {
+            cancellationWaiters.removeValue(forKey: duration)
+        }
     }
 }
 
-final class WarmManagerFixture: @unchecked Sendable {
+final class ConfigurationRecorder: Sendable {
+    private let values = Mutex<[RpcClientConfiguration]>([])
+
+    func append(_ configuration: RpcClientConfiguration) {
+        values.withLock { $0.append(configuration) }
+    }
+
+    func count() -> Int {
+        values.withLock { $0.count }
+    }
+}
+
+final class WarmManagerFixture {
     let root: URL
     let project: URL
     let commandLog: URL
     let manager: SessionProcessManager
-    private let configurations = ConfigurationCapture()
+    private let configurations = ConfigurationRecorder()
 
     init(
         mode: String = "basic",
+        modeArguments: [String] = [],
         warmGracePeriod: Duration = .seconds(300),
+        beforeWarmActivation: (@Sendable () async -> Void)? = nil,
         sleep: @escaping SessionProcessManager.Sleep = { duration in
             try await ContinuousClock().sleep(for: duration)
         }
@@ -75,14 +114,16 @@ final class WarmManagerFixture: @unchecked Sendable {
                 var fake = configuration
                 fake.executable = "/usr/bin/env"
                 fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
+                    + modeArguments
                     + (mode == "command-log" ? [commandLog.path] : [])
                 fake.rawArgv = true
                 fake.cwd = nil
                 return RpcClient(configuration: fake)
-            })
+            },
+            beforeWarmActivation: beforeWarmActivation)
     }
 
-    var configurationCount: Int { configurations.snapshot().count }
+    var configurationCount: Int { configurations.count() }
 
     func commands() throws -> [String] {
         try String(contentsOf: commandLog, encoding: .utf8)
@@ -103,6 +144,124 @@ final class WarmManagerFixture: @unchecked Sendable {
     func cleanup() {
         try? FileManager.default.removeItem(at: root)
     }
+}
+
+@Test func closeAllCancelsWarmInFlightNewSessionCheckout() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WarmCheckoutTrigger-\(UUID().uuidString)", isDirectory: true)
+    let entered = root.appendingPathComponent("entered")
+    let release = root.appendingPathComponent("release")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let fixture = try WarmManagerFixture(
+        mode: "block-new-session",
+        modeArguments: [release.path, entered.path])
+    defer {
+        fixture.cleanup()
+        try? FileManager.default.removeItem(at: root)
+    }
+    let manager = fixture.manager
+    let projectPath = fixture.project.path
+    _ = try await manager.warm(projectDirectory: projectPath)
+    let checkout = Task { try? await manager.openNew(projectDirectory: projectPath) }
+    await fixture.waitUntil { FileManager.default.fileExists(atPath: entered.path) }
+
+    await manager.closeAll()
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    let handle = await checkout.value
+
+    #expect(handle == nil)
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") == nil)
+    await manager.closeAll()
+}
+
+@Test func closeAllCancelsColdInFlightNewSessionCheckout() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ColdCheckoutTrigger-\(UUID().uuidString)", isDirectory: true)
+    let entered = root.appendingPathComponent("entered")
+    let release = root.appendingPathComponent("release")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let fixture = try WarmManagerFixture(
+        mode: "block-get-state",
+        modeArguments: [release.path, entered.path])
+    defer {
+        fixture.cleanup()
+        try? FileManager.default.removeItem(at: root)
+    }
+    let manager = fixture.manager
+    let projectPath = fixture.project.path
+    let checkout = Task { try? await manager.openNew(projectDirectory: projectPath) }
+    await fixture.waitUntil { FileManager.default.fileExists(atPath: entered.path) }
+
+    await manager.closeAll()
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    let handle = await checkout.value
+
+    #expect(handle == nil)
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") == nil)
+    await manager.closeAll()
+}
+
+@Test func laterPrimaryRetentionCancelsExistingExpiry() async throws {
+    let gate = WarmSleepGate()
+    let fixture = try WarmManagerFixture(
+        mode: "basic",
+        sleep: { duration in try await gate.sleep(for: duration) })
+    defer { fixture.cleanup() }
+    let first = try fixture.directory("First")
+    let second = try fixture.directory("Second")
+    let firstHandle = try await fixture.manager.warm(projectDirectory: first.path)
+    _ = try await fixture.manager.warm(projectDirectory: second.path)
+
+    await fixture.manager.beginWarmRetention(primaryProjectDirectory: second.path)
+    await gate.waitUntilSleeping(for: .seconds(300))
+    await fixture.manager.beginWarmRetention(primaryProjectDirectory: first.path)
+    let canceledFormerExpiry = await withTimeout(.seconds(1)) {
+        await gate.waitUntilCancelled(for: .seconds(300))
+        return true
+    } ?? false
+    #expect(canceledFormerExpiry)
+    await gate.release(.seconds(300))
+
+    #expect(await fixture.manager.isWarm(projectDirectory: first.path))
+    #expect(await firstHandle.client.exitCode == nil)
+    await fixture.manager.closeAll()
+}
+
+@Test func warmTransitionCrashReportsActiveExitWithoutRegisteringDeadHandle() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("WarmTransitionCrash-\(UUID().uuidString)", isDirectory: true)
+    let release = root.appendingPathComponent("release")
+    let gate = WarmSleepGate()
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let fixture = try WarmManagerFixture(
+        mode: "crash-after-switch-trigger",
+        modeArguments: [release.path],
+        beforeWarmActivation: { try? await gate.sleep(for: .zero) })
+    defer {
+        fixture.cleanup()
+        try? FileManager.default.removeItem(at: root)
+    }
+    let manager = fixture.manager
+    let projectPath = fixture.project.path
+    let sessionPath = "/tmp/transition-crash.jsonl"
+    let exitStream = manager.unexpectedExits
+    _ = try await manager.warm(projectDirectory: projectPath)
+    let checkout = Task { try? await manager.open(sessionPath: sessionPath, cwd: projectPath) }
+    await gate.waitUntilSleeping(for: .zero)
+
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    let exit = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
+        for await event in exitStream { return event }
+        return nil
+    } ?? nil
+    await gate.release(.zero)
+    let handle = await checkout.value
+
+    #expect(exit?.sessionPath == sessionPath)
+    #expect(exit?.code == 10)
+    #expect(handle == nil)
+    #expect(await manager.handle(for: sessionPath) == nil)
+    await manager.closeAll()
 }
 
 @Test func openNewChecksOutWarmClientAndCreatesARealSessionPath() async throws {
@@ -145,10 +304,11 @@ final class WarmManagerFixture: @unchecked Sendable {
     let fixture = try WarmManagerFixture(mode: "basic")
     defer { fixture.cleanup() }
     let manager = fixture.manager
-    _ = try await manager.warm(projectDirectory: fixture.project.path)
+    let projectPath = fixture.project.path
+    _ = try await manager.warm(projectDirectory: projectPath)
 
-    async let first = manager.open(sessionPath: "/tmp/one.jsonl", cwd: fixture.project.path)
-    async let second = manager.open(sessionPath: "/tmp/two.jsonl", cwd: fixture.project.path)
+    async let first = manager.open(sessionPath: "/tmp/one.jsonl", cwd: projectPath)
+    async let second = manager.open(sessionPath: "/tmp/two.jsonl", cwd: projectPath)
     let handles = try await [first, second]
 
     #expect(handles[0].client !== handles[1].client)
@@ -160,12 +320,13 @@ final class WarmManagerFixture: @unchecked Sendable {
     let fixture = try WarmManagerFixture(mode: "basic")
     defer { fixture.cleanup() }
     let manager = fixture.manager
-    _ = try await manager.warm(projectDirectory: fixture.project.path)
+    let projectPath = fixture.project.path
+    _ = try await manager.warm(projectDirectory: projectPath)
 
     async let first = manager.open(
-        sessionPath: "/tmp/shared.jsonl", cwd: fixture.project.path)
+        sessionPath: "/tmp/shared.jsonl", cwd: projectPath)
     async let second = manager.open(
-        sessionPath: "/tmp/shared.jsonl", cwd: fixture.project.path)
+        sessionPath: "/tmp/shared.jsonl", cwd: projectPath)
     let handles = try await [first, second]
 
     #expect(handles[0].client === handles[1].client)
@@ -250,19 +411,20 @@ final class WarmManagerFixture: @unchecked Sendable {
 @Test func checkedOutWarmCrashUsesTheActiveExitStream() async throws {
     let fixture = try WarmManagerFixture(mode: "crash-after-switch")
     defer { fixture.cleanup() }
-    _ = try await fixture.manager.warm(projectDirectory: fixture.project.path)
-    _ = try await fixture.manager.open(
+    let manager = fixture.manager
+    _ = try await manager.warm(projectDirectory: fixture.project.path)
+    _ = try await manager.open(
         sessionPath: "/tmp/crashes.jsonl",
         cwd: fixture.project.path)
 
     let activeExit = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
-        for await exit in fixture.manager.unexpectedExits { return exit }
+        for await exit in manager.unexpectedExits { return exit }
         return nil
     } ?? nil
 
     #expect(activeExit?.sessionPath == "/tmp/crashes.jsonl")
     #expect(activeExit?.code == 8)
-    await fixture.manager.closeAll()
+    await manager.closeAll()
 }
 
 @Test func warmStartsOneNoSessionClientPerCanonicalProject() async throws {
