@@ -299,7 +299,6 @@ struct ProviderUsageProvider: Identifiable, Equatable, Sendable {
         "openai-codex": "OAI",
         "cursor": "CUR",
         "google-gemini-cli": "GCA",
-        "github-copilot": "GHC",
     ]
 
     private static func fallbackAbbreviation(name: String, id: String) -> String {
@@ -311,7 +310,11 @@ struct ProviderUsageProvider: Identifiable, Equatable, Sendable {
         case 3...:
             characters = words.prefix(3).compactMap(\.first)
         case 2:
-            characters = Array(words[0].prefix(2)) + Array(words[1].prefix(1))
+            let uppercaseCharacters = words[0].filter(\.isUppercase)
+            let firstWordCharacters = uppercaseCharacters.count >= 2
+                ? Array(uppercaseCharacters.prefix(2))
+                : Array(words[0].prefix(2))
+            characters = firstWordCharacters + Array(words[1].prefix(1))
         case 1:
             characters = Array(words[0].prefix(3))
         default:

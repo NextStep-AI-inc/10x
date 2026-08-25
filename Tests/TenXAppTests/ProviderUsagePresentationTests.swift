@@ -73,6 +73,7 @@ import Testing
     #expect(ProviderUsageProvider(id: "cursor", name: "Cursor", accounts: []).abbreviation == "CUR")
     #expect(ProviderUsageProvider(id: "google-gemini-cli", name: "Google Cloud Code Assist", accounts: []).abbreviation == "GCA")
     #expect(ProviderUsageProvider(id: "github-copilot", name: "GitHub Copilot", accounts: []).abbreviation == "GHC")
+    #expect(ProviderUsageProvider(id: "github-copilot", name: "GitLab Copilot", accounts: []).abbreviation == "GLC")
     #expect(ProviderUsageProvider(id: "deepseek", name: "DeepSeek", accounts: []).abbreviation == "DEE")
     #expect(ProviderUsageProvider(id: "unicode", name: "ßXX", accounts: []).abbreviation == "SSX")
     #expect(ProviderUsageProvider(id: "unicode", name: "ßXX", accounts: []).abbreviation.count == 3)
