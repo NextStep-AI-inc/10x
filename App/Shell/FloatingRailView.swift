@@ -42,8 +42,19 @@ struct FloatingRailView: View {
                 .accessibilityLabel("Open Settings")
                 .keyboardShortcut(",", modifiers: .command)
 
-            sessionMap
-                .frame(maxHeight: .infinity)
+            GeometryReader { proxy in
+                VStack(spacing: 0) {
+                    Spacer(minLength: RailMapLayout.minimumVerticalSpacing)
+                    if !items.isEmpty {
+                        sessionMap
+                            .frame(height: RailMapLayout.height(
+                                itemCount: items.count,
+                                availableHeight: proxy.size.height))
+                    }
+                    Spacer(minLength: RailMapLayout.minimumVerticalSpacing)
+                }
+            }
+            .frame(maxHeight: .infinity)
 
             Button(action: model.openArchivedSessions) {
                 HStack(spacing: 12) {
