@@ -215,14 +215,14 @@ import Testing
         id: "notice",
         method: "notify",
         payload: .object(["message": .string("Waiting for approval.")])) )
-    await waitForModelState { model.loginMessage == "Connection needs attention." }
+    await waitForModelState { model.loginMessage == "Connecting to Cursor." }
     await service.emit(ExtensionUIRequest(
         id: "cancel",
         method: "cancel",
         payload: .object(["targetId": .string("input")])) )
     await waitForModelState { model.sheetRequest == nil }
 
-    #expect(model.loginMessage == "Connection needs attention.")
+    #expect(model.loginMessage == "Connecting to Cursor.")
     #expect(model.loginMessageProviderID == "cursor")
 
     await model.cancelLogin()
