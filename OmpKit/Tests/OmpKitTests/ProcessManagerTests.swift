@@ -55,6 +55,18 @@ private func computerContractManager(mode: String = "basic") -> SessionProcessMa
     })
 }
 
+private func grandchildManager(mode: String, heartbeat: URL) -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        var updated = configuration
+        updated.executable = "/usr/bin/env"
+        updated.extraArguments = [
+            "python3", fixtureURL("fake_server.py").path, mode, heartbeat.path,
+        ]
+        updated.rawArgv = true
+        return RpcClient(configuration: updated)
+    })
+}
+
 @Test func openIsIdempotentPerPath() async throws {
     let manager = fakeManager()
     let first = try await manager.open(sessionPath: "/tmp/s.jsonl", cwd: "/tmp")
@@ -261,4 +273,84 @@ func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async thr
     #expect(await manager.handle(for: handle.sessionPath) != nil)
     try await Task.sleep(for: .milliseconds(150))
     #expect(await manager.handle(for: handle.sessionPath) == nil)
+}
+
+@Test func naturalLeaderExitWaitsForGrandchildDeathBeforeReportingManagerExit() async throws {
+    let heartbeat = FileManager.default.temporaryDirectory
+        .appending(path: "ompkit-manager-natural-\(UUID().uuidString)")
+    defer { terminateFixtureChild(heartbeat: heartbeat) }
+    let manager = grandchildManager(mode: "leader-exit-grandchild", heartbeat: heartbeat)
+    let exits = manager.unexpectedExits
+    let handle = try await manager.open(
+        sessionPath: "/tmp/leader-exit-grandchild.jsonl",
+        cwd: "/tmp")
+    #expect(await waitForFixtureChild(heartbeat: heartbeat) != nil)
+
+    let event = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
+        for await exit in exits { return exit }
+        return nil
+    } ?? nil
+    let countAtEvent = (try? Data(contentsOf: heartbeat))?.count ?? 0
+    try await Task.sleep(for: .milliseconds(200))
+    let countAfterEvent = (try? Data(contentsOf: heartbeat))?.count ?? 0
+
+    #expect(event?.sessionPath == handle.sessionPath)
+    #expect(event?.code == 7)
+    #expect(countAtEvent == countAfterEvent)
+    #expect(await manager.handle(for: handle.sessionPath) == nil)
+}
+
+@Test func forceCloseFalseKeepsTheHandleUntilDetachedDescendantsAreConfirmedDead() async throws {
+    let heartbeat = FileManager.default.temporaryDirectory
+        .appending(path: "ompkit-manager-force-\(UUID().uuidString)")
+    defer { terminateFixtureChild(heartbeat: heartbeat) }
+    let manager = grandchildManager(mode: "grandchild", heartbeat: heartbeat)
+    let exits = manager.unexpectedExits
+    let handle = try await manager.open(
+        sessionPath: "/tmp/force-close-grandchild.jsonl",
+        cwd: "/tmp")
+    #expect(await waitForFixtureChild(heartbeat: heartbeat) != nil)
+
+    let confirmed = await manager.forceClose(
+        sessionPath: handle.sessionPath,
+        deadline: ContinuousClock.now)
+
+    #expect(confirmed == false)
+    #expect(await manager.handle(for: handle.sessionPath) != nil)
+    let event = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
+        for await exit in exits { return exit }
+        return nil
+    } ?? nil
+    let countAtEvent = (try? Data(contentsOf: heartbeat))?.count ?? 0
+    try await Task.sleep(for: .milliseconds(200))
+    let countAfterEvent = (try? Data(contentsOf: heartbeat))?.count ?? 0
+
+    #expect(event?.sessionPath == handle.sessionPath)
+    #expect(countAtEvent == countAfterEvent)
+    #expect(await manager.handle(for: handle.sessionPath) == nil)
+}
+
+private func waitForFixtureChild(heartbeat: URL) async -> pid_t? {
+    let pidFile = URL(fileURLWithPath: heartbeat.path + ".pid")
+    return await withTimeout(.seconds(2)) {
+        while !Task.isCancelled {
+            if let text = try? String(contentsOf: pidFile, encoding: .utf8),
+               let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)),
+               ((try? Data(contentsOf: heartbeat))?.isEmpty == false) {
+                return pid
+            }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return nil
+    } ?? nil
+}
+
+private func terminateFixtureChild(heartbeat: URL) {
+    let pidFile = URL(fileURLWithPath: heartbeat.path + ".pid")
+    if let text = try? String(contentsOf: pidFile, encoding: .utf8),
+       let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
+        kill(pid, SIGKILL)
+    }
+    try? FileManager.default.removeItem(at: heartbeat)
+    try? FileManager.default.removeItem(at: pidFile)
 }

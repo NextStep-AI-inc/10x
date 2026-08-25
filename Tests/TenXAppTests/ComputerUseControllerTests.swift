@@ -209,17 +209,17 @@ import Testing
 @MainActor @Test func stopDuringDelayedPrepareReleasesTheLateDesktopWithoutEnablingOMP() async {
     let log = LifecycleLog()
     let rpc = ControllerRPC(log: log)
-    let lifecycle = delayedPrepareLifecycle(log)
+    let prepareGate = PrepareGate()
+    let lifecycle = delayedPrepareLifecycle(log, gate: prepareGate)
     let controller = ComputerUseController(
         sessionID: "session-delayed-prepare", lifecycle: lifecycle, preference: .automatic)
     controller.attach(rpc: rpc, sessionPath: "/tmp/session-delayed-prepare.jsonl")
 
     let enabling = Task { await controller.enable() }
-    for _ in 0..<20 where !log.values.contains("desktop.prepare.started") {
-        try? await Task.sleep(for: .milliseconds(5))
-    }
+    await prepareGate.waitUntilStarted()
     #expect(log.values.contains("desktop.prepare.started"))
     await controller.stopComputerUse()
+    await prepareGate.open()
     await enabling.value
 
     #expect(log.values.contains("desktop.release"))
@@ -261,6 +261,36 @@ import Testing
     #expect(log.values.last == "registry.release")
 }
 
+@MainActor @Test func stopWaitsForTheUnderlyingMutationAfterRequestCancellationReturns() async throws {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(
+        log: log,
+        cancellationLeakedEnableDelay: .milliseconds(120))
+    let controller = ComputerUseController(
+        sessionID: "session-delayed-write",
+        lifecycle: .recording(log),
+        preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-delayed-write.jsonl")
+
+    let enabling = Task { await controller.enable() }
+    for _ in 0..<20 where !log.values.contains("rpc.enable") {
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(log.values.contains("rpc.enable"))
+
+    await controller.stopComputerUse()
+    await enabling.value
+    try? await Task.sleep(for: .milliseconds(160))
+
+    let remote = await rpc.remoteSnapshot()
+    #expect(remote.enabled == false)
+    #expect(remote.toolNames == [])
+    let enableWrite = try #require(log.values.firstIndex(of: "rpc.enable.write"))
+    let disable = try #require(log.values.firstIndex(of: "rpc.disable"))
+    #expect(enableWrite < disable)
+    #expect(log.values.last == "registry.release")
+}
+
 @MainActor @Test func unconfirmedForcedShutdownRetainsComputerResourcesForTheExitOwner() async {
     let log = LifecycleLog()
     let rpc = ControllerRPC(log: log, disableError: TestFailure.failed)
@@ -277,6 +307,45 @@ import Testing
     #expect(controller.isAwaitingConfirmedProcessExit)
     #expect(!log.values.contains("lease.release"))
     #expect(!log.values.contains("registry.release"))
+}
+
+@MainActor @Test func processExitRacingSlowCleanupSharesOneRetainedCleanupTask() async {
+    let log = LifecycleLog()
+    let gate = CleanupGate()
+    let rpc = ControllerRPC(log: log)
+    let controller = ComputerUseController(
+        sessionID: "session-slow-cleanup",
+        lifecycle: .gatedCleanup(log, gate: gate),
+        preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-slow-cleanup.jsonl")
+    await controller.enable()
+    log.reset()
+
+    let started = ContinuousClock.now
+    let stopping = Task { await controller.stopComputerUse() }
+    for _ in 0..<40 where await gate.cleanupCount() == 0 {
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    #expect(await gate.cleanupCount() == 1)
+    let processExit = Task { await controller.handleProcessTerminated() }
+
+    await stopping.value
+    #expect(started.duration(to: .now) <= .seconds(2.2))
+    #expect(controller.phase == .unavailable(
+        message: "Computer use stopped because its session could not be secured",
+        isBestEffortAvailable: false))
+    #expect(await gate.cleanupCount() == 1)
+    #expect(!log.values.contains("lease.release"))
+    #expect(!log.values.contains("registry.release"))
+
+    await gate.open()
+    await processExit.value
+
+    #expect(await gate.cleanupCount() == 1)
+    #expect(log.values.filter { $0 == "desktop.release" }.count == 1)
+    #expect(log.values.filter { $0 == "lease.release" }.count == 1)
+    #expect(log.values.filter { $0 == "registry.release" }.count == 1)
+    #expect(log.values.last == "registry.release")
 }
 
 @MainActor @Test func structuredAvailabilityRefreshReissuesRequireHandoffAuthorization() async {
@@ -350,16 +419,18 @@ private actor ControllerRPC: ComputerUseRPC {
     private let disableError: (any Error)?
     private let enableDelay: Duration?
     private let nonCancellingEnableDelay: Duration?
+    private let cancellationLeakedEnableDelay: Duration?
     private let reportedState: ComputerUseRPCState
     private var remoteEnabled = false
     private var remoteToolNames: [String] = []
 
-    init(log: LifecycleLog, enableError: (any Error)? = nil, disableError: (any Error)? = nil, enableDelay: Duration? = nil, nonCancellingEnableDelay: Duration? = nil, state: ComputerUseRPCState = ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff)) {
+    init(log: LifecycleLog, enableError: (any Error)? = nil, disableError: (any Error)? = nil, enableDelay: Duration? = nil, nonCancellingEnableDelay: Duration? = nil, cancellationLeakedEnableDelay: Duration? = nil, state: ComputerUseRPCState = ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff)) {
         self.log = log
         self.enableError = enableError
         self.disableError = disableError
         self.enableDelay = enableDelay
         self.nonCancellingEnableDelay = nonCancellingEnableDelay
+        self.cancellationLeakedEnableDelay = cancellationLeakedEnableDelay
         reportedState = state
     }
 
@@ -383,6 +454,18 @@ private actor ControllerRPC: ComputerUseRPC {
         await log.append(enabled ? "rpc.enable" : "rpc.disable")
         if enabled, let enableDelay { try await Task.sleep(for: enableDelay) }
         if enabled, let nonCancellingEnableDelay { try? await Task.sleep(for: nonCancellingEnableDelay) }
+        if enabled, let cancellationLeakedEnableDelay {
+            do {
+                try await Task.sleep(for: cancellationLeakedEnableDelay)
+            } catch {
+                Task {
+                    try? await Task.sleep(for: cancellationLeakedEnableDelay)
+                    await self.commitDelayedEnableWrite()
+                }
+                throw error
+            }
+            await log.append("rpc.enable.write")
+        }
         if enabled, let enableError { throw enableError }
         if !enabled, let disableError { throw disableError }
         remoteEnabled = enabled
@@ -412,6 +495,11 @@ private actor ControllerRPC: ComputerUseRPC {
     func remoteSnapshot() -> (enabled: Bool, toolNames: [String]) {
         (remoteEnabled, remoteToolNames)
     }
+
+    private func commitDelayedEnableWrite() async {
+        remoteEnabled = true
+        await log.append("rpc.enable.write")
+    }
 }
 
 private extension ComputerUseControllerLifecycle {
@@ -437,10 +525,90 @@ private extension ComputerUseControllerLifecycle {
             },
             releaseDesktop: { _ in log.append("desktop.release") })
     }
+
+    static func gatedCleanup(_ log: LifecycleLog, gate: CleanupGate) -> Self {
+        Self(
+            activate: { _ in log.append("registry.activate") },
+            release: { _ in log.append("registry.release") },
+            acquireLease: { _ in log.append("lease.acquire") },
+            releaseLease: { log.append("lease.release") },
+            prepare: { _ in
+                log.append("desktop.prepare")
+                return PreparedAgentDesktop(
+                    provider: .aeroSpace,
+                    workspaceID: "workspace",
+                    capabilities: .isolated)
+            },
+            probe: { _, operation in
+                let result = try await operation(nil, nil)
+                log.append("desktop.probe")
+                return result
+            },
+            cleanup: { _ in
+                await gate.wait()
+                log.append("desktop.cleanup")
+                return CleanupReport(
+                    preservedApplicationNames: [],
+                    restoredWindowCount: 0)
+            },
+            releaseDesktop: { _ in log.append("desktop.release") })
+    }
+}
+
+private actor CleanupGate {
+    private var isOpen = false
+    private var count = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        count += 1
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func cleanupCount() -> Int { count }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending { waiter.resume() }
+    }
+}
+
+private actor PrepareGate {
+    private var isOpen = false
+    private var hasStarted = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var openWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        hasStarted = true
+        let pendingStartWaiters = startWaiters
+        startWaiters.removeAll()
+        for waiter in pendingStartWaiters { waiter.resume() }
+        guard !isOpen else { return }
+        await withCheckedContinuation { openWaiters.append($0) }
+    }
+
+    func waitUntilStarted() async {
+        guard !hasStarted else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let pendingOpenWaiters = openWaiters
+        openWaiters.removeAll()
+        for waiter in pendingOpenWaiters { waiter.resume() }
+    }
 }
 
 @MainActor
-private func delayedPrepareLifecycle(_ log: LifecycleLog) -> ComputerUseControllerLifecycle {
+private func delayedPrepareLifecycle(
+    _ log: LifecycleLog,
+    gate: PrepareGate
+) -> ComputerUseControllerLifecycle {
     ComputerUseControllerLifecycle(
         activate: { _ in log.append("registry.activate") },
         release: { _ in log.append("registry.release") },
@@ -448,7 +616,7 @@ private func delayedPrepareLifecycle(_ log: LifecycleLog) -> ComputerUseControll
         releaseLease: { log.append("lease.release") },
         prepare: { _ in
             log.append("desktop.prepare.started")
-            try await Task.sleep(for: .milliseconds(120))
+            await gate.wait()
             log.append("desktop.prepare")
             return PreparedAgentDesktop(provider: .aeroSpace, workspaceID: "workspace", capabilities: .isolated)
         },

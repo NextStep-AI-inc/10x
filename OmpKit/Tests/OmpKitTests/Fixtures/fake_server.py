@@ -54,14 +54,35 @@ if mode == "burst-exit":
 if mode == "grandchild":
     heartbeat = sys.argv[2]
     child = """
-import sys, time
+import os, signal, sys, time
 path = sys.argv[1]
+with open(path + ".pid", "w") as handle:
+    handle.write(str(os.getpid()))
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
 while True:
     with open(path, "ab") as handle:
         handle.write(b"x")
     time.sleep(0.02)
 """
-    subprocess.Popen([sys.executable, "-u", "-c", child, heartbeat])
+    subprocess.Popen(
+        [sys.executable, "-u", "-c", child, heartbeat],
+        start_new_session=True)
+if mode == "leader-exit-grandchild":
+    heartbeat = sys.argv[2]
+    child = """
+import os, signal, sys, time
+path = sys.argv[1]
+with open(path + ".pid", "w") as handle:
+    handle.write(str(os.getpid()))
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+while True:
+    with open(path, "ab") as handle:
+        handle.write(b"x")
+    time.sleep(0.02)
+"""
+    subprocess.Popen(
+        [sys.executable, "-u", "-c", child, heartbeat],
+        start_new_session=True)
 
 STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
          "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
@@ -88,6 +109,11 @@ for line in sys.stdin:
         else:
             emit({"id": cid, "type": "response", "command": "negotiate_protocol",
                   "success": True, "data": {"protocolVersion": 2}})
+        if mode == "leader-exit-grandchild":
+            time.sleep(0.15)
+            sys.stderr.write("leader-exit-grandchild\n")
+            sys.stderr.flush()
+            raise SystemExit(7)
         if mode == "crash-after-negotiation":
             time.sleep(0.2)
             sys.stderr.write("crash-after-negotiation\n")
@@ -110,6 +136,13 @@ for line in sys.stdin:
         emit({"type": "response", "command": ctype, "success": False,
               "error": f"Unknown command: {ctype}"})
     elif ctype == "set_computer_use":
+        if mode == "delayed-exit-on-disable" and cmd.get("enabled") is not True:
+            emit({"id": cid, "type": "response", "command": ctype,
+                  "success": False, "error": "disable failed before delayed exit"})
+            time.sleep(0.8)
+            sys.stderr.write("delayed-exit-on-disable\n")
+            sys.stderr.flush()
+            raise SystemExit(9)
         STATE["computerUse"] = {
             "enabled": cmd.get("enabled") is True,
             "foregroundPolicy": cmd.get("foregroundPolicy"),

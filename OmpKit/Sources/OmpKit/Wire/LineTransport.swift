@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum TransportError: Error, Sendable, Equatable {
@@ -26,6 +27,8 @@ public actor LineTransport {
     private var stdinClosed = false
     private var processGroupID: pid_t?
     private var stdoutDrainer: StdoutDrainer?
+    private var descendantTrackerTask: Task<Void, Never>?
+    private var knownDescendants: Set<pid_t> = []
 
     /// Read from the process itself so a crash reports its real code, not just
     /// exits observed on the shutdown path.
@@ -133,6 +136,12 @@ public actor LineTransport {
         if setpgid(pid, pid) == 0 || getpgid(pid) == pid {
             processGroupID = pid
         }
+        descendantTrackerTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.recordDescendants()
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+        }
     }
 
     public func write(_ line: Data) async throws {
@@ -161,11 +170,9 @@ public actor LineTransport {
     ) async -> Bool {
         guard started else { return true }
         let deadline = deadline ?? ContinuousClock.now.advanced(by: .seconds(3))
-        // Capture descendants while the leader still owns them. Foundation's
-        // Process does not guarantee a fresh process group on every launch, so
-        // this is the fallback when setpgid raced with exec.
-        let descendants = processGroupID == nil
-            ? Self.descendantPIDs(of: process.processIdentifier) : []
+        let wasLeaderRunning = process.isRunning
+        recordDescendants()
+        let descendants = Array(knownDescendants)
         closeStdin()
         // The leader can exit on EOF while a descendant still holds stdout.
         // Continue through group teardown so `finishStreams()` cannot block on
@@ -174,19 +181,21 @@ public actor LineTransport {
 
         if let processGroupID {
             killpg(processGroupID, SIGTERM)
-        } else {
-            for pid in descendants.reversed() { kill(pid, SIGTERM) }
+        }
+        for pid in descendants.reversed() { kill(pid, SIGTERM) }
+        if processGroupID == nil {
             if process.isRunning { process.terminate() }
         }
         _ = await waitForExit(until: min(deadline, ContinuousClock.now.advanced(by: .seconds(1))))
         if let processGroupID {
             killpg(processGroupID, SIGKILL)
-        } else {
-            for pid in descendants.reversed() { kill(pid, SIGKILL) }
+        }
+        for pid in descendants.reversed() { kill(pid, SIGKILL) }
+        if processGroupID == nil {
             if process.isRunning { kill(process.processIdentifier, SIGKILL) }
         }
         let exited = await waitForExit(until: deadline, descendants: descendants)
-        if exited { finishStreams() }
+        if exited { finishStreams(discardingPendingData: wasLeaderRunning) }
         return exited
     }
 
@@ -231,27 +240,48 @@ public actor LineTransport {
         return descendants.allSatisfy { kill($0, 0) != 0 }
     }
 
-    private func finishStreams() {
+    private func recordDescendants() {
+        guard process.isRunning else { return }
+        knownDescendants.formUnion(Self.descendantPIDs(of: process.processIdentifier))
+    }
+
+    private func finishStreams(discardingPendingData: Bool) {
+        descendantTrackerTask?.cancel()
+        descendantTrackerTask = nil
         stderrPipe.fileHandleForReading.readabilityHandler = nil
-        stdoutDrainer?.finish(discardingPendingData: true)
+        stdoutDrainer?.finish(
+            drainingPendingData: !discardingPendingData,
+            closingHandle: discardingPendingData)
         exitContinuation.finish()
     }
 
     private static func descendantPIDs(of parent: pid_t) -> [pid_t] {
-        let query = Process()
-        let output = Pipe()
-        query.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        query.arguments = ["-P", String(parent)]
-        query.standardOutput = output
-        query.standardError = FileHandle.nullDevice
-        guard (try? query.run()) != nil else { return [] }
-        query.waitUntilExit()
-        let text = String(
-            decoding: (try? output.fileHandleForReading.readToEnd()) ?? Data(),
-            as: UTF8.self)
-        let direct = text.split(whereSeparator: \Character.isWhitespace)
-            .compactMap { pid_t($0) }
-        return direct + direct.flatMap { descendantPIDs(of: $0) }
+        var descendants: [pid_t] = []
+        var pendingParents = [parent]
+        var seen: Set<pid_t> = [parent]
+        while let nextParent = pendingParents.popLast() {
+            for child in directChildPIDs(of: nextParent) where seen.insert(child).inserted {
+                descendants.append(child)
+                pendingParents.append(child)
+            }
+        }
+        return descendants
+    }
+
+    private static func directChildPIDs(of parent: pid_t) -> [pid_t] {
+        var capacity = 16
+        while true {
+            var pids = [pid_t](repeating: 0, count: capacity)
+            let count = pids.withUnsafeMutableBytes { buffer in
+                proc_listchildpids(parent, buffer.baseAddress, Int32(buffer.count))
+            }
+            guard count >= 0 else { return [] }
+            guard count < capacity else {
+                capacity *= 2
+                continue
+            }
+            return Array(pids.prefix(Int(count)))
+        }
     }
 }
 
@@ -317,19 +347,27 @@ private final class StdoutDrainer: @unchecked Sendable {
         }
     }
 
-    func finish(discardingPendingData: Bool = false) {
+    func finish(
+        drainingPendingData: Bool = false,
+        closingHandle: Bool = false
+    ) {
         lock.lock()
         defer { lock.unlock() }
         guard !finished else { return }
         finished = true
         handle.readabilityHandler = nil
-        if !discardingPendingData,
-           let remaining = try? handle.readToEnd(), !remaining.isEmpty {
-            for line in buffer.append(remaining, maxLineBytes: maxLineBytes) {
-                continuation.yield(line)
+        if drainingPendingData {
+            // Every writer is confirmed dead before this path. Drain in bounded
+            // chunks instead of collecting an unbounded readToEnd allocation.
+            while true {
+                let remaining = handle.availableData
+                guard !remaining.isEmpty else { break }
+                for line in buffer.append(remaining, maxLineBytes: maxLineBytes) {
+                    continuation.yield(line)
+                }
             }
         }
-        if discardingPendingData { try? handle.close() }
+        if closingHandle { try? handle.close() }
         continuation.finish()
     }
 }

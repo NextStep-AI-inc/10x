@@ -215,6 +215,7 @@ final class ComputerUseController: ComputerUseStopping {
     func handleProcessTerminated() async {
         guard computerMutationAttempted || hostToolsMutationAttempted || hasLease
               || hasRegistryActivation || preparedDesktop != nil || manifest != nil
+              || resourceCleanupTask != nil
         else { return }
         lifecycleGeneration += 1
         isAwaitingConfirmedProcessExit = false
@@ -438,6 +439,7 @@ final class ComputerUseController: ComputerUseStopping {
         let id = UUID()
         let stream = AsyncThrowingStream<T, Error>.makeStream()
         let task = Task { @MainActor in
+            defer { self.remoteMutations.removeValue(forKey: id) }
             do {
                 stream.continuation.yield(try await operation())
                 stream.continuation.finish()
@@ -446,7 +448,6 @@ final class ComputerUseController: ComputerUseStopping {
             }
         }
         remoteMutations[id] = task
-        defer { remoteMutations.removeValue(forKey: id) }
         var iterator = stream.stream.makeAsyncIterator()
         guard let result = try await iterator.next() else {
             throw ComputerUseControllerError.stopTimedOut
@@ -455,7 +456,6 @@ final class ComputerUseController: ComputerUseStopping {
     }
 
     private func settleRemoteMutations(deadline: ContinuousClock.Instant) async -> Bool {
-        for task in remoteMutations.values { task.cancel() }
         while !remoteMutations.isEmpty {
             guard ContinuousClock.now < deadline else { return false }
             try? await Task.sleep(for: .milliseconds(5))
@@ -464,19 +464,7 @@ final class ComputerUseController: ComputerUseStopping {
     }
 
     private func releaseResources(deadline: ContinuousClock.Instant) async -> Bool {
-        if let resourceCleanupTask {
-            do {
-                try await bounded(deadline: deadline) { await resourceCleanupTask.value }
-                return true
-            } catch {
-                return false
-            }
-        }
-        let task = Task { @MainActor in
-            await self.releaseResources()
-            self.resourceCleanupTask = nil
-        }
-        resourceCleanupTask = task
+        let task = resourceCleanupTask ?? beginResourceCleanup()
         do {
             try await bounded(deadline: deadline) { await task.value }
             return true
@@ -486,11 +474,40 @@ final class ComputerUseController: ComputerUseStopping {
     }
 
     private func releaseResources() async {
-        if let manifest { cleanupReport = await lifecycle.cleanup(manifest); self.manifest = nil }
-        if let preparedDesktop { await lifecycle.releaseDesktop(preparedDesktop); self.preparedDesktop = nil; isolation = nil }
-        if hasLease { await lifecycle.releaseLease(); hasLease = false }
-        if hasRegistryActivation { lifecycle.release(self); hasRegistryActivation = false }
+        await (resourceCleanupTask ?? beginResourceCleanup()).value
+    }
+
+    /// Detaches every owned resource before the first suspension so all cleanup
+    /// callers, including process-exit handling, can only join this one task.
+    private func beginResourceCleanup() -> Task<Void, Never> {
+        let ownedManifest = manifest
+        manifest = nil
+        let ownedDesktop = preparedDesktop
+        preparedDesktop = nil
+        isolation = nil
+        let shouldReleaseLease = hasLease
+        hasLease = false
+        let shouldReleaseRegistry = hasRegistryActivation
+        hasRegistryActivation = false
         isComputerToolLive = false
+
+        let task = Task { @MainActor [self] in
+            if let ownedManifest {
+                cleanupReport = await lifecycle.cleanup(ownedManifest)
+            }
+            if let ownedDesktop {
+                await lifecycle.releaseDesktop(ownedDesktop)
+            }
+            if shouldReleaseLease {
+                await lifecycle.releaseLease()
+            }
+            if shouldReleaseRegistry {
+                lifecycle.release(self)
+            }
+            resourceCleanupTask = nil
+        }
+        resourceCleanupTask = task
+        return task
     }
 
     private func requireAvailableComputer(_ rpc: any ComputerUseRPC) async throws {

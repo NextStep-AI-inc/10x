@@ -17,10 +17,9 @@ final class AppModel {
     private(set) var settingsModel: SettingsViewModel?
 
     @ObservationIgnored private let dependencies: AppDependencies
-    @ObservationIgnored private var exitTask: Task<Void, Never>?
+    @ObservationIgnored private var exitTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     @ObservationIgnored private var sessionTransitionTask: Task<Void, Never>?
-    @ObservationIgnored private var transitioningSession: SessionController?
-    @ObservationIgnored private var pendingSafetySessions: [SessionController] = []
+    @ObservationIgnored private var retiringSessions: [ObjectIdentifier: SessionController] = [:]
     @ObservationIgnored private var sessionTransitionGeneration = 0
 
     init(dependencies: AppDependencies = .live) {
@@ -84,11 +83,10 @@ final class AppModel {
                   self.sessionTransitionGeneration == generation,
                   let processManager = self.processManager
             else { return }
-            let controller = SessionController(
-                processManager: processManager,
-                computerUseRegistry: self.dependencies.computerUseRegistry)
+            let controller = self.dependencies.makeSessionController(
+                processManager,
+                self.dependencies.computerUseRegistry)
             self.activeSession = controller
-            self.transitioningSession = nil
             await controller.openExisting(metadata)
             if self.sessionTransitionGeneration != generation {
                 await controller.teardown()
@@ -108,12 +106,11 @@ final class AppModel {
                   self.sessionTransitionGeneration == generation,
                   let processManager = self.processManager
             else { return }
-            let controller = SessionController(
-                processManager: processManager,
-                computerUseRegistry: self.dependencies.computerUseRegistry)
+            let controller = self.dependencies.makeSessionController(
+                processManager,
+                self.dependencies.computerUseRegistry)
             controller.draft = prompt
             self.activeSession = controller
-            self.transitioningSession = nil
             await controller.openNew(projectURL: selectedProjectURL)
             await controller.sendPrompt()
             await self.reloadSessions()
@@ -129,47 +126,67 @@ final class AppModel {
     }
 
     private func install(preferredURL: URL?) async {
+        let priorManager = processManager
         await retireActiveSession()
-        if let processManager { await processManager.closeAll() }
+        if let priorManager {
+            let safetyPaths = Set<String>(retiringSessions.values.compactMap { controller in
+                guard controller.usesProcessManager(priorManager),
+                      controller.computerUse.isAwaitingConfirmedProcessExit
+                else { return nil }
+                return controller.processSessionPath(from: priorManager)
+            })
+            await priorManager.closeAll(excludingSessionPaths: safetyPaths)
+        }
         guard let installation = await dependencies.ompLocator.locate(preferredURL: preferredURL) else {
-            exitTask?.cancel()
             self.installation = nil
             processManager = nil
             settingsModel = nil
             route = .setup
+            if let priorManager { stopWatchingIfUnused(priorManager) }
             return
         }
 
         self.installation = installation
-        let processManager = SessionProcessManager(executable: installation.executableURL.path)
+        let processManager = dependencies.makeProcessManager(installation.executableURL.path)
         self.processManager = processManager
         settingsModel = SettingsViewModel(service: OmpConfigService(
             runner: OmpConfigProcessRunner(executableURL: installation.executableURL)))
         watchUnexpectedExits(from: processManager)
         setupError = nil
         route = .newSession
+        if let priorManager { stopWatchingIfUnused(priorManager) }
     }
 
     private func watchUnexpectedExits(from processManager: SessionProcessManager) {
-        exitTask?.cancel()
-        exitTask = Task { [weak self] in
+        let managerID = ObjectIdentifier(processManager)
+        exitTasks[managerID]?.cancel()
+        exitTasks[managerID] = Task { [weak self, processManager] in
             for await exit in processManager.unexpectedExits {
                 guard let self, !Task.isCancelled else { continue }
-                let owner: SessionController?
-                if self.activeSession?.sessionPath == exit.sessionPath {
-                    owner = self.activeSession
-                } else if self.transitioningSession?.sessionPath == exit.sessionPath {
-                    owner = self.transitioningSession
-                } else if let pending = self.pendingSafetySessions.first(where: { $0.sessionPath == exit.sessionPath }) {
-                    owner = pending
-                } else {
-                    owner = nil
+                let retiringOwner = self.retiringSessions.first {
+                    $0.value.ownsProcess(from: processManager, sessionPath: exit.sessionPath)
                 }
+                let activeOwner = self.activeSession?.ownsProcess(
+                    from: processManager,
+                    sessionPath: exit.sessionPath) == true
+                    ? self.activeSession : nil
+                // A retiring controller can hold safety resources for this
+                // handle even when the same path has just been reopened.
+                let owner = retiringOwner?.value ?? activeOwner
                 guard let owner else { continue }
                 await owner.handleUnexpectedExit(
                     code: exit.code,
                     stderrTail: exit.stderrTail)
-                self.pendingSafetySessions.removeAll { $0 === owner }
+                if let retiringOwner {
+                    self.retiringSessions.removeValue(forKey: retiringOwner.key)
+                }
+                if self.processManager !== processManager,
+                   !self.retiringSessions.values.contains(where: {
+                       $0.usesProcessManager(processManager)
+                   }) {
+                    self.exitTasks.removeValue(forKey: managerID)
+                    return
+                }
             }
         }
     }
@@ -179,17 +196,16 @@ final class AppModel {
         let prior = sessionTransitionTask
         let retiring = activeSession
         activeSession = nil
-        transitioningSession = retiring
+        if let retiring {
+            retiringSessions[ObjectIdentifier(retiring)] = retiring
+        }
         sessionTransitionTask = Task { [weak self] in
             await prior?.value
             await retiring?.teardown()
-            guard let self,
-                  self.transitioningSession === retiring
-            else { return }
-            if let retiring, retiring.computerUse.isAwaitingConfirmedProcessExit {
-                self.pendingSafetySessions.append(retiring)
+            guard let self, let retiring else { return }
+            if !retiring.computerUse.isAwaitingConfirmedProcessExit {
+                self.retiringSessions.removeValue(forKey: ObjectIdentifier(retiring))
             }
-            self.transitioningSession = nil
         }
         return sessionTransitionTask
     }
@@ -201,5 +217,12 @@ final class AppModel {
     private func retireActiveSession() async {
         let prior = beginSessionTransition()
         await prior?.value
+    }
+
+    private func stopWatchingIfUnused(_ manager: SessionProcessManager) {
+        guard processManager !== manager,
+              !retiringSessions.values.contains(where: { $0.usesProcessManager(manager) })
+        else { return }
+        exitTasks.removeValue(forKey: ObjectIdentifier(manager))?.cancel()
     }
 }

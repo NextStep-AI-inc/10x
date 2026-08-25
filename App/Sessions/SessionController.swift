@@ -28,6 +28,7 @@ final class SessionController {
     var streamingBehavior: StreamingBehavior? = .steer
 
     private let processManager: SessionProcessManager
+    private let terminateProcess: (@Sendable (ContinuousClock.Instant) async -> Bool)?
     private let timelineLoader = SessionTimelineLoader()
     private var projectURL: URL?
     private var fallbackThreadStartDate: Date?
@@ -40,10 +41,13 @@ final class SessionController {
 
     init(
         processManager: SessionProcessManager,
-        computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry()
+        computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry(),
+        computerUse: ComputerUseController? = nil,
+        terminateProcess: (@Sendable (ContinuousClock.Instant) async -> Bool)? = nil
     ) {
         self.processManager = processManager
-        computerUse = ComputerUseController(registry: computerUseRegistry)
+        self.terminateProcess = terminateProcess
+        self.computerUse = computerUse ?? ComputerUseController(registry: computerUseRegistry)
     }
 
     init(
@@ -60,6 +64,7 @@ final class SessionController {
         computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry()
     ) {
         self.processManager = processManager
+        terminateProcess = nil
         computerUse = ComputerUseController(registry: computerUseRegistry)
         self.items = previewItems
         self.runtimeState = runtimeState
@@ -76,6 +81,19 @@ final class SessionController {
         case .loading, .stopped, .failed:
             return false
         }
+    }
+
+    func ownsProcess(from manager: SessionProcessManager, sessionPath: String) -> Bool {
+        processSessionPath(from: manager) == sessionPath
+    }
+
+    func usesProcessManager(_ manager: SessionProcessManager) -> Bool {
+        processManager === manager
+    }
+
+    func processSessionPath(from manager: SessionProcessManager) -> String? {
+        guard processManager === manager else { return nil }
+        return handle?.sessionPath
     }
 
     func openExisting(_ metadata: SessionMetadata) async {
@@ -232,11 +250,17 @@ final class SessionController {
         self.handle = handle
         sessionPath = handle.sessionPath
         let path = handle.sessionPath
+        let terminateProcess = self.terminateProcess
         await computerUse.attachAndReconcile(
             rpc: handle.computerUseRPC,
             sessionPath: path,
             terminateProcess: { [processManager] deadline in
-                await processManager.forceClose(sessionPath: path, deadline: deadline)
+                if let terminateProcess {
+                    return await terminateProcess(deadline)
+                }
+                return await processManager.forceClose(
+                    sessionPath: path,
+                    deadline: deadline)
             })
 
         let state = try await handle.client.send(.getState())

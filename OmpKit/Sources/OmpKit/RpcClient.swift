@@ -209,6 +209,7 @@ public actor RpcClient {
     /// alive so the owner can release resources once death is real.
     @discardableResult
     public func shutdown(deadline: ContinuousClock.Instant? = nil) async -> Bool {
+        let didLeaderExitNaturally = await transport.exitStatus != nil
         if !terminated {
             terminated = true
             failAllPending(
@@ -217,7 +218,11 @@ public actor RpcClient {
         }
         let exited = await transport.shutdown(deadline: deadline)
         if exited {
-            readerTask?.cancel()
+            if didLeaderExitNaturally {
+                await readerTask?.value
+            } else {
+                readerTask?.cancel()
+            }
             exitTask?.cancel()
             readerTask = nil
             exitTask = nil

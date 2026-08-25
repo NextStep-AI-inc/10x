@@ -165,6 +165,9 @@ public actor SessionProcessManager {
     private var exitWatchers: [String: Task<Void, Never>] = [:]
     /// A normal close may race the termination watcher; it is never a crash.
     private var intentionalCloses: Set<String> = []
+    /// Prevents a termination watcher from reporting while a caller that may
+    /// confirm and remove the same handle is still inside `forceClose`.
+    private var forcedCloseAttempts: Set<String> = []
     /// Opens in flight, so concurrent callers for one session share a child
     /// instead of racing across the `await` in `open`.
     private var opening: [String: Task<Handle, any Error>] = [:]
@@ -258,16 +261,23 @@ public actor SessionProcessManager {
         deadline: ContinuousClock.Instant
     ) async -> Bool {
         guard let handle = handles[sessionPath] else { return true }
+        forcedCloseAttempts.insert(sessionPath)
         let isDead = await handle.client.shutdown(deadline: deadline)
-        guard isDead else { return false }
+        guard isDead else {
+            forcedCloseAttempts.remove(sessionPath)
+            return false
+        }
         handles.removeValue(forKey: sessionPath)
         exitWatchers.removeValue(forKey: sessionPath)?.cancel()
         intentionalCloses.remove(sessionPath)
+        forcedCloseAttempts.remove(sessionPath)
         return true
     }
 
-    public func closeAll() async {
-        for path in handles.keys { await close(sessionPath: path) }
+    public func closeAll(excludingSessionPaths: Set<String> = []) async {
+        for path in Array(handles.keys) where !excludingSessionPaths.contains(path) {
+            await close(sessionPath: path)
+        }
     }
 
     public func handle(for sessionPath: String) -> Handle? { handles[sessionPath] }
@@ -278,8 +288,21 @@ public actor SessionProcessManager {
         exitWatchers[handle.sessionPath] = Task { [weak self] in
             for await _ in handle.client.termination {}
             guard let self, !Task.isCancelled else { return }
-            await self.reportExitIfStillOpen(handle)
+            while !Task.isCancelled {
+                let confirmed = await handle.client.shutdown(
+                    deadline: ContinuousClock.now.advanced(by: .seconds(3)))
+                guard confirmed else { continue }
+                await self.reportExitAfterForcedCloseAttempt(handle)
+                return
+            }
         }
+    }
+
+    private func reportExitAfterForcedCloseAttempt(_ handle: Handle) async {
+        while forcedCloseAttempts.contains(handle.sessionPath) {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        await reportExitIfStillOpen(handle)
     }
 
     private func reportExitIfStillOpen(_ handle: Handle) async {
