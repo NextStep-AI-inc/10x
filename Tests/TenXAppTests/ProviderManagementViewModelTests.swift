@@ -104,6 +104,43 @@ import Testing
 }
 
 @MainActor
+@Test func providerModelLoginRefreshesBothResourcesAfterAnOverlappingRefresh() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
+    let usage = FakeUsageService(snapshot: .empty)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: usage,
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+    let providerGate = LoadGate()
+    let usageGate = LoadGate()
+    await service.enqueueProviderGate(providerGate)
+    await usage.enqueueLoadGate(usageGate)
+
+    let foregroundRefresh = Task { await model.refresh() }
+    await providerGate.waitForStart()
+    await usageGate.waitForStart()
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
+    await loginGate.release()
+    await loginGate.waitForCompletion()
+
+    await providerGate.release()
+    await usageGate.release()
+    await foregroundRefresh.value
+    await login.value
+
+    #expect(await service.providerLoadCount == 3)
+    #expect(await usage.loadCount == 3)
+    #expect(model.hasAuthenticatedProvider)
+}
+
+@MainActor
 @Test func providerModelCancelDelegatesAndClearsTransientState() async {
     let service = FakeProviderService(providers: [])
     let model = ProviderManagementViewModel(
@@ -170,6 +207,42 @@ import Testing
     await usage.setFailing(true)
 
     await model.refresh()
+
+    #expect(model.usage == presentation)
+    #expect(model.usageMessage == "Usage couldn’t be refreshed. Showing data from 4:00 PM.")
+}
+
+@MainActor
+@Test func providerModelKeepsExactUsagePresentationWhenConcurrentDiscoverySucceeds() async throws {
+    let snapshot = try usageSnapshotFixture()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let usage = FakeUsageService(snapshot: snapshot)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: usage,
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) },
+        formatTime: { _ in "4:00 PM" })
+    await model.load()
+    let presentation = model.usage
+    let providerGate = LoadGate()
+    let usageGate = LoadGate()
+    await service.setProviders([
+        ProviderLoginProvider(id: "cursor", name: "Cursor Updated", isAvailable: true, isAuthenticated: true),
+    ])
+    await service.enqueueProviderGate(providerGate)
+    await usage.enqueueLoadGate(usageGate)
+    await usage.setFailing(true)
+
+    let refresh = Task { await model.refresh() }
+    await providerGate.waitForStart()
+    await usageGate.waitForStart()
+    await providerGate.release()
+    await waitForModelState { model.providers.first?.name == "Cursor Updated" }
+    await usageGate.release()
+    await refresh.value
 
     #expect(model.usage == presentation)
     #expect(model.usageMessage == "Usage couldn’t be refreshed. Showing data from 4:00 PM.")

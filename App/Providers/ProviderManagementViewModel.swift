@@ -36,6 +36,11 @@ private func defaultProviderTimeFormat(_ date: Date) -> String {
     date.formatted(date: .omitted, time: .shortened)
 }
 
+private struct RefreshOperation {
+    let id: Int
+    let task: Task<Void, Never>
+}
+
 @MainActor
 @Observable
 final class ProviderManagementViewModel {
@@ -62,6 +67,9 @@ final class ProviderManagementViewModel {
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var loginGeneration = 0
     @ObservationIgnored private var lastUsageSnapshot: OmpUsageSnapshot?
+    @ObservationIgnored private var nextRefreshOperationID = 0
+    @ObservationIgnored private var providerRefreshOperation: RefreshOperation?
+    @ObservationIgnored private var usageRefreshOperation: RefreshOperation?
 
     init<ProviderService: ProviderManaging, UsageService: OmpUsageLoading>(
         providerService: ProviderService,
@@ -106,8 +114,12 @@ final class ProviderManagementViewModel {
     }
 
     func refresh() async {
-        async let providerRefresh: Void = refreshProviders()
-        async let usageRefresh: Void = refreshUsage()
+        await refresh(forceFresh: false)
+    }
+
+    private func refresh(forceFresh: Bool) async {
+        async let providerRefresh: Void = refreshProviders(forceFresh: forceFresh)
+        async let usageRefresh: Void = refreshUsage(forceFresh: forceFresh)
         await providerRefresh
         await usageRefresh
     }
@@ -132,7 +144,7 @@ final class ProviderManagementViewModel {
         do {
             try await providerService.login(provider.id)
             guard generation == loginGeneration else { return }
-            await refresh()
+            await refresh(forceFresh: true)
             guard generation == loginGeneration else { return }
             clearLoginState()
         } catch {
@@ -163,8 +175,34 @@ final class ProviderManagementViewModel {
         isShowingAllProviders = true
     }
 
-    private func refreshProviders() async {
-        guard !isLoadingProviders else { return }
+    private func refreshProviders(forceFresh: Bool) async {
+        while let operation = providerRefreshOperation {
+            await operation.task.value
+            if providerRefreshOperation?.id == operation.id {
+                providerRefreshOperation = nil
+            }
+            guard forceFresh else { return }
+        }
+
+        let operation = makeProviderRefreshOperation()
+        providerRefreshOperation = operation
+        await operation.task.value
+        if providerRefreshOperation?.id == operation.id {
+            providerRefreshOperation = nil
+        }
+    }
+
+    private func makeProviderRefreshOperation() -> RefreshOperation {
+        nextRefreshOperationID += 1
+        let id = nextRefreshOperationID
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performProviderRefresh()
+        }
+        return RefreshOperation(id: id, task: task)
+    }
+
+    private func performProviderRefresh() async {
         isLoadingProviders = true
         defer { isLoadingProviders = false }
 
@@ -179,10 +217,37 @@ final class ProviderManagementViewModel {
         }
     }
 
-    private func refreshUsage() async {
-        guard !isRefreshingUsage else { return }
+    private func refreshUsage(forceFresh: Bool) async {
+        while let operation = usageRefreshOperation {
+            await operation.task.value
+            if usageRefreshOperation?.id == operation.id {
+                usageRefreshOperation = nil
+            }
+            guard forceFresh else { return }
+        }
+
+        let operation = makeUsageRefreshOperation()
+        usageRefreshOperation = operation
+        await operation.task.value
+        if usageRefreshOperation?.id == operation.id {
+            usageRefreshOperation = nil
+        }
+    }
+
+    private func makeUsageRefreshOperation() -> RefreshOperation {
+        nextRefreshOperationID += 1
+        let id = nextRefreshOperationID
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performUsageRefresh()
+        }
+        return RefreshOperation(id: id, task: task)
+    }
+
+    private func performUsageRefresh() async {
         isRefreshingUsage = true
         defer { isRefreshingUsage = false }
+        let previousUsage = usage
 
         do {
             let snapshot = try await usageService.loadUsage()
@@ -192,6 +257,7 @@ final class ProviderManagementViewModel {
             lastUsageRefresh = refreshDate
             usageMessage = nil
         } catch {
+            usage = previousUsage
             if let lastUsageRefresh {
                 usageMessage = "Usage couldn’t be refreshed. Showing data from \(formatTime(lastUsageRefresh))."
             } else {
