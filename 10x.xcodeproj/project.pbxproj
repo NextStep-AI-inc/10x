@@ -109,6 +109,7 @@
 		DF8EC3C3223CA6B89083A389EE4F2296 /* SettingsCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BADABD39A5BD1BE8CF4F5AED870F2E4 /* SettingsCatalogTests.swift */; };
 		E0EAF729B6DD29502F5BFF955F36B712 /* SearchModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 420AC3D0ACC4506B439A37519466819F /* SearchModalView.swift */; };
 		E11A2220988BCBD41FD80F6AAD0BA3F0 /* UnifiedDiffParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15ED475805DFC8CDE6A64DE5DE949853 /* UnifiedDiffParser.swift */; };
+		F0D3A10B5E5510DEC0DE0002 /* SessionDeletionRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0D3A10B5E5510DEC0DE0001 /* SessionDeletionRequest.swift */; };
 		E4FD366DB9B271211320DEBFBFDE7743 /* ToolDisclosureState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53B28D6223865806FE0E5EA59F9CCC9B /* ToolDisclosureState.swift */; };
 		E5554F5A5A876DE48AFD9A1A87CAA85D /* SessionTimelineLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26648C2E3119054CBF73F29F2FD4EB25 /* SessionTimelineLoader.swift */; };
 		E6A9FABC0CA128CD8836A9E3B3BE0507 /* TenXTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B68D400938AD7EEAA9564E3EA092D77 /* TenXTypography.swift */; };
@@ -250,6 +251,7 @@
 		EAF4ABD0E8BC585BBB861CA6CE1FEBD1 /* FloatingRailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FloatingRailView.swift; path = App/Shell/FloatingRailView.swift; sourceTree = "<group>"; };
 		EC01C4B179B89B4762B48002CD143E25 /* OmpConfigRunning.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpConfigRunning.swift; path = App/Settings/OmpConfigRunning.swift; sourceTree = "<group>"; };
 		EF7CE4A772DEBE1AE023C6AD2EE58E26 /* SettingsCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsCatalog.swift; path = App/Settings/SettingsCatalog.swift; sourceTree = "<group>"; };
+		F0D3A10B5E5510DEC0DE0001 /* SessionDeletionRequest.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionDeletionRequest.swift; path = App/Sessions/SessionDeletionRequest.swift; sourceTree = "<group>"; };
 		F3334F4A3B1F8EF8D8CEBA8E58057CA2 /* SessionHeaderMetadata.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionHeaderMetadata.swift; path = App/Sessions/SessionHeaderMetadata.swift; sourceTree = "<group>"; };
 		F3E28526E6A01ED5E54644D0B6A805A2 /* TranscriptHistoryMapper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptHistoryMapper.swift; path = App/Sessions/TranscriptHistoryMapper.swift; sourceTree = "<group>"; };
 		F79595DE8A95AD6F155CC722CC6E68D0 /* UnifiedDiffParserTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UnifiedDiffParserTests.swift; path = Tests/TenXAppTests/UnifiedDiffParserTests.swift; sourceTree = "<group>"; };
@@ -312,6 +314,7 @@
 				21A2C3508CF29C1D6ED5093DF24B78D2 /* ResponseMetadataView.swift */,
 				98FED7FD8C04C44C77AAE615CE84E49F /* RuntimeRecoveryView.swift */,
 				0D03454F1B39E570D225857E4088CCAC /* SessionController.swift */,
+				F0D3A10B5E5510DEC0DE0001 /* SessionDeletionRequest.swift */,
 				F3334F4A3B1F8EF8D8CEBA8E58057CA2 /* SessionHeaderMetadata.swift */,
 				4DDF13863D8A193FC009C14B7AE604A9 /* SessionHeaderView.swift */,
 				20ECF9957321AC264759736D8F2DDE4D /* SessionRuntimeState.swift */,
@@ -574,6 +577,7 @@
 				43E83FB052EEC25E8FF4B76F818627D0 /* ResponseMetadataView.swift in Sources */,
 				A56E33F742D3309605243079F9E5E9F8 /* RuntimeRecoveryView.swift in Sources */,
 				701798225647F4F74AF5C27F6C760CFA /* SessionController.swift in Sources */,
+				F0D3A10B5E5510DEC0DE0002 /* SessionDeletionRequest.swift in Sources */,
 				559E339EDA1B1C251DAD20A9F0352779 /* SessionHeaderMetadata.swift in Sources */,
 				F85CA13CD4F238E50A963C0204CE0E9D /* SessionHeaderView.swift in Sources */,
 				F557EE21EFA766677C9FF97ADA99E441 /* SessionRuntimeState.swift in Sources */,

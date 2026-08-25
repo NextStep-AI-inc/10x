@@ -49,6 +49,8 @@ struct AppShellView: View {
                     .font(TenXTypography.body(size: 13))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
+        case .archivedSessions:
+            EmptyView()
         case .settings:
             if let settingsModel = model.settingsModel {
                 SettingsView(model: settingsModel)

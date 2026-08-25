@@ -10,6 +10,9 @@ final class AppModel {
     var selectedProjectURL: URL?
     var setupError: String?
     var sessions: [SessionMetadata] = []
+    var archivedSessions: [SessionMetadata] = []
+    var pendingDeletion: SessionDeletionRequest?
+    var sessionActionError: String?
     var providerUsages: [ProviderUsageProvider] = []
     var isSearchPresented = false
     private(set) var activeSession: SessionController?
@@ -26,6 +29,7 @@ final class AppModel {
     func bootstrap() async {
         await install(preferredURL: nil)
         await reloadSessions()
+        await reloadArchivedSessions()
     }
 
     func useOmp(at url: URL) async {
@@ -49,6 +53,11 @@ final class AppModel {
     func openNewSession() {
         activeSession = nil
         route = .newSession
+    }
+
+    func openArchivedSessions() {
+        route = .archivedSessions
+        Task { await reloadArchivedSessions() }
     }
 
     func openSearch() {
@@ -92,6 +101,106 @@ final class AppModel {
 
     func reloadSessions() async {
         sessions = await dependencies.sessionLibrary.listAll()
+    }
+
+    func reloadArchivedSessions() async {
+        archivedSessions = await dependencies.sessionLibrary.listArchived()
+    }
+
+    func requestDeleteSession(_ metadata: SessionMetadata) {
+        pendingDeletion = .session(metadata)
+    }
+
+    func requestDeleteProject(_ group: ProjectSessionGroup) {
+        pendingDeletion = .project(group)
+    }
+
+    func cancelDeletion() {
+        pendingDeletion = nil
+    }
+
+    func dismissSessionActionError() {
+        sessionActionError = nil
+    }
+
+    func archiveSession(_ metadata: SessionMetadata) async {
+        await mutateActive(
+            paths: [metadata.path],
+            action: "archive",
+            subject: sessionDisplayName(metadata)) {
+                await dependencies.sessionLibrary.archive(paths: [metadata.path])
+            }
+    }
+
+    func archiveProject(_ group: ProjectSessionGroup) async {
+        let paths = group.sessions.map(\.path)
+        await mutateActive(
+            paths: paths,
+            action: "archive",
+            subject: "\(group.displayName) sessions") {
+                await dependencies.sessionLibrary.archive(paths: paths)
+            }
+    }
+
+    func restoreSession(_ metadata: SessionMetadata) async {
+        await finish(
+            await dependencies.sessionLibrary.restore(paths: [metadata.path]),
+            action: "restore",
+            subject: sessionDisplayName(metadata))
+    }
+
+    func restoreProject(_ group: ProjectSessionGroup) async {
+        await finish(
+            await dependencies.sessionLibrary.restore(paths: group.sessions.map(\.path)),
+            action: "restore",
+            subject: "\(group.displayName) sessions")
+    }
+
+    func confirmDeletion() async {
+        guard let request = pendingDeletion else { return }
+        pendingDeletion = nil
+        await closeActiveSessionIfNeeded(paths: request.paths)
+        await finish(
+            await dependencies.sessionLibrary.delete(paths: request.paths),
+            action: "delete",
+            subject: request.errorSubject)
+    }
+
+    private func mutateActive(
+        paths: [String],
+        action: String,
+        subject: String,
+        operation: () async -> SessionMutationReport
+    ) async {
+        await closeActiveSessionIfNeeded(paths: paths)
+        await finish(await operation(), action: action, subject: subject)
+    }
+
+    private func closeActiveSessionIfNeeded(paths: [String]) async {
+        guard case .session(let path) = route, paths.contains(path) else { return }
+        await processManager?.close(sessionPath: path)
+        activeSession = nil
+        route = .newSession
+    }
+
+    private func finish(
+        _ report: SessionMutationReport,
+        action: String,
+        subject: String
+    ) async {
+        if !report.failures.isEmpty {
+            let count = report.failures.count
+            let unchangedFiles = count == 1
+                ? "file remains unchanged."
+                : "files remain unchanged."
+            sessionActionError = "Could not \(action) \(subject). \(count) session \(unchangedFiles)"
+        }
+        await reloadSessions()
+        await reloadArchivedSessions()
+    }
+
+    private func sessionDisplayName(_ metadata: SessionMetadata) -> String {
+        metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session"
     }
 
     private func install(preferredURL: URL?) async {
