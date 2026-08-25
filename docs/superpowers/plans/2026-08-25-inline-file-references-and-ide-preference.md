@@ -964,7 +964,7 @@ PID 8252 remained alive for more than three minutes while the live checks ran.
 - `xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' -derivedDataPath .build/DerivedData-inline-file-references clean build` exited 0 with `CLEAN SUCCEEDED` and `BUILD SUCCEEDED`.
 - `git diff --check` exited 0.
 - The exact Release app discovered Xcode, Cursor, and Visual Studio Code; persisted Cursor and Visual Studio Code selections across relaunch; accepted Cursor through `Choose application…`; returned to `Choose IDE` for `None`; opened `MessageBubbleView.swift` in Xcode through the primary action and in Cursor through the preferred action.
-- A live OMP session produced Read, Edit, and Write cards using ignored verification files. Absolute/backtick references, relative resolution, file icons, separate IDE actions, disabled missing-file actions, Edit-result path fallback, and disclosure independence were visible in the final Release UI.
+- A live OMP session produced Read, Edit, and Write cards using ignored verification files. Relative backtick references, relative resolution, file icons, separate IDE actions, disabled missing-file actions, Edit-result path fallback, and disclosure independence were visible in the final Release UI.
 - The primary context menu exposed `Open with System Default`, `Open in Cursor`, `Reveal in Finder`, and `Copy Reference` in the required order.
 
 Release screenshots:
@@ -978,4 +978,4 @@ Release screenshots:
 - `docs/superpowers/evidence/2026-08-25-inline-file-references-release/transcript-normal.jpg`
 - `docs/superpowers/evidence/2026-08-25-inline-file-references-release/transcript-minimum.jpg`
 
-Not verified: Option-held full-path rendering, clipboard contents after `Copy Reference`, an unavailable selected application in the exact Release bundle, the four-second launch-rejection/VoiceOver announcement, and complete keyboard traversal at both widths. The spec remains incomplete and its status is intentionally unchanged.
+Not verified: an absolute assistant reference containing spaces unless Markdown/backtick-delimited, Option-held full-path rendering, clipboard contents after `Copy Reference`, an unavailable selected application in the exact Release bundle, the four-second launch-rejection/VoiceOver announcement, and complete keyboard traversal at both widths. The spec remains incomplete and its status is intentionally unchanged.
