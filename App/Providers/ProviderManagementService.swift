@@ -54,10 +54,16 @@ actor ProviderManagementService: ProviderManaging {
         let task: Task<ProviderRPCClientBox, Error>
     }
 
+    private struct Closing {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
+
     private enum ClientState {
         case idle
         case starting(Startup)
         case ready(ProviderRPCClientBox)
+        case closing(Closing)
     }
 
     nonisolated let events: AsyncStream<ProviderLoginEvent>
@@ -142,6 +148,10 @@ actor ProviderManagementService: ProviderManaging {
         case .starting(let startup):
             await startupWaiterObserver()
             return try await awaitStartup(startup)
+        case .closing(let closing):
+            await closing.task.value
+            clearClosing(closing)
+            return try await clientForRequest()
         case .idle:
             let startup = makeStartup()
             clientState = .starting(startup)
@@ -186,6 +196,8 @@ actor ProviderManagementService: ProviderManaging {
             case .idle, .starting:
                 await client.shutdown()
                 throw CancellationError()
+            case .closing:
+                throw CancellationError()
             }
         } catch {
             clearStarting(startup)
@@ -215,24 +227,47 @@ actor ProviderManagementService: ProviderManaging {
     }
 
     private func closeClient() async {
+        if case .closing(let closing) = clientState {
+            await closing.task.value
+            clearClosing(closing)
+            return
+        }
+
         clientGeneration += 1
         activeLoginGeneration = nil
         eventForwarder?.cancel()
         eventForwarder = nil
         let state = clientState
-        clientState = .idle
 
         switch state {
         case .idle:
-            break
+            return
         case .starting(let startup):
             startup.task.cancel()
-            if case .success(let client) = await startup.task.result {
-                await client.shutdown()
-            }
+            let closing = Closing(id: UUID(), task: Task {
+                if case .success(let client) = await startup.task.result {
+                    await client.shutdown()
+                }
+            })
+            clientState = .closing(closing)
+            await closing.task.value
+            clearClosing(closing)
         case .ready(let client):
-            await client.shutdown()
+            let closing = Closing(id: UUID(), task: Task {
+                await client.shutdown()
+            })
+            clientState = .closing(closing)
+            await closing.task.value
+            clearClosing(closing)
+        case .closing(let closing):
+            await closing.task.value
+            clearClosing(closing)
         }
+    }
+
+    private func clearClosing(_ closing: Closing) {
+        guard case .closing(let current) = clientState, current.id == closing.id else { return }
+        clientState = .idle
     }
 
     private func clearStarting(_ startup: Startup) {

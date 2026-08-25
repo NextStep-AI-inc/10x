@@ -251,6 +251,67 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
     #expect(await fake.shutdownCount == 1)
 }
 
+@Test func providerServiceConcurrentClosesJoinCancellationResistantStartupCleanup() async {
+    let startGate = StartGate()
+    let fake = FakeProviderRPCClient(
+        responses: [providerListResponse],
+        startGate: startGate)
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+    let providers = Task { try await service.providers() }
+    await startGate.waitForStart()
+
+    let firstClose = Task { await service.cancelLogin() }
+    await startGate.waitForCancellation()
+    let secondCloseCompletion = CompletionProbe()
+    let secondClose = Task {
+        await service.shutdown()
+        await secondCloseCompletion.finish()
+    }
+    for _ in 0..<100 { await Task.yield() }
+
+    #expect(await secondCloseCompletion.isFinished == false)
+    await startGate.release()
+    await firstClose.value
+    await secondClose.value
+    _ = await providers.result
+    #expect(await fake.shutdownCount == 1)
+}
+
+@Test func providerServiceDefersRecreationUntilCancelledStartupCleanupCompletes() async throws {
+    let startGate = StartGate()
+    let first = FakeProviderRPCClient(
+        responses: [providerListResponse],
+        startGate: startGate)
+    let second = FakeProviderRPCClient(responses: [providerListResponse])
+    let pool = ProviderClientPool(clients: [first, second])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in await pool.next() })
+    let cancelledProviders = Task { try await service.providers() }
+    await startGate.waitForStart()
+
+    let cancellation = Task { await service.cancelLogin() }
+    await startGate.waitForCancellation()
+    let requestStarted = CompletionProbe()
+    let replacementProviders = Task {
+        await requestStarted.finish()
+        return try await service.providers()
+    }
+    while await requestStarted.isFinished == false { await Task.yield() }
+    for _ in 0..<100 { await Task.yield() }
+
+    #expect(await pool.callCount == 1)
+    await startGate.release()
+    await cancellation.value
+    _ = await cancelledProviders.result
+    _ = try await replacementProviders.value
+    #expect(await pool.callCount == 2)
+    #expect(await first.shutdownCount == 1)
+    #expect(await second.startCount == 1)
+}
+
 private struct ProviderCommand: Sendable, Equatable {
     let command: RpcCommand
     let timeout: Duration?
