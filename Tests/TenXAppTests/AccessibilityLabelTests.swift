@@ -15,3 +15,13 @@ import Testing
         scope: "This project"
     ) == "Always allow, This project")
 }
+
+@Test func providerUsageLabelNamesRemainingCapacityAndReset() {
+    #expect(ProviderUsageAccessibility.limitLabel(
+        provider: "Cursor",
+        account: "tanner@example.com",
+        allowance: "Cursor Models",
+        percentage: 50,
+        reset: "5 days"
+    ) == "Cursor, tanner@example.com, Cursor Models, 50 percent remaining, resets in 5 days")
+}

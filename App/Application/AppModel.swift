@@ -10,7 +10,6 @@ final class AppModel {
     var selectedProjectURL: URL?
     var setupError: String?
     var sessions: [SessionMetadata] = []
-    var providerUsages: [ProviderUsageProvider] = []
     var isSearchPresented = false
     private(set) var activeSession: SessionController?
     private(set) var processManager: SessionProcessManager?
@@ -50,6 +49,10 @@ final class AppModel {
     func openProviders(_ section: ProviderWorkspaceSection) {
         providerModel?.selectedSection = section
         route = .providers(section)
+    }
+
+    func refreshProvidersIfNeeded() async {
+        await providerModel?.refreshIfStale()
     }
 
     func openNewSession() {

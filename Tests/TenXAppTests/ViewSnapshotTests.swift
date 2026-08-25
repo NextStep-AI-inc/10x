@@ -193,11 +193,62 @@ import Testing
 }
 
 @MainActor
+@Test func providerUsageRailSnapshot() throws {
+    let cursor = ProviderUsageProvider(
+        id: "cursor",
+        name: "Cursor",
+        accounts: [
+            providerUsageRailAccount(
+                id: "cursor:personal",
+                label: "tanner@example.com",
+                limit: ProviderUsageLimit(
+                    id: "cursor:personal:models",
+                    label: "Cursor Models",
+                    percentage: 50,
+                    resetWindow: "5 days")),
+            providerUsageRailAccount(
+                id: "cursor:work",
+                label: "work@example.com",
+                limit: ProviderUsageLimit(
+                    id: "cursor:work:models",
+                    label: "Cursor Models",
+                    percentage: 18,
+                    resetWindow: "2 hours")),
+        ])
+
+    try assertSnapshot(
+        ProviderUsageLedgerView(providers: [cursor], onOpenUsage: {}),
+        name: "provider-usage-rail",
+        size: CGSize(width: 184, height: 210))
+}
+
+@MainActor
 private func providerWorkspaceModel() throws -> ProviderManagementViewModel {
     providerTestModel(
         providers: providerWorkspaceProviders,
         snapshot: try providerWorkspaceSnapshot(),
         now: { Date(timeIntervalSince1970: 1_787_675_746) })
+}
+
+private func providerUsageRailAccount(
+    id: String,
+    label: String,
+    limit: ProviderUsageLimit
+) -> ProviderUsageAccount {
+    ProviderUsageAccount(
+        id: id,
+        label: label,
+        identity: ProviderUsageAccountIdentity(
+            email: label,
+            accountID: nil,
+            projectID: nil,
+            enterpriseURL: nil,
+            orgID: nil,
+            orgName: nil),
+        limits: [limit],
+        amounts: [],
+        notes: [],
+        isUsageAvailable: true)
 }
 
 private let providerWorkspaceProviders = [
