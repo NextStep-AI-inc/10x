@@ -5,6 +5,9 @@ struct SessionDeletionConfirmationView: View {
     let onCancel: () -> Void
     let onDelete: () -> Void
 
+    @FocusState private var isCancelFocused: Bool
+    @AccessibilityFocusState private var isCancelAccessibilityFocused: Bool
+
     var body: some View {
         ZStack {
             Color.white.opacity(0.82)
@@ -28,7 +31,8 @@ struct SessionDeletionConfirmationView: View {
                         Spacer()
                         Button("Cancel", action: onCancel)
                             .buttonStyle(GhostActionStyle())
-                            .keyboardShortcut(.cancelAction)
+                            .focused($isCancelFocused)
+                            .accessibilityFocused($isCancelAccessibilityFocused)
                         Button("Delete", action: onDelete)
                             .buttonStyle(.borderedProminent)
                             .tint(TenXPalette.color(TenXPalette.signalRedHex))
@@ -42,5 +46,12 @@ struct SessionDeletionConfirmationView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(request.title)
+        .accessibilityAddTraits(.isModal)
+        .onExitCommand(perform: onCancel)
+        .task {
+            await Task.yield()
+            isCancelFocused = true
+            isCancelAccessibilityFocused = true
+        }
     }
 }

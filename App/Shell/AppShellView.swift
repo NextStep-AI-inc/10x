@@ -6,33 +6,35 @@ struct AppShellView: View {
     @State private var railExpansion = RailExpansionModel()
 
     var body: some View {
-        Group {
-            if model.route == .setup {
-                SetupView(model: model)
-            } else {
-                ZStack(alignment: .leading) {
-                    routeCanvas
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.leading, 64)
-                    FloatingRailView(model: model, expansion: railExpansion)
-                }
-                .overlay(alignment: .topTrailing) {
-                    ShellTopActionsView(model: model)
-                        .padding(.top, 16)
-                        .padding(.trailing, 18)
-                }
-                .overlay {
-                    if model.isSearchPresented {
-                        SearchModalView(
-                            sessions: model.sessions,
-                            onOpen: model.openSearchResult,
-                            onClose: model.closeSearch)
+        ZStack {
+            Group {
+                if model.route == .setup {
+                    SetupView(model: model)
+                } else {
+                    ZStack(alignment: .leading) {
+                        routeCanvas
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(.leading, 64)
+                        FloatingRailView(model: model, expansion: railExpansion)
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        ShellTopActionsView(model: model)
+                            .padding(.top, 16)
+                            .padding(.trailing, 18)
+                    }
+                    .overlay {
+                        if model.isSearchPresented {
+                            SearchModalView(
+                                sessions: model.sessions,
+                                onOpen: model.openSearchResult,
+                                onClose: model.closeSearch)
+                        }
                     }
                 }
             }
-        }
-        .background(TenXPalette.color(TenXPalette.canvasHex))
-        .overlay {
+            .disabled(model.pendingDeletion != nil)
+            .accessibilityHidden(model.pendingDeletion != nil)
+
             if let request = model.pendingDeletion {
                 SessionDeletionConfirmationView(
                     request: request,
@@ -42,6 +44,7 @@ struct AppShellView: View {
                     })
             }
         }
+        .background(TenXPalette.color(TenXPalette.canvasHex))
         .alert(
             "Session action failed",
             isPresented: sessionActionErrorIsPresented,
@@ -57,9 +60,11 @@ struct AppShellView: View {
 
     private var sessionActionErrorIsPresented: Binding<Bool> {
         Binding(
-            get: { model.sessionActionError != nil },
+            get: {
+                model.pendingDeletion == nil && model.sessionActionError != nil
+            },
             set: { isPresented in
-                if !isPresented {
+                if !isPresented && model.pendingDeletion == nil {
                     model.dismissSessionActionError()
                 }
             })

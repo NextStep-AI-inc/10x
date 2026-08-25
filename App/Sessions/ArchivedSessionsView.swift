@@ -59,6 +59,10 @@ struct ArchivedSessionsView: View {
             }
             .padding(.top, 26)
             .padding(.bottom, 8)
+            .contentShape(Rectangle())
+            .focusable()
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(group.displayName), \(sessionCount(group.sessions.count))")
             .contextMenu {
                 Button("Restore Project Sessions", systemImage: "arrow.uturn.backward") {
                     Task { await model.restoreProject(group) }
@@ -66,6 +70,12 @@ struct ArchivedSessionsView: View {
                 Button("Delete Project Sessions...", systemImage: "trash", role: .destructive) {
                     model.requestDeleteProject(group)
                 }
+            }
+            .accessibilityAction(named: Text("Restore Project Sessions")) {
+                Task { await model.restoreProject(group) }
+            }
+            .accessibilityAction(named: Text("Delete Project Sessions...")) {
+                model.requestDeleteProject(group)
             }
 
             Rectangle()
@@ -97,6 +107,7 @@ struct ArchivedSessionsView: View {
         }
         .padding(.vertical, 14)
         .contentShape(Rectangle())
+        .focusable()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)
         .contextMenu {
@@ -106,6 +117,12 @@ struct ArchivedSessionsView: View {
             Button("Delete Session...", systemImage: "trash", role: .destructive) {
                 model.requestDeleteSession(metadata)
             }
+        }
+        .accessibilityAction(named: Text("Restore Session")) {
+            Task { await model.restoreSession(metadata) }
+        }
+        .accessibilityAction(named: Text("Delete Session...")) {
+            model.requestDeleteSession(metadata)
         }
     }
 

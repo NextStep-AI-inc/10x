@@ -21,6 +21,7 @@ final class AppModel {
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
+    @ObservationIgnored private var archivedReloadGeneration = 0
 
     init(dependencies: AppDependencies = .live) {
         self.dependencies = dependencies
@@ -104,7 +105,11 @@ final class AppModel {
     }
 
     func reloadArchivedSessions() async {
-        archivedSessions = await dependencies.sessionLibrary.listArchived()
+        archivedReloadGeneration &+= 1
+        let generation = archivedReloadGeneration
+        let sessions = await dependencies.sessionLibrary.listArchived()
+        guard generation == archivedReloadGeneration else { return }
+        archivedSessions = sessions
     }
 
     func requestDeleteSession(_ metadata: SessionMetadata) {
@@ -143,6 +148,7 @@ final class AppModel {
     }
 
     func restoreSession(_ metadata: SessionMetadata) async {
+        invalidateArchivedSessionReloads()
         await finish(
             await dependencies.sessionLibrary.restore(paths: [metadata.path]),
             action: "restore",
@@ -150,6 +156,7 @@ final class AppModel {
     }
 
     func restoreProject(_ group: ProjectSessionGroup) async {
+        invalidateArchivedSessionReloads()
         await finish(
             await dependencies.sessionLibrary.restore(paths: group.sessions.map(\.path)),
             action: "restore",
@@ -159,6 +166,7 @@ final class AppModel {
     func confirmDeletion() async {
         guard let request = pendingDeletion else { return }
         pendingDeletion = nil
+        invalidateArchivedSessionReloads()
         await closeActiveSessionIfNeeded(paths: request.paths)
         await finish(
             await dependencies.sessionLibrary.delete(paths: request.paths),
@@ -172,6 +180,7 @@ final class AppModel {
         subject: String,
         operation: () async -> SessionMutationReport
     ) async {
+        invalidateArchivedSessionReloads()
         await closeActiveSessionIfNeeded(paths: paths)
         await finish(await operation(), action: action, subject: subject)
     }
@@ -207,6 +216,10 @@ final class AppModel {
         }
         await reloadSessions()
         await reloadArchivedSessions()
+    }
+
+    private func invalidateArchivedSessionReloads() {
+        archivedReloadGeneration &+= 1
     }
 
     private func sessionDisplayName(_ metadata: SessionMetadata) -> String {
