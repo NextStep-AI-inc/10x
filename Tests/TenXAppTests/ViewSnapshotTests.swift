@@ -151,6 +151,35 @@ import Testing
 }
 
 @MainActor
+@Test func providerSetupBrowseAllMixedRowsMinimumSizeSnapshot() async throws {
+    let model = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "github-copilot", name: "GitHub Copilot", isAvailable: true, isAuthenticated: true),
+        ProviderLoginProvider(
+            id: "openai-codex", name: "OpenAI Codex", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "ollama", name: "Ollama", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "anthropic", name: "Anthropic", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "sourcegraph", name: "Sourcegraph", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "zed", name: "Zed", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
+    ])
+    await model.load()
+    model.showAllProviders()
+
+    try assertSnapshot(
+        ProviderSetupView(model: model, onContinue: {}),
+        name: "provider-setup-browse-all-mixed-rows-minimum-size",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
 @Test func providerSetupLoginFailureSnapshot() async throws {
     let service = FakeProviderService(providers: [
         ProviderLoginProvider(

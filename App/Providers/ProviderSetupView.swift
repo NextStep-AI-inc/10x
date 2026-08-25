@@ -163,7 +163,7 @@ private struct ProviderSetupRowView: View {
                 .disabled(!provider.isAvailable || model.activeLoginProviderID != nil)
             }
         }
-        .padding(.vertical, 4)
+        .frame(height: 42)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(TenXPalette.color(TenXPalette.separatorHex))
