@@ -65,6 +65,7 @@ actor ProviderManagementService: ProviderManaging {
     private let eventContinuation: AsyncStream<ExtensionUIRequest>.Continuation
     private let configuration: RpcClientConfiguration
     private let clientFactory: ClientFactory
+    private let startupWaiterObserver: @Sendable () async -> Void
     private var clientState: ClientState = .idle
     private var eventForwarder: Task<Void, Never>?
     private var clientGeneration = 0
@@ -73,7 +74,8 @@ actor ProviderManagementService: ProviderManaging {
 
     init<Client: ProviderRPCClient>(
         executableURL: URL,
-        clientFactory: @escaping @Sendable (RpcClientConfiguration) async -> Client
+        clientFactory: @escaping @Sendable (RpcClientConfiguration) async -> Client,
+        startupWaiterObserver: @escaping @Sendable () async -> Void = {}
     ) {
         var configuration = RpcClientConfiguration()
         configuration.executable = executableURL.path
@@ -82,6 +84,7 @@ actor ProviderManagementService: ProviderManaging {
         self.clientFactory = { configuration in
             ProviderRPCClientBox(await clientFactory(configuration))
         }
+        self.startupWaiterObserver = startupWaiterObserver
         (events, eventContinuation) = AsyncStream<ExtensionUIRequest>.makeStream()
     }
 
@@ -93,6 +96,7 @@ actor ProviderManagementService: ProviderManaging {
         self.clientFactory = { configuration in
             ProviderRPCClientBox(RpcClient(configuration: configuration))
         }
+        self.startupWaiterObserver = {}
         (events, eventContinuation) = AsyncStream<ExtensionUIRequest>.makeStream()
     }
 
@@ -130,10 +134,12 @@ actor ProviderManagementService: ProviderManaging {
         case .ready(let client):
             return client
         case .starting(let startup):
+            await startupWaiterObserver()
             return try await awaitStartup(startup)
         case .idle:
             let startup = makeStartup()
             clientState = .starting(startup)
+            await startupWaiterObserver()
             return try await awaitStartup(startup)
         }
     }

@@ -133,21 +133,19 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
 
 @Test func providerServiceSharesOneStartupBeforeSendingRequests() async throws {
     let startGate = StartGate()
-    let requestProbe = RequestProbe()
+    let startupWaiters = StartupWaiterGate(expectedCount: 2)
     let fake = FakeProviderRPCClient(
         responses: [providerListResponse, providerListResponse],
         startGate: startGate)
     let service = ProviderManagementService(
         executableURL: URL(fileURLWithPath: "/tmp/omp"),
-        clientFactory: { _ in fake })
+        clientFactory: { _ in fake },
+        startupWaiterObserver: { await startupWaiters.joined() })
 
     let firstProviders = Task { try await service.providers() }
     await startGate.waitForStart()
-    let secondProviders = Task {
-        await requestProbe.requestBegan()
-        return try await service.providers()
-    }
-    await requestProbe.waitForRequest()
+    let secondProviders = Task { try await service.providers() }
+    await startupWaiters.waitForAll()
 
     #expect(await fake.commands.isEmpty)
     #expect(await fake.startCount == 1)
@@ -193,24 +191,19 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
 
 @Test func providerServiceShutsDownACancelledSharedStartupOnlyOnce() async {
     let startGate = StartGate()
-    let requestBarrier = RequestBarrier(participantCount: 2)
+    let startupWaiters = StartupWaiterGate(expectedCount: 2)
     let fake = FakeProviderRPCClient(
         responses: [providerListResponse, providerListResponse],
         startGate: startGate)
     let service = ProviderManagementService(
         executableURL: URL(fileURLWithPath: "/tmp/omp"),
-        clientFactory: { _ in fake })
+        clientFactory: { _ in fake },
+        startupWaiterObserver: { await startupWaiters.joined() })
 
-    let firstProviders = Task {
-        await requestBarrier.arrive()
-        return try await service.providers()
-    }
-    let secondProviders = Task {
-        await requestBarrier.arrive()
-        return try await service.providers()
-    }
-    await requestBarrier.waitForAll()
+    let firstProviders = Task { try await service.providers() }
     await startGate.waitForStart()
+    let secondProviders = Task { try await service.providers() }
+    await startupWaiters.waitForAll()
     await service.cancelLogin()
     await startGate.release()
     _ = await firstProviders.result
@@ -382,37 +375,18 @@ private enum ProviderTestError: Error {
     case startFailed
 }
 
-private actor RequestProbe {
-    private var hasReceivedRequest = false
-    private var requestWaiters: [CheckedContinuation<Void, Never>] = []
-
-    func requestBegan() {
-        hasReceivedRequest = true
-        let waiters = requestWaiters
-        requestWaiters.removeAll()
-        for waiter in waiters {
-            waiter.resume()
-        }
-    }
-
-    func waitForRequest() async {
-        guard !hasReceivedRequest else { return }
-        await withCheckedContinuation { requestWaiters.append($0) }
-    }
-}
-
-private actor RequestBarrier {
-    private let participantCount: Int
-    private var arrivedCount = 0
+private actor StartupWaiterGate {
+    private let expectedCount: Int
+    private var waiterCount = 0
     private var allArrivedWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(participantCount: Int) {
-        self.participantCount = participantCount
+    init(expectedCount: Int) {
+        self.expectedCount = expectedCount
     }
 
-    func arrive() {
-        arrivedCount += 1
-        guard arrivedCount == participantCount else { return }
+    func joined() {
+        waiterCount += 1
+        guard waiterCount == expectedCount else { return }
         let waiters = allArrivedWaiters
         allArrivedWaiters.removeAll()
         for waiter in waiters {
@@ -421,7 +395,7 @@ private actor RequestBarrier {
     }
 
     func waitForAll() async {
-        guard arrivedCount < participantCount else { return }
+        guard waiterCount < expectedCount else { return }
         await withCheckedContinuation { allArrivedWaiters.append($0) }
     }
 }
