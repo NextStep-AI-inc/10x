@@ -24,7 +24,7 @@ struct HammerspoonProvider: AgentDesktopProvider {
                   version.split(separator: ".").first == "1",
                   let capabilities = parseCapabilities(value["capabilities"]),
                   let workspaceID = value["workspaceID"]?.stringValue,
-                  Self.isSafeIdentifier(workspaceID)
+                  Self.isPositiveDecimalIdentifier(workspaceID)
             else { return unavailable(.incompatible) }
             return ProviderProbe(availability: .healthy, integrationVersion: version, capabilities: capabilities)
         } catch {
@@ -42,7 +42,7 @@ struct HammerspoonProvider: AgentDesktopProvider {
                   version.split(separator: ".").first == "1",
                   let capabilities = parseCapabilities(value["capabilities"]),
                   let workspaceID = value["workspaceID"]?.stringValue,
-                  Self.isSafeIdentifier(workspaceID)
+                  Self.isPositiveDecimalIdentifier(workspaceID)
             else { throw AgentDesktopProviderError.unavailable(kind, .incompatible) }
             return PreparedAgentDesktop(provider: kind, workspaceID: workspaceID, capabilities: capabilities)
         } catch let error as AgentDesktopProviderError {
@@ -55,23 +55,12 @@ struct HammerspoonProvider: AgentDesktopProvider {
     func listWindows() async throws -> [AgentWindow] {
         let value = try await invoke("return hs.json.encode(tenx.listWindows())")
         guard let values = value.arrayValue else { throw AgentDesktopProviderError.malformedResponse(kind) }
-        return values.compactMap { value in
-            guard let id = value["id"]?.stringValue,
-                  Self.isSafeIdentifier(id),
-                  let processID = value["processID"]?.intValue,
-                  let app = value["app"]?.stringValue,
-                  !app.isEmpty
-            else { return nil }
-            return AgentWindow(
-                id: id,
-                processID: Int32(processID),
-                app: app,
-                workspaceID: value["workspaceID"]?.stringValue)
-        }
+        return try values.map(parseWindow)
     }
 
     func watchWindows() async throws -> AsyncStream<AgentWindowEvent> {
-        _ = try await invoke("return hs.json.encode(tenx.startWatcher())")
+        try requireSuccessfulOperation(
+            try await invoke("return hs.json.encode(tenx.startWatcher())"))
         return AsyncStream { continuation in
             let task = Task {
                 var previous = Set((try? await listWindows()) ?? [])
@@ -99,15 +88,21 @@ struct HammerspoonProvider: AgentDesktopProvider {
     }
 
     func openVisibly(workspaceID: String) async throws {
-        guard Self.isSafeIdentifier(workspaceID) else { throw AgentDesktopProviderError.invalidWorkspaceIdentifier }
+        guard Self.isPositiveDecimalIdentifier(workspaceID) else {
+            throw AgentDesktopProviderError.invalidWorkspaceIdentifier
+        }
         _ = try await fixedInvocation("openSpace", values: ["workspaceID": workspaceID])
     }
 
     func release(workspaceID: String) async {}
 
     private func invokeValidated(_ function: String, windowID: String, workspaceID: String) async throws {
-        guard Self.isSafeIdentifier(windowID) else { throw AgentDesktopProviderError.invalidWindowIdentifier }
-        guard Self.isSafeIdentifier(workspaceID) else { throw AgentDesktopProviderError.invalidWorkspaceIdentifier }
+        guard Self.isPositiveDecimalIdentifier(windowID) else {
+            throw AgentDesktopProviderError.invalidWindowIdentifier
+        }
+        guard Self.isPositiveDecimalIdentifier(workspaceID) else {
+            throw AgentDesktopProviderError.invalidWorkspaceIdentifier
+        }
         _ = try await fixedInvocation(function, values: ["windowID": windowID, "workspaceID": workspaceID])
     }
 
@@ -126,7 +121,9 @@ struct HammerspoonProvider: AgentDesktopProvider {
             throw AgentDesktopProviderError.malformedResponse(kind)
         }
         let command = "local values=hs.json.decode(hs.base64.decode('\(payload)')); return hs.json.encode(\(invocation))"
-        return try await invoke(command)
+        let result = try await invoke(command)
+        try requireSuccessfulOperation(result)
+        return result
     }
 
     private func invoke(_ command: String) async throws -> JSONValue {
@@ -150,7 +147,30 @@ struct HammerspoonProvider: AgentDesktopProvider {
         ProviderProbe(availability: availability, integrationVersion: nil, capabilities: .background)
     }
 
-    private static func isSafeIdentifier(_ value: String) -> Bool {
-        !value.isEmpty && value.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == ".") }
+    private func parseWindow(_ value: JSONValue) throws -> AgentWindow {
+        guard let id = value["id"]?.stringValue,
+              Self.isPositiveDecimalIdentifier(id),
+              case .int(let rawProcessID)? = value["processID"],
+              let processID = Int32(exactly: rawProcessID), processID > 0,
+              let app = value["app"]?.stringValue, !app.isEmpty
+        else { throw AgentDesktopProviderError.malformedResponse(kind) }
+        let workspaceID = value["workspaceID"]?.stringValue
+        if let workspaceID, !Self.isPositiveDecimalIdentifier(workspaceID) {
+            throw AgentDesktopProviderError.malformedResponse(kind)
+        }
+        return AgentWindow(id: id, processID: processID, app: app, workspaceID: workspaceID)
+    }
+
+    private func requireSuccessfulOperation(_ value: JSONValue) throws {
+        guard value["ok"]?.boolValue == true else {
+            throw AgentDesktopProviderError.operationFailed(kind)
+        }
+    }
+
+    private static func isPositiveDecimalIdentifier(_ value: String) -> Bool {
+        guard !value.isEmpty, value.allSatisfy({ $0.isNumber }), let numericValue = Int64(value) else {
+            return false
+        }
+        return numericValue > 0
     }
 }

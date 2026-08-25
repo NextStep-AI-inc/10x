@@ -8,7 +8,7 @@ tenx.workspaceID = tenx.workspaceID or nil
 local watcher = nil
 
 local function validID(value)
-    return type(value) == "string" and value:match("^[A-Za-z0-9._-]+$") ~= nil
+    return type(value) == "string" and value:match("^[0-9]+$") ~= nil and tonumber(value) > 0
 end
 
 local function checkedWindow(windowID)
@@ -18,7 +18,7 @@ end
 
 local function checkedSpace(spaceID)
     if not validID(spaceID) then return nil end
-    return tonumber(spaceID) or spaceID
+    return tonumber(spaceID)
 end
 
 function tenx.probe()
@@ -61,8 +61,7 @@ function tenx.moveWindow(windowID, workspaceID)
     local window = checkedWindow(windowID)
     local space = checkedSpace(workspaceID)
     if window == nil or space == nil then return { ok = false } end
-    hs.spaces.moveWindowToSpace(window:id(), space)
-    return { ok = true }
+    return { ok = hs.spaces.moveWindowToSpace(window:id(), space) == true }
 end
 
 function tenx.restoreWindow(windowID, workspaceID)
@@ -72,8 +71,7 @@ end
 function tenx.openSpace(workspaceID)
     local space = checkedSpace(workspaceID)
     if space == nil then return { ok = false } end
-    hs.spaces.gotoSpace(space)
-    return { ok = true }
+    return { ok = hs.spaces.gotoSpace(space) == true }
 end
 
 function tenx.stopWatcher()

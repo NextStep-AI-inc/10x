@@ -80,5 +80,6 @@ enum AgentDesktopProviderError: Error, Sendable, Equatable {
     case invalidWindowIdentifier
     case invalidWorkspaceIdentifier
     case malformedResponse(AgentDesktopProviderKind)
+    case operationFailed(AgentDesktopProviderKind)
     case probeFailed(AgentDesktopProviderKind)
 }

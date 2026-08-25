@@ -30,6 +30,33 @@ import Testing
     #expect(started.duration(to: clock.now) < .seconds(1))
 }
 
+@Test func commandRunnerTerminatesAHelperWhenTheCallingTaskIsCancelled() async throws {
+    let task = Task {
+        try await AgentDesktopCommandRunner().run(
+            executable: URL(filePath: "/bin/sleep"),
+            arguments: ["2"],
+            timeout: .seconds(10))
+    }
+    try await Task.sleep(for: .milliseconds(20))
+    task.cancel()
+
+    await #expect(throws: CancellationError.self) {
+        _ = try await task.value
+    }
+}
+
+@Test func commandRunnerRejectsOutputOver64KiB() async throws {
+    let fixture = try makeArgumentPrinterFixture()
+    defer { try? FileManager.default.removeItem(at: fixture.deletingLastPathComponent()) }
+
+    await #expect(throws: AgentDesktopCommandError.outputExceededLimit(executable: "argv-printer")) {
+        try await AgentDesktopCommandRunner().run(
+            executable: fixture,
+            arguments: ["--large-output"],
+            timeout: .seconds(1))
+    }
+}
+
 private func makeArgumentPrinterFixture() throws -> URL {
     let directory = FileManager.default.temporaryDirectory.appending(path: "tenx-command-runner-\(UUID())")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -37,7 +64,12 @@ private func makeArgumentPrinterFixture() throws -> URL {
     let executable = directory.appending(path: "argv-printer")
     try """
     #include <stdio.h>
+    #include <string.h>
     int main(int argc, char *argv[]) {
+        if (argc == 2 && strcmp(argv[1], "--large-output") == 0) {
+            for (int i = 0; i <= 65536; i++) putchar('x');
+            return 0;
+        }
         putchar('[');
         for (int i = 1; i < argc; i++) printf("%s\\\"%s\\\"", i == 1 ? "" : ",", argv[i]);
         puts("]");

@@ -27,6 +27,31 @@ import Testing
     #expect(readiness.backgroundFallbackAvailable)
 }
 
+@Test func automaticSelectionSkipsUnhealthyProvidersInStrengthOrder() async throws {
+    let aero = FakeAgentDesktopProvider(kind: .aeroSpace, probe: .failed)
+    let hammerspoon = FakeAgentDesktopProvider(kind: .hammerspoon, probe: .healthy)
+    let background = FakeAgentDesktopProvider(kind: .background, probe: .healthy)
+    let coordinator = AgentDesktopCoordinator(providers: [aero, hammerspoon, background])
+
+    let prepared = try await coordinator.prepare(preference: .automatic, sessionToken: "abc123")
+
+    #expect(prepared.provider == .hammerspoon)
+    #expect(await aero.recordedPrepareTokens().isEmpty)
+    #expect(await hammerspoon.recordedPrepareTokens() == ["abc123"])
+    #expect(await background.recordedPrepareTokens().isEmpty)
+}
+
+@Test func explicitPrepareNeverFallsBackToAnotherProvider() async {
+    let aero = FakeAgentDesktopProvider(kind: .aeroSpace, probe: .missing)
+    let background = FakeAgentDesktopProvider(kind: .background, probe: .healthy)
+    let coordinator = AgentDesktopCoordinator(providers: [aero, background])
+
+    await #expect(throws: AgentDesktopProviderError.self) {
+        try await coordinator.prepare(preference: .aeroSpace, sessionToken: "abc123")
+    }
+    #expect(await background.recordedPrepareTokens().isEmpty)
+}
+
 private actor FakeAgentDesktopProvider: AgentDesktopProvider {
     nonisolated let kind: AgentDesktopProviderKind
     private let result: ProviderAvailability

@@ -46,7 +46,7 @@ struct AeroSpaceProvider: AgentDesktopProvider {
         guard let windows = output.json.arrayValue else {
             throw AgentDesktopProviderError.malformedResponse(kind)
         }
-        return windows.compactMap(parseWindow)
+        return try windows.map(parseWindow)
     }
 
     func watchWindows() async throws -> AsyncStream<AgentWindowEvent> {
@@ -107,14 +107,19 @@ struct AeroSpaceProvider: AgentDesktopProvider {
         return workspaceID
     }
 
-    private func parseWindow(_ value: JSONValue) -> AgentWindow? {
-        guard let id = value["window-id"]?.intValue.map(String.init),
-              !id.isEmpty,
+    private func parseWindow(_ value: JSONValue) throws -> AgentWindow {
+        guard case .int(let windowID)? = value["window-id"], windowID > 0,
               let app = value["app-name"]?.stringValue,
-              !app.isEmpty
-        else { return nil }
-        let processID = Int32(value["pid"]?.intValue ?? -1)
-        return AgentWindow(id: id, processID: processID, app: app, workspaceID: value["workspace"]?.stringValue)
+              !app.isEmpty,
+              case .int(let rawProcessID)? = value["app-pid"],
+              let processID = Int32(exactly: rawProcessID), processID > 0,
+              let workspaceID = value["workspace"]?.stringValue, !workspaceID.isEmpty
+        else { throw AgentDesktopProviderError.malformedResponse(kind) }
+        return AgentWindow(
+            id: String(windowID),
+            processID: processID,
+            app: app,
+            workspaceID: workspaceID)
     }
 
     private static func isSafeIdentifier(_ value: String) -> Bool {
