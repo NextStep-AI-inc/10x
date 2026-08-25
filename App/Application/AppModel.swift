@@ -12,6 +12,7 @@ final class AppModel {
     var sessions: [SessionMetadata] = []
     var providerUsages: [ProviderUsageProvider] = []
     var isSearchPresented = false
+    private(set) var activeSession: SessionController?
     private(set) var processManager: SessionProcessManager?
 
     @ObservationIgnored private let dependencies: AppDependencies
@@ -34,6 +35,7 @@ final class AppModel {
 
     func chooseProject(_ url: URL) {
         selectedProjectURL = url.standardizedFileURL
+        activeSession = nil
         route = .newSession
     }
 
@@ -42,6 +44,7 @@ final class AppModel {
     }
 
     func openNewSession() {
+        activeSession = nil
         route = .newSession
     }
 
@@ -54,7 +57,24 @@ final class AppModel {
             selectedProjectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
                 .standardizedFileURL
         }
+        guard let processManager else { return }
+        let controller = SessionController(processManager: processManager)
+        activeSession = controller
         route = .session(metadata.path)
+        Task { await controller.openExisting(metadata) }
+    }
+
+    func startNewSession(prompt: String) {
+        guard let processManager, let selectedProjectURL else { return }
+        let controller = SessionController(processManager: processManager)
+        controller.draft = prompt
+        activeSession = controller
+        route = .session("new:\(UUID().uuidString)")
+        Task {
+            await controller.openNew(projectURL: selectedProjectURL)
+            await controller.sendPrompt()
+            await reloadSessions()
+        }
     }
 
     func reloadSessions() async {

@@ -34,8 +34,13 @@ struct AppShellView: View {
         case .newSession:
             NewSessionView(model: model)
         case .session:
-            Text("Session")
-                .font(TenXTypography.title(size: 32))
+            if let activeSession = model.activeSession {
+                ActiveSessionView(controller: activeSession)
+            } else {
+                Text("Session unavailable")
+                    .font(TenXTypography.body(size: 13))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
         case .settings:
             Text("Settings")
                 .font(TenXTypography.title(size: 32))

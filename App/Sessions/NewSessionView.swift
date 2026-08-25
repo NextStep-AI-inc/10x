@@ -12,9 +12,12 @@ struct NewSessionView: View {
 
             ComposerView(
                 draft: $draft,
-                projectURL: model.selectedProjectURL,
-                onChooseProject: chooseProject,
-                onSend: {})
+                presentation: .newSession(
+                    projectURL: model.selectedProjectURL,
+                    onChooseProject: chooseProject),
+                onSend: {
+                    model.startNewSession(prompt: draft)
+                })
             .frame(maxWidth: 780)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
