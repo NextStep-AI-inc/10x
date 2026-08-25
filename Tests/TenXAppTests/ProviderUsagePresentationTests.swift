@@ -1,5 +1,28 @@
+import Foundation
 import Testing
 @testable import TenXApp
+
+@Test func usagePresentationShowsRemainingCapacityAndOmitsUnboundedRailAmounts() throws {
+    let snapshot = try usageSnapshotFixture()
+    let presentation = ProviderUsagePresentation.make(
+        snapshot: snapshot,
+        providerNames: ["cursor": "Cursor"],
+        now: Date(timeIntervalSince1970: 1_787_675_746))
+
+    let account = try #require(presentation.providers.first?.accounts.first)
+    #expect(account.label == "tanner@example.com")
+    #expect(account.limits[0].percentage == 50)
+    #expect(account.limits[0].tone == .standard)
+    #expect(account.amounts == [ProviderUsageAmount(
+        id: "cursor:requests", label: "Requests", value: 4, unit: "requests")])
+    #expect(presentation.railProviders[0].accounts[0].limits.map(\.label) == ["Cursor Models"])
+}
+
+@Test func remainingCapacityClampsAndUsesAttentionTones() {
+    #expect(ProviderUsageLimit.remainingPercentage(usedFraction: -0.2) == 100)
+    #expect(ProviderUsageLimit.remainingPercentage(usedFraction: 0.82) == 18)
+    #expect(ProviderUsageLimit.remainingPercentage(usedFraction: 1.4) == 0)
+}
 
 @Test func providerUsageNormalizesPercentagesForRendering() {
     let over = ProviderUsageLimit(id: "over", label: "Weekly", percentage: 140, resetWindow: "Mon")
