@@ -34,6 +34,10 @@ struct SessionDeletionConfirmationView: View {
                             .keyboardShortcut(.cancelAction)
                             .focused($isCancelFocused)
                             .accessibilityFocused($isCancelAccessibilityFocused)
+                            .onKeyPress(.escape) {
+                                onCancel()
+                                return .handled
+                            }
                         Button("Delete", action: onDelete)
                             .buttonStyle(.borderedProminent)
                             .tint(TenXPalette.color(TenXPalette.signalRedHex))
