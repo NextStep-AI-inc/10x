@@ -51,6 +51,16 @@ public struct RpcCommand: Sendable, Equatable {
         RpcCommand(type: "negotiate_protocol", fields: ["protocolVersion": .int(version)])
     }
 
+    // MARK: - Login
+
+    public static func getLoginProviders() -> RpcCommand {
+        RpcCommand(type: "get_login_providers")
+    }
+
+    public static func login(providerID: String) -> RpcCommand {
+        RpcCommand(type: "login", fields: ["providerId": .string(providerID)])
+    }
+
     // MARK: - Prompting
 
     public static func prompt(message: String, streamingBehavior: StreamingBehavior?) -> RpcCommand {
