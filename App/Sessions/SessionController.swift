@@ -23,10 +23,13 @@ final class SessionController {
     private(set) var isRecoveryPresented = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
+    let id: UUID
+    private(set) var providerID: String?
     var draft = ""
     var streamingBehavior: StreamingBehavior? = .steer
 
     private let processManager: SessionProcessManager
+    private let activityRegistry: SessionActivityRegistry?
     private let timelineLoader = SessionTimelineLoader()
     private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
@@ -37,8 +40,14 @@ final class SessionController {
     private var reconciliationTask: Task<Void, Never>?
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
 
-    init(processManager: SessionProcessManager) {
+    init(
+        processManager: SessionProcessManager,
+        id: UUID = UUID(),
+        activityRegistry: SessionActivityRegistry? = nil
+    ) {
         self.processManager = processManager
+        self.id = id
+        self.activityRegistry = activityRegistry
     }
 
     init(
@@ -51,7 +60,10 @@ final class SessionController {
         headerMetadata: SessionHeaderMetadata = SessionHeaderMetadata(
             branch: "",
             repo: "",
-            worktreePath: nil)
+            worktreePath: nil),
+        id: UUID = UUID(),
+        providerID: String? = nil,
+        activityRegistry: SessionActivityRegistry? = nil
     ) {
         self.processManager = processManager
         self.items = previewItems
@@ -60,6 +72,9 @@ final class SessionController {
         self.modelName = modelName
         self.thinkingLevel = thinkingLevel
         self.headerMetadata = headerMetadata
+        self.id = id
+        self.providerID = providerID
+        self.activityRegistry = activityRegistry
     }
 
     var isComposerAvailable: Bool {
@@ -78,6 +93,7 @@ final class SessionController {
         fallbackThreadStartDate = metadata.created
         headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
         runtimeState = .loading
+        reportActivity()
 
         do {
             let handle = try await processManager.open(
@@ -95,6 +111,7 @@ final class SessionController {
         title = "New session"
         headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
         runtimeState = .loading
+        reportActivity()
 
         do {
             let handle = try await processManager.openNew(projectDirectory: projectURL.path)
@@ -146,6 +163,7 @@ final class SessionController {
         reconciliationTask?.cancel()
         await processManager.close(sessionPath: sessionPath)
         runtimeState = .loading
+        reportActivity()
         isRecoveryPresented = false
         do {
             let handle = try await processManager.open(
@@ -188,6 +206,11 @@ final class SessionController {
         reducer.runtimeState = runtimeState
         isRecoveryPresented = true
         logText = stderrTail.isEmpty ? "OMP exited without stderr output." : stderrTail
+        activityRegistry?.remove(sessionID: id)
+    }
+
+    func stopActivityTracking() {
+        activityRegistry?.remove(sessionID: id)
     }
 
     func dismissRecovery() {
@@ -307,10 +330,14 @@ final class SessionController {
     private func applyState(_ data: JSONValue?) {
         guard let data else {
             runtimeState = .idle
+            reportActivity()
             return
         }
         title = data["sessionName"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
-        modelName = Self.modelLabel(data["model"]) ?? modelName
+        if let model = data["model"] {
+            modelName = Self.modelLabel(model) ?? modelName
+            providerID = Self.providerID(from: model)
+        }
         thinkingLevel = data["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
         contextPercentage = Self.contextPercent(data["contextUsage"])
         queuedMessageCount = data["queuedMessageCount"]?.intValue ?? 0
@@ -318,6 +345,7 @@ final class SessionController {
         if let reportedPath = data["sessionFile"]?.stringValue {
             sessionPath = reportedPath
         }
+        reportActivity()
     }
 
     private func applyEventMetadata(_ frame: RpcFrame) {
@@ -326,8 +354,12 @@ final class SessionController {
         case "session_info_update":
             title = payload["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
         case "config_update":
-            modelName = Self.modelLabel(payload["model"]) ?? modelName
+            if let model = payload["model"] {
+                modelName = Self.modelLabel(model) ?? modelName
+                providerID = Self.providerID(from: model)
+            }
             thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
+            reportActivity()
         case "thinking_level_changed":
             thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
         case "model_changed":
@@ -342,6 +374,7 @@ final class SessionController {
         do {
             applyState(try await handle.client.send(.getState()).data)
             reducer.runtimeState = runtimeState
+            reportActivity()
         } catch {
             fail(error, function: "refreshState")
         }
@@ -350,6 +383,7 @@ final class SessionController {
     private func syncReducerState() {
         items = reducer.items
         runtimeState = reducer.runtimeState
+        reportActivity()
     }
 
     private func consumeExtensionUI(_ request: ExtensionUIRequest) {
@@ -422,6 +456,14 @@ final class SessionController {
     private func fail(_ error: any Error, function: String) {
         runtimeState = .failed("[Session:\(function)] Session command failed: \(error)")
         reducer.runtimeState = runtimeState
+        reportActivity()
+    }
+
+    private func reportActivity() {
+        activityRegistry?.update(
+            sessionID: id,
+            providerID: providerID,
+            isGenerating: runtimeState == .streaming)
     }
 
     private static func modelLabel(_ value: JSONValue?) -> String? {
@@ -429,6 +471,14 @@ final class SessionController {
             ?? value?["id"]?.stringValue
             ?? value?["modelId"]?.stringValue
             ?? value?["name"]?.stringValue
+    }
+
+    static func providerID(from value: JSONValue?) -> String? {
+        guard let providerID = value?["provider"]?.stringValue,
+              !providerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return providerID
     }
 
     static func contextPercent(_ value: JSONValue?) -> Int? {
