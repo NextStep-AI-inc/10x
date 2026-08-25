@@ -331,6 +331,30 @@ import Testing
 }
 
 @MainActor
+@Test func archivingAPendingSessionClosesItsLaterOpenedProcess() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-pending-archive-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let metadata = navigationMetadata("/tmp/fake.jsonl", cwd: project.path)
+    let manager = try #require(model.processManager)
+
+    model.openSession(metadata)
+    await model.archiveSession(metadata)
+    try await Task.sleep(for: .milliseconds(500))
+
+    #expect(await manager.handle(for: metadata.path) == nil)
+    await manager.closeAll()
+}
+
+@MainActor
 @Test func nonSessionRoutesAreNotForegroundGeneratingWhileBackgroundActivityContinues() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-foreground-activity-\(UUID().uuidString)")

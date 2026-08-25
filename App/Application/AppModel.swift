@@ -145,6 +145,10 @@ final class AppModel {
         route = .session(metadata.path)
         Task {
             await controller.openExisting(metadata)
+            guard managedSessions[controller.id] === controller else {
+                await processManager.close(sessionPath: controller.sessionPath ?? metadata.path)
+                return
+            }
             indexManagedSessionPath(for: controller)
         }
     }
@@ -158,6 +162,12 @@ final class AppModel {
         route = .session("new:\(UUID().uuidString)")
         Task {
             await controller.openNew(projectURL: selectedProjectURL)
+            guard managedSessions[controller.id] === controller else {
+                if let sessionPath = controller.sessionPath {
+                    await processManager.close(sessionPath: sessionPath)
+                }
+                return
+            }
             indexManagedSessionPath(for: controller)
             await controller.sendPrompt()
             await reloadSessions()
@@ -266,6 +276,9 @@ final class AppModel {
         }
         let matchingIDs = Set(matchingControllers.map(\.id))
         let matchingPaths = Set(matchingControllers.compactMap(\.sessionPath))
+        let matchingIndexedPaths = Set(paths.filter { path in
+            managedSessionPaths[path].map(matchingIDs.contains) == true
+        })
 
         for controller in matchingControllers {
             removeManagedSession(controller)
@@ -283,12 +296,12 @@ final class AppModel {
             if routePath != nil { route = .newSession }
         }
 
-        let pathsToClose = if matchingPaths.isEmpty,
+        let pathsToClose = if matchingPaths.union(matchingIndexedPaths).isEmpty,
                               let routePath,
                               paths.contains(routePath) {
             [routePath]
         } else {
-            matchingPaths.sorted()
+            matchingPaths.union(matchingIndexedPaths).sorted()
         }
         for path in pathsToClose {
             await processManager?.close(sessionPath: path)
