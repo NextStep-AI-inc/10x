@@ -14,6 +14,7 @@ public actor SessionProcessManager {
 
     public typealias ClientFactory = @Sendable (RpcClientConfiguration) -> RpcClient
 
+    private let executable: String
     private let clientFactory: ClientFactory
     private var handles: [String: Handle] = [:]
     private var exitWatchers: [String: Task<Void, Never>] = [:]
@@ -30,7 +31,11 @@ public actor SessionProcessManager {
         public let stderrTail: String
     }
 
-    public init(clientFactory: @escaping ClientFactory = { RpcClient(configuration: $0) }) {
+    public init(
+        executable: String = "omp",
+        clientFactory: @escaping ClientFactory = { RpcClient(configuration: $0) }
+    ) {
+        self.executable = executable
         self.clientFactory = clientFactory
         (exitStream, exitContinuation) = AsyncStream<UnexpectedExit>.makeStream(
             bufferingPolicy: .unbounded)
@@ -47,8 +52,10 @@ public actor SessionProcessManager {
         if let inFlight = opening[sessionPath] { return try await inFlight.value }
 
         let factory = clientFactory
+        let executable = executable
         let task = Task { () throws -> Handle in
             var configuration = RpcClientConfiguration()
+            configuration.executable = executable
             configuration.cwd = URL(fileURLWithPath: cwd)
             configuration.resumeSessionPath = sessionPath
             let client = factory(configuration)
@@ -72,6 +79,7 @@ public actor SessionProcessManager {
     /// Starts a fresh session in a project directory.
     public func openNew(projectDirectory: String) async throws -> Handle {
         var configuration = RpcClientConfiguration()
+        configuration.executable = executable
         configuration.cwd = URL(fileURLWithPath: projectDirectory)
         let client = clientFactory(configuration)
         try await client.start()

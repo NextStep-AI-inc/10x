@@ -77,6 +77,26 @@ private func fakeManager(mode: String = "basic") -> SessionProcessManager {
     await manager.closeAll()
 }
 
+@Test func managerForwardsConfiguredExecutable() async throws {
+    let capture = ConfigurationCapture()
+    let manager = SessionProcessManager(
+        executable: "/Applications/10x Support/omp",
+        clientFactory: { configuration in
+            capture.append(configuration)
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+            fake.rawArgv = true
+            fake.cwd = nil
+            return RpcClient(configuration: fake)
+        })
+
+    _ = try await manager.openNew(projectDirectory: "/tmp/project")
+
+    #expect(capture.snapshot().first?.executable == "/Applications/10x Support/omp")
+    await manager.closeAll()
+}
+
 @Test func openNewForwardsWorkingDirectoryAndUsesUniqueFallbackKeys() async throws {
     let capture = ConfigurationCapture()
     let manager = capturingManager(capture, mode: "no-session-file")
