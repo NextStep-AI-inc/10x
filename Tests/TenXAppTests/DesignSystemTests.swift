@@ -16,6 +16,32 @@ import Testing
         background: TenXPalette.canvasHex) >= 4.5)
 }
 
+@Test func pressedGhostActionPreservesContrastAndDisabledActionsDoNotReact() throws {
+    let pressed = GhostActionVisualState(
+        isEnabled: true,
+        isHovering: true,
+        isPressed: true)
+    let pressedBackground = try #require(pressed.backgroundHex)
+    let pressedForeground = composite(
+        foreground: TenXPalette.interactiveCyanHex,
+        opacity: pressed.foregroundOpacity,
+        background: pressedBackground)
+
+    #expect(contrastRatio(
+        foreground: pressedForeground,
+        background: pressedBackground) >= 4.5)
+    #expect(pressed.scale < 1)
+
+    let disabled = GhostActionVisualState(
+        isEnabled: false,
+        isHovering: true,
+        isPressed: true)
+    #expect(disabled.foregroundOpacity == 1)
+    #expect(disabled.usesMutedForeground)
+    #expect(disabled.backgroundHex == nil)
+    #expect(disabled.scale == 1)
+}
+
 private func contrastRatio(foreground: Int, background: Int) -> Double {
     let lighter = max(relativeLuminance(foreground), relativeLuminance(background))
     let darker = min(relativeLuminance(foreground), relativeLuminance(background))
@@ -30,4 +56,13 @@ private func relativeLuminance(_ hex: Int) -> Double {
             : pow((component + 0.055) / 1.055, 2.4)
     }
     return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+
+private func composite(foreground: Int, opacity: Double, background: Int) -> Int {
+    [16, 8, 0].reduce(0) { result, shift in
+        let foregroundChannel = Double((foreground >> shift) & 0xFF)
+        let backgroundChannel = Double((background >> shift) & 0xFF)
+        let channel = Int((foregroundChannel * opacity + backgroundChannel * (1 - opacity)).rounded())
+        return result | (channel << shift)
+    }
 }

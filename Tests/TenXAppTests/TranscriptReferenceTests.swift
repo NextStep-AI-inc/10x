@@ -53,3 +53,12 @@ import Testing
 
     #expect(references.isEmpty)
 }
+
+@Test func adjacentPlainAbsolutePathsRemainSeparateReferences() {
+    let references = TranscriptReference.extract(from: "Compare /tmp/one.swift /tmp/two.swift")
+
+    #expect(references == [
+        .file(path: "/tmp/one.swift", line: nil),
+        .file(path: "/tmp/two.swift", line: nil),
+    ])
+}
