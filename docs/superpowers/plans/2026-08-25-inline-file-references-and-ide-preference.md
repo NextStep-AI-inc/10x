@@ -952,11 +952,11 @@ Report the worktree path, branch, commit SHAs, verified evidence, skipped checks
 
 ## Verification evidence
 
-Verified on `codex/inline-file-references` through `1bc5f3b` in the explicit
+Verified on `codex/inline-file-references` through `f5d53d6` in the explicit
 Release bundle at
 `.build/DerivedData-inline-file-references/Build/Products/Release/10x.app`.
 The final binary SHA-256 was
-`3ca6384985bd3260cb5948e92776bdbdd950843c725bbdb63cabd6690418e7ab`.
+`6eb7486dac1034e37be29cd8732acc8b969616f1635dc700a2a05ca64adefc65`.
 
 - The independent correctness reviewer reran the pre-fix head `6654704` and
   passed 123/123 tests. After Fix Round 1, the fresh full suite passed 131/131
@@ -970,6 +970,12 @@ The final binary SHA-256 was
   `1bc5f3b` (`/tmp/10x-inline-fix3-parser-green.log` and
   `/tmp/10x-inline-fix3-full.log`). `/tmp/one.swift child/file.swift` no longer
   produces a wrong absolute-prefix action.
+- Fix Round 4 observed the plain-URL regression RED, then passed the focused
+  four-case parser matrix and 135/135 full-suite tests at `f5d53d6`
+  (`/tmp/10x-inline-fix4-parser-green.log` and
+  `/tmp/10x-inline-fix4-full.log`). `https://example.com` remains a web
+  reference when followed by `child/file.swift`; path-safety checks remain
+  file-only.
 - Parser, Settings-query handoff, accessibility-announcement, missing-file
   action, contrast, Preferred IDE semantics, and rail-motion regressions were
   observed RED before their fixes. The final full suite covers each regression.
@@ -984,6 +990,10 @@ The final binary SHA-256 was
   the two historical-session capture attempts.
 - The Fix Round 3 clean Release build exited 0 with `CLEAN SUCCEEDED` and
   `BUILD SUCCEEDED` (`/tmp/10x-inline-fix3-release.log`). Its warning scan found
+  only the unchanged AppIntents metadata warning; no UI recapture was required
+  for this parser-only correction.
+- The Fix Round 4 clean Release build exited 0 with `CLEAN SUCCEEDED` and
+  `BUILD SUCCEEDED` (`/tmp/10x-inline-fix4-release.log`). Its warning scan found
   only the unchanged AppIntents metadata warning; no UI recapture was required
   for this parser-only correction.
 - Accessibility targeted the exact Release process. PID 94221 exposed an
