@@ -11,6 +11,18 @@ import Testing
 }
 
 @MainActor
+@Test func chooseIDESelectsSettingsAndRequestsPreferredIDEFocus() {
+    let model = AppModel()
+
+    model.openSettings(focus: .preferredIDE)
+
+    #expect(model.route == .settings)
+    #expect(model.settingsFocusTarget == .preferredIDE)
+    model.consumeSettingsFocus()
+    #expect(model.settingsFocusTarget == nil)
+}
+
+@MainActor
 @Test func openNewSessionSelectsNewSessionRoute() {
     let model = AppModel()
     model.route = .settings

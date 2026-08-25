@@ -14,6 +14,11 @@ struct AppShellView: View {
                     routeCanvas
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.leading, 64)
+                        .environment(model.idePreferenceStore)
+                        .environment(\.fileOpenService, model.fileOpenService)
+                        .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
+                            model.openSettings(focus: .preferredIDE)
+                        })
                     FloatingRailView(model: model, expansion: railExpansion)
                 }
                 .overlay(alignment: .topTrailing) {
@@ -51,7 +56,12 @@ struct AppShellView: View {
             }
         case .settings:
             if let settingsModel = model.settingsModel {
-                SettingsView(model: settingsModel)
+                SettingsView(
+                    model: settingsModel,
+                    registry: model.ideRegistry,
+                    store: model.idePreferenceStore,
+                    focusTarget: model.settingsFocusTarget,
+                    onFocusConsumed: model.consumeSettingsFocus)
             } else {
                 Text("OMP settings unavailable")
                     .font(TenXTypography.body(size: 13))

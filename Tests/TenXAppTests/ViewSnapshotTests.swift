@@ -58,8 +58,15 @@ import Testing
 @MainActor
 @Test func continuousSettingsSnapshot() async throws {
     let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
+    let suiteName = "TenXAppTests.SettingsSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let registry = IDERegistry.testing(applications: [:])
+    let store = IDEPreferenceStore(defaults: defaults, registry: registry)
     await model.load()
-    try assertSnapshot(SettingsView(model: model), name: "continuous-settings")
+    try assertSnapshot(
+        SettingsView(model: model, registry: registry, store: store),
+        name: "continuous-settings")
 }
 
 @MainActor
