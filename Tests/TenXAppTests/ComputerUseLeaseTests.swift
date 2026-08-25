@@ -54,23 +54,27 @@ import Testing
     await replacement.release()
 }
 
-@Test func leaseDoesNotSurviveIntoAnExecChild() async throws {
+@Test func leaseDescriptorDoesNotSurviveOwnerExitWithAnExecChild() async throws {
     let directory = try makeLeaseDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
 
-    let lease = ComputerUseLease(directory: directory)
-    try await lease.acquire(sessionID: "parent")
-
     let helper = try makeLeaseHelper(in: directory)
-    let child = try HelperProcess(executableURL: helper, arguments: ["--pause"], expectedSignal: "ready")
-    defer { child.stopIfNeeded() }
-    try child.start()
+    let owner = try makeLeaseOwner(in: directory)
+    let process = try LeaseOwnerProcess(
+        executableURL: owner,
+        arguments: [directory.path, helper.path],
+        traceURL: directory.appending(path: "owner-trace"))
+    defer { process.stopOwnerIfNeeded() }
+    let childProcessID = try process.startAndWaitForOwnerExit()
+    defer { process.stopChildIfNeeded(childProcessID) }
 
-    await lease.release()
+    #expect(kill(childProcessID, 0) == 0)
 
-    let replacement = ComputerUseLease(directory: directory)
-    try await replacement.acquire(sessionID: "replacement")
-    await replacement.release()
+    let contender = ComputerUseLease(directory: directory)
+    try await contender.acquire(sessionID: "contender")
+    await contender.release()
+
+    try process.stopChild(childProcessID)
 }
 
 @Test func leaseRepairsPermissionsOnExistingPaths() async throws {
@@ -135,14 +139,22 @@ private func makeLeaseHelper(in directory: URL) throws -> URL {
     let executable = directory.appending(path: "lease-helper")
     try """
     #include <fcntl.h>
+    #include <signal.h>
     #include <stdio.h>
     #include <string.h>
     #include <sys/file.h>
     #include <unistd.h>
 
+    static void stop_child(int signal) {
+        puts("child-stopped");
+        fflush(stdout);
+        _exit(0);
+    }
+
     int main(int argc, char *argv[]) {
         if (argc == 2 && strcmp(argv[1], "--pause") == 0) {
-            puts("ready");
+            signal(SIGTERM, stop_child);
+            puts("child-ready");
             fflush(stdout);
             pause();
             return 0;
@@ -160,6 +172,73 @@ private func makeLeaseHelper(in directory: URL) throws -> URL {
     let compiler = Process()
     compiler.executableURL = URL(filePath: "/usr/bin/xcrun")
     compiler.arguments = ["clang", source.path, "-o", executable.path]
+    try runAndWaitForSuccess(compiler)
+    return executable
+}
+
+private func makeLeaseOwner(in directory: URL) throws -> URL {
+    let source = directory.appending(path: "lease-owner.swift")
+    let executable = directory.appending(path: "lease-owner")
+    try """
+    import Darwin
+    import Foundation
+
+    @main
+    struct LeaseOwner {
+        static func main() async {
+            let arguments = CommandLine.arguments
+            let traceURL = URL(filePath: arguments[1]).appending(path: "owner-trace")
+            func trace(_ message: String) {
+                try? message.write(to: traceURL, atomically: true, encoding: .utf8)
+            }
+            trace("started")
+            let lease = ComputerUseLease(directory: URL(filePath: arguments[1]))
+            do {
+                try await lease.acquire(sessionID: "owner")
+                trace("acquired")
+                var childProcessID: pid_t = 0
+                let spawnResult = arguments[2].withCString { executable in
+                    "--pause".withCString { pause in
+                        var childArguments: [UnsafeMutablePointer<CChar>?] = [
+                            UnsafeMutablePointer(mutating: executable),
+                            UnsafeMutablePointer(mutating: pause),
+                            nil,
+                        ]
+                        return posix_spawn(
+                            &childProcessID,
+                            executable,
+                            nil,
+                            nil,
+                            &childArguments,
+                            environ)
+                    }
+                }
+                guard spawnResult == 0 else {
+                    _exit(1)
+                }
+                trace("child-pid:\\(childProcessID)")
+                _exit(0)
+            } catch {
+                trace("error")
+                _exit(1)
+            }
+        }
+    }
+    """.write(to: source, atomically: true, encoding: .utf8)
+
+    let root = URL(filePath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let compiler = Process()
+    compiler.executableURL = URL(filePath: "/usr/bin/xcrun")
+    compiler.arguments = [
+        "swiftc",
+        "-swift-version", "6",
+        root.appending(path: "App/ComputerUse/ComputerUseLease.swift").path,
+        source.path,
+        "-o", executable.path,
+    ]
     try runAndWaitForSuccess(compiler)
     return executable
 }
@@ -215,6 +294,7 @@ private final class HelperProcess {
         process.executableURL = executableURL
         process.arguments = arguments
         process.standardOutput = output
+        process.standardError = output
         process.terminationHandler = { [exited] _ in exited.signal() }
         output.fileHandleForReading.readabilityHandler = { [ready, signal] handle in
             signal.set(String(decoding: handle.availableData, as: UTF8.self))
@@ -252,6 +332,70 @@ private final class HelperProcess {
     }
 }
 
+private final class LeaseOwnerProcess {
+    private let process = Process()
+    private let exited = DispatchSemaphore(value: 0)
+    private let traceURL: URL
+
+    init(executableURL: URL, arguments: [String], traceURL: URL) throws {
+        self.traceURL = traceURL
+        process.executableURL = executableURL
+        process.arguments = arguments
+        process.terminationHandler = { [exited] _ in exited.signal() }
+    }
+
+    func startAndWaitForOwnerExit() throws -> pid_t {
+        try process.run()
+        guard exited.wait(timeout: .now() + 5) == .success, process.terminationStatus == 0 else {
+            throw LeaseTestError.processFailed
+        }
+        let trace = try String(contentsOf: traceURL, encoding: .utf8)
+        guard let childProcessID = childProcessID(from: trace) else {
+            throw LeaseTestError.processFailed
+        }
+        return childProcessID
+    }
+
+    func stopOwnerIfNeeded() {
+        stopProcess(process, exited: exited)
+    }
+
+    func stopChild(_ childProcessID: pid_t) throws {
+        guard kill(childProcessID, 0) == 0 else {
+            return
+        }
+        let exited = DispatchSemaphore(value: 0)
+        let exitSource = DispatchSource.makeProcessSource(
+            identifier: childProcessID,
+            eventMask: .exit,
+            queue: .global())
+        exitSource.setEventHandler { exited.signal() }
+        exitSource.resume()
+        defer { exitSource.cancel() }
+        guard kill(childProcessID, SIGTERM) == 0 else {
+            throw LeaseTestError.processFailed
+        }
+        guard exited.wait(timeout: .now() + 5) == .success else {
+            _ = kill(childProcessID, SIGKILL)
+            guard exited.wait(timeout: .now() + 1) == .success else {
+                throw LeaseTestError.processTimedOut
+            }
+            return
+        }
+    }
+
+    func stopChildIfNeeded(_ childProcessID: pid_t) {
+        try? stopChild(childProcessID)
+    }
+
+    private func childProcessID(from output: String) -> pid_t? {
+        guard let line = output.split(separator: "\n").first(where: { $0.hasPrefix("child-pid:") }) else {
+            return nil
+        }
+        return Int32(line.dropFirst("child-pid:".count))
+    }
+}
+
 private final class ProcessSignal: @unchecked Sendable {
     private let lock = NSLock()
     private var storage = ""
@@ -263,6 +407,7 @@ private final class ProcessSignal: @unchecked Sendable {
     func set(_ value: String) {
         lock.withLock { storage = value }
     }
+
 }
 
 private enum LeaseTestError: Error {
