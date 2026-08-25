@@ -165,7 +165,7 @@ public actor SessionProcessManager {
         let project = canonicalProjectDirectory(projectDirectory)
         if let existing = warmHandles[project] { return existing.handle }
         if let inFlight = warming[project] {
-            return try await inFlight.task.value.handle
+            return try await completeWarmOpening(project: project, opening: inFlight)
         }
 
         let openingID = UUID()
@@ -186,15 +186,9 @@ public actor SessionProcessManager {
         warming[project] = WarmOpening(id: openingID, task: task)
 
         do {
-            let opened = try await task.value
-            guard warming[project]?.id == openingID else {
-                await opened.managed.client.shutdown()
-                throw CancellationError()
-            }
-            warming.removeValue(forKey: project)
-            warmHandles[project] = opened
-            watchForExit(opened.managed)
-            return opened.handle
+            return try await completeWarmOpening(
+                project: project,
+                opening: WarmOpening(id: openingID, task: task))
         } catch {
             if warming[project]?.id == openingID {
                 warming.removeValue(forKey: project)
@@ -252,6 +246,22 @@ public actor SessionProcessManager {
     }
 
     public func handle(for sessionPath: String) -> Handle? { handles[sessionPath]?.handle }
+
+    private func completeWarmOpening(project: String, opening: WarmOpening) async throws
+        -> WarmHandle {
+        let opened = try await opening.task.value
+        if let existing = warmHandles[project], existing.managed.id == opened.managed.id {
+            return existing.handle
+        }
+        guard warming[project]?.id == opening.id else {
+            await opened.managed.client.shutdown()
+            throw CancellationError()
+        }
+        warming.removeValue(forKey: project)
+        warmHandles[project] = opened
+        watchForExit(opened.managed)
+        return opened.handle
+    }
 
     /// Watches the dedicated termination signal — never `events`, which the app
     /// consumes and which an AsyncStream would not share.

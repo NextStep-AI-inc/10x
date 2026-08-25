@@ -94,3 +94,58 @@ import Testing
     #expect(await clients.snapshot()[1].exitCode != nil)
     await manager.closeAll()
 }
+
+@Test func joinedWarmWaitersRejectALateResultAfterCancellation() async throws {
+    let configurations = ConfigurationCapture()
+    let clients = ClientCapture()
+    let project = URL(filePath: "/tmp/joined-cancel").resolvingSymlinksInPath().path
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        configurations.append(configuration)
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+        fake.rawArgv = true
+        fake.cwd = nil
+        let client = RpcClient(configuration: fake)
+        clients.append(client)
+        return client
+    })
+    let first = Task.detached(priority: .background) {
+        do { return Result<SessionProcessManager.WarmHandle, any Error>.success(
+            try await manager.warm(projectDirectory: project)) }
+        catch { return .failure(error) }
+    }
+    while clients.snapshot().isEmpty { await Task.yield() }
+    let second = Task.detached(priority: .background) {
+        do { return Result<SessionProcessManager.WarmHandle, any Error>.success(
+            try await manager.warm(projectDirectory: project)) }
+        catch { return .failure(error) }
+    }
+    let canceller = Task.detached(priority: .high) {
+        while await clients.snapshot()[0].negotiatedProtocolVersion != 2 { await Task.yield() }
+        return await manager.cancelWarmings()
+    }
+
+    let canceled = await canceller.value
+    let firstResult = await first.value
+    let secondResult = await second.value
+    let firstWasCanceled: Bool
+    if case .failure(let error) = firstResult {
+        firstWasCanceled = error is CancellationError
+    } else {
+        firstWasCanceled = false
+    }
+    let secondWasCanceled: Bool
+    if case .failure(let error) = secondResult {
+        secondWasCanceled = error is CancellationError
+    } else {
+        secondWasCanceled = false
+    }
+
+    #expect(canceled == [project])
+    #expect(configurations.snapshot().count == 1)
+    #expect(firstWasCanceled)
+    #expect(secondWasCanceled)
+    #expect(await clients.snapshot()[0].exitCode != nil)
+    await manager.closeAll()
+}
