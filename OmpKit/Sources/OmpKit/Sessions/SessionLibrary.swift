@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public enum SessionMutationFailureReason: Sendable, Equatable {
     case invalidPath
@@ -66,6 +67,7 @@ public actor SessionLibrary {
 
     private let root: URL
     private let archiveRoot: URL
+    private let unlinkItem: @Sendable (String) -> Int32
     private var cache: [CacheKey: CacheValue] = [:]
     private var watchers: [String: DispatchSourceFileSystemObject] = [:]
     private var watching = false
@@ -87,9 +89,18 @@ public actor SessionLibrary {
             .appendingPathComponent(".omp/agent/sessions"),
         archiveRoot: URL? = nil
     ) {
+        self.init(root: root, archiveRoot: archiveRoot, unlinkItem: { unlink($0) })
+    }
+
+    init(
+        root: URL,
+        archiveRoot: URL?,
+        unlinkItem: @escaping @Sendable (String) -> Int32
+    ) {
         self.root = root.standardizedFileURL
         self.archiveRoot = (archiveRoot ?? root.deletingLastPathComponent()
             .appendingPathComponent("archived-sessions")).standardizedFileURL
+        self.unlinkItem = unlinkItem
         (changeStream, changeContinuation) = AsyncStream<Void>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
     }
@@ -154,7 +165,6 @@ public actor SessionLibrary {
     public func delete(paths: [String]) -> SessionMutationReport {
         var succeeded: [String] = []
         var failures: [SessionMutationFailure] = []
-        let fileManager = FileManager.default
 
         for path in paths {
             let validation = validateSessionPathUnderEitherRoot(path)
@@ -166,12 +176,14 @@ public actor SessionLibrary {
                 failures.append(SessionMutationFailure(path: path, reason: reason))
                 continue
             }
-            do {
-                try fileManager.removeItem(at: source.url)
+            if unlinkItem(source.url.path) == 0 {
                 succeeded.append(path)
                 invalidateCache(paths: [source.url.path])
-            } catch {
-                failures.append(SessionMutationFailure(path: path, reason: .fileOperationFailed))
+            } else {
+                let reason: SessionMutationFailureReason = errno == ENOENT
+                    ? .missingSource
+                    : .fileOperationFailed
+                failures.append(SessionMutationFailure(path: path, reason: reason))
             }
         }
         refreshWatchers()

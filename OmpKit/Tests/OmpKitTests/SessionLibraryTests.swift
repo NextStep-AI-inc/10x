@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Darwin
 @testable import OmpKit
 
 /// Writes a minimal session file whose LAST message line drives the classifier.
@@ -525,4 +526,34 @@ private func makeTempRoot(_ label: String) -> URL {
                  archiveTarget.path, restoreTarget.path, deleteTarget.path] {
         #expect(FileManager.default.fileExists(atPath: path))
     }
+}
+
+@Test func deleteNeverRecursivelyRemovesADirectorySwappedAfterValidation() async throws {
+    let container = makeTempRoot("delete-swap-safety")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let bucket = activeRoot.appendingPathComponent("-bucket")
+    try FileManager.default.createDirectory(at: bucket, withIntermediateDirectories: true)
+    let transcript = bucket.appendingPathComponent("session.jsonl")
+    let swapDirectory = bucket.appendingPathComponent("swap")
+    let sentinel = swapDirectory.appendingPathComponent("sentinel")
+    try Data("transcript".utf8).write(to: transcript)
+    try FileManager.default.createDirectory(at: swapDirectory, withIntermediateDirectories: true)
+    try Data("keep".utf8).write(to: sentinel)
+    let library = SessionLibrary(
+        root: activeRoot,
+        archiveRoot: archiveRoot,
+        unlinkItem: { path in
+            guard renamex_np(path, swapDirectory.path, UInt32(RENAME_SWAP)) == 0 else { return -1 }
+            return unlink(path)
+        })
+
+    let report = await library.delete(paths: [transcript.path])
+
+    #expect(report.failures == [SessionMutationFailure(
+        path: transcript.path,
+        reason: .fileOperationFailed)])
+    #expect(FileManager.default.fileExists(
+        atPath: transcript.appendingPathComponent("sentinel").path))
 }
