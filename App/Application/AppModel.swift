@@ -9,6 +9,8 @@ final class AppModel {
     var installation: OmpInstallation?
     var selectedProjectURL: URL?
     var setupError: String?
+    var sessions: [SessionMetadata] = []
+    var isSearchPresented = false
     private(set) var processManager: SessionProcessManager?
 
     @ObservationIgnored private let dependencies: AppDependencies
@@ -19,6 +21,7 @@ final class AppModel {
 
     func bootstrap() async {
         await install(preferredURL: nil)
+        await reloadSessions()
     }
 
     func useOmp(at url: URL) async {
@@ -30,6 +33,19 @@ final class AppModel {
 
     func chooseProject(_ url: URL) {
         selectedProjectURL = url.standardizedFileURL
+        route = .newSession
+    }
+
+    func openSession(_ metadata: SessionMetadata) {
+        if !metadata.cwd.isEmpty {
+            selectedProjectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
+                .standardizedFileURL
+        }
+        route = .session(metadata.path)
+    }
+
+    func reloadSessions() async {
+        sessions = await dependencies.sessionLibrary.listAll()
     }
 
     private func install(preferredURL: URL?) async {
