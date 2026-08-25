@@ -3,15 +3,18 @@ import SwiftUI
 struct MessageBlockView: View {
     let block: MessageBlock
 
+    static let proseFontSize: CGFloat = 15
+    static let proseLineSpacing: CGFloat = 4
+
     var body: some View {
         switch block {
         case .paragraph(let text):
             markdown(text)
-                .font(TenXTypography.body(size: 14))
+                .font(TenXTypography.body(size: Self.proseFontSize))
         case .heading(let level, let text):
             markdown(text)
                 .font(TenXTypography.body(
-                    size: level == 1 ? 19 : max(14, 18 - CGFloat(level)),
+                    size: level == 1 ? 19 : max(Self.proseFontSize, 18 - CGFloat(level)),
                     weight: .semibold))
                 .padding(.top, level == 1 ? 3 : 0)
         case .unorderedList(let items):
@@ -20,7 +23,7 @@ struct MessageBlockView: View {
             list(items: items, ordered: true)
         case .quote(let text):
             markdown(text)
-                .font(TenXTypography.body(size: 13))
+                .font(TenXTypography.body(size: Self.proseFontSize))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 .padding(.leading, 12)
                 .overlay(alignment: .leading) {
@@ -35,6 +38,7 @@ struct MessageBlockView: View {
 
     private func markdown(_ text: String) -> some View {
         Text((try? AttributedString(markdown: text)) ?? AttributedString(text))
+            .lineSpacing(Self.proseLineSpacing)
             .textSelection(.enabled)
     }
 
@@ -46,7 +50,7 @@ struct MessageBlockView: View {
                         .font(TenXTypography.body(size: 13, weight: .semibold))
                         .frame(width: 20, alignment: .trailing)
                     markdown(item)
-                        .font(TenXTypography.body(size: 14))
+                        .font(TenXTypography.body(size: Self.proseFontSize))
                 }
             }
         }

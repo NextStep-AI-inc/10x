@@ -4,6 +4,9 @@ import SwiftUI
 struct MessageBubbleView: View {
     let message: TranscriptMessage
 
+    static let assistantContentSpacing: CGFloat = 14
+    static let assistantMaxWidth: CGFloat = 720
+
     static func visibleText(from message: JSONValue) -> String {
         TranscriptMessage.visibleText(from: message)
     }
@@ -13,7 +16,9 @@ struct MessageBubbleView: View {
             if message.role == .user { Spacer(minLength: 80) }
 
             content
-                .frame(maxWidth: message.role == .user ? 620 : 780, alignment: .leading)
+                .frame(
+                    maxWidth: message.role == .user ? 620 : Self.assistantMaxWidth,
+                    alignment: .leading)
 
             if message.role != .user { Spacer(minLength: 80) }
         }
@@ -33,7 +38,7 @@ struct MessageBubbleView: View {
                 .background(TenXPalette.color(TenXPalette.nearBlackHex))
                 .clipShape(RoundedRectangle(cornerRadius: 5))
         } else if message.role == .assistant {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Self.assistantContentSpacing) {
                 ResponseMetadataView(message: message)
                 ForEach(Array(MessageContentParser.parse(message.visibleText).enumerated()), id: \.offset) { _, block in
                     MessageBlockView(block: block)
