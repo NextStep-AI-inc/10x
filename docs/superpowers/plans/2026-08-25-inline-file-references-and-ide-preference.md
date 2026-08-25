@@ -888,7 +888,7 @@ git status --short
 
 Expected: all tests pass, the Release build succeeds, the diff has no whitespace errors, and status contains only intended plan/spec evidence updates if they have not yet been committed.
 
-- [ ] **Step 2: Launch the explicit Release bundle**
+- [x] **Step 2: Launch the explicit Release bundle**
 
 Load `launching-local-builds`, then launch:
 
@@ -898,7 +898,7 @@ open '.build/DerivedData-inline-file-references/Build/Products/Release/10x.app'
 
 Confirm the exact bundle process remains alive and the visible 10x window belongs to this worktree's Release build before any interaction claim.
 
-- [ ] **Step 3: Drive the real system-default and preferred-IDE flow**
+- [x] **Step 3: Drive the real system-default and preferred-IDE flow**
 
 Use a real session whose worktree contains a harmless Swift file:
 
@@ -938,7 +938,7 @@ Inspect for horizontal clipping, layout jumps, nested focus behavior, missing fo
 
 Load `verifying-work` and `superpowers:verification-before-completion`, then run their required evidence checks. Load `superpowers:requesting-code-review` for the implementation diff; address blocking correctness, accessibility, and visual-system findings, then rerun the affected evidence. Do not add unrelated cleanup.
 
-- [ ] **Step 7: Record evidence and commit the verified state**
+- [x] **Step 7: Record evidence and commit the verified state**
 
 Mark completed plan checkboxes, change the spec status only if every acceptance criterion passed, and add the exact build/test commands plus screenshot paths under a short `## Verification evidence` section in this plan.
 
@@ -949,3 +949,33 @@ git commit -m "docs: verify inline file references"
 ```
 
 Report the worktree path, branch, commit SHAs, verified evidence, skipped checks with reasons, and the remaining manual checks. Do not merge or clean up the worktree without Tanner's instruction.
+
+## Verification evidence
+
+Verified on `codex/inline-file-references` in the explicit Release bundle at
+`.build/DerivedData-inline-file-references/Build/Products/Release/10x.app`.
+The final binary SHA-256 was
+`3347b96b25e9225f95a24baaed020a98210cdda05f8eae50eea09ec3aefa1dbe`;
+PID 8252 remained alive for more than three minutes while the live checks ran.
+
+- `ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' test` passed 121/121 tests at `93d0532`.
+- The real Cursor edit result exposed a missing tool-header path. The regression was RED, then the full suite passed 122/122 after `fd4cf92`.
+- The minimum-width Settings run exposed content beneath the expanded rail. The regression was RED and the production fix compiled, but two later Xcode test-host launches stalled before executing tests and were stopped. The final Release build and live minimum-width check passed at `9982764`; the post-fix full-suite checkbox remains open.
+- `xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' -derivedDataPath .build/DerivedData-inline-file-references clean build` exited 0 with `CLEAN SUCCEEDED` and `BUILD SUCCEEDED`.
+- `git diff --check` exited 0.
+- The exact Release app discovered Xcode, Cursor, and Visual Studio Code; persisted Cursor and Visual Studio Code selections across relaunch; accepted Cursor through `Choose application…`; returned to `Choose IDE` for `None`; opened `MessageBubbleView.swift` in Xcode through the primary action and in Cursor through the preferred action.
+- A live OMP session produced Read, Edit, and Write cards using ignored verification files. Absolute/backtick references, relative resolution, file icons, separate IDE actions, disabled missing-file actions, Edit-result path fallback, and disclosure independence were visible in the final Release UI.
+- The primary context menu exposed `Open with System Default`, `Open in Cursor`, `Reveal in Finder`, and `Copy Reference` in the required order.
+
+Release screenshots:
+
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/settings-preferred-ide-final.jpg`
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/settings-minimum.jpg`
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/reference-compact.jpg`
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/tool-headers-normal.jpg`
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/tool-headers-minimum.jpg`
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/missing-file.jpg`
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/transcript-normal.jpg`
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/transcript-minimum.jpg`
+
+Not verified: Option-held full-path rendering, clipboard contents after `Copy Reference`, an unavailable selected application in the exact Release bundle, the four-second launch-rejection/VoiceOver announcement, and complete keyboard traversal at both widths. The spec remains incomplete and its status is intentionally unchanged.
