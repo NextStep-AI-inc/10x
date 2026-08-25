@@ -36,3 +36,17 @@ import Testing
     #expect(presentation.action == .retry)
     #expect(presentation.accessibilityLabel == "Retry Cursor connection")
 }
+
+@Test func connectionRowsPresentAuthenticatedUnavailableProvidersConsistently() {
+    let presentation = ProviderConnectionRowPresentation.make(
+        provider: ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: false, isAuthenticated: true),
+        hasCredentialIssue: false,
+        activeLoginProviderID: nil,
+        loginMessage: nil)
+
+    #expect(presentation.status == "Unavailable")
+    #expect(presentation.action == .unavailable)
+    #expect(presentation.isActionDisabled == false)
+    #expect(presentation.accessibilityLabel == "Cursor unavailable")
+}

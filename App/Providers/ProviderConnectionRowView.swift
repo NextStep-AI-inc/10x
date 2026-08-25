@@ -25,10 +25,10 @@ struct ProviderConnectionRowPresentation: Equatable, Sendable {
         let action: ProviderConnectionAction
         if isConnecting {
             action = .cancel
-        } else if provider.isAuthenticated {
-            action = .connected
         } else if !provider.isAvailable {
             action = .unavailable
+        } else if provider.isAuthenticated {
+            action = .connected
         } else if loginMessage != nil {
             action = .retry
         } else if hasCredentialIssue {
