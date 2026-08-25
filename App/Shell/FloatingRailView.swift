@@ -221,11 +221,7 @@ struct FloatingRailView: View {
         case .disclosure(let disclosure):
             if expansion.isExpanded {
                 Button {
-                    if disclosure.isExpanded {
-                        expandedProjectIDs.remove(disclosure.projectID)
-                    } else {
-                        expandedProjectIDs.insert(disclosure.projectID)
-                    }
+                    toggleDisclosure(disclosure)
                 } label: {
                     HStack(spacing: 12) {
                         RailTreeMarker(
@@ -247,9 +243,14 @@ struct FloatingRailView: View {
                 .focused($focusedItem, equals: .disclosure(disclosure.projectID))
                 .padding(.leading, 18)
                 .frame(height: 32)
+                .accessibilityElement(children: .ignore)
                 .accessibilityLabel(RailAccessibility.disclosureLabel(
                     hiddenCount: disclosure.hiddenCount,
                     isExpanded: disclosure.isExpanded))
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction {
+                    toggleDisclosure(disclosure)
+                }
             } else {
                 RailTreeMarker(
                     label: "...",
@@ -262,6 +263,14 @@ struct FloatingRailView: View {
                     .accessibilityLabel(RailAccessibility.hiddenSessionsLabel(
                         disclosure.hiddenCount))
             }
+        }
+    }
+
+    private func toggleDisclosure(_ disclosure: RailProjectDisclosure) {
+        if disclosure.isExpanded {
+            expandedProjectIDs.remove(disclosure.projectID)
+        } else {
+            expandedProjectIDs.insert(disclosure.projectID)
         }
     }
 
