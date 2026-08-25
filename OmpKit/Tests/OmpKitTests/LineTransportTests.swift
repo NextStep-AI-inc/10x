@@ -296,6 +296,33 @@ func withTimeout<T: Sendable>(
     #expect(terminatedAfterRecovery)
 }
 
+@Test func expiredRefreshInvalidatesPriorTerminationCertification() throws {
+    let leader = ProcessSnapshot(
+        identity: .init(pid: 460, startSeconds: 1, startMicroseconds: 0),
+        parentPID: 1,
+        processGroupID: 460)
+    let descendant = ProcessSnapshot(
+        identity: .init(pid: 461, startSeconds: 1, startMicroseconds: 0),
+        parentPID: 460,
+        processGroupID: 460)
+    let table = FakeProcessTable([leader, descendant])
+    var tracker = ProcessTreeTracker(
+        leader: leader,
+        processGroupID: 460,
+        operations: table.operations)
+    let initialRefresh = tracker.refresh(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(initialRefresh)
+
+    let expiredRefresh = tracker.refresh(until: ContinuousClock.now)
+    #expect(!expiredRefresh)
+    table.replace([])
+
+    let terminatedAfterExpiredRefresh = tracker.isTerminated(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(!terminatedAfterExpiredRefresh)
+}
+
 @Test func descendantTrackerStopsPollingWhenTransportShutsDown() async throws {
     let polls = LockedCounter()
     let transport = LineTransport(

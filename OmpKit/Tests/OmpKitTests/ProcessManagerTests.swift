@@ -292,6 +292,12 @@ func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async thr
     #expect(confirmed == false)
     #expect(await manager.handle(for: handle.sessionPath) != nil)
     try await Task.sleep(for: .milliseconds(150))
+    #expect(await handle.client.exitCode == nil)
+
+    let retryConfirmed = await manager.forceClose(
+        sessionPath: handle.sessionPath,
+        deadline: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(retryConfirmed)
     #expect(await manager.handle(for: handle.sessionPath) == nil)
 }
 
@@ -325,7 +331,6 @@ func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async thr
         .appending(path: "ompkit-manager-force-\(UUID().uuidString)")
     defer { terminateFixtureChild(heartbeat: heartbeat) }
     let manager = grandchildManager(mode: "grandchild", heartbeat: heartbeat)
-    let exits = manager.unexpectedExits
     let handle = try await manager.open(
         sessionPath: "/tmp/force-close-grandchild.jsonl",
         cwd: "/tmp")
@@ -337,16 +342,20 @@ func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async thr
 
     #expect(confirmed == false)
     #expect(await manager.handle(for: handle.sessionPath) != nil)
-    let event = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
-        for await exit in exits { return exit }
-        return nil
-    } ?? nil
-    let countAtEvent = (try? Data(contentsOf: heartbeat))?.count ?? 0
-    try await Task.sleep(for: .milliseconds(200))
-    let countAfterEvent = (try? Data(contentsOf: heartbeat))?.count ?? 0
+    let countBeforeRetry = (try? Data(contentsOf: heartbeat))?.count ?? 0
+    try await Task.sleep(for: .milliseconds(100))
+    let countAfterSkippedClose = (try? Data(contentsOf: heartbeat))?.count ?? 0
+    #expect(countAfterSkippedClose > countBeforeRetry)
 
-    #expect(event?.sessionPath == handle.sessionPath)
-    #expect(countAtEvent == countAfterEvent)
+    let retryConfirmed = await manager.forceClose(
+        sessionPath: handle.sessionPath,
+        deadline: ContinuousClock.now.advanced(by: .seconds(3)))
+    let countAtConfirmation = (try? Data(contentsOf: heartbeat))?.count ?? 0
+    try await Task.sleep(for: .milliseconds(200))
+    let countAfterConfirmation = (try? Data(contentsOf: heartbeat))?.count ?? 0
+
+    #expect(retryConfirmed)
+    #expect(countAtConfirmation == countAfterConfirmation)
     #expect(await manager.handle(for: handle.sessionPath) == nil)
 }
 
@@ -389,6 +398,54 @@ func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async thr
     #expect(await manager.handle(for: handle.sessionPath) == nil)
 }
 
+@Test func expiredForceCloseRetainsHandleUntilCertificationIsReanchored() async throws {
+    let processes = CertificationProcessTable()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var updated = configuration
+        updated.executable = "/usr/bin/env"
+        updated.extraArguments = [
+            "python3", fixtureURL("fake_server.py").path, "expired-deadline-exit",
+        ]
+        updated.rawArgv = true
+        updated.cwd = nil
+        return RpcClient(
+            configuration: updated,
+            beforeHandlingLine: { _ in },
+            processOperations: processes.operations)
+    })
+    let exits = manager.unexpectedExits
+    let capturedExits = UnexpectedExitCapture()
+    let observer = Task {
+        for await exit in exits { await capturedExits.append(exit) }
+    }
+    defer { observer.cancel() }
+    let handle = try await manager.open(
+        sessionPath: "/tmp/expired-force-close.jsonl",
+        cwd: "/tmp")
+
+    let confirmed = await manager.forceClose(
+        sessionPath: handle.sessionPath,
+        deadline: ContinuousClock.now)
+    #expect(!confirmed)
+    processes.removeLeader()
+    processes.removeDescendant()
+    #expect(await waitForClientExit(handle.client))
+    try await Task.sleep(for: .milliseconds(100))
+
+    #expect(await manager.handle(for: handle.sessionPath) != nil)
+    #expect(await capturedExits.count == 0)
+
+    let readsBeforeRecovery = processes.completeLeaderAnchorReadCount
+    processes.restoreLeader()
+    #expect(await waitUntil {
+        processes.completeLeaderAnchorReadCount >= readsBeforeRecovery + 2
+    })
+    processes.removeLeader()
+    #expect(await waitForCapturedExit(capturedExits))
+    #expect(await capturedExits.first?.generation == handle.generation)
+    #expect(await manager.handle(for: handle.sessionPath) == nil)
+}
+
 private func waitForFixtureChild(heartbeat: URL) async -> pid_t? {
     let pidFile = URL(fileURLWithPath: heartbeat.path + ".pid")
     return await withTimeout(.seconds(2)) {
@@ -422,6 +479,7 @@ private final class CertificationProcessTable: @unchecked Sendable {
     private var listsAreComplete = true
     private var incompleteReads = 0
     private var observedCompleteDescendantAnchor = false
+    private var completeLeaderAnchorReads = 0
 
     var operations: ProcessOperations {
         ProcessOperations(
@@ -437,11 +495,15 @@ private final class CertificationProcessTable: @unchecked Sendable {
     }
 
     func removeLeader() { lock.withLock { isLeaderVisible = false } }
+    func restoreLeader() { lock.withLock { isLeaderVisible = true } }
     func removeDescendant() { lock.withLock { isDescendantVisible = false } }
 
     var incompleteReadCount: Int { lock.withLock { incompleteReads } }
     var didObserveCompleteDescendantAnchor: Bool {
         lock.withLock { observedCompleteDescendantAnchor }
+    }
+    var completeLeaderAnchorReadCount: Int {
+        lock.withLock { completeLeaderAnchorReads }
     }
 
     private func snapshot(_ pid: pid_t) -> ProcessSnapshot? {
@@ -481,6 +543,7 @@ private final class CertificationProcessTable: @unchecked Sendable {
                 return .init(pids: [], isComplete: false)
             }
             if !listsAreComplete { incompleteReads += 1 }
+            if listsAreComplete, isLeaderVisible { completeLeaderAnchorReads += 1 }
             if listsAreComplete, !isLeaderVisible, isDescendantVisible {
                 observedCompleteDescendantAnchor = true
             }
@@ -490,6 +553,14 @@ private final class CertificationProcessTable: @unchecked Sendable {
             return .init(pids: pids, isComplete: listsAreComplete)
         }
     }
+}
+
+private actor UnexpectedExitCapture {
+    private var values: [SessionProcessManager.UnexpectedExit] = []
+
+    func append(_ value: SessionProcessManager.UnexpectedExit) { values.append(value) }
+    var count: Int { values.count }
+    var first: SessionProcessManager.UnexpectedExit? { values.first }
 }
 
 private func waitForClientExit(_ client: RpcClient) async -> Bool {
@@ -503,6 +574,14 @@ private func waitForClientExit(_ client: RpcClient) async -> Bool {
 private func waitUntil(_ condition: @escaping @Sendable () -> Bool) async -> Bool {
     for _ in 0..<150 {
         if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return false
+}
+
+private func waitForCapturedExit(_ capture: UnexpectedExitCapture) async -> Bool {
+    for _ in 0..<150 {
+        if await capture.count > 0 { return true }
         try? await Task.sleep(for: .milliseconds(20))
     }
     return false

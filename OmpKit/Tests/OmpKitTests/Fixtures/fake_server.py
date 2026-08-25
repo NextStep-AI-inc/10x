@@ -118,6 +118,12 @@ def delayed_process_exit():
     import os
     os._exit(9)
 
+
+def expired_deadline_exit():
+    time.sleep(0.5)
+    import os
+    os._exit(7)
+
 for line in sys.stdin:
     line = line.strip()
     if not line:
@@ -151,6 +157,8 @@ for line in sys.stdin:
                           "data": base64.b64encode(part).decode()})
             time.sleep(30)
             raise SystemExit(0)
+        if mode == "expired-deadline-exit":
+            threading.Thread(target=expired_deadline_exit, daemon=True).start()
         if mode == "leader-exit-grandchild":
             time.sleep(0.15)
             sys.stderr.write("leader-exit-grandchild\n")
@@ -294,3 +302,6 @@ for line in sys.stdin:
               "success": False, "error": "nope", "code": "test_code"})
     else:
         emit({"id": cid, "type": "response", "command": ctype or "parse", "success": True})
+
+if mode == "expired-deadline-exit":
+    time.sleep(0.5)

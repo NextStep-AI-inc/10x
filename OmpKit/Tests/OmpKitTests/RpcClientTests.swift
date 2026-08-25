@@ -347,8 +347,8 @@ func makeClient(
     #expect(await waitForExit(client))
 
     let completion = ShutdownCompletion()
-    let deadline = ContinuousClock.now.advanced(by: .milliseconds(100))
     let shutdownTask = Task {
+        let deadline = ContinuousClock.now.advanced(by: .milliseconds(100))
         let stopped = await client.shutdown(deadline: deadline)
         completion.finish(stopped)
     }

@@ -172,7 +172,10 @@ struct ProcessTreeTracker: Sendable {
     @discardableResult
     mutating func refresh(until deadline: ContinuousClock.Instant) -> Bool {
         var isComplete = true
-        guard ContinuousClock.now < deadline else { return false }
+        guard ContinuousClock.now < deadline else {
+            hasCompleteObservation = false
+            return false
+        }
         let liveLeader = exactSnapshot(for: leader)
         var sawLiveOriginalIdentity = liveLeader != nil
 
@@ -540,7 +543,7 @@ public actor LineTransport {
         let wasLeaderRunning = process.isRunning
         descendantTrackerTask?.cancel()
         descendantTrackerTask = nil
-        recordDescendants(until: deadline)
+        guard recordDescendants(until: deadline) else { return false }
         closeStdin()
         // The leader can exit on EOF while a descendant still holds stdout.
         // Continue through group teardown so `finishStreams()` cannot block on
@@ -597,7 +600,7 @@ public actor LineTransport {
             if hasExited(until: deadline) { return true }
             try? await Task.sleep(for: .milliseconds(20))
         }
-        return hasExited(until: deadline)
+        return false
     }
 
     private func hasExited(until deadline: ContinuousClock.Instant) -> Bool {
@@ -606,11 +609,12 @@ public actor LineTransport {
         return processTreeTracker?.isTerminated(until: deadline) ?? true
     }
 
+    @discardableResult
     private func recordDescendants(
         until deadline: ContinuousClock.Instant = ContinuousClock.now.advanced(by: .milliseconds(10))
-    ) {
+    ) -> Bool {
         trackerDidPoll()
-        processTreeTracker?.refresh(until: deadline)
+        return processTreeTracker?.refresh(until: deadline) ?? true
     }
 
     private func finishStreams(discardingPendingData: Bool) {

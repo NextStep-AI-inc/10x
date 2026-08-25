@@ -356,3 +356,52 @@ suite concern outside the round-6 ownership changes.
 - No manual UI walkthrough was run because round 6 changes lifecycle identity,
   process certification, and protocol backpressure only; it changes no UI or
   user-facing copy.
+
+## Round 7 follow-up
+
+Status: DONE
+
+- Entering `ProcessTreeTracker.refresh` with an already-expired deadline now
+  clears any previous complete-observation certificate before returning. A
+  later anchorless scan therefore cannot reuse stale proof to report the tree
+  terminated.
+- `LineTransport.shutdown` requires its pre-close tree observation to complete
+  before it closes stdin. A skipped observation returns `false` without
+  changing the child, allowing a later deadline-bearing retry to establish
+  fresh anchored proof and perform normal group-confirmed shutdown.
+- Intermediate shutdown phase waits stop at their sub-deadline without calling
+  the tracker once more with that expired sub-deadline. Valid proof established
+  before TERM/KILL is retained unless a real incomplete observation invalidates
+  it.
+
+### Round 7 TDD evidence
+
+- The tracker sequence complete anchored observation → expired refresh → all
+  anchors disappear initially reported termination. It now remains
+  unconfirmed.
+- The manager regression initially removed the handle and emitted an exit after
+  an expired force-close destroyed the leader anchor. It now retains the handle
+  and emits no event until the fake process identity is re-anchored by a new
+  complete observation.
+- Zero-deadline force-close initially closed stdin despite skipping its
+  pre-close observation. It now leaves both a simple child and detached
+  grandchild running and owned; a retry with a real deadline shuts down the
+  group, confirms death, and removes the handle.
+
+### Round 7 verification
+
+- `swift test --package-path OmpKit`: 164 tests passed in 3.143 seconds.
+- `xcodebuild -project 10x.xcodeproj -scheme 10x -destination
+  'platform=macOS,arch=arm64' -derivedDataPath /tmp/tenx-round7-app test`:
+  174 tests passed in 3.791 seconds; `** TEST SUCCEEDED **`.
+- `xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release
+  -destination 'generic/platform=macOS' -derivedDataPath
+  /tmp/tenx-round7-release CODE_SIGNING_ALLOWED=NO build`: succeeded;
+  `lipo -archs` reported `x86_64 arm64`.
+- `ruby scripts/generate_xcodeproj.rb` completed with no generated project
+  diff. `git diff --check` completed without errors.
+
+### Not verified
+
+- No manual UI walkthrough was run because round 7 changes only process
+  certification and shutdown sequencing; it changes no UI or user-facing copy.
