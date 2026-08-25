@@ -1,6 +1,6 @@
 # Inline File References and Preferred IDE
 
-**Status:** Approved in chat; awaiting written-spec review
+**Status:** Implemented; verification incomplete
 **Date:** 2026-08-25
 **Parent spec:** `docs/superpowers/specs/2026-08-24-chat-transcript-experience.md`
 

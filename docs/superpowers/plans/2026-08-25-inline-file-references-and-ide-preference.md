@@ -874,7 +874,7 @@ git commit -m "feat(chat): add actionable file references"
 - Verifies the complete Settings to transcript to macOS application flow.
 - Produces Release-build screenshots and an evidence-backed handoff; it does not merge.
 
-- [ ] **Step 1: Run every automated test and a Release build**
+- [x] **Step 1: Run every automated test and a Release build**
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -952,30 +952,59 @@ Report the worktree path, branch, commit SHAs, verified evidence, skipped checks
 
 ## Verification evidence
 
-Verified on `codex/inline-file-references` in the explicit Release bundle at
+Verified on `codex/inline-file-references` through `0c1b476` in the explicit
+Release bundle at
 `.build/DerivedData-inline-file-references/Build/Products/Release/10x.app`.
 The final binary SHA-256 was
-`3347b96b25e9225f95a24baaed020a98210cdda05f8eae50eea09ec3aefa1dbe`;
-PID 8252 remained alive for more than three minutes while the live checks ran.
+`b4459a20cb203f2cc4ee406e14cbd0dbe096745519be61a88021a54d61c9c398`.
 
-- `ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' test` passed 121/121 tests at `93d0532`.
-- The real Cursor edit result exposed a missing tool-header path. The regression was RED, then the full suite passed 122/122 after `fd4cf92`.
-- The minimum-width Settings run exposed content beneath the expanded rail. The regression was RED and the production fix compiled, but two later Xcode test-host launches stalled before executing tests and were stopped. The final Release build and live minimum-width check passed at `9982764`; the post-fix full-suite checkbox remains open.
-- `xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' -derivedDataPath .build/DerivedData-inline-file-references clean build` exited 0 with `CLEAN SUCCEEDED` and `BUILD SUCCEEDED`.
-- `git diff --check` exited 0.
-- The exact Release app discovered Xcode, Cursor, and Visual Studio Code; persisted Cursor and Visual Studio Code selections across relaunch; accepted Cursor through `Choose application…`; returned to `Choose IDE` for `None`; opened `MessageBubbleView.swift` in Xcode through the primary action and in Cursor through the preferred action.
-- A live OMP session produced Read, Edit, and Write cards using ignored verification files. Relative backtick references, relative resolution, file icons, separate IDE actions, disabled missing-file actions, Edit-result path fallback, and disclosure independence were visible in the final Release UI.
-- The primary context menu exposed `Open with System Default`, `Open in Cursor`, `Reveal in Finder`, and `Copy Reference` in the required order.
+- The independent correctness reviewer reran the pre-fix head `6654704` and
+  passed 123/123 tests. After Fix Round 1, the fresh full suite passed 131/131
+  at `0c1b476` (`/tmp/10x-inline-fix1-post-focusable-full.log`).
+- Parser, Settings-query handoff, accessibility-announcement, missing-file
+  action, contrast, Preferred IDE semantics, and rail-motion regressions were
+  observed RED before their fixes. The final full suite covers each regression.
+- The final clean Release build exited 0 with `CLEAN SUCCEEDED` and
+  `BUILD SUCCEEDED` (`/tmp/10x-inline-fix1-final-release.log`). The former
+  `NSOpenPanel` actor-isolation and boxed-optional `NSApp` warnings are absent;
+  only the unchanged AppIntents metadata warning remains.
+- Accessibility targeted the exact Release process. PID 94221 exposed an
+  `AXStandardWindow` measuring exactly 760×882 points after relaunch
+  (`/tmp/10x-inline-fix1-final-ax-bounds.log`); this measurement is from the AX
+  window attribute, not screenshot pixels.
+- The 760-point collapsed and expanded rail states remained usable without
+  content overlap. Expansion and the content inset now share the same
+  reduce-motion-aware animation.
+- A persisted nonmatching query (`sleep prevention`) hid Preferred IDE. From a
+  live transcript, `Choose IDE` cleared the query, restored the row, removed
+  focus from Search, and showed the native focus ring on the Preferred IDE menu.
+- A live assistant message contained the plain absolute path
+  `/Users/tannerpham/CS Projects/.../MessageBubbleView.swift:1`. The exact file
+  and backtick references remained actionable, while no unrelated
+  `/Users/tannerpham/CS` prefix action was rendered.
+- Missing-file UI retained `Open in Cursor` in its selected-IDE state, disabled
+  the action, displayed the SF Symbol unavailable affordance, and exposed
+  `Unavailable` in accessibility without visible replacement copy.
+- The exact Release app previously completed the system-default, installed IDE,
+  custom application, persistence, harmless file-open, disclosure-independence,
+  and context-menu-order checks recorded in the Task 6 report.
 
-Release screenshots:
+Each Release capture is unique and captioned by the state it proves:
 
-- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/settings-preferred-ide-final.jpg`
-- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/settings-minimum.jpg`
-- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/reference-compact.jpg`
-- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/tool-headers-normal.jpg`
-- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/tool-headers-minimum.jpg`
-- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/missing-file.jpg`
-- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/transcript-normal.jpg`
-- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/transcript-minimum.jpg`
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/release-760-collapsed.png`
+  — AX-proven 760-point standard window with the rail collapsed.
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/release-760-expanded.png`
+  — AX-proven 760-point Settings window with the rail expanded and the Preferred
+  IDE native focus ring visible after the nonmatching-query handoff.
+- `docs/superpowers/evidence/2026-08-25-inline-file-references-release/release-transcript-references.png`
+  — live assistant/tool references, compact Read/Edit/Write headers, darkened
+  interactive cyan, and the disabled missing-file action.
 
-Not verified: an absolute assistant reference containing spaces unless Markdown/backtick-delimited, Option-held full-path rendering, clipboard contents after `Copy Reference`, an unavailable selected application in the exact Release bundle, the four-second launch-rejection/VoiceOver announcement, and complete keyboard traversal at both widths. The spec remains incomplete and its status is intentionally unchanged.
+Not verified: Option-held full-path rendering, clipboard contents after
+`Copy Reference`, an unavailable selected application in the exact Release
+bundle, the four-second launch-rejection/VoiceOver experience, and complete
+keyboard traversal at both widths. A final 760-point transcript recapture was
+also stopped after two Computer Use timeouts while the historical session was
+loading; the preserved transcript capture is from the same final code but its
+normal-width state. The spec remains incomplete and its status is intentionally
+unchanged.
