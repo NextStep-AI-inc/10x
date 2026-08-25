@@ -29,7 +29,7 @@
 **Interfaces:**
 - Produces: SwiftPM targets `OmpKit` (library) and `OmpKitTests` that later tasks add files into.
 
-- [ ] **Step 1: Write Package.swift**
+- [x] **Step 1: Write Package.swift**
 
 ```swift
 // swift-tools-version: 6.1
@@ -50,7 +50,7 @@ let package = Package(
 )
 ```
 
-- [ ] **Step 2: Create the source and test stubs**
+- [x] **Step 2: Create the source and test stubs**
 
 `Sources/OmpKit/OmpKit.swift`:
 ```swift
@@ -83,12 +83,12 @@ Create `Tests/OmpKitTests/Fixtures/.gitkeep` (empty file) so the resource direct
 DerivedData/
 ```
 
-- [ ] **Step 3: Run tests**
+- [x] **Step 3: Run tests**
 
 Run: `cd OmpKit && swift test`
 Expected: `Test run with 1 test passed`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -113,7 +113,7 @@ git commit -m "feat: scaffold OmpKit SwiftPM package"
   - `public enum RpcFrame: Sendable` — `.ready(ReadyFrame)`, `.response(RpcResponse)`, `.chunk(RpcChunk)`, `.extensionUIRequest(ExtensionUIRequest)`, `.event(type: String, payload: JSONValue)` (everything else, including `notice`, `available_commands_update`, all `AgentSessionEvent`s), and `static func decode(line: Data) throws -> RpcFrame`.
 - Consumes: nothing prior.
 
-- [ ] **Step 1: Write failing tests with real captured frames**
+- [x] **Step 1: Write failing tests with real captured frames**
 
 ```swift
 import Testing
@@ -169,9 +169,9 @@ let noticeLine = #"{"type":"notice","level":"info","message":"xd://: mounted","s
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS (types undefined).
+- [x] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS (types undefined).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `JSONValue.swift`: standard recursive Codable enum. Decode order in `init(from:)`: try `Bool` FIRST, then `Int`, then `Double`, then `String`, then `[JSONValue]`, then `[String: JSONValue]`, then null — Bool-before-Int is what makes `.intValue` on a `true` return nil, giving the strict bool/int separation the wire contract requires. `intValue` returns the int case only (plus a whole `Double` like `2.0` — `data.protocolVersion` may decode as either).
 
@@ -215,9 +215,9 @@ public enum RpcFrame: Sendable {
 
 `RpcResponse.init(from:type:)` requires `command: String` and `success: Bool` (throw `.malformedFrame` otherwise); `id`, `data`, `error`, `code` optional. `RpcChunk.init(from:)` requires `chunkId` string, `index`/`count`/`byteLength` via `.intValue` (bools have no intValue → throws `.malformedFrame`), `data` string.
 
-- [ ] **Step 4: Run tests** — `swift test` — Expected: all PASS.
+- [x] **Step 4: Run tests** — `swift test` — Expected: all PASS.
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: RPC frame types and envelope decoding"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: RPC frame types and envelope decoding"`
 
 ---
 
@@ -254,7 +254,7 @@ public enum RpcFrame: Sendable {
 
 Validation rules (port-spec §2 — the reference algorithm, port exactly): a sequence opens only on `index == 0`; `count >= 1`; `byteLength <= cap` checked at open; every subsequent chunk must match `chunkId`, `count`, `byteLength` and arrive with `index == previous + 1`; base64 decodes strictly (reject invalid); on final chunk (`index == count - 1`) concatenated bytes must equal `byteLength` exactly, then decode strict UTF-8 (the payload is a JSON object re-fed to `RpcFrame.decode`; UTF-8 validation happens here, JSON parse happens in the caller). Any violation throws AND resets the state machine to idle.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```swift
 import Testing
@@ -324,13 +324,13 @@ private func chunks(of payload: String, id: String = "rpc-1", size: Int = 4) -> 
 
 (`RpcChunk` needs a memberwise `public init` — add it in this task.)
 
-- [ ] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
+- [x] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
 
-- [ ] **Step 3: Implement** the state machine exactly per the rules above: internal state `(chunkId, count, byteLength, nextIndex, buffer: Data)?`; every throw path sets state to nil first. Strict UTF-8 check: `String(data:encoding:)` returning nil → `.notUTF8` (also reset).
+- [x] **Step 3: Implement** the state machine exactly per the rules above: internal state `(chunkId, count, byteLength, nextIndex, buffer: Data)?`; every throw path sets state to nil first. Strict UTF-8 check: `String(data:encoding:)` returning nil → `.notUTF8` (also reset).
 
-- [ ] **Step 4: Run tests** — `swift test` — Expected: PASS.
+- [x] **Step 4: Run tests** — `swift test` — Expected: PASS.
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: rpc_chunk reassembly state machine"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: rpc_chunk reassembly state machine"`
 
 ---
 
@@ -376,7 +376,7 @@ private func chunks(of payload: String, id: String = "rpc-1", size: Int = 4) -> 
   ```
   Note: `StreamingBehavior.followUp` must encode as `"followUp"` (camelCase on the wire — rawValue already matches).
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```swift
 import Testing
@@ -417,10 +417,10 @@ private func json(_ data: Data) throws -> [String: Any] {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
-- [ ] **Step 3: Implement.** Encode via `JSONValue.object` → `JSONEncoder` (sorted keys for determinism), append `\n`.
-- [ ] **Step 4: Run tests** — `swift test` — Expected: PASS.
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: RPC command encoding"`
+- [x] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
+- [x] **Step 3: Implement.** Encode via `JSONValue.object` → `JSONEncoder` (sorted keys for determinism), append `\n`.
+- [x] **Step 4: Run tests** — `swift test` — Expected: PASS.
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: RPC command encoding"`
 
 ---
 
@@ -451,7 +451,7 @@ private func json(_ data: Data) throws -> [String: Any] {
   ```
   Line splitting: buffer stdout bytes, split on `\n` (strip a trailing `\r` if present), skip empty lines. Cap the line buffer at `maxFrameBytes + 64 KiB` slack; an unterminated line beyond that is discarded with a diagnostic (matches the reference's bounded behavior).
 
-- [ ] **Step 1: Write the fake server fixture** — `Tests/OmpKitTests/Fixtures/fake_server.py` (mirrors the reference suite's inline-Python approach; used by Tasks 5–6):
+- [x] **Step 1: Write the fake server fixture** — `Tests/OmpKitTests/Fixtures/fake_server.py` (mirrors the reference suite's inline-Python approach; used by Tasks 5–6):
 
 ```python
 #!/usr/bin/env python3
@@ -524,7 +524,7 @@ for line in sys.stdin:
         emit({"id": cid, "type": "response", "command": ctype or "parse", "success": True})
 ```
 
-- [ ] **Step 2: Write failing transport tests**
+- [x] **Step 2: Write failing transport tests**
 
 ```swift
 import Testing
@@ -560,10 +560,10 @@ func makeFakeTransport(mode: String) -> LineTransport {
 }
 ```
 
-- [ ] **Step 3: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
-- [ ] **Step 4: Implement** with `Foundation.Process` + `Pipe`; stdout read on `FileHandle.readabilityHandler` feeding a continuation; stderr into a 512-chunk ring. `shutdown()` per the documented sequence (`interrupt`/`terminate` map to SIGTERM; use `kill(pid, SIGKILL)` for the final escalation).
-- [ ] **Step 5: Run tests** — `swift test` — Expected: PASS.
-- [ ] **Step 6: Commit** — `git add -A && git commit -m "feat: process line transport with fake-server fixture"`
+- [x] **Step 3: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
+- [x] **Step 4: Implement** with `Foundation.Process` + `Pipe`; stdout read on `FileHandle.readabilityHandler` feeding a continuation; stderr into a 512-chunk ring. `shutdown()` per the documented sequence (`interrupt`/`terminate` map to SIGTERM; use `kill(pid, SIGKILL)` for the final escalation).
+- [x] **Step 5: Run tests** — `swift test` — Expected: PASS.
+- [x] **Step 6: Commit** — `git add -A && git commit -m "feat: process line transport with fake-server fixture"`
 
 ---
 
@@ -615,7 +615,7 @@ func makeFakeTransport(mode: String) -> LineTransport {
   Argv construction: `[--mode, rpc, --no-title]` + (`--no-session` | `-r <resumeSessionPath>`) + extraArguments; spawn cwd = `configuration.cwd` (this is the workspace tools run in — spec's correctness requirement).
   Semantics ported from the reference (port-spec §1): request ids `req_1, req_2, …`; responses matched on `id`, never order; a matched `success:false` throws `commandFailed`; a response whose id matches a request already completed (the `late-error` case after an async ack) is recorded into `protocolErrors`, not thrown; chunk payloads reassembled then re-fed through `RpcFrame.decode`; every non-chunk frame calls `noteNonChunkFrame()` (chunk violations recorded as protocol errors, sequence dropped); transport EOF fails all pending requests with `processExited(code:stderrTail:)`.
 
-- [ ] **Step 1: Write failing tests (each mirrors a reference-suite behavior; fake server from Task 5)**
+- [x] **Step 1: Write failing tests (each mirrors a reference-suite behavior; fake server from Task 5)**
 
 ```swift
 import Testing
@@ -714,10 +714,10 @@ func makeClient(mode: String) -> RpcClient {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
-- [ ] **Step 3: Implement.** One reader task consumes `transport.lines`: decode → chunk bookkeeping → route `.response` by id to waiting continuations (`[String: CheckedContinuation<RpcResponse, Error>]`), everything else into the events stream (buffered `AsyncStream`). Decode failures on a line: skip + diagnostic (recoverable). Timeouts via `Task` race helper. `start()` awaits the first `.ready` frame with `startupTimeout`, then `negotiate_protocol` if `supportedProtocolVersions` contains 2.
-- [ ] **Step 4: Run tests** — `swift test` — Expected: PASS.
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: RpcClient actor with correlation, chunking, error taxonomy"`
+- [x] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
+- [x] **Step 3: Implement.** One reader task consumes `transport.lines`: decode → chunk bookkeeping → route `.response` by id to waiting continuations (`[String: CheckedContinuation<RpcResponse, Error>]`), everything else into the events stream (buffered `AsyncStream`). Decode failures on a line: skip + diagnostic (recoverable). Timeouts via `Task` race helper. `start()` awaits the first `.ready` frame with `startupTimeout`, then `negotiate_protocol` if `supportedProtocolVersions` contains 2.
+- [x] **Step 4: Run tests** — `swift test` — Expected: PASS.
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: RpcClient actor with correlation, chunking, error taxonomy"`
 
 ---
 
@@ -730,7 +730,7 @@ func makeClient(mode: String) -> RpcClient {
 - Consumes: `RpcClient` (Task 6).
 - Produces: the evidence gate — OmpKit verified against omp 18.0.4 itself.
 
-- [ ] **Step 1: Write the gated test**
+- [x] **Step 1: Write the gated test**
 
 ```swift
 import Testing
@@ -761,10 +761,10 @@ func realOmpReadyStateRoundTrip() async throws {
 }
 ```
 
-- [ ] **Step 2: Run it for real** — `OMPKIT_INTEGRATION=1 swift test --filter realOmpReadyStateRoundTrip`
+- [x] **Step 2: Run it for real** — `OMPKIT_INTEGRATION=1 swift test --filter realOmpReadyStateRoundTrip`
 Expected: PASS in under ~30 s. If it hangs: `omp --version` in the same shell first (PATH), and check `stderrSnapshot()` output in the failure message.
-- [ ] **Step 3: Run the full suite without the env var** — `swift test` — Expected: integration test SKIPPED, everything else PASS.
-- [ ] **Step 4: Commit** — `git add -A && git commit -m "test: integration smoke against real omp RPC"`
+- [x] **Step 3: Run the full suite without the env var** — `swift test` — Expected: integration test SKIPPED, everything else PASS.
+- [x] **Step 4: Commit** — `git add -A && git commit -m "test: integration smoke against real omp RPC"`
 
 ---
 
@@ -816,7 +816,7 @@ Contract: `docs/contracts/session-file-contract.md` §1 (quote-level authority �
   ```
   Parsing rules (contract §1.2–1.3): line 1 MAY be the 256-byte slot — accept only `{type:"title", v:1, title, updatedAt, pad}`; otherwise it's the header. Header must be `type:"session"` with non-empty string `id`, else `invalidHeader`. Slot title overrides header title; empty slot title clears it. v1 migration: assign each entry `id = String(format: "gen-%06d", i)`, `parentId` = previous entry's id (pure chain).
 
-- [ ] **Step 1: Create fixtures + failing tests.** Fixture `Tests/OmpKitTests/Fixtures/session_v3.jsonl` — build it exactly like the real file observed on this machine (title slot line padded to exactly 256 bytes including newline, then):
+- [x] **Step 1: Create fixtures + failing tests.** Fixture `Tests/OmpKitTests/Fixtures/session_v3.jsonl` — build it exactly like the real file observed on this machine (title slot line padded to exactly 256 bytes including newline, then):
 
 ```
 {"type":"session","version":3,"id":"019f1feb-011a-7000-8ccc-3b1d8e69df68","timestamp":"2026-07-01T23:02:02.778Z","cwd":"/tmp"}
@@ -885,10 +885,10 @@ Tests:
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
-- [ ] **Step 3: Implement** per the contract sections cited above.
-- [ ] **Step 4: Run tests** — `swift test` — Expected: PASS.
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: session file parsing with title slot and lenient entries"`
+- [x] **Step 2: Run to verify failure** — `swift test 2>&1 | tail -5` — Expected: compile FAILS.
+- [x] **Step 3: Implement** per the contract sections cited above.
+- [x] **Step 4: Run tests** — `swift test` — Expected: PASS.
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: session file parsing with title slot and lenient entries"`
 
 ---
 
@@ -912,7 +912,7 @@ Tests:
   }
   ```
 
-- [ ] **Step 1: Write failing tests** — linear chain returns all entries in order; a branch (two entries sharing one parent) resolves to the file-order-last leaf's path only; a corrupt parent cycle terminates (cycle guard) instead of hanging; `compactedPrefix` returns the entries before `firstKeptEntryId` for the newest compaction entry on the path and nil when no compaction exists. Build entries inline with `SessionEntryBase(id:parentId:timestamp:)` — no fixtures needed. Test code follows the same `#expect` style as Task 8; the branch test is the load-bearing one:
+- [x] **Step 1: Write failing tests** — linear chain returns all entries in order; a branch (two entries sharing one parent) resolves to the file-order-last leaf's path only; a corrupt parent cycle terminates (cycle guard) instead of hanging; `compactedPrefix` returns the entries before `firstKeptEntryId` for the newest compaction entry on the path and nil when no compaction exists. Build entries inline with `SessionEntryBase(id:parentId:timestamp:)` — no fixtures needed. Test code follows the same `#expect` style as Task 8; the branch test is the load-bearing one:
 
 ```swift
 func testHeader() -> SessionHeader {
@@ -930,10 +930,10 @@ func testHeader() -> SessionHeader {
 }
 ```
 
-- [ ] **Step 2: Run to verify failure** — Expected: compile FAILS.
-- [ ] **Step 3: Implement** (dictionary by id, walk with `seen` set, reverse).
-- [ ] **Step 4: Run tests** — `swift test` — Expected: PASS.
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: session tree active-path reconstruction"`
+- [x] **Step 2: Run to verify failure** — Expected: compile FAILS.
+- [x] **Step 3: Implement** (dictionary by id, walk with `seen` set, reverse).
+- [x] **Step 4: Run tests** — `swift test` — Expected: PASS.
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: session tree active-path reconstruction"`
 
 ---
 
@@ -986,7 +986,7 @@ Contract: `docs/contracts/session-file-contract.md` §4–5.
 
   Memoize per path keyed on `(mtime, size)` **both matching** (title-slot rewrites keep size but bump mtime — cache must miss then). Unparseable files: skip, but cache the negative result under the same key.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```swift
 import Testing
@@ -1049,10 +1049,10 @@ let completeLast = #"{"type":"message","id":"m1","parentId":null,"timestamp":"t"
 ```
 
 Also add a cache-invalidation test: list once, rewrite the file's title-slot bytes in place (same size, mtime bumps), list again → the new title appears (proves the `(mtime, size)` cache key misses on mtime change). Use `FileHandle(forWritingTo:)` + `write(contentsOf:)` at offset 0 with a regenerated 256-byte slot from Task 8's `makeTitleSlotLine`.
-- [ ] **Step 2: Run to verify failure** — Expected: compile FAILS.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run tests** — `swift test` — Expected: PASS.
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat: session library listing with status and change watching"`
+- [x] **Step 2: Run to verify failure** — Expected: compile FAILS.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run tests** — `swift test` — Expected: PASS.
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat: session library listing with status and change watching"`
 
 ---
 
@@ -1088,7 +1088,7 @@ Also add a cache-invalidation test: list once, rewrite the file's title-slot byt
   ```
   Encoding rules to port verbatim (contract §3): home-relative → `"-" + rel` with `/ \ :` each replaced by `-` (home itself = `"-"`); tmp-relative → `"-tmp"` prefix same replacement; otherwise `"--" + abs-minus-leading-slash with separators replaced + "--"`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```swift
 @Test func encodesHomeRelative() {
@@ -1146,11 +1146,11 @@ Process-manager tests reuse the Task 6 fake server through the factory:
 
 (`Handle.client ===` requires `RpcClient` to be a class-like reference — actors are; `#expect(h1.client === h2.client)` compiles with actors.)
 
-- [ ] **Step 2: Run to verify failure** — Expected: compile FAILS.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run full suite** — `swift test` — Expected: ALL tests PASS.
-- [ ] **Step 5: Update `docs/contracts/` provenance** — append to each contract doc's header comment: `Verified against OmpKit tests <today's date>.`
-- [ ] **Step 6: Commit** — `git add -A && git commit -m "feat: bucket encoding and session process manager"`
+- [x] **Step 2: Run to verify failure** — Expected: compile FAILS.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run full suite** — `swift test` — Expected: ALL tests PASS.
+- [x] **Step 5: Update `docs/contracts/` provenance** — append to each contract doc's header comment: `Verified against OmpKit tests <today's date>.`
+- [x] **Step 6: Commit** — `git add -A && git commit -m "feat: bucket encoding and session process manager"`
 
 ---
 

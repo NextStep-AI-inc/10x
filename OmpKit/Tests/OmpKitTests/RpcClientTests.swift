@@ -84,21 +84,25 @@ func makeClient(mode: String) -> RpcClient {
 
 @Test func unknownFramesFlowToEventsWithoutBreakingRequests() async throws {
     let c = makeClient(mode: "noisy")
-    let collector = Task { () -> [String] in
+    let stream = c.events
+    let driver = Task {
+        try? await c.start()
+        _ = try? await c.send(.getState())
+    }
+    defer { driver.cancel() }
+
+    let seen = await withTimeout(.seconds(10)) { () -> [String] in
         var seen: [String] = []
-        for await frame in await c.events {
+        for await frame in stream {
             switch frame {
             case .event(let type, _): seen.append(type)
             case .extensionUIRequest: seen.append("extension_ui_request")
             default: break
             }
-            if seen.count >= 3 { break }
+            if seen.count >= 3 { break }   // available_commands_update, setWidget, notice
         }
         return seen
-    }
-    _ = try await c.start()
-    _ = try await c.send(.getState())
-    let seen = await withTimeout(.seconds(10)) { await collector.value } ?? []
+    } ?? []
     #expect(seen.contains("available_commands_update"))
     #expect(seen.contains("extension_ui_request"))
     #expect(seen.contains("notice"))

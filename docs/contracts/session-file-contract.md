@@ -1,4 +1,4 @@
-<!-- Extracted 2026-08-24 from oh-my-pi v18.0.4 checkout (github.com/can1357/oh-my-pi). Regenerate on omp version bumps. -->
+<!-- Extracted 2026-08-24 from oh-my-pi v18.0.4 checkout (github.com/can1357/oh-my-pi). Regenerate on omp version bumps. Verified against OmpKit tests 2026-08-24. -->
 
 # SESSION FILE CONTRACT (oh-my-pi coding-agent → Swift session-library)
 
