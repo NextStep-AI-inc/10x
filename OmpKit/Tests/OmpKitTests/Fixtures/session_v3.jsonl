@@ -1,0 +1,6 @@
+{"type":"session","version":3,"id":"019f1feb-011a-7000-8ccc-3b1d8e69df68","timestamp":"2026-07-01T23:02:02.778Z","cwd":"/tmp"}
+{"type":"model_change","id":"ba9a4190","parentId":null,"timestamp":"2026-07-01T23:02:02.962Z","model":"anthropic/claude-opus-4-8"}
+{"type":"message","id":"aa11bb22","parentId":"ba9a4190","timestamp":"2026-07-01T23:03:00.000Z","message":{"role":"user","content":"hello"}}
+{"type":"future_entry_kind","id":"cc33dd44","parentId":"aa11bb22","timestamp":"2026-07-01T23:03:01.000Z","mystery":true}
+not json at all
+{"type":"message","id":"ee55ff66","parentId":"cc33dd44","timestamp":"2026-07-01T23:04:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}
