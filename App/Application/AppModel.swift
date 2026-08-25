@@ -14,6 +14,7 @@ final class AppModel {
     var isSearchPresented = false
     private(set) var activeSession: SessionController?
     private(set) var processManager: SessionProcessManager?
+    private(set) var settingsModel: SettingsViewModel?
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
@@ -42,6 +43,7 @@ final class AppModel {
 
     func openSettings() {
         route = .settings
+        Task { await settingsModel?.load() }
     }
 
     func openNewSession() {
@@ -97,6 +99,7 @@ final class AppModel {
             exitTask?.cancel()
             self.installation = nil
             processManager = nil
+            settingsModel = nil
             route = .setup
             return
         }
@@ -104,6 +107,8 @@ final class AppModel {
         self.installation = installation
         let processManager = SessionProcessManager(executable: installation.executableURL.path)
         self.processManager = processManager
+        settingsModel = SettingsViewModel(service: OmpConfigService(
+            runner: OmpConfigProcessRunner(executableURL: installation.executableURL)))
         watchUnexpectedExits(from: processManager)
         setupError = nil
         route = .newSession

@@ -50,8 +50,13 @@ struct AppShellView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
         case .settings:
-            Text("Settings")
-                .font(TenXTypography.title(size: 32))
+            if let settingsModel = model.settingsModel {
+                SettingsView(model: settingsModel)
+            } else {
+                Text("OMP settings unavailable")
+                    .font(TenXTypography.body(size: 13))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
         }
     }
 }

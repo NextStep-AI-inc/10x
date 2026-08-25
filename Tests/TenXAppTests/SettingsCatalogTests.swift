@@ -1,0 +1,47 @@
+import OmpKit
+import Testing
+@testable import TenXApp
+
+@Test func catalogCategorizesDynamicOMPSettingsAndProtectsSecrets() {
+    let source: JSONValue = .object([
+        "autoResume": setting(.bool(false), type: "boolean", description: "Automatically resume"),
+        "advisor.enabled": setting(.bool(true), type: "boolean", description: "Pair a reviewer"),
+        "providers.openai-codex.codeMode": setting(.string("off"), type: "enum", description: "Codex mode"),
+        "auth.broker.token": .object([
+            "type": .string("string"),
+            "description": .string("Authentication value"),
+        ]),
+        "unmapped.futureKey": setting(.int(3), type: "number", description: "Future setting"),
+    ])
+
+    let catalog = SettingsCatalog.build(from: source)
+
+    #expect(catalog.definition(key: "autoResume")?.category == .general)
+    #expect(catalog.definition(key: "advisor.enabled")?.category == .agent)
+    #expect(catalog.definition(key: "providers.openai-codex.codeMode")?.category == .models)
+    #expect(catalog.definition(key: "auth.broker.token")?.category == .integrations)
+    #expect(catalog.definition(key: "auth.broker.token")?.isSecret == true)
+    #expect(catalog.definition(key: "auth.broker.token")?.value == nil)
+    #expect(catalog.definition(key: "unmapped.futureKey")?.category == .advanced)
+    #expect(catalog.definition(key: "unmapped.futureKey")?.displayLabel == "Unmapped Future Key")
+}
+
+@Test func catalogSearchMatchesKeysLabelsAndDescriptions() {
+    let source: JSONValue = .object([
+        "unmapped.futureKey": setting(.int(3), type: "number", description: "Controls tomorrow"),
+        "advisor.enabled": setting(.bool(true), type: "boolean", description: "Pair a reviewer"),
+    ])
+    let catalog = SettingsCatalog.build(from: source)
+
+    #expect(catalog.filter(query: "futureKey").map(\.key) == ["unmapped.futureKey"])
+    #expect(catalog.filter(query: "Future Key").map(\.key) == ["unmapped.futureKey"])
+    #expect(catalog.filter(query: "reviewer").map(\.key) == ["advisor.enabled"])
+}
+
+private func setting(_ value: JSONValue, type: String, description: String) -> JSONValue {
+    .object([
+        "value": value,
+        "type": .string(type),
+        "description": .string(description),
+    ])
+}
