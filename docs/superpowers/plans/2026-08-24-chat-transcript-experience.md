@@ -145,15 +145,15 @@
 - Create: `Tests/TenXAppTests/ToolDisclosureStateTests.swift`
 - Modify: `Tests/TenXAppTests/SnapshotTests.swift`
 
-- [ ] Add failing tests for initial disclosure rules and user-choice persistence
+- [x] Add failing tests for initial disclosure rules and user-choice persistence
   across running-to-complete updates.
-- [ ] Refactor the shared scaffold into a keyboard-accessible disclosure whose
+- [x] Refactor the shared scaffold into a keyboard-accessible disclosure whose
   collapsed row contains verb/object/outcome/duration and whose expanded body
   keeps existing bespoke content.
-- [ ] Add transcript-level `Collapse all` and `Expand active` ghost actions only
+- [x] Add transcript-level `Collapse all` and `Expand active` ghost actions only
   above the activity-count threshold.
-- [ ] Record compact/expanded/running/error/approval/subagent snapshots.
-- [ ] Commit: `feat(chat): add activity disclosure`
+- [x] Record compact/expanded/running/error/approval/subagent snapshots.
+- [x] Commit: `feat(chat): add activity disclosure`
 
 ## Task 7: Parse and render production diff views
 

@@ -137,6 +137,69 @@ import Testing
         size: CGSize(width: 600, height: 420))
 }
 
+@MainActor
+@Test func activityDisclosureSnapshot() throws {
+    let running = ToolPresentation(
+        id: "running-tool",
+        name: "bash",
+        arguments: .object(["command": .string("swift test --filter Transcript")]),
+        result: .object(["content": .array([
+            .object(["type": .string("text"), "text": .string("Building transcript tests…")]),
+        ])]),
+        phase: .running,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 5.6))
+    let failed = ToolPresentation(
+        id: "failed-tool",
+        name: "bash",
+        arguments: .object(["command": .string("swift build")]),
+        result: .object(["content": .array([
+            .object(["type": .string("text"), "text": .string("Compilation failed at TranscriptView.swift:42")]),
+        ])]),
+        phase: .failed,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 1.8))
+    try assertSnapshot(
+        VStack(spacing: 18) {
+            BashToolCardView(presentation: running)
+            BashToolCardView(presentation: failed)
+        }
+        .frame(width: 720),
+        name: "activity-running-error",
+        size: CGSize(width: 800, height: 430))
+}
+
+@MainActor
+@Test func subagentActivitySnapshot() throws {
+    let presentation = SubagentPresentation(
+        id: "subagent",
+        index: 0,
+        agent: "reviewer",
+        task: "Review transcript behavior",
+        assignment: "Check disclosure and attribution",
+        description: "Review the completed implementation against the product direction.",
+        status: .running,
+        sessionFile: "/tmp/reviewer.jsonl",
+        parentToolCallID: "task-1",
+        actualModel: "gpt-5.6-sol",
+        thinkingLevel: "high",
+        modelRole: "review",
+        isFallback: false,
+        currentTool: "read",
+        recentTools: [],
+        recentOutput: ["Checked transcript mapping", "Reviewing compact activity"],
+        toolCount: 6,
+        requests: 2,
+        tokens: 1_840,
+        cost: 0.03,
+        durationMilliseconds: 4_200,
+        result: nil)
+    try assertSnapshot(
+        SubagentCardView(presentation: presentation).frame(width: 720),
+        name: "activity-subagent",
+        size: CGSize(width: 800, height: 330))
+}
+
 private struct SnapshotConfigRunner: OmpConfigRunning {
     func run(arguments: [String]) async throws -> Data {
         if arguments == ["config", "path"] {

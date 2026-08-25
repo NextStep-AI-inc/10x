@@ -2,11 +2,26 @@ import SwiftUI
 
 struct TranscriptView: View {
     let controller: SessionController
+    @State private var disclosureState = ToolDisclosureState()
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 22) {
+                    if activityIDs.count >= 4 {
+                        HStack(spacing: 4) {
+                            Spacer()
+                            Button("Collapse all") {
+                                disclosureState.collapseAll(ids: activityIDs)
+                            }
+                            .buttonStyle(GhostActionStyle(
+                                color: TenXPalette.color(TenXPalette.mutedTextHex)))
+                            Button("Expand active") {
+                                disclosureState.expand(ids: activeActivityIDs)
+                            }
+                            .buttonStyle(GhostActionStyle())
+                        }
+                    }
                     ForEach(controller.items) { item in
                         itemView(item)
                             .id(item.id)
@@ -17,12 +32,36 @@ struct TranscriptView: View {
                 .padding(.vertical, 28)
                 .frame(maxWidth: .infinity)
             }
+            .environment(\.toolDisclosureState, disclosureState)
             .scrollIndicators(.hidden)
             .onChange(of: controller.items.last?.id) { _, id in
                 guard let id else { return }
                 withAnimation(.easeOut(duration: 0.15)) {
                     proxy.scrollTo(id, anchor: .bottom)
                 }
+            }
+        }
+    }
+
+    private var activityIDs: [String] {
+        controller.items.compactMap { item in
+            switch item {
+            case .tool, .subagent: item.id
+            default: nil
+            }
+        }
+    }
+
+    private var activeActivityIDs: [String] {
+        controller.items.compactMap { item in
+            switch item {
+            case .tool(let presentation) where presentation.phase != .complete:
+                presentation.id
+            case .subagent(let presentation) where presentation.status.isActive
+                || presentation.status.isError:
+                presentation.id
+            default:
+                nil
             }
         }
     }

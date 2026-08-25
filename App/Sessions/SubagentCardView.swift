@@ -2,16 +2,14 @@ import SwiftUI
 
 struct SubagentCardView: View {
     let presentation: SubagentPresentation
-    @State private var isExpanded: Bool
+    @Environment(\.toolDisclosureState) private var disclosureState
+    @State private var localChoice: Bool?
 
-    init(presentation: SubagentPresentation) {
-        self.presentation = presentation
-        _isExpanded = State(initialValue: presentation.status.isActive || presentation.status.isError)
-    }
+    init(presentation: SubagentPresentation) { self.presentation = presentation }
 
     var body: some View {
         CornerCard(color: accentColor) {
-            DisclosureGroup(isExpanded: $isExpanded) {
+            DisclosureGroup(isExpanded: binding) {
                 detail
                     .padding(.top, 10)
             } label: {
@@ -37,6 +35,22 @@ struct SubagentCardView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(presentation.agent) subagent, \(presentation.status.label)")
+    }
+
+    private var binding: Binding<Bool> {
+        Binding(
+            get: {
+                disclosureState?.isExpanded(
+                    id: presentation.id,
+                    defaultValue: presentation.status.isActive || presentation.status.isError)
+                    ?? localChoice
+                    ?? presentation.status.isActive
+                    || presentation.status.isError
+            },
+            set: { value in
+                if let disclosureState { disclosureState.setExpanded(value, id: presentation.id) }
+                else { localChoice = value }
+            })
     }
 
     @ViewBuilder
