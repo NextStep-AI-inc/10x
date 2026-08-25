@@ -84,7 +84,7 @@ struct ProviderSetupView: View {
                         }
                     }
                     .scrollIndicators(.visible)
-                    .frame(height: 144)
+                    .frame(height: 126)
                 } else {
                     providerRows
                 }

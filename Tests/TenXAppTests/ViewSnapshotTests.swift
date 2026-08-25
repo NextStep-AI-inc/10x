@@ -146,7 +146,7 @@ import Testing
 
     try assertSnapshot(
         ProviderSetupView(model: model, onContinue: {}),
-        name: "provider-setup-browse-all",
+        name: "provider-setup-browse-all-minimum-size",
         size: CGSize(width: 760, height: 560))
 }
 
