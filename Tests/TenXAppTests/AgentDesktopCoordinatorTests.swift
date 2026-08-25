@@ -41,6 +41,20 @@ import Testing
     #expect(await background.recordedPrepareTokens().isEmpty)
 }
 
+@Test func automaticSelectionFallsBackToBackgroundAfterBothIsolationProvidersFail() async throws {
+    let aero = FakeAgentDesktopProvider(kind: .aeroSpace, probe: .failed)
+    let hammerspoon = FakeAgentDesktopProvider(kind: .hammerspoon, probe: .incompatible)
+    let background = FakeAgentDesktopProvider(kind: .background, probe: .healthy)
+    let coordinator = AgentDesktopCoordinator(providers: [aero, hammerspoon, background])
+
+    let prepared = try await coordinator.prepare(preference: .automatic, sessionToken: "abc123")
+
+    #expect(prepared.provider == .background)
+    #expect(await aero.recordedPrepareTokens().isEmpty)
+    #expect(await hammerspoon.recordedPrepareTokens().isEmpty)
+    #expect(await background.recordedPrepareTokens() == ["abc123"])
+}
+
 @Test func explicitPrepareNeverFallsBackToAnotherProvider() async {
     let aero = FakeAgentDesktopProvider(kind: .aeroSpace, probe: .missing)
     let background = FakeAgentDesktopProvider(kind: .background, probe: .healthy)

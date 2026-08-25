@@ -31,6 +31,8 @@ import Testing
 }
 
 @Test func commandRunnerTerminatesAHelperWhenTheCallingTaskIsCancelled() async throws {
+    let clock = ContinuousClock()
+    let started = clock.now
     let task = Task {
         try await AgentDesktopCommandRunner().run(
             executable: URL(filePath: "/bin/sleep"),
@@ -43,6 +45,7 @@ import Testing
     await #expect(throws: CancellationError.self) {
         _ = try await task.value
     }
+    #expect(started.duration(to: clock.now) < .seconds(1))
 }
 
 @Test func commandRunnerRejectsOutputOver64KiB() async throws {

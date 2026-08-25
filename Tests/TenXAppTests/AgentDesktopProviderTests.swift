@@ -39,6 +39,35 @@ import Testing
     }
 }
 
+@Test func aeroSpaceRequestsAndParsesTheRequiredWindowFields() async throws {
+    let runner = FakeDesktopRunner(outputs: [
+        .init(json: .array([
+            .object([
+                "window-id": .int(17),
+                "app-name": .string("Notes"),
+                "app-pid": .int(404),
+                "workspace": .string("10x-abc123abc123"),
+            ]),
+        ]), exitStatus: 0),
+    ])
+    let provider = AeroSpaceProvider(executable: URL(filePath: "/bin/true"), runner: runner)
+
+    let windows = try await provider.listWindows()
+
+    #expect(windows == [AgentWindow(
+        id: "17",
+        processID: 404,
+        app: "Notes",
+        workspaceID: "10x-abc123abc123")])
+    #expect(await runner.recordedArguments() == [[
+        "list-windows",
+        "--all",
+        "--format",
+        "%{window-id} %{app-name} %{app-pid} %{workspace}",
+        "--json",
+    ]])
+}
+
 @Test func hammerspoonRejectsAnyMalformedWindowInASnapshot() async {
     let runner = FakeDesktopRunner(outputs: [
         .init(json: .array([
@@ -92,15 +121,19 @@ import Testing
 
 private actor FakeDesktopRunner: AgentDesktopCommandRunning {
     private var outputs: [AgentDesktopCommandOutput]
+    private var arguments: [[String]] = []
 
     init(outputs: [AgentDesktopCommandOutput]) {
         self.outputs = outputs
     }
 
     func run(executable: URL, arguments: [String], timeout: Duration) async throws -> AgentDesktopCommandOutput {
+        self.arguments.append(arguments)
         guard !outputs.isEmpty else { throw FakeDesktopRunnerError.noOutput }
         return outputs.removeFirst()
     }
+
+    func recordedArguments() -> [[String]] { arguments }
 }
 
 private enum FakeDesktopRunnerError: Error { case noOutput }

@@ -41,7 +41,13 @@ struct AeroSpaceProvider: AgentDesktopProvider {
     func listWindows() async throws -> [AgentWindow] {
         let output = try await runner.run(
             executable: executable,
-            arguments: ["list-windows", "--all", "--json"],
+            arguments: [
+                "list-windows",
+                "--all",
+                "--format",
+                "%{window-id} %{app-name} %{app-pid} %{workspace}",
+                "--json",
+            ],
             timeout: .seconds(2))
         guard let windows = output.json.arrayValue else {
             throw AgentDesktopProviderError.malformedResponse(kind)
