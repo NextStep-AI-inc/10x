@@ -104,6 +104,9 @@ Compact table (every variant carries optional `id?: string` for response correla
 | `abort_and_prompt` | `message: string`, `images?: ImageContent[]` |
 | `new_session` | `parentSession?: string` |
 | `get_state` | — |
+| `set_computer_use` | `enabled: boolean`, `foregroundPolicy: "allow" \| "require-handoff"` |
+| `get_computer_use` | — |
+| `probe_computer_use` | `target?: string`, `verificationText?: string` |
 | `set_fast_mode` | `enabled: boolean` |
 | `get_available_commands` | — |
 | `set_todos` | `phases: TodoPhase[]` |
@@ -140,6 +143,49 @@ Compact table (every variant carries optional `id?: string` for response correla
 | `login` | `providerId: string` |
 
 Unknown `type` values get an error response: `` return error(undefined, unknownCommand.type, `Unknown command: ${unknownCommand.type}`); `` (`rpc-mode.ts` `default` arm — note `id` is `undefined` there even if the command carried one).
+
+### 1.1 Computer-use safety contract and version gate
+
+OMP builds that support the computer-use safety contract add these state commands:
+
+```ts
+| { id?: string; type: "set_computer_use"; enabled: boolean; foregroundPolicy: "allow" | "require-handoff" }
+| { id?: string; type: "get_computer_use" }
+| { id?: string; type: "probe_computer_use"; target?: string; verificationText?: string }
+```
+
+`set_computer_use` and `get_computer_use` return:
+
+```ts
+{ enabled: boolean; foregroundPolicy: "allow" | "require-handoff" }
+```
+
+`probe_computer_use` returns `{ capabilities, captureSucceeded, backgroundInputSucceeded }`, where
+`capabilities` contains `backend`, `capturePermission`, `inputPermission`, and
+`axPermission`; permissions are `"granted" | "denied" | "unavailable" | "unknown"`.
+`backgroundInputSucceeded` may be `null`. The optional `get_state.data.computerUse`
+field has the same shape as the set/get response. Probe and handoff targets are opaque
+native identifiers such as `"42"`, not synthesized strings such as `"window:42"`.
+
+Complete Agent Desktop contract: `get_state.data.computerUse` parses and
+`set_computer_use(enabled, foregroundPolicy: require-handoff)` succeeds.
+Best-effort background mode: either signal is absent or the command returns an
+unknown-command error. Best-effort mode must not display the non-interruption guarantee.
+
+Foreground consent is an extension UI round trip, so the response reuses the request
+ID and does not receive a client-generated request ID:
+
+```ts
+// stdout
+{ type: "extension_ui_request", id, method: "computer_foreground_handoff",
+  target, action: "foreground-input" | "pointer-move" | "window-raise" | "accessibility-focus", reason }
+
+// stdin
+{ type: "extension_ui_response", id, approved: boolean }
+```
+
+Clients must preserve the entire extension UI payload, including fields added by newer
+extensions, even when they expose this method through a typed view.
 
 ---
 

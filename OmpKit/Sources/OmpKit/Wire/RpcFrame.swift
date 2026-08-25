@@ -121,6 +121,72 @@ public struct ExtensionUIRequest: Sendable, Equatable {
         self.method = method
         self.payload = payload
     }
+
+    /// A typed view of the computer foreground-consent request, when present.
+    /// Other extension methods retain their full payload through `payload`.
+    public var computerForegroundHandoff: ComputerForegroundHandoffRequest? {
+        ComputerForegroundHandoffRequest(extensionUIRequest: self)
+    }
+}
+
+public enum ComputerForegroundAction: String, Sendable, Equatable {
+    case foregroundInput = "foreground-input"
+    case pointerMove = "pointer-move"
+    case windowRaise = "window-raise"
+    case accessibilityFocus = "accessibility-focus"
+}
+
+/// An explicit consent request before computer input brings a target foreground.
+public struct ComputerForegroundHandoffRequest: Sendable, Equatable {
+    public let id: String
+    public let target: String
+    public let action: ComputerForegroundAction
+    public let reason: String
+
+    public init(id: String, target: String, action: ComputerForegroundAction, reason: String) {
+        self.id = id
+        self.target = target
+        self.action = action
+        self.reason = reason
+    }
+
+    public init?(extensionUIRequest: ExtensionUIRequest) {
+        guard extensionUIRequest.method == "computer_foreground_handoff",
+              let target = extensionUIRequest.payload["target"]?.stringValue,
+              let actionRawValue = extensionUIRequest.payload["action"]?.stringValue,
+              let action = ComputerForegroundAction(rawValue: actionRawValue),
+              let reason = extensionUIRequest.payload["reason"]?.stringValue
+        else { return nil }
+        self.init(id: extensionUIRequest.id, target: target, action: action, reason: reason)
+    }
+}
+
+/// A host-provided tool definition supplied before a model may call it.
+public struct HostToolDefinition: Sendable, Equatable {
+    public let name: String
+    public let description: String
+    public let parameters: JSONValue
+
+    public init(name: String, description: String, parameters: JSONValue) {
+        self.name = name
+        self.description = description
+        self.parameters = parameters
+    }
+}
+
+/// A requested host-tool invocation. `id` correlates updates and the final result.
+public struct HostToolCall: Sendable, Equatable {
+    public let id: String
+    public let toolCallID: String
+    public let name: String
+    public let arguments: JSONValue
+
+    public init(id: String, toolCallID: String, name: String, arguments: JSONValue) {
+        self.id = id
+        self.toolCallID = toolCallID
+        self.name = name
+        self.arguments = arguments
+    }
 }
 
 /// One decoded line of omp's stdout stream.
@@ -129,6 +195,8 @@ public enum RpcFrame: Sendable, Equatable {
     case response(RpcResponse)
     case chunk(RpcChunk)
     case extensionUIRequest(ExtensionUIRequest)
+    case hostToolCall(HostToolCall)
+    case hostToolCancel(id: String, targetID: String)
     /// Everything else: session events, notices, command updates, and any frame
     /// type a newer omp introduces.
     case event(type: String, payload: JSONValue)
@@ -162,6 +230,25 @@ public enum RpcFrame: Sendable, Equatable {
                 throw RpcFrameError.malformedFrame(type: type, underlying: "missing id or method")
             }
             return .extensionUIRequest(ExtensionUIRequest(id: id, method: method, payload: value))
+        case "host_tool_call":
+            guard let id = object["id"]?.stringValue,
+                  let toolCallID = object["toolCallId"]?.stringValue,
+                  let name = object["toolName"]?.stringValue ?? object["name"]?.stringValue,
+                  let arguments = object["arguments"]
+            else {
+                throw RpcFrameError.malformedFrame(
+                    type: type, underlying: "missing id, toolCallId, toolName, or arguments")
+            }
+            return .hostToolCall(HostToolCall(
+                id: id, toolCallID: toolCallID, name: name, arguments: arguments
+            ))
+        case "host_tool_cancel":
+            guard let id = object["id"]?.stringValue,
+                  let targetID = object["targetId"]?.stringValue
+            else {
+                throw RpcFrameError.malformedFrame(type: type, underlying: "missing id or targetId")
+            }
+            return .hostToolCancel(id: id, targetID: targetID)
         default:
             return .event(type: type, payload: value)
         }

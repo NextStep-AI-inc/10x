@@ -5,6 +5,8 @@
   late-error— prompt acked ok, then error response with the same id
   silent    — ready, then never answers anything (timeout testing)
   noisy     — like basic, but emits unknown frames + setWidget before each response
+
+Pass --computer-contract to emulate the complete computer-use safety contract.
 """
 import base64
 import json
@@ -12,7 +14,9 @@ import subprocess
 import sys
 import time
 
-mode = sys.argv[1] if len(sys.argv) > 1 else "basic"
+args = sys.argv[1:]
+mode = next((argument for argument in args if not argument.startswith("--")), "basic")
+computer_contract = "--computer-contract" in args
 W = sys.stdout
 
 
@@ -60,6 +64,8 @@ while True:
 
 STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
          "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
+if computer_contract:
+    STATE["computerUse"] = {"enabled": False, "foregroundPolicy": "require-handoff"}
 reverse_commands = []
 
 for line in sys.stdin:
@@ -99,7 +105,35 @@ for line in sys.stdin:
         emit({"type": "response", "command": "parse", "success": False,
               "error": "malformed input"})
         continue
-    if ctype == "idless_error":
+    if ctype in {"set_computer_use", "get_computer_use", "probe_computer_use"} and not computer_contract:
+        emit({"type": "response", "command": ctype, "success": False,
+              "error": f"Unknown command: {ctype}"})
+    elif ctype == "set_computer_use":
+        STATE["computerUse"] = {
+            "enabled": cmd.get("enabled") is True,
+            "foregroundPolicy": cmd.get("foregroundPolicy"),
+        }
+        emit({"id": cid, "type": "response", "command": ctype, "success": True,
+              "data": STATE["computerUse"]})
+    elif ctype == "get_computer_use":
+        emit({"id": cid, "type": "response", "command": ctype, "success": True,
+              "data": STATE["computerUse"]})
+    elif ctype == "probe_computer_use":
+        emit({"id": cid, "type": "response", "command": ctype, "success": True, "data": {
+            "capabilities": {
+                "backend": "fake",
+                "capturePermission": "granted",
+                "inputPermission": "granted",
+                "axPermission": "granted",
+            },
+            "captureSucceeded": True,
+            "backgroundInputSucceeded": True,
+        }})
+    elif ctype == "set_host_tools":
+        tool_names = [tool.get("name") for tool in cmd.get("tools", []) if isinstance(tool, dict)]
+        emit({"id": cid, "type": "response", "command": ctype, "success": True,
+              "data": {"toolNames": tool_names}})
+    elif ctype == "idless_error":
         emit({"type": "response", "command": ctype, "success": False,
               "error": "idless failure"})
     elif ctype == "get_state":

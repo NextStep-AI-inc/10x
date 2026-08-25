@@ -7,6 +7,17 @@ private func json(_ data: Data) throws -> [String: Any] {
     try JSONSerialization.jsonObject(with: data.dropLast()) as! [String: Any]
 }
 
+private func computerContractClient() -> RpcClient {
+    var configuration = RpcClientConfiguration()
+    configuration.executable = "/usr/bin/env"
+    configuration.extraArguments = [
+        "python3", fixtureURL("fake_server.py").path, "basic", "--computer-contract",
+    ]
+    configuration.rawArgv = true
+    configuration.noSession = true
+    return RpcClient(configuration: configuration)
+}
+
 @Test func encodesPromptWithBehavior() throws {
     let line = try RpcCommand.prompt(message: "hi", streamingBehavior: .followUp)
         .encodedLine(id: "req_1")
@@ -103,4 +114,114 @@ private func json(_ data: Data) throws -> [String: Any] {
     #expect(ns["parentSession"] as? String == "/tmp/p.jsonl")
     let bare = try json(try RpcCommand.newSession(parentSession: nil).encodedLine(id: "r"))
     #expect(bare["parentSession"] == nil)
+}
+
+@Test func computerUseCommandsEncodeTheForegroundPolicy() throws {
+    let line = try RpcCommand.setComputerUse(
+        enabled: true,
+        foregroundPolicy: .requireHandoff
+    ).encodedLine(id: "computer-1")
+    let value = try JSONValue.decode(from: line)
+    #expect(value["type"]?.stringValue == "set_computer_use")
+    #expect(value["enabled"]?.boolValue == true)
+    #expect(value["foregroundPolicy"]?.stringValue == "require-handoff")
+    #expect(RpcCommand.getComputerUse().type == "get_computer_use")
+    #expect(RpcCommand.probeComputerUse().type == "probe_computer_use")
+}
+
+@Test func computerUseStateAndProbeDecodeTheCompleteSafetyContract() {
+    let state = ComputerUseRPCState(json: .object([
+        "enabled": .bool(true),
+        "foregroundPolicy": .string("require-handoff"),
+    ]))
+    #expect(state == ComputerUseRPCState(enabled: true, foregroundPolicy: .requireHandoff))
+
+    let probe = ComputerProbeResult(json: .object([
+        "capabilities": .object([
+            "backend": .string("macos"),
+            "capturePermission": .string("granted"),
+            "inputPermission": .string("granted"),
+            "axPermission": .string("granted"),
+        ]),
+        "captureSucceeded": .bool(true),
+        "backgroundInputSucceeded": .bool(true),
+    ]))
+    #expect(probe?.capabilities.isReady == true)
+    #expect(probe?.captureSucceeded == true)
+    #expect(probe?.backgroundInputSucceeded == true)
+}
+
+@Test func probePreservesOpaqueWindowTargets() throws {
+    let line = try RpcCommand.probeComputerUse(target: "42", verificationText: "ready")
+        .encodedLine(id: "probe-1")
+    let value = try JSONValue.decode(from: line)
+    #expect(value["target"]?.stringValue == "42")
+    #expect(value["verificationText"]?.stringValue == "ready")
+}
+
+@Test func hostToolCommandsUseTheRequestIDForResults() throws {
+    let definition = HostToolDefinition(
+        name: "agent_desktop",
+        description: "Launch a dedicated app window",
+        parameters: .object(["type": .string("object")])
+    )
+    let tools = try JSONValue.decode(from: RpcCommand.setHostTools([definition]).encodedLine(id: "tools-1"))
+    #expect(tools["tools"]?.arrayValue?.first?["name"]?.stringValue == "agent_desktop")
+
+    let partial = try JSONValue.decode(from: RpcCommand.hostToolUpdate(
+        id: "host-1", partialResult: .object(["content": .array([])])
+    ).encodedLine(id: "ignored"))
+    #expect(partial["type"]?.stringValue == "host_tool_update")
+    #expect(partial["id"]?.stringValue == "host-1")
+
+    let result = try JSONValue.decode(from: RpcCommand.hostToolResult(
+        id: "host-1", result: .object(["content": .array([.object(["type": .string("text"), "text": .string("done")])])]),
+        isError: false
+    ).encodedLine(id: "ignored"))
+    #expect(result["type"]?.stringValue == "host_tool_result")
+    #expect(result["id"]?.stringValue == "host-1")
+    #expect(result["result"]?["content"]?.arrayValue?.first?["text"]?.stringValue == "done")
+    #expect(result["isError"]?.boolValue == false)
+}
+
+@Test func computerForegroundHandoffResponseEchoesTheUIRequestID() throws {
+    let response = try JSONValue.decode(from: RpcCommand.computerForegroundHandoffResponse(
+        id: "handoff-1", approved: true
+    ).encodedLine(id: "ignored"))
+    #expect(response["type"]?.stringValue == "extension_ui_response")
+    #expect(response["id"]?.stringValue == "handoff-1")
+    #expect(response["approved"]?.boolValue == true)
+}
+
+@Test func computerContractFixtureSeparatesSupportedAndLegacyServers() async throws {
+    let supported = computerContractClient()
+    _ = try await supported.start()
+    let state = try await supported.send(.getState())
+    #expect(ComputerUseRPCState(json: state.data?["computerUse"]) == ComputerUseRPCState(
+        enabled: false, foregroundPolicy: .requireHandoff
+    ))
+    let configured = try await supported.send(.setComputerUse(
+        enabled: true, foregroundPolicy: .requireHandoff
+    ))
+    #expect(ComputerUseRPCState(json: configured.data) == ComputerUseRPCState(
+        enabled: true, foregroundPolicy: .requireHandoff
+    ))
+    let probe = try await supported.send(.probeComputerUse())
+    #expect(probe.data?["capabilities"]?["capturePermission"]?.stringValue == "granted")
+    let tools = try await supported.send(.setHostTools([HostToolDefinition(
+        name: "agent_desktop",
+        description: "Launch a dedicated app window",
+        parameters: .object(["type": .string("object")])
+    )]))
+    #expect(tools.data?["toolNames"]?.arrayValue?.compactMap(\.stringValue) == ["agent_desktop"])
+    await supported.shutdown()
+
+    let legacy = makeClient(mode: "basic")
+    _ = try await legacy.start()
+    let legacyState = try await legacy.send(.getState())
+    #expect(ComputerUseRPCState(json: legacyState.data?["computerUse"]) == nil)
+    await #expect(throws: RpcClientError.self) {
+        _ = try await legacy.send(.setComputerUse(enabled: true, foregroundPolicy: .requireHandoff))
+    }
+    await legacy.shutdown()
 }

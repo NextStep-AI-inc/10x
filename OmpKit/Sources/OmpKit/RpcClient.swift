@@ -298,7 +298,7 @@ public actor RpcClient {
             deliver(response)
         case .chunk:
             break   // handled above
-        case .extensionUIRequest, .event:
+        case .extensionUIRequest, .hostToolCall, .hostToolCancel, .event:
             eventContinuation.yield(frame)
         }
     }
