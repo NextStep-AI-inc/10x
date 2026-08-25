@@ -121,7 +121,7 @@ import Testing
         id: "failed-login",
         method: "notify",
         payload: .object(["message": .string("Couldn’t connect to Cursor.")])) )
-    await waitForModelState { model.loginMessage == "Couldn’t connect to Cursor." }
+    await waitForModelState { model.loginMessage == "Connection needs attention." }
 
     try assertSnapshot(
         ProviderSetupView(model: model, onContinue: {}),

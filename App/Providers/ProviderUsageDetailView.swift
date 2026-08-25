@@ -15,10 +15,10 @@ struct ProviderUsageDetailView: View {
                     usageRecovery(message: usageMessage)
                 }
 
-                if hasContent {
-                    providerSections
-                    unavailableSections
-                    credentialSections
+                if !groups.isEmpty {
+                    ForEach(groups) { group in
+                        providerSection(group)
+                    }
                 } else if !hasSuccessfulUsage {
                     initialFailure
                 } else {
@@ -33,56 +33,36 @@ struct ProviderUsageDetailView: View {
         .scrollIndicators(.hidden)
     }
 
-    private var hasContent: Bool {
-        !usage.providers.isEmpty
-            || !usage.accountsWithoutUsage.isEmpty
-            || !usage.credentialIssues.isEmpty
-    }
-
-    private var providerSections: some View {
-        ForEach(usage.providers) { provider in
-            providerSection(name: provider.name, accounts: provider.accounts)
-        }
-    }
-
-    private var unavailableSections: some View {
-        ForEach(groupedUnavailableAccounts, id: \.providerID) { group in
-            providerSection(name: providerName(for: group.providerID), accounts: group.accounts)
-        }
-    }
-
-    private var credentialSections: some View {
-        ForEach(usage.credentialIssues) { issue in
-            VStack(alignment: .leading, spacing: 9) {
-                sectionHeader(issue.providerName)
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(issue.label)
-                            .font(TenXTypography.body(size: 13, weight: .medium))
-                        Text("Reconnect to update usage.")
-                            .font(TenXTypography.body(size: 12))
-                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    }
-                    Spacer()
-                    if let provider = providers.first(where: { $0.id == issue.providerID }) {
-                        Button("Reconnect") { onReconnect(provider) }
-                            .buttonStyle(GhostActionStyle())
-                            .disabled(!provider.isAvailable)
-                            .accessibilityLabel("Reconnect \(provider.name)")
-                    }
-                }
-                .padding(.bottom, 17)
-            }
-        }
-    }
-
-    private func providerSection(name: String, accounts: [ProviderUsageAccount]) -> some View {
+    private func providerSection(_ group: ProviderUsageDetailGroup) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            sectionHeader(name)
-            ForEach(accounts) { account in
+            sectionHeader(group.name)
+            ForEach(group.accounts) { account in
                 accountSection(account)
             }
+            ForEach(group.credentialIssues) { issue in
+                credentialIssueRow(issue)
+            }
         }
+    }
+
+    private func credentialIssueRow(_ issue: ProviderCredentialIssue) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(issue.label)
+                    .font(TenXTypography.body(size: 13, weight: .medium))
+                Text("Reconnect to update usage.")
+                    .font(TenXTypography.body(size: 12))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
+            Spacer()
+            if let provider = providers.first(where: { $0.id == issue.providerID }) {
+                Button("Reconnect") { onReconnect(provider) }
+                    .buttonStyle(GhostActionStyle())
+                    .disabled(!provider.isAvailable)
+                    .accessibilityLabel("Reconnect \(provider.name)")
+            }
+        }
+        .padding(.bottom, 17)
     }
 
     private func sectionHeader(_ name: String) -> some View {
@@ -151,18 +131,8 @@ struct ProviderUsageDetailView: View {
         .padding(.vertical, 30)
     }
 
-    private var groupedUnavailableAccounts: [UnavailableAccountGroup] {
-        Dictionary(grouping: usage.accountsWithoutUsage, by: providerID(for:))
-            .map { UnavailableAccountGroup(providerID: $0.key, accounts: $0.value) }
-            .sorted { $0.providerID.localizedStandardCompare($1.providerID) == .orderedAscending }
-    }
-
-    private func providerID(for account: ProviderUsageAccount) -> String {
-        account.id.split(separator: ":", maxSplits: 1).first.map(String.init) ?? account.id
-    }
-
-    private func providerName(for providerID: String) -> String {
-        providers.first(where: { $0.id == providerID })?.name ?? providerID
+    private var groups: [ProviderUsageDetailGroup] {
+        ProviderUsageDetailGroup.make(usage: usage, providers: providers)
     }
 
     private func uniqueNotes(_ notes: [String]) -> [String] {
@@ -176,11 +146,62 @@ struct ProviderUsageDetailView: View {
     }
 }
 
-private struct UnavailableAccountGroup: Identifiable {
+struct ProviderUsageDetailGroup: Identifiable, Equatable, Sendable {
     let providerID: String
+    let name: String
     let accounts: [ProviderUsageAccount]
+    let credentialIssues: [ProviderCredentialIssue]
 
     var id: String { providerID }
+
+    static func make(
+        usage: ProviderUsagePresentation,
+        providers: [ProviderLoginProvider]
+    ) -> [ProviderUsageDetailGroup] {
+        var providerIDs: [String] = []
+        var names: [String: String] = [:]
+        var accounts: [String: [ProviderUsageAccount]] = [:]
+        var credentialIssues: [String: [ProviderCredentialIssue]] = [:]
+
+        func ensureProvider(_ providerID: String, name: String) {
+            guard names[providerID] == nil else { return }
+            providerIDs.append(providerID)
+            names[providerID] = name
+        }
+
+        for provider in usage.providers {
+            ensureProvider(provider.id, name: provider.name)
+            accounts[provider.id, default: []].append(contentsOf: provider.accounts)
+        }
+        for account in usage.accountsWithoutUsage {
+            let providerID = providerID(for: account)
+            ensureProvider(providerID, name: providerName(providerID, providers: providers))
+            accounts[providerID, default: []].append(account)
+        }
+        for issue in usage.credentialIssues {
+            ensureProvider(issue.providerID, name: issue.providerName)
+            credentialIssues[issue.providerID, default: []].append(issue)
+        }
+
+        return providerIDs.map { providerID in
+            ProviderUsageDetailGroup(
+                providerID: providerID,
+                name: names[providerID] ?? providerID,
+                accounts: accounts[providerID] ?? [],
+                credentialIssues: credentialIssues[providerID] ?? [])
+        }
+    }
+
+    private static func providerID(for account: ProviderUsageAccount) -> String {
+        account.id.split(separator: ":", maxSplits: 1).first.map(String.init) ?? account.id
+    }
+
+    private static func providerName(
+        _ providerID: String,
+        providers: [ProviderLoginProvider]
+    ) -> String {
+        providers.first(where: { $0.id == providerID })?.name ?? providerID
+    }
 }
 
 private struct ProviderUsageLimitDetailView: View {

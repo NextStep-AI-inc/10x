@@ -55,6 +55,7 @@ final class ProviderManagementViewModel {
     private(set) var usageMessage: String?
     private(set) var activeLoginProviderID: String?
     private(set) var loginMessage: String?
+    private(set) var loginMessageProviderID: String?
     private(set) var sheetRequest: ExtensionUIState?
     private(set) var lastUsageRefresh: Date?
 
@@ -140,6 +141,7 @@ final class ProviderManagementViewModel {
         let generation = loginGeneration
         activeLoginProviderID = provider.id
         loginMessage = nil
+        loginMessageProviderID = nil
         sheetRequest = nil
 
         do {
@@ -153,6 +155,7 @@ final class ProviderManagementViewModel {
             sheetRequest = nil
             activeLoginProviderID = nil
             loginMessage = "Couldn’t connect to \(provider.name)."
+            loginMessageProviderID = provider.id
         }
     }
 
@@ -169,6 +172,7 @@ final class ProviderManagementViewModel {
             sheetRequest = extensionRouter.sheetRequest
         } catch {
             loginMessage = "Couldn’t send the response."
+            loginMessageProviderID = activeLoginProviderID
         }
     }
 
@@ -289,9 +293,17 @@ final class ProviderManagementViewModel {
         case .input:
             extensionRouter.consume(request)
             sheetRequest = extensionRouter.sheetRequest
-        case .notification(_, let message, _):
+        case .notification:
             extensionRouter.consume(request)
-            loginMessage = message
+            guard let activeLoginProviderID,
+                  let provider = providers.first(where: { $0.id == activeLoginProviderID })
+            else {
+                loginMessage = "Connection needs attention."
+                loginMessageProviderID = nil
+                return
+            }
+            loginMessage = "Connecting to \(provider.name)."
+            loginMessageProviderID = provider.id
         case .cancel:
             extensionRouter.consume(request)
             sheetRequest = extensionRouter.sheetRequest
@@ -303,6 +315,7 @@ final class ProviderManagementViewModel {
     private func clearLoginState() {
         activeLoginProviderID = nil
         loginMessage = nil
+        loginMessageProviderID = nil
         extensionRouter = ExtensionUIRouter()
         sheetRequest = nil
     }

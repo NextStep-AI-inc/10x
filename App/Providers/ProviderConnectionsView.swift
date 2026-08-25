@@ -6,6 +6,7 @@ struct ProviderConnectionsView: View {
     let isLoading: Bool
     let providerMessage: String?
     let loginMessage: String?
+    let loginMessageProviderID: String?
     let activeLoginProviderID: String?
     let isShowingAllProviders: Bool
     let query: Binding<String>
@@ -32,6 +33,13 @@ struct ProviderConnectionsView: View {
 
     @ViewBuilder
     private var catalog: some View {
+        if let loginMessage, loginMessageProviderID == nil {
+            Text(loginMessage)
+                .font(TenXTypography.body(size: 12))
+                .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                .padding(.top, 14)
+        }
+
         if isShowingAllProviders {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
@@ -60,7 +68,7 @@ struct ProviderConnectionsView: View {
                     provider: provider,
                     credentialIssue: credentialIssues.first(where: { $0.providerID == provider.id }),
                     isConnecting: activeLoginProviderID == provider.id,
-                    loginMessage: loginMessage?.contains(provider.name) == true ? loginMessage : nil,
+                    loginMessage: loginMessageProviderID == provider.id ? loginMessage : nil,
                     onConnect: { onConnect(provider) },
                     onCancel: onCancel)
             }

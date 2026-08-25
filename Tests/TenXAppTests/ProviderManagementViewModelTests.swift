@@ -181,14 +181,47 @@ import Testing
         id: "notice",
         method: "notify",
         payload: .object(["message": .string("Waiting for approval.")])) )
-    await waitForModelState { model.loginMessage == "Waiting for approval." }
+    await waitForModelState { model.loginMessage == "Connection needs attention." }
     await service.emit(ExtensionUIRequest(
         id: "cancel",
         method: "cancel",
         payload: .object(["targetId": .string("input")])) )
     await waitForModelState { model.sheetRequest == nil }
 
-    #expect(model.loginMessage == "Waiting for approval.")
+    #expect(model.loginMessage == "Connection needs attention.")
+    #expect(model.loginMessageProviderID == nil)
+}
+
+@MainActor
+@Test func providerModelSanitizesNotificationsAndScopesThemToTheActiveProvider() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
+
+    await service.emit(ExtensionUIRequest(
+        id: "malicious-notice",
+        method: "notify",
+        payload: .object(["message": .string("token=secret /tmp/omp rpc_error")])) )
+    await waitForModelState { model.loginMessageProviderID == "cursor" }
+
+    #expect(model.loginMessage == "Connecting to Cursor.")
+    #expect(model.loginMessage?.contains("secret") == false)
+    #expect(model.loginMessage?.contains("/tmp") == false)
+    #expect(model.loginMessage?.contains("rpc_error") == false)
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
 }
 
 @MainActor

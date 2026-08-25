@@ -41,3 +41,50 @@ import Testing
     #expect(low.tone == .warning)
     #expect(exhausted.tone == .exhausted)
 }
+
+@Test func usageDetailGroupsEveryAccountStateUnderOneProvider() {
+    let identity = ProviderUsageAccountIdentity(
+        email: "team@example.com",
+        accountID: nil,
+        projectID: nil,
+        enterpriseURL: nil,
+        orgID: nil,
+        orgName: nil)
+    let usage = ProviderUsagePresentation(
+        providers: [ProviderUsageProvider(
+            id: "anthropic",
+            name: "Anthropic",
+            accounts: [ProviderUsageAccount(
+                id: "anthropic:team@example.com",
+                label: "team@example.com",
+                identity: identity,
+                limits: [],
+                amounts: [],
+                notes: [],
+                isUsageAvailable: true)])],
+        accountsWithoutUsage: [ProviderUsageAccount(
+            id: "anthropic:work@example.com",
+            label: "work@example.com",
+            identity: identity,
+            limits: [],
+            amounts: [],
+            notes: [],
+            isUsageAvailable: false)],
+        credentialIssues: [ProviderCredentialIssue(
+            id: "anthropic:2",
+            providerID: "anthropic",
+            providerName: "Anthropic",
+            label: "old@example.com",
+            type: "oauth",
+            disabledAt: Date(timeIntervalSince1970: 0))])
+
+    let groups = ProviderUsageDetailGroup.make(
+        usage: usage,
+        providers: [ProviderLoginProvider(
+            id: "anthropic", name: "Anthropic", isAvailable: true, isAuthenticated: true)])
+
+    #expect(groups.count == 1)
+    #expect(groups[0].providerID == "anthropic")
+    #expect(groups[0].accounts.map(\.label) == ["team@example.com", "work@example.com"])
+    #expect(groups[0].credentialIssues.map(\.id) == ["anthropic:2"])
+}

@@ -4,13 +4,21 @@ struct ProvidersView: View {
     let model: ProviderManagementViewModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            sectionSwitch
-            content
-                .frame(maxHeight: .infinity)
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                header
+                    .fixedSize(horizontal: false, vertical: true)
+                sectionSwitch
+                    .fixedSize(horizontal: false, vertical: true)
+                content
+                    .frame(
+                        width: proxy.size.width,
+                        height: max(proxy.size.height - Self.headerHeight, 0),
+                        alignment: .top)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
-        .frame(maxWidth: 960, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: 960, maxHeight: .infinity)
         .padding(.horizontal, 48)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(item: extensionSheetBinding) { request in
@@ -51,6 +59,8 @@ struct ProvidersView: View {
         .padding(.bottom, 22)
     }
 
+    private static let headerHeight: CGFloat = 170
+
     private var sectionSwitch: some View {
         HStack(spacing: 18) {
             sectionButton("Connections", section: .connections)
@@ -75,6 +85,7 @@ struct ProvidersView: View {
                 isLoading: model.isLoadingProviders,
                 providerMessage: model.providerMessage,
                 loginMessage: model.loginMessage,
+                loginMessageProviderID: model.loginMessageProviderID,
                 activeLoginProviderID: model.activeLoginProviderID,
                 isShowingAllProviders: model.isShowingAllProviders,
                 query: queryBinding,

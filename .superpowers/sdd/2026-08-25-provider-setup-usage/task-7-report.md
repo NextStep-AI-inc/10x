@@ -73,3 +73,48 @@ which does not receive the shell environment variable in this workspace. The
 three references were recorded through a temporary generated-scheme value and
 then the project was regenerated; the committed scheme retains its generated
 setting expression.
+
+## Fix Round 1
+
+### RED
+
+Added a provider-model regression that sends a notification containing a fake
+token, path, and protocol error while Cursor is connecting. Added grouping
+coverage for a provider with reported usage, an unavailable account, and a
+disabled credential. The first run failed because `ProviderUsageDetailGroup`
+did not exist; the Usage snapshot also mismatched after the regression fixture
+was expanded.
+
+### GREEN
+
+- Notification payload text is ignored at the feature-model boundary. The
+  model publishes only fixed copy and, when known, the active provider ID.
+- Connections associates messages by provider ID, not a substring match.
+- Usage derives one stable group per provider, merging reported accounts,
+  unavailable accounts, and credential recovery into one section.
+- The workspace gives the detail scroll view an explicit remaining canvas,
+  keeping its shared header and switch outside the scrolling detail.
+
+Recorded and visually inspected the corrected `provider-usage-detail.png` at
+1180 × 760. It shows the full Providers header, Cursor limits and amount-only
+usage, GitHub Copilot's unavailable state, and Anthropic reconnect state with
+no collisions or clipped account rows.
+
+### Verified
+
+```sh
+xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' test
+```
+
+Result: 130 tests passed.
+
+```sh
+xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release \
+  -destination 'platform=macOS' build
+```
+
+Result: Release build succeeded.
+
+### Concerns
+
+No new concerns. The ledgered route/test minors remain intentionally untouched.
