@@ -35,3 +35,13 @@ import Testing
         reset: ""
     ) == "Cursor, Cursor Models, 50 percent remaining, reset unavailable")
 }
+
+@Test func providerUsageLabelNamesUnavailableResetWhenWindowIsWhitespace() {
+    #expect(ProviderUsageAccessibility.limitLabel(
+        provider: "Cursor",
+        account: nil,
+        allowance: "Cursor Models",
+        percentage: 50,
+        reset: "  \n\t "
+    ) == "Cursor, Cursor Models, 50 percent remaining, reset unavailable")
+}
