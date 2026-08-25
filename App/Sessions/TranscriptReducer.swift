@@ -165,6 +165,26 @@ struct TranscriptReducer {
         inflightMessageID = nil
     }
 
+    mutating func ensureThreadStart(date: Date?) {
+        guard !items.contains(where: {
+            if case .threadStart = $0 { return true }
+            return false
+        }) else { return }
+        items.insert(.threadStart(id: "thread-start-fallback", date: date), at: 0)
+    }
+
+    mutating func setReconciliationWarning(isPresented: Bool) {
+        items.removeAll { $0.id == "reconciliation-warning" }
+        guard isPresented else { return }
+        items.append(.annotation(TranscriptAnnotation(
+            id: "reconciliation-warning",
+            kind: .notice,
+            title: "History is catching up",
+            detail: "Live updates remain visible.",
+            timestamp: nil,
+            tone: .warning)))
+    }
+
     mutating func reconcile(history: TranscriptHistory) {
         let persistedIDs = Set(history.items.map(\.id))
         let transient = items.filter { item in

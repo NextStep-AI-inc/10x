@@ -193,6 +193,42 @@ import Testing
     #expect(reducer.items.contains { if case .notice = $0 { true } else { false } })
 }
 
+@Test func fallbackHistoryCreatesOnlyOneThreadStart() {
+    var reducer = TranscriptReducer()
+    let started = Date(timeIntervalSince1970: 1_787_601_600)
+
+    reducer.ensureThreadStart(date: started)
+    reducer.ensureThreadStart(date: .distantFuture)
+
+    let starts = reducer.items.compactMap { item -> Date? in
+        guard case .threadStart(_, let date) = item else { return nil }
+        return date
+    }
+    #expect(starts.count == 1)
+    #expect(starts[0] == started)
+}
+
+@Test func reconciliationWarningCoalescesAndClears() {
+    var reducer = TranscriptReducer()
+    reducer.setReconciliationWarning(isPresented: true)
+    reducer.setReconciliationWarning(isPresented: true)
+    #expect(reducer.items.filter { $0.id == "reconciliation-warning" }.count == 1)
+
+    reducer.setReconciliationWarning(isPresented: false)
+    #expect(!reducer.items.contains { $0.id == "reconciliation-warning" })
+}
+
+@Test func transcriptFollowsOnlyWhenViewportIsNearBottom() {
+    #expect(TranscriptView.shouldFollowBottom(
+        contentOffset: 700,
+        containerHeight: 300,
+        contentHeight: 1_050))
+    #expect(!TranscriptView.shouldFollowBottom(
+        contentOffset: 200,
+        containerHeight: 300,
+        contentHeight: 1_050))
+}
+
 private func eventFrame(_ json: String) throws -> RpcFrame {
     try RpcFrame.decode(line: Data(json.utf8))
 }

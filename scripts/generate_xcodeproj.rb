@@ -13,6 +13,7 @@ project.root_object.attributes["LastSwiftUpdateCheck"] = "2660"
 app = project.new_target(:application, "10x", :osx, "15.0")
 tests = project.new_target(:unit_test_bundle, "TenXAppTests", :osx, "15.0")
 tests.add_dependency(app)
+test_dependency = tests.dependencies.last
 
 app_group = project.main_group.new_group("App")
 test_group = project.main_group.new_group("Tests")
@@ -88,6 +89,13 @@ tests.build_configurations.each do |configuration|
 end
 
 project.predictabilize_uuids
+
+# Xcodeproj leaves this circular dependency pair out of its predictable UUID
+# pass, so pin the final two generated identifiers as well.
+test_dependency_uuid = "D4AC311B1DE3EA82606B7F7685E3A230"
+test_proxy_uuid = "7405643B58C04A0D4C4F6864B6221DB8"
+test_dependency.instance_variable_set(:@uuid, test_dependency_uuid)
+test_dependency.target_proxy.instance_variable_set(:@uuid, test_proxy_uuid)
 project.save
 
 scheme = Xcodeproj::XCScheme.new

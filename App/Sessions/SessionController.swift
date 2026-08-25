@@ -29,6 +29,7 @@ final class SessionController {
     private let processManager: SessionProcessManager
     private let timelineLoader = SessionTimelineLoader()
     private var projectURL: URL?
+    private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
     private var reducer = TranscriptReducer()
     private var extensionRouter = ExtensionUIRouter()
@@ -38,6 +39,22 @@ final class SessionController {
 
     init(processManager: SessionProcessManager) {
         self.processManager = processManager
+    }
+
+    init(
+        processManager: SessionProcessManager,
+        previewItems: [TranscriptItem],
+        runtimeState: SessionRuntimeState,
+        title: String = "Transcript",
+        modelName: String = "GPT-5.6",
+        thinkingLevel: String = "High"
+    ) {
+        self.processManager = processManager
+        self.items = previewItems
+        self.runtimeState = runtimeState
+        self.title = title
+        self.modelName = modelName
+        self.thinkingLevel = thinkingLevel
     }
 
     var isComposerAvailable: Bool {
@@ -53,6 +70,7 @@ final class SessionController {
         title = metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session"
         let projectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
         self.projectURL = projectURL
+        fallbackThreadStartDate = metadata.created
         headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
         runtimeState = .loading
 
@@ -68,6 +86,7 @@ final class SessionController {
 
     func openNew(projectURL: URL) async {
         self.projectURL = projectURL
+        fallbackThreadStartDate = Date()
         title = "New session"
         headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
         runtimeState = .loading
@@ -184,11 +203,23 @@ final class SessionController {
 
         let state = try await handle.client.send(.getState())
         applyState(state.data)
-        if let sessionPath, let history = try await timelineLoader.load(path: sessionPath) {
-            reducer.load(history: history)
-        } else {
+        var didLoadHistory = false
+        var didHistoryLoadFail = false
+        if let sessionPath {
+            do {
+                if let history = try await timelineLoader.load(path: sessionPath) {
+                    reducer.load(history: history)
+                    didLoadHistory = true
+                }
+            } catch {
+                didHistoryLoadFail = true
+            }
+        }
+        if !didLoadHistory {
             reducer.load(messages: try await loadMessages(client: handle.client))
         }
+        reducer.ensureThreadStart(date: fallbackThreadStartDate)
+        reducer.setReconciliationWarning(isPresented: didHistoryLoadFail)
         reducer.runtimeState = runtimeState
         syncReducerState()
         try? await handle.client.send(.setSubagentSubscription(level: .progress))
@@ -251,10 +282,11 @@ final class SessionController {
                       !Task.isCancelled
                 else { return }
                 self.reducer.reconcile(history: history)
+                self.reducer.setReconciliationWarning(isPresented: false)
                 self.syncReducerState()
             } catch {
-                // The RPC stream remains usable if a partially-written session
-                // file cannot yet be parsed. The next boundary retries it.
+                self.reducer.setReconciliationWarning(isPresented: true)
+                self.syncReducerState()
             }
         }
     }

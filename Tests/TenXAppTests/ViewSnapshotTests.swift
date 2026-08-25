@@ -240,6 +240,168 @@ import Testing
         size: CGSize(width: 800, height: 650))
 }
 
+@MainActor
+@Test func fullTranscriptCompactWindowSnapshot() throws {
+    try assertSnapshot(
+        ActiveSessionView(controller: compactTranscriptController()),
+        name: "chat-full-900",
+        size: CGSize(width: 900, height: 700))
+}
+
+@MainActor
+@Test func fullTranscriptWideWindowSnapshot() throws {
+    try assertSnapshot(
+        ActiveSessionView(controller: wideTranscriptController()),
+        name: "chat-full-1440",
+        size: CGSize(width: 1_440, height: 900))
+}
+
+@MainActor
+private func compactTranscriptController() -> SessionController {
+    let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
+    let user = TranscriptMessage(
+        id: "compact-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Make the agent transcript compact without hiding important work."),
+        ]),
+        timestamp: timestamp,
+        isFinal: true)
+    let assistant = TranscriptMessage(
+        id: "compact-assistant",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("Routine work stays collapsed. Running and failed work opens automatically, and every item remains keyboard accessible."),
+        ]),
+        timestamp: timestamp.addingTimeInterval(8),
+        attribution: TranscriptResponseAttribution(
+            provider: "openai-codex",
+            model: "gpt-5.6-sol",
+            mode: "design",
+            agent: nil,
+            modelRole: nil),
+        isFinal: false)
+    let read = ToolPresentation(
+        id: "compact-read",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: snapshotTextResult("struct TranscriptView: View { … }"),
+        phase: .complete,
+        startDate: timestamp.addingTimeInterval(10),
+        endDate: timestamp.addingTimeInterval(10.3))
+    let running = ToolPresentation(
+        id: "compact-running",
+        name: "bash",
+        arguments: .object(["command": .string("xcodebuild -scheme 10x test")]),
+        result: snapshotTextResult("Building transcript tests…"),
+        phase: .running,
+        startDate: timestamp.addingTimeInterval(11),
+        endDate: timestamp.addingTimeInterval(15.6))
+    let failed = ToolPresentation(
+        id: "compact-failed",
+        name: "bash",
+        arguments: .object(["command": .string("swift build")]),
+        result: snapshotTextResult("TranscriptView.swift:42: error: invalid scroll target"),
+        phase: .failed,
+        startDate: timestamp.addingTimeInterval(16),
+        endDate: timestamp.addingTimeInterval(16.8))
+    return SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [
+            .threadStart(id: "compact-start", date: timestamp),
+            .message(user),
+            .message(assistant),
+            .tool(read),
+            .tool(running),
+            .tool(failed),
+        ],
+        runtimeState: .streaming,
+        title: "Transcript experience")
+}
+
+@MainActor
+private func wideTranscriptController() -> SessionController {
+    let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
+    let assistant = TranscriptMessage(
+        id: "wide-assistant",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("## Implementation\n\nThe transcript keeps long explanations readable while preserving direct references like `App/Sessions/TranscriptView.swift:42` and [the design notes](https://example.com/design)."),
+        ]),
+        timestamp: timestamp.addingTimeInterval(20),
+        attribution: TranscriptResponseAttribution(
+            provider: "openai-codex",
+            model: "gpt-5.6-sol",
+            mode: "advisor",
+            agent: "interface-worker",
+            modelRole: "implementation"),
+        isFinal: true)
+    let patch = """
+    diff --git a/App/Transcript.swift b/App/Transcript.swift
+    --- a/App/Transcript.swift
+    +++ b/App/Transcript.swift
+    @@ -18,3 +18,3 @@
+    -scrollToBottom()
+    +if isNearBottom { scrollToBottom() }
+     render(items)
+    """
+    let edit = ToolPresentation(
+        id: "wide-edit",
+        name: "edit",
+        arguments: .object(["path": .string("App/Transcript.swift")]),
+        result: .object(["details": .object(["diff": .string(patch)])]),
+        phase: .complete,
+        startDate: timestamp.addingTimeInterval(21),
+        endDate: timestamp.addingTimeInterval(21.7))
+    let subagent = SubagentPresentation(
+        id: "wide-subagent",
+        index: 0,
+        agent: "reviewer",
+        task: "Review transcript behavior",
+        assignment: "Verify attribution, disclosure, and wrapping",
+        description: "Review the integrated transcript against the product direction.",
+        status: .running,
+        sessionFile: "/tmp/reviewer.jsonl",
+        parentToolCallID: "task-review",
+        actualModel: "gpt-5.6-sol",
+        thinkingLevel: "high",
+        modelRole: "review",
+        isFallback: false,
+        currentTool: "view_image",
+        recentTools: [],
+        recentOutput: ["Checked compact state", "Reviewing the structured diff"],
+        toolCount: 7,
+        requests: 2,
+        tokens: 2_140,
+        cost: 0.04,
+        durationMilliseconds: 6_400,
+        result: nil)
+    let warning = TranscriptAnnotation(
+        id: "wide-warning",
+        kind: .retry,
+        title: "Retrying response",
+        detail: "Attempt 2 of 3 · 1s",
+        timestamp: timestamp.addingTimeInterval(22),
+        tone: .warning)
+    return SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [
+            .threadStart(id: "wide-start", date: timestamp),
+            .message(assistant),
+            .annotation(warning),
+            .tool(edit),
+            .subagent(subagent),
+        ],
+        runtimeState: .streaming,
+        title: "Agent transcript")
+}
+
+private func snapshotTextResult(_ text: String) -> JSONValue {
+    .object(["content": .array([
+        .object(["type": .string("text"), "text": .string(text)]),
+    ])])
+}
+
 private struct SnapshotConfigRunner: OmpConfigRunning {
     func run(arguments: [String]) async throws -> Data {
         if arguments == ["config", "path"] {

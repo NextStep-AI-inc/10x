@@ -185,15 +185,15 @@
 - Modify: `Tests/TenXAppTests/SnapshotTests.swift`
 - Modify: `Tests/TenXAppTests/SessionControllerTests.swift`
 
-- [ ] Add the single thread-start timestamp, loading skeleton, header-only empty
+- [x] Add the single thread-start timestamp, loading skeleton, header-only empty
   state, reconciliation warning, and full accessibility labels.
-- [ ] Verify keyboard traversal, focus rings, disclosure announcements, copy/open
+- [x] Verify keyboard traversal, focus rings, disclosure announcements, copy/open
   actions, and Reduce Motion behavior.
-- [ ] Verify scrolling does not jump on in-place streaming/tool updates and only
+- [x] Verify scrolling does not jump on in-place streaming/tool updates and only
   follows the bottom when the user is already near it.
-- [ ] Record full transcript snapshots at 900×700 and 1440×900 for compact,
+- [x] Record full transcript snapshots at 900×700 and 1440×900 for compact,
   expanded, streaming, failure, long content, diff, and subagent fixtures.
-- [ ] Commit: `feat(chat): integrate transcript experience`
+- [x] Commit: `feat(chat): integrate transcript experience`
 
 ## Task 9: Full verification and review
 
