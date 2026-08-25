@@ -12,30 +12,62 @@ public actor SessionProcessManager {
         public let client: RpcClient
     }
 
-    public typealias ClientFactory = @Sendable (RpcClientConfiguration) -> RpcClient
-
-    private let executable: String
-    private let clientFactory: ClientFactory
-    private var handles: [String: Handle] = [:]
-    private var exitWatchers: [String: Task<Void, Never>] = [:]
-
-    private struct Opening {
-        let id: UUID
-        let task: Task<Handle, any Error>
+    public struct WarmHandle: Sendable {
+        public let projectDirectory: String
+        public let client: RpcClient
     }
-
-    /// Opens in flight, so concurrent callers for one session share a child
-    /// instead of racing across the `await` in `open`.
-    private var opening: [String: Opening] = [:]
-
-    private let exitStream: AsyncStream<UnexpectedExit>
-    private let exitContinuation: AsyncStream<UnexpectedExit>.Continuation
 
     public struct UnexpectedExit: Sendable {
         public let sessionPath: String
         public let code: Int32?
         public let stderrTail: String
     }
+
+    public struct WarmExit: Sendable {
+        public let projectDirectory: String
+        public let code: Int32?
+        public let stderrTail: String
+    }
+
+    public typealias ClientFactory = @Sendable (RpcClientConfiguration) -> RpcClient
+
+    private struct ManagedClient: Sendable {
+        let id: UUID
+        let client: RpcClient
+    }
+
+    private struct ManagedHandle: Sendable {
+        let managed: ManagedClient
+        let handle: Handle
+    }
+
+    private struct ManagedWarmHandle: Sendable {
+        let managed: ManagedClient
+        let handle: WarmHandle
+    }
+
+    private struct Opening {
+        let id: UUID
+        let task: Task<ManagedHandle, any Error>
+    }
+
+    private struct WarmOpening {
+        let id: UUID
+        let task: Task<ManagedWarmHandle, any Error>
+    }
+
+    private let executable: String
+    private let clientFactory: ClientFactory
+    private var handles: [String: ManagedHandle] = [:]
+    private var warmHandles: [String: ManagedWarmHandle] = [:]
+    private var opening: [String: Opening] = [:]
+    private var warming: [String: WarmOpening] = [:]
+    private var terminationWatchers: [UUID: Task<Void, Never>] = [:]
+
+    private let exitStream: AsyncStream<UnexpectedExit>
+    private let exitContinuation: AsyncStream<UnexpectedExit>.Continuation
+    private let warmExitStream: AsyncStream<WarmExit>
+    private let warmExitContinuation: AsyncStream<WarmExit>.Continuation
 
     public init(
         executable: String = "omp",
@@ -45,41 +77,58 @@ public actor SessionProcessManager {
         self.clientFactory = clientFactory
         (exitStream, exitContinuation) = AsyncStream<UnexpectedExit>.makeStream(
             bufferingPolicy: .unbounded)
+        (warmExitStream, warmExitContinuation) = AsyncStream<WarmExit>.makeStream(
+            bufferingPolicy: .unbounded)
+    }
+
+    deinit {
+        exitContinuation.finish()
+        warmExitContinuation.finish()
+        for watcher in terminationWatchers.values { watcher.cancel() }
     }
 
     /// Sessions whose child died without `close` being called — the UI's crash signal.
     public nonisolated var unexpectedExits: AsyncStream<UnexpectedExit> { exitStream }
 
+    /// Warm project children that died before checkout.
+    public nonisolated var unexpectedWarmExits: AsyncStream<WarmExit> { warmExitStream }
+
     /// Opens a session, reusing the existing child when one is already running.
     @discardableResult
     public func open(sessionPath: String, cwd: String) async throws -> Handle {
-        if let existing = handles[sessionPath] { return existing }
+        if let existing = handles[sessionPath] { return existing.handle }
         // Join an open already under way rather than spawning a second child.
-        if let inFlight = opening[sessionPath] { return try await inFlight.task.value }
+        if let inFlight = opening[sessionPath] {
+            return try await inFlight.task.value.handle
+        }
 
         let factory = clientFactory
         let executable = executable
         let openingID = UUID()
-        let task = Task { () throws -> Handle in
+        let task = Task { () throws -> ManagedHandle in
             var configuration = RpcClientConfiguration()
             configuration.executable = executable
             configuration.cwd = URL(fileURLWithPath: cwd)
             configuration.resumeSessionPath = sessionPath
             let client = factory(configuration)
             try await client.start()
-            return Handle(sessionPath: sessionPath, client: client)
+            let managed = ManagedClient(id: UUID(), client: client)
+            return ManagedHandle(
+                managed: managed,
+                handle: Handle(sessionPath: sessionPath, client: client))
         }
         opening[sessionPath] = Opening(id: openingID, task: task)
 
         do {
-            let handle = try await task.value
+            let opened = try await task.value
             guard opening[sessionPath]?.id == openingID else {
+                await opened.managed.client.shutdown()
                 throw CancellationError()
             }
             opening.removeValue(forKey: sessionPath)
-            handles[sessionPath] = handle
-            watchForExit(handle)
-            return handle
+            handles[sessionPath] = opened
+            watchForExit(opened.managed)
+            return opened.handle
         } catch {
             if opening[sessionPath]?.id == openingID {
                 opening.removeValue(forKey: sessionPath)
@@ -101,48 +150,145 @@ public actor SessionProcessManager {
         // after an earlier session was closed.
         let path = state?.data?["sessionFile"]?.stringValue
             ?? "new:\(projectDirectory):\(UUID().uuidString)"
-        let handle = Handle(sessionPath: path, client: client)
-        handles[path] = handle
-        watchForExit(handle)
-        return handle
+        let managed = ManagedClient(id: UUID(), client: client)
+        let opened = ManagedHandle(
+            managed: managed,
+            handle: Handle(sessionPath: path, client: client))
+        handles[path] = opened
+        watchForExit(managed)
+        return opened.handle
+    }
+
+    /// Starts a no-session client for a project, reusing a ready or in-flight child.
+    @discardableResult
+    public func warm(projectDirectory: String) async throws -> WarmHandle {
+        let project = canonicalProjectDirectory(projectDirectory)
+        if let existing = warmHandles[project] { return existing.handle }
+        if let inFlight = warming[project] {
+            return try await inFlight.task.value.handle
+        }
+
+        let openingID = UUID()
+        let factory = clientFactory
+        let executable = executable
+        let task = Task { () throws -> ManagedWarmHandle in
+            var configuration = RpcClientConfiguration()
+            configuration.executable = executable
+            configuration.cwd = URL(filePath: project, directoryHint: .isDirectory)
+            configuration.noSession = true
+            let client = factory(configuration)
+            try await client.start()
+            let managed = ManagedClient(id: UUID(), client: client)
+            return ManagedWarmHandle(
+                managed: managed,
+                handle: WarmHandle(projectDirectory: project, client: client))
+        }
+        warming[project] = WarmOpening(id: openingID, task: task)
+
+        do {
+            let opened = try await task.value
+            guard warming[project]?.id == openingID else {
+                await opened.managed.client.shutdown()
+                throw CancellationError()
+            }
+            warming.removeValue(forKey: project)
+            warmHandles[project] = opened
+            watchForExit(opened.managed)
+            return opened.handle
+        } catch {
+            if warming[project]?.id == openingID {
+                warming.removeValue(forKey: project)
+            }
+            throw error
+        }
+    }
+
+    public func isWarm(projectDirectory: String) -> Bool {
+        warmHandles[canonicalProjectDirectory(projectDirectory)] != nil
     }
 
     public func close(sessionPath: String) async {
         let inFlight = opening.removeValue(forKey: sessionPath)
         inFlight?.task.cancel()
         let handle = handles.removeValue(forKey: sessionPath)
-        exitWatchers.removeValue(forKey: sessionPath)?.cancel()
-        if let handle { await handle.client.shutdown() }
+        if let handle {
+            terminationWatchers.removeValue(forKey: handle.managed.id)?.cancel()
+            await handle.managed.client.shutdown()
+        }
         if let opened = try? await inFlight?.task.value {
-            await opened.client.shutdown()
+            await opened.managed.client.shutdown()
         }
     }
 
     public func closeAll() async {
+        _ = await cancelWarmings()
+
         let paths = Set(handles.keys).union(opening.keys)
         for path in paths { await close(sessionPath: path) }
+
+        let registeredWarmHandles = Array(warmHandles.values)
+        warmHandles.removeAll()
+        for warmHandle in registeredWarmHandles {
+            terminationWatchers.removeValue(forKey: warmHandle.managed.id)?.cancel()
+            await warmHandle.managed.client.shutdown()
+        }
+
+        for watcher in terminationWatchers.values { watcher.cancel() }
+        terminationWatchers.removeAll()
     }
 
-    public func handle(for sessionPath: String) -> Handle? { handles[sessionPath] }
+    @discardableResult
+    public func cancelWarmings() async -> [String] {
+        let projects = warming.keys.sorted()
+        let openings = Array(warming.values)
+        warming.removeAll()
+        for opening in openings { opening.task.cancel() }
+        for opening in openings {
+            if let opened = try? await opening.task.value {
+                await opened.managed.client.shutdown()
+            }
+        }
+        return projects
+    }
+
+    public func handle(for sessionPath: String) -> Handle? { handles[sessionPath]?.handle }
 
     /// Watches the dedicated termination signal — never `events`, which the app
     /// consumes and which an AsyncStream would not share.
-    private func watchForExit(_ handle: Handle) {
-        exitWatchers[handle.sessionPath] = Task { [weak self] in
-            for await _ in handle.client.termination {}
+    private func watchForExit(_ managed: ManagedClient) {
+        terminationWatchers[managed.id] = Task { [weak self] in
+            for await _ in managed.client.termination {}
             guard let self, !Task.isCancelled else { return }
-            await self.reportExitIfStillOpen(handle)
+            await self.reportExit(managed)
         }
     }
 
-    private func reportExitIfStillOpen(_ handle: Handle) async {
-        guard let current = handles[handle.sessionPath], current.client === handle.client
-        else { return }
-        handles.removeValue(forKey: handle.sessionPath)
-        exitWatchers.removeValue(forKey: handle.sessionPath)
+    private func reportExit(_ managed: ManagedClient) async {
+        if let warm = warmHandles.first(where: { $0.value.managed.id == managed.id }) {
+            warmHandles.removeValue(forKey: warm.key)
+            terminationWatchers.removeValue(forKey: managed.id)
+            warmExitContinuation.yield(WarmExit(
+                projectDirectory: warm.key,
+                code: await managed.client.exitCode,
+                stderrTail: await managed.client.stderrSnapshot()))
+            return
+        }
+
+        guard let active = handles.first(where: { $0.value.managed.id == managed.id }) else {
+            return
+        }
+        handles.removeValue(forKey: active.key)
+        terminationWatchers.removeValue(forKey: managed.id)
         exitContinuation.yield(UnexpectedExit(
-            sessionPath: handle.sessionPath,
-            code: await handle.client.exitCode,
-            stderrTail: await handle.client.stderrSnapshot()))
+            sessionPath: active.key,
+            code: await managed.client.exitCode,
+            stderrTail: await managed.client.stderrSnapshot()))
+    }
+
+    private func canonicalProjectDirectory(_ projectDirectory: String) -> String {
+        URL(filePath: projectDirectory)
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
     }
 }
