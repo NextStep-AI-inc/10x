@@ -9,11 +9,13 @@
 """
 import base64
 import json
+import os
 import subprocess
 import sys
 import time
 
 mode = sys.argv[1] if len(sys.argv) > 1 else "basic"
+command_log = sys.argv[2] if mode == "command-log" and len(sys.argv) > 2 else None
 W = sys.stdout
 
 
@@ -21,6 +23,13 @@ def emit(obj):
     # Compact separators match real omp output byte-for-byte.
     W.write(json.dumps(obj, separators=(",", ":")) + "\n")
     W.flush()
+
+
+def log_command(command_type):
+    if command_log is None:
+        return
+    with open(command_log, "a", encoding="utf-8") as handle:
+        handle.write((command_type or "parse") + "\n")
 
 
 if mode == "never-ready":
@@ -70,9 +79,11 @@ for line in sys.stdin:
     try:
         cmd = json.loads(line)
     except json.JSONDecodeError:
+        log_command("parse")
         emit({"type": "response", "command": "parse", "success": False, "error": "malformed"})
         continue
     cid, ctype = cmd.get("id"), cmd.get("type")
+    log_command(ctype)
     if mode == "silent" and ctype != "negotiate_protocol":
         continue
     if ctype == "negotiate_protocol":
@@ -87,6 +98,12 @@ for line in sys.stdin:
             sys.stderr.write("crash-after-negotiation\n")
             sys.stderr.flush()
             raise SystemExit(7)
+        if mode == "crash-after-trigger":
+            while not os.path.exists(sys.argv[2]):
+                time.sleep(0.01)
+            sys.stderr.write("crash-after-trigger\n")
+            sys.stderr.flush()
+            raise SystemExit(9)
         continue
     if mode == "reverse":
         reverse_commands.append((cid, ctype))
@@ -100,6 +117,16 @@ for line in sys.stdin:
         emit({"type": "response", "command": "parse", "success": False,
               "error": "malformed input"})
         continue
+    if mode == "reject-new-session" and ctype == "new_session":
+        emit({"id": cid, "type": "response", "command": ctype,
+              "success": False, "error": "new session rejected"})
+        continue
+    if mode == "crash-after-switch" and ctype == "switch_session":
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+        time.sleep(0.2)
+        sys.stderr.write("crash-after-switch\n")
+        sys.stderr.flush()
+        raise SystemExit(8)
     if ctype == "idless_error":
         emit({"type": "response", "command": ctype, "success": False,
               "error": "idless failure"})

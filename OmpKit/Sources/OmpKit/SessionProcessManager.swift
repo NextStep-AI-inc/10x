@@ -30,6 +30,7 @@ public actor SessionProcessManager {
     }
 
     public typealias ClientFactory = @Sendable (RpcClientConfiguration) -> RpcClient
+    public typealias Sleep = @Sendable (Duration) async throws -> Void
 
     private struct ManagedClient: Sendable {
         let id: UUID
@@ -57,11 +58,14 @@ public actor SessionProcessManager {
     }
 
     private let executable: String
+    private let warmGracePeriod: Duration
+    private let sleep: Sleep
     private let clientFactory: ClientFactory
     private var handles: [String: ManagedHandle] = [:]
     private var warmHandles: [String: ManagedWarmHandle] = [:]
     private var opening: [String: Opening] = [:]
     private var warming: [String: WarmOpening] = [:]
+    private var warmExpiryTasks: [String: Task<Void, Never>] = [:]
     private var terminationWatchers: [UUID: Task<Void, Never>] = [:]
 
     private let exitStream: AsyncStream<UnexpectedExit>
@@ -71,9 +75,15 @@ public actor SessionProcessManager {
 
     public init(
         executable: String = "omp",
+        warmGracePeriod: Duration = .seconds(300),
+        sleep: @escaping Sleep = { duration in
+            try await ContinuousClock().sleep(for: duration)
+        },
         clientFactory: @escaping ClientFactory = { RpcClient(configuration: $0) }
     ) {
         self.executable = executable
+        self.warmGracePeriod = warmGracePeriod
+        self.sleep = sleep
         self.clientFactory = clientFactory
         (exitStream, exitContinuation) = AsyncStream<UnexpectedExit>.makeStream(
             bufferingPolicy: .unbounded)
@@ -84,6 +94,7 @@ public actor SessionProcessManager {
     deinit {
         exitContinuation.finish()
         warmExitContinuation.finish()
+        for expiry in warmExpiryTasks.values { expiry.cancel() }
         for watcher in terminationWatchers.values { watcher.cancel() }
     }
 
@@ -100,6 +111,30 @@ public actor SessionProcessManager {
         // Join an open already under way rather than spawning a second child.
         if let inFlight = opening[sessionPath] {
             return try await inFlight.task.value.handle
+        }
+        if let warm = takeWarmClient(projectDirectory: cwd) {
+            let openingID = UUID()
+            let task = Task { () throws -> ManagedHandle in
+                try await self.checkOut(sessionPath: sessionPath, warm: warm)
+            }
+            opening[sessionPath] = Opening(id: openingID, task: task)
+
+            do {
+                let opened = try await task.value
+                guard opening[sessionPath]?.id == openingID else {
+                    terminationWatchers.removeValue(forKey: opened.managed.id)?.cancel()
+                    await opened.managed.client.shutdown()
+                    throw CancellationError()
+                }
+                opening.removeValue(forKey: sessionPath)
+                handles[sessionPath] = opened
+                return opened.handle
+            } catch {
+                if opening[sessionPath]?.id == openingID {
+                    opening.removeValue(forKey: sessionPath)
+                }
+                throw error
+            }
         }
 
         let factory = clientFactory
@@ -139,6 +174,10 @@ public actor SessionProcessManager {
 
     /// Starts a fresh session in a project directory.
     public func openNew(projectDirectory: String) async throws -> Handle {
+        if let checkedOut = try await checkOutForNewSession(projectDirectory: projectDirectory) {
+            return checkedOut.handle
+        }
+
         var configuration = RpcClientConfiguration()
         configuration.executable = executable
         configuration.cwd = URL(fileURLWithPath: projectDirectory)
@@ -201,6 +240,26 @@ public actor SessionProcessManager {
         warmHandles[canonicalProjectDirectory(projectDirectory)] != nil
     }
 
+    /// Retains the primary warm client and expires all others after the grace period.
+    public func beginWarmRetention(primaryProjectDirectory: String?) {
+        let primary = primaryProjectDirectory.map(canonicalProjectDirectory)
+        for (project, warm) in warmHandles where project != primary {
+            let managedID = warm.managed.id
+            warmExpiryTasks[project]?.cancel()
+            warmExpiryTasks[project] = Task { [weak self, sleep, warmGracePeriod] in
+                do { try await sleep(warmGracePeriod) } catch { return }
+                await self?.expireWarmClient(project: project, managedID: managedID)
+            }
+        }
+    }
+
+    @discardableResult
+    public func evictWarmClients() async -> [String] {
+        let projects = warmHandles.keys.sorted()
+        for project in projects { await closeWarm(projectDirectory: project) }
+        return projects
+    }
+
     public func close(sessionPath: String) async {
         let inFlight = opening.removeValue(forKey: sessionPath)
         inFlight?.task.cancel()
@@ -210,6 +269,7 @@ public actor SessionProcessManager {
             await handle.managed.client.shutdown()
         }
         if let opened = try? await inFlight?.task.value {
+            terminationWatchers.removeValue(forKey: opened.managed.id)?.cancel()
             await opened.managed.client.shutdown()
         }
     }
@@ -220,12 +280,10 @@ public actor SessionProcessManager {
         let paths = Set(handles.keys).union(opening.keys)
         for path in paths { await close(sessionPath: path) }
 
-        let registeredWarmHandles = Array(warmHandles.values)
-        warmHandles.removeAll()
-        for warmHandle in registeredWarmHandles {
-            terminationWatchers.removeValue(forKey: warmHandle.managed.id)?.cancel()
-            await warmHandle.managed.client.shutdown()
-        }
+        for expiry in warmExpiryTasks.values { expiry.cancel() }
+        warmExpiryTasks.removeAll()
+        let warmProjects = Array(warmHandles.keys)
+        for project in warmProjects { await closeWarm(projectDirectory: project) }
 
         for watcher in terminationWatchers.values { watcher.cancel() }
         terminationWatchers.removeAll()
@@ -246,6 +304,59 @@ public actor SessionProcessManager {
     }
 
     public func handle(for sessionPath: String) -> Handle? { handles[sessionPath]?.handle }
+
+    private func takeWarmClient(projectDirectory: String) -> ManagedWarmHandle? {
+        let project = canonicalProjectDirectory(projectDirectory)
+        warmExpiryTasks.removeValue(forKey: project)?.cancel()
+        return warmHandles.removeValue(forKey: project)
+    }
+
+    private func checkOutForNewSession(projectDirectory: String) async throws -> ManagedHandle? {
+        guard let warm = takeWarmClient(projectDirectory: projectDirectory) else { return nil }
+        do {
+            _ = try await warm.managed.client.send(.newSession(parentSession: nil))
+            let state = try await warm.managed.client.send(.getState())
+            let path = state.data?["sessionFile"]?.stringValue
+                ?? "new:\(warm.handle.projectDirectory):\(UUID().uuidString)"
+            let handle = Handle(sessionPath: path, client: warm.managed.client)
+            let managed = ManagedHandle(managed: warm.managed, handle: handle)
+            handles[path] = managed
+            return managed
+        } catch {
+            terminationWatchers.removeValue(forKey: warm.managed.id)?.cancel()
+            await warm.managed.client.shutdown()
+            throw error
+        }
+    }
+
+    private func checkOut(
+        sessionPath: String,
+        warm: ManagedWarmHandle
+    ) async throws -> ManagedHandle {
+        do {
+            _ = try await warm.managed.client.send(.switchSession(path: sessionPath))
+            let handle = Handle(sessionPath: sessionPath, client: warm.managed.client)
+            let managed = ManagedHandle(managed: warm.managed, handle: handle)
+            return managed
+        } catch {
+            terminationWatchers.removeValue(forKey: warm.managed.id)?.cancel()
+            await warm.managed.client.shutdown()
+            throw error
+        }
+    }
+
+    private func expireWarmClient(project: String, managedID: UUID) async {
+        guard warmHandles[project]?.managed.id == managedID else { return }
+        await closeWarm(projectDirectory: project)
+    }
+
+    private func closeWarm(projectDirectory: String) async {
+        let project = canonicalProjectDirectory(projectDirectory)
+        warmExpiryTasks.removeValue(forKey: project)?.cancel()
+        guard let warm = warmHandles.removeValue(forKey: project) else { return }
+        terminationWatchers.removeValue(forKey: warm.managed.id)?.cancel()
+        await warm.managed.client.shutdown()
+    }
 
     private func completeWarmOpening(project: String, opening: WarmOpening) async throws
         -> WarmHandle {
@@ -276,6 +387,7 @@ public actor SessionProcessManager {
     private func reportExit(_ managed: ManagedClient) async {
         if let warm = warmHandles.first(where: { $0.value.managed.id == managed.id }) {
             warmHandles.removeValue(forKey: warm.key)
+            warmExpiryTasks.removeValue(forKey: warm.key)?.cancel()
             terminationWatchers.removeValue(forKey: managed.id)
             warmExitContinuation.yield(WarmExit(
                 projectDirectory: warm.key,
