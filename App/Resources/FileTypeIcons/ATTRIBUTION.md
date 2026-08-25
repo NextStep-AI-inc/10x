@@ -15,4 +15,3 @@ and `yaml`.
 Simple Icons' CC0 dedication does not grant trademark rights. Product names
 and logos remain the property of their respective owners. Inclusion identifies
 a file type only and does not imply endorsement.
-

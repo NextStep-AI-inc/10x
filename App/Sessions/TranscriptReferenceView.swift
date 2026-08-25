@@ -77,8 +77,11 @@ private struct FileTranscriptReferenceView: View {
             isOptionPressed = modifiers.contains(.option)
         }
         .contextMenu { contextMenu }
-        .accessibilityLabel(fileAccessibilityLabel)
-        .accessibilityHint(fileAccessibilityHint)
+        .accessibilityRepresentation {
+            Button(fileAccessibilityLabel, action: activateFileReference)
+                .disabled(!resolvedReference.exists)
+                .accessibilityHint(fileAccessibilityHint)
+        }
     }
 
     @ViewBuilder
