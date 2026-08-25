@@ -27,11 +27,13 @@ final class SessionController {
     var streamingBehavior: StreamingBehavior? = .steer
 
     private let processManager: SessionProcessManager
+    private let timelineLoader = SessionTimelineLoader()
     private var projectURL: URL?
     private var handle: SessionProcessManager.Handle?
     private var reducer = TranscriptReducer()
     private var extensionRouter = ExtensionUIRouter()
     private var eventTask: Task<Void, Never>?
+    private var reconciliationTask: Task<Void, Never>?
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
 
     init(processManager: SessionProcessManager) {
@@ -117,6 +119,7 @@ final class SessionController {
     func restart() async {
         guard let projectURL, let sessionPath else { return }
         eventTask?.cancel()
+        reconciliationTask?.cancel()
         await processManager.close(sessionPath: sessionPath)
         runtimeState = .loading
         isRecoveryPresented = false
@@ -181,10 +184,14 @@ final class SessionController {
 
         let state = try await handle.client.send(.getState())
         applyState(state.data)
-        let messages = try await loadMessages(client: handle.client)
-        reducer.load(messages: messages)
+        if let sessionPath, let history = try await timelineLoader.load(path: sessionPath) {
+            reducer.load(history: history)
+        } else {
+            reducer.load(messages: try await loadMessages(client: handle.client))
+        }
         reducer.runtimeState = runtimeState
         syncReducerState()
+        try? await handle.client.send(.setSubagentSubscription(level: .progress))
         consumeEvents(from: handle.client)
     }
 
@@ -219,6 +226,35 @@ final class SessionController {
                 }
                 self.syncReducerState()
                 self.applyEventMetadata(frame)
+                self.reconcileAfterBoundary(frame)
+            }
+        }
+    }
+
+    private func reconcileAfterBoundary(_ frame: RpcFrame) {
+        guard case .event(let type, let payload) = frame else { return }
+        let isBoundary = switch type {
+        case "message_end", "turn_end", "prompt_result":
+            true
+        case "agent_end":
+            payload["isTerminal"]?.boolValue != false
+        default:
+            false
+        }
+        guard isBoundary, let sessionPath else { return }
+
+        reconciliationTask?.cancel()
+        reconciliationTask = Task { [weak self, timelineLoader] in
+            guard let self, !Task.isCancelled else { return }
+            do {
+                guard let history = try await timelineLoader.load(path: sessionPath),
+                      !Task.isCancelled
+                else { return }
+                self.reducer.reconcile(history: history)
+                self.syncReducerState()
+            } catch {
+                // The RPC stream remains usable if a partially-written session
+                // file cannot yet be parsed. The next boundary retries it.
             }
         }
     }

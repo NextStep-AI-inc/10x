@@ -129,6 +129,18 @@ public struct RpcCommand: Sendable, Equatable {
         return RpcCommand(type: "get_messages_page", fields: fields)
     }
 
+    public static func getSubagentMessages(
+        subagentId: String?,
+        sessionFile: String?,
+        fromByte: Int?
+    ) -> RpcCommand {
+        var fields: [String: JSONValue] = [:]
+        if let subagentId { fields["subagentId"] = .string(subagentId) }
+        if let sessionFile { fields["sessionFile"] = .string(sessionFile) }
+        if let fromByte { fields["fromByte"] = .int(fromByte) }
+        return RpcCommand(type: "get_subagent_messages", fields: fields)
+    }
+
     // MARK: - Extension UI
 
     /// Answers a pending `extension_ui_request`. `body` carries the method's

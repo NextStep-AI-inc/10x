@@ -124,6 +124,75 @@ import Testing
     #expect(tool.result?["content"]?.arrayValue?.first?["text"]?.stringValue == "/tmp")
 }
 
+@Test func liveMessagesKeepTheirOwnTimestampAndModel() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"message_start","message":{"id":"m1","role":"assistant","provider":"anthropic","model":"claude-opus-4-8","timestamp":1787601604000,"content":[{"type":"text","text":"Answer"}]}}
+        """))
+
+    guard case .message(let message) = reducer.items[0] else {
+        Issue.record("Expected a message"); return
+    }
+    #expect(message.timestamp == Date(timeIntervalSince1970: 1_787_601_604))
+    #expect(message.attribution.provider == "anthropic")
+    #expect(message.attribution.model == "claude-opus-4-8")
+}
+
+@Test func lifecycleEventsBecomeUsefulAnnotations() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"auto_retry_start","attempt":2,"maxAttempts":4,"delayMs":1500,"errorMessage":"Rate limited"}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"retry_fallback_applied","from":"anthropic/claude-opus-4-8","to":"openai-codex/gpt-5.6-sol","role":"default"}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"thinking_level_changed","thinkingLevel":"high","configured":"auto"}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"auto_compaction_end","action":"snapcompact","aborted":false,"willRetry":false,"result":{"tokensBefore":12000,"tokensAfter":2400}}
+        """))
+
+    let annotations = reducer.items.compactMap { item -> TranscriptAnnotation? in
+        guard case .annotation(let annotation) = item else { return nil }
+        return annotation
+    }
+    #expect(annotations.map(\.kind) == [.retry, .model, .thinking, .compaction])
+    #expect(annotations[0].title == "Retrying response")
+    #expect(annotations[0].detail == "Attempt 2 of 4 · 1.5s")
+    #expect(annotations[1].title == "Fallback to GPT-5.6 Sol")
+    #expect(annotations[2].title == "Thinking set to High")
+    #expect(annotations[3].title == "Context compacted")
+}
+
+@Test func persistedReconciliationReplacesTranscriptWithoutDuplicatingLiveItems() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"live","role":"assistant","content":[{"type":"text","text":"Persisted"}]}}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"tool_execution_start","toolCallId":"running","toolName":"bash","args":{"command":"sleep 1"}}
+        """))
+    reducer.appendNotice(level: "warning", message: "Keep this notice")
+
+    let persistedMessage = TranscriptMessage(
+        id: "entry-1",
+        raw: try message("""
+            {"role":"assistant","content":[{"type":"text","text":"Persisted"}]}
+            """),
+        isFinal: true)
+    let history = TranscriptHistory(items: [
+        .threadStart(id: "thread", date: .distantPast),
+        .message(persistedMessage),
+    ])
+
+    reducer.reconcile(history: history)
+
+    #expect(reducer.items.filter { if case .message = $0 { true } else { false } }.count == 1)
+    #expect(reducer.items.contains { $0.id == "running" })
+    #expect(reducer.items.contains { if case .notice = $0 { true } else { false } })
+}
+
 private func eventFrame(_ json: String) throws -> RpcFrame {
     try RpcFrame.decode(line: Data(json.utf8))
 }

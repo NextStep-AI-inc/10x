@@ -53,6 +53,55 @@ struct TranscriptReducer {
                 id: id,
                 level: payload["level"]?.stringValue ?? "info",
                 message: payload["message"]?.stringValue ?? ""))
+        case "auto_retry_start":
+            appendAnnotation(
+                kind: .retry,
+                title: "Retrying response",
+                detail: retryDetail(payload),
+                tone: .warning)
+        case "auto_retry_end":
+            if payload["success"]?.boolValue == false {
+                appendAnnotation(
+                    kind: .retry,
+                    title: "Response retry failed",
+                    detail: payload["finalError"]?.stringValue,
+                    tone: .error)
+            }
+        case "retry_fallback_applied":
+            appendAnnotation(
+                kind: .model,
+                title: "Fallback to \(Self.modelLabel(payload["to"]?.stringValue))",
+                detail: payload["role"]?.stringValue.flatMap(Self.nonDefaultRole),
+                tone: .warning)
+        case "retry_fallback_succeeded":
+            appendAnnotation(
+                kind: .model,
+                title: "Fallback succeeded with \(Self.modelLabel(payload["model"]?.stringValue))",
+                detail: payload["role"]?.stringValue.flatMap(Self.nonDefaultRole),
+                tone: .interactive)
+        case "thinking_level_changed":
+            let thinking = payload["resolved"]?.stringValue
+                ?? payload["thinkingLevel"]?.stringValue
+                ?? "inherit"
+            appendAnnotation(
+                kind: .thinking,
+                title: "Thinking set to \(thinking.capitalized)",
+                detail: payload["configured"]?.stringValue?.capitalized,
+                tone: .neutral)
+        case "auto_compaction_end":
+            if payload["aborted"]?.boolValue == true {
+                appendAnnotation(
+                    kind: .compaction,
+                    title: "Context compaction stopped",
+                    detail: payload["errorMessage"]?.stringValue,
+                    tone: payload["willRetry"]?.boolValue == true ? .warning : .error)
+            } else if payload["skipped"]?.boolValue != true {
+                appendAnnotation(
+                    kind: .compaction,
+                    title: "Context compacted",
+                    detail: Self.compactionDetail(payload["result"]),
+                    tone: .neutral)
+            }
         case "tool_execution_start", "tool_execution_update", "tool_execution_end":
             toolReducer.consume(type: type, payload: payload)
             guard let id = payload["toolCallId"]?.stringValue,
@@ -93,6 +142,35 @@ struct TranscriptReducer {
             items.append(contentsOf: Self.toolCallPresentations(message).map(TranscriptItem.tool))
         }
         inflightMessageID = nil
+    }
+
+    mutating func load(history: TranscriptHistory) {
+        items = history.items
+        inflightMessageID = nil
+    }
+
+    mutating func reconcile(history: TranscriptHistory) {
+        let persistedIDs = Set(history.items.map(\.id))
+        let transient = items.filter { item in
+            guard !persistedIDs.contains(item.id) else { return false }
+            switch item {
+            case .notice, .annotation, .extensionUI, .rawEvent:
+                return true
+            case .tool(let presentation):
+                return presentation.phase == .running
+            case .message(let message):
+                return !message.isFinal
+            case .threadStart:
+                return false
+            }
+        }
+        items = history.items + transient
+        if !items.contains(where: {
+            guard case .message(let message) = $0 else { return false }
+            return message.id == inflightMessageID
+        }) {
+            inflightMessageID = nil
+        }
     }
 
     private static func toolCallPresentations(_ message: JSONValue) -> [ToolPresentation] {
@@ -170,6 +248,60 @@ struct TranscriptReducer {
             id: syntheticID(prefix: "notice"),
             level: level,
             message: message))
+    }
+
+    private mutating func appendAnnotation(
+        kind: TranscriptAnnotation.Kind,
+        title: String,
+        detail: String?,
+        tone: TranscriptAnnotation.Tone
+    ) {
+        items.append(.annotation(TranscriptAnnotation(
+            id: syntheticID(prefix: "annotation"),
+            kind: kind,
+            title: title,
+            detail: detail,
+            timestamp: Date(),
+            tone: tone)))
+    }
+
+    private func retryDetail(_ payload: JSONValue) -> String? {
+        guard let attempt = payload["attempt"]?.intValue else { return nil }
+        var components = ["Attempt \(attempt)"]
+        if let maximum = payload["maxAttempts"]?.intValue {
+            components[0] += " of \(maximum)"
+        }
+        if let delay = payload["delayMs"]?.doubleValue {
+            components.append(Self.duration(milliseconds: delay))
+        }
+        return components.joined(separator: " · ")
+    }
+
+    private static func duration(milliseconds: Double) -> String {
+        let seconds = milliseconds / 1_000
+        return seconds == seconds.rounded()
+            ? "\(Int(seconds))s"
+            : String(format: "%.1fs", seconds)
+    }
+
+    private static func compactionDetail(_ result: JSONValue?) -> String? {
+        guard let before = result?["tokensBefore"]?.intValue,
+              let after = result?["tokensAfter"]?.intValue
+        else { return nil }
+        return "\(before.formatted()) → \(after.formatted()) tokens"
+    }
+
+    private static func nonDefaultRole(_ role: String) -> String? {
+        role == "default" ? nil : role.capitalized
+    }
+
+    private static func modelLabel(_ fullModel: String?) -> String {
+        guard let fullModel else { return "another model" }
+        let model = fullModel.split(separator: "/").last.map(String.init) ?? fullModel
+        return model.split(separator: "-").map { component in
+            component.lowercased() == "gpt" ? "GPT" : component.capitalized
+        }.joined(separator: "-")
+        .replacingOccurrences(of: "-Sol", with: " Sol")
     }
 
     private mutating func messageID(_ message: JSONValue) -> String {

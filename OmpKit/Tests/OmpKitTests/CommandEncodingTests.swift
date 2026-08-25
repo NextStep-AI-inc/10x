@@ -71,6 +71,24 @@ private func json(_ data: Data) throws -> [String: Any] {
     #expect(obj["level"] as? String == "events")
 }
 
+@Test func getSubagentMessagesOmitsUnavailableSelectors() throws {
+    let selected = try json(try RpcCommand.getSubagentMessages(
+        subagentId: "agent-1",
+        sessionFile: "/tmp/agent.jsonl",
+        fromByte: 4096).encodedLine(id: "req_subagent"))
+    #expect(selected["type"] as? String == "get_subagent_messages")
+    #expect(selected["subagentId"] as? String == "agent-1")
+    #expect(selected["sessionFile"] as? String == "/tmp/agent.jsonl")
+    #expect(selected["fromByte"] as? Int == 4096)
+
+    let bare = try json(try RpcCommand.getSubagentMessages(
+        subagentId: nil,
+        sessionFile: nil,
+        fromByte: nil).encodedLine(id: "req_bare"))
+    #expect(bare.count == 2)
+}
+
+
 @Test func simpleCommandsCarryOnlyIdAndType() throws {
     let obj = try json(try RpcCommand.getState().encodedLine(id: "req_10"))
     #expect(obj.count == 2)

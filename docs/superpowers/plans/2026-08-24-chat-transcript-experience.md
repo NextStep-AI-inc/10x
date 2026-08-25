@@ -74,18 +74,18 @@
 - Modify: `Tests/TenXAppTests/SessionControllerTests.swift`
 - Modify: `OmpKit/Tests/OmpKitTests/CommandEncodingTests.swift`
 
-- [ ] Add failing tests for stable live message replacement, timestamp/model
+- [x] Add failing tests for stable live message replacement, timestamp/model
   retention, retry/fallback/compaction annotations, history fallback, and no
   duplicate persisted/live items.
-- [ ] Add missing typed `get_subagent_messages` command coverage if required by
+- [x] Add missing typed `get_subagent_messages` command coverage if required by
   on-demand expansion; retain the existing progress subscription command.
-- [ ] Implement an actor-based file loader using `SessionFileParser` and
+- [x] Implement an actor-based file loader using `SessionFileParser` and
   `SessionTree.activePath`; use RPC messages only when the file is absent.
-- [ ] Subscribe to subagent progress during open. Reconcile the persisted
+- [x] Subscribe to subagent progress during open. Reconcile the persisted
   timeline after message/turn/agent boundaries without dropping pending
   approval or active tool items.
-- [ ] Run app reducer/controller tests plus OmpKit command tests.
-- [ ] Commit: `feat(chat): reconcile live and persisted timelines`
+- [x] Run app reducer/controller tests plus OmpKit command tests.
+- [x] Commit: `feat(chat): reconcile live and persisted timelines`
 
 ## Task 4: Add subagent and lifecycle presentation
 
