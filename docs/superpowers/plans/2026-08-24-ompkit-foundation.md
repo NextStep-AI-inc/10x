@@ -17,13 +17,14 @@
 - Conventional commits, atomic, no attribution lines. Work happens on a branch in a worktree (`superpowers:using-git-worktrees`), never the main checkout.
 - Wire constants (from `docs/contracts/rpc-client-port-spec.md` §0, quoted): maxFrameBytes `1_048_576`, maxReassembled `67_108_864`, chunk payload `262_144`, request ids `"req_{n}"` from 1, default request timeout 30 s, startup timeout 30 s.
 - Session constants (from `docs/contracts/session-file-contract.md`): title slot exactly **256 bytes**, `CURRENT_SESSION_VERSION = 3`, list prefix window `4096` B, status suffix window `32_768` B, sort by mtime descending, listing glob depth exactly 2 (`*/*.jsonl`).
+- **The package lives in `OmpKit/`** (per the spec's repo layout — the app target lands beside it in Plan 2). Every `Sources/…` and `Tests/…` path in the tasks below is relative to `OmpKit/`, and every `swift test` runs from inside `OmpKit/`.
 
 ---
 
 ### Task 1: Package scaffold
 
 **Files:**
-- Create: `Package.swift`, `Sources/OmpKit/OmpKit.swift`, `Tests/OmpKitTests/SmokeTests.swift`, `.gitignore`
+- Create: `OmpKit/Package.swift`, `OmpKit/Sources/OmpKit/OmpKit.swift`, `OmpKit/Tests/OmpKitTests/SmokeTests.swift`, `.gitignore` (repo root)
 
 **Interfaces:**
 - Produces: SwiftPM targets `OmpKit` (library) and `OmpKitTests` that later tasks add files into.
@@ -84,7 +85,7 @@ DerivedData/
 
 - [ ] **Step 3: Run tests**
 
-Run: `swift test`
+Run: `cd OmpKit && swift test`
 Expected: `Test run with 1 test passed`
 
 - [ ] **Step 4: Commit**
@@ -584,6 +585,9 @@ func makeFakeTransport(mode: String) -> LineTransport {
       public var noSession: Bool = false              // adds: --no-session
       public var startupTimeout: Duration = .seconds(30)
       public var requestTimeout: Duration = .seconds(30)
+      /// Test-only: when true, spawn arguments are extraArguments verbatim
+      /// (no --mode rpc / --no-title / session flags prepended).
+      public var rawArgv: Bool = false
   }
   public actor RpcClient {
       public init(configuration: RpcClientConfiguration)
@@ -622,8 +626,7 @@ func makeClient(mode: String) -> RpcClient {
     var cfg = RpcClientConfiguration()
     cfg.executable = "/usr/bin/env"
     cfg.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
-    // Test-only: extraArguments replace the omp argv entirely when executable != "omp".
-    // Give RpcClientConfiguration an internal `rawArgv: Bool` for this (set true here).
+    cfg.rawArgv = true   // extraArguments become the full argv — no omp flags prepended
     cfg.noSession = true
     return RpcClient(configuration: cfg)
 }
@@ -1112,6 +1115,7 @@ Process-manager tests reuse the Task 6 fake server through the factory:
         var c = cfg
         c.executable = "/usr/bin/env"
         c.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+        c.rawArgv = true
         return RpcClient(configuration: c)   // rawArgv path, as in Task 6
     })
     let h1 = try await mgr.open(sessionPath: "/tmp/s.jsonl", cwd: "/tmp")
@@ -1125,6 +1129,7 @@ Process-manager tests reuse the Task 6 fake server through the factory:
         var c = cfg
         c.executable = "/usr/bin/env"
         c.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+        c.rawArgv = true
         return RpcClient(configuration: c)
     })
     let h = try await mgr.open(sessionPath: "/tmp/dies.jsonl", cwd: "/tmp")
