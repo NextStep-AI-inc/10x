@@ -952,11 +952,11 @@ Report the worktree path, branch, commit SHAs, verified evidence, skipped checks
 
 ## Verification evidence
 
-Verified on `codex/inline-file-references` through `4fbf3c5` in the explicit
+Verified on `codex/inline-file-references` through `1bc5f3b` in the explicit
 Release bundle at
 `.build/DerivedData-inline-file-references/Build/Products/Release/10x.app`.
 The final binary SHA-256 was
-`6f388ec1020c3f84fc375b2da463d97183da0e8072983d91b06d5ba13bf74d65`.
+`3ca6384985bd3260cb5948e92776bdbdd950843c725bbdb63cabd6690418e7ab`.
 
 - The independent correctness reviewer reran the pre-fix head `6654704` and
   passed 123/123 tests. After Fix Round 1, the fresh full suite passed 131/131
@@ -965,6 +965,11 @@ The final binary SHA-256 was
   133/133 tests at `4fbf3c5` (`/tmp/10x-inline-fix2-code-final.log`). Plain
   `/tmp/one.swift /tmp/two.swift` paths remain two references without reopening
   the whitespace-prefix safety defect.
+- Fix Round 3 observed the extension-bearing prefix regression RED, then passed
+  the focused three-case parser matrix and 134/134 full-suite tests at
+  `1bc5f3b` (`/tmp/10x-inline-fix3-parser-green.log` and
+  `/tmp/10x-inline-fix3-full.log`). `/tmp/one.swift child/file.swift` no longer
+  produces a wrong absolute-prefix action.
 - Parser, Settings-query handoff, accessibility-announcement, missing-file
   action, contrast, Preferred IDE semantics, and rail-motion regressions were
   observed RED before their fixes. The final full suite covers each regression.
@@ -977,6 +982,10 @@ The final binary SHA-256 was
   found only the unchanged AppIntents metadata warning. PID 13040 from that
   exact bundle remained alive and exposed a visible 10x standard window before
   the two historical-session capture attempts.
+- The Fix Round 3 clean Release build exited 0 with `CLEAN SUCCEEDED` and
+  `BUILD SUCCEEDED` (`/tmp/10x-inline-fix3-release.log`). Its warning scan found
+  only the unchanged AppIntents metadata warning; no UI recapture was required
+  for this parser-only correction.
 - Accessibility targeted the exact Release process. PID 94221 exposed an
   `AXStandardWindow` measuring exactly 760×882 points after relaunch
   (`/tmp/10x-inline-fix1-final-ax-bounds.log`); this measurement is from the AX
