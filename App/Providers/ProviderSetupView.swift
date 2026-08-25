@@ -18,7 +18,6 @@ struct ProviderSetupView: View {
             }
 
             providerList
-                .fixedSize(horizontal: false, vertical: true)
 
             Button("Continue", action: onContinue)
                 .buttonStyle(GhostActionStyle())
@@ -68,8 +67,22 @@ struct ProviderSetupView: View {
                         }
                 }
 
-                ForEach(model.visibleProviders) { provider in
-                    ProviderSetupRowView(provider: provider, model: model)
+                if let loginMessage = model.loginMessage {
+                    Text(loginMessage)
+                        .font(TenXTypography.body(size: 13))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                }
+
+                if model.isShowingAllProviders {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            providerRows
+                        }
+                    }
+                    .scrollIndicators(.visible)
+                    .frame(height: 144)
+                } else {
+                    providerRows
                 }
 
                 if !model.isShowingAllProviders {
@@ -77,6 +90,12 @@ struct ProviderSetupView: View {
                         .buttonStyle(GhostActionStyle())
                 }
             }
+        }
+    }
+
+    private var providerRows: some View {
+        ForEach(model.visibleProviders) { provider in
+            ProviderSetupRowView(provider: provider, model: model)
         }
     }
 

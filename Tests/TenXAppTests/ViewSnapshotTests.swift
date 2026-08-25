@@ -76,6 +76,60 @@ import Testing
 }
 
 @MainActor
+@Test func providerSetupBrowseAllSnapshot() async throws {
+    let model = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "openai-codex", name: "OpenAI Codex", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "anthropic", name: "Anthropic", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+        ProviderLoginProvider(
+            id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "github-copilot", name: "GitHub Copilot", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "ollama", name: "Ollama", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "sourcegraph", name: "Sourcegraph", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "zed", name: "Zed", isAvailable: true, isAuthenticated: false),
+    ])
+    await model.load()
+    model.showAllProviders()
+
+    try assertSnapshot(
+        ProviderSetupView(model: model, onContinue: {}),
+        name: "provider-setup-browse-all",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func providerSetupLoginFailureSnapshot() async throws {
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) },
+        formatTime: { _ in "4:00 PM" })
+    await model.load()
+    await service.emit(ExtensionUIRequest(
+        id: "failed-login",
+        method: "notify",
+        payload: .object(["message": .string("Couldn’t connect to Cursor.")])) )
+    await waitForModelState { model.loginMessage == "Couldn’t connect to Cursor." }
+
+    try assertSnapshot(
+        ProviderSetupView(model: model, onContinue: {}),
+        name: "provider-setup-login-failure",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
 @Test func runtimeRecoverySnapshot() throws {
     try assertSnapshot(
         RuntimeRecoveryView(
