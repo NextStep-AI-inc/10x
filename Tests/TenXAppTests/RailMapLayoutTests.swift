@@ -14,4 +14,8 @@ import Testing
     @Test func railMapHeightNeverBecomesNegative() {
         #expect(RailMapLayout.height(itemCount: 20, availableHeight: 30) == 0)
     }
+
+    @Test func negativeRailMapItemCountUsesZeroHeight() {
+        #expect(RailMapLayout.height(itemCount: -1, availableHeight: 500) == 0)
+    }
 }
