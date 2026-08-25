@@ -104,3 +104,16 @@ private func json(_ data: Data) throws -> [String: Any] {
     let bare = try json(try RpcCommand.newSession(parentSession: nil).encodedLine(id: "r"))
     #expect(bare["parentSession"] == nil)
 }
+
+@Test func providerLoginCommandsMatchTheOMPContract() throws {
+    let list = try json(try RpcCommand.getLoginProviders().encodedLine(id: "providers"))
+    #expect(list.count == 2)
+    #expect(list["id"] as? String == "providers")
+    #expect(list["type"] as? String == "get_login_providers")
+
+    let login = try json(try RpcCommand.login(providerID: "openai-codex")
+        .encodedLine(id: "login"))
+    #expect(login["id"] as? String == "login")
+    #expect(login["type"] as? String == "login")
+    #expect(login["providerId"] as? String == "openai-codex")
+}

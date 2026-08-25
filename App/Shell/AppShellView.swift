@@ -3,14 +3,25 @@ import SwiftUI
 struct AppShellView: View {
     let model: AppModel
 
-    @State private var railExpansion = RailExpansionModel()
+    @State private var railExpansion: RailExpansionModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(model: AppModel, railExpansion: RailExpansionModel = RailExpansionModel()) {
+        self.model = model
+        _railExpansion = State(initialValue: railExpansion)
+    }
 
     var body: some View {
         ZStack {
             Group {
                 if model.route == .setup {
                     SetupView(model: model)
+                } else if model.route == .providerSetup {
+                    if let providerModel = model.providerModel {
+                        ProviderSetupView(
+                            model: providerModel,
+                            onContinue: model.completeProviderSetup)
+                    }
                 } else {
                     ZStack(alignment: .leading) {
                         routeCanvas
@@ -91,6 +102,8 @@ struct AppShellView: View {
         switch model.route {
         case .setup:
             EmptyView()
+        case .providerSetup:
+            EmptyView()
         case .newSession:
             NewSessionView(model: model)
         case .session:
@@ -110,9 +123,18 @@ struct AppShellView: View {
                     registry: model.ideRegistry,
                     store: model.idePreferenceStore,
                     focusTarget: model.settingsFocusTarget,
-                    onFocusConsumed: model.consumeSettingsFocus)
+                    onFocusConsumed: model.consumeSettingsFocus,
+                    onOpenProviders: { model.openProviders(.connections) })
             } else {
                 Text("OMP settings unavailable")
+                    .font(TenXTypography.body(size: 13))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
+        case .providers:
+            if let providerModel = model.providerModel {
+                ProvidersView(model: providerModel)
+            } else {
+                Text("Providers unavailable")
                     .font(TenXTypography.body(size: 13))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }

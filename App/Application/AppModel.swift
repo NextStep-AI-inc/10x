@@ -23,6 +23,7 @@ final class AppModel {
     let ideRegistry: IDERegistry
     let idePreferenceStore: IDEPreferenceStore
     let fileOpenService: FileOpenService
+    private(set) var providerModel: ProviderManagementViewModel?
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
@@ -71,6 +72,15 @@ final class AppModel {
         settingsFocusTarget = nil
     }
 
+    func openProviders(_ section: ProviderWorkspaceSection) {
+        providerModel?.selectedSection = section
+        route = .providers(section)
+    }
+
+    func refreshProvidersIfNeeded() async {
+        await providerModel?.refreshIfStale()
+    }
+
     func openNewSession() {
         guard !isSessionMutationInFlight else { return }
         activeSession = nil
@@ -81,6 +91,11 @@ final class AppModel {
         guard !isSessionMutationInFlight else { return }
         route = .archivedSessions
         Task { await reloadArchivedSessions() }
+    }
+
+    func completeProviderSetup() {
+        guard providerModel?.hasAuthenticatedProvider == true else { return }
+        route = .newSession
     }
 
     func openSearch() {
@@ -273,11 +288,17 @@ final class AppModel {
     }
 
     private func install(preferredURL: URL?) async {
-        guard let installation = await dependencies.ompLocator.locate(preferredURL: preferredURL) else {
+        let locatedInstallation = await dependencies.ompLocator.locate(preferredURL: preferredURL)
+        if let providerModel {
+            await providerModel.shutdown()
+        }
+
+        guard let installation = locatedInstallation else {
             exitTask?.cancel()
             self.installation = nil
             processManager = nil
             settingsModel = nil
+            providerModel = nil
             route = .setup
             return
         }
@@ -287,9 +308,19 @@ final class AppModel {
         self.processManager = processManager
         settingsModel = SettingsViewModel(service: OmpConfigService(
             runner: OmpConfigProcessRunner(executableURL: installation.executableURL)))
+        let providerModel = dependencies.makeProviderModel(installation.executableURL)
+        self.providerModel = providerModel
         watchUnexpectedExits(from: processManager)
         setupError = nil
-        route = .newSession
+        route = .providerSetup
+        Task { [weak providerModel] in
+            await providerModel?.loadUsage()
+        }
+        await providerModel.loadProviders()
+        guard self.providerModel === providerModel else { return }
+        if providerModel.hasAuthenticatedProvider {
+            route = .newSession
+        }
     }
 
     private func watchUnexpectedExits(from processManager: SessionProcessManager) {

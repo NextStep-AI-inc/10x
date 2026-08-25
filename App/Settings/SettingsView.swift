@@ -6,7 +6,7 @@ struct SettingsView: View {
     let store: IDEPreferenceStore
     let focusTarget: SettingsFocusTarget?
     let onFocusConsumed: () -> Void
-
+    let onOpenProviders: () -> Void
     @FocusState private var isSearchFocused: Bool
     @FocusState private var focusedControl: SettingsFocusTarget?
 
@@ -15,13 +15,15 @@ struct SettingsView: View {
         registry: IDERegistry = .init(),
         store: IDEPreferenceStore? = nil,
         focusTarget: SettingsFocusTarget? = nil,
-        onFocusConsumed: @escaping () -> Void = {}
+        onFocusConsumed: @escaping () -> Void = {},
+        onOpenProviders: @escaping () -> Void = {}
     ) {
         self.model = model
         self.registry = registry
         self.store = store ?? IDEPreferenceStore(registry: registry)
         self.focusTarget = focusTarget
         self.onFocusConsumed = onFocusConsumed
+        self.onOpenProviders = onOpenProviders
     }
 
     var body: some View {
@@ -63,9 +65,14 @@ struct SettingsView: View {
                     .lineLimit(1)
             }
             Spacer()
-            Text("\(model.settingCount) OMP settings")
-                .font(TenXTypography.mono(size: 10))
-                .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+            HStack(spacing: 12) {
+                Text("\(model.settingCount) OMP settings")
+                    .font(TenXTypography.mono(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+                Button("Providers", action: onOpenProviders)
+                    .buttonStyle(GhostActionStyle())
+                    .accessibilityLabel("Open Providers")
+            }
         }
         .padding(.top, 62)
         .padding(.bottom, 22)

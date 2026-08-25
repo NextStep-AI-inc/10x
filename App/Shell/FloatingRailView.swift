@@ -22,6 +22,10 @@ struct FloatingRailView: View {
             expandedProjectIDs: expansion.isExpanded ? expandedProjectIDs : [])
     }
 
+    private var providers: [ProviderUsageProvider] {
+        model.providerModel?.railProviders ?? []
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
@@ -76,8 +80,10 @@ struct FloatingRailView: View {
             .help("Archived sessions")
             .accessibilityLabel("Archived sessions")
 
-            if !model.providerUsages.isEmpty {
-                ProviderUsageLedgerView(providers: model.providerUsages)
+            if !providers.isEmpty {
+                ProviderUsageLedgerView(providers: providers) {
+                    model.openProviders(.usage)
+                }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 18)
                     .frame(height: usageLedgerHeight)
@@ -133,8 +139,13 @@ struct FloatingRailView: View {
     }
 
     private var usageLedgerHeight: CGFloat {
-        let limitCount = model.providerUsages.reduce(0) { $0 + $1.limits.count }
-        return min(210, CGFloat(48 + model.providerUsages.count * 28 + limitCount * 21))
+        let visibleAccountCount = providers.reduce(0) { count, provider in
+            count + (provider.accounts.count > 1 ? provider.accounts.count : 0)
+        }
+        let limitCount = providers.reduce(0) { count, provider in
+            count + provider.limits.count
+        }
+        return min(210, CGFloat(44 + providers.count * 20 + visibleAccountCount * 16 + limitCount * 25))
     }
 
     private var selectedSessionPath: String? {

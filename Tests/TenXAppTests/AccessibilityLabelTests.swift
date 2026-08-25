@@ -25,3 +25,43 @@ import Testing
     #expect(RailAccessibility.scrollLabel(.up) == "Show earlier rail items")
     #expect(RailAccessibility.scrollLabel(.down) == "Show later rail items")
 }
+
+@Test func providerUsageLabelNamesRemainingCapacityAndReset() {
+    #expect(ProviderUsageAccessibility.limitLabel(
+        provider: "Cursor",
+        account: "tanner@example.com",
+        allowance: "Cursor Models",
+        percentage: 50,
+        reset: "5 days"
+    ) == "Cursor, tanner@example.com, Cursor Models, 50 percent remaining, resets in 5 days")
+}
+
+@Test func providerUsageLabelNamesUnavailableResetWhenWindowIsMissing() {
+    #expect(ProviderUsageAccessibility.limitLabel(
+        provider: "Cursor",
+        account: nil,
+        allowance: "Cursor Models",
+        percentage: 50,
+        reset: ""
+    ) == "Cursor, Cursor Models, 50 percent remaining, reset unavailable")
+}
+
+@Test func providerUsageLabelNamesUnavailableResetWhenWindowIsWhitespace() {
+    #expect(ProviderUsageAccessibility.limitLabel(
+        provider: "Cursor",
+        account: nil,
+        allowance: "Cursor Models",
+        percentage: 50,
+        reset: "  \n\t "
+    ) == "Cursor, Cursor Models, 50 percent remaining, reset unavailable")
+}
+
+@Test func providerUsageDetailLabelIncludesProviderAndAccountLikeTheRail() {
+    #expect(ProviderUsageDetailAccessibility.limitLabel(
+        provider: "Cursor",
+        account: "tanner@example.com",
+        allowance: "Cursor Models",
+        percentage: 50,
+        reset: "Aug 30, 9:00 AM"
+    ) == "Cursor, tanner@example.com, Cursor Models, 50 percent remaining, resets in Aug 30, 9:00 AM")
+}

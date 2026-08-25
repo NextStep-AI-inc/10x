@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct TenXApp: App {
     @State private var model = AppModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -10,6 +11,10 @@ struct TenXApp: App {
             .frame(minWidth: 760, minHeight: 560)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .task { await model.bootstrap() }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                Task { await model.refreshProvidersIfNeeded() }
+            }
         }
         .defaultSize(width: 1180, height: 760)
         .windowResizability(.contentMinSize)
