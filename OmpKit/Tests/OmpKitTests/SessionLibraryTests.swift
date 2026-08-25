@@ -164,6 +164,135 @@ private func makeTempRoot(_ label: String) -> URL {
     #expect(fired)
 }
 
+@Test func watcherSignalsOnNewArchivedFile() async throws {
+    let container = makeTempRoot("archive-watch")
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    try FileManager.default.createDirectory(at: archiveRoot, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: container) }
+
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+    let stream = library.changes
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        try? writeSession(
+            at: archiveRoot.appendingPathComponent("-x/archived.jsonl"),
+            id: "archived", cwd: "/x", lastMessage: userLast)
+    }
+    defer { writer.cancel() }
+
+    let fired = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(fired)
+}
+
+@Test func watcherSignalsWhenAnArchivedSessionIsAppended() async throws {
+    let container = makeTempRoot("archive-append-watch")
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let file = archiveRoot.appendingPathComponent("-x/archived.jsonl")
+    try writeSession(at: file, id: "archived", cwd: "/x", lastMessage: userLast)
+    defer { try? FileManager.default.removeItem(at: container) }
+
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+    let stream = library.changes
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let handle = try? FileHandle(forWritingTo: file) else { return }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(("\n" + completeLast + "\n").utf8))
+        try? handle.close()
+    }
+    defer { writer.cancel() }
+
+    let fired = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(fired)
+}
+
+@Test func archiveRefreshesWatchersForItsNewDestination() async throws {
+    let container = makeTempRoot("post-archive-watch")
+    let activeRoot = container.appendingPathComponent("sessions")
+    let archiveRoot = container.appendingPathComponent("archived-sessions")
+    let activeFile = activeRoot.appendingPathComponent("-x/session.jsonl")
+    try writeSession(at: activeFile, id: "session", cwd: "/x", lastMessage: userLast)
+    defer { try? FileManager.default.removeItem(at: container) }
+
+    let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+    let stream = library.changes
+    let report = await library.archive(paths: [activeFile.path])
+    #expect(report.failures.isEmpty)
+    let archiveSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(archiveSignal)
+    let archivedFile = try #require(await library.listArchived().first).path
+
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let handle = try? FileHandle(forWritingTo: URL(filePath: archivedFile)) else { return }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(("\n" + completeLast + "\n").utf8))
+        try? handle.close()
+    }
+    defer { writer.cancel() }
+    let appendSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(appendSignal)
+}
+
+@Test func listingExcludesSymlinkedTranscriptFiles() async throws {
+    let container = makeTempRoot("symlink-listing")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let outsideFile = container.appendingPathComponent("outside/session.jsonl")
+    let linkedFile = activeRoot.appendingPathComponent("-x/linked.jsonl")
+    try writeSession(at: outsideFile, id: "outside", cwd: "/outside", lastMessage: completeLast)
+    try FileManager.default.createDirectory(
+        at: linkedFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: linkedFile, withDestinationURL: outsideFile)
+
+    let library = SessionLibrary(root: activeRoot)
+
+    #expect(await library.listAll().isEmpty)
+}
+
+@Test func watcherIgnoresOutsideTargetOfSymlinkedTranscript() async throws {
+    let container = makeTempRoot("symlink-watch")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let activeRoot = container.appendingPathComponent("sessions")
+    let outsideFile = container.appendingPathComponent("outside/session.jsonl")
+    let linkedFile = activeRoot.appendingPathComponent("-x/linked.jsonl")
+    try writeSession(at: outsideFile, id: "outside", cwd: "/outside", lastMessage: userLast)
+    try FileManager.default.createDirectory(
+        at: linkedFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: linkedFile, withDestinationURL: outsideFile)
+
+    let library = SessionLibrary(root: activeRoot)
+    let stream = library.changes
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let handle = try? FileHandle(forWritingTo: outsideFile) else { return }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: Data(("\n" + completeLast + "\n").utf8))
+        try? handle.close()
+    }
+    defer { writer.cancel() }
+
+    let fired = await withTimeout(.seconds(1)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(!fired)
+}
+
 @Test func corruptFilesAreSkippedThenRescannedAfterChanging() async throws {
     let root = makeTempRoot("negative-cache")
     let bucket = root.appendingPathComponent("-x")

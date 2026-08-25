@@ -132,8 +132,11 @@ public actor SessionLibrary {
                 at: bucket, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
                 options: []
             ) else { continue }
-            for file in files where file.pathExtension == "jsonl" {
-                if let metadata = scan(file) { results.append(metadata) }
+            for file in files {
+                guard let transcript = listableTranscriptURL(file, under: collectionRoot) else {
+                    continue
+                }
+                if let metadata = scan(transcript) { results.append(metadata) }
             }
         }
         results.sort { $0.modified > $1.modified }
@@ -306,6 +309,12 @@ public actor SessionLibrary {
         return .available(destination)
     }
 
+    private func listableTranscriptURL(_ url: URL, under collectionRoot: URL) -> URL? {
+        guard case .valid(let transcript) = validateSessionPath(url.path, under: collectionRoot)
+        else { return nil }
+        return transcript.url
+    }
+
     private func invalidateCache(paths: [String]) {
         let changedPaths = Set(paths)
         cache = cache.filter { !changedPaths.contains($0.key.path) }
@@ -391,7 +400,9 @@ public actor SessionLibrary {
             desired.append(bucket)
             if let files = try? fileManager.contentsOfDirectory(
                 at: bucket, includingPropertiesForKeys: [.isRegularFileKey], options: []) {
-                desired += files.filter { $0.pathExtension == "jsonl" }
+                desired += files.compactMap {
+                    listableTranscriptURL($0, under: collectionRoot)
+                }
             }
         }
         return desired
