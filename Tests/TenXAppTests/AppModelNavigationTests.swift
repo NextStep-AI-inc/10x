@@ -187,6 +187,55 @@ import Testing
     await manager.closeAll()
 }
 
+@MainActor
+@Test func mutationLockDetachesBeforeCloseAndBlocksReentrantActions() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-mutation-lock-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "slow-exit")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let library = SessionLibrary(root: container.appendingPathComponent("sessions"))
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: library))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let manager = try #require(model.processManager)
+    let metadata = navigationMetadata("/tmp/fake.jsonl")
+    let started = ContinuousClock.now
+
+    let mutation = Task { await model.archiveSession(metadata) }
+    for _ in 0..<100 where !model.isSessionMutationInFlight {
+        try await Task.sleep(for: .milliseconds(5))
+    }
+
+    #expect(model.isSessionMutationInFlight)
+    #expect(started.duration(to: .now) < .milliseconds(500))
+    #expect(model.activeSession == nil)
+    #expect(model.route == .newSession)
+    model.openSession(navigationMetadata("/tmp/other.jsonl"))
+    model.openSettings()
+    model.startNewSession(prompt: "Reentrant")
+    #expect(model.activeSession == nil)
+    #expect(model.route == .newSession)
+    await model.restoreSession(navigationMetadata("/tmp/other.jsonl"))
+    #expect(model.sessionActionError == nil)
+
+    await mutation.value
+
+    #expect(!model.isSessionMutationInFlight)
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") == nil)
+    model.openSettings()
+    #expect(model.route == .settings)
+    await manager.closeAll()
+}
+
 private func navigationMetadata(_ path: String) -> SessionMetadata {
     SessionMetadata(
         path: path,
@@ -210,7 +259,7 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     try Data(content.utf8).write(to: url)
 }
 
-private func makeNavigationExecutable(in directory: URL) throws -> URL {
+private func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws -> URL {
     let repository = URL(filePath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -218,7 +267,11 @@ private func makeNavigationExecutable(in directory: URL) throws -> URL {
     let fixture = repository
         .appendingPathComponent("OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py")
     let executable = directory.appendingPathComponent("fake-omp")
-    try FileManager.default.copyItem(at: fixture, to: executable)
+    let wrapper = """
+    #!/bin/sh
+    exec /usr/bin/python3 "\(fixture.path)" "\(mode)"
+    """
+    try Data(wrapper.utf8).write(to: executable)
     try FileManager.default.setAttributes(
         [.posixPermissions: 0o755],
         ofItemAtPath: executable.path)

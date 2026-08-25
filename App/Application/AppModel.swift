@@ -15,6 +15,7 @@ final class AppModel {
     var sessionActionError: String?
     var providerUsages: [ProviderUsageProvider] = []
     var isSearchPresented = false
+    private(set) var isSessionMutationInFlight = false
     private(set) var activeSession: SessionController?
     private(set) var processManager: SessionProcessManager?
     private(set) var settingsModel: SettingsViewModel?
@@ -41,27 +42,32 @@ final class AppModel {
     }
 
     func chooseProject(_ url: URL) {
+        guard !isSessionMutationInFlight else { return }
         selectedProjectURL = url.standardizedFileURL
         activeSession = nil
         route = .newSession
     }
 
     func openSettings() {
+        guard !isSessionMutationInFlight else { return }
         route = .settings
         Task { await settingsModel?.load() }
     }
 
     func openNewSession() {
+        guard !isSessionMutationInFlight else { return }
         activeSession = nil
         route = .newSession
     }
 
     func openArchivedSessions() {
+        guard !isSessionMutationInFlight else { return }
         route = .archivedSessions
         Task { await reloadArchivedSessions() }
     }
 
     func openSearch() {
+        guard !isSessionMutationInFlight else { return }
         isSearchPresented = true
     }
 
@@ -70,12 +76,14 @@ final class AppModel {
     }
 
     func openSearchResult(_ result: SearchResult) {
+        guard !isSessionMutationInFlight else { return }
         guard let metadata = sessions.first(where: { $0.path == result.sessionPath }) else { return }
         closeSearch()
         openSession(metadata)
     }
 
     func openSession(_ metadata: SessionMetadata) {
+        guard !isSessionMutationInFlight else { return }
         if !metadata.cwd.isEmpty {
             selectedProjectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
                 .standardizedFileURL
@@ -88,6 +96,7 @@ final class AppModel {
     }
 
     func startNewSession(prompt: String) {
+        guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
         let controller = SessionController(processManager: processManager)
         controller.draft = prompt
@@ -129,6 +138,8 @@ final class AppModel {
     }
 
     func archiveSession(_ metadata: SessionMetadata) async {
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
         await mutateActive(
             paths: [metadata.path],
             action: "archive",
@@ -138,6 +149,8 @@ final class AppModel {
     }
 
     func archiveProject(_ group: ProjectSessionGroup) async {
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
         let paths = group.sessions.map(\.path)
         await mutateActive(
             paths: paths,
@@ -148,6 +161,8 @@ final class AppModel {
     }
 
     func restoreSession(_ metadata: SessionMetadata) async {
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
         invalidateArchivedSessionReloads()
         await finish(
             await dependencies.sessionLibrary.restore(paths: [metadata.path]),
@@ -156,6 +171,8 @@ final class AppModel {
     }
 
     func restoreProject(_ group: ProjectSessionGroup) async {
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
         invalidateArchivedSessionReloads()
         await finish(
             await dependencies.sessionLibrary.restore(paths: group.sessions.map(\.path)),
@@ -164,7 +181,8 @@ final class AppModel {
     }
 
     func confirmDeletion() async {
-        guard let request = pendingDeletion else { return }
+        guard let request = pendingDeletion, beginSessionMutation() else { return }
+        defer { endSessionMutation() }
         pendingDeletion = nil
         invalidateArchivedSessionReloads()
         await closeActiveSessionIfNeeded(paths: request.paths)
@@ -186,19 +204,20 @@ final class AppModel {
     }
 
     private func closeActiveSessionIfNeeded(paths: [String]) async {
-        guard case .session(let routePath) = route else { return }
         let activePath = activeSession?.sessionPath
-        let matchingPath: String? = if let activePath, paths.contains(activePath) {
-            activePath
-        } else if paths.contains(routePath) {
+        let routePath: String? = if case .session(let path) = route { path } else { nil }
+        let matchingPath: String? = if let activePath {
+            paths.contains(activePath) ? activePath : nil
+        } else if let routePath, paths.contains(routePath) {
             routePath
         } else {
             nil
         }
         guard let matchingPath else { return }
-        await processManager?.close(sessionPath: matchingPath)
+        let processManager = processManager
         activeSession = nil
-        route = .newSession
+        if routePath != nil { route = .newSession }
+        await processManager?.close(sessionPath: matchingPath)
     }
 
     private func finish(
@@ -220,6 +239,16 @@ final class AppModel {
 
     private func invalidateArchivedSessionReloads() {
         archivedReloadGeneration &+= 1
+    }
+
+    private func beginSessionMutation() -> Bool {
+        guard !isSessionMutationInFlight else { return false }
+        isSessionMutationInFlight = true
+        return true
+    }
+
+    private func endSessionMutation() {
+        isSessionMutationInFlight = false
     }
 
     private func sessionDisplayName(_ metadata: SessionMetadata) -> String {

@@ -32,8 +32,8 @@ struct AppShellView: View {
                     }
                 }
             }
-            .disabled(model.pendingDeletion != nil)
-            .accessibilityHidden(model.pendingDeletion != nil)
+            .disabled(isSessionInteractionBlocked)
+            .accessibilityHidden(isSessionInteractionBlocked)
 
             if let request = model.pendingDeletion {
                 SessionDeletionConfirmationView(
@@ -61,13 +61,17 @@ struct AppShellView: View {
     private var sessionActionErrorIsPresented: Binding<Bool> {
         Binding(
             get: {
-                model.pendingDeletion == nil && model.sessionActionError != nil
+                !isSessionInteractionBlocked && model.sessionActionError != nil
             },
             set: { isPresented in
-                if !isPresented && model.pendingDeletion == nil {
+                if !isPresented && !isSessionInteractionBlocked {
                     model.dismissSessionActionError()
                 }
             })
+    }
+
+    private var isSessionInteractionBlocked: Bool {
+        model.pendingDeletion != nil || model.isSessionMutationInFlight
     }
 
     @ViewBuilder

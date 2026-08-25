@@ -4,6 +4,7 @@
   chunked   — get_state answered as a 3-part rpc_chunk sequence
   late-error— prompt acked ok, then error response with the same id
   silent    — ready, then never answers anything (timeout testing)
+  slow-exit — basic behavior, then waits briefly after stdin closes
   noisy     — like basic, but emits unknown frames + setWidget before each response
 """
 import base64
@@ -150,3 +151,6 @@ for line in sys.stdin:
               "success": False, "error": "nope", "code": "test_code"})
     else:
         emit({"id": cid, "type": "response", "command": ctype or "parse", "success": True})
+
+if mode == "slow-exit":
+    time.sleep(0.6)
