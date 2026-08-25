@@ -48,12 +48,24 @@ private struct ProviderRPCClientBox: ProviderRPCClient {
 actor ProviderManagementService: ProviderManaging {
     private typealias ClientFactory = @Sendable (RpcClientConfiguration) async -> ProviderRPCClientBox
 
+    private struct Startup {
+        let id: UUID
+        let generation: Int
+        let task: Task<ProviderRPCClientBox, Error>
+    }
+
+    private enum ClientState {
+        case idle
+        case starting(Startup)
+        case ready(ProviderRPCClientBox)
+    }
+
     nonisolated let events: AsyncStream<ExtensionUIRequest>
 
     private let eventContinuation: AsyncStream<ExtensionUIRequest>.Continuation
     private let configuration: RpcClientConfiguration
     private let clientFactory: ClientFactory
-    private var client: ProviderRPCClientBox?
+    private var clientState: ClientState = .idle
     private var eventForwarder: Task<Void, Never>?
     private var clientGeneration = 0
     private var isLoginInProgress = false
@@ -113,23 +125,53 @@ actor ProviderManagementService: ProviderManaging {
     }
 
     private func clientForRequest() async throws -> ProviderRPCClientBox {
-        if let client { return client }
+        switch clientState {
+        case .ready(let client):
+            return client
+        case .starting(let startup):
+            return try await awaitStartup(startup)
+        case .idle:
+            let startup = makeStartup()
+            clientState = .starting(startup)
+            return try await awaitStartup(startup)
+        }
+    }
 
+    private func makeStartup() -> Startup {
+        let id = UUID()
         let generation = clientGeneration
-        let client = await clientFactory(configuration)
-        self.client = client
-        do {
+        let configuration = configuration
+        let clientFactory = clientFactory
+        let task = Task {
+            let client = await clientFactory(configuration)
             _ = try await client.start()
-            guard generation == clientGeneration else {
+            return client
+        }
+        return Startup(id: id, generation: generation, task: task)
+    }
+
+    private func awaitStartup(_ startup: Startup) async throws -> ProviderRPCClientBox {
+        do {
+            let client = try await startup.task.value
+            guard startup.generation == clientGeneration else {
+                clearStarting(startup)
                 await client.shutdown()
                 throw CancellationError()
             }
-            startForwarding(events: client.events)
-            return client
-        } catch {
-            if generation == clientGeneration {
-                await closeClient()
+
+            switch clientState {
+            case .ready(let client):
+                return client
+            case .starting(let current) where current.id == startup.id:
+                clientState = .ready(client)
+                startForwarding(events: client.events)
+                return client
+            case .idle, .starting:
+                await client.shutdown()
+                throw CancellationError()
             }
+        } catch {
+            clearStarting(startup)
             throw error
         }
     }
@@ -151,9 +193,22 @@ actor ProviderManagementService: ProviderManaging {
         clientGeneration += 1
         eventForwarder?.cancel()
         eventForwarder = nil
-        guard let client else { return }
-        self.client = nil
-        await client.shutdown()
+        let state = clientState
+        clientState = .idle
+
+        switch state {
+        case .idle:
+            break
+        case .starting(let startup):
+            startup.task.cancel()
+        case .ready(let client):
+            await client.shutdown()
+        }
+    }
+
+    private func clearStarting(_ startup: Startup) {
+        guard case .starting(let current) = clientState, current.id == startup.id else { return }
+        clientState = .idle
     }
 
     private func parseProviders(_ data: JSONValue?) throws -> [ProviderLoginProvider] {

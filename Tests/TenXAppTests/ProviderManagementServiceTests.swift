@@ -131,6 +131,48 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
     #expect(await fake.shutdownCount == 1)
 }
 
+@Test func providerServiceSharesOneStartupBeforeSendingRequests() async throws {
+    let startGate = StartGate()
+    let fake = FakeProviderRPCClient(
+        responses: [providerListResponse, providerListResponse],
+        startGate: startGate)
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let firstProviders = Task { try await service.providers() }
+    await startGate.waitForStart()
+    let secondProviders = Task { try await service.providers() }
+    for _ in 0..<10 { await Task.yield() }
+
+    #expect(await fake.commands.isEmpty)
+    #expect(await fake.startCount == 1)
+    await startGate.release()
+    _ = try await firstProviders.value
+    _ = try await secondProviders.value
+}
+
+@Test func providerServiceDiscardsACancelledFactoryClientBeforeRecreation() async throws {
+    let first = FakeProviderRPCClient(responses: [providerListResponse])
+    let second = FakeProviderRPCClient(responses: [providerListResponse])
+    let factoryGate = FactoryGate(clients: [first, second])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in await factoryGate.makeClient() })
+
+    let cancelledProviders = Task { try await service.providers() }
+    await factoryGate.waitForFirstRequest()
+    await service.cancelLogin()
+    await factoryGate.release()
+    _ = await cancelledProviders.result
+
+    _ = try await service.providers()
+
+    #expect(await factoryGate.callCount == 2)
+    #expect(await first.shutdownCount == 1)
+    #expect(await second.startCount == 1)
+}
+
 private struct ProviderCommand: Sendable, Equatable {
     let command: RpcCommand
     let timeout: Duration?
@@ -140,14 +182,16 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
     private let eventStream: AsyncStream<RpcFrame>
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
     private var responses: [RpcResponse]
+    private let startGate: StartGate?
 
     private(set) var startCount = 0
     private(set) var commands: [ProviderCommand] = []
     private(set) var rawCommands: [RpcCommand] = []
     private(set) var shutdownCount = 0
 
-    init(responses: [RpcResponse]) {
+    init(responses: [RpcResponse], startGate: StartGate? = nil) {
         self.responses = responses
+        self.startGate = startGate
         (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream()
     }
 
@@ -155,6 +199,10 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
 
     func start() async throws -> ReadyFrame {
         startCount += 1
+        if let startGate {
+            await startGate.started()
+            await startGate.waitForRelease()
+        }
         return ReadyFrame(protocolVersion: 1)
     }
 
@@ -197,5 +245,82 @@ private actor ProviderClientPool {
     func next() -> FakeProviderRPCClient {
         callCount += 1
         return clients.removeFirst()
+    }
+}
+
+private actor StartGate {
+    private var hasStarted = false
+    private var isReleased = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func started() {
+        hasStarted = true
+        let waiters = startWaiters
+        startWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    func waitForStart() async {
+        guard !hasStarted else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func waitForRelease() async {
+        guard !isReleased else { return }
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func release() {
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+}
+
+private actor FactoryGate {
+    private var clients: [FakeProviderRPCClient]
+    private var hasReceivedFirstRequest = false
+    private var isReleased = false
+    private var firstRequestWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private(set) var callCount = 0
+
+    init(clients: [FakeProviderRPCClient]) {
+        self.clients = clients
+    }
+
+    func makeClient() async -> FakeProviderRPCClient {
+        callCount += 1
+        if !hasReceivedFirstRequest {
+            hasReceivedFirstRequest = true
+            let waiters = firstRequestWaiters
+            firstRequestWaiters.removeAll()
+            for waiter in waiters {
+                waiter.resume()
+            }
+            guard !isReleased else { return clients.removeFirst() }
+            await withCheckedContinuation { releaseWaiters.append($0) }
+        }
+        return clients.removeFirst()
+    }
+
+    func waitForFirstRequest() async {
+        guard !hasReceivedFirstRequest else { return }
+        await withCheckedContinuation { firstRequestWaiters.append($0) }
+    }
+
+    func release() {
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
     }
 }
