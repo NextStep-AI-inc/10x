@@ -5,6 +5,8 @@ struct TranscriptReducer {
     var items: [TranscriptItem] = []
     var runtimeState: SessionRuntimeState = .idle
 
+    var hasPendingPersistence: Bool { !pendingPersistenceIDs.isEmpty }
+
     private var inflightMessageID: String?
     private var pendingPersistenceIDs: Set<String> = []
     private var pendingMessageFingerprints: [String: String] = [:]
@@ -407,8 +409,12 @@ struct TranscriptReducer {
             message.role.rawValue,
             timestamp,
             message.stopReason ?? "",
-            message.visibleText,
+            reconciliationText(message.visibleText),
         ].joined(separator: "\u{1F}")
+    }
+
+    private static func reconciliationText(_ text: String) -> String {
+        text.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     private mutating func messageID(_ message: JSONValue) -> String {
