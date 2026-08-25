@@ -50,6 +50,8 @@ struct TranscriptView: View {
                 Spacer()
             }
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        case .subagent(let presentation):
+            SubagentCardView(presentation: presentation)
         case .notice(_, let level, let message):
             HStack(spacing: 8) {
                 Text(level.capitalized)

@@ -8,6 +8,7 @@ struct TranscriptReducer {
     private var inflightMessageID: String?
     private var nextSyntheticID = 1
     private var toolReducer = ToolEventReducer()
+    private var subagentReducer = SubagentEventReducer()
 
     mutating func consume(_ frame: RpcFrame) {
         guard case .event(let type, let payload) = frame else { return }
@@ -108,6 +109,21 @@ struct TranscriptReducer {
                   let presentation = toolReducer.presentations.first(where: { $0.id == id })
             else { return }
             replaceOrAppend(.tool(presentation))
+            if type == "tool_execution_end", let result = payload["result"] {
+                subagentReducer.attachResult(parentToolCallID: id, result: result)
+                for subagent in subagentReducer.presentations where
+                    subagent.parentToolCallID == id {
+                    replaceOrAppend(.subagent(subagent))
+                }
+            }
+        case "subagent_lifecycle", "subagent_progress":
+            subagentReducer.consume(type: type, payload: payload)
+            guard let body = payload["payload"],
+                  let presentation = Self.subagent(
+                    matching: body,
+                    in: subagentReducer.presentations)
+            else { return }
+            replaceOrAppend(.subagent(presentation))
         default:
             items.append(.rawEvent(
                 id: syntheticID(prefix: "event"),
@@ -154,7 +170,7 @@ struct TranscriptReducer {
         let transient = items.filter { item in
             guard !persistedIDs.contains(item.id) else { return false }
             switch item {
-            case .notice, .annotation, .extensionUI, .rawEvent:
+            case .notice, .annotation, .subagent, .extensionUI, .rawEvent:
                 return true
             case .tool(let presentation):
                 return presentation.phase == .running
@@ -191,6 +207,16 @@ struct TranscriptReducer {
                 startDate: timestamp,
                 endDate: nil)
         } ?? []
+    }
+
+    private static func subagent(
+        matching body: JSONValue,
+        in presentations: [SubagentPresentation]
+    ) -> SubagentPresentation? {
+        let id = body["id"]?.stringValue ?? body["progress"]?["id"]?.stringValue
+        if let id { return presentations.first { $0.id == id } }
+        guard let index = body["index"]?.intValue else { return nil }
+        return presentations.first { $0.index == index }
     }
 
     private static func visibleMessageText(_ message: JSONValue) -> String {

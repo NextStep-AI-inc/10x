@@ -5,6 +5,7 @@ enum TranscriptItem: Identifiable, Equatable {
     case threadStart(id: String, date: Date?)
     case message(TranscriptMessage)
     case annotation(TranscriptAnnotation)
+    case subagent(SubagentPresentation)
     case notice(id: String, level: String, message: String)
     case tool(ToolPresentation)
     case extensionUI(ExtensionUIState)
@@ -20,6 +21,8 @@ enum TranscriptItem: Identifiable, Equatable {
             return message.id
         case .annotation(let annotation):
             return annotation.id
+        case .subagent(let presentation):
+            return presentation.id
         case .tool(let presentation):
             return presentation.id
         case .extensionUI(let state):

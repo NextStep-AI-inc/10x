@@ -96,14 +96,14 @@
 - Modify: `App/Sessions/TranscriptReducer.swift`
 - Create: `Tests/TenXAppTests/SubagentEventReducerTests.swift`
 
-- [ ] Add failing tests for lifecycle/progress coalescing, actual model label,
+- [x] Add failing tests for lifecycle/progress coalescing, actual model label,
   recent tool count, completion/failure, parent task association, and
   out-of-order progress.
-- [ ] Implement one stable presentation per subagent. Keep only bounded recent
+- [x] Implement one stable presentation per subagent. Keep only bounded recent
   progress in memory and store the session path for lazy detail loading.
-- [ ] Render agent/model/state in the compact row and returned result/progress in
+- [x] Render agent/model/state in the compact row and returned result/progress in
   the expanded body; never show internal system prompts.
-- [ ] Run focused tests and commit: `feat(chat): present subagent activity`
+- [x] Run focused tests and commit: `feat(chat): present subagent activity`
 
 ## Task 5: Build rich, wrapping message blocks
 
