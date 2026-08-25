@@ -188,14 +188,19 @@ private func makeLeaseOwner(in directory: URL) throws -> URL {
         static func main() async {
             let arguments = CommandLine.arguments
             let traceURL = URL(filePath: arguments[1]).appending(path: "owner-trace")
-            func trace(_ message: String) {
-                try? message.write(to: traceURL, atomically: true, encoding: .utf8)
+            func publish(_ message: String) throws {
+                try message.write(to: traceURL, atomically: true, encoding: .utf8)
             }
-            trace("started")
-            let lease = ComputerUseLease(directory: URL(filePath: arguments[1]))
+            func terminateAndReap(_ childProcessID: pid_t) {
+                _ = kill(childProcessID, SIGKILL)
+                var status: Int32 = 0
+                while waitpid(childProcessID, &status, 0) == -1, errno == EINTR {}
+            }
             do {
+                try publish("started")
+                let lease = ComputerUseLease(directory: URL(filePath: arguments[1]))
                 try await lease.acquire(sessionID: "owner")
-                trace("acquired")
+                try publish("acquired")
                 var childProcessID: pid_t = 0
                 let spawnResult = arguments[2].withCString { executable in
                     "--pause".withCString { pause in
@@ -216,10 +221,16 @@ private func makeLeaseOwner(in directory: URL) throws -> URL {
                 guard spawnResult == 0 else {
                     _exit(1)
                 }
-                trace("child-pid:\\(childProcessID)")
+                do {
+                    try publish("child-pid:\\(childProcessID)")
+                    _fixLifetime(lease)
+                } catch {
+                    terminateAndReap(childProcessID)
+                    _fixLifetime(lease)
+                    _exit(1)
+                }
                 _exit(0)
             } catch {
-                trace("error")
                 _exit(1)
             }
         }
