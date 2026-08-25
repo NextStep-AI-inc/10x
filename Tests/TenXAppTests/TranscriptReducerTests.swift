@@ -14,13 +14,13 @@ import Testing
         """))
 
     #expect(reducer.items.count == 1)
-    guard case .message(let id, let message, let isFinal) = reducer.items[0] else {
+    guard case .message(let message) = reducer.items[0] else {
         Issue.record("Expected one message item")
         return
     }
-    #expect(id == "m1")
-    #expect(message["content"]?.arrayValue?.first?["text"]?.stringValue == "Complete snapshot")
-    #expect(!isFinal)
+    #expect(message.id == "m1")
+    #expect(message.raw["content"]?.arrayValue?.first?["text"]?.stringValue == "Complete snapshot")
+    #expect(!message.isFinal)
 }
 
 @Test func messageEndReplacesAndFinalizesTheInflightSnapshot() throws {
@@ -34,12 +34,12 @@ import Testing
         """))
 
     #expect(reducer.items.count == 1)
-    guard case .message(_, let message, let isFinal) = reducer.items[0] else {
+    guard case .message(let message) = reducer.items[0] else {
         Issue.record("Expected one message item")
         return
     }
-    #expect(message["content"]?.arrayValue?.first?["text"]?.stringValue == "Final text")
-    #expect(isFinal)
+    #expect(message.raw["content"]?.arrayValue?.first?["text"]?.stringValue == "Final text")
+    #expect(message.isFinal)
 }
 
 @Test func explicitNonterminalAgentEndKeepsTheSessionStreaming() throws {

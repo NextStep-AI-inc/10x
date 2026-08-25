@@ -2,24 +2,18 @@ import OmpKit
 import SwiftUI
 
 struct MessageBubbleView: View {
-    let message: JSONValue
+    let message: TranscriptMessage
 
     private var role: String {
-        message["role"]?.stringValue ?? "unknown"
+        message.role.rawValue
     }
 
     private var text: String {
-        Self.visibleText(from: message)
+        message.visibleText
     }
 
     static func visibleText(from message: JSONValue) -> String {
-        if let content = message["content"]?.stringValue { return content }
-        return message["content"]?.arrayValue?
-            .compactMap { block in
-                guard block["type"]?.stringValue == "text" else { return nil }
-                return block["text"]?.stringValue
-            }
-            .joined(separator: "\n") ?? ""
+        TranscriptMessage.visibleText(from: message)
     }
 
     var body: some View {

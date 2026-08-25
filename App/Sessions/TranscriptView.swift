@@ -30,8 +30,26 @@ struct TranscriptView: View {
     @ViewBuilder
     private func itemView(_ item: TranscriptItem) -> some View {
         switch item {
-        case .message(_, let message, _):
+        case .threadStart(_, let date):
+            HStack(spacing: 8) {
+                Text(date?.formatted(date: .abbreviated, time: .shortened) ?? "Thread started")
+                    .font(TenXTypography.mono(size: 10))
+                Spacer()
+            }
+            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        case .message(let message):
             MessageBubbleView(message: message)
+        case .annotation(let annotation):
+            HStack(spacing: 8) {
+                Text(annotation.title)
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                if let detail = annotation.detail {
+                    Text(detail)
+                        .font(TenXTypography.mono(size: 10))
+                }
+                Spacer()
+            }
+            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
         case .notice(_, let level, let message):
             HStack(spacing: 8) {
                 Text(level.capitalized)

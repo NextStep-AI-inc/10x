@@ -50,18 +50,18 @@
 - Create: `Tests/TenXAppTests/TranscriptHistoryMapperTests.swift`
 - Create: `Tests/TenXAppTests/TranscriptReferenceTests.swift`
 
-- [ ] Write failing tests that map an ordered session path into thread start,
+- [x] Write failing tests that map an ordered session path into thread start,
   timestamped/model-attributed messages, mode/model/thinking/compaction
   annotations, and paired tools without duplicates.
-- [ ] Write failing reference tests for absolute paths, `path:line`, spaces,
+- [x] Write failing reference tests for absolute paths, `path:line`, spaces,
   URLs, punctuation trimming, duplicates, and missing files.
-- [ ] Run the three focused test files and confirm semantic failures.
-- [ ] Implement immutable presentation types and the history mapper. Use the
+- [x] Run the three focused test files and confirm semantic failures.
+- [x] Implement immutable presentation types and the history mapper. Use the
   assistant message's own provider/model first and folded timeline state only
   as fallback. Coalesce identical adjacent metadata annotations.
-- [ ] Implement deterministic reference extraction without regex backtracking
+- [x] Implement deterministic reference extraction without regex backtracking
   or filesystem access in the parser.
-- [ ] Run focused tests and commit: `feat(chat): normalize transcript history`
+- [x] Run focused tests and commit: `feat(chat): normalize transcript history`
 
 ## Task 3: Reconcile authoritative history with live RPC events
 

@@ -26,17 +26,26 @@ struct TranscriptReducer {
             if consumeToolResult(message) { return }
             let id = messageID(message)
             inflightMessageID = id
-            replaceOrAppend(.message(id: id, message: message, isFinal: false))
+            replaceOrAppend(.message(TranscriptMessage(
+                id: id,
+                raw: message,
+                isFinal: false)))
         case "message_update":
             guard let message = payload["message"] else { return }
             let id = inflightMessageID ?? messageID(message)
             inflightMessageID = id
-            replaceOrAppend(.message(id: id, message: message, isFinal: false))
+            replaceOrAppend(.message(TranscriptMessage(
+                id: id,
+                raw: message,
+                isFinal: false)))
         case "message_end":
             guard let message = payload["message"] else { return }
             if consumeToolResult(message) { return }
             let id = inflightMessageID ?? messageID(message)
-            replaceOrAppend(.message(id: id, message: message, isFinal: true))
+            replaceOrAppend(.message(TranscriptMessage(
+                id: id,
+                raw: message,
+                isFinal: true)))
             inflightMessageID = nil
         case "notice":
             let id = syntheticID(prefix: "notice")
@@ -76,10 +85,10 @@ struct TranscriptReducer {
 
             let visibleText = Self.visibleMessageText(message)
             if message["role"]?.stringValue == "user" || !visibleText.isEmpty {
-                items.append(.message(
+                items.append(.message(TranscriptMessage(
                     id: message["id"]?.stringValue ?? "history-\(index)",
-                    message: message,
-                    isFinal: true))
+                    raw: message,
+                    isFinal: true)))
             }
             items.append(contentsOf: Self.toolCallPresentations(message).map(TranscriptItem.tool))
         }
