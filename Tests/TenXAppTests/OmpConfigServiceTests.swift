@@ -20,6 +20,57 @@ import Testing
     ])
 }
 
+@Test func configServiceResetsToAnUnsetOMPDefault() async throws {
+    let runner = FakeConfigRunner()
+    let service = OmpConfigService(runner: runner)
+
+    let value = try await service.reset(key: "shellPath")
+
+    #expect(value == nil)
+    #expect(await runner.calls == [["config", "reset", "shellPath", "--json"]])
+}
+
+@Test func configServiceRejectsAnInvalidCustomShellPath() async {
+    let runner = FakeConfigRunner()
+    let service = OmpConfigService(runner: runner)
+
+    do {
+        try await service.set(key: "shellPath", value: .string("20"))
+        Issue.record("Expected invalid shell path to fail")
+    } catch {
+        #expect(error.localizedDescription.contains("Shell path must point to an executable file"))
+    }
+
+    #expect(await runner.calls.isEmpty)
+}
+
+@MainActor
+@Test func restoringAnUnsetDefaultClearsTheDisplayedValue() async throws {
+    let runner = FakeConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "shellPath"))
+    #expect(definition.value == .string("20"))
+
+    let didRestore = await model.restoreDefault(definition)
+
+    #expect(didRestore)
+    #expect(model.catalog.definition(key: "shellPath")?.value == nil)
+}
+
+@MainActor
+@Test func invalidShellPathUsesAUserFacingError() async throws {
+    let runner = FakeConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "shellPath"))
+
+    let didSave = await model.save(definition, value: .string("20"))
+
+    #expect(!didSave)
+    #expect(model.error(for: "shellPath") == "Choose an executable shell file, such as /bin/zsh.")
+}
+
 @Test func configErrorsNeverIncludeTheSecretValue() async {
     let service = OmpConfigService(runner: FailingConfigRunner())
     do {
@@ -37,10 +88,13 @@ private actor FakeConfigRunner: OmpConfigRunning {
     func run(arguments: [String]) async throws -> Data {
         calls.append(arguments)
         if arguments == ["config", "list", "--json"] {
-            return Data(#"{"autoResume":{"value":false,"type":"boolean","description":"Automatically resume"}}"#.utf8)
+            return Data(#"{"autoResume":{"value":false,"type":"boolean","description":"Automatically resume"},"shellPath":{"value":"20","type":"string","description":""}}"#.utf8)
         }
         if arguments == ["config", "path"] {
             return Data("/tmp/omp/config.json\n".utf8)
+        }
+        if arguments == ["config", "reset", "shellPath", "--json"] {
+            return Data(#"{"key":"shellPath"}"#.utf8)
         }
         return Data()
     }

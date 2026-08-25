@@ -18,21 +18,23 @@ struct SettingControlView: View {
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             control
-            if let defaultValue = definition.defaultValue {
-                Button {
-                    Task { await model.save(definition, value: defaultValue) }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.uturn.backward")
-                        Text(Self.defaultLabel(defaultValue))
-                            .font(TenXTypography.mono(size: 10))
-                    }
+            Button {
+                Task {
+                    guard await model.restoreDefault(definition) else { return }
+                    draftText = Self.textValue(definition.defaultValue)
+                    draftItems = Self.arrayValues(definition.defaultValue)
                 }
-                .buttonStyle(GhostActionStyle())
-                .help("Set to default: \(Self.defaultLabel(defaultValue))")
-                .accessibilityLabel(
-                    "Set \(definition.displayLabel) to default \(Self.defaultLabel(defaultValue))")
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.uturn.backward")
+                    Text(Self.defaultActionLabel(for: definition))
+                        .font(TenXTypography.mono(size: 10))
+                }
             }
+            .buttonStyle(GhostActionStyle())
+            .help("Use default: \(Self.defaultActionLabel(for: definition))")
+            .accessibilityLabel(
+                "Use default for \(definition.displayLabel): \(Self.defaultActionLabel(for: definition))")
         }
         .onChange(of: definition.value) { _, value in
             draftText = Self.textValue(value)
@@ -161,6 +163,11 @@ struct SettingControlView: View {
 
     private static func defaultLabel(_ value: JSONValue) -> String {
         value.stringValue == "" ? "\"\"" : textValue(value)
+    }
+
+    static func defaultActionLabel(for definition: SettingDefinition) -> String {
+        if let value = definition.defaultValue { return defaultLabel(value) }
+        return definition.key == "shellPath" ? "System shell" : "Default"
     }
 
     private static func arrayValues(_ value: JSONValue?) -> [String] {

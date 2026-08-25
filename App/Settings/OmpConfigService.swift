@@ -18,10 +18,25 @@ actor OmpConfigService {
     }
 
     func set(key: String, value: JSONValue) async throws {
+        if key == "shellPath",
+           let path = value.stringValue,
+           !path.isEmpty,
+           !FileManager.default.isExecutableFile(atPath: path) {
+            throw OmpConfigServiceError.invalidShellPath
+        }
         _ = try await perform(
             arguments: ["config", "set", key, try Self.argument(for: value)],
             action: "set",
             key: key)
+    }
+
+    func reset(key: String) async throws -> JSONValue? {
+        let data = try await perform(
+            arguments: ["config", "reset", key, "--json"],
+            action: "reset",
+            key: key)
+        let response = try JSONDecoder().decode(JSONValue.self, from: data)
+        return response["value"]
     }
 
     func path() async throws -> String {
@@ -50,14 +65,17 @@ actor OmpConfigService {
     }
 }
 
-private enum OmpConfigServiceError: LocalizedError {
+enum OmpConfigServiceError: LocalizedError {
     case commandFailed(action: String, key: String?)
+    case invalidShellPath
 
     var errorDescription: String? {
         switch self {
         case .commandFailed(let action, let key):
             let context = key.map { "\(action), \($0)" } ?? action
             return "[Settings:OmpConfigService] Command failed — {\(context)}"
+        case .invalidShellPath:
+            return "[Settings:OmpConfigService] Shell path must point to an executable file — {shellPath}"
         }
     }
 }
