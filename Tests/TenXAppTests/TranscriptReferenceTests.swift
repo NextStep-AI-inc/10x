@@ -1,6 +1,16 @@
 import Testing
 @testable import TenXApp
 
+@Test func codeAndMarkdownAcceptRelativeFilesButPlainTextDoesNot() {
+    #expect(TranscriptReference.extract(from: "`App/Foo.swift:8`") == [
+        .file(path: "App/Foo.swift", line: 8),
+    ])
+    #expect(TranscriptReference.extract(from: "[Foo](App/Foo.swift)") == [
+        .file(path: "App/Foo.swift", line: nil),
+    ])
+    #expect(TranscriptReference.extract(from: "Ignore words/with/slashes and relative/file.swift:2") == [])
+}
+
 @Test func extractsCodeMarkdownAndPlainReferencesWithoutDuplicates() {
     let references = TranscriptReference.extract(from: """
     See `/Users/tannerpham/CS Projects/10x/App/Foo.swift:42`, then [the docs](https://example.com/guide?q=swift).
@@ -28,4 +38,3 @@ import Testing
         .file(path: "/tmp/file.swift", line: 9),
     ])
 }
-
