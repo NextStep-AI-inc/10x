@@ -57,6 +57,7 @@ public struct RpcClientConfiguration: Sendable {
 public actor RpcClient {
     private let configuration: RpcClientConfiguration
     private let transport: LineTransport
+    private let beforeHandlingLine: @Sendable (Data) async -> Void
 
     private struct PendingRequest {
         let command: String
@@ -71,6 +72,7 @@ public actor RpcClient {
     private var exitTask: Task<Void, Never>?
     private var started = false
     private var terminated = false
+    private var readerFinished = false
 
     private let eventStream: AsyncStream<RpcFrame>
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
@@ -89,9 +91,11 @@ public actor RpcClient {
     public private(set) var negotiatedProtocolVersion = 1
     public private(set) var protocolErrors: [RpcProtocolError] = []
     private static let maxProtocolErrors = 128
+    private static let maxBufferedEvents = 512
 
     public init(configuration: RpcClientConfiguration) {
         self.configuration = configuration
+        beforeHandlingLine = { _ in }
         self.transport = LineTransport(
             executable: configuration.executable,
             arguments: configuration.resolvedArguments,
@@ -99,7 +103,25 @@ public actor RpcClient {
             environment: configuration.environment)
         self.reassembler = ChunkReassembler()
         (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream(
-            bufferingPolicy: .unbounded)
+            bufferingPolicy: .bufferingOldest(Self.maxBufferedEvents))
+        (terminationStream, terminationContinuation) = AsyncStream<Void>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+    }
+
+    init(
+        configuration: RpcClientConfiguration,
+        beforeHandlingLine: @escaping @Sendable (Data) async -> Void
+    ) {
+        self.configuration = configuration
+        self.beforeHandlingLine = beforeHandlingLine
+        self.transport = LineTransport(
+            executable: configuration.executable,
+            arguments: configuration.resolvedArguments,
+            currentDirectory: configuration.cwd,
+            environment: configuration.environment)
+        self.reassembler = ChunkReassembler()
+        (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream(
+            bufferingPolicy: .bufferingOldest(Self.maxBufferedEvents))
         (terminationStream, terminationContinuation) = AsyncStream<Void>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
     }
@@ -209,6 +231,7 @@ public actor RpcClient {
     /// alive so the owner can release resources once death is real.
     @discardableResult
     public func shutdown(deadline: ContinuousClock.Instant? = nil) async -> Bool {
+        let deadline = deadline ?? ContinuousClock.now.advanced(by: .seconds(3))
         let didLeaderExitNaturally = await transport.exitStatus != nil
         if !terminated {
             terminated = true
@@ -219,8 +242,9 @@ public actor RpcClient {
         let exited = await transport.shutdown(deadline: deadline)
         if exited {
             if didLeaderExitNaturally {
-                await readerTask?.value
-            } else {
+                await waitForReader(until: deadline)
+            }
+            if !readerFinished {
                 readerTask?.cancel()
             }
             exitTask?.cancel()
@@ -260,12 +284,19 @@ public actor RpcClient {
     // MARK: - Reader
 
     private func startReader() {
+        readerFinished = false
         readerTask = Task { [weak self] in
             guard let self else { return }
-            for await line in self.transport.lines {
-                await self.handle(line: line)
+            do {
+                for try await line in self.transport.lines {
+                    await self.beforeHandlingLine(line)
+                    await self.handle(line: line)
+                }
+                await self.handleStreamEnd()
+            } catch {
+                await self.poison(reason: "transport line backlog overflow: \(error)")
             }
-            await self.handleStreamEnd()
+            await self.markReaderFinished()
         }
         exitTask = Task { [weak self] in
             guard let self else { return }
@@ -317,13 +348,17 @@ public actor RpcClient {
             } else {
                 receivedReady = ready
             }
-            eventContinuation.yield(frame)
+            if case .dropped = eventContinuation.yield(frame) {
+                await poison(reason: "RPC event backlog overflow")
+            }
         case .response(let response):
             deliver(response)
         case .chunk:
             break   // handled above
         case .extensionUIRequest, .hostToolCall, .hostToolCancel, .event:
-            eventContinuation.yield(frame)
+            if case .dropped = eventContinuation.yield(frame) {
+                await poison(reason: "RPC event backlog overflow")
+            }
         }
     }
 
@@ -371,7 +406,11 @@ public actor RpcClient {
 
     private func handleProcessExit() async {
         guard !terminated else {
-            finishStreams()
+            // A deadline-limited shutdown may already have marked the client
+            // terminated while the process was still alive. Wake the manager
+            // without closing `events`; the reader still owns trailing frames.
+            terminationContinuation.yield(())
+            terminationContinuation.finish()
             return
         }
         terminated = true
@@ -380,6 +419,18 @@ public actor RpcClient {
             stderrTail: await transport.stderrSnapshot())
         terminationContinuation.yield(())
         terminationContinuation.finish()
+    }
+
+    private func markReaderFinished() {
+        readerFinished = true
+    }
+
+    private func waitForReader(until deadline: ContinuousClock.Instant) async {
+        while !readerFinished, ContinuousClock.now < deadline {
+            let remaining = ContinuousClock.now.duration(to: deadline)
+            do { try await Task.sleep(for: min(.milliseconds(5), remaining)) }
+            catch { return }
+        }
     }
 
     private func failAllPending(exitCode: Int32?, stderrTail: String) {

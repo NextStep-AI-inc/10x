@@ -5,7 +5,8 @@ import Foundation
 func makeClient(
     mode: String,
     startupTimeout: Duration = .seconds(30),
-    requestTimeout: Duration = .seconds(30)
+    requestTimeout: Duration = .seconds(30),
+    beforeHandlingLine: @escaping @Sendable (Data) async -> Void = { _ in }
 ) -> RpcClient {
     var cfg = RpcClientConfiguration()
     cfg.executable = "/usr/bin/env"
@@ -14,7 +15,9 @@ func makeClient(
     cfg.noSession = true
     cfg.startupTimeout = startupTimeout
     cfg.requestTimeout = requestTimeout
-    return RpcClient(configuration: cfg)
+    return RpcClient(
+        configuration: cfg,
+        beforeHandlingLine: beforeHandlingLine)
 }
 
 @Test func startNegotiatesV2() async throws {
@@ -244,6 +247,79 @@ func makeClient(
     await c.shutdown()
 }
 
+@Test func rpcBacklogOverflowPoisonsTheConnectionWithoutSilentSuccess() async {
+    let client = makeClient(
+        mode: "backlog-overflow",
+        startupTimeout: .seconds(5),
+        requestTimeout: .seconds(5))
+    let started = ContinuousClock.now
+    let result = await withTimeout(.seconds(2)) {
+        do {
+            _ = try await client.start()
+            return StartOutcome.success
+        } catch {
+            return StartOutcome.failure
+        }
+    }
+
+    #expect(result != nil)
+    #expect(result == .failure)
+    #expect(ContinuousClock.now - started < .seconds(2.5))
+    #expect(await client.protocolErrors.contains {
+        $0.remoteError?.contains("backlog overflow") == true
+    })
+    #expect(await client.exitCode != nil)
+}
+
+@Test func naturalShutdownDoesNotAwaitABlockedReaderPastTheDeadline() async throws {
+    let gate = AsyncGate()
+    let client = makeClient(
+        mode: "trailing-exit-after-prompt",
+        beforeHandlingLine: { line in
+            if String(decoding: line, as: UTF8.self).contains(#""trailing":true"#) {
+                await gate.wait()
+            }
+        })
+    _ = try await client.start()
+    _ = try await client.send(.prompt(message: "exit", streamingBehavior: nil))
+    #expect(await waitForExit(client))
+
+    let completion = ShutdownCompletion()
+    let deadline = ContinuousClock.now.advanced(by: .milliseconds(100))
+    let shutdownTask = Task {
+        let stopped = await client.shutdown(deadline: deadline)
+        completion.finish(stopped)
+    }
+    try await Task.sleep(for: .milliseconds(300))
+    let completedByDeadline = completion.value
+    await gate.open()
+    await shutdownTask.value
+
+    #expect(completedByDeadline == true)
+}
+
+@Test func naturalShutdownPreservesTrailingFramesWithinTheDeadline() async throws {
+    let client = makeClient(mode: "trailing-exit-after-prompt")
+    let events = client.events
+    _ = try await client.start()
+    let collector = Task { () -> Int in
+        var notices = 0
+        for await frame in events {
+            if case .event(let type, let payload) = frame,
+               type == "notice", payload["trailing"]?.boolValue == true {
+                notices += 1
+            }
+        }
+        return notices
+    }
+    _ = try await client.send(.prompt(message: "exit", streamingBehavior: nil))
+    #expect(await waitForExit(client))
+
+    #expect(await client.shutdown(
+        deadline: ContinuousClock.now.advanced(by: .seconds(1))))
+    #expect(await collector.value == 200)
+}
+
 @Test func realOmpArgvIsBuiltCorrectly() {
     var cfg = RpcClientConfiguration()
     cfg.cwd = URL(fileURLWithPath: "/tmp/project")
@@ -258,4 +334,41 @@ func makeClient(
     raw.rawArgv = true
     raw.extraArguments = ["python3", "x.py"]
     #expect(raw.resolvedArguments == ["python3", "x.py"])
+}
+
+private actor AsyncGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let continuations = waiters
+        waiters.removeAll()
+        for continuation in continuations { continuation.resume() }
+    }
+}
+
+private enum StartOutcome: Sendable {
+    case success
+    case failure
+}
+
+private final class ShutdownCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stopped: Bool?
+    func finish(_ value: Bool) { lock.withLock { stopped = value } }
+    var value: Bool? { lock.withLock { stopped } }
+}
+
+private func waitForExit(_ client: RpcClient) async -> Bool {
+    for _ in 0..<100 {
+        if await client.exitCode != nil { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return false
 }

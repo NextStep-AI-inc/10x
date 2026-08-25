@@ -163,22 +163,27 @@ final class AppModel {
         exitTasks[managerID] = Task { [weak self, processManager] in
             for await exit in processManager.unexpectedExits {
                 guard let self, !Task.isCancelled else { continue }
-                let retiringOwner = self.retiringSessions.first {
+                let retiringOwners = self.retiringSessions.filter {
                     $0.value.ownsProcess(from: processManager, sessionPath: exit.sessionPath)
                 }
                 let activeOwner = self.activeSession?.ownsProcess(
                     from: processManager,
                     sessionPath: exit.sessionPath) == true
                     ? self.activeSession : nil
-                // A retiring controller can hold safety resources for this
-                // handle even when the same path has just been reopened.
-                let owner = retiringOwner?.value ?? activeOwner
-                guard let owner else { continue }
-                await owner.handleUnexpectedExit(
-                    code: exit.code,
-                    stderrTail: exit.stderrTail)
-                if let retiringOwner {
-                    self.retiringSessions.removeValue(forKey: retiringOwner.key)
+                var owners = retiringOwners.map(\.value)
+                let retiringIDs = Set(retiringOwners.keys)
+                if let activeOwner,
+                   !retiringIDs.contains(ObjectIdentifier(activeOwner)) {
+                    owners.append(activeOwner)
+                }
+                for owner in owners {
+                    await owner.handleUnexpectedExit(
+                        code: exit.code,
+                        stderrTail: exit.stderrTail)
+                }
+                for (ownerID, owner) in retiringOwners
+                where self.retiringSessions[ownerID] === owner {
+                    self.retiringSessions.removeValue(forKey: ownerID)
                 }
                 if self.processManager !== processManager,
                    !self.retiringSessions.values.contains(where: {

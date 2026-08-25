@@ -13,6 +13,7 @@ import base64
 import json
 import subprocess
 import sys
+import threading
 import time
 
 args = sys.argv[1:]
@@ -50,6 +51,11 @@ if mode == "noisy":
 if mode == "burst-exit":
     for index in range(200):
         emit({"type": "notice", "index": index})
+    raise SystemExit(0)
+if mode == "backlog-overflow":
+    for index in range(2000):
+        emit({"type": "notice", "backlog": index})
+    time.sleep(30)
     raise SystemExit(0)
 if mode == "grandchild":
     heartbeat = sys.argv[2]
@@ -89,6 +95,17 @@ STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
 if computer_contract:
     STATE["computerUse"] = {"enabled": False, "foregroundPolicy": "require-handoff"}
 reverse_commands = []
+failed_disable_count = 0
+
+
+def delayed_process_exit():
+    time.sleep(0.8)
+    sys.stderr.write("multi-owner-delayed-exit\n")
+    sys.stderr.flush()
+    # A timer thread cannot reliably interrupt the blocking stdin iterator via
+    # SystemExit, so terminate the whole fixture process directly.
+    import os
+    os._exit(9)
 
 for line in sys.stdin:
     line = line.strip()
@@ -136,6 +153,13 @@ for line in sys.stdin:
         emit({"type": "response", "command": ctype, "success": False,
               "error": f"Unknown command: {ctype}"})
     elif ctype == "set_computer_use":
+        if mode == "multi-owner-delayed-exit" and cmd.get("enabled") is not True:
+            failed_disable_count += 1
+            emit({"id": cid, "type": "response", "command": ctype,
+                  "success": False, "error": "disable failed before shared delayed exit"})
+            if failed_disable_count == 2:
+                threading.Thread(target=delayed_process_exit, daemon=True).start()
+            continue
         if mode == "delayed-exit-on-disable" and cmd.get("enabled") is not True:
             emit({"id": cid, "type": "response", "command": ctype,
                   "success": False, "error": "disable failed before delayed exit"})
@@ -227,6 +251,10 @@ for line in sys.stdin:
             prompt_data = {"agentInvoked": False}
         emit({"id": cid, "type": "response", "command": "prompt", "success": True,
               "data": prompt_data})
+        if mode == "trailing-exit-after-prompt":
+            for index in range(200):
+                emit({"type": "notice", "trailing": True, "index": index})
+            raise SystemExit(0)
         if mode == "burst":
             for index in range(100):
                 emit({"type": "message_update", "index": index})

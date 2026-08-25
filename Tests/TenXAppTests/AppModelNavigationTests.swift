@@ -103,9 +103,48 @@ import Testing
 }
 
 @MainActor
+@Test func confirmedExitNotifiesEveryRetiringAndActiveOwnerOfTheSameHandle() async throws {
+    let harness = ModelLifecycleHarness(mode: "multi-owner-delayed-exit")
+    let model = harness.makeModel()
+    await model.bootstrap()
+
+    let path = "/tmp/model-multiple-reopened-owners.jsonl"
+    model.openSession(modelSession(path: path))
+    var ownerA: SessionController? = await waitForActiveSession(model, path: path)
+    await ownerA?.computerUse.enable()
+    #expect(ownerA?.computerUse.phase == .ready)
+
+    model.openSession(modelSession(path: path))
+    var ownerB: SessionController? = await waitForActiveSession(model, path: path)
+    #expect(ownerB?.computerUse.isAwaitingConfirmedProcessExit == true)
+
+    model.openSession(modelSession(path: path))
+    let activeOwner = try #require(await waitForActiveSession(model, path: path))
+    #expect(activeOwner.computerUse.isAwaitingConfirmedProcessExit)
+
+    weak let weakOwnerA = ownerA
+    weak let weakOwnerB = ownerB
+    ownerA = nil
+    ownerB = nil
+
+    #expect(await waitForStoppedSession(activeOwner))
+    #expect(activeOwner.isRecoveryPresented)
+    #expect(!activeOwner.computerUse.isAwaitingConfirmedProcessExit)
+    #expect(await harness.waitForReleasedOwnerCount(1))
+    #expect(harness.logs[0].count("registry.release") == 1)
+    #expect(await waitForDeallocation { weakOwnerA == nil && weakOwnerB == nil })
+    await harness.closeManagers()
+}
+
+@MainActor
 private final class ModelLifecycleHarness {
     private(set) var logs: [ModelLifecycleLog] = []
     private(set) var managers: [SessionProcessManager] = []
+    private let mode: String
+
+    init(mode: String = "delayed-exit-on-disable") {
+        self.mode = mode
+    }
 
     func makeModel() -> AppModel {
         let root = FileManager.default.temporaryDirectory
@@ -115,7 +154,7 @@ private final class ModelLifecycleHarness {
             sessionLibrary: SessionLibrary(root: root),
             computerUseRegistry: ComputerUseRegistry(),
             makeProcessManager: { [weak self] _ in
-                let manager = modelLifecycleManager()
+                let manager = modelLifecycleManager(mode: self?.mode ?? "delayed-exit-on-disable")
                 self?.managers.append(manager)
                 return manager
             },
@@ -164,13 +203,13 @@ private struct FixedModelOmpLocator: OmpLocating {
     }
 }
 
-private func modelLifecycleManager() -> SessionProcessManager {
+private func modelLifecycleManager(mode: String) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var updated = configuration
         updated.executable = "/usr/bin/env"
         updated.extraArguments = [
             "python3", modelFixtureURL.path,
-            "delayed-exit-on-disable", "--computer-contract",
+            mode, "--computer-contract",
         ]
         updated.rawArgv = true
         updated.cwd = nil
@@ -195,6 +234,24 @@ private func waitForActiveSession(_ model: AppModel, path: String) async -> Sess
         try? await Task.sleep(for: .milliseconds(20))
     }
     return nil
+}
+
+@MainActor
+private func waitForStoppedSession(_ controller: SessionController) async -> Bool {
+    for _ in 0..<100 {
+        if case .stopped = controller.runtimeState { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return false
+}
+
+@MainActor
+private func waitForDeallocation(_ condition: () -> Bool) async -> Bool {
+    for _ in 0..<100 {
+        if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return false
 }
 
 private func modelSession(path: String) -> SessionMetadata {

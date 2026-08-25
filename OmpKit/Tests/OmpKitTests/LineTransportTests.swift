@@ -31,7 +31,7 @@ func withTimeout<T: Sendable>(
     try await t.start()
     let first = await withTimeout(.seconds(10)) {
         var it = t.lines.makeAsyncIterator()
-        return await it.next()
+        return try? await it.next()
     }
     let text = first.flatMap { $0 }.map { String(decoding: $0, as: UTF8.self) }
     #expect(text?.contains(#""type":"ready""#) == true)
@@ -51,9 +51,13 @@ func withTimeout<T: Sendable>(
     try await t.start()
     let collected = await withTimeout(.seconds(10)) {
         var out: [String] = []
-        for await line in t.lines {
-            out.append(String(decoding: line, as: UTF8.self))
-            if out.count >= 3 { break }
+        do {
+            for try await line in t.lines {
+                out.append(String(decoding: line, as: UTF8.self))
+                if out.count >= 3 { break }
+            }
+        } catch {
+            Issue.record("unexpected line transport failure: \(error)")
         }
         return out
     }
@@ -70,9 +74,9 @@ func withTimeout<T: Sendable>(
     try await t.start()
     let response = await withTimeout(.seconds(10)) {
         var it = t.lines.makeAsyncIterator()
-        _ = await it.next()   // ready
+        _ = try? await it.next()   // ready
         try? await t.write(Data(#"{"id":"x1","type":"get_state"}"# .utf8 + [UInt8(ascii: "\n")]))
-        return await it.next()
+        return try? await it.next()
     }
     let text = response.flatMap { $0 }.map { String(decoding: $0, as: UTF8.self) }
     #expect(text?.contains("fake-session") == true)
@@ -101,19 +105,195 @@ func withTimeout<T: Sendable>(
 
 @Test func lineBufferReassemblesSplitReadsAndStripsCRLF() {
     let buffer = LineBuffer()
-    #expect(buffer.append(Data(#"{"a":"hel"# .utf8), maxLineBytes: 100).isEmpty)
+    #expect(buffer.append(Data(#"{"a":"hel"# .utf8), maxLineBytes: 100).lines.isEmpty)
     let completed = buffer.append(
         Data("lo\"}\r\n\n{\"b\":2}\r\n".utf8), maxLineBytes: 100)
-    #expect(completed.map { String(decoding: $0, as: UTF8.self) } == [
+    #expect(!completed.didOverflow)
+    #expect(completed.lines.map { String(decoding: $0, as: UTF8.self) } == [
         #"{"a":"hello"}"#, #"{"b":2}"#,
     ])
 }
 
-@Test func lineBufferDropsOneOverflowingLineThenResynchronizes() {
+@Test func lineBufferReportsOverflowInsteadOfSilentlyResynchronizing() {
     let buffer = LineBuffer()
-    #expect(buffer.append(Data(repeating: UInt8(ascii: "x"), count: 9), maxLineBytes: 8).isEmpty)
+    let overflow = buffer.append(
+        Data(repeating: UInt8(ascii: "x"), count: 9), maxLineBytes: 8)
+    #expect(overflow.lines.isEmpty)
+    #expect(overflow.didOverflow)
     let completed = buffer.append(Data("tail\n{\"ok\":true}\n".utf8), maxLineBytes: 8)
-    #expect(completed.map { String(decoding: $0, as: UTF8.self) } == [#"{"ok":true}"#])
+    #expect(completed.lines.isEmpty)
+    #expect(completed.didOverflow)
+}
+
+@Test func processTreeNeverSignalsReusedPIDsOrAReusedProcessGroup() throws {
+    let table = FakeProcessTable([
+        ProcessSnapshot(identity: .init(pid: 100, startSeconds: 1, startMicroseconds: 0),
+                        parentPID: 1, processGroupID: 100),
+        ProcessSnapshot(identity: .init(pid: 101, startSeconds: 1, startMicroseconds: 0),
+                        parentPID: 100, processGroupID: 100),
+    ])
+    var tracker = ProcessTreeTracker(
+        leader: try #require(table.snapshot(pid: 100)),
+        processGroupID: 100,
+        operations: table.operations)
+    let initialRefresh = tracker.refresh(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(initialRefresh)
+    #expect(tracker.knownIdentityCount == 1)
+
+    table.replace([
+        ProcessSnapshot(identity: .init(pid: 100, startSeconds: 2, startMicroseconds: 0),
+                        parentPID: 1, processGroupID: 100),
+        ProcessSnapshot(identity: .init(pid: 101, startSeconds: 2, startMicroseconds: 0),
+                        parentPID: 100, processGroupID: 100),
+    ])
+
+    let signalCompleted = tracker.signal(
+        SIGKILL, until: ContinuousClock.now.advanced(by: .seconds(1)))
+    let isTerminated = tracker.isTerminated(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(signalCompleted)
+    #expect(isTerminated)
+    #expect(tracker.knownIdentityCount == 0)
+    #expect(table.signaledProcesses.isEmpty)
+    #expect(table.signaledGroups.isEmpty)
+}
+
+@Test func processTreeCanSignalAnOriginalGroupAfterItsLeaderDies() throws {
+    let descendant = ProcessSnapshot(
+        identity: .init(pid: 201, startSeconds: 1, startMicroseconds: 0),
+        parentPID: 200,
+        processGroupID: 200)
+    let table = FakeProcessTable([
+        ProcessSnapshot(identity: .init(pid: 200, startSeconds: 1, startMicroseconds: 0),
+                        parentPID: 1, processGroupID: 200),
+        descendant,
+    ])
+    var tracker = ProcessTreeTracker(
+        leader: try #require(table.snapshot(pid: 200)),
+        processGroupID: 200,
+        operations: table.operations)
+    let initialRefresh = tracker.refresh(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(initialRefresh)
+    table.replace([descendant])
+
+    let signalCompleted = tracker.signal(
+        SIGTERM, until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(signalCompleted)
+    #expect(table.signaledGroups.count == 1)
+    #expect(table.signaledGroups.first?.0 == 200)
+    #expect(table.signaledGroups.first?.1 == SIGTERM)
+    #expect(table.signaledProcesses.isEmpty)
+}
+
+@Test func reusedLeaderPreventsGroupSignalWhileOriginalDescendantIsSignaledDirectly() throws {
+    let descendant = ProcessSnapshot(
+        identity: .init(pid: 251, startSeconds: 1, startMicroseconds: 0),
+        parentPID: 250,
+        processGroupID: 250)
+    let table = FakeProcessTable([
+        ProcessSnapshot(identity: .init(pid: 250, startSeconds: 1, startMicroseconds: 0),
+                        parentPID: 1, processGroupID: 250),
+        descendant,
+    ])
+    var tracker = ProcessTreeTracker(
+        leader: try #require(table.snapshot(pid: 250)),
+        processGroupID: 250,
+        operations: table.operations)
+    let initialRefresh = tracker.refresh(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(initialRefresh)
+    table.replace([
+        ProcessSnapshot(identity: .init(pid: 250, startSeconds: 2, startMicroseconds: 0),
+                        parentPID: 1, processGroupID: 250),
+        descendant,
+    ])
+
+    let signalCompleted = tracker.signal(
+        SIGKILL, until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(signalCompleted)
+    #expect(table.signaledGroups.isEmpty)
+    #expect(table.signaledProcesses.count == 1)
+    #expect(table.signaledProcesses.first?.0 == descendant.identity.pid)
+}
+
+@Test func processTreeTraversalStopsAtItsDeadlineAndTrackedSetStaysBounded() throws {
+    let children = (301...10_000).map { pid in
+        ProcessSnapshot(identity: .init(pid: pid_t(pid), startSeconds: 1, startMicroseconds: 0),
+                        parentPID: 300, processGroupID: 300)
+    }
+    let table = FakeProcessTable([
+        ProcessSnapshot(identity: .init(pid: 300, startSeconds: 1, startMicroseconds: 0),
+                        parentPID: 1, processGroupID: 300),
+    ] + children, snapshotDelay: .milliseconds(1))
+    var tracker = ProcessTreeTracker(
+        leader: try #require(table.snapshot(pid: 300)),
+        processGroupID: 300,
+        operations: table.operations)
+    let started = ContinuousClock.now
+
+    let completed = tracker.refresh(until: started.advanced(by: .milliseconds(10)))
+    #expect(!completed)
+    #expect(ContinuousClock.now - started < .milliseconds(100))
+    #expect(tracker.knownIdentityCount <= ProcessTreeTracker.maximumTrackedProcesses)
+    #expect(table.snapshotCallCount < children.count)
+}
+
+@Test func incompleteTreeObservationCannotLaterClaimConfirmedTermination() throws {
+    let table = FakeProcessTable([
+        ProcessSnapshot(identity: .init(pid: 400, startSeconds: 1, startMicroseconds: 0),
+                        parentPID: 1, processGroupID: 400),
+    ], listsAreComplete: false)
+    var tracker = ProcessTreeTracker(
+        leader: try #require(table.snapshot(pid: 400)),
+        processGroupID: 400,
+        operations: table.operations)
+    let refreshCompleted = tracker.refresh(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(!refreshCompleted)
+    table.replace([])
+
+    let isTerminated = tracker.isTerminated(
+        until: ContinuousClock.now.advanced(by: .seconds(1)))
+    #expect(!isTerminated)
+}
+
+@Test func descendantTrackerStopsPollingWhenTransportShutsDown() async throws {
+    let polls = LockedCounter()
+    let transport = LineTransport(
+        executable: "/usr/bin/env",
+        arguments: ["python3", fixtureURL("fake_server.py").path, "basic"],
+        currentDirectory: nil,
+        environment: nil,
+        trackerDidPoll: { polls.increment() })
+    try await transport.start()
+    #expect(await waitUntil { polls.value >= 2 })
+
+    await transport.shutdown()
+    let stoppedAt = polls.value
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(polls.value == stoppedAt)
+}
+
+@Test func descendantTrackerDoesNotRetainAnAbandonedTransport() async throws {
+    let polls = LockedCounter()
+    let weakTransport = WeakTransportBox()
+    do {
+        let transport = LineTransport(
+            executable: "/usr/bin/true",
+            arguments: [],
+            currentDirectory: nil,
+            environment: nil,
+            trackerDidPoll: { polls.increment() })
+        weakTransport.value = transport
+        try await transport.start()
+    }
+
+    #expect(await waitUntil { weakTransport.value == nil })
+    let stoppedAt = polls.value
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(polls.value == stoppedAt)
 }
 
 @Test func shutdownUnblocksAFullStdinPipe() async throws {
@@ -162,7 +342,11 @@ func withTimeout<T: Sendable>(
     try await transport.start()
     let lines = await withTimeout(.seconds(5)) { () -> [Data] in
         var lines: [Data] = []
-        for await line in transport.lines { lines.append(line) }
+        do {
+            for try await line in transport.lines { lines.append(line) }
+        } catch {
+            Issue.record("unexpected trailing-frame failure: \(error)")
+        }
         return lines
     } ?? []
     #expect(lines.count == 201)  // ready + 200 notices
@@ -171,4 +355,116 @@ func withTimeout<T: Sendable>(
         return nil
     } ?? nil
     #expect(exitCode == 0)
+}
+
+@Test func lineBacklogOverflowFailsClosedInsteadOfDroppingFrames() async throws {
+    let transport = makeFakeTransport(mode: "backlog-overflow")
+    try await transport.start()
+    try await Task.sleep(for: .milliseconds(200))
+
+    let overflowed = await withTimeout(.seconds(2)) { () -> Bool in
+        do {
+            for try await _ in transport.lines {}
+            return false
+        } catch TransportError.backlogOverflow {
+            return true
+        } catch {
+            return false
+        }
+    }
+    let started = ContinuousClock.now
+    let stopped = await transport.shutdown(
+        deadline: started.advanced(by: .seconds(1)))
+
+    #expect(overflowed == true)
+    #expect(stopped)
+    #expect(ContinuousClock.now - started < .seconds(1.2))
+}
+
+private final class FakeProcessTable: @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshots: [pid_t: ProcessSnapshot]
+    private let snapshotDelay: Duration
+    private let listsAreComplete: Bool
+    private var processSignals: [(pid_t, Int32)] = []
+    private var groupSignals: [(pid_t, Int32)] = []
+    private var snapshotCalls = 0
+
+    init(
+        _ values: [ProcessSnapshot],
+        snapshotDelay: Duration = .zero,
+        listsAreComplete: Bool = true
+    ) {
+        snapshots = Dictionary(uniqueKeysWithValues: values.map { ($0.identity.pid, $0) })
+        self.snapshotDelay = snapshotDelay
+        self.listsAreComplete = listsAreComplete
+    }
+
+    var operations: ProcessOperations {
+        ProcessOperations(
+            snapshot: { [self] pid in snapshot(pid: pid) },
+            childPIDs: { [self] parent in
+                lock.withLock {
+                    .init(pids: snapshots.values.filter { $0.parentPID == parent }
+                        .map(\.identity.pid), isComplete: listsAreComplete)
+                }
+            },
+            groupPIDs: { [self] group in
+                lock.withLock {
+                    .init(pids: snapshots.values.filter { $0.processGroupID == group }
+                        .map(\.identity.pid), isComplete: listsAreComplete)
+                }
+            },
+            signalProcess: { [self] pid, signal in
+                lock.withLock { processSignals.append((pid, signal)) }
+            },
+            signalGroup: { [self] group, signal in
+                lock.withLock { groupSignals.append((group, signal)) }
+            })
+    }
+
+    func snapshot(pid: pid_t) -> ProcessSnapshot? {
+        if snapshotDelay > .zero { Thread.sleep(forTimeInterval: snapshotDelay.timeInterval) }
+        return lock.withLock {
+            snapshotCalls += 1
+            return snapshots[pid]
+        }
+    }
+
+    func replace(_ values: [ProcessSnapshot]) {
+        lock.withLock {
+            snapshots = Dictionary(uniqueKeysWithValues: values.map { ($0.identity.pid, $0) })
+        }
+    }
+
+    var signaledProcesses: [(pid_t, Int32)] { lock.withLock { processSignals } }
+    var signaledGroups: [(pid_t, Int32)] { lock.withLock { groupSignals } }
+    var snapshotCallCount: Int { lock.withLock { snapshotCalls } }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    func increment() { lock.withLock { count += 1 } }
+    var value: Int { lock.withLock { count } }
+}
+
+private final class WeakTransportBox: @unchecked Sendable {
+    weak var value: LineTransport?
+}
+
+private func waitUntil(_ condition: @escaping @Sendable () -> Bool) async -> Bool {
+    for _ in 0..<100 {
+        if condition() { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return false
+}
+
+private extension Duration {
+    var timeInterval: TimeInterval {
+        let components = self.components
+        return TimeInterval(components.seconds)
+            + TimeInterval(components.attoseconds) / 1_000_000_000_000_000_000
+    }
 }
