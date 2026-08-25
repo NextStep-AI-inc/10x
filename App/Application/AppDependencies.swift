@@ -1,10 +1,13 @@
 import OmpKit
 
-struct AppDependencies: Sendable {
+@MainActor
+struct AppDependencies {
     let ompLocator: any OmpLocating
     let sessionLibrary: SessionLibrary
+    let computerUseRegistry: ComputerUseRegistry
 
     static let live = AppDependencies(
         ompLocator: OmpExecutableLocator(),
-        sessionLibrary: SessionLibrary())
+        sessionLibrary: SessionLibrary(),
+        computerUseRegistry: ComputerUseRegistry())
 }

@@ -23,6 +23,7 @@ final class SessionController {
     private(set) var isRecoveryPresented = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
+    private(set) var computerUse: ComputerUseController
     var draft = ""
     var streamingBehavior: StreamingBehavior? = .steer
 
@@ -37,8 +38,12 @@ final class SessionController {
     private var reconciliationTask: Task<Void, Never>?
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
 
-    init(processManager: SessionProcessManager) {
+    init(
+        processManager: SessionProcessManager,
+        computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry()
+    ) {
         self.processManager = processManager
+        computerUse = ComputerUseController(registry: computerUseRegistry)
     }
 
     init(
@@ -51,9 +56,11 @@ final class SessionController {
         headerMetadata: SessionHeaderMetadata = SessionHeaderMetadata(
             branch: "",
             repo: "",
-            worktreePath: nil)
+            worktreePath: nil),
+        computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry()
     ) {
         self.processManager = processManager
+        computerUse = ComputerUseController(registry: computerUseRegistry)
         self.items = previewItems
         self.runtimeState = runtimeState
         self.title = title
@@ -183,7 +190,8 @@ final class SessionController {
         removeExtensionRequest(id: requestID)
     }
 
-    func handleUnexpectedExit(code: Int32?, stderrTail: String) {
+    func handleUnexpectedExit(code: Int32?, stderrTail: String) async {
+        await computerUse.failClosed()
         runtimeState = .stopped(code: code, stderrTail: stderrTail)
         reducer.runtimeState = runtimeState
         isRecoveryPresented = true
@@ -205,6 +213,9 @@ final class SessionController {
     private func finishOpening(_ handle: SessionProcessManager.Handle) async throws {
         self.handle = handle
         sessionPath = handle.sessionPath
+        await computerUse.attachAndReconcile(
+            rpc: handle.computerUseRPC,
+            sessionPath: handle.sessionPath)
 
         let state = try await handle.client.send(.getState())
         applyState(state.data)
@@ -255,11 +266,17 @@ final class SessionController {
         eventTask = Task { [weak self] in
             for await frame in client.events {
                 guard let self, !Task.isCancelled else { return }
-                if case .extensionUIRequest(let request) = frame {
+                switch frame {
+                case .extensionUIRequest(let request):
                     self.consumeExtensionUI(request)
-                } else {
+                case .hostToolCall(let call):
+                    await self.computerUse.handleHostToolCall(call)
+                case .hostToolCancel(_, let targetID):
+                    await self.computerUse.handleHostToolCancel(targetID: targetID)
+                default:
                     self.reducer.consume(frame)
                 }
+                self.routeComputerToolEvent(frame)
                 self.syncReducerState()
                 self.applyEventMetadata(frame)
                 self.reconcileAfterBoundary(frame)
@@ -320,10 +337,14 @@ final class SessionController {
         case "config_update":
             modelName = Self.modelLabel(payload["model"]) ?? modelName
             thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
+            Task { [weak self] in await self?.refreshComputerAvailability() }
         case "thinking_level_changed":
             thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
         case "model_changed":
-            Task { [weak self] in await self?.refreshState() }
+            Task { [weak self] in
+                await self?.refreshState()
+                await self?.refreshComputerAvailability()
+            }
         default:
             break
         }
@@ -337,6 +358,44 @@ final class SessionController {
         } catch {
             fail(error, function: "refreshState")
         }
+    }
+
+    private func refreshComputerAvailability() async {
+        guard let handle else { return }
+        do {
+            let state = try await handle.computerUseRPC.state()
+            guard state.enabled else { return }
+        } catch {
+            await computerUse.failClosed()
+        }
+    }
+
+    private func routeComputerToolEvent(_ frame: RpcFrame) {
+        guard case .event(let type, let payload) = frame,
+              payload["toolName"]?.stringValue == "computer"
+        else { return }
+        switch type {
+        case "tool_execution_start":
+            computerUse.handleToolStarted(payload)
+        case "tool_execution_end":
+            computerUse.handleToolEnded(payload)
+            if Self.reportsComputerPermissionLoss(payload) {
+                Task { [weak self] in await self?.computerUse.handlePermissionLoss() }
+            }
+        default:
+            break
+        }
+    }
+
+    private static func reportsComputerPermissionLoss(_ value: JSONValue) -> Bool {
+        guard let object = value.objectValue else { return false }
+        for key in ["capturePermission", "inputPermission", "axPermission"] {
+            if let state = object[key]?.stringValue,
+               state == "denied" || state == "unavailable" {
+                return true
+            }
+        }
+        return object.values.contains { reportsComputerPermissionLoss($0) }
     }
 
     private func syncReducerState() {

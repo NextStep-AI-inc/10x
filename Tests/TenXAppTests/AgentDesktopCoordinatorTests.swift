@@ -66,10 +66,23 @@ import Testing
     #expect(await background.recordedPrepareTokens().isEmpty)
 }
 
+@Test func releaseForwardsOnlyPreparedWorkspacesToTheirProvider() async {
+    let provider = FakeAgentDesktopProvider(kind: .aeroSpace, probe: .healthy)
+    let coordinator = AgentDesktopCoordinator(providers: [provider])
+
+    await coordinator.release(PreparedAgentDesktop(
+        provider: .aeroSpace, workspaceID: "workspace", capabilities: .isolated))
+    await coordinator.release(PreparedAgentDesktop(
+        provider: .aeroSpace, workspaceID: nil, capabilities: .isolated))
+
+    #expect(await provider.recordedReleasedWorkspaces() == ["workspace"])
+}
+
 private actor FakeAgentDesktopProvider: AgentDesktopProvider {
     nonisolated let kind: AgentDesktopProviderKind
     private let result: ProviderAvailability
     private var prepareTokens: [String] = []
+    private var releasedWorkspaces: [String] = []
 
     init(kind: AgentDesktopProviderKind, probe: ProviderAvailability) {
         self.kind = kind
@@ -97,7 +110,8 @@ private actor FakeAgentDesktopProvider: AgentDesktopProvider {
     func move(windowID: String, to workspaceID: String) async throws {}
     func restore(windowID: String, to workspaceID: String) async throws {}
     func openVisibly(workspaceID: String) async throws {}
-    func release(workspaceID: String) async {}
+    func release(workspaceID: String) async { releasedWorkspaces.append(workspaceID) }
 
     func recordedPrepareTokens() -> [String] { prepareTokens }
+    func recordedReleasedWorkspaces() -> [String] { releasedWorkspaces }
 }

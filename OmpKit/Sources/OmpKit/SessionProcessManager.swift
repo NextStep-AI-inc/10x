@@ -1,5 +1,85 @@
 import Foundation
 
+/// The limited RPC surface required by per-session computer-use coordination.
+/// It deliberately prevents desktop providers from receiving a general-purpose
+/// `RpcClient` that could send unrelated model commands.
+public protocol ComputerUseRPC: Sendable {
+    func state() async throws -> ComputerUseRPCState
+    func setComputerUse(
+        enabled: Bool,
+        policy: ComputerForegroundPolicy
+    ) async throws -> ComputerUseRPCState
+    func setLegacyComputerUse(enabled: Bool) async throws
+    func probeComputerUse(
+        target: String?,
+        verificationText: String?
+    ) async throws -> ComputerProbeResult
+    func setHostTools(_ definitions: [HostToolDefinition]) async throws
+    func sendHostToolResult(id: String, result: JSONValue, isError: Bool) async throws
+    func abort() async throws
+}
+
+private actor SessionComputerUseRPC: ComputerUseRPC {
+    private let client: RpcClient
+
+    init(client: RpcClient) {
+        self.client = client
+    }
+
+    func state() async throws -> ComputerUseRPCState {
+        let response = try await client.send(.getComputerUse())
+        guard let state = ComputerUseRPCState(json: response.data) else {
+            throw RpcClientError.startupFailed("computer state was malformed")
+        }
+        return state
+    }
+
+    func setComputerUse(
+        enabled: Bool,
+        policy: ComputerForegroundPolicy
+    ) async throws -> ComputerUseRPCState {
+        let response = try await client.send(.setComputerUse(
+            enabled: enabled,
+            foregroundPolicy: policy))
+        guard let state = ComputerUseRPCState(json: response.data) else {
+            throw RpcClientError.startupFailed("computer state was malformed")
+        }
+        return state
+    }
+
+    func setLegacyComputerUse(enabled: Bool) async throws {
+        _ = try await client.send(RpcCommand(type: "prompt", fields: [
+            "message": .string(enabled ? "/computer on" : "/computer off"),
+            "agentInvoked": .bool(false),
+        ]))
+    }
+
+    func probeComputerUse(
+        target: String?,
+        verificationText: String?
+    ) async throws -> ComputerProbeResult {
+        let response = try await client.send(.probeComputerUse(
+            target: target,
+            verificationText: verificationText))
+        guard let result = ComputerProbeResult(json: response.data) else {
+            throw RpcClientError.startupFailed("computer probe was malformed")
+        }
+        return result
+    }
+
+    func setHostTools(_ definitions: [HostToolDefinition]) async throws {
+        _ = try await client.send(.setHostTools(definitions))
+    }
+
+    func sendHostToolResult(id: String, result: JSONValue, isError: Bool) async throws {
+        try await client.sendRaw(.hostToolResult(id: id, result: result, isError: isError))
+    }
+
+    func abort() async throws {
+        _ = try await client.send(.abort())
+    }
+}
+
 /// Owns one `omp --mode rpc` child per open session.
 ///
 /// One process per session is the lifecycle omp's RPC server is built around:
@@ -10,6 +90,13 @@ public actor SessionProcessManager {
     public struct Handle: Sendable {
         public let sessionPath: String
         public let client: RpcClient
+        public let computerUseRPC: any ComputerUseRPC
+
+        init(sessionPath: String, client: RpcClient) {
+            self.sessionPath = sessionPath
+            self.client = client
+            computerUseRPC = SessionComputerUseRPC(client: client)
+        }
     }
 
     public typealias ClientFactory = @Sendable (RpcClientConfiguration) -> RpcClient

@@ -71,7 +71,9 @@ final class AppModel {
                 .standardizedFileURL
         }
         guard let processManager else { return }
-        let controller = SessionController(processManager: processManager)
+        let controller = SessionController(
+            processManager: processManager,
+            computerUseRegistry: dependencies.computerUseRegistry)
         activeSession = controller
         route = .session(metadata.path)
         Task { await controller.openExisting(metadata) }
@@ -79,7 +81,9 @@ final class AppModel {
 
     func startNewSession(prompt: String) {
         guard let processManager, let selectedProjectURL else { return }
-        let controller = SessionController(processManager: processManager)
+        let controller = SessionController(
+            processManager: processManager,
+            computerUseRegistry: dependencies.computerUseRegistry)
         controller.draft = prompt
         activeSession = controller
         route = .session("new:\(UUID().uuidString)")
@@ -121,7 +125,7 @@ final class AppModel {
                 guard let self, !Task.isCancelled,
                       self.activeSession?.sessionPath == exit.sessionPath
                 else { continue }
-                self.activeSession?.handleUnexpectedExit(
+                await self.activeSession?.handleUnexpectedExit(
                     code: exit.code,
                     stderrTail: exit.stderrTail)
             }

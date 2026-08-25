@@ -43,6 +43,18 @@ private func fakeManager(mode: String = "basic") -> SessionProcessManager {
     })
 }
 
+private func computerContractManager() -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        var updated = configuration
+        updated.executable = "/usr/bin/env"
+        updated.extraArguments = [
+            "python3", fixtureURL("fake_server.py").path, "basic", "--computer-contract",
+        ]
+        updated.rawArgv = true
+        return RpcClient(configuration: updated)
+    })
+}
+
 @Test func openIsIdempotentPerPath() async throws {
     let manager = fakeManager()
     let first = try await manager.open(sessionPath: "/tmp/s.jsonl", cwd: "/tmp")
@@ -175,4 +187,20 @@ private func fakeManager(mode: String = "basic") -> SessionProcessManager {
         return nil
     } ?? nil
     #expect(path == nil)
+}
+
+@Test func handleVendsAComputerRPCAdapterWithoutExposingTheClientToConsumers() async throws {
+    let manager = computerContractManager()
+    let handle = try await manager.open(sessionPath: "/tmp/computer.jsonl", cwd: "/tmp")
+
+    let initial = try await handle.computerUseRPC.state()
+    let enabled = try await handle.computerUseRPC.setComputerUse(
+        enabled: true, policy: .requireHandoff)
+    let probe = try await handle.computerUseRPC.probeComputerUse(
+        target: "window-1", verificationText: "ready")
+
+    #expect(initial == ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff))
+    #expect(enabled == ComputerUseRPCState(enabled: true, foregroundPolicy: .requireHandoff))
+    #expect(probe.capabilities.isReady)
+    await manager.closeAll()
 }

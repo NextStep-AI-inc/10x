@@ -105,6 +105,13 @@ struct AgentDesktopCoordinator: Sendable {
             restoredWindowCount: restoredWindowCount)
     }
 
+    func release(_ prepared: PreparedAgentDesktop) async {
+        guard let workspaceID = prepared.workspaceID,
+              let provider = providers[prepared.provider]
+        else { return }
+        await provider.release(workspaceID: workspaceID)
+    }
+
     @MainActor
     func probePreparedWorkspace(
         _ prepared: PreparedAgentDesktop,
