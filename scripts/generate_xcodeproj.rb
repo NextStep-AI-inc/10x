@@ -229,7 +229,9 @@ scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(app)
 scheme.add_test_target(tests)
 scheme.test_action.should_use_launch_scheme_args_env = false
-scheme.test_action.environment_variables = Xcodeproj::XCScheme::EnvironmentVariables.new([
-  { key: "RECORD_SNAPSHOTS", value: "$(RECORD_SNAPSHOTS)" },
-])
+# Deliberately no TestAction EnvironmentVariables: any entry here wins over the
+# values xcodebuild injects from TEST_RUNNER_-prefixed shell variables, so a
+# `RECORD_SNAPSHOTS = $(RECORD_SNAPSHOTS)` entry silently overwrote
+# TEST_RUNNER_RECORD_SNAPSHOTS=1 with "" and made CLI re-recording impossible.
+# See docs/testing.md.
 scheme.save_as(project_path, "10x", true)
