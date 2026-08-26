@@ -213,17 +213,26 @@ app.build_configurations.each do |configuration|
       "ENABLE_HARDENED_RUNTIME" => "YES",
     })
   else
-    configuration.build_settings["CODE_SIGN_STYLE"] = "Automatic"
+    configuration.build_settings.merge!({
+      "CODE_SIGN_STYLE" => "Manual",
+      "CODE_SIGN_IDENTITY" => "-",
+      "CODE_SIGNING_REQUIRED" => "YES",
+      "CODE_SIGNING_ALLOWED" => "YES",
+    })
   end
 end
 ```
 
 The `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` defaults exist so that a plain local build produces a valid app. `release.sh` overrides both on the command line.
 
-The tests target inherits `DEVELOPMENT_TEAM` from nothing, so also add it to the tests configuration block to keep local test signing consistent:
+Non-Release configurations must pin ad-hoc signing (`CODE_SIGN_IDENTITY = "-"`) explicitly. Setting `DEVELOPMENT_TEAM` while leaving `CODE_SIGN_STYLE = Automatic` makes Xcode demand an `Apple Development` certificate for that team, which this machine does not have and which nothing in this project needs. Ad-hoc signing requires no certificate and no provisioning profile, so Debug and test builds behave identically on a developer machine and a CI runner.
+
+The tests target inherits `DEVELOPMENT_TEAM` from nothing, so add it and the same ad-hoc signing to the tests configuration block:
 
 ```ruby
     "DEVELOPMENT_TEAM" => "345S42BKPY",
+    "CODE_SIGN_STYLE" => "Manual",
+    "CODE_SIGN_IDENTITY" => "-",
 ```
 
 - [ ] **Step 5: Update the tests target bundle identifier**

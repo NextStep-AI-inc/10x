@@ -69,23 +69,40 @@ app.frameworks_build_phase.add_file_reference(sqlite)
 
 app.build_configurations.each do |configuration|
   configuration.build_settings.merge!({
-    "PRODUCT_BUNDLE_IDENTIFIER" => "com.tannerpham.tenx",
+    "PRODUCT_BUNDLE_IDENTIFIER" => "com.nextstep.tenx",
     "PRODUCT_MODULE_NAME" => "TenXApp",
     "INFOPLIST_FILE" => "App/Info.plist",
     "GENERATE_INFOPLIST_FILE" => "NO",
+    "MARKETING_VERSION" => "0.1.0",
+    "CURRENT_PROJECT_VERSION" => "1",
     "SWIFT_VERSION" => "6.0",
     "SWIFT_STRICT_CONCURRENCY" => "complete",
     "MACOSX_DEPLOYMENT_TARGET" => "15.0",
     "ENABLE_APP_SANDBOX" => "NO",
     "ASSETCATALOG_COMPILER_APPICON_NAME" => "AppIcon",
     "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME" => "",
-    "CODE_SIGN_STYLE" => "Automatic",
+    "DEVELOPMENT_TEAM" => "345S42BKPY",
   })
+
+  if configuration.name == "Release"
+    configuration.build_settings.merge!({
+      "CODE_SIGN_STYLE" => "Manual",
+      "CODE_SIGN_IDENTITY" => "Developer ID Application",
+      "ENABLE_HARDENED_RUNTIME" => "YES",
+    })
+  else
+    configuration.build_settings.merge!({
+      "CODE_SIGN_STYLE" => "Manual",
+      "CODE_SIGN_IDENTITY" => "-",
+      "CODE_SIGNING_REQUIRED" => "YES",
+      "CODE_SIGNING_ALLOWED" => "YES",
+    })
+  end
 end
 
 tests.build_configurations.each do |configuration|
   configuration.build_settings.merge!({
-    "PRODUCT_BUNDLE_IDENTIFIER" => "com.tannerpham.tenx.tests",
+    "PRODUCT_BUNDLE_IDENTIFIER" => "com.nextstep.tenx.tests",
     "PRODUCT_MODULE_NAME" => "TenXAppTests",
     "GENERATE_INFOPLIST_FILE" => "YES",
     "SWIFT_VERSION" => "6.0",
@@ -93,6 +110,9 @@ tests.build_configurations.each do |configuration|
     "MACOSX_DEPLOYMENT_TARGET" => "15.0",
     "TEST_HOST" => "$(BUILT_PRODUCTS_DIR)/10x.app/Contents/MacOS/10x",
     "BUNDLE_LOADER" => "$(TEST_HOST)",
+    "DEVELOPMENT_TEAM" => "345S42BKPY",
+    "CODE_SIGN_STYLE" => "Manual",
+    "CODE_SIGN_IDENTITY" => "-",
   })
 end
 
