@@ -87,6 +87,7 @@ actor ProviderManagementService: ProviderManaging {
         var configuration = RpcClientConfiguration()
         configuration.executable = executableURL.path
         configuration.noSession = true
+        configuration.extraArguments += ProviderExtensionBundle.spawnArguments()
         self.configuration = configuration
         self.clientFactory = { configuration in
             ProviderRPCClientBox(await clientFactory(configuration))
@@ -99,6 +100,7 @@ actor ProviderManagementService: ProviderManaging {
         var configuration = RpcClientConfiguration()
         configuration.executable = executableURL.path
         configuration.noSession = true
+        configuration.extraArguments += ProviderExtensionBundle.spawnArguments()
         self.configuration = configuration
         self.clientFactory = { configuration in
             ProviderRPCClientBox(RpcClient(configuration: configuration))

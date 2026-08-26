@@ -21,7 +21,7 @@ struct AppDependencies: Sendable {
         recentProjectStore: RecentProjectStore? = nil,
         startupTiming: StartupTiming = .live,
         makeProcessManager: @escaping @Sendable (String) -> SessionProcessManager = {
-            SessionProcessManager(executable: $0)
+            SessionProcessManager(executable: $0, extraArguments: ProviderExtensionBundle.spawnArguments())
         },
         makeSettingsModel: (@MainActor @Sendable (URL) -> SettingsViewModel)? = nil,
         makeProviderModel: @escaping @MainActor @Sendable (URL) -> ProviderManagementViewModel,
@@ -52,7 +52,7 @@ struct AppDependencies: Sendable {
         recentProjectStore: RecentProjectStore(),
         startupTiming: .live,
         makeProcessManager: { executable in
-            SessionProcessManager(executable: executable)
+            SessionProcessManager(executable: executable, extraArguments: ProviderExtensionBundle.spawnArguments())
         },
         makeSettingsModel: { executableURL in
             SettingsViewModel(service: OmpConfigService(

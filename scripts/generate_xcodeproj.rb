@@ -43,6 +43,27 @@ file_type_icons = app_group.new_file("App/Resources/FileTypeIcons")
 file_type_icons.last_known_file_type = "folder"
 app.resources_build_phase.add_file_reference(file_type_icons)
 
+# The provider account extension ships as a TypeScript source tree, not a
+# compiled resource, so it needs its own Copy Files phase rather than the
+# ordinary resources phase: only that phase type can place its contents at a
+# `dst_path` nested under Resources/ (`omp-extensions/provider-accounts`)
+# instead of a flat top-level folder named after the source directory. Only
+# `index.ts` and `src/` are referenced (never `test/` or `node_modules/`), and
+# `src` is a folder reference so future files added under it (e.g. a later
+# task's `accounts.ts`/`events.ts`) are picked up without touching this script.
+extension_group = project.main_group.new_group("OmpExtension")
+
+extension_index = extension_group.new_file("OmpExtension/index.ts")
+
+extension_src = extension_group.new_file("OmpExtension/src")
+extension_src.last_known_file_type = "folder"
+
+extension_copy_phase = app.new_copy_files_build_phase("Bundle Provider Account Extension")
+extension_copy_phase.symbol_dst_subfolder_spec = :resources
+extension_copy_phase.dst_path = "omp-extensions/provider-accounts"
+extension_copy_phase.add_file_reference(extension_index)
+extension_copy_phase.add_file_reference(extension_src)
+
 snapshot_path = File.join(root, "Tests/TenXAppTests/ReferenceImages")
 if File.directory?(snapshot_path)
   reference = test_group.new_file("Tests/TenXAppTests/ReferenceImages")
