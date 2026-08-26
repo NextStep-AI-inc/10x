@@ -289,6 +289,38 @@ import Testing
 }
 
 @MainActor
+@Test func failedOpenExistingWithoutSessionPathIsNotReusedOnRetry() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-failed-open-retry-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "crash-after-negotiation")
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let metadata = navigationMetadata("/tmp/fake.jsonl")
+    let manager = try #require(model.processManager)
+
+    model.openSession(metadata)
+    let failed = try #require(model.activeSession)
+    for _ in 0..<100 where failed.sessionPath != nil || !isFailed(failed.runtimeState) {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(failed.sessionPath == nil)
+    #expect(isFailed(failed.runtimeState))
+
+    model.openNewSession()
+    model.openSession(metadata)
+    let retried = try #require(model.activeSession)
+
+    #expect(retried !== failed)
+    #expect(model.providerActivityCounts.isEmpty)
+    #expect(await manager.handle(for: metadata.path) == nil)
+    await manager.closeAll()
+}
+
+@MainActor
 @Test func unexpectedExitUpdatesARetainedBackgroundController() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-background-exit-\(UUID().uuidString)")
@@ -468,6 +500,11 @@ private func navigationMetadata(_ path: String, cwd: String = "/tmp/Project") ->
         modified: .distantPast,
         sizeBytes: 10,
         status: .complete)
+}
+
+private func isFailed(_ state: SessionRuntimeState) -> Bool {
+    if case .failed = state { return true }
+    return false
 }
 
 private func writeNavigationSession(at url: URL, id: String, cwd: String) throws {

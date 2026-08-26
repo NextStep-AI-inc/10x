@@ -150,6 +150,10 @@ final class AppModel {
                 await processManager.close(sessionPath: controller.sessionPath ?? metadata.path)
                 return
             }
+            guard controller.sessionPath != nil else {
+                removeManagedSession(controller)
+                return
+            }
             indexManagedSessionPath(for: controller)
         }
     }
@@ -168,6 +172,10 @@ final class AppModel {
                 if let sessionPath = controller.sessionPath {
                     await processManager.close(sessionPath: sessionPath)
                 }
+                return
+            }
+            guard controller.sessionPath != nil else {
+                removeManagedSession(controller)
                 return
             }
             indexManagedSessionPath(for: controller)
