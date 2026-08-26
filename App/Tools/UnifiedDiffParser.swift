@@ -106,8 +106,74 @@ enum UnifiedDiffParser {
 
         if let completed = finishedHunk(hunk) { file?.hunks.append(completed) }
         if let completed = finishedFile(file) { files.append(completed) }
-        guard !files.isEmpty else { return nil }
+        guard !files.isEmpty else {
+            return parseCursorNumbered(raw, fallbackPath: fallbackPath)
+        }
         return UnifiedDiff(raw: raw, files: files)
+    }
+
+    private static func parseCursorNumbered(
+        _ raw: String,
+        fallbackPath: String?
+    ) -> UnifiedDiff? {
+        let source = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var hunks: [UnifiedDiffHunk] = []
+        var lines: [UnifiedDiffLine] = []
+        var hasChanges = false
+
+        func finishHunk() {
+            guard !lines.isEmpty else { return }
+            let oldLines = lines.compactMap(\.oldLine)
+            let newLines = lines.compactMap(\.newLine)
+            let oldStart = oldLines.min() ?? newLines.min() ?? 1
+            let newStart = newLines.min() ?? oldLines.min() ?? 1
+            let oldCount = oldLines.count
+            let newCount = newLines.count
+            hunks.append(UnifiedDiffHunk(
+                header: "@@ -\(oldStart),\(oldCount) +\(newStart),\(newCount) @@",
+                oldStart: oldStart,
+                oldCount: oldCount,
+                newStart: newStart,
+                newCount: newCount,
+                lines: lines))
+            lines.removeAll(keepingCapacity: true)
+        }
+
+        for line in source {
+            if line.isEmpty {
+                finishHunk()
+                continue
+            }
+            guard let parsed = cursorNumberedLine(line) else { return nil }
+            lines.append(parsed)
+            hasChanges = hasChanges || parsed.kind == .addition || parsed.kind == .removal
+        }
+        finishHunk()
+
+        guard hasChanges, !hunks.isEmpty else { return nil }
+        return UnifiedDiff(
+            raw: raw,
+            files: [UnifiedDiffFile(
+                oldPath: fallbackPath,
+                newPath: fallbackPath,
+                hunks: hunks)])
+    }
+
+    private static func cursorNumberedLine(_ line: String) -> UnifiedDiffLine? {
+        guard let marker = line.first,
+              marker == " " || marker == "+" || marker == "-",
+              let separator = line.firstIndex(of: "|")
+        else { return nil }
+        let numberStart = line.index(after: line.startIndex)
+        guard numberStart < separator else { return nil }
+        let numberText = line[numberStart..<separator]
+        guard numberText.allSatisfy(\.isNumber), let number = Int(numberText) else { return nil }
+        let text = String(line[line.index(after: separator)...])
+        return switch marker {
+        case "+": UnifiedDiffLine(kind: .addition, text: text, oldLine: nil, newLine: number)
+        case "-": UnifiedDiffLine(kind: .removal, text: text, oldLine: number, newLine: nil)
+        default: UnifiedDiffLine(kind: .context, text: text, oldLine: number, newLine: number)
+        }
     }
 
     private struct FileBuilder {

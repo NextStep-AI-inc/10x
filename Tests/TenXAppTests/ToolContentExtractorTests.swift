@@ -388,6 +388,49 @@ import Testing
     }
 }
 
+@Test func cursorNumberedEditDetailsUseDiffSurfaceWithoutRawMetadata() throws {
+    let cursorDiff = """
+     1|# Scope
+     2|
+    -3|oldValue()
+    +3|newValue()
+     4|    keepIndentation()
+
+     9|## Verification
+    -10|return false
+    +10|return true
+    """
+    let card = ToolContentExtractor.card(
+        name: "edit",
+        arguments: .object([:]),
+        result: .object([
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string("[local://cursor-plan.md#A1]\nSWAP.BLK 3 → resolved lines 3-4"),
+            ])]),
+            "details": .object([
+                "diff": .string(cursorDiff),
+                "firstChangedLine": .int(3),
+                "newText": .string("# Scope\n\nnewValue()\n    keepIndentation()"),
+                "oldText": .string("# Scope\n\noldValue()\n    keepIndentation()"),
+                "op": .string("update"),
+                "path": .string("local://cursor-plan.md"),
+            ]),
+        ]),
+        phase: .complete)
+
+    #expect(card.primary == "local://cursor-plan.md")
+    #expect(card.outcome == "+2 −2")
+    guard case .diff(let diff, let fallbackPath) = card.body else {
+        Issue.record("Cursor numbered edits should use only the semantic diff surface")
+        return
+    }
+    #expect(fallbackPath == "local://cursor-plan.md")
+    #expect(diff.files.map(\.path) == ["local://cursor-plan.md"])
+    #expect(diff.files[0].hunks.count == 2)
+    #expect(diff.files[0].hunks.flatMap(\.lines).map(\.text).contains("    keepIndentation()"))
+}
+
 @Test func searchStructuralAndLSPCardsUseReferencedCollections() {
     let grep = ToolContentExtractor.card(
         name: "grep",
