@@ -65,3 +65,48 @@ import Testing
         reset: "Aug 30, 9:00 AM"
     ) == "Cursor, tanner@example.com, Cursor Models, 50 percent remaining, resets in Aug 30, 9:00 AM")
 }
+
+@Test func providerUsageWheelValueNamesProviderActivityAndOrderedLimits() {
+    let provider = ProviderUsageProvider(
+        id: "cursor",
+        name: "Cursor",
+        accounts: [ProviderUsageAccount(
+            id: "cursor:primary",
+            label: "Primary",
+            identity: ProviderUsageAccountIdentity(
+                email: nil,
+                accountID: nil,
+                projectID: nil,
+                enterpriseURL: nil,
+                orgID: nil,
+                orgName: nil),
+            limits: [
+                ProviderUsageLimit(
+                    id: "five-hour",
+                    label: "5 hour",
+                    percentage: 20,
+                    detailReset: "in 35 minutes",
+                    railReset: "35m",
+                    windowDurationRank: 1),
+                ProviderUsageLimit(
+                    id: "weekly",
+                    label: "Weekly",
+                    percentage: 80,
+                    detailReset: "in 5 days",
+                    railReset: "5d",
+                    windowDurationRank: 2),
+            ],
+            amounts: [],
+            notes: [],
+            isUsageAvailable: true)],
+    )
+
+    #expect(ProviderUsageAccessibility.wheelValue(provider: provider, activeCount: 0)
+        == "Cursor, No active sessions, 5 hour, 20 percent remaining, resets in 35m, Weekly, 80 percent remaining, resets in 5d")
+    #expect(ProviderUsageAccessibility.wheelValue(provider: provider, activeCount: 1)
+        .contains("1 active session"))
+    #expect(ProviderUsageAccessibility.wheelValue(provider: provider, activeCount: 2)
+        .contains("2 active sessions"))
+    #expect(ProviderUsageAccessibility.wheelValue(provider: provider, activeCount: 2)
+        .contains("5 hour, 20 percent remaining"))
+}

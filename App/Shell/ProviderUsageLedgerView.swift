@@ -117,39 +117,3 @@ private struct ProviderUsageLimitView: View {
         }
     }
 }
-
-enum ProviderUsageAccessibility {
-    static func limitLabel(
-        provider: String,
-        account: String?,
-        allowance: String,
-        percentage: Int,
-        reset: String
-    ) -> String {
-        let resetDescription: String
-        if let resetValue = resetValue(reset) {
-            let resetPhrase = resetValue.hasPrefix("in ") ? resetValue : "in \(resetValue)"
-            resetDescription = "resets \(resetPhrase)"
-        } else {
-            resetDescription = "reset unavailable"
-        }
-        return [
-            provider,
-            account,
-            allowance,
-            "\(min(max(percentage, 0), 100)) percent remaining",
-            resetDescription,
-        ]
-        .compactMap { $0 }
-        .joined(separator: ", ")
-    }
-
-    static func displayReset(_ reset: String) -> String {
-        resetValue(reset) ?? "Reset unavailable"
-    }
-
-    private static func resetValue(_ reset: String) -> String? {
-        let value = reset.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
-    }
-}
