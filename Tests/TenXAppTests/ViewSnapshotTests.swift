@@ -1255,6 +1255,271 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
+@Test func coordinationToolCardsSnapshot() throws {
+    let cards = [
+        snapshotToolPresentation(
+            id: "coordination-task",
+            name: "task",
+            arguments: .object([
+                "title": .string("Audit the complete transcript surface while preserving every long file reference and execution detail"),
+            ]),
+            result: .object(["details": .object([
+                "status": .string("running"),
+                "progress": .string("Inspecting compact and expanded states."),
+                "completed": .int(2),
+                "total": .int(5),
+                "history": .array([
+                    .string("Mapped transcript routing"),
+                    .string("Checked disclosure persistence"),
+                ]),
+                "artifacts": .array([
+                    .object(["path": .string("App/Tools/ToolCardView.swift")]),
+                ]),
+            ])]),
+            phase: .running,
+            duration: 4.2),
+        snapshotToolPresentation(
+            id: "coordination-todo",
+            name: "todo",
+            arguments: .object(["todos": .array([
+                .object(["content": .string("Map the OMP catalog"), "status": .string("completed")]),
+                .object(["content": .string("Verify compact wrapping"), "status": .string("in_progress")]),
+                .object(["content": .string("Launch the Release build"), "status": .string("pending")]),
+            ])]),
+            result: nil,
+            phase: .complete,
+            duration: 0.3),
+        snapshotToolPresentation(
+            id: "coordination-proposal",
+            name: "propose",
+            arguments: .object([
+                "path": .string("App/Sessions/TranscriptView.swift"),
+                "reason": .string("Route every tool through the shared semantic card contract."),
+            ]),
+            result: .object(["details": .object(["status": .string("complete")])]),
+            phase: .complete,
+            duration: 0.6),
+        snapshotToolPresentation(
+            id: "coordination-security",
+            name: "security_scan",
+            arguments: .object(["target": .string("App/Sessions")]),
+            result: .object([
+                "error": .string("Scan stopped after an unreadable fixture"),
+                "details": .object([
+                    "status": .string("failed"),
+                    "findings": .array([.object([
+                        "title": .string("Unchecked file URL"),
+                        "severity": .string("high"),
+                        "path": .string("App/Sessions/TranscriptReference.swift"),
+                        "line": .int(42),
+                    ])]),
+                ]),
+            ]),
+            phase: .failed,
+            duration: 1.8),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-coordination",
+        size: CGSize(width: 600, height: 1_150))
+}
+
+@MainActor
+@Test func memoryToolCardsSnapshot() throws {
+    let cards = [
+        snapshotToolPresentation(
+            id: "memory-retain",
+            name: "retain",
+            arguments: .object(["memory": .string("Use one semantic card contract")]),
+            result: .object(["details": .object(["memories": .array([
+                .object([
+                    "id": .string("memory-1"),
+                    "text": .string("Use one semantic card contract"),
+                    "status": .string("stored"),
+                ]),
+                .object([
+                    "id": .string("memory-2"),
+                    "text": .string("Wrap source by default"),
+                    "status": .string("stored"),
+                ]),
+            ])])]),
+            phase: .complete,
+            duration: 0.4),
+        snapshotToolPresentation(
+            id: "memory-recall",
+            name: "recall",
+            arguments: .object(["query": .string("obsolete transcript rule")]),
+            result: .object(["details": .object(["memories": .array([])])]),
+            phase: .complete,
+            duration: 0.2),
+        snapshotToolPresentation(
+            id: "memory-edit",
+            name: "memory_edit",
+            arguments: .object([
+                "id": .string("memory-1"),
+                "content": .string("## Transcript rule\n\nKeep references where they are written."),
+            ]),
+            result: .object(["details": .object([
+                "status": .string("updated"),
+                "version": .int(2),
+            ])]),
+            phase: .complete,
+            duration: 0.5),
+        snapshotToolPresentation(
+            id: "memory-skill",
+            name: "manage_skill",
+            arguments: .object([
+                "operation": .string("update"),
+                "name": .string("rich-chat"),
+                "content": .string("# Rich chat\n\n- Reuse the two-corner card\n- Compose semantic surfaces\n- Preserve complete source"),
+            ]),
+            result: .object(["details": .object([
+                "status": .string("updated"),
+                "path": .string("skills/rich-chat/SKILL.md"),
+            ])]),
+            phase: .complete,
+            duration: 0.8),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-memory",
+        size: CGSize(width: 600, height: 1_100))
+}
+
+@MainActor
+@Test func mediaToolCardsSnapshot() throws {
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    let imageResult = JSONValue.object([
+        "content": .array([.object([
+            "type": .string("image"),
+            "url": .string(previewPath),
+            "mimeType": .string("image/png"),
+            "name": .string("Transcript preview"),
+        ])]),
+        "details": .object([
+            "width": .int(500),
+            "height": .int(340),
+            "scale": .double(2),
+        ]),
+    ])
+    let cards = [
+        snapshotToolPresentation(
+            id: "media-inspect",
+            name: "inspect_image",
+            arguments: .object(["path": .string(previewPath)]),
+            result: imageResult,
+            phase: .complete,
+            duration: 0.7),
+        snapshotToolPresentation(
+            id: "media-computer",
+            name: "computer",
+            arguments: .object([
+                "action": .string("click"),
+                "application": .string("Safari"),
+            ]),
+            result: .object([
+                "content": imageResult["content"] ?? .array([]),
+                "details": .object([
+                    "action": .string("click"),
+                    "x": .int(412),
+                    "y": .int(288),
+                ]),
+            ]),
+            phase: .complete,
+            duration: 1.1),
+        snapshotToolPresentation(
+            id: "media-question",
+            name: "ask",
+            arguments: .object([
+                "question": .string("Use the compact card while keeping expanded screenshots and metadata at full transcript width?"),
+            ]),
+            result: nil,
+            phase: .running,
+            duration: 3.4),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-media",
+        size: CGSize(width: 600, height: 1_150))
+}
+
+@MainActor
+@Test func mcpFallbackToolCardsSnapshot() throws {
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    var nestedFallback = JSONValue.string(String(repeating: "bounded-value-", count: 18))
+    for depth in (1...8).reversed() {
+        nestedFallback = .object(["level\(depth)": nestedFallback])
+    }
+    let cards = [
+        snapshotToolPresentation(
+            id: "fallback-mcp",
+            name: "mcp__vision__render_preview",
+            arguments: .object(["quality": .string("high")]),
+            result: .object([
+                "content": .array([
+                    .object(["type": .string("text"), "text": .string("Rendered the requested transcript preview.")]),
+                    .object([
+                        "type": .string("image"),
+                        "url": .string(previewPath),
+                        "mimeType": .string("image/png"),
+                        "name": .string("Wrapped transcript"),
+                    ]),
+                    .object([
+                        "type": .string("resource_link"),
+                        "name": .string("Render report"),
+                        "uri": .string("https://example.com/render-report"),
+                    ]),
+                ]),
+                "details": .object([
+                    "width": .int(800),
+                    "height": .int(600),
+                    "status": .string("complete"),
+                ]),
+            ]),
+            phase: .complete,
+            duration: 1.3),
+        snapshotToolPresentation(
+            id: "fallback-extension",
+            name: "extension_future",
+            arguments: .object([
+                "mode": .string("preview"),
+                "payload": nestedFallback,
+            ]),
+            result: .object([
+                "unexpected": .array([.null, .int(2), .bool(true)]),
+            ]),
+            phase: .complete,
+            duration: 0.4),
+        snapshotToolPresentation(
+            id: "fallback-empty",
+            name: "unknown_empty",
+            arguments: .null,
+            result: nil,
+            phase: .complete,
+            duration: 0.1),
+        snapshotToolPresentation(
+            id: "fallback-error",
+            name: "extension_failed",
+            arguments: .object(["operation": .string("import")]),
+            result: .object(["error": .string("Extension returned malformed content")]),
+            phase: .failed,
+            duration: 0.9),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-mcp-fallback",
+        size: CGSize(width: 600, height: 1_600))
+}
+
+@MainActor
 @Test func subagentActivitySnapshot() throws {
     let presentation = SubagentPresentation(
         id: "subagent",
@@ -1715,6 +1980,44 @@ private func snapshotTextResult(_ text: String) -> JSONValue {
     .object(["content": .array([
         .object(["type": .string("text"), "text": .string(text)]),
     ])])
+}
+
+private func snapshotToolPresentation(
+    id: String,
+    name: String,
+    arguments: JSONValue,
+    result: JSONValue?,
+    phase: ToolPhase,
+    duration: TimeInterval
+) -> ToolPresentation {
+    let timestamp = Date(timeIntervalSince1970: 1)
+    return ToolPresentation(
+        id: id,
+        name: name,
+        arguments: arguments,
+        result: result,
+        phase: phase,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(duration))
+}
+
+@MainActor
+private func snapshotToolCardStack(
+    _ presentations: [ToolPresentation],
+    width: CGFloat
+) -> some View {
+    let disclosure = ToolDisclosureState()
+    disclosure.expand(ids: presentations.map(\.id))
+    return VStack(alignment: .leading, spacing: 18) {
+        ForEach(presentations) { presentation in
+            ToolCardView(presentation: presentation)
+        }
+    }
+    .environment(\.toolDisclosureState, disclosure)
+    .environment(snapshotEmptyIDEStore)
+    .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+    .environment(\.fileOpenService, snapshotFileOpenService)
+    .frame(width: width, alignment: .leading)
 }
 
 private struct SnapshotConfigRunner: OmpConfigRunning {

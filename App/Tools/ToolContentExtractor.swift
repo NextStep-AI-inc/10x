@@ -414,17 +414,11 @@ enum ToolContentExtractor {
                 phase: phase,
                 emptyText: completionText(phase))
         case .todo:
-            collectionCard(
-                title: "Tasks",
-                verb: "Update",
-                primary: nil,
-                values: arguments["todos"]?.arrayValue
-                    ?? firstArray(in: result, paths: [["details", "todos"], ["todos"]]),
-                envelope: envelope,
+            todoCard(
                 arguments: arguments,
+                envelope: envelope,
                 result: result,
-                phase: phase,
-                emptyText: "No tasks")
+                phase: phase)
         case .task:
             progressCard(
                 title: "Task",
@@ -511,10 +505,8 @@ enum ToolContentExtractor {
                 envelope: envelope,
                 phase: phase)
         case .resolution(let action):
-            progressCard(
-                title: "Proposal",
-                verb: resolutionLabel(action),
-                primary: firstString(in: arguments, keys: ["path", "proposal", "reason"]),
+            resolutionCard(
+                action: action,
                 arguments: arguments,
                 result: result,
                 envelope: envelope,
@@ -562,12 +554,7 @@ enum ToolContentExtractor {
                 envelope: envelope,
                 phase: phase)
         case .manageSkill:
-            documentCard(
-                title: "Skill",
-                verb: "Manage",
-                primary: firstString(in: arguments, keys: ["name", "skill", "operation"]),
-                preferredText: firstString(in: arguments, keys: ["content", "description"])
-                    ?? envelope.text,
+            skillCard(
                 arguments: arguments,
                 result: result,
                 envelope: envelope,
@@ -989,6 +976,40 @@ enum ToolContentExtractor {
             body: body)
     }
 
+    private static func todoCard(
+        arguments: JSONValue,
+        envelope: ToolResultEnvelope,
+        result: JSONValue?,
+        phase: ToolPhase
+    ) -> ToolCardContent {
+        let values = arguments["todos"]?.arrayValue
+            ?? firstArray(in: result, paths: [["details", "todos"], ["todos"]])
+        let items = values?.enumerated().map(collectionItem) ?? []
+        let completed = values?.filter { value in
+            let status = firstString(in: value, keys: ["status", "state"])
+            return status.map(isCompletedState) == true
+        }.count ?? 0
+        let outcome = items.isEmpty
+            ? (result == nil && phase == .running ? "Waiting for tasks" : "No tasks")
+            : "\(completed) of \(items.count) complete"
+        let body: ToolBody = items.isEmpty
+            ? (result == nil && phase == .running
+                ? envelopeBody(
+                    envelope,
+                    arguments: arguments,
+                    result: result,
+                    phase: phase)
+                : .empty("No tasks"))
+            : .collection(items)
+        return ToolCardContent(
+            title: "Tasks",
+            verb: "Update",
+            primary: nil,
+            outcome: outcome,
+            reference: nil,
+            body: body)
+    }
+
     private static func collectionItem(
         _ offsetAndValue: EnumeratedSequence<[JSONValue]>.Element
     ) -> ToolCollectionItem {
@@ -1014,12 +1035,13 @@ enum ToolContentExtractor {
         } else {
             nil
         }
+        let detail = firstString(in: value, keys: [
+            "snippet", "summary", "description", "detail", "message", "text", "match",
+        ])
         return ToolCollectionItem(
             id: "\(index)-\(label)",
             label: label,
-            detail: firstString(in: value, keys: [
-                "snippet", "summary", "description", "detail", "message", "text", "match",
-            ]),
+            detail: detail == label ? nil : detail,
             reference: itemReference,
             state: firstString(in: value, keys: ["status", "state", "severity"]))
     }
@@ -1060,16 +1082,21 @@ enum ToolContentExtractor {
             paths: [["details", "progress"], ["progress"], ["details", "detail"]])
             ?? envelope.text
         let historyValues = firstArray(in: result, paths: [
-            ["details", "history"], ["history"], ["messages"],
+            ["details", "history"], ["details", "messages"],
+            ["history"], ["messages"],
         ]) ?? []
         let history = historyValues.compactMap { value in
             value.stringValue ?? firstString(in: value, keys: ["text", "message", "title"])
         }
         let completed = firstInt(in: result, paths: [
-            ["details", "completed"], ["completed"], ["usage", "used"],
+            ["details", "completed"], ["completed"],
+            ["details", "usage", "used"], ["usage", "used"],
+            ["details", "tokenUsage"], ["tokenUsage"],
         ])
         let total = firstInt(in: result, paths: [
-            ["details", "total"], ["total"], ["usage", "budget"],
+            ["details", "total"], ["total"],
+            ["details", "usage", "budget"], ["usage", "budget"],
+            ["details", "tokenBudget"], ["tokenBudget"],
         ])
         let progress = ToolProgress(
             title: primary ?? title,
@@ -1079,11 +1106,79 @@ enum ToolContentExtractor {
             total: total,
             history: history,
             document: detail.map(MessageContentParser.parse))
+        let findings = firstArray(in: result, paths: [
+            ["details", "findings"], ["findings"],
+        ])
+        let groups: [(String, [JSONValue]?)] = [
+            ("Findings", findings),
+            ("Artifacts", firstArray(in: result, paths: [
+                ["details", "artifacts"], ["details", "references"],
+                ["artifacts"], ["references"],
+            ])),
+            ("Results", firstArray(in: result, paths: [
+                ["details", "results"], ["results"],
+            ])),
+            ("Workers", firstArray(in: result, paths: [
+                ["details", "workers"], ["workers"],
+            ])),
+        ]
+        var bodies: [ToolBody] = [.progress(progress)]
+        for (_, values) in groups {
+            guard let values, !values.isEmpty else { continue }
+            bodies.append(.collection(values.enumerated().map(collectionItem)))
+        }
+        for block in envelope.blocks {
+            if case .text = block { continue }
+            bodies.append(body(block))
+        }
+        if var remainingDetails = envelope.details {
+            for key in [
+                "status", "stage", "progress", "detail", "history", "messages",
+                "completed", "total", "usage", "tokenUsage", "tokenBudget",
+                "findings", "artifacts", "references", "results", "workers",
+            ] {
+                remainingDetails.removeValue(forKey: key)
+            }
+            if !remainingDetails.isEmpty {
+                bodies.append(.data(label: "Details", value: .object(remainingDetails)))
+            }
+        }
+        let outcome = findings.flatMap(severitySummary).map { "\(status) · \($0)" }
+            ?? status
         return ToolCardContent(
             title: title,
             verb: verb,
             primary: primary,
-            outcome: status,
+            outcome: outcome,
+            reference: primary.flatMap { reference(for: $0) },
+            body: bodies.count == 1 ? bodies[0] : .stack(bodies))
+    }
+
+    private static func resolutionCard(
+        action: ResolutionToolAction,
+        arguments: JSONValue,
+        result: JSONValue?,
+        envelope: ToolResultEnvelope,
+        phase: ToolPhase
+    ) -> ToolCardContent {
+        let primary = firstString(in: arguments, keys: ["path", "proposal", "id"])
+        let reason = firstString(in: arguments, keys: ["reason", "message"])
+            ?? nestedString(in: result, paths: [["details", "reason"], ["reason"]])
+            ?? envelope.text
+        let outcome = resolutionOutcome(action, phase: phase)
+        let progress = ToolProgress(
+            title: primary ?? "Proposal",
+            status: outcome.lowercased(),
+            detail: reason,
+            completed: nil,
+            total: nil,
+            history: [],
+            document: reason.map(MessageContentParser.parse))
+        return ToolCardContent(
+            title: "Proposal",
+            verb: resolutionLabel(action),
+            primary: primary,
+            outcome: outcome,
             reference: primary.flatMap { reference(for: $0) },
             body: .progress(progress))
     }
@@ -1098,20 +1193,82 @@ enum ToolContentExtractor {
         envelope: ToolResultEnvelope,
         phase: ToolPhase
     ) -> ToolCardContent {
-        let body = preferredText.flatMap { text in
-            text.isEmpty ? nil : ToolBody.document(MessageContentParser.parse(text))
-        } ?? envelopeBody(
-            envelope,
-            arguments: arguments,
-            result: result,
-            phase: phase)
+        let body: ToolBody
+        if let preferredText, !preferredText.isEmpty {
+            var bodies: [ToolBody] = [
+                .document(MessageContentParser.parse(preferredText)),
+            ]
+            for block in envelope.blocks {
+                if case .text = block { continue }
+                bodies.append(self.body(block))
+            }
+            if let details = envelope.details, !details.isEmpty {
+                bodies.append(.data(label: "Details", value: .object(details)))
+            }
+            body = bodies.count == 1 ? bodies[0] : .stack(bodies)
+        } else {
+            body = envelopeBody(
+                envelope,
+                arguments: arguments,
+                result: result,
+                phase: phase)
+        }
         return ToolCardContent(
             title: title,
             verb: verb,
             primary: primary,
-            outcome: envelopeOutcome(envelope, phase: phase),
+            outcome: nestedString(
+                in: result,
+                paths: [["details", "status"], ["status"]])
+                ?? envelopeOutcome(envelope, phase: phase),
             reference: primary.flatMap { reference(for: $0) },
             body: body)
+    }
+
+    private static func skillCard(
+        arguments: JSONValue,
+        result: JSONValue?,
+        envelope: ToolResultEnvelope,
+        phase: ToolPhase
+    ) -> ToolCardContent {
+        let primary = firstString(in: arguments, keys: ["name", "skill", "operation"])
+        let source = firstString(
+            in: arguments,
+            keys: ["content", "source", "text", "description"])
+            ?? envelope.text
+        let path = nestedString(
+            in: result,
+            paths: [["details", "path"], ["details", "file"], ["path"], ["file"]])
+        var bodies: [ToolBody] = []
+        if let source, !source.isEmpty {
+            bodies.append(.source(SourcePresentation(
+                language: path.flatMap(SourceTokenizer.languageIdentifier) ?? "markdown",
+                text: source), previewLines: 20))
+        }
+        for block in envelope.blocks {
+            if case .text = block { continue }
+            bodies.append(body(block))
+        }
+        if let details = envelope.details, !details.isEmpty {
+            bodies.append(.data(label: "Outcome", value: .object(details)))
+        }
+        if bodies.isEmpty {
+            bodies.append(envelopeBody(
+                envelope,
+                arguments: arguments,
+                result: result,
+                phase: phase))
+        }
+        return ToolCardContent(
+            title: "Skill",
+            verb: "Manage",
+            primary: primary,
+            outcome: nestedString(
+                in: result,
+                paths: [["details", "status"], ["status"]])
+                ?? envelopeOutcome(envelope, phase: phase),
+            reference: path.map { .file(path: $0, line: nil) },
+            body: bodies.count == 1 ? bodies[0] : .stack(bodies))
     }
 
     private static func browserCard(
@@ -1189,13 +1346,20 @@ enum ToolContentExtractor {
                 url: primary))
         }
         let caption = envelope.text.map(MessageContentParser.parse)
-        let body = media.isEmpty
-            ? envelopeBody(
+        let body: ToolBody
+        if media.isEmpty {
+            body = envelopeBody(
                 envelope,
                 arguments: arguments,
                 result: result,
                 phase: phase)
-            : ToolBody.media(media, caption: caption)
+        } else {
+            var bodies: [ToolBody] = [.media(media, caption: caption)]
+            if let details = envelope.details, !details.isEmpty {
+                bodies.append(.data(label: "Metadata", value: .object(details)))
+            }
+            body = bodies.count == 1 ? bodies[0] : .stack(bodies)
+        }
         return ToolCardContent(
             title: title,
             verb: verb,
@@ -1317,6 +1481,25 @@ enum ToolContentExtractor {
         "\(count) \(count == 1 ? "item" : "items")"
     }
 
+    private static func isCompletedState(_ value: String) -> Bool {
+        ["complete", "completed", "done"].contains(value.lowercased())
+    }
+
+    private static func severitySummary(_ findings: [JSONValue]) -> String? {
+        let order = ["critical", "high", "medium", "low", "info"]
+        var counts: [String: Int] = [:]
+        for finding in findings {
+            guard let severity = firstString(in: finding, keys: ["severity", "level"])
+            else { continue }
+            counts[severity.lowercased(), default: 0] += 1
+        }
+        let summary = order.compactMap { severity -> String? in
+            guard let count = counts[severity], count > 0 else { return nil }
+            return "\(count) \(severity)"
+        }.joined(separator: ", ")
+        return summary.isEmpty ? nil : summary
+    }
+
     private static func reference(for value: String) -> TranscriptReference? {
         TranscriptReference.parseInline(value)
     }
@@ -1380,6 +1563,28 @@ enum ToolContentExtractor {
         case .resolve: "Apply"
         case .reject: "Discard"
         case .propose: "Propose"
+        }
+    }
+
+    private static func resolutionOutcome(
+        _ action: ResolutionToolAction,
+        phase: ToolPhase
+    ) -> String {
+        switch phase {
+        case .running:
+            switch action {
+            case .resolve: "Applying"
+            case .reject: "Discarding"
+            case .propose: "Proposing"
+            }
+        case .complete:
+            switch action {
+            case .resolve: "Applied"
+            case .reject: "Discarded"
+            case .propose: "Proposed"
+            }
+        case .failed:
+            "Failed"
         }
     }
 

@@ -547,6 +547,292 @@ import Testing
     #expect(checks.first?.state == "success")
 }
 
+@Test func remainingCanonicalToolsChooseSemanticBodies() {
+    let imageResult = JSONValue.object([
+        "content": .array([.object([
+            "type": .string("image"),
+            "url": .string("/tmp/frame.png"),
+            "mimeType": .string("image/png"),
+        ])]),
+        "details": .object(["width": .int(1280), "height": .int(720)]),
+    ])
+    let progressResult = JSONValue.object(["details": .object([
+        "status": .string("complete"),
+        "progress": .string("Finished the requested work"),
+    ])])
+    let fixtures: [(String, JSONValue, JSONValue?, ToolPhase, ToolBodyCategory)] = [
+        ("ask", .object(["question": .string("Which target should I use?")]), nil, .running, .document),
+        ("debug", .object(["target": .string("TranscriptView")]), progressResult, .complete, .progress),
+        ("inspect_image", .object(["path": .string("/tmp/frame.png")]), imageResult, .complete, .media),
+        ("computer", .object(["action": .string("click"), "application": .string("Safari")]), imageResult, .complete, .media),
+        ("checkpoint", .object(["goal": .string("Trace wrapping")]), progressResult, .complete, .progress),
+        ("rewind", .object(["checkpoint": .string("before-layout")]), progressResult, .complete, .progress),
+        ("security_scan", .object(["target": .string("App")]), progressResult, .complete, .progress),
+        ("task", .object(["title": .string("Inspect reducers")]), progressResult, .complete, .progress),
+        ("hub", .object(["operation": .string("status")]), progressResult, .complete, .progress),
+        ("todo", .object(["todos": .array([
+            .object(["content": .string("Map cards"), "status": .string("completed")]),
+        ])]), nil, .complete, .collection),
+        ("goal", .object(["objective": .string("Finish rich chat")]), progressResult, .complete, .progress),
+        ("yield", .object(["reason": .string("Waiting for tests")]), progressResult, .running, .progress),
+        ("think", .object(["thought": .string("must stay private")]), result(text: "must stay private"), .complete, .privateActivity),
+        ("memory_edit", .object(["id": .string("memory-1"), "content": .string("Use semantic cards")]), progressResult, .complete, .document),
+        ("retain", .object(["memory": .string("Use semantic cards")]), .object(["details": .object(["memories": .array([
+            .object(["id": .string("memory-1"), "text": .string("Use semantic cards")]),
+        ])])]), .complete, .collection),
+        ("recall", .object(["query": .string("semantic cards")]), .object(["details": .object(["memories": .array([
+            .object(["id": .string("memory-1"), "text": .string("Use semantic cards")]),
+        ])])]), .complete, .collection),
+        ("reflect", .object(["query": .string("What changed?")]), result(text: "The transcript now wraps."), .complete, .document),
+        ("learn", .object(["lesson": .string("Prefer semantic surfaces")]), nil, .complete, .document),
+        ("manage_skill", .object([
+            "operation": .string("update"),
+            "name": .string("rich-chat"),
+            "content": .string("# Rich chat\n\nUse one card contract."),
+        ]), progressResult, .complete, .source),
+    ]
+
+    for (name, arguments, result, phase, category) in fixtures {
+        let card = ToolContentExtractor.card(
+            name: name,
+            arguments: arguments,
+            result: result,
+            phase: phase)
+        #expect(!card.title.isEmpty, "\(name) needs a specific title")
+        #expect(card.verb != "Run", "\(name) must not use the generic verb")
+        #expect(bodyContains(card.body, category), "\(name) should contain \(category)")
+    }
+}
+
+@Test func proposalAndVibeAdaptersKeepTheirSpecificState() {
+    let expectedResolutionOutcomes = [
+        "resolve": "Applied",
+        "reject": "Discarded",
+        "propose": "Proposed",
+    ]
+    for (name, outcome) in expectedResolutionOutcomes {
+        let card = ToolContentExtractor.card(
+            name: name,
+            arguments: .object([
+                "path": .string("App/TranscriptView.swift"),
+                "reason": .string("Keep the shared card contract"),
+            ]),
+            result: .object(["details": .object(["status": .string("complete")])]),
+            phase: .complete)
+        #expect(card.title == "Proposal")
+        #expect(card.outcome == outcome)
+        guard case .progress(let progress) = card.body else {
+            Issue.record("\(name) should use proposal progress")
+            continue
+        }
+        #expect(progress.status == outcome.lowercased())
+        #expect(progress.detail == "Keep the shared card contract")
+    }
+
+    for name in ["vibe_spawn", "vibe_send", "vibe_wait", "vibe_kill", "vibe_list"] {
+        let card = ToolContentExtractor.card(
+            name: name,
+            arguments: .object(["worker": .string("ui-worker")]),
+            result: .object(["details": .object(["status": .string("running")])]),
+            phase: .running)
+        #expect(card.title == "Hub")
+        #expect(bodyContains(card.body, .progress))
+    }
+}
+
+@Test func progressMediaTodoAndSkillCardsRetainTheirUsefulStructure() {
+    let security = ToolContentExtractor.card(
+        name: "security_scan",
+        arguments: .object(["target": .string("App")]),
+        result: .object(["details": .object([
+            "status": .string("complete"),
+            "findings": .array([
+                .object([
+                    "title": .string("Unsafe path"),
+                    "severity": .string("high"),
+                    "path": .string("App/Files.swift"),
+                    "line": .int(42),
+                ]),
+            ]),
+        ])]),
+        phase: .complete)
+    #expect(bodyContains(security.body, .progress))
+    #expect(bodyContains(security.body, .collection))
+
+    let task = ToolContentExtractor.card(
+        name: "task",
+        arguments: .object(["title": .string("Build rich cards")]),
+        result: .object(["details": .object([
+            "status": .string("complete"),
+            "artifacts": .array([
+                .object(["path": .string("App/Tools/ToolCardView.swift")]),
+            ]),
+        ])]),
+        phase: .complete)
+    #expect(bodyContains(task.body, .progress))
+    #expect(bodyContains(task.body, .collection))
+
+    let image = ToolContentExtractor.card(
+        name: "inspect_image",
+        arguments: .object(["path": .string("/tmp/frame.png")]),
+        result: .object([
+            "content": .array([.object([
+                "type": .string("image"),
+                "url": .string("/tmp/frame.png"),
+                "mimeType": .string("image/png"),
+            ])]),
+            "details": .object(["width": .int(1280), "height": .int(720)]),
+        ]),
+        phase: .complete)
+    #expect(bodyContains(image.body, .media))
+    #expect(bodyContains(image.body, .data))
+
+    let todo = ToolContentExtractor.card(
+        name: "todo",
+        arguments: .object(["todos": .array([
+            .object(["content": .string("Map cards"), "status": .string("completed")]),
+            .object(["content": .string("Polish wrapping"), "status": .string("in_progress")]),
+            .object(["content": .string("Verify build"), "status": .string("pending")]),
+        ])]),
+        result: nil,
+        phase: .running)
+    #expect(todo.outcome == "1 of 3 complete")
+
+    let skill = ToolContentExtractor.card(
+        name: "manage_skill",
+        arguments: .object([
+            "operation": .string("update"),
+            "name": .string("rich-chat"),
+            "content": .string("# Rich chat\n\nUse semantic surfaces."),
+        ]),
+        result: .object(["details": .object(["path": .string("skills/rich-chat/SKILL.md")])]),
+        phase: .complete)
+    guard case .stack(let skillBodies) = skill.body,
+          case .source(let source, _) = skillBodies.first
+    else {
+        Issue.record("Skill management should lead with editable Markdown source")
+        return
+    }
+    #expect(source.language == "md")
+    #expect(bodyContains(skill.body, .data))
+}
+
+@Test func mcpAndUnknownCardsPreserveOrderedTypedAndBoundedFallbackContent() {
+    let mcp = ToolContentExtractor.card(
+        name: "mcp__vision__render_preview",
+        arguments: .object(["quality": .string("high")]),
+        result: .object([
+            "content": .array([
+                .object(["type": .string("text"), "text": .string("Rendered preview")]),
+                .object([
+                    "type": .string("image"),
+                    "data": .string("AA=="),
+                    "mimeType": .string("image/png"),
+                ]),
+                .object([
+                    "type": .string("resource_link"),
+                    "name": .string("Report"),
+                    "uri": .string("https://example.com/report"),
+                ]),
+            ]),
+            "details": .object(["width": .int(800)]),
+        ]),
+        phase: .complete)
+    #expect(mcp.title == "Render Preview")
+    #expect(mcp.primary == "vision/render_preview")
+    guard case .stack(let mcpBodies) = mcp.body else {
+        Issue.record("MCP should preserve its ordered blocks and metadata")
+        return
+    }
+    #expect(mcpBodies.count == 5)
+    #expect(bodyContains(mcpBodies[0], .document))
+    #expect(bodyContains(mcpBodies[1], .media))
+    #expect(bodyContains(mcpBodies[2], .collection))
+    #expect(bodyContains(mcpBodies[3], .data))
+    #expect(bodyContains(mcpBodies[4], .data))
+
+    let malformed = ToolContentExtractor.card(
+        name: "extension_future",
+        arguments: .object(["nested": .array([.object(["value": .bool(true)])])]),
+        result: .object(["unexpected": .array([.null, .int(2)])]),
+        phase: .complete)
+    #expect(malformed.title == "extension_future")
+    #expect(malformed.outcome == "Result")
+    #expect(bodyContains(malformed.body, .data))
+
+    let empty = ToolContentExtractor.card(
+        name: "unknown_empty",
+        arguments: .null,
+        result: nil,
+        phase: .complete)
+    #expect(empty.body == .empty("Completed without output"))
+    #expect(empty.outcome == "Completed without output")
+}
+
+@Test func collectionRowsDoNotRepeatTheirLabelAsDetail() {
+    let card = ToolContentExtractor.card(
+        name: "recall",
+        arguments: .object(["query": .string("semantic cards")]),
+        result: .object(["details": .object(["memories": .array([
+            .object([
+                "id": .string("memory-1"),
+                "text": .string("Use one semantic card contract"),
+                "status": .string("stored"),
+            ]),
+        ])])]),
+        phase: .complete)
+
+    guard case .collection(let rows) = card.body else {
+        Issue.record("Recall should render a collection")
+        return
+    }
+    #expect(rows.first?.label == "Use one semantic card contract")
+    #expect(rows.first?.detail == nil)
+}
+
+private enum ToolBodyCategory: CustomStringConvertible {
+    case document
+    case source
+    case diff
+    case console
+    case collection
+    case media
+    case progress
+    case data
+    case empty
+    case privateActivity
+
+    var description: String {
+        switch self {
+        case .document: "document"
+        case .source: "source"
+        case .diff: "diff"
+        case .console: "console"
+        case .collection: "collection"
+        case .media: "media"
+        case .progress: "progress"
+        case .data: "data"
+        case .empty: "empty"
+        case .privateActivity: "private activity"
+        }
+    }
+}
+
+private func bodyContains(_ value: ToolBody, _ category: ToolBodyCategory) -> Bool {
+    if case .stack(let bodies) = value {
+        return bodies.contains { bodyContains($0, category) }
+    }
+    return switch (value, category) {
+    case (.document, .document), (.source, .source), (.diff, .diff),
+         (.console, .console), (.collection, .collection), (.media, .media),
+         (.progress, .progress), (.data, .data), (.empty, .empty),
+         (.privateActivity, .privateActivity):
+        true
+    default:
+        false
+    }
+}
+
 private func presentation(
     name: String,
     arguments: JSONValue,
