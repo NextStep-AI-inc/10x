@@ -55,6 +55,18 @@ import Testing
     #expect(MessageContentParser.parse(longPath).plainText == longPath)
 }
 
+@Test func inlineParserPreservesSemanticStylesAndHardBreaks() {
+    let content = MessageContentParser.inline(
+        "Plain *emphasis* **strong** ~~strike~~ `code`  \nnext")
+    let intents = content.attributed.runs.compactMap(\.inlinePresentationIntent)
+
+    #expect(content.plainText == "Plain emphasis strong strike code  \nnext")
+    #expect(intents.contains { $0.contains(.emphasized) })
+    #expect(intents.contains { $0.contains(.stronglyEmphasized) })
+    #expect(intents.contains { $0.contains(.strikethrough) })
+    #expect(intents.contains { $0.contains(.code) })
+}
+
 @Test func transcriptMessageNormalizesContentAtInitialization() {
     let message = TranscriptMessage(
         id: "message",
