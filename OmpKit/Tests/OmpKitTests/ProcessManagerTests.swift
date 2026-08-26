@@ -114,6 +114,27 @@ private func fakeManager(mode: String = "basic") -> SessionProcessManager {
     await manager.closeAll()
 }
 
+@Test func openNewForwardsProviderModelThinkingFlags() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture, mode: "no-session-file")
+    _ = try await manager.openNew(
+        projectDirectory: "/tmp/project",
+        provider: "anthropic",
+        model: "claude-opus-4-8",
+        thinking: "high")
+    let configuration = capture.snapshot().first
+    #expect(configuration?.provider == "anthropic")
+    #expect(configuration?.model == "claude-opus-4-8")
+    #expect(configuration?.thinking == "high")
+    #expect(configuration?.resolvedArguments == [
+        "--mode", "rpc", "--no-title",
+        "--provider", "anthropic",
+        "--model", "claude-opus-4-8",
+        "--thinking", "high",
+    ])
+    await manager.closeAll()
+}
+
 @Test func openNewForwardsWorkingDirectoryAndUsesUniqueFallbackKeys() async throws {
     let capture = ConfigurationCapture()
     let manager = capturingManager(capture, mode: "no-session-file")

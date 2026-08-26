@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ActiveSessionView: View {
     let controller: SessionController
+    var controls: ComposerControlsModel?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +26,8 @@ struct ActiveSessionView: View {
             ComposerView(
                 draft: Bindable(controller).draft,
                 presentation: .active(controller: controller),
+                controls: controls,
+                controlsMode: .activeSession,
                 onSend: {
                     Task { await controller.sendPrompt() }
                 })

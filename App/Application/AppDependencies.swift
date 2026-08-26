@@ -5,6 +5,7 @@ struct AppDependencies: Sendable {
     let ompLocator: any OmpLocating
     let sessionLibrary: SessionLibrary
     let makeProviderModel: @MainActor @Sendable (URL) -> ProviderManagementViewModel
+    let makeComposerControls: @MainActor @Sendable (URL) -> ComposerControlsModel
 
     static let live = AppDependencies(
         ompLocator: OmpExecutableLocator(),
@@ -17,5 +18,12 @@ struct AppDependencies: Sendable {
                 openURL: { url in
                     NSWorkspace.shared.open(url)
                 })
+        },
+        makeComposerControls: { executableURL in
+            ComposerControlsModel(
+                catalog: OmpModelCatalogService(executableURL: executableURL),
+                defaults: OmpComposerDefaultStore(
+                    config: OmpConfigService(
+                        runner: OmpConfigProcessRunner(executableURL: executableURL))))
         })
 }

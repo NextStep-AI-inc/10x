@@ -108,6 +108,10 @@ public struct RpcCommand: Sendable, Equatable {
         RpcCommand(type: "set_thinking_level", fields: ["level": .string(level)])
     }
 
+    public static func setFastMode(enabled: Bool) -> RpcCommand {
+        RpcCommand(type: "set_fast_mode", fields: ["enabled": .bool(enabled)])
+    }
+
     // MARK: - Session
 
     public static func switchSession(path: String) -> RpcCommand {

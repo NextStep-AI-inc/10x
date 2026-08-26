@@ -27,6 +27,9 @@ public struct RpcClientConfiguration: Sendable {
     public var cwd: URL?
     public var resumeSessionPath: String?
     public var noSession: Bool = false
+    public var provider: String?
+    public var model: String?
+    public var thinking: String?
     public var environment: [String: String]?
     public var startupTimeout: Duration = .seconds(30)
     public var requestTimeout: Duration = .seconds(30)
@@ -39,6 +42,9 @@ public struct RpcClientConfiguration: Sendable {
     var resolvedArguments: [String] {
         if rawArgv { return extraArguments }
         var args = ["--mode", "rpc", "--no-title"]
+        if let provider { args += ["--provider", provider] }
+        if let model { args += ["--model", model] }
+        if let thinking { args += ["--thinking", thinking] }
         if let resumeSessionPath {
             args += ["-r", resumeSessionPath]
         } else if noSession {

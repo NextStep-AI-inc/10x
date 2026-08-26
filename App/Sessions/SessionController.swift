@@ -6,7 +6,7 @@ import UserNotifications
 
 @MainActor
 @Observable
-final class SessionController {
+final class SessionController: ComposerSessionControlling {
     private(set) var items: [TranscriptItem] = []
     private(set) var runtimeState: SessionRuntimeState = .loading
     private(set) var title = "Untitled session"
@@ -89,7 +89,18 @@ final class SessionController {
         }
     }
 
-    func openNew(projectURL: URL) async {
+    enum ComposerFastModeApplyOutcome: Sendable {
+        case notRequested
+        case applied
+        case unsupported
+        case failed
+    }
+
+    @discardableResult
+    func openNew(
+        projectURL: URL,
+        selection: ComposerSpawnSelection? = nil
+    ) async -> ComposerFastModeApplyOutcome {
         self.projectURL = projectURL
         fallbackThreadStartDate = Date()
         title = "New session"
@@ -97,11 +108,50 @@ final class SessionController {
         runtimeState = .loading
 
         do {
-            let handle = try await processManager.openNew(projectDirectory: projectURL.path)
+            let handle = try await processManager.openNew(
+                projectDirectory: projectURL.path,
+                provider: selection?.provider,
+                model: selection?.modelID,
+                thinking: selection?.thinking)
             try await finishOpening(handle)
+            guard selection?.fastModeEnabled == true else { return .notRequested }
+            do {
+                let supported = try await setFastMode(true)
+                return supported ? .applied : .unsupported
+            } catch {
+                return .failed
+            }
         } catch {
             fail(error, function: "openNew")
+            return selection?.fastModeEnabled == true ? .failed : .notRequested
         }
+    }
+
+    func setModel(provider: String, modelID: String) async throws {
+        guard let handle else { throw RpcClientError.notStarted }
+        let response = try await handle.client.send(.setModel(provider: provider, modelId: modelID))
+        if let label = Self.modelLabel(response.data) {
+            modelName = label
+        } else {
+            await refreshState()
+        }
+    }
+
+    func setThinkingLevel(_ level: String) async throws {
+        guard let handle else { throw RpcClientError.notStarted }
+        _ = try await handle.client.send(.setThinkingLevel(level))
+        thinkingLevel = level.capitalized
+    }
+
+    /// Returns `false` only when Fast mode is unsupported (`active == false`).
+    /// Transport / OMP command failures throw.
+    func setFastMode(_ enabled: Bool) async throws -> Bool {
+        guard let handle else { throw RpcClientError.notStarted }
+        let response = try await handle.client.send(.setFastMode(enabled: enabled))
+        if response.data?["active"]?.boolValue == false {
+            return false
+        }
+        return true
     }
 
     func sendPrompt() async {

@@ -25,6 +25,7 @@ final class AppModel {
     let idePreferenceStore: IDEPreferenceStore
     let fileOpenService: FileOpenService
     private(set) var providerModel: ProviderManagementViewModel?
+    private(set) var composerControls: ComposerControlsModel?
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
@@ -60,6 +61,7 @@ final class AppModel {
         guard !isSessionMutationInFlight else { return }
         selectedProjectURL = url.standardizedFileURL
         activeSession = nil
+        detachComposerControlsAndRefresh()
         route = .newSession
     }
 
@@ -114,6 +116,7 @@ final class AppModel {
     func openNewSession() {
         guard !isSessionMutationInFlight else { return }
         activeSession = nil
+        detachComposerControlsAndRefresh()
         route = .newSession
     }
 
@@ -126,6 +129,7 @@ final class AppModel {
     func completeProviderSetup() {
         guard providerModel?.hasAuthenticatedProvider == true else { return }
         route = .newSession
+        Task { await refreshComposerControls() }
     }
 
     func openSearch() {
@@ -154,7 +158,10 @@ final class AppModel {
         let controller = SessionController(processManager: processManager)
         activeSession = controller
         route = .session(metadata.path)
-        Task { await controller.openExisting(metadata) }
+        Task {
+            await controller.openExisting(metadata)
+            composerControls?.attachActiveSession(controller)
+        }
     }
 
     func startNewSession(prompt: String) {
@@ -164,8 +171,15 @@ final class AppModel {
         controller.draft = prompt
         activeSession = controller
         route = .session("new:\(UUID().uuidString)")
+        let selection = composerControls?.spawnSelection
         Task {
-            await controller.openNew(projectURL: selectedProjectURL)
+            let fastOutcome = await controller.openNew(
+                projectURL: selectedProjectURL,
+                selection: selection)
+            if fastOutcome == .unsupported || fastOutcome == .failed {
+                await composerControls?.setFastMode(false, mode: .newSession)
+            }
+            composerControls?.attachActiveSession(controller)
             await controller.sendPrompt()
             await reloadSessions()
         }
@@ -278,8 +292,24 @@ final class AppModel {
         guard let matchingPath else { return }
         let processManager = processManager
         activeSession = nil
-        if routePath != nil { route = .newSession }
+        if routePath != nil {
+            route = .newSession
+            detachComposerControlsAndRefresh()
+        }
         await processManager?.close(sessionPath: matchingPath)
+    }
+
+    private func detachComposerControlsAndRefresh() {
+        composerControls?.detachActiveSession()
+        Task { await refreshComposerControls() }
+    }
+
+    private func refreshComposerControls() async {
+        let authenticatedIDs = Set(
+            (providerModel?.providers ?? [])
+                .filter(\.isAuthenticated)
+                .map(\.id))
+        await composerControls?.refresh(authenticatedProviderIDs: authenticatedIDs)
     }
 
     private func finish(
@@ -322,6 +352,9 @@ final class AppModel {
         if let providerModel {
             await providerModel.shutdown()
         }
+        if let composerControls {
+            await composerControls.shutdown()
+        }
 
         guard let installation = locatedInstallation else {
             exitTask?.cancel()
@@ -329,6 +362,7 @@ final class AppModel {
             processManager = nil
             settingsModel = nil
             providerModel = nil
+            composerControls = nil
             route = .setup
             return
         }
@@ -340,6 +374,8 @@ final class AppModel {
             runner: OmpConfigProcessRunner(executableURL: installation.executableURL)))
         let providerModel = dependencies.makeProviderModel(installation.executableURL)
         self.providerModel = providerModel
+        let composerControls = dependencies.makeComposerControls(installation.executableURL)
+        self.composerControls = composerControls
         watchUnexpectedExits(from: processManager)
         setupError = nil
         route = .providerSetup
@@ -348,6 +384,7 @@ final class AppModel {
         }
         await providerModel.loadProviders()
         guard self.providerModel === providerModel else { return }
+        await refreshComposerControls()
         if providerModel.hasAuthenticatedProvider {
             route = .newSession
         }
