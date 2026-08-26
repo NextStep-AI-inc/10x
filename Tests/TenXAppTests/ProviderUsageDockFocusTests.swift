@@ -1,10 +1,18 @@
 import Testing
 @testable import TenXApp
 
-@Test func providerUsageDockFocusReturnWaitsForCompactMountAndConsumesOnce() {
-    var restoration = ProviderUsageDockFocusRestoration()
-    restoration.scheduleReturn(to: "anthropic")
+@MainActor
+@Test func providerUsageDockFocusReturnWaitsForCompactMountAndAssignsOnce() async {
+    let restoration = ProviderUsageDockFocusRestorationCoordinator()
+    var focusedProviderIDs: [String] = []
 
-    #expect(restoration.consumeOnCompactMount() == "anthropic")
-    #expect(restoration.consumeOnCompactMount() == nil)
+    restoration.scheduleReturn(to: "anthropic")
+    await restoration.restoreAfterCompactMount { providerID in
+        focusedProviderIDs.append(providerID)
+    }
+    await restoration.restoreAfterCompactMount { providerID in
+        focusedProviderIDs.append(providerID)
+    }
+
+    #expect(focusedProviderIDs == ["anthropic"])
 }

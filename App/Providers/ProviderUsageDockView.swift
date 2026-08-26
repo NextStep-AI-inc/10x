@@ -10,7 +10,7 @@ struct ProviderUsageDockView: View {
     let collapsedBottomOffset: CGFloat
 
     @State private var selectedProviderID: String?
-    @State private var focusRestoration = ProviderUsageDockFocusRestoration()
+    @State private var focusRestoration = ProviderUsageDockFocusRestorationCoordinator()
     @FocusState private var compactFocusedProviderID: String?
     @FocusState private var expandedFocusedProviderID: String?
     @Namespace private var expansionNamespace
@@ -217,9 +217,9 @@ struct ProviderUsageDockView: View {
 
     private func restoreCompactFocusIfNeeded() {
         Task { @MainActor in
-            await Task.yield()
-            guard let providerID = focusRestoration.consumeOnCompactMount() else { return }
-            compactFocusedProviderID = providerID
+            await focusRestoration.restoreAfterCompactMount { providerID in
+                compactFocusedProviderID = providerID
+            }
         }
     }
 
@@ -234,15 +234,18 @@ struct ProviderUsageDockView: View {
     }
 }
 
-struct ProviderUsageDockFocusRestoration {
+@MainActor
+final class ProviderUsageDockFocusRestorationCoordinator {
     private var pendingProviderID: String?
 
-    mutating func scheduleReturn(to providerID: String) {
+    func scheduleReturn(to providerID: String) {
         pendingProviderID = providerID
     }
 
-    mutating func consumeOnCompactMount() -> String? {
-        defer { pendingProviderID = nil }
-        return pendingProviderID
+    func restoreAfterCompactMount(_ assignCompactFocus: (String) -> Void) async {
+        await Task.yield()
+        guard let providerID = pendingProviderID else { return }
+        pendingProviderID = nil
+        assignCompactFocus(providerID)
     }
 }
