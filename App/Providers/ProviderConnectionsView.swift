@@ -1,34 +1,54 @@
+import OmpKit
 import SwiftUI
 
 struct ProviderConnectionsView: View {
     let providers: [ProviderLoginProvider]
     let credentialIssues: [ProviderCredentialIssue]
+    let accountsByProviderID: [String: [ProviderAccountSummary]]
+    let accountManagedProviderIDs: Set<String>
+    let primaryAccountRefs: [String: String]
+    let sessionCounts: [ProviderAccountKey: Int]
+    let pendingRemovalAccounts: Set<ProviderAccountKey>
+    let focusedProviderID: String?
     let isLoading: Bool
     let providerMessage: String?
     let loginMessage: String?
     let loginMessageProviderID: String?
+    let removalMessage: String?
+    let removalMessageProviderID: String?
     let activeLoginProviderID: String?
     let isShowingAllProviders: Bool
     let query: Binding<String>
     let onShowAll: () -> Void
     let onConnect: (ProviderLoginProvider) -> Void
+    let onRemove: (ProviderLoginProvider, ProviderAccountSummary) -> Void
     let onCancel: () -> Void
     let onRetry: () -> Void
 
+    @FocusState private var focusedAddAccountProviderID: String?
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if let providerMessage {
-                    recovery(message: providerMessage)
-                } else if isLoading && providers.isEmpty {
-                    loadingRows
-                } else {
-                    catalog
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let providerMessage {
+                        recovery(message: providerMessage)
+                    } else if isLoading && providers.isEmpty {
+                        loadingRows
+                    } else {
+                        catalog
+                    }
                 }
+                .padding(.bottom, 60)
             }
-            .padding(.bottom, 60)
+            .scrollIndicators(.hidden)
+            .task(id: focusedProviderID) {
+                guard let focusedProviderID else { return }
+                await Task.yield()
+                proxy.scrollTo(focusedProviderID, anchor: .center)
+                focusedAddAccountProviderID = focusedProviderID
+            }
         }
-        .scrollIndicators(.hidden)
     }
 
     @ViewBuilder
@@ -64,13 +84,19 @@ struct ProviderConnectionsView: View {
                 .padding(.vertical, 30)
         } else {
             ForEach(providers) { provider in
-                ProviderConnectionRowView(
-                    provider: provider,
-                    credentialIssue: credentialIssues.first(where: { $0.providerID == provider.id }),
-                    activeLoginProviderID: activeLoginProviderID,
-                    loginMessage: loginMessageProviderID == provider.id ? loginMessage : nil,
-                    onConnect: { onConnect(provider) },
-                    onCancel: onCancel)
+                if accountManagedProviderIDs.contains(provider.id), provider.isAuthenticated {
+                    accountGroup(provider)
+                        .id(provider.id)
+                } else {
+                    ProviderConnectionRowView(
+                        provider: provider,
+                        credentialIssue: credentialIssues.first(where: { $0.providerID == provider.id }),
+                        activeLoginProviderID: activeLoginProviderID,
+                        loginMessage: loginMessageProviderID == provider.id ? loginMessage : nil,
+                        onConnect: { onConnect(provider) },
+                        onCancel: onCancel)
+                        .id(provider.id)
+                }
             }
         }
 
@@ -78,6 +104,69 @@ struct ProviderConnectionsView: View {
             Button("Browse all providers", action: onShowAll)
                 .buttonStyle(GhostActionStyle())
                 .padding(.top, 9)
+        }
+    }
+
+    private func accountGroup(_ provider: ProviderLoginProvider) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(provider.companyName)
+                .font(TenXTypography.body(size: 14, weight: .semibold))
+                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                .padding(.top, 16)
+                .padding(.bottom, 5)
+
+            ForEach(accountsByProviderID[provider.id] ?? []) { account in
+                ProviderAccountConnectionRowView(
+                    account: account,
+                    isPrimary: primaryAccountRefs[provider.id] == account.accountRef,
+                    sessionCount: sessionCounts[ProviderAccountKey(
+                        providerID: provider.id,
+                        accountRef: account.accountRef)] ?? 0,
+                    isPendingRemoval: pendingRemovalAccounts.contains(ProviderAccountKey(
+                        providerID: provider.id,
+                        accountRef: account.accountRef)),
+                    onRemove: { onRemove(provider, account) })
+                    .padding(.leading, 16)
+            }
+
+            if activeLoginProviderID == provider.id {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Connecting…")
+                        .font(TenXTypography.body(size: 12))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    Button("Cancel", action: onCancel)
+                        .buttonStyle(GhostActionStyle(
+                            color: TenXPalette.color(TenXPalette.nearBlackHex)))
+                }
+                .padding(.vertical, 10)
+            } else {
+                Button("Add account") {
+                    onConnect(provider)
+                }
+                .buttonStyle(GhostActionStyle())
+                .disabled(activeLoginProviderID != nil)
+                .focused($focusedAddAccountProviderID, equals: provider.id)
+                .padding(.vertical, 10)
+            }
+
+            if let loginMessage, loginMessageProviderID == provider.id {
+                Text(loginMessage)
+                    .font(TenXTypography.body(size: 12))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                    .padding(.bottom, 10)
+            }
+            if let removalMessage, removalMessageProviderID == provider.id {
+                Text(removalMessage)
+                    .font(TenXTypography.body(size: 12))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                    .padding(.bottom, 10)
+            }
+
+            Rectangle()
+                .fill(TenXPalette.color(TenXPalette.separatorHex))
+                .frame(height: 1)
         }
     }
 

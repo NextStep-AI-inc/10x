@@ -143,6 +143,150 @@ import Testing
     #expect(model.providerMessage == "Provider accounts couldn’t be loaded.")
 }
 
+@Test func successfulLoginAppendsAnAccountAndRefreshesAccountMetadataAndUsage() async throws {
+    let providerID = "openai-codex"
+    let first = providerAccountFixture(
+        providerID: providerID,
+        ref: "acct_A",
+        label: "same@example.com",
+        order: 0,
+        detailLabel: "Personal")
+    let second = providerAccountFixture(
+        providerID: providerID,
+        ref: "acct_B",
+        label: "same@example.com",
+        order: 1,
+        detailLabel: "Work")
+    let service = AccountManagementProviderService(
+        provider: ProviderLoginProvider(
+            id: providerID,
+            name: "ChatGPT",
+            isAvailable: true,
+            isAuthenticated: true),
+        accounts: [first],
+        accountAddedOnLogin: second)
+    let usage = FakeUsageService(snapshot: .empty)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: usage,
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+
+    await model.login(provider)
+
+    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == ["acct_A", "acct_B"])
+    #expect(model.connectionAccounts(providerID: providerID).map(\.displayLabel) == [
+        "same@example.com", "same@example.com",
+    ])
+    #expect(await service.loginIDs == [providerID])
+    #expect(await service.accountLoadCount == 2)
+    #expect(await service.accountUsageLoadCount == 2)
+    #expect(await usage.loadCount == 2)
+}
+
+@Test func staleExternalRemovalRefreshesRowsAndReportsAccountUnavailable() async throws {
+    let providerID = "openai-codex"
+    let removed = providerAccountFixture(
+        providerID: providerID,
+        ref: "acct_A",
+        label: "Personal",
+        order: 0)
+    let remaining = providerAccountFixture(
+        providerID: providerID,
+        ref: "acct_B",
+        label: "Work",
+        order: 1)
+    let service = AccountManagementProviderService(
+        provider: ProviderLoginProvider(
+            id: providerID,
+            name: "ChatGPT",
+            isAvailable: true,
+            isAuthenticated: true),
+        accounts: [removed, remaining],
+        removalReportsStale: true)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let (coordinator, defaults, suiteName) = try makeManagementCoordinator()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+
+    await model.removeAccount(removed, coordinator: coordinator)
+
+    #expect(await service.removalRequests == [
+        AccountRemovalRequest(providerID: providerID, accountRef: "acct_A"),
+    ])
+    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == ["acct_B"])
+    #expect(model.removalMessage == "Account is no longer available.")
+    #expect(model.pendingRemovalAccounts.isEmpty)
+}
+
+@Test func connectionFocusSelectsConnectionsAndRetainsTheProviderTarget() {
+    let model = providerTestModel(providers: [])
+    model.selectedSection = .usage
+
+    model.focusConnections(providerID: "anthropic")
+
+    #expect(model.selectedSection == .connections)
+    #expect(model.focusedConnectionsProviderID == "anthropic")
+}
+
+@Test func accountConnectionCopyUsesSafeDetailPrimaryAndSessionGrammar() {
+    let account = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "private-ref",
+        label: "same@example.com",
+        order: 0,
+        detailLabel: "Work")
+
+    let unused = ProviderAccountConnectionRowPresentation.make(
+        account: account,
+        isPrimary: false,
+        sessionCount: 0,
+        isPendingRemoval: false)
+    let singular = ProviderAccountConnectionRowPresentation.make(
+        account: account,
+        isPrimary: true,
+        sessionCount: 1,
+        isPendingRemoval: false)
+    let plural = ProviderAccountConnectionRowPresentation.make(
+        account: account,
+        isPrimary: true,
+        sessionCount: 3,
+        isPendingRemoval: false)
+
+    #expect(unused.label == "same@example.com")
+    #expect(unused.detail == "Work")
+    #expect(unused.status == nil)
+    #expect(singular.status == "Primary · In use by 1 session")
+    #expect(plural.status == "Primary · In use by 3 sessions")
+    #expect(!plural.accessibilityLabel.contains("private-ref"))
+}
+
+@Test func removalConfirmationCopyNamesOnlyManagedSessionsAndUsesExactLastAccountWarning() {
+    let normal = ProviderAccountRemovalConfirmationPresentation(
+        providerName: "ChatGPT",
+        accountLabel: "work@example.com",
+        affectedSessionCount: 2,
+        isLastAccount: false)
+    let last = ProviderAccountRemovalConfirmationPresentation(
+        providerName: "ChatGPT",
+        accountLabel: "work@example.com",
+        affectedSessionCount: 2,
+        isLastAccount: true)
+
+    #expect(normal.title == "Remove work@example.com?")
+    #expect(normal.message == "2 10x-managed sessions use this account. They move to another account before removal. Generating turns finish first.")
+    #expect(!normal.message.localizedCaseInsensitiveContains("other apps"))
+    #expect(!normal.message.localizedCaseInsensitiveContains("terminal"))
+    #expect(last.title == "Remove the last account?")
+    #expect(last.message == "This disconnects ChatGPT. Sessions using this provider cannot continue through it.")
+}
+
 @Test func lateCLIFailureDoesNotOverwriteNewerAccountRPCUsage() async throws {
     let providerID = "cursor"
     let account = providerAccountFixture(
@@ -710,4 +854,100 @@ final class MutableClock: Sendable {
     }
 }
 
+}
+
+private struct AccountRemovalRequest: Equatable, Sendable {
+    let providerID: String
+    let accountRef: String
+}
+
+private actor AccountManagementProviderService: ProviderManaging {
+    nonisolated let events: AsyncStream<ProviderLoginEvent>
+
+    private let eventContinuation: AsyncStream<ProviderLoginEvent>.Continuation
+    private var provider: ProviderLoginProvider
+    private var accounts: [ProviderAccountSummary]
+    private let accountAddedOnLogin: ProviderAccountSummary?
+    private let removalReportsStale: Bool
+    private(set) var loginIDs: [String] = []
+    private(set) var removalRequests: [AccountRemovalRequest] = []
+    private(set) var accountLoadCount = 0
+    private(set) var accountUsageLoadCount = 0
+
+    init(
+        provider: ProviderLoginProvider,
+        accounts: [ProviderAccountSummary],
+        accountAddedOnLogin: ProviderAccountSummary? = nil,
+        removalReportsStale: Bool = false
+    ) {
+        self.provider = provider
+        self.accounts = accounts
+        self.accountAddedOnLogin = accountAddedOnLogin
+        self.removalReportsStale = removalReportsStale
+        (events, eventContinuation) = AsyncStream.makeStream(bufferingPolicy: .unbounded)
+    }
+
+    func providers() async throws -> [ProviderLoginProvider] { [provider] }
+
+    func accountCapability(providerID: String) async throws -> ProviderAccountCapability {
+        .accountRouting
+    }
+
+    func accounts(providerID: String) async throws -> [ProviderAccountSummary] {
+        accountLoadCount += 1
+        return accounts
+    }
+
+    func accountUsage(providerID: String) async throws -> [ProviderAccountUsage] {
+        accountUsageLoadCount += 1
+        return []
+    }
+
+    func removeAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> ProviderAccountRemovalResult {
+        removalRequests.append(AccountRemovalRequest(providerID: providerID, accountRef: accountRef))
+        accounts.removeAll { $0.providerID == providerID && $0.accountRef == accountRef }
+        if accounts.isEmpty {
+            provider = ProviderLoginProvider(
+                id: provider.id,
+                name: provider.name,
+                isAvailable: provider.isAvailable,
+                isAuthenticated: false)
+        }
+        return ProviderAccountRemovalResult(
+            removed: !removalReportsStale,
+            accounts: accounts)
+    }
+
+    func login(providerID: String, generation: Int) async throws {
+        loginIDs.append(providerID)
+        if let accountAddedOnLogin, !accounts.contains(where: { $0.accountRef == accountAddedOnLogin.accountRef }) {
+            accounts.append(accountAddedOnLogin)
+        }
+    }
+
+    func respond(requestID: String, body: [String: JSONValue]) async throws {}
+
+    func cancelLogin() async {}
+
+    func shutdown() async {
+        eventContinuation.finish()
+    }
+}
+
+@MainActor
+private func makeManagementCoordinator() throws -> (
+    coordinator: ProviderAccountCoordinator,
+    defaults: UserDefaults,
+    suiteName: String
+) {
+    let suiteName = "TenXAppTests.ProviderManagementCoordinator.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defaults.removePersistentDomain(forName: suiteName)
+    return (
+        ProviderAccountCoordinator(primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults)),
+        defaults,
+        suiteName)
 }

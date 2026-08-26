@@ -14,6 +14,7 @@ private struct ProviderServiceBox: Sendable {
     let accountCapability: @Sendable (String) async throws -> ProviderAccountCapability
     let accounts: @Sendable (String) async throws -> [ProviderAccountSummary]
     let accountUsage: @Sendable (String) async throws -> [ProviderAccountUsage]
+    let removeAccount: @Sendable (String, String) async throws -> ProviderAccountRemovalResult
     let login: @Sendable (String, Int) async throws -> Void
     let respond: @Sendable (String, [String: JSONValue]) async throws -> Void
     let cancelLogin: @Sendable () async -> Void
@@ -25,6 +26,9 @@ private struct ProviderServiceBox: Sendable {
         accountCapability = { try await service.accountCapability(providerID: $0) }
         accounts = { try await service.accounts(providerID: $0) }
         accountUsage = { try await service.accountUsage(providerID: $0) }
+        removeAccount = { providerID, accountRef in
+            try await service.removeAccount(providerID: providerID, accountRef: accountRef)
+        }
         login = { providerID, generation in
             try await service.login(providerID: providerID, generation: generation)
         }
@@ -57,6 +61,7 @@ final class ProviderManagementViewModel {
     var query = ""
     var isShowingAllProviders = false
     var selectedSection: ProviderWorkspaceSection = .connections
+    private(set) var focusedConnectionsProviderID: String?
     private(set) var providers: [ProviderLoginProvider] = []
     private(set) var usage = ProviderUsagePresentation.empty
     private(set) var isLoadingProviders = false
@@ -68,6 +73,9 @@ final class ProviderManagementViewModel {
     private(set) var loginMessageProviderID: String?
     private(set) var sheetRequest: ExtensionUIState?
     private(set) var lastUsageRefresh: Date?
+    private(set) var pendingRemovalAccounts: Set<ProviderAccountKey> = []
+    private(set) var removalMessage: String?
+    private(set) var removalMessageProviderID: String?
 
     @ObservationIgnored private let providerService: ProviderServiceBox
     @ObservationIgnored private let usageService: UsageServiceBox
@@ -128,6 +136,19 @@ final class ProviderManagementViewModel {
         usage.dockProviders
     }
 
+    func connectionAccounts(providerID: String) -> [ProviderAccountSummary] {
+        (accountSummaries[providerID] ?? []).enumerated().sorted { lhs, rhs in
+            if lhs.element.connectionOrder != rhs.element.connectionOrder {
+                return lhs.element.connectionOrder < rhs.element.connectionOrder
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    func supportsAccountManagement(providerID: String) -> Bool {
+        accountCapabilities[providerID] == .accountRouting
+    }
+
     func load() async {
         await refresh()
     }
@@ -184,6 +205,47 @@ final class ProviderManagementViewModel {
         }
     }
 
+    func removeAccount(
+        _ account: ProviderAccountSummary,
+        coordinator: ProviderAccountCoordinator
+    ) async {
+        let key = ProviderAccountKey(
+            providerID: account.providerID,
+            accountRef: account.accountRef)
+        guard pendingRemovalAccounts.insert(key).inserted else { return }
+        removalMessage = nil
+        removalMessageProviderID = nil
+        defer { pendingRemovalAccounts.remove(key) }
+
+        do {
+            let result = try await coordinator.removeAccount(
+                providerID: account.providerID,
+                accountRef: account.accountRef,
+                accounts: connectionAccounts(providerID: account.providerID)
+            ) { [providerService] in
+                try await providerService.removeAccount(account.providerID, account.accountRef)
+            }
+            accountSummaries[account.providerID] = result.accounts
+            accountUsage[account.providerID] = accountUsage[account.providerID]?.filter {
+                $0.accountRef != account.accountRef
+            }
+            rebuildUsage(at: lastUsageRefresh ?? now())
+            await refresh(forceFresh: true)
+            if !result.removed {
+                removalMessage = "Account is no longer available."
+                removalMessageProviderID = account.providerID
+            }
+        } catch ProviderAccountRemovalError.reassignmentFailed(let count) {
+            removalMessage = count == 1
+                ? "Account couldn’t be removed because 1 10x-managed session couldn’t switch."
+                : "Account couldn’t be removed because \(count) 10x-managed sessions couldn’t switch."
+            removalMessageProviderID = account.providerID
+        } catch {
+            removalMessage = "Account couldn’t be removed."
+            removalMessageProviderID = account.providerID
+        }
+    }
+
     func cancelLogin() async {
         loginGeneration += 1
         clearLoginState()
@@ -220,6 +282,11 @@ final class ProviderManagementViewModel {
 
     func showAllProviders() {
         isShowingAllProviders = true
+    }
+
+    func focusConnections(providerID: String) {
+        selectedSection = .connections
+        focusedConnectionsProviderID = providerID
     }
 
     private func refreshProviders(forceFresh: Bool) async {

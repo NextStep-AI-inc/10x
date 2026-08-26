@@ -1,11 +1,20 @@
+import OmpKit
 import SwiftUI
 
 struct ProvidersView: View {
     let model: ProviderManagementViewModel
+    let accountCoordinator: ProviderAccountCoordinator?
     let onBack: (() -> Void)?
 
-    init(model: ProviderManagementViewModel, onBack: (() -> Void)? = nil) {
+    @State private var removalRequest: ProviderAccountRemovalRequest?
+
+    init(
+        model: ProviderManagementViewModel,
+        accountCoordinator: ProviderAccountCoordinator? = nil,
+        onBack: (() -> Void)? = nil
+    ) {
         self.model = model
+        self.accountCoordinator = accountCoordinator
         self.onBack = onBack
     }
 
@@ -40,6 +49,26 @@ struct ProvidersView: View {
                             with: .cancelled(timedOut: false))
                     }
                 })
+        }
+        .overlay {
+            if let removalRequest, let accountCoordinator {
+                ProviderAccountRemovalConfirmationView(
+                    providerName: removalRequest.provider.companyName,
+                    accountLabel: removalRequest.account.displayLabel,
+                    affectedSessionCount: accountCoordinator.sessionCounts[removalRequest.key] ?? 0,
+                    isLastAccount: model.connectionAccounts(
+                        providerID: removalRequest.provider.id).count == 1,
+                    isRemoving: model.pendingRemovalAccounts.contains(removalRequest.key),
+                    onCancel: { self.removalRequest = nil },
+                    onRemove: {
+                        Task {
+                            await model.removeAccount(
+                                removalRequest.account,
+                                coordinator: accountCoordinator)
+                            self.removalRequest = nil
+                        }
+                    })
+            }
         }
     }
 
@@ -104,16 +133,30 @@ struct ProvidersView: View {
             ProviderConnectionsView(
                 providers: model.visibleProviders,
                 credentialIssues: model.usage.credentialIssues,
+                accountsByProviderID: connectionAccounts,
+                accountManagedProviderIDs: accountManagedProviderIDs,
+                primaryAccountRefs: primaryAccountRefs,
+                sessionCounts: accountCoordinator?.sessionCounts ?? [:],
+                pendingRemovalAccounts: model.pendingRemovalAccounts.union(
+                    accountCoordinator?.pendingRemovalAccounts ?? []),
+                focusedProviderID: model.focusedConnectionsProviderID,
                 isLoading: model.isLoadingProviders,
                 providerMessage: model.providerMessage,
                 loginMessage: model.loginMessage,
                 loginMessageProviderID: model.loginMessageProviderID,
+                removalMessage: model.removalMessage,
+                removalMessageProviderID: model.removalMessageProviderID,
                 activeLoginProviderID: model.activeLoginProviderID,
                 isShowingAllProviders: model.isShowingAllProviders,
                 query: queryBinding,
                 onShowAll: model.showAllProviders,
                 onConnect: { provider in
                     Task { await model.login(provider) }
+                },
+                onRemove: { provider, account in
+                    removalRequest = ProviderAccountRemovalRequest(
+                        provider: provider,
+                        account: account)
                 },
                 onCancel: {
                     Task { await model.cancelLogin() }
@@ -133,6 +176,26 @@ struct ProvidersView: View {
                 onReconnect: { provider in
                     Task { await model.login(provider) }
                 })
+        }
+    }
+
+    private var connectionAccounts: [String: [ProviderAccountSummary]] {
+        model.providers.reduce(into: [:]) { accounts, provider in
+            accounts[provider.id] = model.connectionAccounts(providerID: provider.id)
+        }
+    }
+
+    private var accountManagedProviderIDs: Set<String> {
+        guard accountCoordinator != nil else { return [] }
+        return Set(model.providers.compactMap { provider in
+            model.supportsAccountManagement(providerID: provider.id) ? provider.id : nil
+        })
+    }
+
+    private var primaryAccountRefs: [String: String] {
+        guard let accountCoordinator else { return [:] }
+        return model.providers.reduce(into: [:]) { primaryRefs, provider in
+            primaryRefs[provider.id] = accountCoordinator.primaryAccountRef(providerID: provider.id)
         }
     }
 
@@ -170,5 +233,15 @@ struct ProvidersView: View {
                         with: .cancelled(timedOut: false))
                 }
             })
+    }
+}
+
+private struct ProviderAccountRemovalRequest: Identifiable {
+    let provider: ProviderLoginProvider
+    let account: ProviderAccountSummary
+
+    var id: String { account.id }
+    var key: ProviderAccountKey {
+        ProviderAccountKey(providerID: provider.id, accountRef: account.accountRef)
     }
 }

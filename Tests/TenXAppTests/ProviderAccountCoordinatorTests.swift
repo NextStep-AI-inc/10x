@@ -407,6 +407,339 @@ import Testing
         #expect(coordinator.failureSummary == nil)
     }
 
+    @Test func removingThePrimaryPersistsItsReplacementBeforeIdleSessionsMove() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        await coordinator.useAccount(
+            "acct_A",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+        var primaryObservedDuringPin: String?
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            pinHook: { _ in
+                primaryObservedDuringPin = coordinator.primaryAccountRef(providerID: self.providerID)
+            })
+        coordinator.register(session)
+        var removeCalls = 0
+
+        let result = try await coordinator.removeAccount(
+            providerID: providerID,
+            accountRef: "acct_A",
+            accounts: removalAccounts
+        ) {
+            removeCalls += 1
+            #expect(session.currentProviderAccountRef == "acct_B")
+            return ProviderAccountRemovalResult(removed: true, accounts: [self.removalAccounts[1]])
+        }
+
+        #expect(result.removed)
+        #expect(primaryObservedDuringPin == "acct_B")
+        #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_B")
+        #expect(session.pins == ["acct_B"])
+        #expect(removeCalls == 1)
+    }
+
+    @Test func primaryRepairPreservesConnectionsOrderWhenAccountOrdersMatch() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        await coordinator.useAccount(
+            "acct_primary",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+        let target = providerAccountFixture(
+            providerID: providerID,
+            ref: "acct_primary",
+            label: "Primary",
+            order: 0)
+        let firstRemaining = providerAccountFixture(
+            providerID: providerID,
+            ref: "acct_Z",
+            label: "First remaining",
+            order: 1)
+        let secondRemaining = providerAccountFixture(
+            providerID: providerID,
+            ref: "acct_A",
+            label: "Second remaining",
+            order: 1)
+
+        _ = try await coordinator.removeAccount(
+            providerID: providerID,
+            accountRef: target.accountRef,
+            accounts: [target, firstRemaining, secondRemaining]
+        ) {
+            #expect(coordinator.primaryAccountRef(providerID: self.providerID) == "acct_Z")
+            return ProviderAccountRemovalResult(
+                removed: true,
+                accounts: [firstRemaining, secondRemaining])
+        }
+
+        #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_Z")
+    }
+
+    @Test func generatingRemovalQueuesAReplacementAndAwaitsTheTurn() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            runtimeState: .streaming)
+        coordinator.register(session)
+        var removeCalls = 0
+        let removal = Task {
+            try await coordinator.removeAccount(
+                providerID: providerID,
+                accountRef: "acct_A",
+                accounts: removalAccounts
+            ) {
+                removeCalls += 1
+                #expect(session.runtimeState == .idle)
+                #expect(session.currentProviderAccountRef == "acct_B")
+                #expect(coordinator.pendingAccountRef(sessionID: session.id) == nil)
+                return ProviderAccountRemovalResult(removed: true, accounts: [self.removalAccounts[1]])
+            }
+        }
+        await waitForCoordinatorCondition {
+            coordinator.pendingAccountRef(sessionID: session.id) == "acct_B"
+        }
+
+        #expect(removeCalls == 0)
+        #expect(session.pins.isEmpty)
+
+        session.setGenerating(false)
+        coordinator.update(sessionID: session.id, providerID: providerID, isGenerating: false)
+        await coordinator.sessionDidBecomeIdle(session.id)
+        _ = try await removal.value
+
+        #expect(session.pins == ["acct_B"])
+        #expect(removeCalls == 1)
+    }
+
+    @Test func removalRejectsNewSwitchesToItsTargetAndCancelsAnExistingTargetQueue() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_B",
+            runtimeState: .streaming)
+        coordinator.register(session)
+        await coordinator.useAccount(
+            "acct_A",
+            providerID: providerID,
+            scope: .thisSession,
+            openSessionID: session.id)
+        #expect(coordinator.pendingAccountRef(sessionID: session.id) == "acct_A")
+        let gate = PinPause()
+        let removal = Task {
+            try await coordinator.removeAccount(
+                providerID: providerID,
+                accountRef: "acct_A",
+                accounts: removalAccounts
+            ) {
+                #expect(coordinator.pendingAccountRef(sessionID: session.id) == nil)
+                await gate.pause()
+                return ProviderAccountRemovalResult(removed: true, accounts: [self.removalAccounts[1]])
+            }
+        }
+        await gate.waitUntilStarted()
+
+        await coordinator.useAccount(
+            "acct_A",
+            providerID: providerID,
+            scope: .thisSession,
+            openSessionID: session.id)
+
+        #expect(coordinator.pendingRemovalAccounts == [
+            ProviderAccountKey(providerID: providerID, accountRef: "acct_A"),
+        ])
+        #expect(coordinator.pendingAccountRef(sessionID: session.id) == nil)
+        #expect(session.pins.isEmpty)
+        #expect(coordinator.failureSummary == "Account is no longer available.")
+        await gate.release()
+        _ = try await removal.value
+    }
+
+    @Test func removalAwaitsAnInFlightSwitchToItsTargetBeforeExactRemoval() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let pinGate = PinPause()
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_B",
+            pinHook: { accountRef in
+                if accountRef == "acct_A" {
+                    await pinGate.pause()
+                }
+            })
+        coordinator.register(session)
+        let switchToTarget = Task {
+            await coordinator.useAccount(
+                "acct_A",
+                providerID: providerID,
+                scope: .thisSession,
+                openSessionID: session.id)
+        }
+        await pinGate.waitUntilStarted()
+        var removeCalls = 0
+        let removal = Task {
+            try await coordinator.removeAccount(
+                providerID: providerID,
+                accountRef: "acct_A",
+                accounts: removalAccounts
+            ) {
+                removeCalls += 1
+                #expect(session.currentProviderAccountRef == "acct_B")
+                return ProviderAccountRemovalResult(removed: true, accounts: [self.removalAccounts[1]])
+            }
+        }
+        await waitForCoordinatorCondition { !coordinator.pendingRemovalAccounts.isEmpty }
+
+        #expect(removeCalls == 0)
+        await pinGate.release()
+        await switchToTarget.value
+        _ = try await removal.value
+
+        #expect(session.pins == ["acct_A", "acct_B"])
+        #expect(removeCalls == 1)
+    }
+
+    @Test func removalAwaitsAnExistingManualQueueAwayFromTheTarget() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            runtimeState: .streaming)
+        coordinator.register(session)
+        await coordinator.useAccount(
+            "acct_C",
+            providerID: providerID,
+            scope: .thisSession,
+            openSessionID: session.id)
+        var removeCalls = 0
+        let removal = Task {
+            try await coordinator.removeAccount(
+                providerID: providerID,
+                accountRef: "acct_A",
+                accounts: removalAccounts + [providerAccountFixture(
+                    providerID: providerID,
+                    ref: "acct_C",
+                    label: "Manual",
+                    order: 2)]
+            ) {
+                removeCalls += 1
+                #expect(session.currentProviderAccountRef == "acct_C")
+                #expect(coordinator.pendingAccountRef(sessionID: session.id) == nil)
+                return ProviderAccountRemovalResult(removed: true, accounts: [])
+            }
+        }
+        await Task.yield()
+
+        #expect(removeCalls == 0)
+        #expect(coordinator.pendingAccountRef(sessionID: session.id) == "acct_C")
+
+        session.setGenerating(false)
+        coordinator.update(sessionID: session.id, providerID: providerID, isGenerating: false)
+        await coordinator.sessionDidBecomeIdle(session.id)
+        _ = try await removal.value
+
+        #expect(session.pins == ["acct_C"])
+        #expect(removeCalls == 1)
+    }
+
+    @Test func removingTheLastAccountAwaitsGeneratingButDoesNotRepin() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        await coordinator.useAccount(
+            "acct_A",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+        let onlyAccount = removalAccounts[0]
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            runtimeState: .streaming)
+        coordinator.register(session)
+        var removeCalls = 0
+        let removal = Task {
+            try await coordinator.removeAccount(
+                providerID: providerID,
+                accountRef: "acct_A",
+                accounts: [onlyAccount]
+            ) {
+                removeCalls += 1
+                #expect(session.runtimeState == .idle)
+                return ProviderAccountRemovalResult(removed: true, accounts: [])
+            }
+        }
+        await waitForCoordinatorCondition { !coordinator.pendingRemovalAccounts.isEmpty }
+
+        #expect(removeCalls == 0)
+        #expect(session.pins.isEmpty)
+        #expect(coordinator.primaryAccountRef(providerID: providerID) == nil)
+
+        session.setGenerating(false)
+        coordinator.update(sessionID: session.id, providerID: providerID, isGenerating: false)
+        await coordinator.sessionDidBecomeIdle(session.id)
+        _ = try await removal.value
+
+        #expect(removeCalls == 1)
+        #expect(session.pins.isEmpty)
+    }
+
+    @Test func partialRepinFailurePreventsExactRemoval() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let failing = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            failingAccountRefs: ["acct_B"])
+        let succeeding = FakeProviderAccountSession(providerID: providerID, accountRef: "acct_A")
+        coordinator.register(failing)
+        coordinator.register(succeeding)
+        var removeCalls = 0
+
+        do {
+            _ = try await coordinator.removeAccount(
+                providerID: providerID,
+                accountRef: "acct_A",
+                accounts: removalAccounts
+            ) {
+                removeCalls += 1
+                return ProviderAccountRemovalResult(removed: true, accounts: [])
+            }
+            Issue.record("Expected reassignment failure")
+        } catch ProviderAccountRemovalError.reassignmentFailed(let count) {
+            #expect(count == 1)
+        } catch {
+            Issue.record("Unexpected removal error: \(error)")
+        }
+
+        #expect(failing.currentProviderAccountRef == "acct_A")
+        #expect(succeeding.currentProviderAccountRef == "acct_B")
+        #expect(removeCalls == 0)
+        #expect(coordinator.pendingRemovalAccounts.isEmpty)
+    }
+
+    private var removalAccounts: [ProviderAccountSummary] {
+        [
+            providerAccountFixture(
+                providerID: providerID,
+                ref: "acct_A",
+                label: "Primary",
+                order: 0),
+            providerAccountFixture(
+                providerID: providerID,
+                ref: "acct_B",
+                label: "Replacement",
+                order: 1),
+        ]
+    }
+
     private func accountEvent(ref: String, sequence: Int) -> ProviderAccountChangedEvent {
         ProviderAccountChangedEvent(
             providerID: providerID,
@@ -414,6 +747,16 @@ import Testing
             reason: .automaticFailover,
             sequence: sequence)
     }
+}
+
+@MainActor
+private func waitForCoordinatorCondition(
+    _ predicate: @escaping @MainActor () -> Bool
+) async {
+    for _ in 0..<100 where !predicate() {
+        await Task.yield()
+    }
+    #expect(predicate())
 }
 
 @MainActor

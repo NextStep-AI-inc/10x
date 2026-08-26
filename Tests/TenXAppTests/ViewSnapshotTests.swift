@@ -566,6 +566,77 @@ import Testing
 
 @Suite struct ViewSnapshotTests {
 @MainActor
+@Test func providerAccountConnectionsRowsSnapshot() async throws {
+    let providerID = "openai-codex"
+    let service = FakeProviderService(
+        providers: [ProviderLoginProvider(
+            id: providerID,
+            name: "ChatGPT",
+            isAvailable: true,
+            isAuthenticated: true)],
+        capabilities: [providerID: .accountRouting],
+        accounts: [providerID: [
+            providerAccountFixture(
+                providerID: providerID,
+                ref: "acct_A",
+                label: "same@example.com",
+                order: 0,
+                detailLabel: "Personal"),
+            providerAccountFixture(
+                providerID: providerID,
+                ref: "acct_B",
+                label: "same@example.com",
+                order: 1,
+                detailLabel: "Work"),
+        ]])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+    let suiteName = "TenXAppTests.ProviderConnectionsSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: "acct_A"))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: "acct_A"))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: "acct_B"))
+
+    try assertSnapshot(
+        ProvidersView(model: model, accountCoordinator: coordinator),
+        name: "provider-account-connections",
+        size: CGSize(width: 880, height: 680))
+}
+
+@MainActor
+@Test func providerAccountRemovalConfirmationSnapshot() throws {
+    try assertSnapshot(
+        ProviderAccountRemovalConfirmationView(
+            providerName: "ChatGPT",
+            accountLabel: "same@example.com",
+            affectedSessionCount: 2,
+            isLastAccount: false,
+            isRemoving: false,
+            onCancel: {},
+            onRemove: {}),
+        name: "provider-account-removal-confirmation",
+        size: CGSize(width: 880, height: 680))
+}
+
+@MainActor
 @Test func providerAccountMultipleIdleSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
@@ -578,6 +649,37 @@ import Testing
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
         name: "provider-account-multiple-idle",
         size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+private final class SnapshotProviderAccountSession: ProviderAccountSession {
+    let id = UUID()
+    let providerID: String?
+    let runtimeState: SessionRuntimeState = .idle
+    private(set) var currentProviderAccountRef: String?
+    private(set) var providerAccountSequence = 0
+
+    init(providerID: String, accountRef: String) {
+        self.providerID = providerID
+        currentProviderAccountRef = accountRef
+    }
+
+    func setProviderAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> SetSessionProviderAccountResult {
+        currentProviderAccountRef = accountRef
+        providerAccountSequence += 1
+        return SetSessionProviderAccountResult(
+            account: ProviderAccountSummary(
+                providerID: providerID,
+                accountRef: accountRef,
+                displayLabel: "Account",
+                connectionOrder: 0,
+                availability: .available,
+                isActiveForSession: true),
+            sequence: providerAccountSequence)
+    }
 }
 
 @MainActor

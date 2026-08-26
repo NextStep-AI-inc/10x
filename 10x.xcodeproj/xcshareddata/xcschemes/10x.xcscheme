@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "5472A7E2A28BFA8C566B20E0D792033B"
+               BlueprintIdentifier = "3EDFE288AA28B60A18C5D1CD4BE999FF"
                BuildableName = "10x.app"
                BlueprintName = "10x"
                ReferencedContainer = "container:10x.xcodeproj">
