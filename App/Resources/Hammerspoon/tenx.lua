@@ -81,3 +81,5 @@ function tenx.stopWatcher()
     end
     return { ok = true }
 end
+
+return tenx

@@ -1,6 +1,20 @@
 import Foundation
 import OmpKit
 
+enum HammerspoonExecutableLocator {
+    static let supportedCandidates = [
+        URL(filePath: "/opt/homebrew/bin/hs"),
+        URL(filePath: "/usr/local/bin/hs"),
+    ]
+
+    static func locate(
+        in candidates: [URL] = supportedCandidates,
+        isExecutable: (URL) -> Bool = { FileManager.default.isExecutableFile(atPath: $0.path) }
+    ) -> URL? {
+        candidates.first(where: isExecutable)
+    }
+}
+
 struct HammerspoonProvider: AgentDesktopProvider {
     let kind: AgentDesktopProviderKind = .hammerspoon
     private let executable: URL
@@ -8,11 +22,13 @@ struct HammerspoonProvider: AgentDesktopProvider {
     private let watcherPollInterval: Duration
 
     init(
-        executable: URL = URL(filePath: "/usr/local/bin/hs"),
+        executable: URL? = nil,
         runner: any AgentDesktopCommandRunning = AgentDesktopCommandRunner(),
         watcherPollInterval: Duration = .seconds(1)
     ) {
         self.executable = executable
+            ?? HammerspoonExecutableLocator.locate()
+            ?? HammerspoonExecutableLocator.supportedCandidates[0]
         self.runner = runner
         self.watcherPollInterval = watcherPollInterval
     }

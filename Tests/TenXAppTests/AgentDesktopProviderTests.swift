@@ -13,6 +13,34 @@ import Testing
     #expect(!probe.capabilities.canInputInBackground)
 }
 
+@Test func hammerspoonExecutableLocatorUsesSupportedHomebrewCandidatesInOrder() {
+    let candidates = HammerspoonExecutableLocator.supportedCandidates
+
+    #expect(candidates.map(\.path) == ["/opt/homebrew/bin/hs", "/usr/local/bin/hs"])
+    #expect(HammerspoonExecutableLocator.locate(
+        in: candidates,
+        isExecutable: { _ in true }) == candidates[0])
+    #expect(HammerspoonExecutableLocator.locate(
+        in: candidates,
+        isExecutable: { $0 == candidates[1] }) == candidates[1])
+}
+
+@MainActor @Test func hammerspoonModuleContractMatchesSetupInstructions() async throws {
+    let repositoryRoot = URL(filePath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let template = try String(
+        contentsOf: repositoryRoot.appending(path: "App/Resources/Hammerspoon/tenx.lua"),
+        encoding: .utf8)
+    let model = ComputerUseSetupModel(automaticallyChecksReadiness: false)
+
+    await model.perform(.showHammerspoonInstructions)
+
+    #expect(template.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("return tenx"))
+    #expect(model.instructions?.contains("tenx = require(\"tenx\")") == true)
+}
+
 @Test func aeroSpaceWorkspaceIDsRejectUnsafeSessionTokens() async {
     let provider = AeroSpaceProvider()
 
