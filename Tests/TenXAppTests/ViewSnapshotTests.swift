@@ -289,10 +289,28 @@ import Testing
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let registry = IDERegistry.testing(applications: [:])
     let store = IDEPreferenceStore(defaults: defaults, registry: registry)
+    let providerModel = try providerWorkspaceModel()
     await model.load()
     try assertSnapshot(
-        SettingsView(model: model, registry: registry, store: store),
+        SettingsView(
+            model: model,
+            registry: registry,
+            store: store,
+            providerModel: providerModel),
         name: "continuous-settings")
+}
+
+@MainActor
+@Test func settingsProvidersEmbeddedSnapshot() async throws {
+    let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
+    let providerModel = try providerWorkspaceModel()
+    await model.load()
+    await providerModel.load()
+
+    try assertSnapshot(
+        ProvidersView(model: providerModel, onBack: {}),
+        name: "settings-providers-embedded",
+        size: CGSize(width: 1180, height: 760))
 }
 
 @MainActor
@@ -599,6 +617,20 @@ import Testing
         AppShellView(model: model, railExpansion: railExpansion),
         name: "full-shell-expanded-rail-overflow",
         size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func brandActionsMenuSnapshot() throws {
+    let model = AppModel()
+    model.route = .newSession
+
+    try assertSnapshot(
+        BrandActionsMenuView(
+            model: model,
+            isPresented: .constant(true),
+            revealsImmediately: true),
+        name: "brand-actions-menu",
+        size: CGSize(width: 220, height: 180))
 }
 
 @MainActor
@@ -959,7 +991,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     let (model, expansion) = snapshotRail(isExpanded: false)
 
     try assertSnapshot(
-        FloatingRailView(model: model, expansion: expansion),
+        FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
         name: "shell-rail-collapsed",
         size: CGSize(width: 64, height: 620))
 }
@@ -969,7 +1001,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     let (model, expansion) = snapshotRail(isExpanded: true)
 
     try assertSnapshot(
-        FloatingRailView(model: model, expansion: expansion),
+        FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
         name: "shell-rail-expanded",
         size: CGSize(width: 220, height: 620))
 }
@@ -979,7 +1011,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     let (model, expansion) = snapshotOverflowRail()
 
     try assertSnapshot(
-        FloatingRailView(model: model, expansion: expansion),
+        FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
         name: "shell-rail-overflow-expanded",
         size: CGSize(width: 220, height: 360))
 }

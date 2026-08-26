@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import OmpKit
@@ -28,6 +29,7 @@ final class AppModel {
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
     @ObservationIgnored private var archivedReloadGeneration = 0
+    @ObservationIgnored private var routeBeforeSettings: AppRoute?
 
     init(
         dependencies: AppDependencies = .live,
@@ -61,11 +63,39 @@ final class AppModel {
         route = .newSession
     }
 
+    func chooseNewProject() {
+        guard !isSessionMutationInFlight else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose Project"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        chooseProject(url)
+    }
+
     func openSettings(focus: SettingsFocusTarget? = nil) {
         guard !isSessionMutationInFlight else { return }
+        if route != .settings {
+            routeBeforeSettings = route
+        }
         settingsFocusTarget = focus
         route = .settings
         Task { await settingsModel?.load() }
+    }
+
+    func leaveSettings() {
+        guard !isSessionMutationInFlight else { return }
+        guard route == .settings else { return }
+        settingsFocusTarget = nil
+        let destination = routeBeforeSettings ?? .newSession
+        routeBeforeSettings = nil
+        switch destination {
+        case .setup, .providerSetup, .settings:
+            route = .newSession
+        default:
+            route = destination
+        }
     }
 
     func consumeSettingsFocus() {

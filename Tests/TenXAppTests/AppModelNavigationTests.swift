@@ -13,6 +13,62 @@ import Testing
 }
 
 @MainActor
+@Test func leaveSettingsRestoresThePreviousRoute() {
+    let model = AppModel()
+    model.route = .archivedSessions
+
+    model.openSettings()
+    model.leaveSettings()
+
+    #expect(model.route == .archivedSessions)
+}
+
+@MainActor
+@Test func leaveSettingsFallsBackToNewSessionFromSetup() {
+    let model = AppModel()
+    model.route = .setup
+
+    model.openSettings()
+    model.leaveSettings()
+
+    #expect(model.route == .newSession)
+}
+
+@MainActor
+@Test func leaveSettingsRestoresSessionRoute() {
+    let model = AppModel()
+    model.route = .session("/tmp/session.jsonl")
+
+    model.openSettings()
+    model.leaveSettings()
+
+    #expect(model.route == .session("/tmp/session.jsonl"))
+}
+
+@MainActor
+@Test func leaveSettingsIsNoOpWhenNotOnSettings() {
+    let model = AppModel()
+    model.route = .archivedSessions
+
+    model.leaveSettings()
+
+    #expect(model.route == .archivedSessions)
+}
+
+@MainActor
+@Test func settingsBackActionLeavesSettingsViaOnBack() {
+    let model = AppModel()
+    model.route = .newSession
+    model.openSettings()
+
+    // Mirrors AppShellView wiring: explicit closure, not a bare method reference.
+    let onBack = { model.leaveSettings() }
+    onBack()
+
+    #expect(model.route == .newSession)
+}
+
+@MainActor
 @Test func chooseIDESelectsSettingsAndRequestsPreferredIDEFocus() {
     let model = AppModel()
 
@@ -401,7 +457,7 @@ private struct FixedOmpLocator: OmpLocating {
 }
 
 @MainActor
-@Test func settingsProvidersActionOpensConnectionsWithoutChangingSettingsData() async throws {
+@Test func openProvidersKeepsSettingsDataIntact() async throws {
     let providerModel = providerTestModel(providers: [
         ProviderLoginProvider(
             id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
@@ -409,12 +465,28 @@ private struct FixedOmpLocator: OmpLocating {
     let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
 
     await model.bootstrap()
+    model.openSettings()
     let settingsModel = try #require(model.settingsModel)
     let settingsCount = settingsModel.settingCount
     model.openProviders(.connections)
 
     #expect(model.route == .providers(.connections))
     #expect(settingsModel.settingCount == settingsCount)
+}
+
+@MainActor
+@Test func settingsRouteStaysOnSettingsWhenProvidersAreAvailable() async throws {
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
+
+    await model.bootstrap()
+    model.openSettings()
+
+    #expect(model.route == .settings)
+    #expect(model.providerModel != nil)
 }
 
 @MainActor

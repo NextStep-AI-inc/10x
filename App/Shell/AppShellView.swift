@@ -4,6 +4,7 @@ struct AppShellView: View {
     let model: AppModel
 
     @State private var railExpansion: RailExpansionModel
+    @State private var isBrandMenuPresented = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(model: AppModel, railExpansion: RailExpansionModel = RailExpansionModel()) {
@@ -32,14 +33,19 @@ struct AppShellView: View {
                             .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
                                 model.openSettings(focus: .preferredIDE)
                             })
-                        FloatingRailView(model: model, expansion: railExpansion)
+                        FloatingRailView(
+                            model: model,
+                            expansion: railExpansion,
+                            isBrandMenuPresented: $isBrandMenuPresented)
+                        BrandActionsKeyboardShortcuts(model: model)
                     }
                     .animation(railAnimation, value: railExpansion.isExpanded)
-                    .overlay(alignment: .topTrailing) {
-                        ShellTopActionsView(model: model)
-                            .padding(.top, 16)
-                            .padding(.trailing, 18)
+                    .overlay {
+                        if isBrandMenuPresented {
+                            brandMenuOverlay
+                        }
                     }
+                    .animation(brandMenuAnimation, value: isBrandMenuPresented)
                     .overlay {
                         if model.isSearchPresented {
                             SearchModalView(
@@ -74,6 +80,43 @@ struct AppShellView: View {
         } message: { message in
             Text(message)
         }
+        .onChange(of: model.isSearchPresented) { _, presented in
+            if presented { isBrandMenuPresented = false }
+        }
+        .onChange(of: model.route) { _, _ in
+            isBrandMenuPresented = false
+        }
+    }
+
+    private var brandMenuOverlay: some View {
+        ZStack(alignment: .topLeading) {
+            Color.clear
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { isBrandMenuPresented = false }
+                .onExitCommand { isBrandMenuPresented = false }
+
+            BrandActionsMenuView(model: model, isPresented: $isBrandMenuPresented)
+                .padding(.leading, 15)
+                .padding(.top, 54)
+                .transition(brandMenuTransition)
+        }
+    }
+
+    private var brandMenuAnimation: Animation? {
+        reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.88)
+    }
+
+    private var brandMenuTransition: AnyTransition {
+        reduceMotion
+            ? .identity
+            : .asymmetric(
+                insertion: .modifier(
+                    active: BrandMenuDrawerModifier(progress: 0),
+                    identity: BrandMenuDrawerModifier(progress: 1)),
+                removal: .modifier(
+                    active: BrandMenuDrawerModifier(progress: 0),
+                    identity: BrandMenuDrawerModifier(progress: 1)))
     }
 
     private var sessionActionErrorIsPresented: Binding<Bool> {
@@ -124,7 +167,8 @@ struct AppShellView: View {
                     store: model.idePreferenceStore,
                     focusTarget: model.settingsFocusTarget,
                     onFocusConsumed: model.consumeSettingsFocus,
-                    onOpenProviders: { model.openProviders(.connections) })
+                    onBack: { model.leaveSettings() },
+                    providerModel: model.providerModel)
             } else {
                 Text("OMP settings unavailable")
                     .font(TenXTypography.body(size: 13))
@@ -139,5 +183,15 @@ struct AppShellView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
         }
+    }
+}
+
+private struct BrandMenuDrawerModifier: ViewModifier {
+    let progress: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(x: 1, y: max(progress, 0.001), anchor: .topLeading)
+            .offset(y: (1 - progress) * -8)
     }
 }

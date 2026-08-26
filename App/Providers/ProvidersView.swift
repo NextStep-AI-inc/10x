@@ -2,6 +2,12 @@ import SwiftUI
 
 struct ProvidersView: View {
     let model: ProviderManagementViewModel
+    let onBack: (() -> Void)?
+
+    init(model: ProviderManagementViewModel, onBack: (() -> Void)? = nil) {
+        self.model = model
+        self.onBack = onBack
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -13,7 +19,7 @@ struct ProvidersView: View {
                 content
                     .frame(
                         width: proxy.size.width,
-                        height: max(proxy.size.height - Self.headerHeight, 0),
+                        height: max(proxy.size.height - headerHeight, 0),
                         alignment: .top)
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
@@ -40,6 +46,22 @@ struct ProvidersView: View {
     private var header: some View {
         HStack(alignment: .bottom, spacing: 16) {
             VStack(alignment: .leading, spacing: 5) {
+                if let onBack {
+                    Button(action: onBack) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 11, weight: .semibold))
+                                .offset(x: 1, y: 0.5)
+                            Text("Back")
+                        }
+                    }
+                    .buttonStyle(GhostActionStyle(
+                        color: TenXPalette.color(TenXPalette.nearBlackHex),
+                        horizontalPadding: 0))
+                    .accessibilityLabel("Back")
+                    .padding(.bottom, 4)
+                }
+
                 Text("Providers")
                     .font(TenXTypography.title(size: 34))
                     .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
@@ -59,7 +81,7 @@ struct ProvidersView: View {
         .padding(.bottom, 22)
     }
 
-    private static let headerHeight: CGFloat = 170
+    private var headerHeight: CGFloat { onBack == nil ? 170 : 202 }
 
     private var sectionSwitch: some View {
         HStack(spacing: 18) {

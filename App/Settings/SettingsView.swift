@@ -6,7 +6,9 @@ struct SettingsView: View {
     let store: IDEPreferenceStore
     let focusTarget: SettingsFocusTarget?
     let onFocusConsumed: () -> Void
-    let onOpenProviders: () -> Void
+    let onBack: () -> Void
+    let providerModel: ProviderManagementViewModel?
+    @State private var showingProviders = false
     @FocusState private var isSearchFocused: Bool
     @FocusState private var focusedControl: SettingsFocusTarget?
 
@@ -16,17 +18,27 @@ struct SettingsView: View {
         store: IDEPreferenceStore? = nil,
         focusTarget: SettingsFocusTarget? = nil,
         onFocusConsumed: @escaping () -> Void = {},
-        onOpenProviders: @escaping () -> Void = {}
+        onBack: @escaping () -> Void = {},
+        providerModel: ProviderManagementViewModel? = nil
     ) {
         self.model = model
         self.registry = registry
         self.store = store ?? IDEPreferenceStore(registry: registry)
         self.focusTarget = focusTarget
         self.onFocusConsumed = onFocusConsumed
-        self.onOpenProviders = onOpenProviders
+        self.onBack = onBack
+        self.providerModel = providerModel
     }
 
     var body: some View {
+        if showingProviders, let providerModel {
+            ProvidersView(model: providerModel, onBack: { showingProviders = false })
+        } else {
+            settingsBody
+        }
+    }
+
+    private var settingsBody: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 header
@@ -57,6 +69,23 @@ struct SettingsView: View {
     private var header: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 5) {
+                Button(action: onBack) {
+                    HStack(alignment: .center, spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .semibold))
+                            // Optical: SF chevron sits high and left of its ink tip vs title sidebearing.
+                            .offset(x: 1, y: 0.5)
+                        Text("Back")
+                    }
+                }
+                // GhostActionStyle (not .plain): macOS plain buttons drop compact label hits;
+                // horizontalPadding 0 keeps the chevron flush with the title.
+                .buttonStyle(GhostActionStyle(
+                    color: TenXPalette.color(TenXPalette.nearBlackHex),
+                    horizontalPadding: 0))
+                .accessibilityLabel("Back")
+                .padding(.bottom, 8)
+
                 Text("Settings")
                     .font(TenXTypography.title(size: 34))
                 Text(model.configPath.isEmpty ? "OMP configuration" : model.configPath)
@@ -69,9 +98,14 @@ struct SettingsView: View {
                 Text("\(model.settingCount) OMP settings")
                     .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-                Button("Providers", action: onOpenProviders)
+                if providerModel != nil {
+                    Button("Providers") {
+                        providerModel?.selectedSection = .connections
+                        showingProviders = true
+                    }
                     .buttonStyle(GhostActionStyle())
                     .accessibilityLabel("Open Providers")
+                }
             }
         }
         .padding(.top, 62)

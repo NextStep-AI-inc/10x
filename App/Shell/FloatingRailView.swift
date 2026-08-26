@@ -4,6 +4,7 @@ import SwiftUI
 struct FloatingRailView: View {
     let model: AppModel
     let expansion: RailExpansionModel
+    @Binding var isBrandMenuPresented: Bool
 
     @FocusState private var focusedItem: RailFocus?
     @State private var expandedProjectIDs: Set<String> = []
@@ -28,23 +29,7 @@ struct FloatingRailView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {
-                expansion.pointerEntered()
-                model.openSettings()
-            } label: {
-                BrandWordmark(width: 34)
-                    .frame(width: 44, height: 44, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-                .buttonStyle(.plain)
-                .focusEffectDisabled()
-                .focused($focusedItem, equals: .settings)
-                .frame(height: 44)
-                .padding(.leading, 15)
-                .padding(.top, 10)
-                .help("Open Settings")
-                .accessibilityLabel("Open Settings")
-                .keyboardShortcut(",", modifiers: .command)
+            brandMenuAnchor
 
             GeometryReader { proxy in
                 VStack(spacing: 0) {
@@ -100,12 +85,39 @@ struct FloatingRailView: View {
         .onHover { isInside in
             if isInside {
                 expansion.pointerEntered()
+            } else if !isBrandMenuPresented {
+                expansion.pointerExited()
+            }
+        }
+        .onChange(of: isBrandMenuPresented) { _, presented in
+            if presented {
+                expansion.pointerEntered()
             } else {
                 expansion.pointerExited()
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Application navigation")
+    }
+
+    private var brandMenuAnchor: some View {
+        Button {
+            expansion.pointerEntered()
+            isBrandMenuPresented.toggle()
+        } label: {
+            BrandWordmark(width: 34)
+                .frame(width: 44, height: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .focused($focusedItem, equals: .brandMenu)
+        .frame(height: 44)
+        .padding(.leading, 15)
+        .padding(.top, 10)
+        .help("Open actions")
+        .accessibilityLabel(isBrandMenuPresented ? "Close actions" : "Open actions")
+        .accessibilityAddTraits(isBrandMenuPresented ? .isSelected : [])
     }
 
     private var sessionMap: some View {
@@ -329,7 +341,7 @@ struct FloatingRailView: View {
 }
 
 private enum RailFocus: Hashable {
-    case settings
+    case brandMenu
     case archived
     case scrollUp
     case scrollDown
