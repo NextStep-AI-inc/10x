@@ -349,12 +349,6 @@ final class AppModel {
         startupOperation = nil
         startup?.task.cancel()
 
-        await continuation?.task.value
-        if let fallbacks {
-            for fallback in fallbacks.tasks { await fallback.value }
-        }
-        await startup?.task.value
-
         let sessionChanges = sessionChangeTask
         sessionChangeTask = nil
         sessionChangeGeneration &+= 1
@@ -370,8 +364,18 @@ final class AppModel {
         providerUsageOperation = nil
         usage?.task.cancel()
 
-        await providerModel?.shutdown()
-        await processManager?.closeAll()
+        let provider = providerModel
+        let manager = processManager
+        async let providerShutdown: Void = provider?.shutdown() ?? ()
+        async let processShutdown: Void = manager?.closeAll() ?? ()
+        await providerShutdown
+        await processShutdown
+
+        await continuation?.task.value
+        if let fallbacks {
+            for fallback in fallbacks.tasks { await fallback.value }
+        }
+        await startup?.task.value
         await sessionChanges?.value
         await warmExits?.value
         await activeExits?.value

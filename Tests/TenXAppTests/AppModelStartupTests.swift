@@ -444,7 +444,10 @@ final class AppTerminationDelegateTests: XCTestCase {
         await Task.yield()
         return model.isShuttingDown
     }
-    #expect(await fallbackProviderService.shutdownCount == 0)
+    await waitForModelState {
+        let warmExitCode = await warm.client.exitCode
+        return warmExitCode != nil
+    }
     await fallbackProviderGate.release()
     await usageGate.release()
     await shutdown.value
