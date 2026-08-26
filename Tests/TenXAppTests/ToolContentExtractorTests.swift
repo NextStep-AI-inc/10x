@@ -120,6 +120,133 @@ import Testing
     #expect(ToolContentExtractor.web(web)?.results.count == 12)
 }
 
+@Test func toolResultEnvelopePreservesOrderedTypedBlocks() {
+    let envelope = ToolResultEnvelope(result: .object([
+        "content": .array([
+            .object(["type": .string("text"), "text": .string("Found 2")]),
+            .object([
+                "type": .string("image"),
+                "data": .string("AA=="),
+                "mimeType": .string("image/png"),
+            ]),
+            .object([
+                "type": .string("resource_link"),
+                "name": .string("report"),
+                "uri": .string("file:///tmp/report.txt"),
+            ]),
+        ]),
+        "details": .object(["count": .int(2)]),
+    ]))
+
+    #expect(envelope.blocks.map(\.kind) == [.text, .image, .resource])
+    #expect(envelope.details?["count"]?.intValue == 2)
+}
+
+@Test func toolResultEnvelopeSuppressesDuplicateTextAndCapturesErrors() {
+    let envelope = ToolResultEnvelope(result: .object([
+        "content": .array([
+            .object(["type": .string("text"), "text": .string("Permission denied")]),
+            .object(["type": .string("text"), "text": .string("Permission denied")]),
+        ]),
+        "error": .string("Permission denied"),
+    ]))
+
+    #expect(envelope.blocks == [.text("Permission denied")])
+    #expect(envelope.error == "Permission denied")
+}
+
+@Test func toolCardContentUsesSemanticBodiesAcrossFamilies() {
+    let read = ToolContentExtractor.card(
+        name: "read",
+        arguments: .object(["path": .string("App/Session.swift")]),
+        result: result(text: "let count = 2"),
+        phase: .complete)
+    #expect(read.primary == "App/Session.swift")
+    guard case .source(let source, _) = read.body else {
+        Issue.record("Read should normalize to a source body")
+        return
+    }
+    #expect(source.language == "swift")
+
+    let bash = ToolContentExtractor.card(
+        name: "bash",
+        arguments: .object(["command": .string("swift test")]),
+        result: .object([
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string("Build complete"),
+            ])]),
+            "details": .object(["exitCode": .int(0)]),
+        ]),
+        phase: .complete)
+    guard case .console(let command, let output, let exitCode) = bash.body else {
+        Issue.record("Bash should normalize to a console body")
+        return
+    }
+    #expect(command == "swift test")
+    #expect(output == "Build complete")
+    #expect(exitCode == 0)
+
+    let task = ToolContentExtractor.card(
+        name: "task",
+        arguments: .object(["title": .string("Inspect sessions")]),
+        result: .object(["details": .object(["status": .string("complete")])]),
+        phase: .complete)
+    guard case .progress(let progress) = task.body else {
+        Issue.record("Task should normalize to a progress body")
+        return
+    }
+    #expect(progress.title == "Inspect sessions")
+    #expect(progress.status == "complete")
+
+    let recall = ToolContentExtractor.card(
+        name: "recall",
+        arguments: .object(["query": .string("transcript")]),
+        result: .object(["details": .object(["memories": .array([])])]),
+        phase: .complete)
+    #expect(recall.outcome == "No memories found")
+    #expect(recall.body == .empty("No memories found"))
+}
+
+@Test func privateAndFallbackToolBodiesNeverLoseTheirContract() {
+    let privateActivity = ToolContentExtractor.card(
+        name: "think",
+        arguments: .object(["thought": .string("private input")]),
+        result: result(text: "private output"),
+        phase: .running)
+    #expect(privateActivity.title == "Working")
+    #expect(privateActivity.body == .privateActivity)
+
+    let fallback = ToolContentExtractor.card(
+        name: "future_tool",
+        arguments: .object(["alpha": .int(1)]),
+        result: .object(["unexpected": .array([.bool(true)])]),
+        phase: .complete)
+    #expect(fallback.title == "future_tool")
+    guard case .stack(let bodies) = fallback.body else {
+        Issue.record("Custom tools should retain arguments and results")
+        return
+    }
+    #expect(bodies.count == 2)
+}
+
+@Test func failedToolContentPutsTheUsefulErrorFirst() {
+    let card = ToolContentExtractor.card(
+        name: "bash",
+        arguments: .object(["command": .string("make")]),
+        result: .object(["error": .string("Permission denied")]),
+        phase: .failed)
+
+    #expect(card.outcome == "Permission denied")
+    guard case .stack(let bodies) = card.body,
+          case .document(let error) = bodies.first
+    else {
+        Issue.record("Failed cards should put an error document first")
+        return
+    }
+    #expect(error.plainText == "Permission denied")
+}
+
 private func presentation(
     name: String,
     arguments: JSONValue,

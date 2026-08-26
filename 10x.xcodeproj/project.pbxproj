@@ -78,6 +78,7 @@
 		A10000000000000000000001 /* ContentDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* ContentDocument.swift */; };
 		A10000000000000000000003 /* SourceSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* SourceSurface.swift */; };
 		A10000000000000000000005 /* SourcePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* SourcePresentationTests.swift */; };
+		A10000000000000000000007 /* ToolCardRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* ToolCardRegistryTests.swift */; };
 		5F0460BBA8F235DBBF79C56578303B10 /* FileTypeIconDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C134480862742DABA50D1BC46A13326 /* FileTypeIconDescriptor.swift */; };
 		5FACA0103E4C510F4B195C83BA27A69B /* SubagentEventReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDA6BBA78D4E9D610F30E4F71D1365AD /* SubagentEventReducer.swift */; };
 		6154E5D3E0695225113CEDB38BC2BDB8 /* AppModelNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF205FAAE951EA3DDDF585AA2BEA7619 /* AppModelNavigationTests.swift */; };
@@ -360,6 +361,7 @@
 		A10000000000000000000002 /* ContentDocument.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContentDocument.swift; path = App/Sessions/ContentDocument.swift; sourceTree = "<group>"; };
 		A10000000000000000000004 /* SourceSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourceSurface.swift; path = App/Design/SourceSurface.swift; sourceTree = "<group>"; };
 		A10000000000000000000006 /* SourcePresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourcePresentationTests.swift; path = Tests/TenXAppTests/SourcePresentationTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000008 /* ToolCardRegistryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolCardRegistryTests.swift; path = Tests/TenXAppTests/ToolCardRegistryTests.swift; sourceTree = "<group>"; };
 		A102D4B8054BEBC4A7B2B8EC4847A3F6 /* SubagentCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubagentCardView.swift; path = App/Sessions/SubagentCardView.swift; sourceTree = "<group>"; };
 		A1AC18462527DFC7511755A43B16CFBA /* ExtensionUIState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExtensionUIState.swift; path = App/ExtensionUI/ExtensionUIState.swift; sourceTree = "<group>"; };
 		A1BA098CAA656555309A3AF08F68EE67 /* ProviderLoginProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderLoginProvider.swift; path = App/Providers/ProviderLoginProvider.swift; sourceTree = "<group>"; };
@@ -706,6 +708,7 @@
 				A7B6B3964643E53306915D8C28B21831 /* SessionTimelineLoaderTests.swift */,
 				D3C70583F7B3642323027D9A62D7F10D /* SettingsCatalogTests.swift */,
 				A10000000000000000000006 /* SourcePresentationTests.swift */,
+				A10000000000000000000008 /* ToolCardRegistryTests.swift */,
 				BBC0FF77DBA99F3DD47B1E48267CAC02 /* SnapshotHarness.swift */,
 				D86079DC05CB0744553ABA452B73C13E /* StartupSignalTests.swift */,
 				FDC50C4A545F06A169B4BCB4ED733FEF /* StartupSplashSnapshotTests.swift */,
@@ -1022,6 +1025,7 @@
 				B561F5FEEE4EE14E46FF3D52784FC1B1 /* SessionTimelineLoaderTests.swift in Sources */,
 				A472F51A83D966222E7926ECFF08E81B /* SettingsCatalogTests.swift in Sources */,
 				A10000000000000000000005 /* SourcePresentationTests.swift in Sources */,
+				A10000000000000000000007 /* ToolCardRegistryTests.swift in Sources */,
 				75D2772F2B008404B30854073205AFF2 /* SnapshotHarness.swift in Sources */,
 				8B35D7E1FB50ACE5E5B10F8497C49603 /* StartupSignalTests.swift in Sources */,
 				E6AC842D8CA179D343FE1C72E740DE61 /* StartupSplashSnapshotTests.swift in Sources */,

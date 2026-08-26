@@ -164,15 +164,15 @@ struct TranscriptView: View {
                 EditToolCardView(presentation: presentation)
             case .write:
                 WriteToolCardView(presentation: presentation)
-            case .search:
+            case .grep, .glob:
                 SearchToolCardView(presentation: presentation)
             case .task:
                 TaskToolCardView(presentation: presentation)
             case .todo:
                 TodoToolCardView(presentation: presentation)
-            case .web:
+            case .webSearch, .browser:
                 WebToolCardView(presentation: presentation)
-            case .generic:
+            default:
                 GenericToolCardView(presentation: presentation)
             }
         case .extensionUI(let state):
