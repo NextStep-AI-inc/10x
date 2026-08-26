@@ -93,11 +93,11 @@ private struct ContentTableView: View {
     let table: ContentTable
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            row(table.headers, isHeader: true)
-            Divider()
-            ForEach(Array(table.rows.enumerated()), id: \.offset) { _, cells in
-                row(cells, isHeader: false)
+        ViewThatFits(in: .horizontal) {
+            tableGrid(isScrollable: false)
+            ScrollView(.horizontal) {
+                tableGrid(isScrollable: true)
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
         .padding(10)
@@ -105,16 +105,34 @@ private struct ContentTableView: View {
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
-    private func row(_ cells: [InlineContent], isHeader: Bool) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+    private func tableGrid(isScrollable: Bool) -> some View {
+        Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 7) {
+            tableRow(table.headers, isHeader: true, isScrollable: isScrollable)
+            GridRow {
+                Divider()
+                    .gridCellColumns(table.headers.count)
+            }
+            ForEach(Array(table.rows.enumerated()), id: \.offset) { _, cells in
+                tableRow(cells, isHeader: false, isScrollable: isScrollable)
+            }
+        }
+        .frame(maxWidth: isScrollable ? nil : .infinity, alignment: .leading)
+    }
+
+    private func tableRow(
+        _ cells: [InlineContent],
+        isHeader: Bool,
+        isScrollable: Bool
+    ) -> some View {
+        GridRow {
             ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
                 Text(cell.attributed)
                     .font(TenXTypography.body(
                         size: 12,
                         weight: isHeader ? .semibold : .regular))
                     .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: isScrollable, vertical: true)
+                    .frame(maxWidth: isScrollable ? nil : .infinity, alignment: .leading)
             }
         }
     }

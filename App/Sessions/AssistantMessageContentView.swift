@@ -53,28 +53,35 @@ struct AssistantMessageContentView: View, Equatable {
             reference: resolved,
             isOptionPressed: false) {
         case .openInIDE(let application):
-            open(resolved, in: application)
+            perform(.openInIDE(application), reference: resolved)
         case .openPreferences:
-            openIDEPreferences()
+            perform(.openPreferences, reference: resolved)
         case .revealInFinder:
-            if let fileURL = resolved.url {
-                fileOpenService.reveal(fileURL)
-            }
+            perform(.revealInFinder, reference: resolved)
         case .unavailable:
             showReferenceError("File isn’t available: \(resolved.compactLabel)")
         }
         return .handled
     }
 
-    private func open(_ reference: ResolvedFileReference, in application: IDEApplication) {
-        guard let fileURL = reference.url else { return }
+    private func perform(
+        _ action: FileReferenceActivation,
+        reference: ResolvedFileReference
+    ) {
+        let handler = FileReferenceActionHandler(
+            fileOpenService: fileOpenService,
+            openIDEPreferences: openIDEPreferences)
         Task {
             do {
-                try await fileOpenService.open(fileURL, in: application)
+                try await handler.perform(action, reference: reference)
             } catch {
                 Self.logger.error(
-                    "[InlineReferences:open] Could not open file — application=\(application.displayName, privacy: .public), path=\(reference.fullPathLabel, privacy: .private(mask: .hash)), error=\(String(describing: error), privacy: .private)")
-                showReferenceError("Couldn’t open in \(application.displayName)")
+                    "[InlineReferences:perform] Could not activate file reference — action=\(String(describing: action), privacy: .private(mask: .hash)), path=\(reference.fullPathLabel, privacy: .private(mask: .hash)), error=\(String(describing: error), privacy: .private)")
+                if case .openInIDE(let application) = action {
+                    showReferenceError("Couldn’t open in \(application.displayName)")
+                } else {
+                    showReferenceError("Couldn’t open \(reference.compactLabel)")
+                }
             }
         }
     }

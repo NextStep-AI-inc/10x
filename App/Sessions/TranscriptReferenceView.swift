@@ -64,6 +64,12 @@ private struct FileTranscriptReferenceView: View {
         FileReferenceResolver().resolve(path: path, line: line, relativeTo: baseURL)
     }
 
+    private var actionHandler: FileReferenceActionHandler {
+        FileReferenceActionHandler(
+            fileOpenService: fileOpenService,
+            openIDEPreferences: openIDEPreferences)
+    }
+
     private var fileAction: some View {
         Button(action: activateFileReference) {
             FileReferenceLabel(
@@ -90,7 +96,7 @@ private struct FileTranscriptReferenceView: View {
             .disabled(!resolvedReference.exists)
         if case .available(let application) = idePreferenceStore.state {
             Button("Open in \(application.displayName)") {
-                openInIDE(application)
+                perform(.openInIDE(application))
             }
             .disabled(!resolvedReference.exists)
         }
@@ -130,41 +136,36 @@ private struct FileTranscriptReferenceView: View {
     }
 
     private func activateFileReference() {
-        switch FileReferenceActivation.resolve(
+        perform(FileReferenceActivation.resolve(
             preference: idePreferenceStore.state,
             reference: resolvedReference,
             isOptionPressed: isOptionPressed
-        ) {
-        case .openInIDE(let application):
-            openInIDE(application)
-        case .openPreferences:
-            beginInteraction()
-            openIDEPreferences()
-        case .revealInFinder:
-            revealInFinder()
-        case .unavailable:
-            break
-        }
+        ))
     }
 
-    private func openInIDE(_ application: IDEApplication) {
+    private func revealInFinder() {
+        perform(.revealInFinder)
+    }
+
+    private func perform(_ action: FileReferenceActivation) {
+        guard action != .unavailable else { return }
         beginInteraction()
-        guard resolvedReference.exists, let url = resolvedReference.url else { return }
         Task {
             do {
-                try await fileOpenService.open(url, in: application)
+                try await actionHandler.perform(action, reference: resolvedReference)
             } catch {
                 Self.logger.error(
-                    "[FileReferences:openInIDE] Could not open file — application=\(application.displayName, privacy: .public), path=\(resolvedReference.fullPathLabel, privacy: .private(mask: .hash)), error=\(String(describing: error), privacy: .private)")
-                showError("Couldn’t open in \(application.displayName)")
+                    "[FileReferences:perform] Could not activate file reference — action=\(String(describing: action), privacy: .private(mask: .hash)), path=\(resolvedReference.fullPathLabel, privacy: .private(mask: .hash)), error=\(String(describing: error), privacy: .private)")
+                showError(errorMessage(for: action))
             }
         }
     }
 
-    private func revealInFinder() {
-        beginInteraction()
-        guard resolvedReference.exists, let url = resolvedReference.url else { return }
-        fileOpenService.reveal(url)
+    private func errorMessage(for action: FileReferenceActivation) -> String {
+        if case .openInIDE(let application) = action {
+            return "Couldn’t open in \(application.displayName)"
+        }
+        return "Couldn’t open \(resolvedReference.compactLabel)"
     }
 
     private func copyReference() {
