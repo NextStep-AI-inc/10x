@@ -103,6 +103,7 @@ final class ComposerControlsModel {
             isMutating = true
             defer { isMutating = false }
             let prior = selectedModel
+            let priorFastEnabled = isFastModeEnabled
             selectedModel = model
             applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
             do {
@@ -110,7 +111,7 @@ final class ComposerControlsModel {
                 errorMessage = nil
             } catch {
                 selectedModel = prior
-                applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
+                applyFastModeVisibility(preservingEnabled: priorFastEnabled)
                 errorMessage = Self.sanitizedMessage(
                     from: error,
                     fallback: "Couldn’t update the model.")

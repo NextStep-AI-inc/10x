@@ -217,6 +217,31 @@ private let cursorModel = ComposerModelInfo(
 }
 
 @MainActor
+@Test func activeSessionSelectModelRevertRestoresPriorFastIntent() async {
+    let session = FakeComposerSessionController()
+    session.setModelError = FakeComposerError.rpcFailed
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, cursorModel],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: true,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
+    model.attachActiveSession(session)
+    #expect(model.isFastModeEnabled == true)
+    #expect(model.isFastModeVisible == true)
+
+    await model.selectModel(cursorModel, mode: .activeSession)
+
+    #expect(model.selectedModel?.id == "claude-opus-4-8")
+    #expect(model.isFastModeEnabled == true)
+    #expect(model.isFastModeVisible == true)
+    #expect(model.errorMessage != nil)
+}
+
+@MainActor
 @Test func activeSessionUnsupportedSetFastModeHidesChip() async {
     let session = FakeComposerSessionController()
     session.setFastModeSupported = false
