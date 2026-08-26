@@ -36,6 +36,20 @@ struct ComposerView: View {
         self.onSend = onSend
     }
 
+    /// Plain Return sends (or is swallowed while sending is unavailable);
+    /// Shift/Option/Command/Control+Return fall through to the text view.
+    nonisolated static func handleReturn(
+        modifiers: EventModifiers,
+        canSend: Bool,
+        send: () -> Void
+    ) -> KeyPress.Result {
+        guard modifiers.isDisjoint(with: [.shift, .option, .command, .control]) else {
+            return .ignored
+        }
+        if canSend { send() }
+        return .handled
+    }
+
     private var canSend: Bool {
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
@@ -68,6 +82,12 @@ struct ComposerView: View {
                 .padding(16)
                 .frame(height: 58)
                 .disabled(!isAvailable)
+                .onKeyPress(keys: [.return], phases: .down) { press in
+                    Self.handleReturn(
+                        modifiers: press.modifiers,
+                        canSend: canSend,
+                        send: onSend)
+                }
                 .accessibilityLabel("Session prompt")
                 .accessibilityHint(composerModeLabel)
 

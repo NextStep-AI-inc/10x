@@ -1,3 +1,4 @@
+import SwiftUI
 import Testing
 @testable import TenXApp
 
@@ -25,4 +26,34 @@ import Testing
     #expect(ComposerControlsPresentation.supportsFastMode(model: anthropic))
     #expect(!ComposerControlsPresentation.supportsFastMode(model: cursor))
     #expect(ComposerControlsPresentation.supportsFastMode(model: codex))
+}
+
+@Test func plainReturnSendsWhenSendIsAvailable() {
+    var didSend = false
+    let result = ComposerView.handleReturn(modifiers: [], canSend: true) { didSend = true }
+    #expect(didSend)
+    #expect(result == .handled)
+}
+
+@Test func plainReturnIsSwallowedWhenSendIsUnavailable() {
+    var didSend = false
+    let result = ComposerView.handleReturn(modifiers: [], canSend: false) { didSend = true }
+    #expect(!didSend)
+    #expect(result == .handled)
+}
+
+@Test func modifiedReturnFallsThroughToTextView() {
+    for modifiers: EventModifiers in [[.shift], [.option], [.command], [.control], [.shift, .capsLock]] {
+        var didSend = false
+        let result = ComposerView.handleReturn(modifiers: modifiers, canSend: true) { didSend = true }
+        #expect(!didSend)
+        #expect(result == .ignored)
+    }
+}
+
+@Test func capsLockDoesNotBlockSending() {
+    var didSend = false
+    let result = ComposerView.handleReturn(modifiers: [.capsLock], canSend: true) { didSend = true }
+    #expect(didSend)
+    #expect(result == .handled)
 }
