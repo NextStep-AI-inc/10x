@@ -31,9 +31,29 @@ enum ProviderUsageRingGeometry {
     }
 }
 
-enum ProviderUsageWheelActivityPresentation {
-    static func countText(activeCount: Int) -> String {
-        "\(max(0, activeCount))"
+enum ProviderUsageWheelPresentationMode: Equatable, Sendable {
+    case providerOnly
+    case account(ProviderUsageState)
+
+    var showsPlaceholderTrack: Bool {
+        switch self {
+        case .providerOnly, .account(.available):
+            false
+        case .account(.loading), .account(.unavailable):
+            true
+        }
+    }
+
+    func renderedRingCount(limitCount: Int) -> Int {
+        showsPlaceholderTrack ? 1 : max(0, limitCount)
+    }
+
+    func activityCountText(activeCount: Int) -> String? {
+        let normalizedCount = max(0, activeCount)
+        if self == .providerOnly, normalizedCount == 0 {
+            return nil
+        }
+        return "\(normalizedCount)"
     }
 }
 
@@ -43,6 +63,7 @@ struct ProviderUsageWheelView: View {
     let isGrayscale: Bool
     let diameter: CGFloat
     let showsProviderLabel: Bool
+    let presentationMode: ProviderUsageWheelPresentationMode
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -51,13 +72,15 @@ struct ProviderUsageWheelView: View {
         activeCount: Int,
         isGrayscale: Bool,
         diameter: CGFloat = ProviderUsageRingGeometry.diameter,
-        showsProviderLabel: Bool = true
+        showsProviderLabel: Bool = true,
+        presentationMode: ProviderUsageWheelPresentationMode = .providerOnly
     ) {
         self.provider = provider
         self.activeCount = activeCount
         self.isGrayscale = isGrayscale
         self.diameter = diameter
         self.showsProviderLabel = showsProviderLabel
+        self.presentationMode = presentationMode
     }
 
     private var ringLimits: [ProviderUsageLimit] {
@@ -65,7 +88,9 @@ struct ProviderUsageWheelView: View {
     }
 
     private var metrics: [ProviderUsageRingMetric] {
-        ProviderUsageRingGeometry.metrics(limitCount: ringLimits.count, outerDiameter: diameter)
+        ProviderUsageRingGeometry.metrics(
+            limitCount: presentationMode.renderedRingCount(limitCount: ringLimits.count),
+            outerDiameter: diameter)
     }
 
     private var activityCoreDiameter: CGFloat {
@@ -75,8 +100,12 @@ struct ProviderUsageWheelView: View {
     var body: some View {
         VStack(spacing: 5) {
             ZStack {
-                ForEach(ringLimits.indices, id: \.self) { index in
-                    ring(limit: ringLimits[index], metric: metrics[index])
+                if presentationMode.showsPlaceholderTrack, let metric = metrics.first {
+                    ringTrack(metric: metric)
+                } else {
+                    ForEach(ringLimits.indices, id: \.self) { index in
+                        ring(limit: ringLimits[index], metric: metrics[index])
+                    }
                 }
 
                 activityPulse
@@ -97,10 +126,7 @@ struct ProviderUsageWheelView: View {
 
     private func ring(limit: ProviderUsageLimit, metric: ProviderUsageRingMetric) -> some View {
         ZStack {
-            Circle()
-                .stroke(
-                    TenXPalette.color(TenXPalette.separatorHex),
-                    style: StrokeStyle(lineWidth: metric.lineWidth, lineCap: .round))
+            ringTrack(metric: metric)
             Circle()
                 .trim(from: 0, to: limit.normalizedFraction)
                 .stroke(
@@ -109,6 +135,14 @@ struct ProviderUsageWheelView: View {
                 .rotationEffect(.degrees(-90))
         }
         .frame(width: metric.diameter, height: metric.diameter)
+    }
+
+    private func ringTrack(metric: ProviderUsageRingMetric) -> some View {
+        Circle()
+            .stroke(
+                TenXPalette.color(TenXPalette.separatorHex),
+                style: StrokeStyle(lineWidth: metric.lineWidth, lineCap: .round))
+            .frame(width: metric.diameter, height: metric.diameter)
     }
 
     @ViewBuilder
@@ -144,11 +178,13 @@ struct ProviderUsageWheelView: View {
                 width: activityCoreDiameter,
                 height: activityCoreDiameter)
             .overlay {
-                Text(ProviderUsageWheelActivityPresentation.countText(activeCount: activeCount))
-                    .font(TenXTypography.mono(size: 9, weight: .semibold))
-                    .foregroundStyle(activeCount > 0
-                        ? Color.white
-                        : TenXPalette.color(TenXPalette.mutedTextHex))
+                if let countText = presentationMode.activityCountText(activeCount: activeCount) {
+                    Text(countText)
+                        .font(TenXTypography.mono(size: 9, weight: .semibold))
+                        .foregroundStyle(activeCount > 0
+                            ? Color.white
+                            : TenXPalette.color(TenXPalette.mutedTextHex))
+                }
             }
     }
 

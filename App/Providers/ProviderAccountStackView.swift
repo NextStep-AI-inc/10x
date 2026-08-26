@@ -14,9 +14,16 @@ struct ProviderAccountStackItemGeometry: Equatable {
 struct ProviderAccountStackVisualState: Equatable {
     let isRaised: Bool
     let isGrayscale: Bool
+    let showsFocusOutline: Bool
     let elevation: CGFloat
     let zIndex: Double
     let animationDuration: TimeInterval?
+}
+
+enum ProviderAccountStackMotion {
+    static func animationDuration(reduceMotion: Bool) -> TimeInterval? {
+        reduceMotion ? nil : 0.16
+    }
 }
 
 struct ProviderAccountStackGeometry: Equatable {
@@ -76,9 +83,11 @@ struct ProviderAccountStackGeometry: Equatable {
         return ProviderAccountStackVisualState(
             isRaised: isRaised,
             isGrayscale: isGrayscale && !isRaised,
+            showsFocusOutline: isFocused,
             elevation: isRaised ? Self.raisedElevation : 0,
             zIndex: isRaised ? Double(items.count + 2) : item.zIndex,
-            animationDuration: reduceMotion ? nil : 0.16)
+            animationDuration: ProviderAccountStackMotion.animationDuration(
+                reduceMotion: reduceMotion))
     }
 }
 
@@ -88,9 +97,9 @@ struct ProviderAccountStackView: View {
     let isGrayscale: Bool
     let diameter: CGFloat
     let onSelect: (ProviderUsageAccount) -> Void
+    @FocusState.Binding var focusedAccountID: String?
 
     @State private var hoveredAccountID: String?
-    @FocusState private var focusedAccountID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
@@ -98,6 +107,7 @@ struct ProviderAccountStackView: View {
         generatingCounts: [ProviderAccountKey: Int],
         isGrayscale: Bool,
         diameter: CGFloat = ProviderUsageRingGeometry.diameter,
+        focusedAccountID: FocusState<String?>.Binding,
         onSelect: @escaping (ProviderUsageAccount) -> Void
     ) {
         self.provider = provider
@@ -105,6 +115,7 @@ struct ProviderAccountStackView: View {
         self.isGrayscale = isGrayscale
         self.diameter = diameter
         self.onSelect = onSelect
+        self._focusedAccountID = focusedAccountID
     }
 
     private var geometry: ProviderAccountStackGeometry {
@@ -125,6 +136,7 @@ struct ProviderAccountStackView: View {
                     }
                 }
             }
+            .animation(stackAnimation, value: geometry)
             .frame(
                 width: geometry.width,
                 height: diameter + ProviderAccountStackGeometry.raisedElevation,
@@ -158,11 +170,23 @@ struct ProviderAccountStackView: View {
                 activeCount: activeCount,
                 isGrayscale: visualState.isGrayscale,
                 diameter: item.visualDiameter,
-                showsProviderLabel: false)
+                showsProviderLabel: false,
+                presentationMode: .account(account.usageState))
                 .frame(
                     width: item.hitTargetDiameter,
                     height: item.hitTargetDiameter)
                 .contentShape(Rectangle())
+                .overlay {
+                    if visualState.showsFocusOutline {
+                        Circle()
+                            .stroke(
+                                TenXPalette.color(TenXPalette.interactiveCyanHex),
+                                lineWidth: 2)
+                            .frame(
+                                width: item.hitTargetDiameter - 2,
+                                height: item.hitTargetDiameter - 2)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .focusable()
@@ -181,6 +205,11 @@ struct ProviderAccountStackView: View {
             provider: accountProvider,
             activeCount: activeCount))
         .accessibilitySortPriority(item.accessibilityPriority)
+    }
+
+    private var stackAnimation: Animation? {
+        ProviderAccountStackMotion.animationDuration(reduceMotion: reduceMotion)
+            .map { .easeInOut(duration: $0) }
     }
 
     private func generatingCount(for account: ProviderUsageAccount) -> Int {
