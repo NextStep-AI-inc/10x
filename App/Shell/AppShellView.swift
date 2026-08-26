@@ -54,14 +54,32 @@ struct AppShellView: View {
                                 let compactLayout = ProviderUsageDockLayout.compact(
                                     shellWidth: geometry.size.width,
                                     contentLeadingInset: railExpansion.contentLeadingInset,
-                                    providerCount: dockProviders.count,
+                                    stackWidths: ProviderUsageDockLayout.stackWidths(
+                                        providers: dockProviders),
                                     hasComposer: hasComposer)
 
                                 ProviderUsageDockView(
                                     providers: dockProviders,
                                     activeCounts: model.providerActivityCounts,
+                                    generatingCounts: model.accountGeneratingCounts,
                                     isForegroundGenerating: model.isForegroundSessionGenerating,
-                                    compactLayout: compactLayout)
+                                    compactLayout: compactLayout,
+                                    accountScopeSatisfaction: model.accountScopeSatisfaction(
+                                        openSessionID: model.activeSessionIdentityToken),
+                                    pendingRemovalAccounts: model.pendingRemovalAccounts,
+                                    activeSessionIdentityToken: model.activeSessionIdentityToken,
+                                    onUseAccount: { accountRef, scope in
+                                        let openSessionID = model.activeSessionIdentityToken
+                                        Task {
+                                            await model.useProviderAccount(
+                                                accountRef,
+                                                scope: scope,
+                                                openSessionID: openSessionID)
+                                        }
+                                    },
+                                    onManageAccounts: { providerID in
+                                        model.manageProviderAccounts(providerID: providerID)
+                                    })
                                     .padding(.trailing, 16)
                                     .padding(.bottom, 16)
                                     .frame(
@@ -205,7 +223,8 @@ struct AppShellView: View {
                     focusTarget: model.settingsFocusTarget,
                     onFocusConsumed: model.consumeSettingsFocus,
                     onBack: { model.leaveSettings() },
-                    providerModel: model.providerModel)
+                    providerModel: model.providerModel,
+                    accountCoordinator: model.sessionActivityRegistry)
             } else {
                 Text("OMP settings unavailable")
                     .font(TenXTypography.body(size: 13))
@@ -213,7 +232,9 @@ struct AppShellView: View {
             }
         case .providers:
             if let providerModel = model.providerModel {
-                ProvidersView(model: providerModel)
+                ProvidersView(
+                    model: providerModel,
+                    accountCoordinator: model.sessionActivityRegistry)
             } else {
                 Text("Providers unavailable")
                     .font(TenXTypography.body(size: 13))

@@ -193,6 +193,35 @@ final class ProviderAccountCoordinator {
         pendingRoutes[sessionID]?.accountRef
     }
 
+    /// Which of the three confirmation scopes an account already satisfies, so the
+    /// panel can disable choices that would be a no-op.
+    func scopeSatisfaction(
+        providerID: String,
+        accountRef: String,
+        openSessionID: UUID?
+    ) -> ProviderAccountScopeSatisfaction {
+        let providerSessionIDs = sessionStates.filter { entry in
+            entry.value.providerID == providerID
+        }.keys
+        let isRoutedToAccount = { (sessionID: UUID) -> Bool in
+            self.effectiveAccountRef(sessionID: sessionID) == accountRef
+        }
+        return ProviderAccountScopeSatisfaction(
+            isThisSessionSatisfied: openSessionID.map { sessionID in
+                providerSessionIDs.contains(sessionID) && isRoutedToAccount(sessionID)
+            } ?? false,
+            areAllCurrentSessionsSatisfied: !providerSessionIDs.isEmpty
+                && providerSessionIDs.allSatisfy(isRoutedToAccount),
+            isAllNewSessionsSatisfied: primaryStore.primaryAccountRef(
+                providerID: providerID) == accountRef)
+    }
+
+    private func effectiveAccountRef(sessionID: UUID) -> String? {
+        desiredRoutes[sessionID]?.accountRef
+            ?? pendingRoutes[sessionID]?.accountRef
+            ?? sessionStates[sessionID]?.accountRef
+    }
+
     func useAccount(
         _ accountRef: String,
         providerID: String,

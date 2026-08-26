@@ -60,6 +60,22 @@ enum ProviderUsageDockLayout {
             hasComposer: hasComposer)
     }
 
+    /// Measures each dock entry at the regular wheel size so multi-account stacks
+    /// are part of the "does the group fit the gutter" decision.
+    static func stackWidths(providers: [ProviderUsageProvider]) -> [CGFloat] {
+        providers.map { provider in
+            guard provider.capability == .accountRouting, !provider.accounts.isEmpty else {
+                return regular54
+            }
+            return ProviderAccountStackGeometry(
+                accountIDs: provider.accounts.map(\.id),
+                foregroundAccountID: provider.accounts.first(where: { account in
+                    account.accountRef == provider.foregroundAccountRef
+                })?.id,
+                wheelDiameter: regular54).width
+        }
+    }
+
     private static func wheelGroupWidth(stackWidths: [CGFloat]) -> CGFloat {
         let normalizedWidths = stackWidths.map { max(0, $0) }
         guard !normalizedWidths.isEmpty else {

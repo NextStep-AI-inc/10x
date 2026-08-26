@@ -8,6 +8,7 @@ struct SettingsView: View {
     let onFocusConsumed: () -> Void
     let onBack: () -> Void
     let providerModel: ProviderManagementViewModel?
+    let accountCoordinator: ProviderAccountCoordinator?
     @State private var showingProviders = false
     @FocusState private var isSearchFocused: Bool
     @FocusState private var focusedControl: SettingsFocusTarget?
@@ -19,7 +20,8 @@ struct SettingsView: View {
         focusTarget: SettingsFocusTarget? = nil,
         onFocusConsumed: @escaping () -> Void = {},
         onBack: @escaping () -> Void = {},
-        providerModel: ProviderManagementViewModel? = nil
+        providerModel: ProviderManagementViewModel? = nil,
+        accountCoordinator: ProviderAccountCoordinator? = nil
     ) {
         self.model = model
         self.registry = registry
@@ -28,11 +30,15 @@ struct SettingsView: View {
         self.onFocusConsumed = onFocusConsumed
         self.onBack = onBack
         self.providerModel = providerModel
+        self.accountCoordinator = accountCoordinator
     }
 
     var body: some View {
         if showingProviders, let providerModel {
-            ProvidersView(model: providerModel, onBack: { showingProviders = false })
+            ProvidersView(
+                model: providerModel,
+                accountCoordinator: accountCoordinator,
+                onBack: { showingProviders = false })
         } else {
             settingsBody
         }

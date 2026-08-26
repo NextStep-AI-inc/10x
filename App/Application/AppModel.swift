@@ -71,6 +71,57 @@ final class AppModel {
         activeSession?.id
     }
 
+    var accountGeneratingCounts: [ProviderAccountKey: Int] {
+        sessionActivityRegistry.generatingCounts
+    }
+
+    var pendingRemovalAccounts: Set<ProviderAccountKey> {
+        sessionActivityRegistry.pendingRemovalAccounts
+    }
+
+    func accountScopeSatisfaction(
+        openSessionID: UUID?
+    ) -> [ProviderAccountKey: ProviderAccountScopeSatisfaction] {
+        guard let providerModel else { return [:] }
+        return providerModel.dockProviders.reduce(into: [:]) { satisfaction, provider in
+            guard provider.capability == .accountRouting else { return }
+            for account in provider.accounts {
+                guard let accountRef = account.accountRef else { continue }
+                let key = ProviderAccountKey(providerID: provider.id, accountRef: accountRef)
+                satisfaction[key] = sessionActivityRegistry.scopeSatisfaction(
+                    providerID: provider.id,
+                    accountRef: accountRef,
+                    openSessionID: openSessionID)
+            }
+        }
+    }
+
+    func useProviderAccount(
+        _ accountRef: String,
+        scope: ProviderAccountScope,
+        openSessionID: UUID?
+    ) async {
+        guard let providerID = providerID(forAccountRef: accountRef) else { return }
+        await sessionActivityRegistry.useAccount(
+            accountRef,
+            providerID: providerID,
+            scope: scope,
+            openSessionID: openSessionID)
+    }
+
+    func manageProviderAccounts(providerID: String) {
+        guard !isSessionMutationInFlight else { return }
+        providerModel?.focusConnections(providerID: providerID)
+        route = .providers(.connections)
+    }
+
+    private func providerID(forAccountRef accountRef: String) -> String? {
+        providerModel?.dockProviders.first { provider in
+            provider.capability == .accountRouting
+                && provider.accounts.contains { $0.accountRef == accountRef }
+        }?.id
+    }
+
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
     @ObservationIgnored private var archivedReloadGeneration = 0

@@ -784,7 +784,10 @@ private func navigationDependencies<Locator: OmpLocating>(
     sessionSearch: SessionSearchService = SessionSearchService(),
     makeProviderAccountCoordinator: @escaping @MainActor @Sendable () -> ProviderAccountCoordinator = {
         ProviderAccountCoordinator()
-    }
+    },
+    makeProviderModel: (
+        @MainActor @Sendable (URL) -> ProviderManagementViewModel
+    )? = nil
 ) -> AppDependencies {
     let defaults = appModelTestDefaults()
     return AppDependencies(
@@ -800,7 +803,7 @@ private func navigationDependencies<Locator: OmpLocating>(
             SettingsViewModel(service: OmpConfigService(
                 runner: AppModelTestConfigRunner()))
         },
-        makeProviderModel: { _ in
+        makeProviderModel: makeProviderModel ?? { _ in
             providerTestModel(providers: [
                 ProviderLoginProvider(
                     id: "cursor",
@@ -932,6 +935,12 @@ private func navigationLog(_ url: URL, eventuallyContains expected: String) asyn
         try? await Task.sleep(for: .milliseconds(20))
     }
     return (try? navigationCommands(in: url).contains(expected)) == true
+}
+
+private struct StubbedOmpLocator: OmpLocating {
+    func locate(preferredURL: URL?) async -> OmpInstallation? {
+        OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test")
+    }
 }
 
 private struct MissingOmpLocator: OmpLocating {
@@ -1417,4 +1426,187 @@ private actor StubAppComposerDefaults: ComposerDefaultPersisting {
 
     #expect(model.isSearchPresented)
     #expect(model.sessions.map(\.title) == ["Open search refresh"])
+}
+
+@Suite @MainActor struct AppModelAccountDockTests {
+private func accountProviderModel() -> ProviderManagementViewModel {
+    ProviderManagementViewModel(
+        providerService: FakeProviderService(
+            providers: [
+                ProviderLoginProvider(
+                    id: "openai-codex",
+                    name: "ChatGPT",
+                    isAvailable: true,
+                    isAuthenticated: true),
+            ],
+            capabilities: ["openai-codex": .accountRouting],
+            accounts: [
+                "openai-codex": [
+                    providerAccountFixture(
+                        providerID: "openai-codex",
+                        ref: "acct_A",
+                        label: "personal@example.com",
+                        order: 0),
+                    providerAccountFixture(
+                        providerID: "openai-codex",
+                        ref: "acct_B",
+                        label: "work@example.com",
+                        order: 1),
+                ],
+            ]),
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+}
+
+@Test func dockAccountStateMirrorsTheCoordinator() async throws {
+    let coordinator = ProviderAccountCoordinator()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: MissingOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: NSTemporaryDirectory(),
+            directoryHint: .isDirectory)),
+        makeProviderAccountCoordinator: { coordinator }))
+    let session = DockAccountSession(providerID: "openai-codex", accountRef: "acct_A")
+    coordinator.register(session)
+    coordinator.update(sessionID: session.id, providerID: "openai-codex", isGenerating: true)
+
+    #expect(model.accountGeneratingCounts == [
+        ProviderAccountKey(providerID: "openai-codex", accountRef: "acct_A"): 1,
+    ])
+    #expect(model.pendingRemovalAccounts.isEmpty)
+}
+
+@Test func accountScopeSatisfactionReflectsSessionsAndPrimary() async throws {
+    let suiteName = "tenx-dock-satisfaction-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    let providerModel = accountProviderModel()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: NSTemporaryDirectory(),
+            directoryHint: .isDirectory)),
+        makeProviderAccountCoordinator: { coordinator },
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+    await providerModel.load()
+    let session = DockAccountSession(providerID: "openai-codex", accountRef: "acct_A")
+    coordinator.register(session)
+    coordinator.update(sessionID: session.id, providerID: "openai-codex", isGenerating: false)
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+
+    let satisfaction = model.accountScopeSatisfaction(openSessionID: session.id)
+    let onAccountA = try #require(satisfaction[ProviderAccountKey(
+        providerID: "openai-codex",
+        accountRef: "acct_A")])
+    let onAccountB = try #require(satisfaction[ProviderAccountKey(
+        providerID: "openai-codex",
+        accountRef: "acct_B")])
+
+    #expect(onAccountA.areAllScopesSatisfied)
+    #expect(onAccountB == .none)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func manageAccountsOpensConnectionsFocusedOnTheProvider() async throws {
+    let providerModel = accountProviderModel()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: NSTemporaryDirectory(),
+            directoryHint: .isDirectory)),
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+
+    model.manageProviderAccounts(providerID: "openai-codex")
+
+    #expect(model.route == .providers(.connections))
+    #expect(providerModel.selectedSection == .connections)
+    #expect(providerModel.focusedConnectionsProviderID == "openai-codex")
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func useProviderAccountRoutesThroughTheCoordinator() async throws {
+    let suiteName = "tenx-dock-use-account-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    let providerModel = accountProviderModel()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: NSTemporaryDirectory(),
+            directoryHint: .isDirectory)),
+        makeProviderAccountCoordinator: { coordinator },
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+    await providerModel.load()
+    let session = DockAccountSession(providerID: "openai-codex", accountRef: "acct_A")
+    coordinator.register(session)
+    coordinator.update(sessionID: session.id, providerID: "openai-codex", isGenerating: false)
+
+    await model.useProviderAccount("acct_B", scope: .thisSession, openSessionID: session.id)
+
+    #expect(session.currentProviderAccountRef == "acct_B")
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func useProviderAccountIgnoresUnknownRefs() async throws {
+    let coordinator = ProviderAccountCoordinator()
+    let providerModel = accountProviderModel()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: NSTemporaryDirectory(),
+            directoryHint: .isDirectory)),
+        makeProviderAccountCoordinator: { coordinator },
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+    await providerModel.load()
+    let session = DockAccountSession(providerID: "openai-codex", accountRef: "acct_A")
+    coordinator.register(session)
+
+    await model.useProviderAccount("acct_missing", scope: .thisSession, openSessionID: session.id)
+
+    #expect(session.currentProviderAccountRef == "acct_A")
+    if let manager = model.processManager { await manager.closeAll() }
+}
+}
+
+@MainActor
+private final class DockAccountSession: ProviderAccountSession {
+    let id = UUID()
+    let providerID: String?
+    var runtimeState: SessionRuntimeState = .idle
+    private(set) var currentProviderAccountRef: String?
+    private(set) var providerAccountSequence = 0
+
+    init(providerID: String, accountRef: String) {
+        self.providerID = providerID
+        currentProviderAccountRef = accountRef
+    }
+
+    func setProviderAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> SetSessionProviderAccountResult {
+        currentProviderAccountRef = accountRef
+        providerAccountSequence += 1
+        return SetSessionProviderAccountResult(
+            account: ProviderAccountSummary(
+                providerID: providerID,
+                accountRef: accountRef,
+                displayLabel: accountRef,
+                connectionOrder: 0,
+                availability: .available),
+            sequence: providerAccountSequence)
+    }
 }

@@ -849,6 +849,140 @@ private final class SnapshotProviderAccountSession: ProviderAccountSession {
 }
 
 @MainActor
+private func fullShellAccountProviderModel() -> ProviderManagementViewModel {
+    ProviderManagementViewModel(
+        providerService: FakeProviderService(
+            providers: fullShellProviders,
+            capabilities: [
+                "anthropic": .accountRouting,
+                "openai-codex": .accountRouting,
+                "cursor": .providerOnly,
+            ],
+            accounts: [
+                "anthropic": [
+                    providerAccountFixture(
+                        providerID: "anthropic",
+                        ref: "acct_claude_personal",
+                        label: "tanner@example.com",
+                        order: 0),
+                    providerAccountFixture(
+                        providerID: "anthropic",
+                        ref: "acct_claude_work",
+                        label: "work@example.com",
+                        order: 1),
+                ],
+                "openai-codex": [
+                    providerAccountFixture(
+                        providerID: "openai-codex",
+                        ref: "acct_chatgpt_personal",
+                        label: "tanner@example.com",
+                        order: 0),
+                    providerAccountFixture(
+                        providerID: "openai-codex",
+                        ref: "acct_chatgpt_team",
+                        label: "team@example.com",
+                        order: 1),
+                    providerAccountFixture(
+                        providerID: "openai-codex",
+                        ref: "acct_chatgpt_school",
+                        label: "school@example.com",
+                        order: 2),
+                ],
+            ],
+            accountUsage: [
+                "anthropic": [
+                    fullShellAccountUsage(providerID: "anthropic", ref: "acct_claude_personal", remaining: 0.82),
+                    fullShellAccountUsage(providerID: "anthropic", ref: "acct_claude_work", remaining: 0.24),
+                ],
+                "openai-codex": [
+                    fullShellAccountUsage(providerID: "openai-codex", ref: "acct_chatgpt_personal", remaining: 0.61),
+                    fullShellAccountUsage(providerID: "openai-codex", ref: "acct_chatgpt_team", remaining: 0.45),
+                    fullShellAccountUsage(providerID: "openai-codex", ref: "acct_chatgpt_school", remaining: 0.9),
+                ],
+            ]),
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) },
+        formatTime: { _ in "4:00 PM" })
+}
+
+private func fullShellAccountUsage(
+    providerID: String,
+    ref: String,
+    remaining: Double
+) -> ProviderAccountUsage {
+    providerAccountUsageFixture(
+        providerID: providerID,
+        ref: ref,
+        windows: [
+            providerAccountUsageWindowFixture(
+                id: "\(ref):five-hour",
+                label: "5 hour",
+                remainingFraction: remaining,
+                resetsAt: Date(timeIntervalSince1970: 1_787_700_000)),
+            providerAccountUsageWindowFixture(
+                id: "\(ref):weekly",
+                label: "Weekly",
+                sourceIndex: 1,
+                remainingFraction: max(0, remaining - 0.2),
+                resetsAt: Date(timeIntervalSince1970: 1_788_061_624)),
+        ])
+}
+
+@MainActor
+private func fullShellAccountModel(
+    directory: String
+) async -> (AppModel, ProviderManagementViewModel) {
+    let providerModel = fullShellAccountProviderModel()
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: directory,
+            directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
+    await model.bootstrap()
+    await providerModel.load()
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    model.sessions = fullShellSessions
+    return (model, providerModel)
+}
+
+@MainActor
+@Test func fullShellAccountDockWideWindowSnapshot() async throws {
+    let (model, _) = await fullShellAccountModel(
+        directory: "/tmp/10x-full-shell-account-dock-wide")
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-account-dock-wide-window",
+        size: CGSize(width: 1280, height: 760))
+}
+
+@MainActor
+@Test func fullShellAccountDockCompactTriggerWindowSnapshot() async throws {
+    let (model, _) = await fullShellAccountModel(
+        directory: "/tmp/10x-full-shell-account-dock-compact")
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-account-dock-compact-trigger-window",
+        size: CGSize(width: 1180, height: 760))
+}
+
+@MainActor
+@Test func fullShellAccountDockMinimumWindowSnapshot() async throws {
+    let (model, _) = await fullShellAccountModel(
+        directory: "/tmp/10x-full-shell-account-dock-minimum")
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-account-dock-minimum-window",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
 private func providerWorkspaceModel() throws -> ProviderManagementViewModel {
     providerTestModel(
         providers: providerWorkspaceProviders,
