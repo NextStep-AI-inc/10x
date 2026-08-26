@@ -57,6 +57,24 @@ struct ComputerUseProbeReport: Sendable, Equatable {
     let windowPlacementSucceeded: Bool?
 }
 
+enum DisposableProbeResult: Sendable {
+    case success(contract: OmpComputerContract, probe: ComputerProbeResult)
+    case failed(contract: OmpComputerContract)
+    case cancelled
+
+    var contract: OmpComputerContract {
+        switch self {
+        case let .success(contract, _), let .failed(contract): contract
+        case .cancelled: .unavailable
+        }
+    }
+
+    var probe: ComputerProbeResult? {
+        guard case let .success(_, probe) = self else { return nil }
+        return probe
+    }
+}
+
 enum ComputerUseSetupAction {
     case openScreenRecordingSettings
     case openAccessibilitySettings
@@ -73,13 +91,41 @@ protocol ComputerUseSetupOMP: Sendable {
     func shutdown() async -> Bool
 }
 
+protocol DisposableComputerUseRPC: AnyObject, Sendable {
+    func start() async throws -> ReadyFrame
+    func send(_ command: RpcCommand, timeout: Duration?) async throws -> RpcResponse
+    func shutdown(deadline: ContinuousClock.Instant?) async -> Bool
+    var termination: AsyncStream<Void> { get }
+}
+
+extension RpcClient: DisposableComputerUseRPC {}
+
+extension DisposableComputerUseRPC {
+    func send(_ command: RpcCommand) async throws -> RpcResponse {
+        try await send(command, timeout: nil)
+    }
+}
+
 actor DisposableComputerUseOMP: ComputerUseSetupOMP {
     private let executable: String
-    private var client: RpcClient?
+    private let clientFactory: @Sendable (RpcClientConfiguration) -> any DisposableComputerUseRPC
+    private var client: (any DisposableComputerUseRPC)?
     private var terminationTask: Task<Void, Never>?
 
-    init(executable: String) {
+    init(
+        executable: String,
+        clientFactory: @escaping @Sendable (RpcClientConfiguration) -> any DisposableComputerUseRPC = {
+            RpcClient(configuration: $0)
+        }
+    ) {
         self.executable = executable
+        self.clientFactory = clientFactory
+    }
+
+    init(client: any DisposableComputerUseRPC) {
+        executable = ""
+        clientFactory = { _ in client }
+        self.client = client
     }
 
     func getComputerUse() async throws -> ComputerUseRPCState {
@@ -108,39 +154,50 @@ actor DisposableComputerUseOMP: ComputerUseSetupOMP {
 
     func shutdown() async -> Bool {
         guard let client else { return true }
-        let isTerminated = await client.shutdown()
+        let isTerminated = await client.shutdown(deadline: nil)
         if isTerminated {
-            self.client = nil
-            terminationTask?.cancel()
-            terminationTask = nil
+            release(client)
         } else {
             observeTermination(of: client)
         }
         return isTerminated
     }
 
-    private func rpc() async throws -> RpcClient {
+    var hasRetainedClient: Bool { client != nil }
+
+    private func rpc() async throws -> any DisposableComputerUseRPC {
         if let client { return client }
         var configuration = RpcClientConfiguration()
         configuration.executable = executable
         configuration.noSession = true
-        let client = RpcClient(configuration: configuration)
+        let client = clientFactory(configuration)
         try await client.start()
         self.client = client
         return client
     }
 
-    private func observeTermination(of client: RpcClient) {
+    private func observeTermination(of client: any DisposableComputerUseRPC) {
         guard terminationTask == nil else { return }
         terminationTask = Task { [weak self] in
             for await _ in client.termination {
-                await self?.releaseTerminatedClient(client)
+                await self?.confirmGroupTermination(of: client)
                 return
             }
         }
     }
 
-    private func releaseTerminatedClient(_ terminatedClient: RpcClient) {
+    private func confirmGroupTermination(of terminatingClient: any DisposableComputerUseRPC) async {
+        guard client === terminatingClient else { return }
+        while client === terminatingClient {
+            if await terminatingClient.shutdown(deadline: ContinuousClock.now.advanced(by: .seconds(1))) {
+                release(terminatingClient)
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    private func release(_ terminatedClient: any DisposableComputerUseRPC) {
         guard client === terminatedClient else { return }
         client = nil
         terminationTask = nil
@@ -239,30 +296,37 @@ final class ComputerUseSetupModel {
                 try await selected.provider.move(windowID: opened.windowID, to: workspaceID)
             }
             let result = await runDisposableProbe(target: opened.windowID, verificationText: opened.verificationText)
-            if let probe = result.probe {
+            switch result {
+            case let .success(contract, probe):
                 harmlessTest = ComputerUseProbeReport(
-                    outcome: probe.captureSucceeded && probe.backgroundInputSucceeded != false
-                        && probe.capabilities.accessibility == .granted ? .passed : .failed,
+                    outcome: probe.captureSucceeded && probe.backgroundInputSucceeded == true
+                        && probe.capabilities.accessibility == .granted && helperAvailable ? .passed : .failed,
                     capabilities: probe.capabilities,
                     captureSucceeded: probe.captureSucceeded,
                     backgroundInputSucceeded: probe.backgroundInputSucceeded,
                     helperAvailable: helperAvailable,
                     windowPlacementSucceeded: prepared?.workspaceID == nil ? nil : true)
                 readiness = ComputerUseReadiness(
-                    ompContract: result.contract,
+                    ompContract: contract,
                     capabilities: probe.capabilities,
                     preferredProvider: preferredProbe(from: probes),
                     backgroundFallbackAvailable: probes[.background]?.availability == .healthy,
                     providerProbes: probes)
+            case let .failed(contract):
+                harmlessTest = failedProbeReport(outcome: .failed, target: target)
+                readiness = ComputerUseReadiness(
+                    ompContract: contract,
+                    capabilities: .unknown,
+                    preferredProvider: preferredProbe(from: probes),
+                    backgroundFallbackAvailable: probes[.background]?.availability == .healthy,
+                    providerProbes: probes)
+            case .cancelled:
+                harmlessTest = failedProbeReport(outcome: .cancelled, target: target)
             }
         } catch {
-            harmlessTest = ComputerUseProbeReport(
+            harmlessTest = failedProbeReport(
                 outcome: error is CancellationError ? .cancelled : .failed,
-                capabilities: .unknown,
-                captureSucceeded: false,
-                backgroundInputSucceeded: nil,
-                helperAvailable: false,
-                windowPlacementSucceeded: target == nil ? nil : false)
+                target: target)
         }
         if let selected, let target, let originalWorkspaceID {
             try? await selected.provider.restore(windowID: target.windowID, to: originalWorkspaceID)
@@ -313,10 +377,10 @@ final class ComputerUseSetupModel {
         return nil
     }
 
-    private func runDisposableProbe(
+    func runDisposableProbe(
         target: String?,
         verificationText: String?
-    ) async -> (contract: OmpComputerContract, probe: ComputerProbeResult?) {
+    ) async -> DisposableProbeResult {
         var didAttemptEnable = false
         do {
             _ = try await omp.getComputerUse()
@@ -324,16 +388,17 @@ final class ComputerUseSetupModel {
             let enabled = try await omp.setComputerUse(enabled: true, policy: .requireHandoff)
             guard enabled.enabled, enabled.foregroundPolicy == .requireHandoff else {
                 await settleDisposableCleanup(requiresDisable: true)
-                return (.unavailable, nil)
+                return .failed(contract: .unavailable)
             }
             let probe = try await omp.probeComputerUse(target: target, verificationText: verificationText)
             let disabled = try await omp.setComputerUse(enabled: false, policy: .requireHandoff)
             await settleDisposableCleanup(requiresDisable: false)
-            guard !disabled.enabled else { return (.unavailable, probe) }
-            return (.complete, probe)
+            guard !disabled.enabled else { return .failed(contract: .unavailable) }
+            return .success(contract: .complete, probe: probe)
         } catch {
             await settleDisposableCleanup(requiresDisable: didAttemptEnable)
-            return (isUnknownComputerCommand(error) ? .legacyBestEffort : .unavailable, nil)
+            if error is CancellationError { return .cancelled }
+            return .failed(contract: isUnknownComputerCommand(error) ? .legacyBestEffort : .unavailable)
         }
     }
 
@@ -348,7 +413,7 @@ final class ComputerUseSetupModel {
                 _ = try? await omp.setComputerUse(enabled: false, policy: .requireHandoff)
             }
             while !(await omp.shutdown()) {
-                try? await Task.sleep(for: .milliseconds(10))
+                try? await Task.sleep(for: .milliseconds(100))
             }
         }
         cleanupTask = task
@@ -361,6 +426,19 @@ final class ComputerUseSetupModel {
             return String(describing: error).localizedCaseInsensitiveContains("unknown command")
         }
         return message.localizedCaseInsensitiveContains("unknown command")
+    }
+
+    private func failedProbeReport(
+        outcome: ComputerUseTestOutcome,
+        target: AgentDesktopProbeWindow.Target?
+    ) -> ComputerUseProbeReport {
+        ComputerUseProbeReport(
+            outcome: outcome,
+            capabilities: .unknown,
+            captureSucceeded: false,
+            backgroundInputSucceeded: false,
+            helperAvailable: false,
+            windowPlacementSucceeded: target == nil ? nil : false)
     }
 
     private func open(_ value: String) {

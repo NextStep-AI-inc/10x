@@ -8,7 +8,8 @@ DONE
 
 - Base: `b905c92c6bb0458e3698a1b0b9eb9b647d411d9c`
 - Branch: `codex/computer-use-design`
-- Fix commit: pending
+- Round 1 commit: `62f49e5607c959394a38106f2d2eefcff2313169`
+- Round 2 commit: pending
 
 ## Implemented
 
@@ -32,6 +33,12 @@ DONE
 - Automatic helper selection now uses the first healthy provider in
   AeroSpace, Hammerspoon, Background order; explicit choices report only that
   provider.
+- A disposable RPC leader-exit notification now triggers group-death
+  confirmation without releasing ownership. The retained client is released
+  only after `shutdown(deadline:)` confirms the full process group is dead.
+- Probe execution uses typed success, failure, and cancellation results. A
+  new setup attempt always replaces a prior result and reports failed or
+  cancelled checks honestly.
 
 ## Verified
 
@@ -40,6 +47,11 @@ DONE
 - Record: `RECORD_SNAPSHOTS=1 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round1-record` passed 182 tests.
 - Compare: `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round1` passed 182 tests.
 - Release: `xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round1-release` succeeded.
+- Round 2 full suite: `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round2` passed 185 tests.
+- Round 2 Release: `xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round2-release` succeeded.
+- Focused cleanup coverage uses a production-faithful detached-descendant RPC:
+  leader termination fires first, the first confirmation returns false and
+  keeps ownership, then confirmed group shutdown clears it once.
 - Inspected at native size:
   - `/Users/tannerpham/CS Projects/.worktrees/10x-computer-use-design/Tests/TenXAppTests/ReferenceImages/computer-use-settings.png`
   - `/Users/tannerpham/CS Projects/.worktrees/10x-computer-use-design/Tests/TenXAppTests/ReferenceImages/computer-use-settings-degraded.png`
@@ -47,6 +59,8 @@ DONE
   760 pt minimum shell. Both were inspected at original size: values and
   controls are aligned, long status values wrap without clipping, the degraded
   warning is near-black on white, and the yellow badge remains an accent.
+- Round 2 did not change either reference PNG. The full snapshot comparison
+  passed against the already inspected images.
 
 ## Not verified
 

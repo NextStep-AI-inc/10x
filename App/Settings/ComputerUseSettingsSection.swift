@@ -55,10 +55,10 @@ struct ComputerUseSettingsSection: View {
 
                 if let harmlessTest = model.harmlessTest {
                     statusRow("Setup test", value: testOutcomeLabel(harmlessTest.outcome))
-                    statusRow("Test capture", value: harmlessTest.captureSucceeded ? "Passed" : "Failed")
-                    statusRow("Test accessibility", value: permissionLabel(harmlessTest.capabilities.accessibility))
-                    statusRow("Test background input", value: testInputLabel(harmlessTest.backgroundInputSucceeded))
-                    statusRow("Test helper", value: harmlessTest.helperAvailable ? "Passed" : "Failed")
+                    statusRow("Test capture", value: testCheckLabel(harmlessTest.captureSucceeded, outcome: harmlessTest.outcome))
+                    statusRow("Test accessibility", value: testPermissionLabel(harmlessTest.capabilities.accessibility, outcome: harmlessTest.outcome))
+                    statusRow("Test background input", value: testInputLabel(harmlessTest.backgroundInputSucceeded, outcome: harmlessTest.outcome))
+                    statusRow("Test helper", value: testCheckLabel(harmlessTest.helperAvailable, outcome: harmlessTest.outcome))
                     statusRow("Test window placement", value: testPlacementLabel(harmlessTest.windowPlacementSucceeded))
                 }
 
@@ -187,9 +187,20 @@ struct ComputerUseSettingsSection: View {
         }
     }
 
-    private func testInputLabel(_ value: Bool?) -> String {
-        guard let value else { return "Not checked" }
-        return value ? "Passed" : "Failed"
+    private func testCheckLabel(_ value: Bool, outcome: ComputerUseTestOutcome) -> String {
+        value ? "Passed" : testOutcomeLabel(outcome)
+    }
+
+    private func testPermissionLabel(
+        _ permission: ComputerPermissionState,
+        outcome: ComputerUseTestOutcome
+    ) -> String {
+        permission == .unknown ? testOutcomeLabel(outcome) : permissionLabel(permission)
+    }
+
+    private func testInputLabel(_ value: Bool?, outcome: ComputerUseTestOutcome) -> String {
+        guard let value else { return testOutcomeLabel(outcome) }
+        return testCheckLabel(value, outcome: outcome)
     }
 
     private func testPlacementLabel(_ value: Bool?) -> String {
