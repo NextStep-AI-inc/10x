@@ -2,6 +2,15 @@ import Foundation
 import Testing
 @testable import TenXApp
 
+@Test func liveStartupTimingKeepsSplashVisibleForAtLeastOneSecond() async throws {
+    let clock = ContinuousClock()
+    let start = clock.now
+
+    try await StartupTiming.live.sleep(StartupTiming.live.minimumVisibility)
+
+    #expect(start.duration(to: clock.now) >= .seconds(1))
+}
+
 @MainActor
 @Test func startupRowsUseTheApprovedOrderAndExactCopy() {
     let state = StartupState()

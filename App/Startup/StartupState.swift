@@ -54,7 +54,7 @@ struct StartupTiming: Sendable {
     let sleep: @Sendable (Duration) async throws -> Void
 
     static let live = StartupTiming(
-        minimumVisibility: .milliseconds(350),
+        minimumVisibility: .milliseconds(1_200),
         timeout: .seconds(10),
         sleep: { duration in try await ContinuousClock().sleep(for: duration) })
 }
