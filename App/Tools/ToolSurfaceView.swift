@@ -409,13 +409,23 @@ private struct DataTreeSurfaceView: View {
     }
 }
 
+enum DataTreeSurfaceLayout {
+    static let maximumDepth = 6
+    static let previewChildLimit = 12
+
+    static func visibleChildCount(total: Int, isShowingAll: Bool) -> Int {
+        let boundedTotal = max(0, total)
+        return isShowingAll ? boundedTotal : min(boundedTotal, previewChildLimit)
+    }
+}
+
 private struct JSONValueNode: View {
     let label: String?
     let value: JSONValue
     let depth: Int
 
     @State private var isExpanded: Bool
-    private static let maximumDepth = 6
+    @State private var isShowingAllChildren = false
 
     init(label: String?, value: JSONValue, depth: Int) {
         self.label = label
@@ -426,18 +436,23 @@ private struct JSONValueNode: View {
 
     @ViewBuilder
     var body: some View {
-        if depth >= Self.maximumDepth {
+        if depth >= DataTreeSurfaceLayout.maximumDepth {
             scalarRow(summary)
         } else {
             switch value {
             case .object(let object):
                 DisclosureGroup(isExpanded: $isExpanded) {
                     VStack(alignment: .leading, spacing: 5) {
-                        ForEach(object.keys.sorted(), id: \.self) { key in
+                        let keys = object.keys.sorted()
+                        ForEach(
+                            keys.prefix(visibleChildCount(total: keys.count)),
+                            id: \.self
+                        ) { key in
                             if let child = object[key] {
                                 JSONValueNode(label: key, value: child, depth: depth + 1)
                             }
                         }
+                        childDisclosure(total: object.count, noun: "fields")
                     }
                     .padding(.leading, 12)
                 } label: {
@@ -446,12 +461,13 @@ private struct JSONValueNode: View {
             case .array(let values):
                 DisclosureGroup(isExpanded: $isExpanded) {
                     VStack(alignment: .leading, spacing: 5) {
-                        ForEach(values.indices, id: \.self) { index in
+                        ForEach(0..<visibleChildCount(total: values.count), id: \.self) { index in
                             JSONValueNode(
                                 label: "[\(index)]",
                                 value: values[index],
                                 depth: depth + 1)
                         }
+                        childDisclosure(total: values.count, noun: "items")
                     }
                     .padding(.leading, 12)
                 } label: {
@@ -460,6 +476,22 @@ private struct JSONValueNode: View {
             default:
                 scalarRow(scalarText)
             }
+        }
+    }
+
+    private func visibleChildCount(total: Int) -> Int {
+        DataTreeSurfaceLayout.visibleChildCount(
+            total: total,
+            isShowingAll: isShowingAllChildren)
+    }
+
+    @ViewBuilder
+    private func childDisclosure(total: Int, noun: String) -> some View {
+        if total > DataTreeSurfaceLayout.previewChildLimit {
+            Button(isShowingAllChildren ? "Show fewer" : "Show all \(total) \(noun)") {
+                isShowingAllChildren.toggle()
+            }
+            .buttonStyle(GhostActionStyle(horizontalPadding: 0))
         }
     }
 

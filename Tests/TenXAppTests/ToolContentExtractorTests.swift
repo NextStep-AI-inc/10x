@@ -849,6 +849,12 @@ import Testing
     #expect(rows.first?.detail == nil)
 }
 
+@Test func dataTreeFallbackBoundsItsInitialChildCount() {
+    #expect(DataTreeSurfaceLayout.visibleChildCount(total: 40, isShowingAll: false) == 12)
+    #expect(DataTreeSurfaceLayout.visibleChildCount(total: 40, isShowingAll: true) == 40)
+    #expect(DataTreeSurfaceLayout.visibleChildCount(total: 4, isShowingAll: false) == 4)
+}
+
 @Test func progressFailureStatusUsesTheErrorTreatment() {
     let failed = ToolProgress(
         title: "Security scan",
