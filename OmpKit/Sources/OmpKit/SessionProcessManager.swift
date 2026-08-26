@@ -89,10 +89,18 @@ public actor SessionProcessManager {
     }
 
     /// Starts a fresh session in a project directory.
-    public func openNew(projectDirectory: String) async throws -> Handle {
+    public func openNew(
+        projectDirectory: String,
+        provider: String? = nil,
+        model: String? = nil,
+        thinking: String? = nil
+    ) async throws -> Handle {
         var configuration = RpcClientConfiguration()
         configuration.executable = executable
         configuration.cwd = URL(fileURLWithPath: projectDirectory)
+        configuration.provider = provider
+        configuration.model = model
+        configuration.thinking = thinking
         let client = clientFactory(configuration)
         try await client.start()
 

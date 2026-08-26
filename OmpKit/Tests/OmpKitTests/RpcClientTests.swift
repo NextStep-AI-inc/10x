@@ -244,6 +244,21 @@ func makeClient(
     await c.shutdown()
 }
 
+@Test func spawnFlagsFollowProviderModelThinkingOrder() {
+    var cfg = RpcClientConfiguration()
+    cfg.provider = "anthropic"
+    cfg.model = "claude-opus-4-8"
+    cfg.thinking = "high"
+    cfg.noSession = true
+    #expect(cfg.resolvedArguments == [
+        "--mode", "rpc", "--no-title",
+        "--provider", "anthropic",
+        "--model", "claude-opus-4-8",
+        "--thinking", "high",
+        "--no-session",
+    ])
+}
+
 @Test func realOmpArgvIsBuiltCorrectly() {
     var cfg = RpcClientConfiguration()
     cfg.cwd = URL(fileURLWithPath: "/tmp/project")

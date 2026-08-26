@@ -105,6 +105,12 @@ private func json(_ data: Data) throws -> [String: Any] {
     #expect(bare["parentSession"] == nil)
 }
 
+@Test func setFastModeEncodesEnabledBool() throws {
+    let obj = try json(try RpcCommand.setFastMode(enabled: false).encodedLine(id: "req_fast"))
+    #expect(obj["type"] as? String == "set_fast_mode")
+    #expect(obj["enabled"] as? Bool == false)
+}
+
 @Test func providerLoginCommandsMatchTheOMPContract() throws {
     let list = try json(try RpcCommand.getLoginProviders().encodedLine(id: "providers"))
     #expect(list.count == 2)
