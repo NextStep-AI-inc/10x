@@ -45,7 +45,7 @@ final class ProviderPrimaryPreferenceStore {
     }
 }
 
-private extension ProviderAccountSummary {
+extension ProviderAccountSummary {
     var isEligiblePrimary: Bool {
         availability == .available || availability == .limited
     }

@@ -307,6 +307,8 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
               isComposerAvailable,
               !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
+        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return }
+        defer { accountCoordinator?.endManagedTurn(sessionID: id) }
 
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {

@@ -1,12 +1,32 @@
 import OmpKit
 import SwiftUI
 
+struct ProviderAccountRemovalModalBehavior: Equatable, Sendable {
+    let isPresented: Bool
+
+    var isUnderlyingContentDisabled: Bool { isPresented }
+    var isUnderlyingContentAccessibilityHidden: Bool { isPresented }
+
+    func restorationTarget(
+        dismissalSource: ProviderAccountRemovalDismissalSource,
+        accountID: String,
+        providerID: String,
+        accountStillConnected: Bool
+    ) -> ProviderConnectionsFocusTarget {
+        switch dismissalSource {
+        case .background, .cancelAction, .keyboard, .confirmAction:
+            return accountStillConnected ? .removeAccount(accountID) : .addAccount(providerID)
+        }
+    }
+}
+
 struct ProvidersView: View {
     let model: ProviderManagementViewModel
     let accountCoordinator: ProviderAccountCoordinator?
     let onBack: (() -> Void)?
 
     @State private var removalRequest: ProviderAccountRemovalRequest?
+    @State private var connectionsFocusRequest: ProviderConnectionsFocusRequest?
 
     init(
         model: ProviderManagementViewModel,
@@ -19,6 +39,66 @@ struct ProvidersView: View {
     }
 
     var body: some View {
+        ZStack {
+            workspace
+                .disabled(modalBehavior.isUnderlyingContentDisabled)
+                .accessibilityHidden(modalBehavior.isUnderlyingContentAccessibilityHidden)
+
+            if let removalRequest, let accountCoordinator {
+                ProviderAccountRemovalConfirmationView(
+                    providerName: removalRequest.provider.companyName,
+                    accountLabel: removalRequest.account.displayLabel,
+                    accountDetailLabel: removalRequest.account.detailLabel,
+                    hasDuplicateAccountLabel: hasDuplicateAccountLabel(removalRequest),
+                    affectedSessionCount: accountCoordinator.sessionCounts[removalRequest.key] ?? 0,
+                    isLastAccount: model.connectionAccounts(
+                        providerID: removalRequest.provider.id).count == 1,
+                    isRemoving: model.pendingRemovalAccounts.contains(removalRequest.key),
+                    onCancel: { source in
+                        let accountStillConnected = model.connectionAccounts(
+                            providerID: removalRequest.provider.id
+                        ).contains { $0.id == removalRequest.account.id }
+                        dismissRemoval(
+                            source: source,
+                            accountStillConnected: accountStillConnected)
+                    },
+                    onRemove: {
+                        Task {
+                            await model.removeAccount(
+                                removalRequest.account,
+                                coordinator: accountCoordinator)
+                            let accountStillConnected = model.connectionAccounts(
+                                providerID: removalRequest.provider.id
+                            ).contains { $0.id == removalRequest.account.id }
+                            dismissRemoval(
+                                source: .confirmAction,
+                                accountStillConnected: accountStillConnected)
+                        }
+                    })
+            }
+        }
+        .sheet(item: extensionSheetBinding) { request in
+            ExtensionInputSheet(
+                request: request,
+                onSubmit: { value in
+                    Task { await model.respond(to: request, with: .value(value)) }
+                },
+                onCancel: {
+                    Task {
+                        await model.respond(
+                            to: request,
+                            with: .cancelled(timedOut: false))
+                    }
+                })
+        }
+        .task {
+            if let accountCoordinator {
+                model.attachAccountCoordinator(accountCoordinator)
+            }
+        }
+    }
+
+    private var workspace: some View {
         GeometryReader { proxy in
             VStack(spacing: 0) {
                 header
@@ -36,40 +116,6 @@ struct ProvidersView: View {
         .frame(maxWidth: 960, maxHeight: .infinity)
         .padding(.horizontal, 48)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .sheet(item: extensionSheetBinding) { request in
-            ExtensionInputSheet(
-                request: request,
-                onSubmit: { value in
-                    Task { await model.respond(to: request, with: .value(value)) }
-                },
-                onCancel: {
-                    Task {
-                        await model.respond(
-                            to: request,
-                            with: .cancelled(timedOut: false))
-                    }
-                })
-        }
-        .overlay {
-            if let removalRequest, let accountCoordinator {
-                ProviderAccountRemovalConfirmationView(
-                    providerName: removalRequest.provider.companyName,
-                    accountLabel: removalRequest.account.displayLabel,
-                    affectedSessionCount: accountCoordinator.sessionCounts[removalRequest.key] ?? 0,
-                    isLastAccount: model.connectionAccounts(
-                        providerID: removalRequest.provider.id).count == 1,
-                    isRemoving: model.pendingRemovalAccounts.contains(removalRequest.key),
-                    onCancel: { self.removalRequest = nil },
-                    onRemove: {
-                        Task {
-                            await model.removeAccount(
-                                removalRequest.account,
-                                coordinator: accountCoordinator)
-                            self.removalRequest = nil
-                        }
-                    })
-            }
-        }
     }
 
     private var header: some View {
@@ -140,6 +186,7 @@ struct ProvidersView: View {
                 pendingRemovalAccounts: model.pendingRemovalAccounts.union(
                     accountCoordinator?.pendingRemovalAccounts ?? []),
                 focusedProviderID: model.focusedConnectionsProviderID,
+                focusRequest: connectionsFocusRequest,
                 isLoading: model.isLoadingProviders,
                 providerMessage: model.providerMessage,
                 loginMessage: model.loginMessage,
@@ -197,6 +244,39 @@ struct ProvidersView: View {
         return model.providers.reduce(into: [:]) { primaryRefs, provider in
             primaryRefs[provider.id] = accountCoordinator.primaryAccountRef(providerID: provider.id)
         }
+    }
+
+    private var modalBehavior: ProviderAccountRemovalModalBehavior {
+        ProviderAccountRemovalModalBehavior(isPresented: removalRequest != nil)
+    }
+
+    private func hasDuplicateAccountLabel(_ request: ProviderAccountRemovalRequest) -> Bool {
+        let targetLabel = safeAccountLabel(request.account)
+        return model.connectionAccounts(providerID: request.provider.id).filter {
+            safeAccountLabel($0) == targetLabel
+        }.count > 1
+    }
+
+    private func safeAccountLabel(_ account: ProviderAccountSummary) -> String {
+        ProviderAccountConnectionRowPresentation.make(
+            account: account,
+            isPrimary: false,
+            sessionCount: 0,
+            isPendingRemoval: false).label
+    }
+
+    private func dismissRemoval(
+        source: ProviderAccountRemovalDismissalSource,
+        accountStillConnected: Bool
+    ) {
+        guard let removalRequest else { return }
+        let target = modalBehavior.restorationTarget(
+            dismissalSource: source,
+            accountID: removalRequest.account.id,
+            providerID: removalRequest.provider.id,
+            accountStillConnected: accountStillConnected)
+        self.removalRequest = nil
+        connectionsFocusRequest = ProviderConnectionsFocusRequest(target: target)
     }
 
     private func sectionButton(_ title: String, section: ProviderWorkspaceSection) -> some View {

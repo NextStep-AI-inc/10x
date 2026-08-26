@@ -312,6 +312,58 @@ import OmpKit
     if let manager = model.processManager { await manager.closeAll() }
 }
 
+@Suite @MainActor struct AppModelRemovalBarrierTests {
+@Test func blocksNewAndResumedSessionControllerCreation() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-removal-barrier-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let coordinator = ProviderAccountCoordinator()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+    model.chooseProject(project)
+    let target = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "acct_A",
+        label: "Personal",
+        order: 0)
+    let remaining = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "acct_B",
+        label: "Work",
+        order: 1)
+    let rpcGate = LoadGate()
+    let removal = Task {
+        try await coordinator.removeAccount(
+            providerID: "openai-codex",
+            accountRef: "acct_A",
+            accounts: [target, remaining]
+        ) {
+            await rpcGate.started()
+            await rpcGate.waitForRelease()
+            return ProviderAccountRemovalResult(removed: true, accounts: [remaining])
+        }
+    }
+    await rpcGate.waitForStart()
+
+    model.startNewSession(prompt: "Blocked draft")
+    model.openSession(navigationMetadata("/tmp/resumed.jsonl", cwd: project.path))
+
+    #expect(model.activeSession == nil)
+    #expect(coordinator.managedSessions.isEmpty)
+
+    await rpcGate.release()
+    _ = try await removal.value
+    if let manager = model.processManager { await manager.closeAll() }
+}
+}
+
 @MainActor
 @Test func resumedSessionKeepsReportedAccountInsteadOfCurrentPrimary() async throws {
     let container = URL(filePath: NSTemporaryDirectory())

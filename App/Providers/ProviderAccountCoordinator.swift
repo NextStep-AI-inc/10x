@@ -15,6 +15,7 @@ struct ProviderAccountKey: Hashable, Sendable {
 
 enum ProviderAccountRemovalError: Error, Equatable {
     case alreadyInProgress
+    case noEligibleReplacement
     case reassignmentFailed(Int)
 }
 
@@ -53,7 +54,7 @@ final class ProviderAccountCoordinator {
         let task: Task<RoutingOutcome, Never>
     }
 
-    private struct RoutingCompletion {
+    private struct RoutingCompletion: Equatable {
         let operationID: UInt64
         let outcome: RoutingOutcome
     }
@@ -84,6 +85,7 @@ final class ProviderAccountCoordinator {
     @ObservationIgnored private var pendingRoutes: [UUID: DesiredRoute] = [:]
     @ObservationIgnored private var routingTails: [UUID: RoutingTail] = [:]
     @ObservationIgnored private var routingCompletions: [UUID: RoutingCompletion] = [:]
+    @ObservationIgnored private var activeManagedTurns: Set<UUID> = []
     @ObservationIgnored private var stateChangeWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var failureRecord: FailureRecord?
     @ObservationIgnored private var nextOperationID: UInt64 = 0
@@ -92,7 +94,13 @@ final class ProviderAccountCoordinator {
         self.primaryStore = primaryStore
     }
 
-    func register(_ session: any ProviderAccountSession) {
+    var canCreateManagedSession: Bool {
+        pendingRemovalAccounts.isEmpty
+    }
+
+    @discardableResult
+    func register(_ session: any ProviderAccountSession) -> Bool {
+        guard managedSessions[session.id] != nil || canCreateManagedSession else { return false }
         managedSessions[session.id] = session
         sessionStates[session.id] = SessionState(
             providerID: session.providerID,
@@ -100,6 +108,7 @@ final class ProviderAccountCoordinator {
             sequence: session.providerAccountSequence,
             isGenerating: session.runtimeState == .streaming)
         publishSessionState()
+        return true
     }
 
     func unregister(sessionID: UUID) {
@@ -109,10 +118,12 @@ final class ProviderAccountCoordinator {
         pendingRoutes.removeValue(forKey: sessionID)
         routingTails.removeValue(forKey: sessionID)?.task.cancel()
         routingCompletions.removeValue(forKey: sessionID)
+        activeManagedTurns.remove(sessionID)
         publishSessionState()
     }
 
     func update(sessionID: UUID, providerID: String?, isGenerating: Bool) {
+        guard managedSessions[sessionID] != nil else { return }
         var state = sessionStates[sessionID] ?? SessionState(
             providerID: providerID,
             accountRef: managedSessions[sessionID]?.currentProviderAccountRef,
@@ -128,12 +139,41 @@ final class ProviderAccountCoordinator {
         publishSessionState()
     }
 
+    func beginManagedTurn(sessionID: UUID) -> Bool {
+        guard let session = managedSessions[sessionID],
+              !activeManagedTurns.contains(sessionID)
+        else { return false }
+        if let providerID = normalized(session.providerID) {
+            guard !pendingRemovalAccounts.contains(where: { $0.providerID == providerID }) else {
+                return false
+            }
+        } else {
+            guard pendingRemovalAccounts.isEmpty else { return false }
+        }
+        activeManagedTurns.insert(sessionID)
+        notifyStateChange()
+        return true
+    }
+
+    func endManagedTurn(sessionID: UUID) {
+        guard activeManagedTurns.remove(sessionID) != nil else { return }
+        notifyStateChange()
+    }
+
     func remove(sessionID: UUID) {
         unregister(sessionID: sessionID)
     }
 
     func primaryAccountRef(providerID: String) -> String? {
         primaryStore.primaryAccountRef(providerID: providerID)
+    }
+
+    @discardableResult
+    func reconcilePrimaryAccount(
+        providerID: String,
+        accounts: [ProviderAccountSummary]
+    ) -> String? {
+        primaryStore.repairPrimary(providerID: providerID, accounts: accounts)
     }
 
     func pendingAccountRef(sessionID: UUID) -> String? {
@@ -228,6 +268,7 @@ final class ProviderAccountCoordinator {
             notifyStateChange()
         }
 
+        let originalPrimary = primaryStore.primaryAccountRef(providerID: providerID)
         let remainingAccounts = accounts
             .enumerated()
             .filter { entry in
@@ -245,6 +286,9 @@ final class ProviderAccountCoordinator {
                 return lhs.offset < rhs.offset
             }
             .map(\.element)
+        guard remainingAccounts.isEmpty || remainingAccounts.contains(where: \.isEligiblePrimary) else {
+            throw ProviderAccountRemovalError.noEligibleReplacement
+        }
         let replacement = primaryStore.repairPrimary(
             providerID: providerID,
             accounts: remainingAccounts)
@@ -252,6 +296,7 @@ final class ProviderAccountCoordinator {
         let removalOperationID = nextOperationID
         var affectedSessionIDs: Set<UUID> = []
         var failedSessionIDs: Set<UUID> = []
+        var movedSessionAccounts: [UUID: String] = [:]
 
         cancelRoutesTargeting(key)
 
@@ -261,10 +306,19 @@ final class ProviderAccountCoordinator {
             where session.providerID == providerID && session.currentProviderAccountRef == accountRef {
                 affectedSessionIDs.insert(session.id)
             }
+            for sessionID in affectedSessionIDs {
+                guard routingCompletions[sessionID] == RoutingCompletion(
+                    operationID: removalOperationID,
+                    outcome: .applied),
+                      let currentAccountRef = managedSessions[sessionID]?.currentProviderAccountRef,
+                      currentAccountRef != accountRef
+                else { continue }
+                movedSessionAccounts[sessionID] = currentAccountRef
+            }
 
             let relevantTails = routingTails.filter { sessionID, tail in
-                affectedSessionIDs.contains(sessionID)
-                    || (tail.route.providerID == providerID && tail.route.accountRef == accountRef)
+                managedSessions[sessionID]?.providerID == providerID
+                    || tail.route.providerID == providerID
             }.map(\.value.task)
             if !relevantTails.isEmpty {
                 for task in relevantTails {
@@ -273,7 +327,7 @@ final class ProviderAccountCoordinator {
                 continue
             }
 
-            var routingTasks: [(UUID, Task<RoutingOutcome, Never>)] = []
+            var routingTasks: [(UUID, DesiredRoute, Task<RoutingOutcome, Never>)] = []
             for sessionID in affectedSessionIDs {
                 guard let session = managedSessions[sessionID],
                       session.providerID == providerID,
@@ -289,7 +343,7 @@ final class ProviderAccountCoordinator {
                 if let route = desiredRoutes[sessionID], route.accountRef != accountRef {
                     guard session.runtimeState != .streaming else { continue }
                     pendingRoutes.removeValue(forKey: sessionID)
-                    routingTasks.append((sessionID, enqueue(route, sessionID: sessionID)))
+                    routingTasks.append((sessionID, route, enqueue(route, sessionID: sessionID)))
                     continue
                 }
 
@@ -302,17 +356,28 @@ final class ProviderAccountCoordinator {
                     pendingRoutes[sessionID] = route
                 } else {
                     pendingRoutes.removeValue(forKey: sessionID)
-                    routingTasks.append((sessionID, enqueue(route, sessionID: sessionID)))
+                    routingTasks.append((sessionID, route, enqueue(route, sessionID: sessionID)))
                 }
             }
 
             if !routingTasks.isEmpty {
-                for (sessionID, task) in routingTasks where await task.value == .failed {
-                    failedSessionIDs.insert(sessionID)
+                for (sessionID, route, task) in routingTasks {
+                    let outcome = await task.value
+                    if outcome == .failed {
+                        failedSessionIDs.insert(sessionID)
+                    } else if outcome == .applied, route.operationID == removalOperationID {
+                        movedSessionAccounts[sessionID] = route.accountRef
+                    }
                 }
                 continue
             }
             guard failedSessionIDs.isEmpty else {
+                await restoreRemovalMutation(
+                    providerID: providerID,
+                    accountRef: accountRef,
+                    originalPrimary: originalPrimary,
+                    removalOperationID: removalOperationID,
+                    movedSessionAccounts: movedSessionAccounts)
                 throw ProviderAccountRemovalError.reassignmentFailed(failedSessionIDs.count)
             }
 
@@ -324,25 +389,85 @@ final class ProviderAccountCoordinator {
             let hasAffectedQueue = affectedSessionIDs.contains { sessionID in
                 desiredRoutes[sessionID] != nil || pendingRoutes[sessionID] != nil
             }
-            let hasGeneratingTarget = managedSessions.values.contains { session in
+            let hasGeneratingProvider = managedSessions.values.contains { session in
                 session.providerID == providerID
-                    && session.currentProviderAccountRef == accountRef
                     && session.runtimeState == .streaming
+            }
+            let hasActiveManagedTurn = activeManagedTurns.contains { sessionID in
+                guard let session = managedSessions[sessionID] else { return false }
+                return session.providerID == nil || session.providerID == providerID
+            }
+            let hasLoadingRegistration = managedSessions.values.contains { session in
+                session.runtimeState == .loading
+                    && (session.providerID == nil || session.providerID == providerID)
             }
             let hasUnmovedTarget = replacement != nil && managedSessions.values.contains { session in
                 session.providerID == providerID && session.currentProviderAccountRef == accountRef
             }
-            if hasQueuedTarget || hasAffectedQueue || hasGeneratingTarget || hasUnmovedTarget {
+            if hasQueuedTarget
+                || hasAffectedQueue
+                || hasGeneratingProvider
+                || hasActiveManagedTurn
+                || hasLoadingRegistration
+                || hasUnmovedTarget
+            {
                 await waitForStateChange()
                 continue
             }
 
-            let result = try await performRemoval()
+            let result: ProviderAccountRemovalResult
+            do {
+                result = try await performRemoval()
+            } catch {
+                await restoreRemovalMutation(
+                    providerID: providerID,
+                    accountRef: accountRef,
+                    originalPrimary: originalPrimary,
+                    removalOperationID: removalOperationID,
+                    movedSessionAccounts: movedSessionAccounts)
+                throw error
+            }
             _ = primaryStore.repairPrimary(
                 providerID: providerID,
                 accounts: result.accounts.filter { $0.accountRef != accountRef })
             return result
         }
+    }
+
+    private func restoreRemovalMutation(
+        providerID: String,
+        accountRef: String,
+        originalPrimary: String?,
+        removalOperationID: UInt64,
+        movedSessionAccounts: [UUID: String]
+    ) async {
+        primaryStore.setPrimaryAccountRef(originalPrimary, providerID: providerID)
+        for sessionID in movedSessionAccounts.keys.sorted(by: { $0.uuidString < $1.uuidString }) {
+            guard let movedAccountRef = movedSessionAccounts[sessionID],
+                  routingCompletions[sessionID] == RoutingCompletion(
+                    operationID: removalOperationID,
+                    outcome: .applied),
+                  let session = managedSessions[sessionID],
+                  session.providerID == providerID,
+                  session.currentProviderAccountRef == movedAccountRef,
+                  session.runtimeState != .streaming
+            else { continue }
+            do {
+                let result = try await session.setProviderAccount(
+                    providerID: providerID,
+                    accountRef: accountRef)
+                self.session(
+                    sessionID,
+                    didChangeAccount: ProviderAccountChangedEvent(
+                        providerID: result.account.providerID,
+                        accountRef: result.account.accountRef,
+                        reason: .manual,
+                        sequence: result.sequence))
+            } catch {
+                synchronizeState(from: session)
+            }
+        }
+        publishSessionState()
     }
 
     func session(_ sessionID: UUID, didChangeAccount event: ProviderAccountChangedEvent) {

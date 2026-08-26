@@ -1,6 +1,16 @@
 import OmpKit
 import SwiftUI
 
+enum ProviderConnectionsFocusTarget: Equatable, Sendable {
+    case addAccount(String)
+    case removeAccount(String)
+}
+
+struct ProviderConnectionsFocusRequest: Equatable, Identifiable, Sendable {
+    let id = UUID()
+    let target: ProviderConnectionsFocusTarget
+}
+
 struct ProviderConnectionsView: View {
     let providers: [ProviderLoginProvider]
     let credentialIssues: [ProviderCredentialIssue]
@@ -10,6 +20,7 @@ struct ProviderConnectionsView: View {
     let sessionCounts: [ProviderAccountKey: Int]
     let pendingRemovalAccounts: Set<ProviderAccountKey>
     let focusedProviderID: String?
+    let focusRequest: ProviderConnectionsFocusRequest?
     let isLoading: Bool
     let providerMessage: String?
     let loginMessage: String?
@@ -26,6 +37,7 @@ struct ProviderConnectionsView: View {
     let onRetry: () -> Void
 
     @FocusState private var focusedAddAccountProviderID: String?
+    @FocusState private var focusedRemoveAccountID: String?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -47,6 +59,18 @@ struct ProviderConnectionsView: View {
                 await Task.yield()
                 proxy.scrollTo(focusedProviderID, anchor: .center)
                 focusedAddAccountProviderID = focusedProviderID
+            }
+            .task(id: focusRequest?.id) {
+                guard let focusRequest else { return }
+                await Task.yield()
+                switch focusRequest.target {
+                case .addAccount(let providerID):
+                    proxy.scrollTo(providerID, anchor: .center)
+                    focusedAddAccountProviderID = providerID
+                case .removeAccount(let accountID):
+                    proxy.scrollTo(accountID, anchor: .center)
+                    focusedRemoveAccountID = accountID
+                }
             }
         }
     }
@@ -125,8 +149,11 @@ struct ProviderConnectionsView: View {
                     isPendingRemoval: pendingRemovalAccounts.contains(ProviderAccountKey(
                         providerID: provider.id,
                         accountRef: account.accountRef)),
+                    canRemove: canRemove(account, from: provider),
+                    removeButtonFocus: $focusedRemoveAccountID,
                     onRemove: { onRemove(provider, account) })
                     .padding(.leading, 16)
+                    .id(account.id)
             }
 
             if activeLoginProviderID == provider.id {
@@ -168,6 +195,14 @@ struct ProviderConnectionsView: View {
                 .fill(TenXPalette.color(TenXPalette.separatorHex))
                 .frame(height: 1)
         }
+    }
+
+    private func canRemove(
+        _ account: ProviderAccountSummary,
+        from provider: ProviderLoginProvider
+    ) -> Bool {
+        let remaining = (accountsByProviderID[provider.id] ?? []).filter { $0.id != account.id }
+        return remaining.isEmpty || remaining.contains(where: \.isEligiblePrimary)
     }
 
     private func recovery(message: String) -> some View {

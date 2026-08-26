@@ -275,6 +275,7 @@ final class AppModel {
             composerControls?.attachActiveSession(controller)
             return
         }
+        guard sessionActivityRegistry.canCreateManagedSession else { return }
         let controller = makeSessionController(
             processManager: processManager,
             intendedSessionPath: metadata.path)
@@ -302,6 +303,7 @@ final class AppModel {
     func startNewSession(prompt: String) {
         guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
+        guard sessionActivityRegistry.canCreateManagedSession else { return }
         let controller = makeSessionController(processManager: processManager)
         controller.draft = prompt
         composerControls?.detachActiveSession()

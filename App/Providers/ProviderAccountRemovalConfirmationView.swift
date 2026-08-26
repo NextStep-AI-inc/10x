@@ -1,5 +1,12 @@
 import SwiftUI
 
+enum ProviderAccountRemovalDismissalSource: Equatable, Sendable {
+    case background
+    case cancelAction
+    case keyboard
+    case confirmAction
+}
+
 struct ProviderAccountRemovalConfirmationPresentation: Equatable, Sendable {
     let title: String
     let message: String
@@ -9,6 +16,8 @@ struct ProviderAccountRemovalConfirmationPresentation: Equatable, Sendable {
     init(
         providerName: String,
         accountLabel: String,
+        accountDetailLabel: String? = nil,
+        hasDuplicateAccountLabel: Bool = false,
         affectedSessionCount: Int,
         isLastAccount: Bool
     ) {
@@ -16,7 +25,16 @@ struct ProviderAccountRemovalConfirmationPresentation: Equatable, Sendable {
             title = "Remove the last account?"
             message = "This disconnects \(providerName). Sessions using this provider cannot continue through it."
         } else {
-            title = "Remove \(accountLabel)?"
+            let safeLabel = Self.normalized(accountLabel) ?? "Connected account"
+            let safeDetail = Self.normalized(accountDetailLabel).flatMap { detail in
+                detail == safeLabel ? nil : detail
+            }
+            let identity = if hasDuplicateAccountLabel, let safeDetail {
+                "\(safeLabel) (\(safeDetail))"
+            } else {
+                safeLabel
+            }
+            title = "Remove \(identity)?"
             switch affectedSessionCount {
             case 0:
                 message = "No 10x-managed sessions use this account."
@@ -27,15 +45,23 @@ struct ProviderAccountRemovalConfirmationPresentation: Equatable, Sendable {
             }
         }
     }
+
+    private static func normalized(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
 }
 
 struct ProviderAccountRemovalConfirmationView: View {
     let providerName: String
     let accountLabel: String
+    let accountDetailLabel: String?
+    let hasDuplicateAccountLabel: Bool
     let affectedSessionCount: Int
     let isLastAccount: Bool
     let isRemoving: Bool
-    let onCancel: () -> Void
+    let onCancel: (ProviderAccountRemovalDismissalSource) -> Void
     let onRemove: () -> Void
 
     @FocusState private var isCancelFocused: Bool
@@ -48,7 +74,7 @@ struct ProviderAccountRemovalConfirmationView: View {
                 .contentShape(Rectangle())
                 .onTapGesture {
                     guard !isRemoving else { return }
-                    onCancel()
+                    onCancel(.background)
                 }
 
             CornerCard(color: TenXPalette.color(TenXPalette.signalRedHex)) {
@@ -65,12 +91,14 @@ struct ProviderAccountRemovalConfirmationView: View {
 
                     HStack(spacing: 10) {
                         Spacer()
-                        Button(presentation.cancelActionLabel, action: onCancel)
-                            .buttonStyle(GhostActionStyle())
-                            .disabled(isRemoving)
-                            .keyboardShortcut(.cancelAction)
-                            .focused($isCancelFocused)
-                            .accessibilityFocused($isCancelAccessibilityFocused)
+                        Button(presentation.cancelActionLabel) {
+                            onCancel(.cancelAction)
+                        }
+                        .buttonStyle(GhostActionStyle())
+                        .disabled(isRemoving)
+                        .keyboardShortcut(.cancelAction)
+                        .focused($isCancelFocused)
+                        .accessibilityFocused($isCancelAccessibilityFocused)
                         Button(action: onRemove) {
                             if isRemoving {
                                 HStack(spacing: 6) {
@@ -98,7 +126,7 @@ struct ProviderAccountRemovalConfirmationView: View {
         .accessibilityAddTraits(.isModal)
         .onExitCommand {
             guard !isRemoving else { return }
-            onCancel()
+            onCancel(.keyboard)
         }
         .task {
             await Task.yield()
@@ -111,6 +139,8 @@ struct ProviderAccountRemovalConfirmationView: View {
         ProviderAccountRemovalConfirmationPresentation(
             providerName: providerName,
             accountLabel: accountLabel,
+            accountDetailLabel: accountDetailLabel,
+            hasDuplicateAccountLabel: hasDuplicateAccountLabel,
             affectedSessionCount: affectedSessionCount,
             isLastAccount: isLastAccount)
     }

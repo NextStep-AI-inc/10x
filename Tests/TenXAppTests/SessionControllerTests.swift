@@ -219,6 +219,52 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
 
 @MainActor extension SessionControllerTests {
 
+@MainActor @Test func managedPromptAdmissionRejectsANewTurnDuringAccountRemoval() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = try makeProviderAccountExecutable(in: directory)
+    let manager = SessionProcessManager(executable: executable.path)
+    let coordinator = ProviderAccountCoordinator()
+    let controller = SessionController(processManager: manager, activityRegistry: coordinator)
+    await controller.openExisting(metadata(path: "/tmp/account-session.jsonl", cwd: "/tmp"))
+    #expect(await eventually {
+        controller.currentProviderAccountRef == "acct_B" && controller.runtimeState == .idle
+    })
+    let target = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "acct_A",
+        label: "Personal",
+        order: 0)
+    let remaining = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "acct_B",
+        label: "Work",
+        order: 1)
+    let rpcGate = LoadGate()
+    let removal = Task {
+        try await coordinator.removeAccount(
+            providerID: "openai-codex",
+            accountRef: "acct_A",
+            accounts: [target, remaining]
+        ) {
+            await rpcGate.started()
+            await rpcGate.waitForRelease()
+            return ProviderAccountRemovalResult(removed: true, accounts: [remaining])
+        }
+    }
+    await rpcGate.waitForStart()
+
+    controller.draft = "Keep this draft"
+    await controller.sendPrompt()
+
+    #expect(controller.draft == "Keep this draft")
+    #expect(controller.runtimeState == .idle)
+
+    await rpcGate.release()
+    _ = try await removal.value
+    await manager.closeAll()
+}
+
 @MainActor @Test func accountEventCapturedFromClosedPipelineIsIgnored() async throws {
     let manager = fakeManager(mode: "basic")
     let controller = SessionController(processManager: manager)

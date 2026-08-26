@@ -587,6 +587,7 @@ import Testing
                 ref: "acct_B",
                 label: "same@example.com",
                 order: 1,
+                availability: .unavailable,
                 detailLabel: "Work"),
         ]])
     let model = ProviderManagementViewModel(
@@ -627,10 +628,12 @@ import Testing
         ProviderAccountRemovalConfirmationView(
             providerName: "ChatGPT",
             accountLabel: "same@example.com",
+            accountDetailLabel: "Work",
+            hasDuplicateAccountLabel: true,
             affectedSessionCount: 2,
             isLastAccount: false,
             isRemoving: false,
-            onCancel: {},
+            onCancel: { _ in },
             onRemove: {}),
         name: "provider-account-removal-confirmation",
         size: CGSize(width: 880, height: 680))

@@ -171,8 +171,16 @@ import Testing
         usageService: usage,
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    let (coordinator, defaults, suiteName) = try makeManagementCoordinator()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    model.attachAccountCoordinator(coordinator)
     await model.load()
     let provider = try #require(model.providers.first)
+    await coordinator.useAccount(
+        "stale-primary",
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
 
     await model.login(provider)
 
@@ -184,6 +192,7 @@ import Testing
     #expect(await service.accountLoadCount == 2)
     #expect(await service.accountUsageLoadCount == 2)
     #expect(await usage.loadCount == 2)
+    #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_A")
 }
 
 @Test func staleExternalRemovalRefreshesRowsAndReportsAccountUnavailable() async throws {
@@ -214,6 +223,12 @@ import Testing
     await model.load()
     let (coordinator, defaults, suiteName) = try makeManagementCoordinator()
     defer { defaults.removePersistentDomain(forName: suiteName) }
+    model.attachAccountCoordinator(coordinator)
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
 
     await model.removeAccount(removed, coordinator: coordinator)
 
@@ -223,6 +238,90 @@ import Testing
     #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == ["acct_B"])
     #expect(model.removalMessage == "Account is no longer available.")
     #expect(model.pendingRemovalAccounts.isEmpty)
+    #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_B")
+}
+
+@Test func failedRemovalRefreshesMetadataAndUsageThenRepairsFromAuthoritativeAccounts() async throws {
+    let providerID = "openai-codex"
+    let removed = providerAccountFixture(
+        providerID: providerID,
+        ref: "acct_A",
+        label: "Personal",
+        order: 0)
+    let remaining = providerAccountFixture(
+        providerID: providerID,
+        ref: "acct_B",
+        label: "Work",
+        order: 1)
+    let service = AccountManagementProviderService(
+        provider: ProviderLoginProvider(
+            id: providerID,
+            name: "ChatGPT",
+            isAvailable: true,
+            isAuthenticated: true),
+        accounts: [removed, remaining],
+        removalFailureAfterMutation: true)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    let (coordinator, defaults, suiteName) = try makeManagementCoordinator()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    model.attachAccountCoordinator(coordinator)
+    await model.load()
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
+
+    await model.removeAccount(removed, coordinator: coordinator)
+
+    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == ["acct_B"])
+    #expect(model.removalMessage == "Account couldn’t be removed.")
+    #expect(await service.accountLoadCount == 2)
+    #expect(await service.accountUsageLoadCount == 2)
+    #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_B")
+}
+
+@Test func removalWithoutAnEligibleReplacementRefreshesAndShowsATruthfulError() async throws {
+    let providerID = "openai-codex"
+    let target = providerAccountFixture(
+        providerID: providerID,
+        ref: "acct_A",
+        label: "Personal",
+        order: 0)
+    let unavailable = providerAccountFixture(
+        providerID: providerID,
+        ref: "acct_B",
+        label: "Unavailable",
+        order: 1,
+        availability: .unavailable)
+    let service = AccountManagementProviderService(
+        provider: ProviderLoginProvider(
+            id: providerID,
+            name: "ChatGPT",
+            isAvailable: true,
+            isAuthenticated: true),
+        accounts: [target, unavailable])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    let (coordinator, defaults, suiteName) = try makeManagementCoordinator()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    model.attachAccountCoordinator(coordinator)
+    await model.load()
+
+    await model.removeAccount(target, coordinator: coordinator)
+
+    #expect(await service.removalRequests.isEmpty)
+    #expect(await service.accountLoadCount == 2)
+    #expect(await service.accountUsageLoadCount == 2)
+    #expect(model.removalMessage == "Account couldn’t be removed because no replacement account is available.")
+    #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_A")
 }
 
 @Test func connectionFocusSelectsConnectionsAndRetainsTheProviderTarget() {
@@ -258,6 +357,12 @@ import Testing
         isPrimary: true,
         sessionCount: 3,
         isPendingRemoval: false)
+    let unavailableReplacement = ProviderAccountConnectionRowPresentation.make(
+        account: account,
+        isPrimary: true,
+        sessionCount: 0,
+        isPendingRemoval: false,
+        canRemove: false)
 
     #expect(unused.label == "same@example.com")
     #expect(unused.detail == "Work")
@@ -265,26 +370,56 @@ import Testing
     #expect(singular.status == "Primary · In use by 1 session")
     #expect(plural.status == "Primary · In use by 3 sessions")
     #expect(!plural.accessibilityLabel.contains("private-ref"))
+    #expect(unavailableReplacement.status == "Primary · No available replacement")
+    #expect(unavailableReplacement.actionLabel == "Remove")
+    #expect(unavailableReplacement.isActionDisabled)
 }
 
 @Test func removalConfirmationCopyNamesOnlyManagedSessionsAndUsesExactLastAccountWarning() {
     let normal = ProviderAccountRemovalConfirmationPresentation(
         providerName: "ChatGPT",
         accountLabel: "work@example.com",
+        accountDetailLabel: "Work",
+        hasDuplicateAccountLabel: true,
         affectedSessionCount: 2,
         isLastAccount: false)
     let last = ProviderAccountRemovalConfirmationPresentation(
         providerName: "ChatGPT",
         accountLabel: "work@example.com",
+        accountDetailLabel: "Work",
+        hasDuplicateAccountLabel: true,
         affectedSessionCount: 2,
         isLastAccount: true)
 
-    #expect(normal.title == "Remove work@example.com?")
+    #expect(normal.title == "Remove work@example.com (Work)?")
     #expect(normal.message == "2 10x-managed sessions use this account. They move to another account before removal. Generating turns finish first.")
     #expect(!normal.message.localizedCaseInsensitiveContains("other apps"))
     #expect(!normal.message.localizedCaseInsensitiveContains("terminal"))
     #expect(last.title == "Remove the last account?")
     #expect(last.message == "This disconnects ChatGPT. Sessions using this provider cannot continue through it.")
+}
+
+@Test func removalModalBehaviorHidesUnderlyingContentAndRestoresKeyboardOriginFocus() {
+    let behavior = ProviderAccountRemovalModalBehavior(isPresented: true)
+
+    #expect(behavior.isUnderlyingContentDisabled)
+    #expect(behavior.isUnderlyingContentAccessibilityHidden)
+    #expect(behavior.restorationTarget(
+        dismissalSource: .keyboard,
+        accountID: "openai-codex:acct_A",
+        providerID: "openai-codex",
+        accountStillConnected: true
+    ) == .removeAccount("openai-codex:acct_A"))
+    #expect(behavior.restorationTarget(
+        dismissalSource: .confirmAction,
+        accountID: "openai-codex:acct_A",
+        providerID: "openai-codex",
+        accountStillConnected: false
+    ) == .addAccount("openai-codex"))
+
+    let hidden = ProviderAccountRemovalModalBehavior(isPresented: false)
+    #expect(!hidden.isUnderlyingContentDisabled)
+    #expect(!hidden.isUnderlyingContentAccessibilityHidden)
 }
 
 @Test func lateCLIFailureDoesNotOverwriteNewerAccountRPCUsage() async throws {
@@ -869,6 +1004,7 @@ private actor AccountManagementProviderService: ProviderManaging {
     private var accounts: [ProviderAccountSummary]
     private let accountAddedOnLogin: ProviderAccountSummary?
     private let removalReportsStale: Bool
+    private let removalFailureAfterMutation: Bool
     private(set) var loginIDs: [String] = []
     private(set) var removalRequests: [AccountRemovalRequest] = []
     private(set) var accountLoadCount = 0
@@ -878,12 +1014,14 @@ private actor AccountManagementProviderService: ProviderManaging {
         provider: ProviderLoginProvider,
         accounts: [ProviderAccountSummary],
         accountAddedOnLogin: ProviderAccountSummary? = nil,
-        removalReportsStale: Bool = false
+        removalReportsStale: Bool = false,
+        removalFailureAfterMutation: Bool = false
     ) {
         self.provider = provider
         self.accounts = accounts
         self.accountAddedOnLogin = accountAddedOnLogin
         self.removalReportsStale = removalReportsStale
+        self.removalFailureAfterMutation = removalFailureAfterMutation
         (events, eventContinuation) = AsyncStream.makeStream(bufferingPolicy: .unbounded)
     }
 
@@ -916,6 +1054,9 @@ private actor AccountManagementProviderService: ProviderManaging {
                 isAvailable: provider.isAvailable,
                 isAuthenticated: false)
         }
+        if removalFailureAfterMutation {
+            throw AccountManagementProviderError.removalFailed
+        }
         return ProviderAccountRemovalResult(
             removed: !removalReportsStale,
             accounts: accounts)
@@ -935,6 +1076,10 @@ private actor AccountManagementProviderService: ProviderManaging {
     func shutdown() async {
         eventContinuation.finish()
     }
+}
+
+private enum AccountManagementProviderError: Error {
+    case removalFailed
 }
 
 @MainActor

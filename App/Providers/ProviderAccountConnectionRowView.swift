@@ -13,7 +13,8 @@ struct ProviderAccountConnectionRowPresentation: Equatable, Sendable {
         account: ProviderAccountSummary,
         isPrimary: Bool,
         sessionCount: Int,
-        isPendingRemoval: Bool
+        isPendingRemoval: Bool,
+        canRemove: Bool = true
     ) -> ProviderAccountConnectionRowPresentation {
         let displayLabel = normalized(account.displayLabel) ?? "Connected account"
         let detail = normalized(account.detailLabel).flatMap { value in
@@ -26,6 +27,7 @@ struct ProviderAccountConnectionRowPresentation: Equatable, Sendable {
         } else if sessionCount > 1 {
             statuses.append("In use by \(sessionCount) sessions")
         }
+        if !canRemove { statuses.append("No available replacement") }
         let status = statuses.isEmpty ? nil : statuses.joined(separator: " · ")
         let accessibilityLabel = [displayLabel, detail, status]
             .compactMap { $0 }
@@ -36,7 +38,7 @@ struct ProviderAccountConnectionRowPresentation: Equatable, Sendable {
             status: status,
             actionLabel: isPendingRemoval ? "Removing…" : "Remove",
             accessibilityLabel: accessibilityLabel,
-            isActionDisabled: isPendingRemoval)
+            isActionDisabled: isPendingRemoval || !canRemove)
     }
 
     private static func normalized(_ value: String?) -> String? {
@@ -51,6 +53,8 @@ struct ProviderAccountConnectionRowView: View {
     let isPrimary: Bool
     let sessionCount: Int
     let isPendingRemoval: Bool
+    let canRemove: Bool
+    let removeButtonFocus: FocusState<String?>.Binding
     let onRemove: () -> Void
 
     var body: some View {
@@ -76,6 +80,7 @@ struct ProviderAccountConnectionRowView: View {
                     color: TenXPalette.color(TenXPalette.signalRedHex)))
                 .disabled(presentation.isActionDisabled)
                 .accessibilityLabel("Remove \(presentation.accessibilityLabel)")
+                .focused(removeButtonFocus, equals: account.id)
         }
         .padding(.vertical, 10)
         .accessibilityElement(children: .contain)
@@ -86,6 +91,7 @@ struct ProviderAccountConnectionRowView: View {
             account: account,
             isPrimary: isPrimary,
             sessionCount: sessionCount,
-            isPendingRemoval: isPendingRemoval)
+            isPendingRemoval: isPendingRemoval,
+            canRemove: canRemove)
     }
 }

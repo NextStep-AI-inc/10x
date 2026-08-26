@@ -97,6 +97,7 @@ final class ProviderManagementViewModel {
     @ObservationIgnored private var nextRefreshOperationID = 0
     @ObservationIgnored private var providerRefreshOperation: RefreshOperation?
     @ObservationIgnored private var usageRefreshOperation: RefreshOperation?
+    @ObservationIgnored private weak var accountCoordinator: ProviderAccountCoordinator?
 
     init<ProviderService: ProviderManaging, UsageService: OmpUsageLoading>(
         providerService: ProviderService,
@@ -147,6 +148,13 @@ final class ProviderManagementViewModel {
 
     func supportsAccountManagement(providerID: String) -> Bool {
         accountCapabilities[providerID] == .accountRouting
+    }
+
+    func attachAccountCoordinator(_ coordinator: ProviderAccountCoordinator) {
+        accountCoordinator = coordinator
+        for (providerID, accounts) in accountSummaries {
+            coordinator.reconcilePrimaryAccount(providerID: providerID, accounts: accounts)
+        }
     }
 
     func load() async {
@@ -209,6 +217,7 @@ final class ProviderManagementViewModel {
         _ account: ProviderAccountSummary,
         coordinator: ProviderAccountCoordinator
     ) async {
+        attachAccountCoordinator(coordinator)
         let key = ProviderAccountKey(
             providerID: account.providerID,
             accountRef: account.accountRef)
@@ -226,6 +235,9 @@ final class ProviderManagementViewModel {
                 try await providerService.removeAccount(account.providerID, account.accountRef)
             }
             accountSummaries[account.providerID] = result.accounts
+            coordinator.reconcilePrimaryAccount(
+                providerID: account.providerID,
+                accounts: result.accounts)
             accountUsage[account.providerID] = accountUsage[account.providerID]?.filter {
                 $0.accountRef != account.accountRef
             }
@@ -235,12 +247,18 @@ final class ProviderManagementViewModel {
                 removalMessage = "Account is no longer available."
                 removalMessageProviderID = account.providerID
             }
+        } catch ProviderAccountRemovalError.noEligibleReplacement {
+            await refresh(forceFresh: true)
+            removalMessage = "Account couldn’t be removed because no replacement account is available."
+            removalMessageProviderID = account.providerID
         } catch ProviderAccountRemovalError.reassignmentFailed(let count) {
+            await refresh(forceFresh: true)
             removalMessage = count == 1
                 ? "Account couldn’t be removed because 1 10x-managed session couldn’t switch."
                 : "Account couldn’t be removed because \(count) 10x-managed sessions couldn’t switch."
             removalMessageProviderID = account.providerID
         } catch {
+            await refresh(forceFresh: true)
             removalMessage = "Account couldn’t be removed."
             removalMessageProviderID = account.providerID
         }
@@ -349,7 +367,11 @@ final class ProviderManagementViewModel {
                     continue
                 }
 
-                accountSummaries[provider.id] = try await providerService.accounts(provider.id)
+                let accounts = try await providerService.accounts(provider.id)
+                accountSummaries[provider.id] = accounts
+                accountCoordinator?.reconcilePrimaryAccount(
+                    providerID: provider.id,
+                    accounts: accounts)
                 rebuildUsage(at: lastUsageRefresh ?? now())
                 do {
                     accountUsage[provider.id] = try await providerService.accountUsage(provider.id)
