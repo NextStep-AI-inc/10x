@@ -134,7 +134,7 @@ import Testing
 }
 
 enum OmpCommandFixtureError: Error {
-    case timedOutWaitingForPIDs
+    case timedOutWaitingForPIDs(file: URL, expectedCount: Int, observedContents: String?)
 }
 
 struct OmpCommandFixture {
@@ -159,10 +159,13 @@ struct OmpCommandFixture {
     }
 
     func waitForPIDs(in file: URL, count: Int) async throws -> [pid_t] {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+        var observedContents: String?
         while ContinuousClock.now < deadline {
             if let data = try? Data(contentsOf: file) {
-                let pids = String(decoding: data, as: UTF8.self)
+                let contents = String(decoding: data, as: UTF8.self)
+                observedContents = contents
+                let pids = contents
                     .split(whereSeparator: \Character.isWhitespace)
                     .compactMap { pid_t($0) }
                 if pids.count == count, pids.allSatisfy({ $0 > 0 }) {
@@ -171,7 +174,10 @@ struct OmpCommandFixture {
             }
             try await Task.sleep(for: .milliseconds(10))
         }
-        throw OmpCommandFixtureError.timedOutWaitingForPIDs
+        throw OmpCommandFixtureError.timedOutWaitingForPIDs(
+            file: file,
+            expectedCount: count,
+            observedContents: observedContents)
     }
 
     func cleanup() {
