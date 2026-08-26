@@ -27,6 +27,7 @@ struct AppShellView: View {
                         routeCanvas
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding(.leading, railExpansion.contentLeadingInset)
+                            .padding(.trailing, composerDockReservation)
                             .environment(model.idePreferenceStore)
                             .environment(\.fileOpenService, model.fileOpenService)
                             .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
@@ -39,6 +40,17 @@ struct AppShellView: View {
                         ShellTopActionsView(model: model)
                             .padding(.top, 16)
                             .padding(.trailing, 18)
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        if let providerModel = model.providerModel,
+                           !providerModel.dockProviders.isEmpty {
+                            ProviderUsageDockView(
+                                providers: providerModel.dockProviders,
+                                activeCounts: model.providerActivityCounts,
+                                isForegroundGenerating: model.isForegroundSessionGenerating)
+                                .padding(.trailing, 16)
+                                .padding(.bottom, 16)
+                        }
                     }
                     .overlay {
                         if model.isSearchPresented {
@@ -95,6 +107,27 @@ struct AppShellView: View {
     private var railAnimation: Animation? {
         RailExpansionTransition.animationDuration(reduceMotion: reduceMotion)
             .map { .easeInOut(duration: $0) }
+    }
+
+    private var composerDockReservation: CGFloat {
+        guard !railExpansion.isExpanded else { return 0 }
+
+        switch model.route {
+        case .newSession, .session:
+            break
+        default:
+            return 0
+        }
+
+        guard let providerModel = model.providerModel else { return 0 }
+        let providerCount = providerModel.dockProviders.count
+        guard providerCount > 0 else { return 0 }
+
+        let interWheelSpacing: CGFloat = 8
+        let shellTrailingInset: CGFloat = 16
+        return CGFloat(providerCount) * ProviderUsageRingGeometry.diameter
+            + CGFloat(providerCount - 1) * interWheelSpacing
+            + shellTrailingInset
     }
 
     @ViewBuilder

@@ -610,6 +610,29 @@ import Testing
 }
 
 @MainActor
+@Test func fullShellUsageDockSmallWindowSnapshot() async throws {
+    let providerModel = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: fullShellProviders),
+        usageService: FakeUsageService(snapshot: try fullShellUsageSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: "/tmp/10x-full-shell-usage-dock-snapshot",
+            directoryHint: .isDirectory)),
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    model.sessions = fullShellSessions
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-usage-dock-small-window",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
 private func providerWorkspaceModel() throws -> ProviderManagementViewModel {
     providerTestModel(
         providers: providerWorkspaceProviders,
