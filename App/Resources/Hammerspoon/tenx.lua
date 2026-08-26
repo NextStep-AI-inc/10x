@@ -21,10 +21,24 @@ local function checkedSpace(spaceID)
     return tonumber(spaceID)
 end
 
+local function checkedUserSpace(spaceID)
+    local space = checkedSpace(spaceID)
+    if space == nil or hs.spaces.spaceType(space) ~= "user" then return nil end
+    return tostring(space)
+end
+
+local function containsSpace(spaces, target)
+    if type(spaces) ~= "table" then return false end
+    for _, space in ipairs(spaces) do
+        if tonumber(space) == target then return true end
+    end
+    return false
+end
+
 function tenx.probe()
     return {
         integrationVersion = tenx.integrationVersion,
-        workspaceID = tenx.workspaceID,
+        workspaceID = checkedUserSpace(tenx.workspaceID),
         capabilities = {
             canIsolate = true,
             canMoveWithoutFocus = true,
@@ -61,7 +75,9 @@ function tenx.moveWindow(windowID, workspaceID)
     local window = checkedWindow(windowID)
     local space = checkedSpace(workspaceID)
     if window == nil or space == nil then return { ok = false } end
-    return { ok = hs.spaces.moveWindowToSpace(window:id(), space) == true }
+    local moved = hs.spaces.moveWindowToSpace(window:id(), space) == true
+    local inspected, spaces = pcall(hs.spaces.windowSpaces, window:id())
+    return { ok = moved and inspected and containsSpace(spaces, space) }
 end
 
 function tenx.restoreWindow(windowID, workspaceID)
@@ -71,7 +87,9 @@ end
 function tenx.openSpace(workspaceID)
     local space = checkedSpace(workspaceID)
     if space == nil then return { ok = false } end
-    return { ok = hs.spaces.gotoSpace(space) == true }
+    local opened = hs.spaces.gotoSpace(space) == true
+    local inspected, focused = pcall(hs.spaces.focusedSpace)
+    return { ok = opened and inspected and tonumber(focused) == space }
 end
 
 function tenx.stopWatcher()

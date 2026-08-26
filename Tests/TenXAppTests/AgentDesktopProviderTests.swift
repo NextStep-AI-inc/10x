@@ -41,6 +41,32 @@ import Testing
     #expect(model.instructions?.contains("tenx = require(\"tenx\")") == true)
 }
 
+@Test func hammerspoonProbeRequiresConfiguredSpaceToBeAUserSpace() throws {
+    let repositoryRoot = URL(filePath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let template = try String(
+        contentsOf: repositoryRoot.appending(path: "App/Resources/Hammerspoon/tenx.lua"),
+        encoding: .utf8)
+
+    #expect(template.contains("hs.spaces.spaceType"))
+    #expect(template.contains("~= \"user\""))
+}
+
+@Test func hammerspoonSpaceOperationsVerifyTheirPostconditions() throws {
+    let repositoryRoot = URL(filePath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let template = try String(
+        contentsOf: repositoryRoot.appending(path: "App/Resources/Hammerspoon/tenx.lua"),
+        encoding: .utf8)
+
+    #expect(template.contains("hs.spaces.windowSpaces"))
+    #expect(template.contains("hs.spaces.focusedSpace"))
+}
+
 @Test func aeroSpaceWorkspaceIDsRejectUnsafeSessionTokens() async {
     let provider = AeroSpaceProvider()
 
