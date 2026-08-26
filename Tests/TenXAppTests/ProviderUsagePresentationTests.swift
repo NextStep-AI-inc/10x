@@ -15,7 +15,69 @@ import Testing
     #expect(account.limits[0].tone == .standard)
     #expect(account.amounts == [ProviderUsageAmount(
         id: "cursor:requests", label: "Requests", value: 4, unit: "requests")])
-    #expect(presentation.railProviders[0].accounts[0].limits.map(\.label) == ["Cursor Models"])
+    #expect(presentation.dockProviders[0].accounts[0].limits.map(\.label) == ["Cursor Models"])
+}
+
+@Test func usagePresentationOrdersKnownDurationLimitsAroundUnknownSourceSlots() throws {
+    let presentation = ProviderUsagePresentation.make(
+        snapshot: try usageSnapshot(limits: [
+            usageLimit(id: "weekly", label: "Weekly", windowID: "weekly"),
+            usageLimit(id: "unknown-a", label: "Unknown A", windowID: "rolling"),
+            usageLimit(id: "five-hour", label: "5 hour", windowID: "5-hour"),
+            usageLimit(id: "daily", label: "Daily", windowID: "daily"),
+            usageLimit(id: "unknown-b", label: "Unknown B", windowID: "custom"),
+        ]),
+        providerNames: ["cursor": "Cursor"],
+        now: Date(timeIntervalSince1970: 1))
+
+    let provider = try #require(presentation.dockProviders.first)
+    #expect(provider.ringLimits.map(\.label) == [
+        "5 hour",
+        "Unknown A",
+        "Daily",
+        "Weekly",
+        "Unknown B",
+    ])
+}
+
+@Test func usagePresentationRetainsSourceOrderForEqualAndUnknownDurationLimitsAcrossAccounts() throws {
+    let presentation = ProviderUsagePresentation.make(
+        snapshot: try usageSnapshot(reports: [
+            usageReport(limits: [
+                usageLimit(id: "daily-a", label: "Daily A", windowID: "daily"),
+                usageLimit(id: "unknown-a", label: "Unknown A", windowID: "rolling"),
+                usageLimit(id: "daily-b", label: "Daily B", windowID: "daily"),
+            ]),
+            usageReport(limits: [
+                usageLimit(id: "unknown-b", label: "Unknown B", windowID: "custom"),
+                usageLimit(id: "weekly", label: "Weekly", windowID: "weekly"),
+            ]),
+        ]),
+        providerNames: ["cursor": "Cursor"],
+        now: Date(timeIntervalSince1970: 1))
+
+    let provider = try #require(presentation.dockProviders.first)
+    #expect(provider.ringLimits.map(\.label) == [
+        "Daily A",
+        "Unknown A",
+        "Daily B",
+        "Unknown B",
+        "Weekly",
+    ])
+    #expect(provider.ringLimits.count == 5)
+}
+
+@Test func providerUsageAbbreviationsUseKnownMappingsAndDeterministicFallbacks() {
+    #expect(ProviderUsageProvider(id: "anthropic", name: "Anthropic", accounts: []).abbreviation == "ANT")
+    #expect(ProviderUsageProvider(id: "openai-codex", name: "ChatGPT", accounts: []).abbreviation == "OAI")
+    #expect(ProviderUsageProvider(id: "cursor", name: "Cursor", accounts: []).abbreviation == "CUR")
+    #expect(ProviderUsageProvider(id: "google-gemini-cli", name: "Google Cloud Code Assist", accounts: []).abbreviation == "GCA")
+    #expect(ProviderUsageProvider(id: "github-copilot", name: "GitHub Copilot", accounts: []).abbreviation == "GHC")
+    #expect(ProviderUsageProvider(id: "github-copilot", name: "GitLab Copilot", accounts: []).abbreviation == "GLC")
+    #expect(ProviderUsageProvider(id: "deepseek", name: "DeepSeek", accounts: []).abbreviation == "DEE")
+    #expect(ProviderUsageProvider(id: "unicode", name: "ßXX", accounts: []).abbreviation == "SSX")
+    #expect(ProviderUsageProvider(id: "unicode", name: "ßXX", accounts: []).abbreviation.count == 3)
+    #expect(ProviderUsageProvider(id: "x", name: "X", accounts: []).abbreviation.count == 3)
 }
 
 @Test func remainingCapacityClampsAndUsesAttentionTones() {
@@ -185,4 +247,31 @@ private func usageSnapshot(amount: String) throws -> OmpUsageSnapshot {
       "disabledCredentials":[]
     }
     """.utf8))
+}
+
+private func usageSnapshot(limits: [String]) throws -> OmpUsageSnapshot {
+    try usageSnapshot(reports: [usageReport(limits: limits)])
+}
+
+private func usageSnapshot(reports: [String]) throws -> OmpUsageSnapshot {
+    try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data("""
+    {
+      "generatedAt":1,
+      "reports":[\(reports.joined(separator: ","))],
+      "accountsWithoutUsage":[],
+      "disabledCredentials":[]
+    }
+    """.utf8))
+}
+
+private func usageReport(limits: [String]) -> String {
+    #"{"provider":"cursor","fetchedAt":1,"limits":[$LIMITS]}"#
+        .replacingOccurrences(of: "$LIMITS", with: limits.joined(separator: ","))
+}
+
+private func usageLimit(id: String, label: String, windowID: String) -> String {
+    #"{"id":"$ID","label":"$LABEL","scope":{"provider":"cursor","windowId":"$WINDOW"},"window":{"id":"$WINDOW","label":"$LABEL"},"amount":{"remainingFraction":0.5,"unit":"percent"}}"#
+        .replacingOccurrences(of: "$ID", with: id)
+        .replacingOccurrences(of: "$LABEL", with: label)
+        .replacingOccurrences(of: "$WINDOW", with: windowID)
 }

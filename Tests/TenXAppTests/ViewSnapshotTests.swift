@@ -565,33 +565,43 @@ import Testing
 }
 
 @MainActor
-@Test func providerUsageRailSnapshot() throws {
-    let cursor = ProviderUsageProvider(
-        id: "cursor",
-        name: "Cursor",
-        accounts: [
-            providerUsageRailAccount(
-                id: "cursor:personal",
-                label: "tanner@example.com",
-                limit: ProviderUsageLimit(
-                    id: "cursor:personal:models",
-                    label: "Cursor Models",
-                    percentage: 50,
-                    resetWindow: "5 days")),
-            providerUsageRailAccount(
-                id: "cursor:work",
-                label: "work@example.com",
-                limit: ProviderUsageLimit(
-                    id: "cursor:work:models",
-                    label: "Cursor Models",
-                    percentage: 18,
-                    resetWindow: "2 hours")),
-        ])
-
+@Test func providerUsageDockIdleSnapshot() throws {
     try assertSnapshot(
-        ProviderUsageLedgerView(providers: [cursor], onOpenUsage: {}),
-        name: "provider-usage-rail",
-        size: CGSize(width: 184, height: 210))
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders,
+            activeCounts: ["anthropic": 2],
+            isForegroundGenerating: false)
+            // macOS exposes the public Reduce Motion key as read-only.
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-usage-dock-idle",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerUsageDockGeneratingSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders,
+            activeCounts: ["anthropic": 2],
+            isForegroundGenerating: true)
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-usage-dock-generating",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerUsageDockExpandedSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders,
+            activeCounts: ["anthropic": 2],
+            isForegroundGenerating: true,
+            initiallySelectedProviderID: "anthropic")
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-usage-dock-expanded",
+        size: CGSize(width: 430, height: 460))
 }
 
 @MainActor
@@ -636,6 +646,56 @@ import Testing
 }
 
 @MainActor
+@Test func fullShellUsageDockSmallWindowSnapshot() async throws {
+    let providerModel = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: fullShellProviders),
+        usageService: FakeUsageService(snapshot: try fullShellUsageSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: "/tmp/10x-full-shell-usage-dock-snapshot",
+            directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
+    await model.bootstrap()
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    model.sessions = fullShellSessions
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-usage-dock-small-window",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func fullShellUsageDockWideWindowSnapshot() async throws {
+    let providerModel = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: fullShellProviders),
+        usageService: FakeUsageService(snapshot: try fullShellUsageSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: "/tmp/10x-full-shell-wide-usage-dock-snapshot",
+            directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
+    await model.bootstrap()
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    model.sessions = fullShellSessions
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-usage-dock-wide-window",
+        size: CGSize(width: 1280, height: 760))
+}
+
+@MainActor
 private func providerWorkspaceModel() throws -> ProviderManagementViewModel {
     providerTestModel(
         providers: providerWorkspaceProviders,
@@ -666,10 +726,78 @@ private struct SnapshotOmpLocator: OmpLocating {
     }
 }
 
-private func providerUsageRailAccount(
+private let providerUsageDockProviders = [
+    ProviderUsageProvider(
+        id: "anthropic",
+        name: "Anthropic",
+        accounts: [
+            providerUsageDockAccount(
+                id: "anthropic:personal",
+                label: "tanner@example.com",
+                limits: [
+                    providerUsageDockLimit(
+                        id: "anthropic:personal:five-hour",
+                        label: "5 hour",
+                        percentage: 82,
+                        reset: "in 2 hours",
+                        rank: 300),
+                    providerUsageDockLimit(
+                        id: "anthropic:personal:weekly",
+                        label: "Weekly",
+                        percentage: 20,
+                        reset: "in 4 days",
+                        rank: 10_080),
+                ]),
+            providerUsageDockAccount(
+                id: "anthropic:work",
+                label: "work@example.com",
+                limits: [
+                    providerUsageDockLimit(
+                        id: "anthropic:work:monthly",
+                        label: "Monthly",
+                        percentage: 0,
+                        reset: "in 18 days",
+                        rank: 43_200),
+                ]),
+        ]),
+    ProviderUsageProvider(
+        id: "openai-codex",
+        name: "OpenAI Codex",
+        accounts: [
+            providerUsageDockAccount(
+                id: "openai-codex:personal",
+                label: "tanner@example.com",
+                limits: [
+                    providerUsageDockLimit(
+                        id: "openai-codex:personal:five-hour",
+                        label: "5 hour",
+                        percentage: 62,
+                        reset: "in 2 hours",
+                        rank: 300),
+                ]),
+        ]),
+    ProviderUsageProvider(
+        id: "cursor",
+        name: "Cursor",
+        accounts: [
+            providerUsageDockAccount(
+                id: "cursor:personal",
+                label: "tanner@example.com",
+                limits: [
+                    providerUsageDockLimit(
+                        id: "cursor:personal:weekly",
+                        label: "Weekly",
+                        percentage: 14,
+                        reset: "in 5 days",
+                        rank: 10_080),
+                ]),
+        ]),
+]
+
+private func providerUsageDockAccount(
     id: String,
     label: String,
-    limit: ProviderUsageLimit
+    limits: [ProviderUsageLimit]
 ) -> ProviderUsageAccount {
     ProviderUsageAccount(
         id: id,
@@ -681,10 +809,26 @@ private func providerUsageRailAccount(
             enterpriseURL: nil,
             orgID: nil,
             orgName: nil),
-        limits: [limit],
+        limits: limits,
         amounts: [],
         notes: [],
         isUsageAvailable: true)
+}
+
+private func providerUsageDockLimit(
+    id: String,
+    label: String,
+    percentage: Int,
+    reset: String,
+    rank: Int
+) -> ProviderUsageLimit {
+    ProviderUsageLimit(
+        id: id,
+        label: label,
+        percentage: percentage,
+        detailReset: reset,
+        railReset: reset,
+        windowDurationRank: rank)
 }
 
 private let providerWorkspaceProviders = [

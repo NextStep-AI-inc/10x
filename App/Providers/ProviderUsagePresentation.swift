@@ -11,7 +11,7 @@ struct ProviderUsagePresentation: Equatable, Sendable {
         accountsWithoutUsage: [],
         credentialIssues: [])
 
-    var railProviders: [ProviderUsageProvider] {
+    var dockProviders: [ProviderUsageProvider] {
         providers.compactMap { provider in
             let accounts: [ProviderUsageAccount] = provider.accounts.compactMap { account in
                 let limits = account.limits.filter { $0.hasComputablePercentage }
@@ -30,6 +30,8 @@ struct ProviderUsagePresentation: Equatable, Sendable {
         }
     }
 
+    var railProviders: [ProviderUsageProvider] { dockProviders }
+
     static func make(
         snapshot: OmpUsageSnapshot,
         providerNames: [String: String],
@@ -37,14 +39,17 @@ struct ProviderUsagePresentation: Equatable, Sendable {
     ) -> ProviderUsagePresentation {
         var providerOrder: [String] = []
         var accountsByProvider: [String: [ProviderUsageAccount]] = [:]
+        var nextSourceIndexByProvider: [String: Int] = [:]
 
         for report in snapshot.reports {
             if accountsByProvider[report.provider] == nil {
                 providerOrder.append(report.provider)
                 accountsByProvider[report.provider] = []
             }
+            let sourceIndexOffset = nextSourceIndexByProvider[report.provider, default: 0]
             accountsByProvider[report.provider, default: []].append(
-                account(from: report, now: now))
+                account(from: report, now: now, sourceIndexOffset: sourceIndexOffset))
+            nextSourceIndexByProvider[report.provider] = sourceIndexOffset + report.limits.count
         }
 
         let providers = providerOrder.map { providerID in
@@ -81,7 +86,11 @@ struct ProviderUsagePresentation: Equatable, Sendable {
             credentialIssues: credentialIssues)
     }
 
-    private static func account(from report: OmpUsageReport, now: Date) -> ProviderUsageAccount {
+    private static func account(
+        from report: OmpUsageReport,
+        now: Date,
+        sourceIndexOffset: Int
+    ) -> ProviderUsageAccount {
         let scope = report.limits.first?.scope
         let identity = ProviderUsageAccountIdentity(
             email: report.metadata?["email"]?.stringValue,
@@ -90,14 +99,16 @@ struct ProviderUsagePresentation: Equatable, Sendable {
             enterpriseURL: report.metadata?["enterpriseUrl"]?.stringValue,
             orgID: report.metadata?["orgId"]?.stringValue ?? scope?.orgId,
             orgName: report.metadata?["orgName"]?.stringValue)
-        let limits: [ProviderUsageLimit] = report.limits.compactMap { limit in
+        let limits: [ProviderUsageLimit] = report.limits.enumerated().compactMap { offset, limit in
             guard let fraction = Self.remainingFraction(limit.amount) else { return nil }
             return ProviderUsageLimit(
                 id: limit.id,
                 label: usageLimitLabel(providerID: report.provider, label: limit.label),
                 percentage: Int((fraction * 100).rounded()),
                 detailReset: Self.detailResetText(window: limit.window),
-                railReset: Self.railResetText(window: limit.window, now: now))
+                railReset: Self.railResetText(window: limit.window, now: now),
+                windowDurationRank: Self.windowDurationRank(for: limit),
+                sourceIndex: sourceIndexOffset + offset)
         }
         let amounts: [ProviderUsageAmount] = report.limits.compactMap { limit in
             guard Self.remainingFraction(limit.amount) == nil, let used = limit.amount.used else { return nil }
@@ -166,6 +177,30 @@ struct ProviderUsagePresentation: Equatable, Sendable {
         if normalized.contains("5 hour") { return "5 hour" }
         if normalized.contains("7 day") || normalized.contains("weekly") { return "Weekly" }
         return label
+    }
+
+    private static let knownWindowDurationRanks = [
+        "hourly": 60,
+        "1-hour": 60,
+        "five-hour": 300,
+        "5-hour": 300,
+        "5 hour": 300,
+        "daily": 1_440,
+        "day": 1_440,
+        "weekly": 10_080,
+        "week": 10_080,
+        "monthly": 43_200,
+        "month": 43_200,
+        "annual": 525_600,
+        "yearly": 525_600,
+        "year": 525_600,
+    ]
+
+    private static func windowDurationRank(for limit: OmpUsageLimit) -> Int? {
+        [limit.window?.id, limit.window?.label, limit.scope.windowId]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .compactMap { knownWindowDurationRanks[$0] }
+            .first
     }
 
     private static func accountID(
@@ -243,6 +278,73 @@ struct ProviderUsageProvider: Identifiable, Equatable, Sendable {
     var limits: [ProviderUsageLimit] {
         accounts.flatMap(\.limits)
     }
+
+    var ringLimits: [ProviderUsageLimit] {
+        let flattenedLimits = limits
+        let orderedKnownLimits = flattenedLimits.enumerated()
+            .filter { $0.element.windowDurationRank != nil }
+            .sorted { lhs, rhs in
+                guard let lhsRank = lhs.element.windowDurationRank,
+                      let rhsRank = rhs.element.windowDurationRank
+                else {
+                    return lhs.offset < rhs.offset
+                }
+                if lhsRank != rhsRank { return lhsRank < rhsRank }
+                if lhs.element.sourceIndex != rhs.element.sourceIndex {
+                    return lhs.element.sourceIndex < rhs.element.sourceIndex
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+        var knownIndex = 0
+
+        return flattenedLimits.map { limit in
+            guard limit.windowDurationRank != nil else { return limit }
+            defer { knownIndex += 1 }
+            return orderedKnownLimits[knownIndex]
+        }
+    }
+
+    var abbreviation: String {
+        Self.knownAbbreviations[id] ?? Self.fallbackAbbreviation(name: name, id: id)
+    }
+
+    private static let knownAbbreviations = [
+        "anthropic": "ANT",
+        "openai-codex": "OAI",
+        "cursor": "CUR",
+        "google-gemini-cli": "GCA",
+    ]
+
+    private static func fallbackAbbreviation(name: String, id: String) -> String {
+        let words = name.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+        var characters: [Character]
+
+        switch words.count {
+        case 3...:
+            characters = words.prefix(3).compactMap(\.first)
+        case 2:
+            let uppercaseCharacters = words[0].filter(\.isUppercase)
+            let firstWordCharacters = uppercaseCharacters.count >= 2
+                ? Array(uppercaseCharacters.prefix(2))
+                : Array(words[0].prefix(2))
+            characters = firstWordCharacters + Array(words[1].prefix(1))
+        case 1:
+            characters = Array(words[0].prefix(3))
+        default:
+            characters = []
+        }
+
+        if characters.count < 3 {
+            characters.append(contentsOf: id.uppercased().filter { $0.isLetter || $0.isNumber })
+        }
+        var normalizedCharacters = String(characters).uppercased().filter { $0.isLetter || $0.isNumber }
+        while normalizedCharacters.count < 3 {
+            normalizedCharacters.append("X")
+        }
+        return String(normalizedCharacters.prefix(3))
+    }
 }
 
 struct ProviderUsageAccount: Identifiable, Equatable, Sendable {
@@ -276,17 +378,29 @@ struct ProviderUsageLimit: Identifiable, Equatable, Sendable {
     let percentage: Int
     let detailReset: String?
     let railReset: String
+    let windowDurationRank: Int?
+    let sourceIndex: Int
 
     init(id: String, label: String, percentage: Int, resetWindow: String) {
         self.init(id: id, label: label, percentage: percentage, detailReset: resetWindow, railReset: resetWindow)
     }
 
-    init(id: String, label: String, percentage: Int, detailReset: String?, railReset: String) {
+    init(
+        id: String,
+        label: String,
+        percentage: Int,
+        detailReset: String?,
+        railReset: String,
+        windowDurationRank: Int? = nil,
+        sourceIndex: Int = 0
+    ) {
         self.id = id
         self.label = label
         self.percentage = percentage
         self.detailReset = detailReset
         self.railReset = railReset
+        self.windowDurationRank = windowDurationRank
+        self.sourceIndex = sourceIndex
     }
 
     var resetWindow: String { railReset }

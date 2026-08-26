@@ -5,6 +5,9 @@
   late-error— prompt acked ok, then error response with the same id
   silent    — ready, then never answers anything (timeout testing)
   slow-exit — basic behavior, then waits briefly after stdin closes
+  slow-turn — prompt starts an agent turn that finishes after two seconds
+  background-exit — starts a turn, then exits one second after accepting event subscription
+  pending-streaming — reports an active turn while a pending app open is archived
   noisy     — like basic, but emits unknown frames + setWidget before each response
   transcript-burst — one assistant message streamed as 1,000 growing snapshots
   transcript-burst-extensions — transcript-burst plus deterministic confirm requests
@@ -12,6 +15,7 @@
   extension-timeout — emits a short-lived confirm request and surfaces stale responses
   delayed-prompt-success — delays a prompt success response so controller replacement can race it
   delayed-prompt-failure — delays a prompt failure response so controller replacement can race it
+  activity-lifecycle — scripted provider/config/runtime events for controller activity tests
 """
 import base64
 import json
@@ -147,6 +151,9 @@ while True:
 
 STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
          "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
+if mode in ("activity-lifecycle", "pending-streaming"):
+    STATE = {"model": {"id": "initial-model", "provider": "initial-provider"},
+             "isStreaming": True, "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
 reverse_commands = []
 
 for line in sys.stdin:
@@ -277,6 +284,23 @@ for line in sys.stdin:
             continue
         emit({"id": cid, "type": "response", "command": "prompt", "success": True,
               "data": {"agentInvoked": True}})
+        if mode == "activity-lifecycle":
+            emit({"type": "agent_start"})
+            time.sleep(0.2)
+            emit({"type": "config_update", "model": {
+                "id": "updated-model", "provider": "updated-provider"}})
+            time.sleep(0.2)
+            emit({"type": "config_update", "thinkingLevel": "medium"})
+            time.sleep(0.2)
+            emit({"type": "config_update", "model": {"id": "provider-less-model"}})
+            time.sleep(0.2)
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+            continue
+        if mode == "slow-turn":
+            emit({"type": "agent_start"})
+            time.sleep(2)
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+            continue
         if mode == "burst":
             for index in range(100):
                 emit({"type": "message_update", "index": index})
@@ -362,8 +386,17 @@ for line in sys.stdin:
     elif ctype == "extension_ui_response" and mode == "extension-timeout":
         emit({"type": "message_update", "message": {"id": "leaked-timeout-response",
               "role": "assistant", "content": [{"type": "text", "text": "stale timeout leaked"}]}})
+    elif mode in ("background-exit", "pending-streaming") and ctype == "set_subagent_subscription":
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+        emit({"type": "agent_start"})
+        if mode == "pending-streaming":
+            continue
+        time.sleep(1)
+        sys.stderr.write("background-exit\n")
+        sys.stderr.flush()
+        raise SystemExit(7)
     else:
         emit({"id": cid, "type": "response", "command": ctype or "parse", "success": True})
 
-if mode == "slow-exit":
+if mode in ("slow-exit", "pending-streaming"):
     time.sleep(0.6)

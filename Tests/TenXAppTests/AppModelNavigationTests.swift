@@ -242,7 +242,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
         try await Task.sleep(for: .milliseconds(20))
     }
     let manager = try #require(model.processManager)
@@ -255,6 +255,229 @@ import OmpKit
     #expect(model.activeSession == nil)
     #expect(await manager.handle(for: "/tmp/fake.jsonl") == nil)
     await manager.closeAll()
+}
+
+@MainActor
+@Test func backgroundSessionActivityRemainsTrackedUntilItsTurnFinishes() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-background-activity-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "slow-turn")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    for _ in 0..<100 where model.providerActivityCounts["test"] != 1 {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    #expect(model.providerActivityCounts["test"] == 1)
+    model.openNewSession()
+    #expect(model.activeSession == nil)
+    #expect(model.route == .newSession)
+    #expect(model.providerActivityCounts["test"] == 1)
+    #expect(!model.isForegroundSessionGenerating)
+
+    for _ in 0..<150 where model.providerActivityCounts["test"] != nil {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(model.providerActivityCounts["test"] == nil)
+    if let manager = model.processManager {
+        await manager.closeAll()
+    }
+}
+
+@MainActor
+@Test func reopeningManagedSessionReusesItsController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-reused-controller-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
+    let original = try #require(model.activeSession)
+
+    model.openNewSession()
+    model.openSession(navigationMetadata("/tmp/fake.jsonl"))
+    let reopened = try #require(model.activeSession)
+
+    #expect(reopened === original)
+    if let manager = model.processManager {
+        await manager.closeAll()
+    }
+}
+
+@MainActor
+@Test func reopeningTheSameSessionBeforeItsInitialOpenStartsReusesItsController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-rapid-reuse-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let metadata = navigationMetadata("/tmp/fake.jsonl")
+
+    model.openSession(metadata)
+    let original = try #require(model.activeSession)
+    model.openSession(metadata)
+
+    #expect(model.activeSession === original)
+    if let manager = model.processManager {
+        await manager.closeAll()
+    }
+}
+
+@MainActor
+@Test func failedOpenExistingWithoutSessionPathIsNotReusedOnRetry() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-failed-open-retry-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "crash-after-negotiation")
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let metadata = navigationMetadata("/tmp/fake.jsonl")
+    let manager = try #require(model.processManager)
+
+    model.openSession(metadata)
+    let failed = try #require(model.activeSession)
+    for _ in 0..<100 where failed.sessionPath != nil || !isFailed(failed.runtimeState) {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(failed.sessionPath == nil)
+    #expect(isFailed(failed.runtimeState))
+
+    model.openNewSession()
+    model.openSession(metadata)
+    let retried = try #require(model.activeSession)
+
+    #expect(retried !== failed)
+    #expect(model.providerActivityCounts.isEmpty)
+    #expect(await manager.handle(for: metadata.path) == nil)
+    await manager.closeAll()
+}
+
+@MainActor
+@Test func unexpectedExitUpdatesARetainedBackgroundController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-background-exit-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "background-exit")
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let original = try #require(model.activeSession)
+    let manager = try #require(model.processManager)
+    for _ in 0..<100 where original.runtimeState != .streaming {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    #expect(original.runtimeState == .streaming)
+
+    model.openNewSession()
+    for _ in 0..<100 where !original.isRecoveryPresented {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let isStopped = switch original.runtimeState {
+    case .stopped:
+        true
+    default:
+        false
+    }
+
+    #expect(original.isRecoveryPresented)
+    #expect(isStopped)
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") == nil)
+    #expect(model.activeSession == nil)
+    await manager.closeAll()
+}
+
+@MainActor
+@Test func archivingAPendingStreamingSessionClosesAndRemovesActivity() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-pending-archive-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "pending-streaming")
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let metadata = navigationMetadata("/tmp/fake.jsonl", cwd: project.path)
+    let manager = try #require(model.processManager)
+
+    model.openSession(metadata)
+    await model.archiveSession(metadata)
+    try await Task.sleep(for: .milliseconds(500))
+
+    #expect(await manager.handle(for: metadata.path) == nil)
+    #expect(model.providerActivityCounts.isEmpty)
+    await manager.closeAll()
+}
+
+@MainActor
+@Test func nonSessionRoutesAreNotForegroundGeneratingWhileBackgroundActivityContinues() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-foreground-activity-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "slow-turn")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    for _ in 0..<100 where model.providerActivityCounts["test"] != 1 {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+
+    #expect(model.isForegroundSessionGenerating)
+    model.openSettings()
+    #expect(!model.isForegroundSessionGenerating)
+    model.openProviders(.usage)
+    #expect(!model.isForegroundSessionGenerating)
+    model.openNewSession()
+    #expect(!model.isForegroundSessionGenerating)
+    model.openArchivedSessions()
+    #expect(!model.isForegroundSessionGenerating)
+    #expect(model.providerActivityCounts["test"] == 1)
+    if let manager = model.processManager {
+        await manager.closeAll()
+    }
 }
 
 @MainActor
@@ -338,16 +561,21 @@ private func navigationDependencies<Locator: OmpLocating>(
         makeComposerControls: stubAppComposerControlsFactory)
 }
 
-private func navigationMetadata(_ path: String) -> SessionMetadata {
+private func navigationMetadata(_ path: String, cwd: String = "/tmp/Project") -> SessionMetadata {
     SessionMetadata(
         path: path,
         sessionId: path,
-        cwd: "/tmp/Project",
+        cwd: cwd,
         title: "Session",
         created: .distantPast,
         modified: .distantPast,
         sizeBytes: 10,
         status: .complete)
+}
+
+private func isFailed(_ state: SessionRuntimeState) -> Bool {
+    if case .failed = state { return true }
+    return false
 }
 
 private func writeNavigationSession(at url: URL, id: String, cwd: String) throws {
@@ -361,7 +589,7 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     try Data(content.utf8).write(to: url)
 }
 
-private func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws -> URL {
+func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws -> URL {
     let repository = URL(filePath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
