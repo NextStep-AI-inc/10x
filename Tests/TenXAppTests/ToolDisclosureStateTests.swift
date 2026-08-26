@@ -39,18 +39,49 @@ import Testing
     #expect(state.isExpanded(for: failed))
 }
 
-@Test func boundedToolOutputOffersDisclosureOnlyWhenContentMayBeClipped() {
-    #expect(!BoundedToolOutputView.shouldOfferDisclosure("one\ntwo", lineLimit: 3))
-    #expect(BoundedToolOutputView.shouldOfferDisclosure(
-        (1...13).map(String.init).joined(separator: "\n"),
-        lineLimit: 12))
-    #expect(BoundedToolOutputView.shouldOfferDisclosure(
-        String(repeating: "wrapped output ", count: 80),
-        lineLimit: 6))
-    #expect(BoundedToolOutputView.shouldOfferDisclosure(
-        "short text that can wrap in a narrow card",
-        lineLimit: 1,
-        isAlwaysAvailable: true))
+@Test func compactToolHeaderNamesObjectOutcomeAndLifecycle() {
+    let header = ToolCardHeaderPresentation(
+        content: ToolCardContent(
+            title: "Read",
+            verb: "Read",
+            primary: "App.swift",
+            outcome: "42 lines",
+            reference: nil,
+            body: .empty("Completed without output")),
+        phase: .complete,
+        duration: "0.3s")
+
+    #expect(header.visibleText == "Read App.swift · 42 lines")
+    #expect(header.accessibilityLabel == "Read App.swift, 42 lines, Complete, 0.3 seconds")
+}
+
+@Test func compactToolHeaderDoesNotRepeatLifecycleAsOutcome() {
+    let header = ToolCardHeaderPresentation(
+        content: ToolCardContent(
+            title: "Run",
+            verb: "Run",
+            primary: "xcodebuild test",
+            outcome: "Running",
+            reference: nil,
+            body: .empty("")),
+        phase: .running,
+        duration: "4.2s")
+
+    #expect(header.visibleText == "Run xcodebuild test")
+    #expect(header.accessibilityLabel == "Run xcodebuild test, Running, 4.2 seconds")
+}
+
+@Test func attentionToolsDefaultExpandedAfterCompletion() {
+    #expect(ToolDisclosureState.defaultExpanded(
+        for: tool(id: "edit", name: "edit", phase: .complete)))
+    #expect(ToolDisclosureState.defaultExpanded(
+        for: tool(id: "proposal", name: "resolve", phase: .complete)))
+    #expect(!ToolDisclosureState.defaultExpanded(
+        for: tool(id: "read", name: "read", phase: .complete)))
+}
+
+@Test func sharedToolDisclosureMeetsTheMinimumHitTarget() {
+    #expect(ToolCardScaffoldLayout.minimumDisclosureHitHeight >= 32)
 }
 
 private func tool(id: String, name: String, phase: ToolPhase) -> ToolPresentation {

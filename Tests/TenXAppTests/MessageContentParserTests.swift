@@ -2,17 +2,21 @@ import Foundation
 import Testing
 @testable import TenXApp
 
-@Test func messageParserSeparatesSemanticMarkdownBlocks() {
-    let blocks = MessageContentParser.parse("""
+@Test func messageParserBuildsSemanticDocumentBlocks() {
+    let document = MessageContentParser.parse("""
     # Result
 
-    A readable paragraph that wraps normally.
+    A **readable** paragraph that wraps normally.
 
     - first item
-    - second item
+      - nested item
+    - [x] finished item
 
-    1. inspect
-    2. change
+    | File | State |
+    | --- | --- |
+    | App.swift | changed |
+
+    ---
 
     > Keep the interface quiet.
 
@@ -21,40 +25,96 @@ import Testing
     ```
     """)
 
-    #expect(blocks == [
-        .heading(level: 1, text: "Result"),
-        .paragraph("A readable paragraph that wraps normally."),
-        .unorderedList(["first item", "second item"]),
-        .orderedList(["inspect", "change"]),
-        .quote("Keep the interface quiet."),
-        .code(language: "swift", text: "let answer = 10"),
+    #expect(document.blocks.map(\.kind) == [
+        .heading,
+        .paragraph,
+        .list,
+        .table,
+        .divider,
+        .quote,
+        .source,
     ])
+    #expect(document.plainText.contains("nested item"))
+    #expect(document.plainText.contains("let answer = 10"))
 }
 
 @Test func unmatchedFenceStaysVisibleInsteadOfDroppingContent() {
-    let blocks = MessageContentParser.parse("""
+    let document = MessageContentParser.parse("""
     Before
 
     ```text
     unfinished
     """)
 
-    #expect(blocks == [
-        .paragraph("Before"),
-        .paragraph("```text\nunfinished"),
-    ])
+    #expect(document.blocks.map(\.kind) == [.paragraph, .paragraph])
+    #expect(document.plainText == "Before\n```text\nunfinished")
 }
 
 @Test func parserPreservesLongUnbrokenContent() {
     let longPath = "/tmp/" + String(repeating: "segment", count: 100) + ".swift"
-    #expect(MessageContentParser.parse(longPath) == [.paragraph(longPath)])
+    #expect(MessageContentParser.parse(longPath).plainText == longPath)
+}
+
+@Test func inlineParserPreservesSemanticStylesAndHardBreaks() {
+    let content = MessageContentParser.inline(
+        "Plain *emphasis* **strong** ~~strike~~ `code`  \nnext")
+    let intents = content.attributed.runs.compactMap(\.inlinePresentationIntent)
+
+    #expect(content.plainText == "Plain emphasis strong strike code  \nnext")
+    #expect(intents.contains { $0.contains(.emphasized) })
+    #expect(intents.contains { $0.contains(.stronglyEmphasized) })
+    #expect(intents.contains { $0.contains(.strikethrough) })
+    #expect(intents.contains { $0.contains(.code) })
+}
+
+@Test func transcriptMessageNormalizesContentAtInitialization() {
+    let message = TranscriptMessage(
+        id: "message",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("## Result\n\nRendered once."),
+        ]),
+        isFinal: true)
+
+    #expect(message.document.blocks.map(\.kind) == [.heading, .paragraph])
+    #expect(message.document.source == message.visibleText)
+}
+
+@Test func transcriptMessageKeepsUnsupportedBlocksWithoutExposingPrivateContent() {
+    let message = TranscriptMessage(
+        id: "message",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .array([
+                .object(["type": .string("text"), "text": .string("## Result")]),
+                .object(["type": .string("image")]),
+                .object(["type": .string("resource_link"), "name": .string("Build log")]),
+                .object(["type": .string("future_block")]),
+                .object(["type": .string("thinking"), "thinking": .string("Private")]),
+                .object(["type": .string("tool_use"), "name": .string("read")]),
+            ]),
+        ]),
+        isFinal: true)
+
+    #expect(message.document.blocks.map(\.kind) == [
+        .heading,
+        .unsupported,
+        .unsupported,
+        .unsupported,
+    ])
+    #expect(message.visibleText.contains("Image attachment"))
+    #expect(message.visibleText.contains("Resource attachment: Build log"))
+    #expect(message.visibleText.contains("Unsupported future block content"))
+    #expect(!message.visibleText.contains("Private"))
+    #expect(!message.visibleText.contains("read"))
 }
 
 @Test func assistantTranscriptUsesReadableProseMetrics() {
     #expect(MessageBlockView.proseFontSize == 15)
     #expect(MessageBlockView.proseLineSpacing == 4)
     #expect(MessageBubbleView.assistantContentSpacing == 14)
-    #expect(MessageBubbleView.assistantMaxWidth == 720)
+    #expect(TranscriptView.contentMaxWidth == 860)
+    #expect(MessageBubbleView.assistantMaxWidth == TranscriptView.contentMaxWidth)
 }
 
 @Test func responseMetadataNamesActualModelModeAgentAndState() {

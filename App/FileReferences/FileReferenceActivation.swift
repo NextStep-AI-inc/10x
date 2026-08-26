@@ -20,3 +20,27 @@ enum FileReferenceActivation: Equatable {
         }
     }
 }
+
+struct FileReferenceActionHandler: Sendable {
+    let fileOpenService: FileOpenService
+    let openIDEPreferences: OpenIDEPreferencesAction
+
+    @MainActor
+    func perform(
+        _ action: FileReferenceActivation,
+        reference: ResolvedFileReference
+    ) async throws {
+        switch action {
+        case .openInIDE(let application):
+            guard reference.exists, let url = reference.url else { return }
+            try await fileOpenService.open(url, in: application)
+        case .openPreferences:
+            openIDEPreferences()
+        case .revealInFinder:
+            guard reference.exists, let url = reference.url else { return }
+            fileOpenService.reveal(url)
+        case .unavailable:
+            break
+        }
+    }
+}

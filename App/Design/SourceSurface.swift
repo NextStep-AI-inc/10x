@@ -1,0 +1,455 @@
+import AppKit
+import SwiftUI
+
+struct SourcePresentation: Equatable, Sendable {
+    let language: String?
+    let text: String
+    let lines: [SourceLine]
+
+    init(language: String?, text: String) {
+        self.language = language
+        self.text = text
+        lines = SourceTokenizer.lines(text, language: language)
+    }
+}
+
+struct SourceLine: Equatable, Sendable, Identifiable {
+    let number: Int
+    let spans: [SourceSpan]
+
+    var id: Int { number }
+    var plainText: String { spans.map(\.text).joined() }
+}
+
+struct SourceSpan: Equatable, Sendable {
+    enum Role: Equatable, Sendable {
+        case plain
+        case keyword
+        case type
+        case string
+        case number
+        case comment
+    }
+
+    let text: String
+    let role: Role
+}
+
+enum SourceTokenizer {
+    private struct Profile {
+        let keywords: Set<String>
+        let types: Set<String>
+        let lineCommentMarkers: [String]
+        let stringDelimiters: Set<Character>
+        let recognizesCapitalizedTypes: Bool
+    }
+
+    static func lines(_ text: String, language: String?) -> [SourceLine] {
+        text.split(separator: "\n", omittingEmptySubsequences: false)
+            .enumerated()
+            .map { offset, line in
+                SourceLine(
+                    number: offset + 1,
+                    spans: spans(String(line), language: language))
+            }
+    }
+
+    static func spans(_ line: String, language: String?) -> [SourceSpan] {
+        guard let profile = profile(for: language) else {
+            return [SourceSpan(text: line, role: .plain)]
+        }
+
+        var result: [SourceSpan] = []
+        var index = line.startIndex
+        while index < line.endIndex {
+            if profile.lineCommentMarkers.contains(where: {
+                line[index...].hasPrefix($0)
+            }) {
+                append(String(line[index...]), role: .comment, to: &result)
+                index = line.endIndex
+                continue
+            }
+
+            let character = line[index]
+            if profile.stringDelimiters.contains(character) {
+                let start = index
+                let delimiter = character
+                index = line.index(after: index)
+                var isEscaped = false
+                while index < line.endIndex {
+                    let current = line[index]
+                    index = line.index(after: index)
+                    if current == delimiter, !isEscaped { break }
+                    if current == "\\" {
+                        isEscaped.toggle()
+                    } else {
+                        isEscaped = false
+                    }
+                }
+                append(String(line[start..<index]), role: .string, to: &result)
+                continue
+            }
+
+            if character.isNumber, isTokenBoundary(before: index, in: line) {
+                let start = index
+                index = endOfNumber(startingAt: index, in: line)
+                append(String(line[start..<index]), role: .number, to: &result)
+                continue
+            }
+
+            if isIdentifierStart(character) {
+                let start = index
+                index = line.index(after: index)
+                while index < line.endIndex, isIdentifierContinuation(line[index]) {
+                    index = line.index(after: index)
+                }
+                let word = String(line[start..<index])
+                let role: SourceSpan.Role
+                if profile.keywords.contains(word) {
+                    role = .keyword
+                } else if profile.types.contains(word)
+                    || (profile.recognizesCapitalizedTypes && word.first?.isUppercase == true) {
+                    role = .type
+                } else {
+                    role = .plain
+                }
+                append(word, role: role, to: &result)
+                continue
+            }
+
+            let start = index
+            index = line.index(after: index)
+            append(String(line[start..<index]), role: .plain, to: &result)
+        }
+
+        return result.isEmpty ? [SourceSpan(text: "", role: .plain)] : result
+    }
+
+    static func languageIdentifier(forPath path: String) -> String? {
+        let fileExtension = URL(filePath: path).pathExtension.lowercased()
+        return fileExtension.isEmpty ? nil : fileExtension
+    }
+
+    private static func profile(for language: String?) -> Profile? {
+        guard let language else { return nil }
+        let normalized = language
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+
+        return switch normalized {
+        case "swift":
+            Profile(
+                keywords: words("actor any as async await break case catch class continue default defer deinit do else enum extension fallthrough false fileprivate for func guard if import in init inout internal is let nil nonisolated open operator private protocol public repeat rethrows return self Self some static struct subscript super switch throw throws true try typealias var where while"),
+                types: words("Any Bool Character Data Date Dictionary Double Error Float Int Never Optional Result Set String UInt URL Void"),
+                lineCommentMarkers: ["//", "/*"],
+                stringDelimiters: ["\"", "'"],
+                recognizesCapitalizedTypes: true)
+        case "js", "javascript", "jsx", "ts", "typescript", "tsx":
+            Profile(
+                keywords: words("as async await break case catch class const continue debugger default delete do else enum export extends false finally for from function get if implements import in instanceof interface let new null of package private protected public return set static super switch this throw true try typeof undefined var void while with yield"),
+                types: words("Array BigInt Boolean Date Error Map Number Object Promise Record Set String Symbol Unknown"),
+                lineCommentMarkers: ["//", "/*"],
+                stringDelimiters: ["\"", "'", "`"],
+                recognizesCapitalizedTypes: normalized.contains("ts"))
+        case "py", "python":
+            Profile(
+                keywords: words("and as assert async await break class continue def del elif else except False finally for from global if import in is lambda None nonlocal not or pass raise return True try while with yield"),
+                types: words("bool bytes dict float int list object set str tuple"),
+                lineCommentMarkers: ["#"],
+                stringDelimiters: ["\"", "'"],
+                recognizesCapitalizedTypes: true)
+        case "sh", "bash", "zsh", "shell":
+            Profile(
+                keywords: words("case do done elif else esac export fi for function if in local readonly return set then unset while"),
+                types: [],
+                lineCommentMarkers: ["#"],
+                stringDelimiters: ["\"", "'", "`"],
+                recognizesCapitalizedTypes: false)
+        case "c", "h", "cc", "cpp", "cxx", "hpp", "m", "mm", "java", "kt", "kotlin":
+            Profile(
+                keywords: words("abstract auto boolean break byte case catch char class const continue default do double else enum extends false final finally float for goto if implements import instanceof int interface long native new null package private protected public register return short signed static strictfp struct super switch synchronized this throw throws transient true try typedef union unsigned virtual void volatile while"),
+                types: words("Array Boolean Double Float Integer List Long Map Object Set String Vector"),
+                lineCommentMarkers: ["//", "/*"],
+                stringDelimiters: ["\"", "'"],
+                recognizesCapitalizedTypes: true)
+        case "go":
+            Profile(
+                keywords: words("break case chan const continue default defer else fallthrough for func go goto if import interface map package range return select struct switch type var"),
+                types: words("bool byte complex64 complex128 error float32 float64 int int8 int16 int32 int64 rune string uint uint8 uint16 uint32 uint64 uintptr"),
+                lineCommentMarkers: ["//", "/*"],
+                stringDelimiters: ["\"", "'", "`"],
+                recognizesCapitalizedTypes: true)
+        case "rs", "rust":
+            Profile(
+                keywords: words("as async await break const continue crate dyn else enum extern false fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait true type unsafe use where while"),
+                types: words("bool char f32 f64 i8 i16 i32 i64 i128 isize str u8 u16 u32 u64 u128 usize Option Result String Vec"),
+                lineCommentMarkers: ["//", "/*"],
+                stringDelimiters: ["\"", "'"],
+                recognizesCapitalizedTypes: true)
+        case "rb", "ruby":
+            Profile(
+                keywords: words("alias and begin break case class def defined do else elsif end ensure false for if in module next nil not or redo rescue retry return self super then true undef unless until when while yield"),
+                types: words("Array FalseClass Float Hash Integer NilClass Object String Symbol TrueClass"),
+                lineCommentMarkers: ["#"],
+                stringDelimiters: ["\"", "'"],
+                recognizesCapitalizedTypes: true)
+        case "json":
+            Profile(
+                keywords: words("false null true"),
+                types: [],
+                lineCommentMarkers: [],
+                stringDelimiters: ["\""],
+                recognizesCapitalizedTypes: false)
+        case "yaml", "yml", "toml":
+            Profile(
+                keywords: words("false null true yes no"),
+                types: [],
+                lineCommentMarkers: ["#"],
+                stringDelimiters: ["\"", "'"],
+                recognizesCapitalizedTypes: false)
+        case "css", "scss", "less":
+            Profile(
+                keywords: words("important inherit initial none unset var"),
+                types: [],
+                lineCommentMarkers: ["/*"],
+                stringDelimiters: ["\"", "'"],
+                recognizesCapitalizedTypes: false)
+        case "html", "xml":
+            Profile(
+                keywords: [],
+                types: [],
+                lineCommentMarkers: ["<!--"],
+                stringDelimiters: ["\"", "'"],
+                recognizesCapitalizedTypes: false)
+        default:
+            nil
+        }
+    }
+
+    private static func words(_ value: String) -> Set<String> {
+        Set(value.split(separator: " ").map(String.init))
+    }
+
+    private static func append(
+        _ text: String,
+        role: SourceSpan.Role,
+        to spans: inout [SourceSpan]
+    ) {
+        guard !text.isEmpty else { return }
+        if spans.last?.role == role {
+            let previous = spans.removeLast()
+            spans.append(SourceSpan(text: previous.text + text, role: role))
+        } else {
+            spans.append(SourceSpan(text: text, role: role))
+        }
+    }
+
+    private static func isTokenBoundary(before index: String.Index, in line: String) -> Bool {
+        guard index > line.startIndex else { return true }
+        return !isIdentifierContinuation(line[line.index(before: index)])
+    }
+
+    private static func isIdentifierStart(_ character: Character) -> Bool {
+        character == "_" || character == "$" || character.isLetter
+    }
+
+    private static func isIdentifierContinuation(_ character: Character) -> Bool {
+        isIdentifierStart(character) || character.isNumber
+    }
+
+    private static func endOfNumber(
+        startingAt start: String.Index,
+        in line: String
+    ) -> String.Index {
+        var index = line.index(after: start)
+        if line[start] == "0", index < line.endIndex {
+            let prefix = line[index].lowercased()
+            let radix: Int? = switch prefix {
+            case "x": 16
+            case "o": 8
+            case "b": 2
+            default: nil
+            }
+            if let radix {
+                index = line.index(after: index)
+                while index < line.endIndex,
+                      line[index] == "_" || isDigit(line[index], radix: radix) {
+                    index = line.index(after: index)
+                }
+                return index
+            }
+        }
+
+        var hasDecimalPoint = false
+        var hasExponent = false
+        while index < line.endIndex {
+            let character = line[index]
+            if character.isNumber || character == "_" {
+                index = line.index(after: index)
+            } else if character == ".", !hasDecimalPoint, !hasExponent {
+                hasDecimalPoint = true
+                index = line.index(after: index)
+            } else if (character == "e" || character == "E"), !hasExponent {
+                hasExponent = true
+                index = line.index(after: index)
+                if index < line.endIndex, line[index] == "+" || line[index] == "-" {
+                    index = line.index(after: index)
+                }
+            } else {
+                break
+            }
+        }
+        return index
+    }
+
+    private static func isDigit(_ character: Character, radix: Int) -> Bool {
+        guard let value = character.hexDigitValue else { return false }
+        return value < radix
+    }
+}
+
+struct SourceSurface: View {
+    let presentation: SourcePresentation
+    let previewLineLimit: Int?
+
+    @State private var isWrapped: Bool
+    @State private var isShowingAll = false
+
+    init(
+        presentation: SourcePresentation,
+        previewLineLimit: Int? = nil,
+        isInitiallyWrapped: Bool = true
+    ) {
+        self.presentation = presentation
+        self.previewLineLimit = previewLineLimit
+        _isWrapped = State(initialValue: isInitiallyWrapped)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            if isWrapped {
+                rows
+            } else {
+                ScrollView(.horizontal) {
+                    rows.fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            if hasHiddenLines {
+                Button(isShowingAll ? "Show less" : "Show all \(presentation.lines.count) lines") {
+                    isShowingAll.toggle()
+                }
+                .buttonStyle(GhostActionStyle(horizontalPadding: 0))
+                .accessibilityLabel(isShowingAll ? "Show fewer source lines" : "Show all source lines")
+            }
+        }
+        .padding(10)
+        .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private var header: some View {
+        HStack(spacing: 4) {
+            Text(presentation.language?.uppercased() ?? "SOURCE")
+                .font(TenXTypography.mono(size: 10, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            Spacer(minLength: 12)
+            Button(isWrapped ? "Scroll" : "Wrap") {
+                isWrapped.toggle()
+            }
+            .buttonStyle(GhostActionStyle())
+            .accessibilityLabel(isWrapped
+                ? "Use horizontal scrolling for source"
+                : "Wrap source lines")
+            Button("Copy") { copy() }
+                .buttonStyle(GhostActionStyle())
+                .accessibilityLabel("Copy source")
+        }
+    }
+
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(visibleLines) { line in
+                SourceLineView(
+                    line: line,
+                    showsNumber: presentation.lines.count > 1,
+                    isWrapped: isWrapped)
+            }
+        }
+        .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
+    }
+
+    private var visibleLines: ArraySlice<SourceLine> {
+        guard let previewLineLimit, !isShowingAll else {
+            return presentation.lines[...]
+        }
+        return presentation.lines.prefix(previewLineLimit)
+    }
+
+    private var hasHiddenLines: Bool {
+        guard let previewLineLimit else { return false }
+        return presentation.lines.count > previewLineLimit
+    }
+
+    private func copy() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(presentation.text, forType: .string)
+    }
+}
+
+private struct SourceLineView: View {
+    let line: SourceLine
+    let showsNumber: Bool
+    let isWrapped: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            if showsNumber {
+                Text(String(line.number))
+                    .font(TenXTypography.mono(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .frame(width: 28, alignment: .trailing)
+                    .accessibilityHidden(true)
+            }
+            SourceTextView(spans: line.spans, isWrapped: isWrapped)
+                .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
+        }
+        .frame(minHeight: 16, alignment: .topLeading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Line \(line.number), \(line.plainText)")
+    }
+}
+
+struct SourceTextView: View {
+    let spans: [SourceSpan]
+    let isWrapped: Bool
+
+    var body: some View {
+        Text(attributedText)
+            .font(TenXTypography.mono(size: 11))
+            .textSelection(.enabled)
+            .fixedSize(horizontal: !isWrapped, vertical: true)
+    }
+
+    private var attributedText: AttributedString {
+        spans.reduce(into: AttributedString()) { result, span in
+            var value = AttributedString(span.text)
+            value.foregroundColor = color(for: span.role)
+            result.append(value)
+        }
+    }
+
+    private func color(for role: SourceSpan.Role) -> Color {
+        switch role {
+        case .plain, .type:
+            TenXPalette.color(TenXPalette.nearBlackHex)
+        case .keyword, .number:
+            TenXPalette.color(TenXPalette.interactiveCyanHex)
+        case .string:
+            TenXPalette.color(TenXPalette.signalRedHex)
+        case .comment:
+            TenXPalette.color(TenXPalette.mutedTextHex)
+        }
+    }
+}

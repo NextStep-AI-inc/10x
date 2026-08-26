@@ -17,7 +17,7 @@ import Testing
         startDate: Date(timeIntervalSince1970: 1),
         endDate: Date(timeIntervalSince1970: 1.4))
     try assertSnapshot(
-        GenericToolCardView(presentation: presentation)
+        ToolCardView(presentation: presentation)
             .frame(width: 720),
         name: "generic-tool-card")
 }
@@ -459,10 +459,10 @@ import Testing
 
     try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
-            ReadToolCardView(presentation: read)
-            EditToolCardView(presentation: edit)
-            WriteToolCardView(presentation: write)
-            ReadToolCardView(presentation: read)
+            ToolCardView(presentation: read)
+            ToolCardView(presentation: edit)
+            ToolCardView(presentation: write)
+            ToolCardView(presentation: read)
                 .frame(width: 360, alignment: .leading)
         }
         .environment(\.toolDisclosureState, disclosureState)
@@ -940,11 +940,18 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             - Structured code with copy
             - Actionable [documentation](https://example.com/docs)
 
+            | Surface | Behavior |
+            | --- | --- |
+            | Source | Wraps by default without losing indentation |
+            | References | Stay where the response introduced them |
+
             > Changes stay quiet until they need attention.
 
             ```swift
-            let state = TranscriptState.compact
-            render(state, references: true)
+            let state = TranscriptState.compact // preserve the reader's place
+            if state.isReady {
+                render(state, references: true, maximumVisibleCharacters: 120)
+            }
             ```
             """),
         ]),
@@ -957,9 +964,48 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             modelRole: nil),
         isFinal: true)
     try assertSnapshot(
-        MessageBubbleView(message: message).frame(width: 720),
+        MessageBubbleView(message: message)
+            .environment(snapshotEmptyIDEStore)
+            .frame(width: 720),
         name: "chat-rich-assistant",
-        size: CGSize(width: 800, height: 560))
+        size: CGSize(width: 800, height: 700))
+}
+
+@MainActor
+@Test func wrappedSourceSurfaceSnapshot() throws {
+    let source = SourcePresentation(language: "swift", text: """
+    struct TranscriptRow: View {
+        let count = 12 // preserve indentation and explain the line
+
+        var body: some View {
+            Text("A deliberately long source line that wraps inside the transcript instead of escaping underneath the activity card")
+        }
+    }
+    """)
+
+    try assertSnapshot(
+        SourceSurface(presentation: source)
+            .frame(width: 430),
+        name: "source-wrapped",
+        size: CGSize(width: 500, height: 340))
+}
+
+@MainActor
+@Test func scrollingSourceSurfaceSnapshot() throws {
+    let source = SourcePresentation(language: "swift", text: """
+    struct TranscriptRow: View {
+        let count = 12 // preserve indentation and explain the line
+        let title = "A deliberately long source line kept at its exact width for horizontal inspection"
+    }
+    """)
+
+    try assertSnapshot(
+        SourceSurface(
+            presentation: source,
+            isInitiallyWrapped: false)
+            .frame(width: 430),
+        name: "source-scrolling",
+        size: CGSize(width: 500, height: 250))
 }
 
 @MainActor
@@ -1015,12 +1061,485 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         endDate: Date(timeIntervalSince1970: 1.8))
     try assertSnapshot(
         VStack(spacing: 18) {
-            BashToolCardView(presentation: running)
-            BashToolCardView(presentation: failed)
+            ToolCardView(presentation: running)
+            ToolCardView(presentation: failed)
         }
         .frame(width: 720),
         name: "activity-running-error",
         size: CGSize(width: 800, height: 520))
+}
+
+@MainActor
+@Test func semanticToolSurfacesSnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1)
+    let source = ToolPresentation(
+        id: "semantic-source",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: snapshotTextResult("struct TranscriptView: View {\n    let controller: SessionController\n}"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.3))
+    let collection = ToolPresentation(
+        id: "semantic-collection",
+        name: "web_search",
+        arguments: .object(["query": .string("Open multimodal protocol")]),
+        result: .object(["details": .object(["results": .array([
+            .object([
+                "title": .string("OMP reference"),
+                "url": .string("https://example.com/omp"),
+                "snippet": .string("A typed protocol for model tools and ordered content blocks."),
+            ]),
+            .object([
+                "title": .string("Tool result guide"),
+                "url": .string("https://example.com/tools"),
+                "snippet": .string("Text, resources, images, and structured details remain in order."),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.6))
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    let mcp = ToolPresentation(
+        id: "semantic-mcp",
+        name: "mcp__vision__render",
+        arguments: .object(["quality": .string("high")]),
+        result: .object([
+            "content": .array([
+                .object(["type": .string("text"), "text": .string("Rendered preview")]),
+                .object([
+                    "type": .string("image"),
+                    "url": .string(previewPath),
+                    "mimeType": .string("image/png"),
+                    "name": .string("Wrapped source preview"),
+                ]),
+                .object([
+                    "type": .string("resource_link"),
+                    "name": .string("Render report"),
+                    "uri": .string("https://example.com/report"),
+                ]),
+                .object([
+                    "type": .string("image"),
+                    "data": .string("not-valid-base64"),
+                    "mimeType": .string("image/png"),
+                    "name": .string("Malformed preview"),
+                ]),
+            ]),
+            "details": .object([
+                "width": .int(800),
+                "height": .int(600),
+                "nested": .object(["status": .string("complete")]),
+            ]),
+        ]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(1.2))
+    let disclosure = ToolDisclosureState()
+    disclosure.expand(ids: [source.id, collection.id, mcp.id])
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ToolCardView(presentation: source)
+            ToolCardView(presentation: collection)
+            ToolCardView(presentation: mcp)
+        }
+        .environment(\.toolDisclosureState, disclosure)
+        .environment(snapshotEmptyIDEStore)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 720, alignment: .leading),
+        name: "semantic-tool-surfaces",
+        size: CGSize(width: 800, height: 1_500))
+}
+
+@MainActor
+@Test func developerToolFlowSnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1)
+    let read = ToolPresentation(
+        id: "developer-read",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptEventProcessor.swift")]),
+        result: snapshotTextResult("actor TranscriptEventProcessor { }"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.2))
+    let patch = """
+    diff --git a/App/Sessions/TranscriptView.swift b/App/Sessions/TranscriptView.swift
+    --- a/App/Sessions/TranscriptView.swift
+    +++ b/App/Sessions/TranscriptView.swift
+    @@ -157,3 +157,5 @@
+    -            .frame(maxWidth: 720, alignment: .leading)
+    +            .frame(
+    +                maxWidth: TranscriptView.contentMaxWidth,
+    +                alignment: .leading)
+     }
+    """
+    let edit = ToolPresentation(
+        id: "developer-edit",
+        name: "edit",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: .object(["details": .object(["diff": .string(patch)])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.7))
+    let grep = ToolPresentation(
+        id: "developer-grep",
+        name: "grep",
+        arguments: .object(["pattern": .string("ToolCardView")]),
+        result: .object(["details": .object(["matches": .array([
+            .object([
+                "path": .string("App/Sessions/TranscriptView.swift"),
+                "line": .int(158),
+                "text": .string("ToolCardView(presentation: presentation)"),
+            ]),
+            .object([
+                "path": .string("App/Tools/ToolCardView.swift"),
+                "line": .int(3),
+                "text": .string("struct ToolCardView: View"),
+            ]),
+            .object([
+                "path": .string("Tests/TenXAppTests/ViewSnapshotTests.swift"),
+                "line": .int(20),
+                "text": .string("ToolCardView(presentation: presentation)"),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.4))
+    let bash = ToolPresentation(
+        id: "developer-bash",
+        name: "bash",
+        arguments: .object(["command": .string("xcodebuild test -scheme 10x")]),
+        result: snapshotTextResult((1...14).map { "Test group \($0) passed" }.joined(separator: "\n")),
+        phase: .running,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(4.6))
+    let web = ToolPresentation(
+        id: "developer-web",
+        name: "web_search",
+        arguments: .object(["query": .string("SwiftUI attributed text wrapping")]),
+        result: .object(["details": .object(["results": .array([
+            .object([
+                "title": .string("Text | Apple Developer Documentation"),
+                "url": .string("https://developer.apple.com/documentation/swiftui/text"),
+                "snippet": .string("Display read-only text that can wrap across available width."),
+            ]),
+            .object([
+                "title": .string("Layout fundamentals"),
+                "url": .string("https://developer.apple.com/documentation/swiftui/layout-fundamentals"),
+                "snippet": .string("Compose flexible layouts without nested vertical scrolling."),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.9))
+    let disclosure = ToolDisclosureState()
+    disclosure.expand(ids: [edit.id, grep.id, bash.id, web.id])
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ToolCardView(presentation: read)
+            ToolCardView(presentation: edit)
+            ToolCardView(presentation: grep)
+            ToolCardView(presentation: bash)
+            ToolCardView(presentation: web)
+        }
+        .environment(\.toolDisclosureState, disclosure)
+        .environment(snapshotEmptyIDEStore)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 720, alignment: .leading),
+        name: "developer-tool-flow",
+        size: CGSize(width: 800, height: 1_700))
+}
+
+@MainActor
+@Test func coordinationToolCardsSnapshot() throws {
+    let cards = [
+        snapshotToolPresentation(
+            id: "coordination-task",
+            name: "task",
+            arguments: .object([
+                "title": .string("Audit the complete transcript surface while preserving every long file reference and execution detail"),
+            ]),
+            result: .object(["details": .object([
+                "status": .string("running"),
+                "progress": .string("Inspecting compact and expanded states."),
+                "completed": .int(2),
+                "total": .int(5),
+                "history": .array([
+                    .string("Mapped transcript routing"),
+                    .string("Checked disclosure persistence"),
+                ]),
+                "artifacts": .array([
+                    .object(["path": .string("App/Tools/ToolCardView.swift")]),
+                ]),
+            ])]),
+            phase: .running,
+            duration: 4.2),
+        snapshotToolPresentation(
+            id: "coordination-todo",
+            name: "todo",
+            arguments: .object(["todos": .array([
+                .object(["content": .string("Map the OMP catalog"), "status": .string("completed")]),
+                .object(["content": .string("Verify compact wrapping"), "status": .string("in_progress")]),
+                .object(["content": .string("Launch the Release build"), "status": .string("pending")]),
+            ])]),
+            result: nil,
+            phase: .complete,
+            duration: 0.3),
+        snapshotToolPresentation(
+            id: "coordination-proposal",
+            name: "propose",
+            arguments: .object([
+                "path": .string("App/Sessions/TranscriptView.swift"),
+                "reason": .string("Route every tool through the shared semantic card contract."),
+            ]),
+            result: .object(["details": .object(["status": .string("complete")])]),
+            phase: .complete,
+            duration: 0.6),
+        snapshotToolPresentation(
+            id: "coordination-security",
+            name: "security_scan",
+            arguments: .object(["target": .string("App/Sessions")]),
+            result: .object([
+                "error": .string("Scan stopped after an unreadable fixture"),
+                "details": .object([
+                    "status": .string("failed"),
+                    "findings": .array([.object([
+                        "title": .string("Unchecked file URL"),
+                        "severity": .string("high"),
+                        "path": .string("App/Sessions/TranscriptReference.swift"),
+                        "line": .int(42),
+                    ])]),
+                ]),
+            ]),
+            phase: .failed,
+            duration: 1.8),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-coordination",
+        size: CGSize(width: 600, height: 1_150))
+}
+
+@MainActor
+@Test func memoryToolCardsSnapshot() throws {
+    let cards = [
+        snapshotToolPresentation(
+            id: "memory-retain",
+            name: "retain",
+            arguments: .object(["memory": .string("Use one semantic card contract")]),
+            result: .object(["details": .object(["memories": .array([
+                .object([
+                    "id": .string("memory-1"),
+                    "text": .string("Use one semantic card contract"),
+                    "status": .string("stored"),
+                ]),
+                .object([
+                    "id": .string("memory-2"),
+                    "text": .string("Wrap source by default"),
+                    "status": .string("stored"),
+                ]),
+            ])])]),
+            phase: .complete,
+            duration: 0.4),
+        snapshotToolPresentation(
+            id: "memory-recall",
+            name: "recall",
+            arguments: .object(["query": .string("obsolete transcript rule")]),
+            result: .object(["details": .object(["memories": .array([])])]),
+            phase: .complete,
+            duration: 0.2),
+        snapshotToolPresentation(
+            id: "memory-edit",
+            name: "memory_edit",
+            arguments: .object([
+                "id": .string("memory-1"),
+                "content": .string("## Transcript rule\n\nKeep references where they are written."),
+            ]),
+            result: .object(["details": .object([
+                "status": .string("updated"),
+                "version": .int(2),
+            ])]),
+            phase: .complete,
+            duration: 0.5),
+        snapshotToolPresentation(
+            id: "memory-skill",
+            name: "manage_skill",
+            arguments: .object([
+                "operation": .string("update"),
+                "name": .string("rich-chat"),
+                "content": .string("# Rich chat\n\n- Reuse the two-corner card\n- Compose semantic surfaces\n- Preserve complete source"),
+            ]),
+            result: .object(["details": .object([
+                "status": .string("updated"),
+                "path": .string("skills/rich-chat/SKILL.md"),
+            ])]),
+            phase: .complete,
+            duration: 0.8),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-memory",
+        size: CGSize(width: 600, height: 1_100))
+}
+
+@MainActor
+@Test func mediaToolCardsSnapshot() throws {
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    let imageResult = JSONValue.object([
+        "content": .array([.object([
+            "type": .string("image"),
+            "url": .string(previewPath),
+            "mimeType": .string("image/png"),
+            "name": .string("Transcript preview"),
+        ])]),
+        "details": .object([
+            "width": .int(500),
+            "height": .int(340),
+            "scale": .double(2),
+        ]),
+    ])
+    let cards = [
+        snapshotToolPresentation(
+            id: "media-inspect",
+            name: "inspect_image",
+            arguments: .object(["path": .string(previewPath)]),
+            result: imageResult,
+            phase: .complete,
+            duration: 0.7),
+        snapshotToolPresentation(
+            id: "media-computer",
+            name: "computer",
+            arguments: .object([
+                "action": .string("click"),
+                "application": .string("Safari"),
+            ]),
+            result: .object([
+                "content": imageResult["content"] ?? .array([]),
+                "details": .object([
+                    "action": .string("click"),
+                    "x": .int(412),
+                    "y": .int(288),
+                ]),
+            ]),
+            phase: .complete,
+            duration: 1.1),
+        snapshotToolPresentation(
+            id: "media-question",
+            name: "ask",
+            arguments: .object([
+                "questions": .array([.object([
+                    "id": .string("tool-card-density"),
+                    "question": .string("How should completed tool calls balance scanability and detail?"),
+                    "options": .array([
+                        .object([
+                            "label": .string("Compact until expanded"),
+                            "description": .string("Keep the two-corner summary row and reveal semantic detail on demand."),
+                        ]),
+                        .object([
+                            "label": .string("Always expanded"),
+                            "description": .string("Show every tool result directly in the transcript."),
+                        ]),
+                    ]),
+                    "recommended": .int(0),
+                ])]),
+            ]),
+            result: .object([
+                "content": .array([.object([
+                    "type": .string("text"),
+                    "text": .string("User selected: Compact until expanded"),
+                ])]),
+                "details": .object([
+                    "selectedOptions": .array([.string("Compact until expanded")]),
+                ]),
+            ]),
+            phase: .complete,
+            duration: 3.4),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-media",
+        size: CGSize(width: 600, height: 1_300))
+}
+
+@MainActor
+@Test func mcpFallbackToolCardsSnapshot() throws {
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    var nestedFallback = JSONValue.string(String(repeating: "bounded-value-", count: 18))
+    for depth in (1...8).reversed() {
+        nestedFallback = .object(["level\(depth)": nestedFallback])
+    }
+    let cards = [
+        snapshotToolPresentation(
+            id: "fallback-mcp",
+            name: "mcp__vision__render_preview",
+            arguments: .object(["quality": .string("high")]),
+            result: .object([
+                "content": .array([
+                    .object(["type": .string("text"), "text": .string("Rendered the requested transcript preview.")]),
+                    .object([
+                        "type": .string("image"),
+                        "url": .string(previewPath),
+                        "mimeType": .string("image/png"),
+                        "name": .string("Wrapped transcript"),
+                    ]),
+                    .object([
+                        "type": .string("resource_link"),
+                        "name": .string("Render report"),
+                        "uri": .string("https://example.com/render-report"),
+                    ]),
+                ]),
+                "details": .object([
+                    "width": .int(800),
+                    "height": .int(600),
+                    "status": .string("complete"),
+                ]),
+            ]),
+            phase: .complete,
+            duration: 1.3),
+        snapshotToolPresentation(
+            id: "fallback-extension",
+            name: "extension_future",
+            arguments: .object([
+                "mode": .string("preview"),
+                "payload": nestedFallback,
+            ]),
+            result: .object([
+                "unexpected": .array([.null, .int(2), .bool(true)]),
+            ]),
+            phase: .complete,
+            duration: 0.4),
+        snapshotToolPresentation(
+            id: "fallback-empty",
+            name: "unknown_empty",
+            arguments: .null,
+            result: nil,
+            phase: .complete,
+            duration: 0.1),
+        snapshotToolPresentation(
+            id: "fallback-error",
+            name: "extension_failed",
+            arguments: .object(["operation": .string("import")]),
+            result: .object(["error": .string("Extension returned malformed content")]),
+            phase: .failed,
+            duration: 0.9),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-mcp-fallback",
+        size: CGSize(width: 600, height: 1_600))
 }
 
 @MainActor
@@ -1064,14 +1583,14 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     @@ -1,10 +1,10 @@
      import SwiftUI
      struct Transcript {
-     let id: String
-     let role: String
-     let model: String
-     let mode: String
-     let date: Date
-     let state: State
+         let id: String
+         let role: String
+         let model: String
+         let mode: String
+         let date: Date
+         let state: State
     -let title = "Old transcript"
-    +\(longLine)
+    +    \(longLine) // 10 repeated segments
     diff --git a/App/Palette.swift b/App/Palette.swift
     --- a/App/Palette.swift
     +++ b/App/Palette.swift
@@ -1089,7 +1608,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         startDate: Date(timeIntervalSince1970: 1),
         endDate: Date(timeIntervalSince1970: 1.7))
     try assertSnapshot(
-        EditToolCardView(presentation: presentation)
+        ToolCardView(presentation: presentation)
             .environment(snapshotEmptyIDEStore)
             .frame(width: 720),
         name: "activity-structured-diff",
@@ -1112,6 +1631,28 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             .environment(snapshotEmptyIDEStore),
         name: "chat-full-1440",
         size: CGSize(width: 1_440, height: 900))
+}
+
+@MainActor
+@Test func richTranscriptCompactSnapshot() throws {
+    try assertSnapshot(
+        TranscriptView(controller: richTranscriptController())
+            .environment(snapshotEmptyIDEStore)
+            .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+            .environment(\.fileOpenService, snapshotFileOpenService),
+        name: "rich-transcript-compact",
+        size: CGSize(width: 700, height: 2_100))
+}
+
+@MainActor
+@Test func richTranscriptWideSnapshot() throws {
+    try assertSnapshot(
+        TranscriptView(controller: richTranscriptController())
+            .environment(snapshotEmptyIDEStore)
+            .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+            .environment(\.fileOpenService, snapshotFileOpenService),
+        name: "rich-transcript-wide",
+        size: CGSize(width: 1_180, height: 2_000))
 }
 
 @MainActor
@@ -1339,6 +1880,129 @@ private func compactTranscriptController() -> SessionController {
 }
 
 @MainActor
+private func richTranscriptController() -> SessionController {
+    let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
+    let longValue = String(repeating: "unbrokentranscriptvalue", count: 16)
+    let user = TranscriptMessage(
+        id: "rich-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Make the transcript readable without hiding the work."),
+        ]),
+        timestamp: timestamp,
+        isFinal: true)
+    let assistant = TranscriptMessage(
+        id: "rich-assistant",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("""
+            ## Transcript result
+
+            The response keeps [the design notes](https://example.com/design) and `App/Sessions/TranscriptView.swift:42` exactly where they explain the work.
+
+            - Semantic prose stays unboxed.
+              - Nested context keeps its indentation.
+            - Tool calls share one compact two-corner contract.
+
+            | Surface | Default |
+            | --- | --- |
+            | Source and diff | Wrap |
+            | Routine tool | Collapsed |
+
+            ```swift
+            let path = "App/Sessions/" + String(repeating: "deeply-nested-segment/", count: 6) + "TranscriptView.swift"
+            render(path, preservingIndentation: true)
+            ```
+            """ + "\n\nLong values remain contained: " + longValue),
+        ]),
+        timestamp: timestamp.addingTimeInterval(1),
+        attribution: TranscriptResponseAttribution(
+            provider: "openai-codex",
+            model: "gpt-5.6-sol",
+            mode: "implementation",
+            agent: nil,
+            modelRole: nil),
+        isFinal: true)
+    let read = snapshotToolPresentation(
+        id: "rich-read",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: snapshotTextResult("struct TranscriptView: View { }"),
+        phase: .complete,
+        duration: 0.2)
+    let patch = """
+    diff --git a/App/Sessions/MessageBubbleView.swift b/App/Sessions/MessageBubbleView.swift
+    --- a/App/Sessions/MessageBubbleView.swift
+    +++ b/App/Sessions/MessageBubbleView.swift
+    @@ -7,3 +7,3 @@
+    -static let assistantMaxWidth: CGFloat = 720
+    +static let assistantMaxWidth = TranscriptView.contentMaxWidth
+     static let assistantContentSpacing: CGFloat = 14
+    """
+    let edit = snapshotToolPresentation(
+        id: "rich-edit",
+        name: "edit",
+        arguments: .object(["path": .string("App/Sessions/MessageBubbleView.swift")]),
+        result: .object(["details": .object(["diff": .string(patch)])]),
+        phase: .complete,
+        duration: 0.7)
+    let command = snapshotToolPresentation(
+        id: "rich-command",
+        name: "bash",
+        arguments: .object(["command": .string("xcodebuild test -project 10x.xcodeproj -scheme 10x")]),
+        result: snapshotTextResult((1...14).map { "Test group \($0) passed" }.joined(separator: "\n")),
+        phase: .running,
+        duration: 4.2)
+    let mcp = snapshotToolPresentation(
+        id: "rich-mcp",
+        name: "mcp__workspace__inspect",
+        arguments: .object([
+            "path": .string(String(repeating: "nestedvalue", count: 30)),
+        ]),
+        result: .object([
+            "content": .array([
+                .object(["type": .string("text"), "text": .string("Inspected the current workspace.")]),
+                .object([
+                    "type": .string("resource_link"),
+                    "name": .string("Workspace report"),
+                    "uri": .string("https://example.com/workspace-report"),
+                ]),
+            ]),
+            "details": .object([
+                "status": .string("running"),
+                "files": .int(42),
+            ]),
+        ]),
+        phase: .running,
+        duration: 1.3)
+    let failed = snapshotToolPresentation(
+        id: "rich-failed",
+        name: "security_scan",
+        arguments: .object(["target": .string("App/Sessions")]),
+        result: .object([
+            "error": .string("Scan stopped after an unreadable fixture"),
+            "details": .object(["status": .string("failed")]),
+        ]),
+        phase: .failed,
+        duration: 0.9)
+
+    return SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [
+            .threadStart(id: "rich-start", date: timestamp),
+            .message(user),
+            .message(assistant),
+            .tool(read),
+            .tool(edit),
+            .tool(command),
+            .tool(mcp),
+            .tool(failed),
+        ],
+        runtimeState: .streaming,
+        title: "Rich transcript")
+}
+
+@MainActor
 private func wideTranscriptController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
     let assistant = TranscriptMessage(
@@ -1484,6 +2148,44 @@ private func snapshotTextResult(_ text: String) -> JSONValue {
     .object(["content": .array([
         .object(["type": .string("text"), "text": .string(text)]),
     ])])
+}
+
+private func snapshotToolPresentation(
+    id: String,
+    name: String,
+    arguments: JSONValue,
+    result: JSONValue?,
+    phase: ToolPhase,
+    duration: TimeInterval
+) -> ToolPresentation {
+    let timestamp = Date(timeIntervalSince1970: 1)
+    return ToolPresentation(
+        id: id,
+        name: name,
+        arguments: arguments,
+        result: result,
+        phase: phase,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(duration))
+}
+
+@MainActor
+private func snapshotToolCardStack(
+    _ presentations: [ToolPresentation],
+    width: CGFloat
+) -> some View {
+    let disclosure = ToolDisclosureState()
+    disclosure.expand(ids: presentations.map(\.id))
+    return VStack(alignment: .leading, spacing: 18) {
+        ForEach(presentations) { presentation in
+            ToolCardView(presentation: presentation)
+        }
+    }
+    .environment(\.toolDisclosureState, disclosure)
+    .environment(snapshotEmptyIDEStore)
+    .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+    .environment(\.fileOpenService, snapshotFileOpenService)
+    .frame(width: width, alignment: .leading)
 }
 
 private struct SnapshotConfigRunner: OmpConfigRunning {

@@ -1,11 +1,11 @@
 import Foundation
 
-struct UnifiedDiff: Equatable {
+struct UnifiedDiff: Equatable, Sendable {
     let raw: String
     let files: [UnifiedDiffFile]
 }
 
-struct UnifiedDiffFile: Equatable, Identifiable {
+struct UnifiedDiffFile: Equatable, Identifiable, Sendable {
     let oldPath: String?
     let newPath: String?
     let hunks: [UnifiedDiffHunk]
@@ -16,7 +16,7 @@ struct UnifiedDiffFile: Equatable, Identifiable {
     var removals: Int { hunks.flatMap(\.lines).filter { $0.kind == .removal }.count }
 }
 
-struct UnifiedDiffHunk: Equatable, Identifiable {
+struct UnifiedDiffHunk: Equatable, Identifiable, Sendable {
     let header: String
     let oldStart: Int
     let oldCount: Int
@@ -56,8 +56,8 @@ struct UnifiedDiffHunk: Equatable, Identifiable {
     }
 }
 
-struct UnifiedDiffLine: Equatable {
-    enum Kind: Equatable {
+struct UnifiedDiffLine: Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
         case context
         case addition
         case removal
@@ -70,7 +70,7 @@ struct UnifiedDiffLine: Equatable {
     let newLine: Int?
 }
 
-enum UnifiedDiffDisplayRow: Equatable, Identifiable {
+enum UnifiedDiffDisplayRow: Equatable, Identifiable, Sendable {
     case line(Int)
     case collapsed(id: String, count: Int, lineIndices: [Int])
 

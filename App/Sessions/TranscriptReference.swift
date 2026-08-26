@@ -1,8 +1,45 @@
 import Foundation
 
-enum TranscriptReference: Equatable, Hashable {
+enum TranscriptReference: Equatable, Hashable, Sendable {
     case file(path: String, line: Int?)
     case web(url: String, label: String?)
+
+    var inlineURL: URL? {
+        switch self {
+        case .web(let value, _):
+            URL(string: value)
+        case .file(let path, let line):
+            Self.fileURL(path: path, line: line)
+        }
+    }
+
+    init?(inlineURL: URL) {
+        if inlineURL.scheme == "http" || inlineURL.scheme == "https" {
+            self = .web(url: inlineURL.absoluteString, label: nil)
+            return
+        }
+        guard inlineURL.scheme == "tenx-file",
+              let components = URLComponents(
+                url: inlineURL,
+                resolvingAgainstBaseURL: false),
+              let path = components.queryItems?
+                .first(where: { $0.name == "path" })?
+                .value,
+              !path.isEmpty
+        else { return nil }
+        let line = components.queryItems?
+            .first(where: { $0.name == "line" })?
+            .value
+            .flatMap(Int.init)
+        self = .file(path: path, line: line)
+    }
+
+    static func parseInline(
+        _ candidate: String,
+        label: String? = nil
+    ) -> TranscriptReference? {
+        parse(candidate, label: label, allowsRelativeFile: true)
+    }
 
     static func extract(from text: String) -> [TranscriptReference] {
         var located: [LocatedReference] = []
@@ -116,6 +153,9 @@ enum TranscriptReference: Equatable, Hashable {
             return .web(url: value, label: label)
         }
         let suffix = lineSuffix(in: value)
+        guard !suffix.path.contains("://"),
+              URLComponents(string: suffix.path)?.scheme == nil
+        else { return nil }
         guard suffix.path.hasPrefix("/") || (allowsRelativeFile && isRelativeFilePath(suffix.path)) else {
             return nil
         }
@@ -124,8 +164,8 @@ enum TranscriptReference: Equatable, Hashable {
 
     private static func isRelativeFilePath(_ path: String) -> Bool {
         if path.hasPrefix("./") || path.hasPrefix("../") { return true }
-        guard path.contains("/") else { return false }
-        return !URL(filePath: path).pathExtension.isEmpty
+        let fileExtension = URL(filePath: path).pathExtension
+        return !fileExtension.isEmpty && fileExtension.contains(where: \.isLetter)
     }
 
     private static func lineSuffix(in path: String) -> (path: String, line: Int?) {
@@ -135,5 +175,18 @@ enum TranscriptReference: Equatable, Hashable {
             return (path, nil)
         }
         return (String(path[..<colon]), line)
+    }
+
+    private static func fileURL(path: String, line: Int?) -> URL? {
+        var components = URLComponents()
+        components.scheme = "tenx-file"
+        components.host = "reference"
+        components.queryItems = [URLQueryItem(name: "path", value: path)]
+        if let line {
+            components.queryItems?.append(URLQueryItem(
+                name: "line",
+                value: String(line)))
+        }
+        return components.url
     }
 }

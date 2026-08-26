@@ -36,6 +36,22 @@ import Testing
     #expect(result.exists)
 }
 
+@Test func resolvesTildePathAgainstTheUserHomeDirectory() {
+    let expectedPath = FileManager.default.homeDirectoryForCurrentUser
+        .appending(path: ".omp/agent/config.yml")
+        .standardizedFileURL
+        .path
+    let resolver = FileReferenceResolver(fileExists: { $0 == expectedPath })
+    let result = resolver.resolve(
+        path: "~/.omp/agent/config.yml",
+        line: 7,
+        relativeTo: URL(filePath: "/tmp/10x", directoryHint: .isDirectory))
+
+    #expect(result.url?.path == expectedPath)
+    #expect(result.exists)
+    #expect(result.originalReference == "~/.omp/agent/config.yml:7")
+}
+
 @Test func reportsMissingAbsoluteFile() {
     let result = FileReferenceResolver(fileExists: { _ in false })
         .resolve(path: "/tmp/missing.swift", line: 9, relativeTo: nil)

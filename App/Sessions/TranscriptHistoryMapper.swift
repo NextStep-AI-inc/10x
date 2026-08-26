@@ -67,17 +67,18 @@ enum TranscriptHistoryMapper {
                 return
             }
 
-            let role = message["role"]?.stringValue
-            let visibleText = TranscriptMessage.visibleText(from: message)
-            let isTerminalFailure = role == "assistant"
+            let transcriptMessage = TranscriptMessage(
+                id: base.id,
+                raw: message,
+                timestamp: TranscriptHistoryMapper.date(from: base.timestamp),
+                attribution: attribution,
+                isFinal: true)
+            let isTerminalFailure = transcriptMessage.role == .assistant
                 && ["error", "aborted"].contains(message["stopReason"]?.stringValue?.lowercased())
-            if role == "user" || !visibleText.isEmpty || isTerminalFailure {
-                items.append(.message(TranscriptMessage(
-                    id: base.id,
-                    raw: message,
-                    timestamp: TranscriptHistoryMapper.date(from: base.timestamp),
-                    attribution: attribution,
-                    isFinal: true)))
+            if transcriptMessage.role == .user
+                || !transcriptMessage.visibleText.isEmpty
+                || isTerminalFailure {
+                items.append(.message(transcriptMessage))
                 hasConversation = true
             }
             items.append(contentsOf: toolCallPresentations(

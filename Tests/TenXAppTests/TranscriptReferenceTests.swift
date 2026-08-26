@@ -1,6 +1,26 @@
 import Testing
 @testable import TenXApp
 
+@Test func inlineFileReferencesRoundTripThroughAttributedLinks() throws {
+    let reference = TranscriptReference.file(path: "App/Foo.swift", line: 8)
+    let url = try #require(reference.inlineURL)
+
+    #expect(TranscriptReference(inlineURL: url) == reference)
+}
+
+@Test func inlineMarkdownKeepsReferencesInTheirWrittenPosition() {
+    let content = MessageContentParser.inline(
+        "Open `App/Foo.swift:8` and [the docs](https://example.com/docs).")
+    let references = content.attributed.runs
+        .compactMap(\.link)
+        .compactMap(TranscriptReference.init(inlineURL:))
+
+    #expect(references == [
+        .file(path: "App/Foo.swift", line: 8),
+        .web(url: "https://example.com/docs", label: nil),
+    ])
+}
+
 @Test func codeAndMarkdownAcceptRelativeFilesButPlainTextDoesNot() {
     #expect(TranscriptReference.extract(from: "`App/Foo.swift:8`") == [
         .file(path: "App/Foo.swift", line: 8),
@@ -9,6 +29,15 @@ import Testing
         .file(path: "App/Foo.swift", line: nil),
     ])
     #expect(TranscriptReference.extract(from: "Ignore words/with/slashes and relative/file.swift:2") == [])
+}
+
+@Test func codeAndMarkdownAcceptRootFilesButRejectVersionNumbers() {
+    #expect(TranscriptReference.extract(from: "Open `Package.swift` and [README](README.md).") == [
+        .file(path: "Package.swift", line: nil),
+        .file(path: "README.md", line: nil),
+    ])
+    #expect(TranscriptReference.extract(from: "Version `1.2` is current.").isEmpty)
+    #expect(TranscriptReference.extract(from: "[Email](mailto:dev@example.com)").isEmpty)
 }
 
 @Test func codeAndMarkdownRejectRelativePathsWithEmptyExtensions() {
@@ -44,6 +73,11 @@ import Testing
         .web(url: "https://example.com/one", label: nil),
         .file(path: "/tmp/file.swift", line: 9),
     ])
+}
+
+@Test func virtualResourceSchemesAreNotPresentedAsLocalFiles() {
+    #expect(TranscriptReference.parseInline("omp://models.md") == nil)
+    #expect(TranscriptReference.parseInline("local://implementation-plan.md") == nil)
 }
 
 @Test func plainAbsolutePathWithWhitespaceContinuationNeverUsesItsPrefix() {

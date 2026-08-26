@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct TranscriptView: View {
+    static let contentMaxWidth: CGFloat = 860
+
     let controller: SessionController
     @State private var disclosureState = ToolDisclosureState()
     @State private var isNearBottom = true
@@ -33,7 +35,7 @@ struct TranscriptView: View {
                             .id(item.id)
                     }
                 }
-                .frame(maxWidth: 860)
+                .frame(maxWidth: Self.contentMaxWidth)
                 .padding(.horizontal, 42)
                 .padding(.vertical, 28)
                 .frame(maxWidth: .infinity)
@@ -155,26 +157,7 @@ struct TranscriptView: View {
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             .accessibilityElement(children: .combine)
         case .tool(let presentation):
-            switch ToolCardRegistry.kind(for: presentation.name) {
-            case .read:
-                ReadToolCardView(presentation: presentation)
-            case .bash:
-                BashToolCardView(presentation: presentation)
-            case .edit:
-                EditToolCardView(presentation: presentation)
-            case .write:
-                WriteToolCardView(presentation: presentation)
-            case .search:
-                SearchToolCardView(presentation: presentation)
-            case .task:
-                TaskToolCardView(presentation: presentation)
-            case .todo:
-                TodoToolCardView(presentation: presentation)
-            case .web:
-                WebToolCardView(presentation: presentation)
-            case .generic:
-                GenericToolCardView(presentation: presentation)
-            }
+            ToolCardView(presentation: presentation)
         case .extensionUI(let state):
             ApprovalCardView(
                 state: state,

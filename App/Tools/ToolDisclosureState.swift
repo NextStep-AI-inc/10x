@@ -32,7 +32,8 @@ final class ToolDisclosureState: @unchecked Sendable {
     }
 
     nonisolated static func defaultExpanded(for presentation: ToolPresentation) -> Bool {
-        presentation.phase != .complete || ToolCardRegistry.kind(for: presentation.name) == .edit
+        presentation.phase != .complete
+            || ToolCardRegistry.kind(for: presentation.name).startsExpandedWhenComplete
     }
 }
 
