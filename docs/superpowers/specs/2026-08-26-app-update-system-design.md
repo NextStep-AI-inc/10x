@@ -311,9 +311,11 @@ Two existing defects block this and are in scope.
 | --- | --- |
 | 0 | Public `NextStep-AI-inc/10x` created and pushed. Bundle identifier, team, hardened runtime, manual Release signing, and version build settings applied. EdDSA keypair generated, public key in `Info.plist`, private key stored as a repository secret |
 | 1 | Sparkle linked through SPM. `UpdateController`, `UpdateState`, and `SplashUpdateDriver` implemented with no splash UI. Verified against a temporary local feed using Sparkle's `SUFeedURL` user-default override |
-| 2 | `scripts/release.sh` and `.github/workflows/release.yml`. Apple secret scope confirmed. Version `v0.1.0` published, signed, notarized, with an appcast attached |
+| 2 | `scripts/release.sh` and `.github/workflows/release.yml` written and proven by a local dry run that signs, notarizes, and staples. Apple secret scope confirmed. Nothing is published yet |
 | 3 | Splash update UI: advisory stage, presentation refactor, update mode, determinate signal, menu item, and both re-entry defects fixed |
-| 4 | Version `v0.1.1` published. A real `0.1.0` install upgrades itself end to end |
+| 4 | Version `v0.1.0` published, then `v0.1.1`. A real `0.1.0` install upgrades itself end to end |
+
+The first publish deliberately waits until phase 3 is complete. The update interface that a user sees during an upgrade belongs to the **installed** version, not the incoming one, so a `v0.1.0` published before the splash UI exists would upgrade to `v0.1.1` showing no update interface at all, and phase 4 would verify nothing.
 
 ## Verification contract
 
