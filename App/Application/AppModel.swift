@@ -99,6 +99,7 @@ final class AppModel {
     func completeProviderSetup() {
         guard providerModel?.hasAuthenticatedProvider == true else { return }
         route = .newSession
+        Task { await refreshComposerControls() }
     }
 
     func openSearch() {
@@ -321,6 +322,9 @@ final class AppModel {
         if let providerModel {
             await providerModel.shutdown()
         }
+        if let composerControls {
+            await composerControls.shutdown()
+        }
 
         guard let installation = locatedInstallation else {
             exitTask?.cancel()
@@ -328,6 +332,7 @@ final class AppModel {
             processManager = nil
             settingsModel = nil
             providerModel = nil
+            composerControls = nil
             route = .setup
             return
         }
@@ -339,6 +344,8 @@ final class AppModel {
             runner: OmpConfigProcessRunner(executableURL: installation.executableURL)))
         let providerModel = dependencies.makeProviderModel(installation.executableURL)
         self.providerModel = providerModel
+        let composerControls = dependencies.makeComposerControls(installation.executableURL)
+        self.composerControls = composerControls
         watchUnexpectedExits(from: processManager)
         setupError = nil
         route = .providerSetup
@@ -347,6 +354,7 @@ final class AppModel {
         }
         await providerModel.loadProviders()
         guard self.providerModel === providerModel else { return }
+        await refreshComposerControls()
         if providerModel.hasAuthenticatedProvider {
             route = .newSession
         }

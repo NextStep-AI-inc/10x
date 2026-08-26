@@ -264,7 +264,8 @@ private func navigationDependencies<Locator: OmpLocating>(
                     isAvailable: true,
                     isAuthenticated: true),
             ])
-        })
+        },
+        makeComposerControls: stubAppComposerControlsFactory)
 }
 
 private func navigationMetadata(_ path: String) -> SessionMetadata {
@@ -567,7 +568,8 @@ private func testDependencies<Locator: OmpLocating>(
         sessionLibrary: SessionLibrary(root: URL(
             filePath: "/tmp/10x-provider-tests-empty",
             directoryHint: .isDirectory)),
-        makeProviderModel: makeProviderModel)
+        makeProviderModel: makeProviderModel,
+        makeComposerControls: stubAppComposerControlsFactory)
 }
 
 private final class ProviderRefreshClock: @unchecked Sendable {
@@ -590,4 +592,28 @@ private final class ProviderRefreshClock: @unchecked Sendable {
             storedDate = newValue
         }
     }
+}
+
+private let stubAppComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerControlsModel = { _ in
+    ComposerControlsModel(
+        catalog: StubAppComposerCatalog(),
+        defaults: StubAppComposerDefaults())
+}
+
+private actor StubAppComposerCatalog: ComposerCatalogLoading {
+    func load() async throws -> ComposerCatalogSnapshot {
+        ComposerCatalogSnapshot(
+            models: [],
+            selected: nil,
+            thinkingLevel: nil,
+            fastModeEnabled: false,
+            fastModeActive: false)
+    }
+
+    func shutdown() async {}
+}
+
+private actor StubAppComposerDefaults: ComposerDefaultPersisting {
+    func setDefaultModel(provider: String, modelID: String) async throws {}
+    func setDefaultThinkingLevel(_ level: String) async throws {}
 }

@@ -25,6 +25,29 @@ import Testing
     #expect(groups[0].sessions == [metadata])
 }
 
+@Test func choosableProjectURLsSkipsUnknownAndIncludesSelected() {
+    let known = session(path: "/sessions/a.jsonl", cwd: "/tmp/alpha", modified: 10)
+    let unknown = session(path: "/sessions/u.jsonl", cwd: "", modified: 20)
+    let selected = URL(filePath: "/tmp/new-folder", directoryHint: .isDirectory)
+
+    let urls = ProjectSessionGrouper.choosableProjectURLs(
+        from: [known, unknown],
+        including: selected)
+
+    #expect(urls.map(\.path) == ["/tmp/new-folder", "/tmp/alpha"])
+}
+
+@Test func choosableProjectURLsDoesNotDuplicateSelected() {
+    let known = session(path: "/sessions/a.jsonl", cwd: "/tmp/alpha", modified: 10)
+    let selected = URL(filePath: "/tmp/alpha", directoryHint: .isDirectory)
+
+    let urls = ProjectSessionGrouper.choosableProjectURLs(
+        from: [known],
+        including: selected)
+
+    #expect(urls.map(\.path) == ["/tmp/alpha"])
+}
+
 private func session(path: String, cwd: String, modified: TimeInterval) -> SessionMetadata {
     SessionMetadata(
         path: path,

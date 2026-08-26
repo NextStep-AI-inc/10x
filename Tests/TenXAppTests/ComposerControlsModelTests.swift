@@ -301,6 +301,8 @@ private actor FakeComposerCatalog: ComposerCatalogLoading {
     func load() async throws -> ComposerCatalogSnapshot {
         snapshot
     }
+
+    func shutdown() async {}
 }
 
 private actor FakeComposerDefaults: ComposerDefaultPersisting {

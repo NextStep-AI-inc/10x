@@ -3,6 +3,7 @@ import Observation
 
 protocol ComposerCatalogLoading: Sendable {
     func load() async throws -> ComposerCatalogSnapshot
+    func shutdown() async
 }
 
 extension OmpModelCatalogService: ComposerCatalogLoading {}
@@ -188,6 +189,11 @@ final class ComposerControlsModel {
 
     func detachActiveSession() {
         activeSession = nil
+    }
+
+    func shutdown() async {
+        detachActiveSession()
+        await catalog.shutdown()
     }
 
     private func applyFastModeVisibility(preservingEnabled enabled: Bool) {

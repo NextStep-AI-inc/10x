@@ -588,7 +588,8 @@ import Testing
         sessionLibrary: SessionLibrary(root: URL(
             filePath: "/tmp/10x-full-shell-snapshot",
             directoryHint: .isDirectory)),
-        makeProviderModel: { _ in providerModel }))
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
     await model.bootstrap()
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     model.sessions = fullShellSessions
@@ -1037,6 +1038,67 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
+@Test func composerFooterFastPresentSnapshot() async throws {
+    let anthropic = ComposerModelInfo(
+        id: "claude-opus-4-8",
+        name: "Claude Opus 4.8",
+        provider: "anthropic",
+        api: "anthropic-messages",
+        thinkingEfforts: ["low", "high"],
+        requiresEffort: false)
+    let controls = await snapshotComposerControls(
+        models: [anthropic],
+        selected: anthropic,
+        thinkingLevel: "high",
+        fastModeEnabled: true)
+
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant("Ship the Bauhaus composer footer."),
+            presentation: .newSession(
+                projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                projectURLs: [URL(filePath: "/tmp/10x", directoryHint: .isDirectory)],
+                onChooseProject: { _ in },
+                onAddExistingFolder: {}),
+            controls: controls,
+            controlsMode: .newSession,
+            onSend: {}),
+        name: "composer-footer-fast-present",
+        size: CGSize(width: 780, height: 140))
+}
+
+@MainActor
+@Test func composerFooterFastAbsentSnapshot() async throws {
+    let cursor = ComposerModelInfo(
+        id: "gpt-5",
+        name: "GPT-5",
+        provider: "cursor",
+        api: "cursor-agent",
+        thinkingEfforts: [],
+        requiresEffort: false)
+    let controls = await snapshotComposerControls(
+        models: [cursor],
+        selected: cursor,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant("Hide Fast when the model cannot support it."),
+            presentation: .active(controller: SessionController(
+                processManager: SessionProcessManager(),
+                previewItems: [],
+                runtimeState: .idle,
+                modelName: "GPT-5",
+                thinkingLevel: "Auto")),
+            controls: controls,
+            controlsMode: .activeSession,
+            onSend: {}),
+        name: "composer-footer-fast-absent",
+        size: CGSize(width: 780, height: 140))
+}
+
+@MainActor
 private func compactTranscriptController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
     let user = TranscriptMessage(
@@ -1275,3 +1337,51 @@ private let snapshotEmptyIDEStore: IDEPreferenceStore = {
     defaults.removePersistentDomain(forName: suiteName)
     return IDEPreferenceStore(defaults: defaults, registry: .testing(applications: [:]))
 }()
+
+@MainActor
+private func snapshotComposerControls(
+    models: [ComposerModelInfo],
+    selected: ComposerModelInfo,
+    thinkingLevel: String,
+    fastModeEnabled: Bool
+) async -> ComposerControlsModel {
+    let catalog = SnapshotComposerCatalog(snapshot: ComposerCatalogSnapshot(
+        models: models,
+        selected: selected,
+        thinkingLevel: thinkingLevel,
+        fastModeEnabled: fastModeEnabled,
+        fastModeActive: false))
+    let model = ComposerControlsModel(
+        catalog: catalog,
+        defaults: SnapshotComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)))
+    return model
+}
+
+private actor SnapshotComposerCatalog: ComposerCatalogLoading {
+    private let snapshot: ComposerCatalogSnapshot
+
+    init(snapshot: ComposerCatalogSnapshot) {
+        self.snapshot = snapshot
+    }
+
+    func load() async throws -> ComposerCatalogSnapshot { snapshot }
+
+    func shutdown() async {}
+}
+
+private actor SnapshotComposerDefaults: ComposerDefaultPersisting {
+    func setDefaultModel(provider: String, modelID: String) async throws {}
+    func setDefaultThinkingLevel(_ level: String) async throws {}
+}
+
+private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerControlsModel = { _ in
+    ComposerControlsModel(
+        catalog: SnapshotComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [],
+            selected: nil,
+            thinkingLevel: nil,
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: SnapshotComposerDefaults())
+}

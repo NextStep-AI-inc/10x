@@ -21,4 +21,20 @@ enum ProjectSessionGrouper {
             return leftDate > rightDate
         }
     }
+
+    static func choosableProjectURLs(
+        from sessions: [SessionMetadata],
+        including selected: URL? = nil
+    ) -> [URL] {
+        var urls = groups(sessions)
+            .map(\.projectURL)
+            .filter { $0 != ProjectSessionGroup.unknownProjectURL }
+        if let selected {
+            let standardized = selected.standardizedFileURL
+            if !urls.contains(where: { $0.path == standardized.path }) {
+                urls.insert(standardized, at: 0)
+            }
+        }
+        return urls
+    }
 }

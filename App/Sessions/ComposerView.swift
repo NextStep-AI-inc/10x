@@ -2,21 +2,44 @@ import OmpKit
 import SwiftUI
 
 enum ComposerPresentation {
-    case newSession(projectURL: URL?, onChooseProject: () -> Void)
+    case newSession(
+        projectURL: URL?,
+        projectURLs: [URL],
+        onChooseProject: (URL) -> Void,
+        onAddExistingFolder: () -> Void)
     case active(controller: SessionController)
 }
 
 struct ComposerView: View {
     @Binding var draft: String
+    @Binding var isProjectFlyoutPresented: Bool
     let presentation: ComposerPresentation
+    let controls: ComposerControlsModel?
+    let controlsMode: ComposerControlsMode
     let onSend: () -> Void
+
+    init(
+        draft: Binding<String>,
+        isProjectFlyoutPresented: Binding<Bool> = .constant(false),
+        presentation: ComposerPresentation,
+        controls: ComposerControlsModel? = nil,
+        controlsMode: ComposerControlsMode = .newSession,
+        onSend: @escaping () -> Void
+    ) {
+        _draft = draft
+        _isProjectFlyoutPresented = isProjectFlyoutPresented
+        self.presentation = presentation
+        self.controls = controls
+        self.controlsMode = controlsMode
+        self.onSend = onSend
+    }
 
     private var canSend: Bool {
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
         }
         switch presentation {
-        case .newSession(let projectURL, _):
+        case .newSession(let projectURL, _, _, _):
             return projectURL != nil
         case .active(let controller):
             return controller.isComposerAvailable
@@ -24,6 +47,13 @@ struct ComposerView: View {
     }
 
     var body: some View {
+        composerCard
+            .onExitCommand {
+                isProjectFlyoutPresented = false
+            }
+    }
+
+    private var composerCard: some View {
         VStack(spacing: 0) {
             TextEditor(text: $draft)
                 .font(TenXTypography.body(size: 14))
@@ -54,6 +84,17 @@ struct ComposerView: View {
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
+            .zIndex(isProjectFlyoutPresented ? 1 : 0)
+
+            if let errorMessage = controls?.errorMessage {
+                Text(errorMessage)
+                    .font(TenXTypography.body(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+            }
         }
         .background(.white)
         .overlay {
@@ -65,28 +106,34 @@ struct ComposerView: View {
     @ViewBuilder
     private var footerControls: some View {
         switch presentation {
-        case .newSession(let projectURL, let onChooseProject):
-            Button(action: onChooseProject) {
-                Label(projectURL?.lastPathComponent ?? "Choose project", systemImage: "folder")
-            }
-            .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
+        case .newSession(let projectURL, let projectURLs, let onChooseProject, let onAddExistingFolder):
+            ChooseProjectControl(
+                projectURL: projectURL,
+                projectURLs: projectURLs,
+                onChoose: onChooseProject,
+                onAddExistingFolder: onAddExistingFolder,
+                isPresented: $isProjectFlyoutPresented)
 
             Button("Local") {}
                 .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
-            Button("GPT-5.6") {}
-                .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
-            Button("High") {}
-                .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
+
+            if let controls {
+                ComposerSessionControlsView(model: controls, mode: controlsMode)
+            }
 
         case .active(let controller):
             if controller.runtimeState == .streaming {
                 behaviorButton("Steer", behavior: .steer, controller: controller)
                 behaviorButton("Follow up", behavior: .followUp, controller: controller)
             }
-            Text(controller.modelName)
-                .font(TenXTypography.body(size: 10, weight: .medium))
-            Text(controller.thinkingLevel)
-                .font(TenXTypography.body(size: 10, weight: .medium))
+            if let controls {
+                ComposerSessionControlsView(model: controls, mode: controlsMode)
+            } else {
+                Text(controller.modelName)
+                    .font(TenXTypography.body(size: 10, weight: .medium))
+                Text(controller.thinkingLevel)
+                    .font(TenXTypography.body(size: 10, weight: .medium))
+            }
             if controller.queuedMessageCount > 0 {
                 Text("\(controller.queuedMessageCount) queued")
                     .font(TenXTypography.body(size: 10, weight: .medium))

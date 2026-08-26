@@ -108,7 +108,9 @@ struct AppShellView: View {
             NewSessionView(model: model)
         case .session:
             if let activeSession = model.activeSession {
-                ActiveSessionView(controller: activeSession)
+                ActiveSessionView(
+                    controller: activeSession,
+                    controls: model.composerControls)
             } else {
                 Text("Session unavailable")
                     .font(TenXTypography.body(size: 13))
