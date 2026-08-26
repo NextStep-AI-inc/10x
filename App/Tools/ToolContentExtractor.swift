@@ -793,9 +793,14 @@ enum ToolContentExtractor {
             keys: ["path", "filePath", "file_path", "absolutePath"])
             ?? nestedString(in: result, paths: [["details", "path"], ["path"]])
         let argumentText = firstString(in: arguments, keys: ["content", "text"])
-        let text = prefersArgumentContent
+        let rawText = prefersArgumentContent
             ? (argumentText ?? envelope.text)
             : (envelope.text ?? argumentText)
+        let text = if let rawText, !prefersArgumentContent {
+            normalizedReadText(rawText)
+        } else {
+            rawText
+        }
         let body: ToolBody
         if let text, !text.isEmpty {
             body = .source(SourcePresentation(
@@ -815,6 +820,35 @@ enum ToolContentExtractor {
             outcome: text.map(lineSummary) ?? envelopeOutcome(envelope, phase: phase),
             reference: path.flatMap { reference(forPath: $0) },
             body: body)
+    }
+
+    private static func normalizedReadText(_ text: String) -> String {
+        let lines = text
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        guard lines.count > 1,
+              lines[0].hasPrefix("["),
+              lines[0].hasSuffix("]"),
+              lines[0].contains("#")
+        else { return text }
+
+        var previousNumber: Int?
+        var sourceLines: [String] = []
+        for (offset, line) in lines.dropFirst().enumerated() {
+            if line.isEmpty, offset == lines.count - 2 {
+                sourceLines.append("")
+                continue
+            }
+            guard let colon = line.firstIndex(of: ":"),
+                  colon > line.startIndex,
+                  line[..<colon].allSatisfy(\.isNumber),
+                  let number = Int(line[..<colon]),
+                  previousNumber.map({ number == $0 + 1 }) ?? true
+            else { return text }
+            previousNumber = number
+            sourceLines.append(String(line[line.index(after: colon)...]))
+        }
+        return sourceLines.joined(separator: "\n")
     }
 
     private static func editCard(

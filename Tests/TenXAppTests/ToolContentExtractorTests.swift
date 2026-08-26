@@ -332,6 +332,31 @@ import Testing
     #expect(writtenSource.language == "py")
 }
 
+@Test func readCardsRemoveOMPLineProtocolBeforeHighlighting() {
+    let card = ToolContentExtractor.card(
+        name: "read",
+        arguments: .object(["path": .string("~/.omp/agent/config.yml")]),
+        result: result(text: """
+        [~/.omp/agent/config.yml#L1A3]
+        1:theme:
+        2:  dark: titanium
+        3:  light: light
+        """),
+        phase: .complete)
+
+    #expect(card.outcome == "3 lines")
+    guard case .source(let source, _) = card.body else {
+        Issue.record("Read should keep using the source surface")
+        return
+    }
+    #expect(source.text == "theme:\n  dark: titanium\n  light: light")
+    #expect(source.lines.map(\.plainText) == [
+        "theme:",
+        "  dark: titanium",
+        "  light: light",
+    ])
+}
+
 @Test func editAliasesPreserveMultiFileDiffsAndCounts() {
     let patch = """
     diff --git a/App/A.swift b/App/A.swift
