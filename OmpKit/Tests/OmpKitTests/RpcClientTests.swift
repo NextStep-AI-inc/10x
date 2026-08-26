@@ -4,17 +4,27 @@ import Foundation
 
 func makeClient(
     mode: String,
+    modeArguments: [String] = [],
     startupTimeout: Duration = .seconds(30),
     requestTimeout: Duration = .seconds(30)
 ) -> RpcClient {
     var cfg = RpcClientConfiguration()
     cfg.executable = "/usr/bin/env"
     cfg.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
+        + modeArguments
     cfg.rawArgv = true   // extraArguments become the full argv — no omp flags prepended
     cfg.noSession = true
     cfg.startupTimeout = startupTimeout
     cfg.requestTimeout = requestTimeout
     return RpcClient(configuration: cfg)
+}
+
+private actor RpcCompletionProbe {
+    private(set) var hasPendingFinished = false
+    private(set) var hasTerminationFinished = false
+
+    func markPendingFinished() { hasPendingFinished = true }
+    func markTerminationFinished() { hasTerminationFinished = true }
 }
 
 @Test func startNegotiatesV2() async throws {
@@ -129,6 +139,63 @@ func makeClient(
     #expect(code == 5)
     #expect(stderr.contains("eof-on-get-state"))
     await c.shutdown()
+}
+
+@Test func stdoutEOFWaitsForAuthoritativeExitStatus() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("RpcExitGate-\(UUID().uuidString)", isDirectory: true)
+    let stdoutClosed = root.appendingPathComponent("stdout-closed")
+    let release = root.appendingPathComponent("release")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let client = makeClient(
+        mode: "close-stdout-before-exit",
+        modeArguments: [stdoutClosed.path, release.path])
+    _ = try await client.start()
+    let probe = RpcCompletionProbe()
+    let pending = Task { () -> Result<RpcResponse, any Error> in
+        let result: Result<RpcResponse, any Error>
+        do { result = .success(try await client.send(.getState(), timeout: .seconds(10))) }
+        catch { result = .failure(error) }
+        await probe.markPendingFinished()
+        return result
+    }
+    let termination = Task {
+        for await _ in client.termination {}
+        await probe.markTerminationFinished()
+    }
+
+    let observedStdoutClose = await withTimeout(.seconds(5)) { () -> Bool in
+        while !Task.isCancelled {
+            if FileManager.default.fileExists(atPath: stdoutClosed.path) { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return false
+    } ?? false
+    #expect(observedStdoutClose)
+    if observedStdoutClose {
+        // Completion is an absence assertion, so allow one short, bounded window
+        // only after the child confirms stdout is closed and reader work is eligible.
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await !probe.hasPendingFinished)
+        #expect(await !probe.hasTerminationFinished)
+    }
+
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    let result = await pending.value
+    await termination.value
+
+    guard case .failure(let error) = result,
+          case .processExited(let code, let stderr) = error as? RpcClientError else {
+        Issue.record("expected the pending request to fail with processExited")
+        await client.shutdown()
+        return
+    }
+    #expect(code == 23)
+    #expect(stderr.contains("close-stdout-before-exit"))
+    #expect(await client.exitCode == 23)
+    await client.shutdown()
 }
 
 @Test func sendBeforeStartThrows() async {

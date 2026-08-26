@@ -144,6 +144,14 @@ for line in sys.stdin:
         emit({"type": "response", "command": ctype, "success": False,
               "error": "idless failure"})
     elif ctype == "get_state":
+        if mode == "close-stdout-before-exit":
+            os.close(W.fileno())
+            open(sys.argv[2], "w", encoding="utf-8").close()
+            while not os.path.exists(sys.argv[3]):
+                time.sleep(0.01)
+            sys.stderr.write("close-stdout-before-exit\n")
+            sys.stderr.flush()
+            raise SystemExit(23)
         if mode == "block-get-state":
             open(sys.argv[3], "w", encoding="utf-8").close()
             while not os.path.exists(sys.argv[2]):

@@ -70,6 +70,7 @@ public actor RpcClient {
     private var readerTask: Task<Void, Never>?
     private var started = false
     private var terminated = false
+    private var authoritativeExitCode: Int32?
 
     private let eventStream: AsyncStream<RpcFrame>
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
@@ -200,7 +201,10 @@ public actor RpcClient {
 
     /// The child's exit code once it has exited, nil while it is running.
     public var exitCode: Int32? {
-        get async { await transport.exitStatus }
+        get async {
+            if let authoritativeExitCode { return authoritativeExitCode }
+            return await transport.exitStatus
+        }
     }
 
     public func shutdown() async {
@@ -248,7 +252,12 @@ public actor RpcClient {
             for await line in self.transport.lines {
                 await self.handle(line: line)
             }
-            await self.handleStreamEnd()
+            for await exitCode in self.transport.onExit {
+                await self.handleStreamEnd(
+                    exitCode: exitCode,
+                    stderrTail: await self.transport.stderrSnapshot())
+                return
+            }
         }
     }
 
@@ -341,12 +350,11 @@ public actor RpcClient {
         }
     }
 
-    private func handleStreamEnd() async {
+    private func handleStreamEnd(exitCode: Int32, stderrTail: String) {
         guard !terminated else { return }
+        authoritativeExitCode = exitCode
         terminated = true
-        failAllPending(
-            exitCode: await transport.exitStatus,
-            stderrTail: await transport.stderrSnapshot())
+        failAllPending(exitCode: exitCode, stderrTail: stderrTail)
         finishStreams()
     }
 

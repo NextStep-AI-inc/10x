@@ -166,5 +166,10 @@ func withTimeout<T: Sendable>(
         return lines
     } ?? []
     #expect(lines.count == 201)  // ready + 200 notices
-    #expect(await transport.exitStatus == 0)
+    let exitCode = await withTimeout(.seconds(5)) { () -> Int32 in
+        for await code in transport.onExit { return code }
+        return Int32.min
+    }
+    #expect(exitCode == 0)
+    #expect(await transport.exitStatus == exitCode)
 }
