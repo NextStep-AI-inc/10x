@@ -68,6 +68,35 @@ import Testing
     #expect(message.document.source == message.visibleText)
 }
 
+@Test func transcriptMessageKeepsUnsupportedBlocksWithoutExposingPrivateContent() {
+    let message = TranscriptMessage(
+        id: "message",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .array([
+                .object(["type": .string("text"), "text": .string("## Result")]),
+                .object(["type": .string("image")]),
+                .object(["type": .string("resource_link"), "name": .string("Build log")]),
+                .object(["type": .string("future_block")]),
+                .object(["type": .string("thinking"), "thinking": .string("Private")]),
+                .object(["type": .string("tool_use"), "name": .string("read")]),
+            ]),
+        ]),
+        isFinal: true)
+
+    #expect(message.document.blocks.map(\.kind) == [
+        .heading,
+        .unsupported,
+        .unsupported,
+        .unsupported,
+    ])
+    #expect(message.visibleText.contains("Image attachment"))
+    #expect(message.visibleText.contains("Resource attachment: Build log"))
+    #expect(message.visibleText.contains("Unsupported future block content"))
+    #expect(!message.visibleText.contains("Private"))
+    #expect(!message.visibleText.contains("read"))
+}
+
 @Test func assistantTranscriptUsesReadableProseMetrics() {
     #expect(MessageBlockView.proseFontSize == 15)
     #expect(MessageBlockView.proseLineSpacing == 4)

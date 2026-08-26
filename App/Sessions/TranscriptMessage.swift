@@ -60,10 +60,10 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             modelRole: attribution.modelRole)
         self.isFinal = isFinal
         stopReason = raw["stopReason"]?.stringValue
-        let text = Self.visibleText(from: raw)
+        let normalizedDocument = Self.contentDocument(from: raw)
         let displayText: String
-        if !text.isEmpty {
-            displayText = text
+        if !normalizedDocument.source.isEmpty {
+            displayText = normalizedDocument.source
         } else if let errorMessage = raw["errorMessage"]?.stringValue,
                   !errorMessage.isEmpty {
             displayText = errorMessage
@@ -74,17 +74,74 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             default: ""
             }
         }
-        document = MessageContentParser.parse(displayText)
+        document = normalizedDocument.source.isEmpty
+            ? MessageContentParser.parse(displayText)
+            : normalizedDocument
     }
 
     static func visibleText(from message: JSONValue) -> String {
-        if let content = message["content"]?.stringValue { return content }
-        return message["content"]?.arrayValue?
-            .compactMap { block in
-                guard block["type"]?.stringValue == "text" else { return nil }
-                return block["text"]?.stringValue
+        contentDocument(from: message).source
+    }
+
+    private static func contentDocument(from message: JSONValue) -> ContentDocument {
+        guard let content = message["content"] else { return .empty }
+        if let source = content.stringValue {
+            return MessageContentParser.parse(source)
+        }
+        guard let contentBlocks = content.arrayValue else { return .empty }
+
+        var blocks: [ContentBlock] = []
+        var sourceParts: [String] = []
+        for contentBlock in contentBlocks {
+            if let source = contentBlock.stringValue {
+                let document = MessageContentParser.parse(source)
+                blocks.append(contentsOf: document.blocks)
+                sourceParts.append(source)
+                continue
             }
-            .joined(separator: "\n") ?? ""
+
+            let type = contentBlock["type"]?.stringValue?.lowercased()
+            if type == "text", let source = contentBlock["text"]?.stringValue {
+                let document = MessageContentParser.parse(source)
+                blocks.append(contentsOf: document.blocks)
+                sourceParts.append(source)
+            } else if let type, isPrivateOrToolContent(type) {
+                continue
+            } else {
+                let label = unsupportedLabel(for: contentBlock, type: type)
+                blocks.append(.unsupported(label: label))
+                sourceParts.append(label)
+            }
+        }
+        return ContentDocument(
+            source: sourceParts.joined(separator: "\n"),
+            blocks: blocks)
+    }
+
+    private static func isPrivateOrToolContent(_ type: String) -> Bool {
+        let compactType = type.filter(\.isLetter)
+        return compactType == "analysis"
+            || compactType.contains("thinking")
+            || compactType.contains("reasoning")
+            || compactType.contains("toolcall")
+            || compactType.contains("tooluse")
+            || compactType.contains("toolresult")
+    }
+
+    private static func unsupportedLabel(for block: JSONValue, type: String?) -> String {
+        switch type {
+        case "image":
+            return "Image attachment"
+        case "audio":
+            return "Audio attachment"
+        case "resource", "resource_link":
+            let name = block["name"]?.stringValue ?? block["title"]?.stringValue
+            return name.map { "Resource attachment: \($0)" } ?? "Resource attachment"
+        case .some(let type):
+            return "Unsupported \(type.replacingOccurrences(of: "_", with: " ")) content"
+        case nil:
+            return "Unsupported message content"
+        }
     }
 
     static func messageDate(_ message: JSONValue) -> Date? {
