@@ -1,6 +1,6 @@
 # Composer Model Picker
 
-**Status:** Approved by product direction
+**Status:** Draft, pending review
 **Date:** 2026-08-26
 **Parent spec:** `docs/superpowers/specs/2026-08-24-10x-omp-macos-gui-design.md`
 
@@ -24,10 +24,12 @@ name and by provider, grouped by provider.
 In scope: the composer footer controls in both modes (`newSession`,
 `activeSession`) and the pure presentation functions behind them.
 
-Out of scope: `ComposerControlsModel`'s selection semantics. Both modes already
-work correctly through it (`newSession` persists a default via
-`ComposerDefaultPersisting`; `activeSession` calls `setModel` with optimistic
-rollback). This is a view-layer replacement plus additive presentation logic.
+Mostly a view-layer replacement plus additive presentation logic.
+`ComposerControlsModel`'s selection semantics stay as they are, with one
+necessary addition: `selectModel` reconciles `thinkingLevel` against the incoming
+model, described under Effort selection. Everything else about it is untouched
+(`newSession` persists a default via `ComposerDefaultPersisting`; `activeSession`
+calls `setModel` with optimistic rollback).
 
 ## Design direction
 
@@ -98,6 +100,17 @@ When a model switch leaves the current thinking level absent from the new
 model's options, the selection falls back to `"auto"` where it is offered, and
 otherwise to `thinkingEfforts[thinkingEfforts.count / 2]`.
 
+This reconciliation cannot be display-only, which is why it reaches into
+`ComposerControlsModel`. `spawnSelection` sends `thinkingLevel` verbatim whenever
+the model has options, so a stale `"auto"` held while switching to a
+`requiresEffort` model would spawn with the exact invalid value this fix exists to
+prevent. `selectModel` therefore assigns the reconciled level to in-memory
+`thinkingLevel` in both modes. It does not write that value to config: only an
+explicit effort pick persists, so switching models never silently rewrites the
+user's stored default. In `activeSession` the reconciled level is the optimistic
+value, and `applyLiveSelection` corrects it from OMP's reported state, so no
+extra `setThinkingLevel` call is issued on a model switch.
+
 ## Fast mode
 
 Unchanged in behavior: a binary toggle, shown only when
@@ -122,9 +135,11 @@ default model role and default thinking level, and gains nothing.
 - Up and Down move a highlight across the flat visible row order, skipping
   section headers. The highlight starts on the current selection, or on the first
   row when the query is non-empty.
-- Return commits the highlighted row and closes the panel.
-- Escape closes the panel without committing, via `onExitCommand`.
-- Clicking a row commits it. Clicking outside closes the panel.
+- Return commits the highlighted row. Clicking a row commits it. Neither closes
+  the panel: committing a model re-adapts the effort row in place, which is the
+  whole reason the three controls were unified into one surface.
+- Escape closes the panel, via `onExitCommand`. So does clicking outside it, or
+  clicking the trigger again. Closing never reverts a commit.
 - Rows highlight on hover with `hoverNeutralHex`, matching `FlyoutRowBackground`.
 
 ## Flyout coordination
@@ -216,6 +231,12 @@ no longer resolve against the catalog.
 Snapshot coverage in `ViewSnapshotTests` for the open panel in three states:
 default, active search with results, and empty catalog. Recording requires the
 `TEST_RUNNER_RECORD_SNAPSHOTS` environment prefix.
+
+Arrow-key navigation needs explicit handling: the search field holds focus, and
+an AppKit-backed `TextField` consumes Up and Down for caret movement by default.
+The field intercepts both, plus Return, through `onKeyPress` rather than relying
+on default responder behavior. `SearchModalView` selects with the pointer only,
+so there is no existing pattern in the app to lift here.
 
 `AccessibilityLabelTests` covers the trigger and rows: the trigger keeps its
 `Model` label and selected-model value; each row is labeled with its model name
