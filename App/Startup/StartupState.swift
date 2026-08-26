@@ -35,13 +35,6 @@ enum StartupStageStatus: String, Equatable, Sendable {
     case stopped = "Stopped"
 }
 
-struct StartupStageRow: Identifiable, Equatable, Sendable {
-    let id: StartupStageID
-    let status: StartupStageStatus
-    var title: String { id.title }
-    var accessibilityLabel: String { "\(title), \(status.rawValue)" }
-}
-
 enum StartupPhase: Equatable, Sendable {
     case preparing
     case recovery
@@ -68,9 +61,12 @@ final class StartupState {
     private var statuses: [StartupStageID: StartupStageStatus] = Dictionary(
         uniqueKeysWithValues: StartupStageID.allCases.map { ($0, .queued) })
 
-    var rows: [StartupStageRow] {
+    var rows: [SplashLedgerRow] {
         StartupStageID.allCases.map {
-            StartupStageRow(id: $0, status: statuses[$0] ?? .queued)
+            SplashLedgerRow(
+                id: $0.rawValue,
+                title: $0.title,
+                status: statuses[$0] ?? .queued)
         }
     }
 

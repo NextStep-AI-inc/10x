@@ -42,10 +42,9 @@ import Testing
     state.enterRecovery(attemptID: attempt)
     let size = CGSize(width: 640, height: 400)
     let root = SplashView(
-        state: state,
-        buildVersion: "0.1.0",
-        onRetry: {},
-        onContinue: {})
+        presentation: SplashPresentation.startup(
+            state: state, onRetry: {}, onContinue: {}),
+        buildVersion: "0.1.0")
         .frame(width: size.width, height: size.height)
         .environment(\.colorScheme, .light)
         .environment(\.startupSignalReduceMotionOverride, true)

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct StartupLedgerView: View {
-    let rows: [StartupStageRow]
+    let rows: [SplashLedgerRow]
 
     var body: some View {
         VStack(spacing: 0) {

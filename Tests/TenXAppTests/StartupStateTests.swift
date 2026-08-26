@@ -15,12 +15,7 @@ import Testing
 @Test func startupRowsUseTheApprovedOrderAndExactCopy() {
     let state = StartupState()
 
-    #expect(state.rows.map(\.id) == [
-        .runtime,
-        .sessions,
-        .settings,
-        .recentProjects,
-    ])
+    #expect(state.rows.map(\.id) == StartupStageID.allCases.map(\.rawValue))
     #expect(state.rows.map(\.title) == [
         "Preparing runtime",
         "Loading sessions",
@@ -106,4 +101,42 @@ import Testing
 
     #expect(state.status(of: .recentProjects) == .stopped)
     #expect(state.beginRetry(id: UUID()) == [.recentProjects])
+}
+
+@MainActor
+@Test func startupPresentationCarriesTheLedgerAndFooterUnchanged() {
+    let state = StartupState()
+    let attempt = UUID()
+    state.beginAttempt(id: attempt)
+    state.markLoading(.runtime, attemptID: attempt)
+
+    let presentation = SplashPresentation.startup(
+        state: state, onRetry: {}, onContinue: {})
+
+    #expect(presentation.heading == "Preparing your workspace")
+    #expect(presentation.accessibilityLabel == "Preparing your workspace")
+    #expect(presentation.footerTitle == "Preparing runtime")
+    #expect(presentation.footerDetail == "Checking OMP and provider access")
+    #expect(presentation.footerTone == .working)
+    #expect(presentation.signalProgress == nil)
+    #expect(presentation.isSignalAnimating)
+    #expect(presentation.actions.isEmpty)
+}
+
+@MainActor
+@Test func startupRecoveryPresentationOffersRetryThenContinue() {
+    let state = StartupState()
+    let attempt = UUID()
+    state.beginAttempt(id: attempt)
+    state.enterRecovery(attemptID: attempt)
+
+    let presentation = SplashPresentation.startup(
+        state: state, onRetry: {}, onContinue: {})
+
+    #expect(presentation.footerTitle == "Startup needs attention")
+    #expect(presentation.footerTone == .failed)
+    #expect(presentation.isSignalFailed)
+    #expect(!presentation.isSignalAnimating)
+    #expect(presentation.actions.map(\.title) == ["Retry", "Continue to workspace"])
+    #expect(presentation.actions.map(\.kind) == [.primary, .secondary])
 }

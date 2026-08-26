@@ -1,15 +1,13 @@
 import SwiftUI
 
 struct SplashView: View {
-    let state: StartupState
+    let presentation: SplashPresentation
     let buildVersion: String
-    let onRetry: () -> Void
-    let onContinue: () -> Void
 
     @Environment(\.accessibilityAnnouncer) private var announcer
-    @FocusState private var isRetryFocused: Bool
-    @AccessibilityFocusState private var isRetryAccessibilityFocused: Bool
-    @State private var announcedRows: [StartupStageRow] = []
+    @FocusState private var isPrimaryFocused: Bool
+    @AccessibilityFocusState private var isPrimaryAccessibilityFocused: Bool
+    @State private var announcedRows: [SplashLedgerRow] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,13 +17,13 @@ struct SplashView: View {
                         .font(TenXTypography.mono(size: 10, weight: .medium))
                         .tracking(1.3)
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    Text("Preparing your workspace")
+                    Text(presentation.heading)
                         .font(TenXTypography.title(size: 27))
                         .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                StartupLedgerView(rows: state.rows)
+                StartupLedgerView(rows: presentation.rows)
             }
             .padding(.horizontal, 28)
             .padding(.top, 26)
@@ -33,8 +31,9 @@ struct SplashView: View {
             .frame(height: 248)
 
             StartupSignalView(
-                isAnimating: state.isSignalAnimating,
-                isFailed: state.phase == .recovery)
+                isAnimating: presentation.isSignalAnimating,
+                isFailed: presentation.isSignalFailed,
+                progress: presentation.signalProgress)
                 .frame(height: 48)
 
             footer
@@ -51,21 +50,18 @@ struct SplashView: View {
         }
         .shadow(color: Color.black.opacity(0.14), radius: 18, x: 0, y: 10)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Preparing your workspace")
+        .accessibilityLabel(presentation.accessibilityLabel)
         .onAppear {
-            announcedRows = state.rows
-            if state.phase == .recovery {
-                focusRecoveryAction()
-            }
+            announcedRows = presentation.rows
+            if !presentation.actions.isEmpty { focusPrimaryAction() }
         }
-        .onChange(of: state.phase) { _, phase in
-            guard phase == .recovery else { return }
-            focusRecoveryAction()
-            announcer.announce(
-                "Startup needs attention. Retry the stopped work or continue with what is ready.")
+        .onChange(of: presentation.footerTone) { _, tone in
+            guard tone == .failed else { return }
+            focusPrimaryAction()
+            announcer.announce("\(presentation.footerTitle). \(presentation.footerDetail)")
         }
-        .onChange(of: state.rows) { _, rows in
-            guard state.phase != .recovery else {
+        .onChange(of: presentation.rows) { _, rows in
+            guard presentation.footerTone != .failed else {
                 announcedRows = rows
                 return
             }
@@ -82,24 +78,18 @@ struct SplashView: View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(state.footerTitle)
+                    Text(presentation.footerTitle)
                         .font(TenXTypography.mono(size: 10, weight: .semibold))
                         .foregroundStyle(footerTitleColor)
-                    Text(state.footerDetail)
+                    Text(presentation.footerDetail)
                         .font(TenXTypography.mono(size: 10))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 }
-                if state.phase == .recovery {
+                if !presentation.actions.isEmpty {
                     HStack(spacing: 8) {
-                        Button("Retry", action: onRetry)
-                            .font(TenXTypography.body(size: 12, weight: .medium))
-                            .buttonStyle(.bordered)
-                            .tint(TenXPalette.color(TenXPalette.interactiveCyanHex))
-                            .controlSize(.small)
-                            .focused($isRetryFocused)
-                            .accessibilityFocused($isRetryAccessibilityFocused)
-                        Button("Continue to workspace", action: onContinue)
-                            .buttonStyle(GhostActionStyle())
+                        ForEach(presentation.actions) { action in
+                            actionButton(action)
+                        }
                     }
                 }
             }
@@ -108,17 +98,34 @@ struct SplashView: View {
         }
     }
 
+    @ViewBuilder
+    private func actionButton(_ action: SplashAction) -> some View {
+        switch action.kind {
+        case .primary:
+            Button(action.title) { action.perform() }
+                .font(TenXTypography.body(size: 12, weight: .medium))
+                .buttonStyle(.bordered)
+                .tint(TenXPalette.color(TenXPalette.interactiveCyanHex))
+                .controlSize(.small)
+                .focused($isPrimaryFocused)
+                .accessibilityFocused($isPrimaryAccessibilityFocused)
+        case .secondary:
+            Button(action.title) { action.perform() }
+                .buttonStyle(GhostActionStyle())
+        }
+    }
+
     private var footerTitleColor: Color {
-        state.phase == .recovery
+        presentation.footerTone == .failed
             ? TenXPalette.color(TenXPalette.signalRedHex)
             : TenXPalette.color(TenXPalette.cyanHex)
     }
 
-    private func focusRecoveryAction() {
+    private func focusPrimaryAction() {
         Task { @MainActor in
             await Task.yield()
-            isRetryFocused = true
-            isRetryAccessibilityFocused = true
+            isPrimaryFocused = true
+            isPrimaryAccessibilityFocused = true
         }
     }
 }

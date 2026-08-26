@@ -14,11 +14,12 @@ struct StartupSceneView: View {
 
     var body: some View {
         SplashView(
-            state: model.startupState,
+            presentation: SplashPresentation.startup(
+                state: model.startupState,
+                onRetry: { Task { await model.retryStartup() } },
+                onContinue: { Task { await model.continueToWorkspace() } }),
             buildVersion: Bundle.main.object(
-                forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
-            onRetry: { Task { await model.retryStartup() } },
-            onContinue: { Task { await model.continueToWorkspace() } })
+                forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
         .task { await model.bootstrap() }
         .onChange(of: model.startupState.handoffGeneration, initial: true) {
             _, generation in
