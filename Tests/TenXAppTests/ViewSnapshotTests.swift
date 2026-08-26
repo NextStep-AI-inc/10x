@@ -17,7 +17,7 @@ import Testing
         startDate: Date(timeIntervalSince1970: 1),
         endDate: Date(timeIntervalSince1970: 1.4))
     try assertSnapshot(
-        GenericToolCardView(presentation: presentation)
+        ToolCardView(presentation: presentation)
             .frame(width: 720),
         name: "generic-tool-card")
 }
@@ -1061,12 +1061,97 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         endDate: Date(timeIntervalSince1970: 1.8))
     try assertSnapshot(
         VStack(spacing: 18) {
-            BashToolCardView(presentation: running)
-            BashToolCardView(presentation: failed)
+            ToolCardView(presentation: running)
+            ToolCardView(presentation: failed)
         }
         .frame(width: 720),
         name: "activity-running-error",
         size: CGSize(width: 800, height: 520))
+}
+
+@MainActor
+@Test func semanticToolSurfacesSnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1)
+    let source = ToolPresentation(
+        id: "semantic-source",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: snapshotTextResult("struct TranscriptView: View {\n    let controller: SessionController\n}"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.3))
+    let collection = ToolPresentation(
+        id: "semantic-collection",
+        name: "web_search",
+        arguments: .object(["query": .string("Open multimodal protocol")]),
+        result: .object(["details": .object(["results": .array([
+            .object([
+                "title": .string("OMP reference"),
+                "url": .string("https://example.com/omp"),
+                "snippet": .string("A typed protocol for model tools and ordered content blocks."),
+            ]),
+            .object([
+                "title": .string("Tool result guide"),
+                "url": .string("https://example.com/tools"),
+                "snippet": .string("Text, resources, images, and structured details remain in order."),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.6))
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    let mcp = ToolPresentation(
+        id: "semantic-mcp",
+        name: "mcp__vision__render",
+        arguments: .object(["quality": .string("high")]),
+        result: .object([
+            "content": .array([
+                .object(["type": .string("text"), "text": .string("Rendered preview")]),
+                .object([
+                    "type": .string("image"),
+                    "url": .string(previewPath),
+                    "mimeType": .string("image/png"),
+                    "name": .string("Wrapped source preview"),
+                ]),
+                .object([
+                    "type": .string("resource_link"),
+                    "name": .string("Render report"),
+                    "uri": .string("https://example.com/report"),
+                ]),
+                .object([
+                    "type": .string("image"),
+                    "data": .string("not-valid-base64"),
+                    "mimeType": .string("image/png"),
+                    "name": .string("Malformed preview"),
+                ]),
+            ]),
+            "details": .object([
+                "width": .int(800),
+                "height": .int(600),
+                "nested": .object(["status": .string("complete")]),
+            ]),
+        ]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(1.2))
+    let disclosure = ToolDisclosureState()
+    disclosure.expand(ids: [source.id, collection.id, mcp.id])
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ToolCardView(presentation: source)
+            ToolCardView(presentation: collection)
+            ToolCardView(presentation: mcp)
+        }
+        .environment(\.toolDisclosureState, disclosure)
+        .environment(snapshotEmptyIDEStore)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 720, alignment: .leading),
+        name: "semantic-tool-surfaces",
+        size: CGSize(width: 800, height: 1_500))
 }
 
 @MainActor

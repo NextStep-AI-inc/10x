@@ -53,6 +53,31 @@ import Testing
         isAlwaysAvailable: true))
 }
 
+@Test func compactToolHeaderNamesObjectOutcomeAndLifecycle() {
+    let header = ToolCardHeaderPresentation(
+        content: ToolCardContent(
+            title: "Read",
+            verb: "Read",
+            primary: "App.swift",
+            outcome: "42 lines",
+            reference: nil,
+            body: .empty("Completed without output")),
+        phase: .complete,
+        duration: "0.3s")
+
+    #expect(header.visibleText == "Read App.swift · 42 lines")
+    #expect(header.accessibilityLabel == "Read App.swift, 42 lines, Complete, 0.3 seconds")
+}
+
+@Test func attentionToolsDefaultExpandedAfterCompletion() {
+    #expect(ToolDisclosureState.defaultExpanded(
+        for: tool(id: "edit", name: "edit", phase: .complete)))
+    #expect(ToolDisclosureState.defaultExpanded(
+        for: tool(id: "proposal", name: "resolve", phase: .complete)))
+    #expect(!ToolDisclosureState.defaultExpanded(
+        for: tool(id: "read", name: "read", phase: .complete)))
+}
+
 private func tool(id: String, name: String, phase: ToolPhase) -> ToolPresentation {
     ToolPresentation(
         id: id,

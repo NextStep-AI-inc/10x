@@ -602,7 +602,7 @@ enum ToolContentExtractor {
             ToolCardContent(
                 title: humanized(tool),
                 verb: "Use",
-                primary: server,
+                primary: "\(server)/\(tool)",
                 outcome: envelopeOutcome(envelope, phase: phase),
                 reference: nil,
                 body: envelopeBody(
@@ -615,7 +615,7 @@ enum ToolContentExtractor {
             ToolCardContent(
                 title: customName,
                 verb: "Run",
-                primary: nil,
+                primary: customName,
                 outcome: envelopeOutcome(envelope, phase: phase),
                 reference: nil,
                 body: customBody(arguments: arguments, result: result, phase: phase))
@@ -630,17 +630,16 @@ enum ToolContentExtractor {
         }
 
         guard phase == .failed, kind != .think else { return base }
-        let error = envelope.error ?? envelope.text ?? "Tool failed"
+        let fullError = ansiSafe(envelope.error ?? envelope.text ?? "Tool failed")
+        let error = fullError.split(whereSeparator: \.isNewline).first.map(String.init)
+            ?? "Tool failed"
         return ToolCardContent(
             title: base.title,
             verb: base.verb,
             primary: base.primary,
             outcome: error,
             reference: base.reference,
-            body: .stack([
-                .document(MessageContentParser.parse(error)),
-                base.body,
-            ]))
+            body: failedBody(error: error, base: base.body))
     }
 
     static func file(_ presentation: ToolPresentation) -> FileToolContent? {
@@ -860,7 +859,8 @@ enum ToolContentExtractor {
             nestedString(in: result, paths: [["details", "stdout"], ["stdout"]]),
             nestedString(in: result, paths: [["details", "stderr"], ["stderr"]]),
         ].compactMap { $0 }.filter { !$0.isEmpty }
-        let output = streams.isEmpty ? (envelope.text ?? "") : streams.joined(separator: "\n")
+        let output = ansiSafe(
+            streams.isEmpty ? (envelope.text ?? "") : streams.joined(separator: "\n"))
         let exitCode = firstInt(in: result, paths: [
             ["details", "exitCode"], ["details", "exit_code"], ["exitCode"], ["exit_code"],
         ])
@@ -868,7 +868,8 @@ enum ToolContentExtractor {
             title: title,
             verb: verb,
             primary: command,
-            outcome: exitCode.map { "Exit \($0)" } ?? envelopeOutcome(envelope, phase: phase),
+            outcome: exitCode.map { "Exit \($0)" }
+                ?? (!output.isEmpty ? lineSummary(output) : envelopeOutcome(envelope, phase: phase)),
             reference: nil,
             body: .console(command: command, output: output, exitCode: exitCode))
     }
@@ -887,7 +888,7 @@ enum ToolContentExtractor {
         }
         bodies.append(.console(
             command: nil,
-            output: envelope.text ?? "",
+            output: ansiSafe(envelope.text ?? ""),
             exitCode: firstInt(in: result, paths: [["details", "exitCode"], ["exitCode"]])))
         return ToolCardContent(
             title: "Evaluate",
@@ -965,7 +966,7 @@ enum ToolContentExtractor {
         let itemReference: TranscriptReference? = if let target,
                                                     target.hasPrefix("/") || target.contains("/") {
             target.hasPrefix("http")
-                ? reference(for: target)
+                ? .web(url: target, label: label)
                 : .file(path: target, line: line)
         } else {
             nil
@@ -1123,7 +1124,7 @@ enum ToolContentExtractor {
                 id: resource.uri,
                 label: resource.name,
                 detail: resource.text ?? resource.mimeType,
-                reference: reference(forResourceURI: resource.uri),
+                reference: reference(forResource: resource),
                 state: nil)])
         case .data(let label, let value):
             .data(label: label, value: value)
@@ -1152,9 +1153,38 @@ enum ToolContentExtractor {
     ) -> String? {
         if let error = envelope.error { return error }
         if envelope.blocks.isEmpty, envelope.details?.isEmpty != false {
-            return completionText(phase)
+            return envelope.raw.map(isMeaningful) == true
+                ? "Result"
+                : completionText(phase)
         }
-        return nil
+        if !envelope.blocks.isEmpty {
+            let count = envelope.blocks.count
+            return "\(count) \(count == 1 ? "result" : "results")"
+        }
+        return "Details"
+    }
+
+    private static func failedBody(error: String, base: ToolBody) -> ToolBody {
+        let errorDocument = ToolBody.document(MessageContentParser.parse(error))
+        switch base {
+        case .console(let command, let output, let exitCode):
+            let visibleOutput = output.trimmingCharacters(in: .whitespacesAndNewlines) == error
+                ? ""
+                : output
+            guard command != nil || exitCode != nil || !visibleOutput.isEmpty else {
+                return errorDocument
+            }
+            return .stack([
+                errorDocument,
+                .console(command: command, output: visibleOutput, exitCode: exitCode),
+            ])
+        case .document(let document) where document.plainText == error:
+            return errorDocument
+        case .empty:
+            return errorDocument
+        default:
+            return .stack([errorDocument, base])
+        }
     }
 
     private static func completionText(_ phase: ToolPhase) -> String {
@@ -1178,11 +1208,14 @@ enum ToolContentExtractor {
         TranscriptReference.parseInline(value)
     }
 
-    private static func reference(forResourceURI value: String) -> TranscriptReference? {
-        if let url = URL(string: value), url.isFileURL {
+    private static func reference(forResource resource: ToolResourceItem) -> TranscriptReference? {
+        if let url = URL(string: resource.uri), url.isFileURL {
             return .file(path: url.path, line: nil)
         }
-        return reference(for: value)
+        if resource.uri.hasPrefix("http://") || resource.uri.hasPrefix("https://") {
+            return .web(url: resource.uri, label: resource.name)
+        }
+        return reference(for: resource.uri)
     }
 
     private static func firstArray(
@@ -1235,6 +1268,51 @@ enum ToolContentExtractor {
         case .reject: "Discard"
         case .propose: "Propose"
         }
+    }
+
+    private static func ansiSafe(_ text: String) -> String {
+        enum State {
+            case text
+            case escape
+            case controlSequence
+            case operatingSystemCommand
+            case operatingSystemCommandEscape
+        }
+
+        var state = State.text
+        var output = ""
+        for scalar in text.unicodeScalars {
+            switch state {
+            case .text:
+                if scalar.value == 0x1B {
+                    state = .escape
+                } else if scalar.value >= 0x20
+                    || scalar == "\n"
+                    || scalar == "\r"
+                    || scalar == "\t" {
+                    output.unicodeScalars.append(scalar)
+                }
+            case .escape:
+                if scalar == "[" {
+                    state = .controlSequence
+                } else if scalar == "]" {
+                    state = .operatingSystemCommand
+                } else {
+                    state = .text
+                }
+            case .controlSequence:
+                if (0x40...0x7E).contains(scalar.value) { state = .text }
+            case .operatingSystemCommand:
+                if scalar.value == 0x07 {
+                    state = .text
+                } else if scalar.value == 0x1B {
+                    state = .operatingSystemCommandEscape
+                }
+            case .operatingSystemCommandEscape:
+                state = scalar == "\\" ? .text : .operatingSystemCommand
+            }
+        }
+        return output
     }
 
     static func outputText(_ result: JSONValue?) -> String? {

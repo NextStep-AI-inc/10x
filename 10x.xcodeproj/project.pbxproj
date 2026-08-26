@@ -79,6 +79,8 @@
 		A10000000000000000000003 /* SourceSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* SourceSurface.swift */; };
 		A10000000000000000000005 /* SourcePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* SourcePresentationTests.swift */; };
 		A10000000000000000000007 /* ToolCardRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* ToolCardRegistryTests.swift */; };
+		A10000000000000000000009 /* ToolCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000B /* ToolCardView.swift */; };
+		A1000000000000000000000A /* ToolSurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000000C /* ToolSurfaceView.swift */; };
 		5F0460BBA8F235DBBF79C56578303B10 /* FileTypeIconDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C134480862742DABA50D1BC46A13326 /* FileTypeIconDescriptor.swift */; };
 		5FACA0103E4C510F4B195C83BA27A69B /* SubagentEventReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDA6BBA78D4E9D610F30E4F71D1365AD /* SubagentEventReducer.swift */; };
 		6154E5D3E0695225113CEDB38BC2BDB8 /* AppModelNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF205FAAE951EA3DDDF585AA2BEA7619 /* AppModelNavigationTests.swift */; };
@@ -362,6 +364,8 @@
 		A10000000000000000000004 /* SourceSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourceSurface.swift; path = App/Design/SourceSurface.swift; sourceTree = "<group>"; };
 		A10000000000000000000006 /* SourcePresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourcePresentationTests.swift; path = Tests/TenXAppTests/SourcePresentationTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000008 /* ToolCardRegistryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolCardRegistryTests.swift; path = Tests/TenXAppTests/ToolCardRegistryTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000000B /* ToolCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolCardView.swift; path = App/Tools/ToolCardView.swift; sourceTree = "<group>"; };
+		A1000000000000000000000C /* ToolSurfaceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolSurfaceView.swift; path = App/Tools/ToolSurfaceView.swift; sourceTree = "<group>"; };
 		A102D4B8054BEBC4A7B2B8EC4847A3F6 /* SubagentCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubagentCardView.swift; path = App/Sessions/SubagentCardView.swift; sourceTree = "<group>"; };
 		A1AC18462527DFC7511755A43B16CFBA /* ExtensionUIState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExtensionUIState.swift; path = App/ExtensionUI/ExtensionUIState.swift; sourceTree = "<group>"; };
 		A1BA098CAA656555309A3AF08F68EE67 /* ProviderLoginProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderLoginProvider.swift; path = App/Providers/ProviderLoginProvider.swift; sourceTree = "<group>"; };
@@ -604,11 +608,13 @@
 				7A1967C3195E5B10D8102853782363D2 /* TaskToolCardView.swift */,
 				703931D716EA59997FF119FE3DCBDA53 /* TodoToolCardView.swift */,
 				986EF245CC5BE4AF9BD69A341549C1C2 /* ToolCardRegistry.swift */,
+				A1000000000000000000000B /* ToolCardView.swift */,
 				2622FF581B4C8AB58A4769D2130DF978 /* ToolCardScaffold.swift */,
 				06F2BBC5C9DB08E4B2F677A6BF3D7DF7 /* ToolContentExtractor.swift */,
 				EC8A7666C6827538E92047B898060A3C /* ToolDisclosureState.swift */,
 				146D5660523F883C48D8A4B52D4AFB75 /* ToolEventReducer.swift */,
 				7CFC8FE295B46DCE4389194219BDF1FA /* ToolPresentation.swift */,
+				A1000000000000000000000C /* ToolSurfaceView.swift */,
 				D18084C5D261A9A59BA0640CCC4DBCA5 /* UnifiedDiff.swift */,
 				1505F288C1D9CD24D14A9826C2983BA7 /* UnifiedDiffParser.swift */,
 				266B9CC2713F29A348E87D7F0B0FE976 /* WebToolCardView.swift */,
@@ -961,11 +967,13 @@
 				3810E983440728DCCC6DC85F95A271D1 /* TaskToolCardView.swift in Sources */,
 				A4A0BCD1F60D370FDF0B028E6E66258C /* TodoToolCardView.swift in Sources */,
 				C1222B4A52E7214B7DE9F9702C17028E /* ToolCardRegistry.swift in Sources */,
+				A10000000000000000000009 /* ToolCardView.swift in Sources */,
 				72316128DB722891FD20E36805A0123B /* ToolCardScaffold.swift in Sources */,
 				844869BCAB343475E533CBD7F5C5F548 /* ToolContentExtractor.swift in Sources */,
 				875FEF283A25C32307E0D265D1B3D2D7 /* ToolDisclosureState.swift in Sources */,
 				C99CEF45AA583D067FAACA5AC587A019 /* ToolEventReducer.swift in Sources */,
 				832735AE64F7336087190DDBCCD6763E /* ToolPresentation.swift in Sources */,
+				A1000000000000000000000A /* ToolSurfaceView.swift in Sources */,
 				7747B71F84620678A9036B1E0A9CDC4A /* UnifiedDiff.swift in Sources */,
 				9A57473461991FD2B7C985F5656D204C /* UnifiedDiffParser.swift in Sources */,
 				95EC40ECDF4F5A4DCA760DC9269EBB00 /* WebToolCardView.swift in Sources */,

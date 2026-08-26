@@ -223,6 +223,8 @@ import Testing
         result: .object(["unexpected": .array([.bool(true)])]),
         phase: .complete)
     #expect(fallback.title == "future_tool")
+    #expect(fallback.primary == "future_tool")
+    #expect(fallback.outcome == "Result")
     guard case .stack(let bodies) = fallback.body else {
         Issue.record("Custom tools should retain arguments and results")
         return
@@ -245,6 +247,42 @@ import Testing
         return
     }
     #expect(error.plainText == "Permission denied")
+}
+
+@Test func consoleBodiesStripANSIControlsWithoutFlatteningLines() {
+    let card = ToolContentExtractor.card(
+        name: "bash",
+        arguments: .object(["command": .string("swift test")]),
+        result: result(text: "\u{001B}[31mFailed\u{001B}[0m\nNext line"),
+        phase: .failed)
+
+    guard case .stack(let bodies) = card.body,
+          case .console(_, let output, _) = bodies.last
+    else {
+        Issue.record("Failed bash should retain a console after its error summary")
+        return
+    }
+    #expect(output == "Failed\nNext line")
+}
+
+@Test func failedSingleLineConsoleDoesNotRepeatItsErrorAsOutput() {
+    let card = ToolContentExtractor.card(
+        name: "bash",
+        arguments: .object(["command": .string("swift build")]),
+        result: result(text: "Compilation failed"),
+        phase: .failed)
+
+    guard case .stack(let bodies) = card.body,
+          bodies.count == 2,
+          case .document(let error) = bodies[0],
+          case .console(let command, let output, _) = bodies[1]
+    else {
+        Issue.record("A failed command should show one error followed by command context")
+        return
+    }
+    #expect(error.plainText == "Compilation failed")
+    #expect(command == "swift build")
+    #expect(output.isEmpty)
 }
 
 private func presentation(

@@ -1,5 +1,23 @@
 import SwiftUI
 
+struct ContentDocumentView: View {
+    let document: ContentDocument
+    let spacing: CGFloat
+
+    init(document: ContentDocument, spacing: CGFloat = 10) {
+        self.document = document
+        self.spacing = spacing
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            ForEach(Array(document.blocks.enumerated()), id: \.offset) { _, block in
+                MessageBlockView(block: block)
+            }
+        }
+    }
+}
+
 struct MessageBlockView: View {
     let block: ContentBlock
 

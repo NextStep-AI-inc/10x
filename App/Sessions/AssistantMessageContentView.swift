@@ -24,9 +24,9 @@ struct AssistantMessageContentView: View, Equatable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: MessageBubbleView.assistantContentSpacing) {
-            ForEach(Array(message.document.blocks.enumerated()), id: \.offset) { _, block in
-                MessageBlockView(block: block)
-            }
+            ContentDocumentView(
+                document: message.document,
+                spacing: MessageBubbleView.assistantContentSpacing)
             if let referenceError {
                 Text(referenceError)
                     .font(TenXTypography.body(size: 10, weight: .medium))
