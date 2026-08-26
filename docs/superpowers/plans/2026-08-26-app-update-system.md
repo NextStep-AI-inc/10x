@@ -3211,7 +3211,7 @@ set -euo pipefail
 
 VERSION="${1:?usage: release.sh <version> [--no-publish]}"
 PUBLISH="${2:-publish}"
-SPARKLE_VERSION="2.6.4"
+SPARKLE_VERSION="2.9.6"   # must match Package.resolved; the tools and the framework are a pair
 REPO="NextStep-AI-inc/10x"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -3270,6 +3270,9 @@ ZIP="$DIST/10x-$VERSION.zip"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
 echo "==> Fetching Sparkle $SPARKLE_VERSION tools"
+# Keep this pinned to the version in Package.resolved. Signing an archive with tools
+# from a different Sparkle release than the framework the app embeds is a silent way
+# to produce an appcast the shipped app refuses.
 curl -fsSL -o "$BUILD/sparkle.tar.xz" \
   "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
 mkdir -p "$BUILD/sparkle"
@@ -3544,7 +3547,7 @@ Report in the shape Tanner expects: Verified with evidence, Not verified and why
 
 1. `SPUUserDriver`'s actor isolation. Task 8 Step 1 tells you how to check and what to do either way.
 2. The `SUError` case names in `SplashUpdateDriver.failure(for:)`. Verify them against the resolved header; do not substitute integer literals.
-3. `generate_appcast`'s exact flags for Sparkle 2.6.4. If `--ed-key-file` or `--download-url-prefix` differ, run it with `--help` and use the real names. Do not work around a flag mismatch by hand-writing the appcast; a hand-written signature is the one thing that silently breaks every future update.
+3. `generate_appcast`'s exact flags for Sparkle 2.9.6, the version SPM resolved. If `--ed-key-file` or `--download-url-prefix` differ, run it with `--help` and use the real names. Do not work around a flag mismatch by hand-writing the appcast; a hand-written signature is the one thing that silently breaks every future update.
 
 **What must never be weakened to make something compile.** Strict concurrency, the advisory row's inability to enter `Stopped`, awaiting `shutdown()` before consenting to install, and `.dismiss` rather than `.skip` for `Not now`.
 
