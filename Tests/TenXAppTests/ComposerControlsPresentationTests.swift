@@ -198,3 +198,19 @@ private let noEffortModel = ComposerModelInfo(
     #expect(ComposerControlsPresentation.rowAccessibilityValue(
         provider: "cursor", isSelected: false) == "cursor")
 }
+
+@Test func listHeightGrowsWithContentAndStopsAtTheCap() {
+    #expect(ModelPickerMetrics.listHeight(rowCount: 2, sectionCount: 1)
+        == 2 * ModelPickerMetrics.rowHeight + ModelPickerMetrics.headerHeight)
+    #expect(ModelPickerMetrics.listHeight(rowCount: 0, sectionCount: 0)
+        == 2 * ModelPickerMetrics.rowHeight)
+    #expect(ModelPickerMetrics.listHeight(rowCount: 400, sectionCount: 40)
+        == ModelPickerMetrics.maxListHeight)
+}
+
+@Test func panelIsNeverNarrowerThanItsTrigger() {
+    #expect(ModelPickerMetrics.bottomWidth(triggerWidth: 40) == 44)
+    #expect(ModelPickerMetrics.bottomWidth(triggerWidth: 120) == 120)
+    #expect(ModelPickerMetrics.bottomWidth(triggerWidth: 900)
+        == ModelPickerMetrics.panelWidth)
+}

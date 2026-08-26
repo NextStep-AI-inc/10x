@@ -27,7 +27,7 @@ enum ChooseProjectFlyoutMetrics {
 }
 
 /// Stepped silhouette: wide folder panel over a narrower choose-project rect.
-private struct TwoRectShelfShape: Shape {
+struct TwoRectShelfShape: Shape {
     var topWidth: CGFloat
     var topHeight: CGFloat
     var bottomWidth: CGFloat
@@ -222,7 +222,7 @@ struct ChooseProjectShelf: View {
     }
 }
 
-private struct FlyoutRowBackground: View {
+struct FlyoutRowBackground: View {
     let isSelected: Bool
     @State private var isHovering = false
 
