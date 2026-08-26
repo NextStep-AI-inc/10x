@@ -31,6 +31,15 @@ import Testing
     #expect(TranscriptReference.extract(from: "Ignore words/with/slashes and relative/file.swift:2") == [])
 }
 
+@Test func codeAndMarkdownAcceptRootFilesButRejectVersionNumbers() {
+    #expect(TranscriptReference.extract(from: "Open `Package.swift` and [README](README.md).") == [
+        .file(path: "Package.swift", line: nil),
+        .file(path: "README.md", line: nil),
+    ])
+    #expect(TranscriptReference.extract(from: "Version `1.2` is current.").isEmpty)
+    #expect(TranscriptReference.extract(from: "[Email](mailto:dev@example.com)").isEmpty)
+}
+
 @Test func codeAndMarkdownRejectRelativePathsWithEmptyExtensions() {
     #expect(TranscriptReference.extract(from: "`App/.gitignore`") == [])
     #expect(TranscriptReference.extract(from: "`App/Foo.`") == [])

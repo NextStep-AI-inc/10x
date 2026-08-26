@@ -152,8 +152,10 @@ enum TranscriptReference: Equatable, Hashable, Sendable {
             guard let url = URL(string: value), url.host != nil else { return nil }
             return .web(url: value, label: label)
         }
-        guard !value.contains("://") else { return nil }
         let suffix = lineSuffix(in: value)
+        guard !suffix.path.contains("://"),
+              URLComponents(string: suffix.path)?.scheme == nil
+        else { return nil }
         guard suffix.path.hasPrefix("/") || (allowsRelativeFile && isRelativeFilePath(suffix.path)) else {
             return nil
         }
@@ -162,8 +164,8 @@ enum TranscriptReference: Equatable, Hashable, Sendable {
 
     private static func isRelativeFilePath(_ path: String) -> Bool {
         if path.hasPrefix("./") || path.hasPrefix("../") { return true }
-        guard path.contains("/") else { return false }
-        return !URL(filePath: path).pathExtension.isEmpty
+        let fileExtension = URL(filePath: path).pathExtension
+        return !fileExtension.isEmpty && fileExtension.contains(where: \.isLetter)
     }
 
     private static func lineSuffix(in path: String) -> (path: String, line: Int?) {
