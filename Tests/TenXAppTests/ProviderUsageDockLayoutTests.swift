@@ -6,7 +6,7 @@ import Testing
     let layout = ProviderUsageDockLayout.compact(
         shellWidth: 1280,
         contentLeadingInset: 64,
-        providerCount: 3,
+        stackWidths: [54, 54, 54],
         hasComposer: true)
 
     #expect(layout == ProviderUsageDockCompactLayout(
@@ -19,7 +19,7 @@ import Testing
     let layout = ProviderUsageDockLayout.compact(
         shellWidth: 760,
         contentLeadingInset: 64,
-        providerCount: 3,
+        stackWidths: [54, 54, 54],
         hasComposer: true)
 
     #expect(layout == ProviderUsageDockCompactLayout(
@@ -28,27 +28,43 @@ import Testing
         bottomOffset: 116))
 }
 
-@Test func usageDockProviderCountControlsWidePlacementDecision() {
-    let twoProviderLayout = ProviderUsageDockLayout.compact(
+@Test func completeAccountStackWidthsControlWidePlacementDecision() {
+    let singleAccountStacks = ProviderUsageDockLayout.compact(
         shellWidth: 1180,
         contentLeadingInset: 64,
-        providerCount: 2,
+        stackWidths: [54, 54],
         hasComposer: true)
-    let threeProviderLayout = ProviderUsageDockLayout.compact(
+    let multiAccountStacks = ProviderUsageDockLayout.compact(
         shellWidth: 1180,
         contentLeadingInset: 64,
-        providerCount: 3,
+        stackWidths: [82, 82],
         hasComposer: true)
 
-    #expect(twoProviderLayout.wheelDiameter == 54)
-    #expect(threeProviderLayout.wheelDiameter == 44)
+    #expect(singleAccountStacks.wheelDiameter == 54)
+    #expect(multiAccountStacks.wheelDiameter == 44)
+}
+
+@Test func accountStackWidthsNeverChangeComposerDerivedOffsets() {
+    let compact = ProviderUsageDockLayout.compact(
+        shellWidth: 760,
+        contentLeadingInset: 64,
+        stackWidths: [54],
+        hasComposer: true)
+    let expanded = ProviderUsageDockLayout.compact(
+        shellWidth: 760,
+        contentLeadingInset: 64,
+        stackWidths: [120, 120, 120],
+        hasComposer: true)
+
+    #expect(compact.trailingOffset == expanded.trailingOffset)
+    #expect(compact.bottomOffset == expanded.bottomOffset)
 }
 
 @Test func usageDockStandaloneRoutesKeepRegularWheelsWithoutOffsets() {
     let layout = ProviderUsageDockLayout.compact(
         shellWidth: 760,
         contentLeadingInset: 64,
-        providerCount: 3,
+        stackWidths: [54, 54, 54],
         hasComposer: false)
 
     #expect(layout == .standalone)

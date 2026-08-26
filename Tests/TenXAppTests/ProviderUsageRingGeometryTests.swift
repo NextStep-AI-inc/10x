@@ -29,4 +29,31 @@ func providerUsageRingMetricsScaleWithoutDroppingRings(limitCount: Int) {
     #expect(metrics.first.map { ($0.diameter - $0.lineWidth) / 2 > scaledCore / 2 } ?? false)
     #expect(metrics.last.map { ($0.diameter + $0.lineWidth) / 2 <= 22 } ?? false)
 }
+
+@Test func backgroundAccountRingMetricsScaleEveryLimitWithTheSmallerWheel() {
+    let geometry = ProviderAccountStackGeometry(
+        accountIDs: ["foreground", "background"],
+        foregroundAccountID: "foreground",
+        wheelDiameter: 54)
+    let backgroundDiameter = geometry.items.first(where: {
+        $0.accountID == "background"
+    })?.visualDiameter ?? 0
+    let metrics = ProviderUsageRingGeometry.metrics(
+        limitCount: 5,
+        outerDiameter: backgroundDiameter)
+
+    #expect(backgroundDiameter < 54)
+    #expect(metrics.count == 5)
+    #expect(metrics.last.map {
+        ($0.diameter + $0.lineWidth) / 2 <= backgroundDiameter / 2
+    } ?? false)
+}
+
+@Test func providerUsageWheelShowsZeroGeneratingSessionsInItsCenter() {
+    #expect(ProviderUsageWheelActivityPresentation.countText(activeCount: 0) == "0")
+}
+
+@Test func providerUsageWheelShowsFiveGeneratingSessionsInItsCenter() {
+    #expect(ProviderUsageWheelActivityPresentation.countText(activeCount: 5) == "5")
+}
 }

@@ -31,11 +31,18 @@ enum ProviderUsageRingGeometry {
     }
 }
 
+enum ProviderUsageWheelActivityPresentation {
+    static func countText(activeCount: Int) -> String {
+        "\(max(0, activeCount))"
+    }
+}
+
 struct ProviderUsageWheelView: View {
     let provider: ProviderUsageProvider
     let activeCount: Int
     let isGrayscale: Bool
     let diameter: CGFloat
+    let showsProviderLabel: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -43,12 +50,14 @@ struct ProviderUsageWheelView: View {
         provider: ProviderUsageProvider,
         activeCount: Int,
         isGrayscale: Bool,
-        diameter: CGFloat = ProviderUsageRingGeometry.diameter
+        diameter: CGFloat = ProviderUsageRingGeometry.diameter,
+        showsProviderLabel: Bool = true
     ) {
         self.provider = provider
         self.activeCount = activeCount
         self.isGrayscale = isGrayscale
         self.diameter = diameter
+        self.showsProviderLabel = showsProviderLabel
     }
 
     private var ringLimits: [ProviderUsageLimit] {
@@ -77,9 +86,11 @@ struct ProviderUsageWheelView: View {
                 width: diameter,
                 height: diameter)
 
-            Text(provider.abbreviation)
-                .font(TenXTypography.mono(size: 9, weight: .semibold))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            if showsProviderLabel {
+                Text(provider.abbreviation)
+                    .font(TenXTypography.mono(size: 9, weight: .semibold))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
         }
         .accessibilityElement(children: .ignore)
     }
@@ -133,11 +144,11 @@ struct ProviderUsageWheelView: View {
                 width: activityCoreDiameter,
                 height: activityCoreDiameter)
             .overlay {
-                if activeCount > 0 {
-                    Text("\(activeCount)")
-                        .font(TenXTypography.mono(size: 9, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
+                Text(ProviderUsageWheelActivityPresentation.countText(activeCount: activeCount))
+                    .font(TenXTypography.mono(size: 9, weight: .semibold))
+                    .foregroundStyle(activeCount > 0
+                        ? Color.white
+                        : TenXPalette.color(TenXPalette.mutedTextHex))
             }
     }
 

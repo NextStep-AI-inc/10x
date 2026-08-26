@@ -19,7 +19,7 @@ enum ProviderUsageDockLayout {
     static func compact(
         shellWidth: CGFloat,
         contentLeadingInset: CGFloat,
-        providerCount: Int,
+        stackWidths: [CGFloat],
         hasComposer: Bool
     ) -> ProviderUsageDockCompactLayout {
         guard hasComposer else {
@@ -29,7 +29,7 @@ enum ProviderUsageDockLayout {
         let routeWidth = max(0, shellWidth - contentLeadingInset)
         let composerWidth = min(780, max(0, routeWidth - 84))
         let trailingGutter = max(0, (routeWidth - composerWidth) / 2)
-        let groupWidth = wheelGroupWidth(providerCount: providerCount)
+        let groupWidth = wheelGroupWidth(stackWidths: stackWidths)
         let requiredGutter = groupWidth + 16 + 16
 
         if trailingGutter >= requiredGutter {
@@ -45,12 +45,28 @@ enum ProviderUsageDockLayout {
             bottomOffset: 28 + 96 + 8 - 16)
     }
 
-    private static func wheelGroupWidth(providerCount: Int) -> CGFloat {
-        let normalizedCount = max(0, providerCount)
-        guard normalizedCount > 0 else {
+    static func compact(
+        shellWidth: CGFloat,
+        contentLeadingInset: CGFloat,
+        providerCount: Int,
+        hasComposer: Bool
+    ) -> ProviderUsageDockCompactLayout {
+        compact(
+            shellWidth: shellWidth,
+            contentLeadingInset: contentLeadingInset,
+            stackWidths: Array(
+                repeating: regular54,
+                count: max(0, providerCount)),
+            hasComposer: hasComposer)
+    }
+
+    private static func wheelGroupWidth(stackWidths: [CGFloat]) -> CGFloat {
+        let normalizedWidths = stackWidths.map { max(0, $0) }
+        guard !normalizedWidths.isEmpty else {
             return 0
         }
 
-        return CGFloat(normalizedCount) * regular54 + CGFloat(normalizedCount - 1) * spacing8
+        return normalizedWidths.reduce(0, +)
+            + CGFloat(normalizedWidths.count - 1) * spacing8
     }
 }
