@@ -299,13 +299,18 @@ final class ComputerUseSetupModel {
             target = opened
             if let selected,
                let workspaceID = prepared?.workspaceID {
-                originalWorkspaceID = try await selected.provider.listWindows()
-                    .first(where: { $0.id == opened.windowID })?.workspaceID
                 do {
-                    try await selected.provider.move(windowID: opened.windowID, to: workspaceID)
-                    placementOutcome = .passed
+                    originalWorkspaceID = try await selected.provider.listWindows()
+                        .first(where: { $0.id == opened.windowID })?.workspaceID
+                    do {
+                        try await selected.provider.move(windowID: opened.windowID, to: workspaceID)
+                        placementOutcome = .passed
+                    } catch {
+                        placementOutcome = error is CancellationError ? .cancelled : .failed
+                        throw error
+                    }
                 } catch {
-                    placementOutcome = error is CancellationError ? .cancelled : .failed
+                    if error is CancellationError { placementOutcome = .cancelled }
                     throw error
                 }
             }

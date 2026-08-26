@@ -105,6 +105,24 @@ import Testing
     #expect(report.windowPlacementOutcome == .cancelled)
 }
 
+@MainActor @Test func cancelledWorkspaceLookupReportsCancelledBeforeMoveStarts() async throws {
+    let model = ComputerUseSetupModel(
+        omp: FakeSetupOMP(),
+        providers: [
+            FakeSetupProvider(
+                kind: .background,
+                probe: .healthy,
+                workspaceID: "probe-space",
+                listWindowsFailure: .cancelled),
+        ])
+
+    await model.runHarmlessTest()
+
+    let report = try #require(model.harmlessTest)
+    #expect(report.outcome == .cancelled)
+    #expect(report.windowPlacementOutcome == .cancelled)
+}
+
 @MainActor @Test func cancelledProbePreservesCompletedPlacement() async throws {
     let model = ComputerUseSetupModel(
         omp: FakeSetupOMP(failure: .cancelledProbe),
@@ -281,29 +299,36 @@ private actor DetachedDescendantRPC: DisposableComputerUseRPC {
 
 private struct FakeSetupProvider: AgentDesktopProvider {
     enum MoveFailure { case failed, cancelled }
+    enum ListWindowsFailure { case cancelled }
 
     let kind: AgentDesktopProviderKind
     let result: ProviderProbe
     let workspaceID: String?
     let moveFailure: MoveFailure?
+    let listWindowsFailure: ListWindowsFailure?
 
     init(
         kind: AgentDesktopProviderKind,
         probe: ProviderAvailability,
         workspaceID: String? = nil,
-        moveFailure: MoveFailure? = nil
+        moveFailure: MoveFailure? = nil,
+        listWindowsFailure: ListWindowsFailure? = nil
     ) {
         self.kind = kind
         result = ProviderProbe(availability: probe, integrationVersion: kind.rawValue, capabilities: .background)
         self.workspaceID = workspaceID
         self.moveFailure = moveFailure
+        self.listWindowsFailure = listWindowsFailure
     }
 
     func probe() async -> ProviderProbe { result }
     func prepare(sessionToken: String) async throws -> PreparedAgentDesktop {
         PreparedAgentDesktop(provider: kind, workspaceID: workspaceID, capabilities: result.capabilities)
     }
-    func listWindows() async throws -> [AgentWindow] { [] }
+    func listWindows() async throws -> [AgentWindow] {
+        if listWindowsFailure == .cancelled { throw CancellationError() }
+        return []
+    }
     func watchWindows() async throws -> AsyncStream<AgentWindowEvent> { AsyncStream { $0.finish() } }
     func move(windowID: String, to workspaceID: String) async throws {
         switch moveFailure {
