@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import TenXApp
@@ -22,6 +23,32 @@ import Testing
         #expect(!error.localizedDescription.contains("token=secret"))
         #expect(!error.localizedDescription.contains("/Users/example/.omp"))
     }
+}
+
+@Test func cancellingUsageServiceReapsTheCommand() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let pidFile = fixture.root.appending(path: "usage.pid")
+    let executable = try fixture.executable(
+        name: "blocked-usage",
+        body: "printf '%s' $$ > '\(pidFile.path)'; printf 'token=secret\\n' >&2; trap '' TERM; while :; do sleep 1; done")
+    let service = OmpUsageService(
+        runner: OmpUsageProcessRunner(executableURL: executable))
+    let operation = Task { try await service.loadUsage() }
+    let pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    let pid = try #require(pids.first)
+
+    operation.cancel()
+    do {
+        _ = try await operation.value
+        Issue.record("Expected canceled usage command to fail")
+    } catch {
+        #expect(!error.localizedDescription.contains("token=secret"))
+    }
+    try await fixture.waitUntilProcessIsGone(pid)
+
+    #expect(kill(pid, 0) == -1)
+    #expect(errno == ESRCH)
 }
 
 private actor FakeUsageRunner: OmpUsageRunning {

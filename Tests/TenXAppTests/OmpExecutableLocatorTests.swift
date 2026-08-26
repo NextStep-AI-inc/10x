@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import TenXApp
@@ -22,4 +23,25 @@ import Testing
     #expect(installation == OmpInstallation(
         executableURL: executable.standardizedFileURL,
         version: "18.0.4"))
+}
+
+@Test func cancellingExecutableLookupReapsTheInspectionCommand() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let pidFile = fixture.root.appending(path: "locator.pid")
+    let executable = try fixture.executable(
+        name: "blocked-locator",
+        body: "printf '%s' $$ > '\(pidFile.path)'; trap '' TERM; while :; do sleep 1; done")
+    let operation = Task {
+        await OmpExecutableLocator().locate(preferredURL: executable)
+    }
+    let pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    let pid = try #require(pids.first)
+
+    operation.cancel()
+    _ = await operation.value
+    try await fixture.waitUntilProcessIsGone(pid)
+
+    #expect(kill(pid, 0) == -1)
+    #expect(errno == ESRCH)
 }

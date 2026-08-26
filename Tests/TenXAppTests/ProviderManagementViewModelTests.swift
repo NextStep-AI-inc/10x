@@ -1,8 +1,34 @@
+import Darwin
 import Foundation
 import OmpKit
 import Synchronization
 import Testing
 @testable import TenXApp
+
+@MainActor
+@Test func providerShutdownCancelsAndAwaitsAnInflightUsageCommand() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let pidFile = fixture.root.appending(path: "usage.pid")
+    let executable = try fixture.executable(
+        name: "blocked-usage",
+        body: "printf '%s' $$ > '\(pidFile.path)'; trap '' TERM; while :; do sleep 1; done")
+    let model = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: []),
+        usageService: OmpUsageService(
+            runner: OmpUsageProcessRunner(executableURL: executable)),
+        openURL: { _ in })
+    let load = Task { await model.loadUsage() }
+    let pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    let pid = try #require(pids.first)
+
+    await model.shutdown()
+    await load.value
+    try await fixture.waitUntilProcessIsGone(pid)
+
+    #expect(kill(pid, 0) == -1)
+    #expect(errno == ESRCH)
+}
 
 @MainActor
 @Test func providerModelLoadsCuratedConnectedFirstAndGatesContinue() async {

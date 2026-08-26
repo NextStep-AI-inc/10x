@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import OmpKit
 import Testing
@@ -91,6 +92,32 @@ import Testing
         #expect(error.localizedDescription.contains("auth.broker.token"))
         #expect(!error.localizedDescription.contains("do-not-leak"))
     }
+}
+
+@Test func cancellingConfigServiceReapsTheCommand() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let pidFile = fixture.root.appending(path: "config.pid")
+    let executable = try fixture.executable(
+        name: "blocked-config",
+        body: "printf '%s' $$ > '\(pidFile.path)'; printf 'token=secret\\n' >&2; trap '' TERM; while :; do sleep 1; done")
+    let service = OmpConfigService(
+        runner: OmpConfigProcessRunner(executableURL: executable))
+    let operation = Task { try await service.path() }
+    let pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    let pid = try #require(pids.first)
+
+    operation.cancel()
+    do {
+        _ = try await operation.value
+        Issue.record("Expected canceled config command to fail")
+    } catch {
+        #expect(!error.localizedDescription.contains("token=secret"))
+    }
+    try await fixture.waitUntilProcessIsGone(pid)
+
+    #expect(kill(pid, 0) == -1)
+    #expect(errno == ESRCH)
 }
 
 private actor FakeConfigRunner: OmpConfigRunning {
