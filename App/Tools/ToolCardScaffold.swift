@@ -36,6 +36,10 @@ struct ToolCardHeaderPresentation: Equatable, Sendable {
     }
 }
 
+enum ToolCardScaffoldLayout {
+    static let minimumDisclosureHitHeight: CGFloat = 32
+}
+
 struct ToolCardScaffold<Content: View>: View {
     let presentation: ToolPresentation
     let cardContent: ToolCardContent
@@ -111,7 +115,7 @@ struct ToolCardScaffold<Content: View>: View {
                     Text(cardContent.verb)
                         .font(TenXTypography.body(size: 12, weight: .semibold))
                 }
-                .frame(minHeight: 28)
+                .frame(minHeight: ToolCardScaffoldLayout.minimumDisclosureHitHeight)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

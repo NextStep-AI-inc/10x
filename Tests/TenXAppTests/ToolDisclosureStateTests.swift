@@ -80,6 +80,10 @@ import Testing
         for: tool(id: "read", name: "read", phase: .complete)))
 }
 
+@Test func sharedToolDisclosureMeetsTheMinimumHitTarget() {
+    #expect(ToolCardScaffoldLayout.minimumDisclosureHitHeight >= 32)
+}
+
 private func tool(id: String, name: String, phase: ToolPhase) -> ToolPresentation {
     ToolPresentation(
         id: id,
