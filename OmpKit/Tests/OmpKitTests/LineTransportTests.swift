@@ -26,6 +26,21 @@ func withTimeout<T: Sendable>(
     }
 }
 
+private func openGateAndWaitForProducer(_ gate: URL, producer: URL) {
+    FileManager.default.createFile(atPath: gate.path, contents: nil)
+    let deadline = ContinuousClock.now + .seconds(2)
+    while ContinuousClock.now < deadline {
+        if FileManager.default.fileExists(atPath: producer.path) { return }
+        usleep(1_000)
+    }
+}
+
+private func fixturePID(at url: URL) -> pid_t? {
+    guard let data = try? Data(contentsOf: url),
+          let value = pid_t(String(decoding: data, as: UTF8.self)) else { return nil }
+    return value
+}
+
 @Test func readsReadyLineAndShutsDown() async throws {
     let t = makeFakeTransport(mode: "basic")
     try await t.start()
@@ -209,4 +224,95 @@ func withTimeout<T: Sendable>(
     #expect(holderReleased)
     #expect(exitCode == 31)
     #expect(await transport.stderrSnapshot().hasSuffix("final-stderr-marker\n"))
+}
+
+@Test func exitDrainSnapshotsBytesBeforeContinuouslyWritingDescendants() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ContinuousExitDrain-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer {
+        for stream in ["stdout", "stderr"] {
+            FileManager.default.createFile(
+                atPath: root.appendingPathComponent("\(stream)-stop").path,
+                contents: nil)
+            let stopped = root.appendingPathComponent("\(stream)-stopped")
+            if !FileManager.default.fileExists(atPath: stopped.path),
+               let pid = fixturePID(at: root.appendingPathComponent("\(stream)-pid")) {
+                kill(pid, SIGKILL)
+            }
+        }
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    let transport = makeFakeTransport(
+        mode: "continuous-inherited-output-exit", arguments: [root.path])
+    await transport.installTestHooks(LineTransportTestHooks(
+        afterStdoutFinalDrainSnapshot: {
+            openGateAndWaitForProducer(
+                root.appendingPathComponent("stdout-start"),
+                producer: root.appendingPathComponent("stdout-primed"))
+        },
+        afterStderrFinalDrainSnapshot: {
+            openGateAndWaitForProducer(
+                root.appendingPathComponent("stderr-start"),
+                producer: root.appendingPathComponent("stderr-primed"))
+        }))
+    try await transport.start()
+
+    let parentReachedExit = await withTimeout(.seconds(2)) { () -> Bool in
+        let marker = root.appendingPathComponent("parent-exiting")
+        while !Task.isCancelled {
+            if FileManager.default.fileExists(atPath: marker.path) { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+    let exitCode = await withTimeout(.seconds(1)) { () -> Int32 in
+        for await code in transport.onExit { return code }
+        return Int32.min
+    }
+    let stdoutPID = fixturePID(at: root.appendingPathComponent("stdout-pid"))
+    let stderrPID = fixturePID(at: root.appendingPathComponent("stderr-pid"))
+    let writersWereAlive = [stdoutPID, stderrPID].allSatisfy {
+        guard let pid = $0 else { return false }
+        return kill(pid, 0) == 0
+    }
+
+    for stream in ["stdout", "stderr"] {
+        FileManager.default.createFile(
+            atPath: root.appendingPathComponent("\(stream)-stop").path,
+            contents: nil)
+    }
+    let writersStopped = await withTimeout(.seconds(2)) { () -> Bool in
+        while !Task.isCancelled {
+            if ["stdout", "stderr"].allSatisfy({
+                FileManager.default.fileExists(
+                    atPath: root.appendingPathComponent("\($0)-stopped").path)
+            }) { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+    let lines = await withTimeout(.seconds(2)) { () -> [String] in
+        var lines: [String] = []
+        for await line in transport.lines {
+            lines.append(String(decoding: line, as: UTF8.self))
+        }
+        return lines
+    } ?? []
+    let stderr = await transport.stderrSnapshot()
+
+    #expect(parentReachedExit)
+    #expect(FileManager.default.fileExists(
+        atPath: root.appendingPathComponent("stdout-primed").path))
+    #expect(FileManager.default.fileExists(
+        atPath: root.appendingPathComponent("stderr-primed").path))
+    #expect(exitCode == 37)
+    #expect(writersWereAlive)
+    #expect(writersStopped)
+    #expect(lines.contains { $0.contains(#""type":"parent-final""#) })
+    #expect(!lines.contains { $0.contains("late-stdout-marker") })
+    #expect(stderr.contains("parent-final-stderr\n"))
+    #expect(!stderr.contains("late-stderr-marker"))
+    #expect(stderr.utf8.count < 1_024)
 }

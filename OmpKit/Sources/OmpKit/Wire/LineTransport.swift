@@ -6,6 +6,11 @@ public enum TransportError: Error, Sendable, Equatable {
     case notStarted
 }
 
+struct LineTransportTestHooks: Sendable {
+    var afterStdoutFinalDrainSnapshot: (@Sendable () -> Void)?
+    var afterStderrFinalDrainSnapshot: (@Sendable () -> Void)?
+}
+
 /// Newline-delimited byte transport over a child process's stdio.
 ///
 /// Framing above this layer is JSON-per-line; this type only splits lines,
@@ -27,6 +32,7 @@ public actor LineTransport {
     private var processGroupID: pid_t?
     private var stdoutDrainer: StdoutDrainer?
     private var stderrDrainer: StderrDrainer?
+    private var testHooks = LineTransportTestHooks()
 
     /// Read from the process itself so a crash reports its real code, not just
     /// exits observed on the shutdown path.
@@ -76,6 +82,11 @@ public actor LineTransport {
     /// are available at direct-child exit. Inherited writers do not delay it.
     public nonisolated var onExit: AsyncStream<Int32> { exitStream }
 
+    func installTestHooks(_ hooks: LineTransportTestHooks) {
+        precondition(!started)
+        testHooks = hooks
+    }
+
     public func start() throws {
         guard !started else { return }
         guard let resolved = Self.resolveExecutable(executable, environment: environment) else {
@@ -98,7 +109,8 @@ public actor LineTransport {
             handle: stdoutPipe.fileHandleForReading,
             buffer: buffer,
             continuation: lineContinuation,
-            maxLineBytes: Self.maxLineBytes)
+            maxLineBytes: Self.maxLineBytes,
+            afterFinalDrainSnapshot: testHooks.afterStdoutFinalDrainSnapshot)
         stdoutDrainer = drainer
         stdoutPipe.fileHandleForReading.readabilityHandler = { _ in
             drainer.consumeAvailableData()
@@ -107,7 +119,8 @@ public actor LineTransport {
         let stderrLog = self.stderrLog
         let stderrDrainer = StderrDrainer(
             handle: stderrPipe.fileHandleForReading,
-            log: stderrLog)
+            log: stderrLog,
+            afterFinalDrainSnapshot: testHooks.afterStderrFinalDrainSnapshot)
         self.stderrDrainer = stderrDrainer
         stderrPipe.fileHandleForReading.readabilityHandler = { _ in
             stderrDrainer.consumeAvailableData()
@@ -243,12 +256,18 @@ public actor LineTransport {
 private final class StderrDrainer: @unchecked Sendable {
     private let handle: FileHandle
     private let log: StderrLog
+    private let afterFinalDrainSnapshot: @Sendable () -> Void
     private let lock = NSLock()
     private var finished = false
 
-    init(handle: FileHandle, log: StderrLog) {
+    init(
+        handle: FileHandle,
+        log: StderrLog,
+        afterFinalDrainSnapshot: (@Sendable () -> Void)?
+    ) {
         self.handle = handle
         self.log = log
+        self.afterFinalDrainSnapshot = afterFinalDrainSnapshot ?? {}
     }
 
     func consumeAvailableData() {
@@ -270,14 +289,19 @@ private final class StderrDrainer: @unchecked Sendable {
         guard !finished else { return }
         finished = true
         handle.readabilityHandler = nil
-        let remaining = readCurrentlyAvailable(from: handle.fileDescriptor)
+        let remaining = readCurrentlyAvailable(
+            from: handle.fileDescriptor,
+            afterSnapshot: afterFinalDrainSnapshot)
         if !remaining.isEmpty {
             log.append(String(decoding: remaining, as: UTF8.self))
         }
     }
 }
 
-private func readCurrentlyAvailable(from descriptor: Int32) -> Data {
+private func readCurrentlyAvailable(
+    from descriptor: Int32,
+    afterSnapshot: @Sendable () -> Void
+) -> Data {
     let originalFlags = fcntl(descriptor, F_GETFL)
     guard originalFlags >= 0,
           fcntl(descriptor, F_SETFL, originalFlags | O_NONBLOCK) == 0 else {
@@ -285,21 +309,32 @@ private func readCurrentlyAvailable(from descriptor: Int32) -> Data {
     }
     defer { _ = fcntl(descriptor, F_SETFL, originalFlags) }
 
+    var availableBytes: Int32 = 0
+    // Swift does not import Darwin's structure-valued FIONREAD macro.
+    let fionReadRequest: UInt = 0x4004_667f  // _IOR('f', 127, Int32)
+    guard ioctl(descriptor, fionReadRequest, &availableBytes) == 0 else {
+        afterSnapshot()
+        return Data()
+    }
+    var bytesRemaining = max(0, Int(availableBytes))
+    afterSnapshot()
+
     var result = Data()
+    result.reserveCapacity(bytesRemaining)
     var buffer = [UInt8](repeating: 0, count: 64 * 1024)
-    while true {
+    while bytesRemaining > 0 {
         let bytesRead = buffer.withUnsafeMutableBytes { bytes in
-            read(descriptor, bytes.baseAddress, bytes.count)
+            read(descriptor, bytes.baseAddress, min(bytes.count, bytesRemaining))
         }
         if bytesRead > 0 {
             result.append(contentsOf: buffer[..<bytesRead])
+            bytesRemaining -= bytesRead
             continue
         }
         if bytesRead < 0, errno == EINTR { continue }
-        // EOF and EAGAIN both end the direct-child snapshot. Waiting for a
-        // descendant's inherited writer would make process exit unbounded.
-        return result
+        break
     }
+    return result
 }
 
 /// Accumulates stdout bytes and splits complete lines off the front.
@@ -340,6 +375,7 @@ private final class StdoutDrainer: @unchecked Sendable {
     private let buffer: LineBuffer
     private let continuation: AsyncStream<Data>.Continuation
     private let maxLineBytes: Int
+    private let afterFinalDrainSnapshot: @Sendable () -> Void
     private let lock = NSLock()
     private var finished = false
 
@@ -347,12 +383,14 @@ private final class StdoutDrainer: @unchecked Sendable {
         handle: FileHandle,
         buffer: LineBuffer,
         continuation: AsyncStream<Data>.Continuation,
-        maxLineBytes: Int
+        maxLineBytes: Int,
+        afterFinalDrainSnapshot: (@Sendable () -> Void)?
     ) {
         self.handle = handle
         self.buffer = buffer
         self.continuation = continuation
         self.maxLineBytes = maxLineBytes
+        self.afterFinalDrainSnapshot = afterFinalDrainSnapshot ?? {}
     }
 
     func consumeAvailableData() {
@@ -377,7 +415,9 @@ private final class StdoutDrainer: @unchecked Sendable {
         guard !finished else { return }
         finished = true
         handle.readabilityHandler = nil
-        let remaining = readCurrentlyAvailable(from: handle.fileDescriptor)
+        let remaining = readCurrentlyAvailable(
+            from: handle.fileDescriptor,
+            afterSnapshot: afterFinalDrainSnapshot)
         if !remaining.isEmpty {
             for line in buffer.append(remaining, maxLineBytes: maxLineBytes) {
                 continuation.yield(line)

@@ -84,6 +84,49 @@ open(released, "w", encoding="utf-8").close()
     sys.stderr.write("x" * 262144 + "final-stderr-marker\n")
     sys.stderr.flush()
     raise SystemExit(31)
+if mode == "continuous-inherited-output-exit":
+    root = sys.argv[2]
+    writer = r"""
+import os, sys, time
+stream_name, root = sys.argv[1], sys.argv[2]
+descriptor = sys.stdout.fileno() if stream_name == "stdout" else sys.stderr.fileno()
+start = os.path.join(root, stream_name + "-start")
+primed = os.path.join(root, stream_name + "-primed")
+stop = os.path.join(root, stream_name + "-stop")
+stopped = os.path.join(root, stream_name + "-stopped")
+with open(os.path.join(root, stream_name + "-pid"), "w", encoding="utf-8") as handle:
+    handle.write(str(os.getpid()))
+while not os.path.exists(start):
+    time.sleep(0.001)
+os.set_blocking(descriptor, False)
+marker = ("late-" + stream_name + "-marker\n").encode()
+while True:
+    try:
+        os.write(descriptor, marker)
+        break
+    except BlockingIOError:
+        time.sleep(0.001)
+open(primed, "w", encoding="utf-8").close()
+payload = (stream_name[0] * 65536).encode()
+while not os.path.exists(stop):
+    try:
+        os.write(descriptor, payload)
+    except BlockingIOError:
+        time.sleep(0.001)
+os.close(sys.stdout.fileno())
+os.close(sys.stderr.fileno())
+open(stopped, "w", encoding="utf-8").close()
+"""
+    subprocess.Popen([sys.executable, "-u", "-c", writer, "stdout", root])
+    subprocess.Popen([sys.executable, "-u", "-c", writer, "stderr", root])
+    while not all(os.path.exists(os.path.join(root, name + "-pid"))
+                  for name in ("stdout", "stderr")):
+        time.sleep(0.001)
+    emit({"type": "parent-final"})
+    sys.stderr.write("parent-final-stderr\n")
+    sys.stderr.flush()
+    open(os.path.join(root, "parent-exiting"), "w", encoding="utf-8").close()
+    raise SystemExit(37)
 if mode == "grandchild":
     heartbeat = sys.argv[2]
     child = """
