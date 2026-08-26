@@ -398,7 +398,32 @@ gh secret set SPARKLE_ED_PRIVATE_KEY --repo NextStep-AI-inc/10x < ~/sparkle-10x-
 
 The keychain copy remains and is what local `release.sh` runs use.
 
-- [ ] **Step 4: Write the failing test**
+- [ ] **Step 4: Stop the generator from discarding the package pin**
+
+`generate_xcodeproj.rb` begins with `FileUtils.rm_rf(project_path)`, which deletes the whole `10x.xcodeproj` directory including `project.xcworkspace/xcshareddata/swiftpm/Package.resolved`. The pin only reappears after a build resolves packages again. A task that regenerates and then runs `git add 10x.xcodeproj` without an intervening build silently drops the Sparkle version pin from the commit.
+
+Every remaining task in this plan regenerates the project, so fix it once here. Preserve the file across the wipe, near the top of the script:
+
+```ruby
+resolved_relative = "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+resolved_path = File.join(project_path, resolved_relative)
+preserved_resolved = File.exist?(resolved_path) ? File.read(resolved_path) : nil
+
+FileUtils.rm_rf(project_path)
+```
+
+and restore it after `project.save`:
+
+```ruby
+if preserved_resolved
+  FileUtils.mkdir_p(File.dirname(resolved_path))
+  File.write(resolved_path, preserved_resolved)
+end
+```
+
+Verify it: `ruby scripts/generate_xcodeproj.rb && git status --short` must not report `Package.resolved` as deleted.
+
+- [ ] **Step 5: Write the failing test**
 
 Create `Tests/TenXAppTests/UpdateConfigurationTests.swift`:
 
@@ -434,7 +459,7 @@ import Testing
 
 The 32-byte assertion catches a truncated or misquoted key, which otherwise fails only at the moment a real update is verified.
 
-- [ ] **Step 5: Run the test to verify it fails**
+- [ ] **Step 6: Run the test to verify it fails**
 
 ```bash
 ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /private/tmp/tenx-updateconfig test '-only-testing:TenXAppTests/updateFeedPointsAtTheNextStepReleaseFeed()'
@@ -442,7 +467,7 @@ ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 
 
 Expected: FAIL, feed is `nil`.
 
-- [ ] **Step 6: Add the keys to Info.plist**
+- [ ] **Step 7: Add the keys to Info.plist**
 
 Insert before the closing `</dict>` in `App/Info.plist`, substituting the public key printed in Step 2:
 
@@ -459,7 +484,7 @@ Insert before the closing `</dict>` in `App/Info.plist`, substituting the public
 
 `SUEnableAutomaticChecks` must be explicitly `false`. Leaving it absent makes Sparkle show its own permission prompt on second launch, which is a stock dialog and violates the design.
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [ ] **Step 8: Run the tests to verify they pass**
 
 ```bash
 ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /private/tmp/tenx-updateconfig test '-only-testing:TenXAppTests/updateFeedPointsAtTheNextStepReleaseFeed()' '-only-testing:TenXAppTests/updatePublicKeyIsPresentAndDecodable()' '-only-testing:TenXAppTests/sparkleNeverSchedulesItsOwnChecksOrInstalls()'
@@ -467,7 +492,7 @@ ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add App/Info.plist Tests/TenXAppTests/UpdateConfigurationTests.swift && git commit -m "feat(updates): configure the Sparkle feed and verification key"
