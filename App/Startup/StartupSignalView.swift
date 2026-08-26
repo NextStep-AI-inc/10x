@@ -3,17 +3,6 @@ import SwiftUI
 struct StartupSignalGeometry {
     static let waveWidth: CGFloat = 190
 
-    private static let waveSegments: [(
-        start: CGFloat,
-        end: CGFloat,
-        multiplier: CGFloat
-    )] = [
-        (0, 0.18, 1.10),
-        (0.18, 0.46, -0.72),
-        (0.46, 0.68, 1),
-        (0.68, 1, -0.62),
-    ]
-
     let width: CGFloat
     let midY: CGFloat
     let amplitude: CGFloat
@@ -24,13 +13,11 @@ struct StartupSignalGeometry {
 
     func wavePoint(progress: CGFloat) -> CGPoint {
         let clampedProgress = min(max(progress, 0), 1)
-        guard let segment = Self.waveSegments.first(where: { clampedProgress <= $0.end }) else {
-            return CGPoint(x: waveStart.x + Self.waveWidth, y: midY)
-        }
-        let localProgress = (clampedProgress - segment.start) / (segment.end - segment.start)
-        let verticalOffset = CGFloat(sin(Double(localProgress) * .pi))
-            * amplitude
-            * segment.multiplier
+        let entryProgress = min(clampedProgress / 0.08, 1)
+        let entryEase = entryProgress * entryProgress * (3 - 2 * entryProgress)
+        let envelope = clampedProgress.squareRoot() * entryEase
+        let phase = Double(clampedProgress) * 4 * .pi
+        let verticalOffset = CGFloat(sin(phase)) * amplitude * envelope
 
         return CGPoint(
             x: waveStart.x + Self.waveWidth * clampedProgress,

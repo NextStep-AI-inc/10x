@@ -4,19 +4,25 @@ import SwiftUI
 import Testing
 @testable import TenXApp
 
-@Test func startupSignalUsesAFixedUnevenWaveWithPinnedEndpoints() {
+@Test func startupSignalEntersSmoothlyAndGrowsIntoAContinuousRipple() {
     let geometry = StartupSignalGeometry(width: 640, midY: 24, amplitude: 18)
 
     #expect(geometry.waveStart.x == 450)
     #expect(geometry.wavePoint(progress: 0).y == 24)
-    #expect(abs(geometry.wavePoint(progress: 0.18).y - 24) < 0.001)
-    #expect(abs(geometry.wavePoint(progress: 0.46).y - 24) < 0.001)
-    #expect(abs(geometry.wavePoint(progress: 0.68).y - 24) < 0.001)
+    #expect(abs(geometry.wavePoint(progress: 0.01).y - 24) < 0.05)
+    #expect(abs(geometry.wavePoint(progress: 0.25).y - 24) < 0.001)
+    #expect(abs(geometry.wavePoint(progress: 0.5).y - 24) < 0.001)
+    #expect(abs(geometry.wavePoint(progress: 0.75).y - 24) < 0.001)
     #expect(abs(geometry.wavePoint(progress: 1).y - 24) < 0.001)
-    #expect(geometry.wavePoint(progress: 0.09).y > 40)
-    #expect(geometry.wavePoint(progress: 0.32).y < 13)
-    #expect(geometry.wavePoint(progress: 0.57).y > 40)
-    #expect(geometry.wavePoint(progress: 0.84).y < 14)
+
+    let firstPeak = geometry.wavePoint(progress: 0.125).y - 24
+    let secondPeak = 24 - geometry.wavePoint(progress: 0.375).y
+    let thirdPeak = geometry.wavePoint(progress: 0.625).y - 24
+    let fourthPeak = 24 - geometry.wavePoint(progress: 0.875).y
+    #expect(firstPeak > 5 && firstPeak < 7)
+    #expect(secondPeak > 10 && secondPeak < 12)
+    #expect(thirdPeak > 13 && thirdPeak < 15)
+    #expect(fourthPeak > 16 && fourthPeak < 18)
 }
 
 @Test func signalMotionKeepsTheWaveFixedAndFreezesTravelForReducedMotion() {
