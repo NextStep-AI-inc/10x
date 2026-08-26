@@ -180,18 +180,56 @@ import Testing
     defer { fixture.cleanup() }
     let stable = try fixture.project("Stable")
     let crashing = try fixture.project("Crashing")
-    let manager = fixture.processManager(
-        modesByProject: [crashing.path: "crash-after-negotiation"])
+    let trigger = fixture.file("pre-handoff-crash.trigger")
+    let minimumGate = LoadGate()
+    let (floorRelease, floorReleaseContinuation) = AsyncStream<Void>.makeStream(
+        bufferingPolicy: .bufferingNewest(1))
+    defer { floorReleaseContinuation.finish() }
+    let timing = StartupTiming(
+        minimumVisibility: .milliseconds(350),
+        timeout: .seconds(10),
+        sleep: { duration in
+            if duration == .milliseconds(350) {
+                await minimumGate.started()
+                for await _ in floorRelease { break }
+                try Task.checkCancellation()
+            } else {
+                try await ContinuousClock().sleep(for: .seconds(60))
+            }
+        })
+    let manager = fixture.triggeredCrashManager(
+        project: crashing,
+        trigger: trigger)
     _ = try await manager.warm(projectDirectory: stable.path)
-    let model = fixture.model(processManager: manager)
+    let model = fixture.model(processManager: manager, timing: timing)
     model.chooseProject(stable)
     try fixture.writeSession(cwd: crashing, modified: .now)
 
-    await model.bootstrap()
+    let bootstrap = Task { await model.bootstrap() }
+    await minimumGate.waitForStart()
+    await waitForModelState {
+        let stableIsWarm = await manager.isWarm(projectDirectory: stable.path)
+        let crashingIsWarm = await manager.isWarm(projectDirectory: crashing.path)
+        return stableIsWarm && crashingIsWarm
+    }
+    #expect(model.startupState.phase == .preparing)
+    #expect(model.startupState.handoffGeneration == 0)
+
+    try Data().write(to: trigger)
+    await waitForModelState {
+        await !manager.isWarm(projectDirectory: crashing.path)
+    }
+    await waitForModelState {
+        model.startupState.phase == .recovery
+            && model.startupState.status(of: .recentProjects) == .stopped
+    }
 
     #expect(model.startupState.phase == .recovery)
     #expect(model.startupState.status(of: .recentProjects) == .stopped)
     #expect(await manager.isWarm(projectDirectory: stable.path))
+    floorReleaseContinuation.yield()
+    floorReleaseContinuation.finish()
+    await bootstrap.value
     await model.shutdown()
 }
 
