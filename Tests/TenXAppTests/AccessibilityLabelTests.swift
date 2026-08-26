@@ -1,6 +1,7 @@
 import Testing
 @testable import TenXApp
 
+@Suite struct AccessibilityLabelTests {
 @Test func railSessionLabelsIncludeHierarchyAndState() {
     #expect(RailAccessibility.sessionLabel(
         title: "Bauhaus macOS interface",
@@ -109,4 +110,5 @@ import Testing
         .contains("2 active sessions"))
     #expect(ProviderUsageAccessibility.wheelValue(provider: provider, activeCount: 2)
         .contains("5 hour, 20 percent remaining"))
+}
 }

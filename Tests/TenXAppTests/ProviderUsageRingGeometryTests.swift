@@ -1,6 +1,7 @@
 import Testing
 @testable import TenXApp
 
+@Suite struct ProviderUsageRingGeometryTests {
 @Test(arguments: [0, 1, 2, 3, 12])
 func providerUsageRingMetricsScaleWithoutDroppingRings(limitCount: Int) {
     let metrics = ProviderUsageRingGeometry.metrics(limitCount: limitCount)
@@ -17,4 +18,5 @@ func providerUsageRingMetricsScaleWithoutDroppingRings(limitCount: Int) {
 
 @Test func providerUsageRingMetricsRetainDenseLimits() {
     #expect(ProviderUsageRingGeometry.metrics(limitCount: 12).count == 12)
+}
 }
