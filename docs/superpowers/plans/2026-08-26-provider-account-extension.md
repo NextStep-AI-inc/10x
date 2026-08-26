@@ -16,7 +16,8 @@
 - Strict Swift: no `any` escapes into public API, no `as!`, no force unwraps outside tests. One component per file, `PascalCase.swift`.
 - No new Swift package dependencies. The extension adds no npm dependencies beyond what OMP already injects (`pi.zod`, `pi.pi`).
 - Never write tokens, credential ids, filesystem paths, or raw provider payloads into anything 10x persists, renders, or logs. Only opaque refs and safe labels cross the boundary.
-- `accountRef` is `sha256(provider \0 accountId \0 email \0 orgId \0 projectId)` with empty strings for absent fields, and is undefined when both `accountId` and `email` are absent. This must byte-match OMP's `credentialPinHash`.
+- `accountRef` is `sha256(provider \0 accountId \0 email \0 orgId \0 projectId)` as bare lowercase hex with no prefix, empty strings for absent fields, and undefined when both `accountId` and `email` are absent. This must byte-match **stock** OMP's `credentialPinHash` at commit `b4e8e856a` (v18.0.6).
+- **Version trap:** the OMP worktree at `/Users/tannerpham/CS Projects/.worktrees/oh-my-pi-provider-account-rpc` defaults to `d65d2247f`, a fork whose `credentialPinHash` adds a `credentialId` fallback and a `v1:` prefix. That fork is being abandoned by this very plan and no user will ever run it. Always generate parity fixtures from a pinned stock commit, never from that working tree.
 - User-facing copy: no em dashes, no performed states, no capability that does not ship in the active tier. Load `writing-ui` before writing any string.
 - Every task ends with `ruby scripts/generate_xcodeproj.rb && git diff --check` clean when it touches the file tree.
 - Test command for 10x: `xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-ext -parallel-testing-enabled NO test`. Reuse one derived-data path; do not create a new one per run.

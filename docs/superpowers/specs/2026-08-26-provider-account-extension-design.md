@@ -49,8 +49,11 @@ noted, against the published `omp/18.0.4` installed on this machine.
 - **`OmpUsageSnapshot` in 10x already decodes that exact shape**, including
   `accountsWithoutUsage` and `disabledCredentials`.
 - **`credentialPinHash(provider, identity)`** in
-  `packages/coding-agent/src/session/credential-pin.ts` is a documented, stable
-  `sha256` over `provider\0accountId\0email\0orgId\0projectId`. Its source
+  `packages/coding-agent/src/session/credential-pin.ts`, **as of stock commit
+  `b4e8e856a` (v18.0.6)**, is a documented, stable `sha256` over
+  `provider\0accountId\0email\0orgId\0projectId`, emitted as bare lowercase hex
+  with no prefix. The abandoned `codex/provider-account-rpc` fork modified this
+  function; parity must always be taken against stock, never that fork. Its source
   comment names the digest input as the persisted contract for
   `CredentialPinEntry.hash`.
 - **`credential_pin` session-file entries** are written after each assistant turn
