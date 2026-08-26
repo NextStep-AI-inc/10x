@@ -300,8 +300,10 @@ final class ComputerUseSetupModel {
             if let selected,
                let workspaceID = prepared?.workspaceID {
                 do {
-                    originalWorkspaceID = try await selected.provider.listWindows()
-                        .first(where: { $0.id == opened.windowID })?.workspaceID
+                    let observedWindow = try await waitForProviderToObserve(
+                        windowID: opened.windowID,
+                        using: selected.provider)
+                    originalWorkspaceID = observedWindow.workspaceID
                     do {
                         try await selected.provider.move(windowID: opened.windowID, to: workspaceID)
                         placementOutcome = .passed
@@ -310,7 +312,7 @@ final class ComputerUseSetupModel {
                         throw error
                     }
                 } catch {
-                    if error is CancellationError { placementOutcome = .cancelled }
+                    placementOutcome = error is CancellationError ? .cancelled : .failed
                     throw error
                 }
             }
@@ -395,6 +397,24 @@ final class ComputerUseSetupModel {
             }
         }
         return nil
+    }
+
+    private func waitForProviderToObserve(
+        windowID: String,
+        using provider: any AgentDesktopProvider
+    ) async throws -> AgentWindow {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(2))
+        while true {
+            try Task.checkCancellation()
+            if let window = try await provider.listWindows().first(where: { $0.id == windowID }) {
+                return window
+            }
+            guard clock.now < deadline else {
+                throw AgentDesktopProviderError.operationFailed(provider.kind)
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
     }
 
     func runDisposableProbe(
