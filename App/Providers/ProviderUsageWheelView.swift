@@ -56,7 +56,7 @@ struct ProviderUsageWheelView: View {
                 .font(TenXTypography.mono(size: 9, weight: .semibold))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
         }
-        .accessibilityHidden(true)
+        .accessibilityElement(children: .ignore)
     }
 
     private func ring(limit: ProviderUsageLimit, metric: ProviderUsageRingMetric) -> some View {
