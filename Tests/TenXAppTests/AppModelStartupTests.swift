@@ -1,6 +1,80 @@
+import AppKit
 import Foundation
 import Testing
+import XCTest
 @testable import TenXApp
+
+@MainActor
+final class AppTerminationDelegateTests: XCTestCase {
+    func testTerminationWithoutShutdownHandlerTerminatesImmediately() {
+        let replies = TerminationReplyRecorder()
+        let delegate = AppTerminationDelegate(reply: replies.reply)
+
+        let first = delegate.applicationShouldTerminate(.shared)
+        let second = delegate.applicationShouldTerminate(.shared)
+
+        XCTAssertEqual(first, .terminateNow)
+        XCTAssertEqual(second, .terminateNow)
+        XCTAssertTrue(replies.values.isEmpty)
+    }
+
+    func testRepeatedTerminationRequestsShareOneShutdownAndOneSuccessReply() async {
+        let shutdownGate = LoadGate()
+        let counter = TerminationCounter()
+        let replies = TerminationReplyRecorder()
+        let delegate = AppTerminationDelegate(
+            terminationGrace: .seconds(10),
+            sleep: { _ in try await ContinuousClock().sleep(for: .seconds(60)) },
+            reply: replies.reply)
+        delegate.shutdown = {
+            await counter.increment()
+            await shutdownGate.started()
+            await shutdownGate.waitForRelease()
+        }
+
+        XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateLater)
+        await shutdownGate.waitForStart()
+        XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateLater)
+        var shutdownCount = await counter.currentValue()
+        XCTAssertEqual(shutdownCount, 1)
+        XCTAssertTrue(replies.values.isEmpty)
+
+        await shutdownGate.release()
+        await replies.waitForValues([true])
+
+        shutdownCount = await counter.currentValue()
+        XCTAssertEqual(shutdownCount, 1)
+        XCTAssertEqual(replies.values, [true])
+        XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateNow)
+    }
+
+    func testTerminationGraceRepliesWhenShutdownDoesNotReturn() async {
+        let shutdownGate = LoadGate()
+        let counter = TerminationCounter()
+        let sleep = TerminationSleepRecorder()
+        let replies = TerminationReplyRecorder()
+        let delegate = AppTerminationDelegate(
+            terminationGrace: .milliseconds(250),
+            sleep: { duration in await sleep.sleep(duration) },
+            reply: replies.reply)
+        delegate.shutdown = {
+            await counter.increment()
+            await shutdownGate.started()
+            await shutdownGate.waitForRelease()
+        }
+
+        XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateLater)
+        await shutdownGate.waitForStart()
+        await replies.waitForValues([true])
+        XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateNow)
+
+        await shutdownGate.release()
+        await waitForModelState { await counter.currentValue() == 1 }
+        let durations = await sleep.recordedDurations()
+        XCTAssertEqual(durations, [.milliseconds(250)])
+        XCTAssertEqual(replies.values, [true])
+    }
+}
 
 @Test func startupAndWorkspaceUseDistinctStableSceneIDs() {
     #expect(AppWindowID.startup == "startup")
@@ -538,6 +612,50 @@ private let unauthenticatedProvider = ProviderLoginProvider(
     name: "Cursor",
     isAvailable: true,
     isAuthenticated: false)
+
+@MainActor
+private final class TerminationReplyRecorder {
+    private(set) var values: [Bool] = []
+    private var waiters: [([Bool], CheckedContinuation<Void, Never>)] = []
+
+    func reply(_: NSApplication, _ shouldTerminate: Bool) {
+        values.append(shouldTerminate)
+        let readyWaiters = waiters.filter { values == $0.0 }
+        waiters.removeAll { values == $0.0 }
+        for waiter in readyWaiters {
+            waiter.1.resume()
+        }
+    }
+
+    func waitForValues(_ expected: [Bool]) async {
+        guard values != expected else { return }
+        await withCheckedContinuation { waiters.append((expected, $0)) }
+    }
+}
+
+private actor TerminationCounter {
+    private var value = 0
+
+    func increment() {
+        value += 1
+    }
+
+    func currentValue() -> Int {
+        value
+    }
+}
+
+private actor TerminationSleepRecorder {
+    private var durations: [Duration] = []
+
+    func sleep(_ duration: Duration) {
+        durations.append(duration)
+    }
+
+    func recordedDurations() -> [Duration] {
+        durations
+    }
+}
 
 @MainActor
 private func startupProviderModel(

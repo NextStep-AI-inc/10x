@@ -10,7 +10,6 @@ struct StartupSceneView: View {
     let model: AppModel
 
     @Environment(\.openWindow) private var openWindow
-    @Environment(\.dismissWindow) private var dismissWindow
     @State private var handledHandoffGeneration = 0
 
     var body: some View {
@@ -27,8 +26,6 @@ struct StartupSceneView: View {
             handledHandoffGeneration = generation
             Task { @MainActor in
                 openWindow(id: AppWindowID.workspace)
-                await model.workspaceDidOpen()
-                dismissWindow(id: AppWindowID.startup)
             }
         }
     }
