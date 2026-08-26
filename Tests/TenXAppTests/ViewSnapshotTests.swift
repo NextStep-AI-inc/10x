@@ -63,6 +63,26 @@ import Testing
 }
 
 @MainActor
+@Test func computerUseSettingsSnapshot() throws {
+    try assertSnapshot(
+        ComputerUseSettingsSection(model: computerUseSnapshotModel(contract: .complete))
+            .frame(width: 720)
+            .frame(maxHeight: .infinity, alignment: .topLeading),
+        name: "computer-use-settings",
+        size: CGSize(width: 800, height: 620))
+}
+
+@MainActor
+@Test func degradedComputerUseSettingsSnapshot() throws {
+    try assertSnapshot(
+        ComputerUseSettingsSection(model: computerUseSnapshotModel(contract: .legacyBestEffort))
+            .frame(width: 720)
+            .frame(maxHeight: .infinity, alignment: .topLeading),
+        name: "computer-use-settings-degraded",
+        size: CGSize(width: 800, height: 620))
+}
+
+@MainActor
 @Test func userMessageSnapshot() throws {
     let message = TranscriptMessage(
         id: "user-message",
@@ -486,6 +506,33 @@ private func snapshotTextResult(_ text: String) -> JSONValue {
     .object(["content": .array([
         .object(["type": .string("text"), "text": .string(text)]),
     ])])
+}
+
+@MainActor
+private func computerUseSnapshotModel(contract: OmpComputerContract) -> ComputerUseSetupModel {
+    let isComplete = contract == .complete
+    let capabilities = ComputerCapabilities(
+        backend: "macos",
+        capture: isComplete ? .granted : .denied,
+        input: isComplete ? .granted : .unknown,
+        accessibility: isComplete ? .granted : .denied)
+    let provider = ProviderProbe(
+        availability: isComplete ? .healthy : .incompatible,
+        integrationVersion: isComplete ? "1.0.0" : nil,
+        capabilities: isComplete ? .isolated : .background)
+    return ComputerUseSetupModel(
+        preference: .automatic,
+        readiness: ComputerUseReadiness(
+            ompContract: contract,
+            capabilities: capabilities,
+            preferredProvider: provider,
+            backgroundFallbackAvailable: true,
+            providerProbes: [.aeroSpace: provider, .background: ProviderProbe(
+                availability: .healthy,
+                integrationVersion: nil,
+                capabilities: .background)]),
+        ompVersion: "18.0.5",
+        automaticallyChecksReadiness: false)
 }
 
 private struct SnapshotConfigRunner: OmpConfigRunning {

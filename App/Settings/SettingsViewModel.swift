@@ -10,14 +10,20 @@ final class SettingsViewModel {
     private(set) var isLoading = false
     private(set) var loadError: String?
     private(set) var keyErrors: [String: String] = [:]
+    let computerUseSetup: ComputerUseSetupModel
 
     var sections: [SettingsSection] { catalog.sections(query: query) }
     var settingCount: Int { catalog.definitions.count }
+    var hasComputerUseSetting: Bool { catalog.hasComputerUseSetting }
 
     @ObservationIgnored private let service: OmpConfigService
 
-    init(service: OmpConfigService) {
+    init(
+        service: OmpConfigService,
+        computerUseSetup: ComputerUseSetupModel = ComputerUseSetupModel()
+    ) {
         self.service = service
+        self.computerUseSetup = computerUseSetup
     }
 
     func load() async {

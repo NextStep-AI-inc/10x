@@ -3,12 +3,14 @@ import OmpKit
 
 struct SettingsCatalog: Equatable {
     private(set) var definitions: [SettingDefinition]
+    private(set) var hasComputerUseSetting: Bool
 
-    static let empty = SettingsCatalog(definitions: [])
+    static let empty = SettingsCatalog(definitions: [], hasComputerUseSetting: false)
 
     static func build(from value: JSONValue) -> SettingsCatalog {
         guard let object = value.objectValue else { return .empty }
         let definitions = object.keys.sorted().compactMap { key -> SettingDefinition? in
+            guard key != "computer.enabled" else { return nil }
             guard let source = object[key]?.objectValue else { return nil }
             let isSecret = secretKey(key)
             return SettingDefinition(
@@ -22,7 +24,9 @@ struct SettingsCatalog: Equatable {
                 isSecret: isSecret,
                 requiresRestart: requiresRestart(key))
         }
-        return SettingsCatalog(definitions: definitions)
+        return SettingsCatalog(
+            definitions: definitions,
+            hasComputerUseSetting: object.keys.contains(where: { $0.hasPrefix("computer.") }))
     }
 
     func definition(key: String) -> SettingDefinition? {

@@ -149,8 +149,11 @@ final class AppModel {
         self.installation = installation
         let processManager = dependencies.makeProcessManager(installation.executableURL.path)
         self.processManager = processManager
-        settingsModel = SettingsViewModel(service: OmpConfigService(
-            runner: OmpConfigProcessRunner(executableURL: installation.executableURL)))
+        settingsModel = SettingsViewModel(
+            service: OmpConfigService(runner: OmpConfigProcessRunner(executableURL: installation.executableURL)),
+            computerUseSetup: ComputerUseSetupModel(
+                omp: DisposableComputerUseOMP(executable: installation.executableURL.path),
+                ompVersion: installation.version))
         watchUnexpectedExits(from: processManager)
         setupError = nil
         route = .newSession

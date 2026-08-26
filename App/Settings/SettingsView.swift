@@ -106,6 +106,9 @@ struct SettingsView: View {
     private var settingsDocument: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
+                if model.hasComputerUseSetting {
+                    ComputerUseSettingsSection(model: model.computerUseSetup)
+                }
                 if model.sections.isEmpty {
                     Text("No settings match this search")
                         .font(TenXTypography.body(size: 12))
