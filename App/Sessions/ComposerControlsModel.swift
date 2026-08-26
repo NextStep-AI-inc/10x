@@ -114,6 +114,9 @@ final class ComposerControlsModel {
             do {
                 try await defaults.setDefaultModel(provider: model.provider, modelID: model.modelID)
                 selectedModel = model
+                thinkingLevel = ComposerControlsPresentation.resolvedThinkingLevel(
+                    current: thinkingLevel,
+                    for: model)
                 applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
                 errorMessage = nil
             } catch {
@@ -124,14 +127,19 @@ final class ComposerControlsModel {
             isMutating = true
             defer { isMutating = false }
             let prior = selectedModel
+            let priorThinking = thinkingLevel
             let priorFastEnabled = isFastModeEnabled
             selectedModel = model
+            thinkingLevel = ComposerControlsPresentation.resolvedThinkingLevel(
+                current: thinkingLevel,
+                for: model)
             applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
             do {
                 try await activeSession.setModel(provider: model.provider, modelID: model.modelID)
                 errorMessage = nil
             } catch {
                 selectedModel = prior
+                thinkingLevel = priorThinking
                 applyFastModeVisibility(preservingEnabled: priorFastEnabled)
                 errorMessage = Self.sanitizedMessage(
                     from: error,

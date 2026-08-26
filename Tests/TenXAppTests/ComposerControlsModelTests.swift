@@ -26,6 +26,14 @@ private let cursorModel = ComposerModelInfo(
     thinkingEfforts: [],
     requiresEffort: false)
 
+private let codexRequiredEffort = ComposerModelInfo(
+    modelID: "gpt-5.2-codex",
+    name: "GPT-5.2 Codex",
+    provider: "openai-codex",
+    api: "openai-codex-responses",
+    thinkingEfforts: ["low", "medium", "high"],
+    requiresEffort: true)
+
 @MainActor
 @Test func refreshFiltersToAuthenticatedProvidersAndSeedsSelection() async {
     let catalog = FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
@@ -386,6 +394,63 @@ private let cursorModel = ComposerModelInfo(
     #expect(left.id == "anthropic/shared")
     #expect(right.id == "cursor/shared")
     #expect(left.id != right.id)
+}
+
+@MainActor
+@Test func selectingARequiredEffortModelDropsAutoFromTheThinkingLevel() async {
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+
+    await model.selectModel(codexRequiredEffort, mode: .newSession)
+
+    #expect(model.thinkingLevel == "medium")
+    #expect(model.spawnSelection.thinking == "medium")
+}
+
+@MainActor
+@Test func selectingAModelKeepsAThinkingLevelItStillOffers() async {
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "high",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+
+    await model.selectModel(codexRequiredEffort, mode: .newSession)
+
+    #expect(model.thinkingLevel == "high")
+}
+
+@MainActor
+@Test func aFailedActiveSwitchRestoresTheThinkingLevelToo() async {
+    let session = FakeComposerSessionController()
+    session.setModelError = FakeComposerError.rpcFailed
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    model.attachActiveSession(session)
+
+    await model.selectModel(codexRequiredEffort, mode: .activeSession)
+
+    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
+    #expect(model.thinkingLevel == "auto")
+    #expect(model.errorMessage != nil)
 }
 
 // MARK: - Fakes
