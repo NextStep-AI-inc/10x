@@ -76,7 +76,15 @@ Everything in t2 rests on 10x being able to send a command *into* a running exte
 
 **Interfaces:**
 - Produces: `openCommandChannel(ctx, handler)` — loops `ctx.ui.input` and dispatches parsed commands.
-- Produces the wire contract: request `method: "input"` with `title === "tenx.provider-accounts.v1"`; response body `{ value: "<json>" }` where the JSON is `{ id: string, command: string, params?: unknown }`; the extension's reply to the *next* loop turn carries `{ id, ok: true, data }` or `{ id, ok: false, error }`.
+- Produces the wire contract, **verified against a live `omp` 18.0.4 in Task 1**: OMP emits `{ type: "extension_ui_request", id, method: "input", title: "tenx.provider-accounts.v1", placeholder }`. The client answers with a **flat** frame, no `body` wrapper:
+
+```json
+{ "type": "extension_ui_response", "id": "<request id>", "value": "<json string>" }
+```
+
+  The `value` string parses to `{ id: string, command: string, params?: unknown }`. The extension carries its reply to that command forward in the *next* request's `placeholder`, as `{ id, ok: true, data }` or `{ id, ok: false, error }`.
+
+  Note for Swift callers: `OmpKit`'s `respond(requestID:body:)` takes `body` as a Swift *parameter name* that is flattened into the frame. It does not add a `body` key. Confirmed against `docs/contracts/rpc-wire-contract.md` and `OmpKit/.../RpcCommand.swift`.
 
 - [ ] **Step 1: Scaffold the bun project**
 
@@ -136,7 +144,7 @@ test("the extension receives a command from the client and answers it", async ()
 			`${JSON.stringify({
 				type: "extension_ui_response",
 				id: opened.id,
-				body: { value: JSON.stringify({ id: "c1", command: "ping" }) },
+				value: JSON.stringify({ id: "c1", command: "ping" }),
 			})}\n`,
 		),
 	);
@@ -211,7 +219,7 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { openCommandChannel } from "./src/command-channel";
 
 export default function (pi: ExtensionAPI) {
-	pi.on("session_start", async ctx => {
+	pi.on("session_start", async (_event, ctx) => {
 		void openCommandChannel(ctx.ui, async command => {
 			if (command.command === "ping") return "pong";
 			throw new Error(`Unknown command: ${command.command}`);
