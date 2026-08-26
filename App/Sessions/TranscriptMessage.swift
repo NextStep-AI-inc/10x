@@ -30,18 +30,10 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
     let attribution: TranscriptResponseAttribution
     let isFinal: Bool
     let stopReason: String?
+    let document: ContentDocument
 
     var visibleText: String {
-        let text = Self.visibleText(from: raw)
-        if !text.isEmpty { return text }
-        if let errorMessage = raw["errorMessage"]?.stringValue, !errorMessage.isEmpty {
-            return errorMessage
-        }
-        return switch stopReason?.lowercased() {
-        case "error": "Response failed."
-        case "aborted": "Response aborted."
-        default: ""
-        }
+        document.source
     }
 
     init(
@@ -68,6 +60,21 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             modelRole: attribution.modelRole)
         self.isFinal = isFinal
         stopReason = raw["stopReason"]?.stringValue
+        let text = Self.visibleText(from: raw)
+        let displayText: String
+        if !text.isEmpty {
+            displayText = text
+        } else if let errorMessage = raw["errorMessage"]?.stringValue,
+                  !errorMessage.isEmpty {
+            displayText = errorMessage
+        } else {
+            displayText = switch stopReason?.lowercased() {
+            case "error": "Response failed."
+            case "aborted": "Response aborted."
+            default: ""
+            }
+        }
+        document = MessageContentParser.parse(displayText)
     }
 
     static func visibleText(from message: JSONValue) -> String {

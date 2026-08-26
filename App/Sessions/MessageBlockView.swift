@@ -1,57 +1,120 @@
 import SwiftUI
 
 struct MessageBlockView: View {
-    let block: MessageBlock
+    let block: ContentBlock
 
     static let proseFontSize: CGFloat = 15
     static let proseLineSpacing: CGFloat = 4
 
+    @ViewBuilder
     var body: some View {
         switch block {
-        case .paragraph(let text):
-            markdown(text)
+        case .paragraph(let content):
+            richText(content)
                 .font(TenXTypography.body(size: Self.proseFontSize))
-        case .heading(let level, let text):
-            markdown(text)
+        case .heading(let level, let content):
+            richText(content)
                 .font(TenXTypography.body(
                     size: level == 1 ? 19 : max(Self.proseFontSize, 18 - CGFloat(level)),
                     weight: .semibold))
                 .padding(.top, level == 1 ? 3 : 0)
-        case .unorderedList(let items):
-            list(items: items, ordered: false)
-        case .orderedList(let items):
-            list(items: items, ordered: true)
-        case .quote(let text):
-            markdown(text)
-                .font(TenXTypography.body(size: Self.proseFontSize))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                .padding(.leading, 12)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(TenXPalette.color(TenXPalette.nearBlackHex))
-                        .frame(width: 2)
+        case .list(let list):
+            ContentListView(list: list)
+        case .quote(let blocks):
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(blocks.enumerated()), id: \.offset) { _, child in
+                    MessageBlockView(block: child)
                 }
-        case .code(let language, let text):
-            CodeBlockView(language: language, code: text)
+            }
+            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            .padding(.leading, 12)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(TenXPalette.color(TenXPalette.nearBlackHex))
+                    .frame(width: 2)
+            }
+        case .table(let table):
+            ContentTableView(table: table)
+        case .divider:
+            Divider()
+        case .source(let source):
+            CodeBlockView(language: source.language, code: source.text)
+        case .unsupported(let label):
+            Text(label)
+                .font(TenXTypography.body(size: 12))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
         }
     }
 
-    private func markdown(_ text: String) -> some View {
-        Text((try? AttributedString(markdown: text)) ?? AttributedString(text))
+    private func richText(_ content: InlineContent) -> some View {
+        Text(content.attributed)
             .lineSpacing(Self.proseLineSpacing)
             .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct ContentListView: View {
+    let list: ContentList
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(list.items.enumerated()), id: \.offset) { index, item in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(marker(for: item, index: index))
+                            .font(TenXTypography.body(size: 13, weight: .semibold))
+                            .frame(width: 22, alignment: .trailing)
+                        Text(item.content.attributed)
+                            .font(TenXTypography.body(size: MessageBlockView.proseFontSize))
+                            .lineSpacing(MessageBlockView.proseLineSpacing)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
+                        ContentListView(list: child)
+                            .padding(.leading, 22)
+                    }
+                }
+            }
+        }
     }
 
-    private func list(items: [String], ordered: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(ordered ? "\(index + 1)." : "•")
-                        .font(TenXTypography.body(size: 13, weight: .semibold))
-                        .frame(width: 20, alignment: .trailing)
-                    markdown(item)
-                        .font(TenXTypography.body(size: Self.proseFontSize))
-                }
+    private func marker(for item: ContentListItem, index: Int) -> String {
+        if let isChecked = item.isChecked { return isChecked ? "✓" : "○" }
+        return switch list.style {
+        case .unordered, .task: "•"
+        case .ordered(let start): "\(start + index)."
+        }
+    }
+}
+
+private struct ContentTableView: View {
+    let table: ContentTable
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            row(table.headers, isHeader: true)
+            Divider()
+            ForEach(Array(table.rows.enumerated()), id: \.offset) { _, cells in
+                row(cells, isHeader: false)
+            }
+        }
+        .padding(10)
+        .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func row(_ cells: [InlineContent], isHeader: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ForEach(Array(cells.enumerated()), id: \.offset) { _, cell in
+                Text(cell.attributed)
+                    .font(TenXTypography.body(
+                        size: 12,
+                        weight: isHeader ? .semibold : .regular))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }

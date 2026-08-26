@@ -75,6 +75,7 @@
 		5A701FD8D13D24F1AC6A2B4EFF9C3750 /* ReferenceImages in Resources */ = {isa = PBXBuildFile; fileRef = 8829E9FB26B0C3F4084304D34D2C301A /* ReferenceImages */; };
 		5B151C50E093C100144459A849F6A6A0 /* NewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E39762F4FB52F3D515AF403DFE58B6 /* NewSessionView.swift */; };
 		5CCBA6B1E602B5BDDE23007487AFC67D /* AssistantMessageContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B54AE4F0847236005C0CDBE2C06D1958 /* AssistantMessageContentView.swift */; };
+		A10000000000000000000001 /* ContentDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* ContentDocument.swift */; };
 		5F0460BBA8F235DBBF79C56578303B10 /* FileTypeIconDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C134480862742DABA50D1BC46A13326 /* FileTypeIconDescriptor.swift */; };
 		5FACA0103E4C510F4B195C83BA27A69B /* SubagentEventReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDA6BBA78D4E9D610F30E4F71D1365AD /* SubagentEventReducer.swift */; };
 		6154E5D3E0695225113CEDB38BC2BDB8 /* AppModelNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF205FAAE951EA3DDDF585AA2BEA7619 /* AppModelNavigationTests.swift */; };
@@ -354,6 +355,7 @@
 		99111A6BFAC69D977458BFEFDF68AD9C /* ProvidersView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProvidersView.swift; path = App/Providers/ProvidersView.swift; sourceTree = "<group>"; };
 		9A4C64501E0FC8E46A6478B15E5CC333 /* ProviderManagementViewModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderManagementViewModelTests.swift; path = Tests/TenXAppTests/ProviderManagementViewModelTests.swift; sourceTree = "<group>"; };
 		9E1FEB21A58ABA76B2F6F406BB04F6AE /* MessageContentParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessageContentParser.swift; path = App/Sessions/MessageContentParser.swift; sourceTree = "<group>"; };
+		A10000000000000000000002 /* ContentDocument.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContentDocument.swift; path = App/Sessions/ContentDocument.swift; sourceTree = "<group>"; };
 		A102D4B8054BEBC4A7B2B8EC4847A3F6 /* SubagentCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubagentCardView.swift; path = App/Sessions/SubagentCardView.swift; sourceTree = "<group>"; };
 		A1AC18462527DFC7511755A43B16CFBA /* ExtensionUIState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExtensionUIState.swift; path = App/ExtensionUI/ExtensionUIState.swift; sourceTree = "<group>"; };
 		A1BA098CAA656555309A3AF08F68EE67 /* ProviderLoginProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderLoginProvider.swift; path = App/Providers/ProviderLoginProvider.swift; sourceTree = "<group>"; };
@@ -518,6 +520,7 @@
 				A5C2E6DF2829FFEFFD25B0C8835DD810 /* ActiveSessionView.swift */,
 				EC96F6DBF9F715198A356D7EF2D25030 /* ArchivedSessionsView.swift */,
 				B54AE4F0847236005C0CDBE2C06D1958 /* AssistantMessageContentView.swift */,
+				A10000000000000000000002 /* ContentDocument.swift */,
 				12FF2AC253BA0B1E626BE86E84A07DBE /* ChooseProjectFlyout.swift */,
 				E41A820CAD344BAF082ADB182F639214 /* CodeBlockView.swift */,
 				633C20108053EE86E061EDE9561D6C86 /* ComposerControlsModel.swift */,
@@ -871,6 +874,7 @@
 				ACB86CD90A9EE5F54A613CDE3EAC6E68 /* ActiveSessionView.swift in Sources */,
 				922FA81BA6164753A3F81AEA66EC0A0E /* ArchivedSessionsView.swift in Sources */,
 				5CCBA6B1E602B5BDDE23007487AFC67D /* AssistantMessageContentView.swift in Sources */,
+				A10000000000000000000001 /* ContentDocument.swift in Sources */,
 				186E24B7C00D20774933CA4884E82016 /* ChooseProjectFlyout.swift in Sources */,
 				33E51612337F074FA0003755BA1A054D /* CodeBlockView.swift in Sources */,
 				1F0CD8195D9FF16A5E22C4114A59364B /* ComposerControlsModel.swift in Sources */,

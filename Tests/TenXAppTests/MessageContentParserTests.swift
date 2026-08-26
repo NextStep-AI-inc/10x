@@ -2,17 +2,21 @@ import Foundation
 import Testing
 @testable import TenXApp
 
-@Test func messageParserSeparatesSemanticMarkdownBlocks() {
-    let blocks = MessageContentParser.parse("""
+@Test func messageParserBuildsSemanticDocumentBlocks() {
+    let document = MessageContentParser.parse("""
     # Result
 
-    A readable paragraph that wraps normally.
+    A **readable** paragraph that wraps normally.
 
     - first item
-    - second item
+      - nested item
+    - [x] finished item
 
-    1. inspect
-    2. change
+    | File | State |
+    | --- | --- |
+    | App.swift | changed |
+
+    ---
 
     > Keep the interface quiet.
 
@@ -21,33 +25,47 @@ import Testing
     ```
     """)
 
-    #expect(blocks == [
-        .heading(level: 1, text: "Result"),
-        .paragraph("A readable paragraph that wraps normally."),
-        .unorderedList(["first item", "second item"]),
-        .orderedList(["inspect", "change"]),
-        .quote("Keep the interface quiet."),
-        .code(language: "swift", text: "let answer = 10"),
+    #expect(document.blocks.map(\.kind) == [
+        .heading,
+        .paragraph,
+        .list,
+        .table,
+        .divider,
+        .quote,
+        .source,
     ])
+    #expect(document.plainText.contains("nested item"))
+    #expect(document.plainText.contains("let answer = 10"))
 }
 
 @Test func unmatchedFenceStaysVisibleInsteadOfDroppingContent() {
-    let blocks = MessageContentParser.parse("""
+    let document = MessageContentParser.parse("""
     Before
 
     ```text
     unfinished
     """)
 
-    #expect(blocks == [
-        .paragraph("Before"),
-        .paragraph("```text\nunfinished"),
-    ])
+    #expect(document.blocks.map(\.kind) == [.paragraph, .paragraph])
+    #expect(document.plainText == "Before\n```text\nunfinished")
 }
 
 @Test func parserPreservesLongUnbrokenContent() {
     let longPath = "/tmp/" + String(repeating: "segment", count: 100) + ".swift"
-    #expect(MessageContentParser.parse(longPath) == [.paragraph(longPath)])
+    #expect(MessageContentParser.parse(longPath).plainText == longPath)
+}
+
+@Test func transcriptMessageNormalizesContentAtInitialization() {
+    let message = TranscriptMessage(
+        id: "message",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("## Result\n\nRendered once."),
+        ]),
+        isFinal: true)
+
+    #expect(message.document.blocks.map(\.kind) == [.heading, .paragraph])
+    #expect(message.document.source == message.visibleText)
 }
 
 @Test func assistantTranscriptUsesReadableProseMetrics() {

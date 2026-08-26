@@ -5,13 +5,13 @@ struct AssistantMessageContentView: View, Equatable {
 
     nonisolated static func == (lhs: AssistantMessageContentView, rhs: AssistantMessageContentView) -> Bool {
         lhs.message.id == rhs.message.id
-            && lhs.message.visibleText == rhs.message.visibleText
+            && lhs.message.document == rhs.message.document
             && lhs.message.isFinal == rhs.message.isFinal
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: MessageBubbleView.assistantContentSpacing) {
-            ForEach(Array(MessageContentParser.parse(message.visibleText).enumerated()), id: \.offset) { _, block in
+            ForEach(Array(message.document.blocks.enumerated()), id: \.offset) { _, block in
                 MessageBlockView(block: block)
             }
             let references = TranscriptReference.extract(from: message.visibleText)
