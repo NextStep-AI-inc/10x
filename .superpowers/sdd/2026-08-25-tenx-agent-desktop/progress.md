@@ -79,9 +79,10 @@
 | 6. Specialized Setup and Readiness UI | complete | `b905c92c6bb0458e3698a1b0b9eb9b647d411d9c` | `b4b9744f5f03008e043828b9ed8849fe42bd4460` | Approved after fix round 4 | Commits through `b4b9744`; app tests 190 pass, Release build passes, and placement outcomes distinguish cancellation, non-applicability, failure, and success. |
 | 7. Computer Tool Evidence and Persisted Images | complete | `b4b9744f5f03008e043828b9ed8849fe42bd4460` | `4711e0f` | Approved after owner fix round 1 | Commits `c0658ce`, `4711e0f`; app tests 200 pass, Release build passes, reference images inspected. |
 | 8. Foreground Handoff, Header Controls, Menu Bar Stop, and Fail-Closed Lifecycle | complete | `6d97ff5` | `59e90407b129818bb1d41858240b5b95da8b2ff7` | Approved by code-owner review | Commit `59e9040`; app tests 210 pass, universal Release build passes, and handoff/ready/controlling snapshots inspected. |
-| 9. Release-Build End-to-End Acceptance | pending | — | — | — | Requires `launching-local-builds`. |
+| 9. Release-Build End-to-End Acceptance | recorded with blocked physical acceptance | `09a3215` | `09a3215` | Not reviewed | Automated gates passed after timing-sensitive reruns; Release app launched visibly, but AeroSpace, Hammerspoon, Background Only live agent run, and older-OMP physical checks are recorded as FAIL/not run in `docs/qa/computer-use-release-acceptance.md` because required local prerequisites were unavailable. |
 
 ## Rulings and follow-ups
 
 - No dependency installation, deployment, merge, or publication is authorized by this execution.
 - The approved visual system and current component patterns are binding; snapshot updates must be inspected, not blindly accepted.
+- Task 9: Ruling: acceptance documentation should record failed/not-run physical desktop rows instead of manufacturing pass evidence — the environment does not expose `aerospace`, Hammerspoon is not installed, and no older OMP 18.0.4 binary is available — cost if wrong: this branch may need a follow-up acceptance pass on Tanner's configured desktop before it can be called release-ready.
