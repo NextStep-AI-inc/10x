@@ -23,8 +23,10 @@ end
 
 local function checkedUserSpace(spaceID)
     local space = checkedSpace(spaceID)
-    if space == nil or hs.spaces.spaceType(space) ~= "user" then return nil end
-    return tostring(space)
+    if space == nil then return nil end
+    local resolved, spaceType = pcall(hs.spaces.spaceType, space)
+    if not resolved or spaceType ~= "user" then return nil end
+    return space
 end
 
 local function containsSpace(spaces, target)
@@ -36,9 +38,10 @@ local function containsSpace(spaces, target)
 end
 
 function tenx.probe()
+    local workspace = checkedUserSpace(tenx.workspaceID)
     return {
         integrationVersion = tenx.integrationVersion,
-        workspaceID = checkedUserSpace(tenx.workspaceID),
+        workspaceID = workspace and tostring(workspace) or nil,
         capabilities = {
             canIsolate = true,
             canMoveWithoutFocus = true,
@@ -73,7 +76,7 @@ end
 
 function tenx.moveWindow(windowID, workspaceID)
     local window = checkedWindow(windowID)
-    local space = checkedSpace(workspaceID)
+    local space = checkedUserSpace(workspaceID)
     if window == nil or space == nil then return { ok = false } end
     local moved = hs.spaces.moveWindowToSpace(window:id(), space) == true
     local inspected, spaces = pcall(hs.spaces.windowSpaces, window:id())
@@ -85,7 +88,7 @@ function tenx.restoreWindow(windowID, workspaceID)
 end
 
 function tenx.openSpace(workspaceID)
-    local space = checkedSpace(workspaceID)
+    local space = checkedUserSpace(workspaceID)
     if space == nil then return { ok = false } end
     local opened = hs.spaces.gotoSpace(space) == true
     local inspected, focused = pcall(hs.spaces.focusedSpace)
