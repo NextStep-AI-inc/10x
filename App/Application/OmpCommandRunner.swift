@@ -3,15 +3,19 @@ import Foundation
 import Synchronization
 
 enum OmpCommandRunnerError: Error, Sendable {
+    case spawnFailed(Int32)
+    case waitFailed(Int32)
     case nonzeroExit(Int32)
 }
 
 struct OmpCommandRunner: Sendable {
     func run(executableURL: URL, arguments: [String]) async throws -> Data {
-        let state = OmpCommandProcessState(
-            executableURL: executableURL,
-            arguments: arguments)
-        let worker = Task.detached { try await state.run() }
+        let state = OmpCommandProcessState()
+        let worker = Task.detached {
+            try await state.run(
+                executableURL: executableURL,
+                arguments: arguments)
+        }
 
         return try await withTaskCancellationHandler {
             let data = try await worker.value
@@ -25,143 +29,278 @@ struct OmpCommandRunner: Sendable {
 }
 
 private struct OmpCommandProcessStorage {
-    let process: Process
-    let output: Pipe
-    let error: Pipe
     var isCancellationRequested = false
-    var processGroupID: pid_t?
-    var cancellationDescendants: [pid_t] = []
+    var hasSentTermination = false
+    var processID: pid_t?
+    var waitStatus: Int32?
 }
 
-private struct OmpCommandProcessTarget {
-    let group: pid_t?
-    let pid: pid_t
-    let descendants: [pid_t]
-    let isLeaderRunning: Bool
+private struct OmpSpawnedCommand {
+    let processID: pid_t
+    let output: FileHandle
+    let error: FileHandle
 }
 
 private final class OmpCommandProcessState: Sendable {
-    private let storage: Mutex<OmpCommandProcessStorage>
+    private let storage = Mutex(OmpCommandProcessStorage())
 
-    init(executableURL: URL, arguments: [String]) {
-        let process = Process()
-        let output = Pipe()
-        let error = Pipe()
-        process.executableURL = executableURL
-        process.arguments = arguments
-        process.standardOutput = output
-        process.standardError = error
-        storage = Mutex(OmpCommandProcessStorage(
-            process: process,
-            output: output,
-            error: error))
-    }
-
-    func run() async throws -> Data {
+    func run(executableURL: URL, arguments: [String]) async throws -> Data {
         try Task.checkCancellation()
-        let started = try storage.withLock { storage in
-            try storage.process.run()
-            let pid = storage.process.processIdentifier
-            storage.processGroupID = setpgid(pid, pid) == 0 || getpgid(pid) == pid
-                ? pid
-                : nil
-            return (
-                storage.process,
-                storage.output.fileHandleForReading,
-                storage.error.fileHandleForReading,
-                storage.isCancellationRequested)
+        let command = try storage.withLock { storage in
+            guard !storage.isCancellationRequested else { throw CancellationError() }
+            let command = try Self.spawn(
+                executableURL: executableURL,
+                arguments: arguments)
+            storage.processID = command.processID
+            return command
         }
-        if started.3 { cancel() }
 
-        async let outputData = started.1.readToEnd() ?? Data()
-        async let errorData = started.2.readToEnd() ?? Data()
-        started.0.waitUntilExit()
-        let data = try await outputData
-        _ = try await errorData
-        try Task.checkCancellation()
-        guard started.0.terminationStatus == 0 else {
-            throw OmpCommandRunnerError.nonzeroExit(started.0.terminationStatus)
+        async let outputData = Self.drain(command.output)
+        async let errorData = Self.drain(command.error)
+
+        do {
+            let waitStatus = try await waitForLeader()
+            let data = try await outputData
+            _ = try await errorData
+            try Task.checkCancellation()
+            let terminationStatus = Self.terminationStatus(from: waitStatus)
+            guard terminationStatus == 0 else {
+                throw OmpCommandRunnerError.nonzeroExit(terminationStatus)
+            }
+            try finish()
+            return data
+        } catch is CancellationError {
+            await terminateAndReapProcessGroup()
+            _ = try? await outputData
+            _ = try? await errorData
+            throw CancellationError()
+        } catch {
+            await terminateAndReapProcessGroup()
+            _ = try? await outputData
+            _ = try? await errorData
+            throw error
         }
-        return data
     }
 
     func cancel() {
-        let target = storage.withLock { storage -> OmpCommandProcessTarget? in
+        let processID = storage.withLock { storage -> pid_t? in
             storage.isCancellationRequested = true
-            guard storage.process.isRunning else { return nil }
-            return OmpCommandProcessTarget(
-                group: storage.processGroupID,
-                pid: storage.process.processIdentifier,
-                descendants: [],
-                isLeaderRunning: true)
+            guard !storage.hasSentTermination else { return nil }
+            storage.hasSentTermination = true
+            return storage.processID
         }
-        guard let target else { return }
-        let descendants = target.group == nil ? Self.descendantPIDs(of: target.pid) : []
-        storage.withLock { storage in
-            storage.cancellationDescendants = descendants
-        }
-        signal(
-            target: OmpCommandProcessTarget(
-                group: target.group,
-                pid: target.pid,
-                descendants: descendants,
-                isLeaderRunning: true),
-            signal: SIGTERM)
-        DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(500)) {
-            self.forceKillIfNeeded()
+        if let processID { killpg(processID, SIGTERM) }
+    }
+
+    private func waitForLeader() async throws -> Int32 {
+        while true {
+            try Task.checkCancellation()
+            if let status = try pollLeader() { return status }
+            try await Task.sleep(for: .milliseconds(10))
         }
     }
 
-    private func forceKillIfNeeded() {
-        let target = storage.withLock { storage -> OmpCommandProcessTarget? in
-            guard storage.isCancellationRequested,
-                  storage.process.processIdentifier > 0
-            else { return nil }
-            return OmpCommandProcessTarget(
-                group: storage.processGroupID,
-                pid: storage.process.processIdentifier,
-                descendants: storage.cancellationDescendants,
-                isLeaderRunning: storage.process.isRunning)
-        }
-        guard let target else { return }
-        let descendants = target.group == nil && target.isLeaderRunning
-            ? target.descendants + Self.descendantPIDs(of: target.pid)
-            : target.descendants
-        signal(
-            target: OmpCommandProcessTarget(
-                group: target.group,
-                pid: target.pid,
-                descendants: descendants,
-                isLeaderRunning: target.isLeaderRunning),
-            signal: SIGKILL)
-    }
-
-    private func signal(
-        target: OmpCommandProcessTarget,
-        signal: Int32
-    ) {
-        if let group = target.group {
-            killpg(group, signal)
-        } else {
-            for descendant in target.descendants.reversed() { kill(descendant, signal) }
-            if target.isLeaderRunning { kill(target.pid, signal) }
+    private func finish() throws {
+        try storage.withLock { storage in
+            guard !storage.isCancellationRequested else { throw CancellationError() }
+            storage.processID = nil
         }
     }
 
-    private static func descendantPIDs(of parent: pid_t) -> [pid_t] {
-        let query = Process()
-        let output = Pipe()
-        query.executableURL = URL(filePath: "/usr/bin/pgrep")
-        query.arguments = ["-P", String(parent)]
-        query.standardOutput = output
-        query.standardError = FileHandle.nullDevice
-        guard (try? query.run()) != nil else { return [] }
-        query.waitUntilExit()
-        let direct = String(
-            decoding: (try? output.fileHandleForReading.readToEnd()) ?? Data(),
-            as: UTF8.self)
-            .split(whereSeparator: \Character.isWhitespace)
-            .compactMap { pid_t($0) }
-        return direct + direct.flatMap { descendantPIDs(of: $0) }
+    private func terminateAndReapProcessGroup() async {
+        guard let processID = storage.withLock({ $0.processID }) else { return }
+        let shouldSendTermination = storage.withLock { storage in
+            guard !storage.hasSentTermination else { return false }
+            storage.hasSentTermination = true
+            return true
+        }
+        if shouldSendTermination, Self.processGroupExists(processID) {
+            killpg(processID, SIGTERM)
+        }
+
+        let deadline = ContinuousClock.now.advanced(by: .milliseconds(500))
+        while ContinuousClock.now < deadline, Self.processGroupExists(processID) {
+            _ = try? pollLeader()
+            await Self.delay()
+        }
+        if Self.processGroupExists(processID) {
+            killpg(processID, SIGKILL)
+        }
+        while Self.processGroupExists(processID) {
+            _ = try? pollLeader()
+            await Self.delay()
+        }
+        while storage.withLock({ $0.waitStatus == nil }) {
+            _ = try? pollLeader()
+            if storage.withLock({ $0.waitStatus == nil }) {
+                await Self.delay()
+            }
+        }
+    }
+
+    private func pollLeader() throws -> Int32? {
+        try storage.withLock { storage in
+            if let waitStatus = storage.waitStatus { return waitStatus }
+            guard let processID = storage.processID else { return nil }
+            var waitStatus: Int32 = 0
+            let result = waitpid(processID, &waitStatus, WNOHANG)
+            if result == processID {
+                storage.waitStatus = waitStatus
+                return waitStatus
+            }
+            if result == -1, errno != EINTR {
+                throw OmpCommandRunnerError.waitFailed(errno)
+            }
+            return nil
+        }
+    }
+
+    private static func processGroupExists(_ processGroupID: pid_t) -> Bool {
+        if killpg(processGroupID, 0) == 0 { return true }
+        return errno == EPERM
+    }
+
+    private static func delay() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(10)) {
+                continuation.resume()
+            }
+        }
+    }
+
+    private static func drain(_ handle: FileHandle) async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                do {
+                    continuation.resume(returning: try handle.readToEnd() ?? Data())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private static func terminationStatus(from waitStatus: Int32) -> Int32 {
+        let signal = waitStatus & 0x7f
+        return signal == 0 ? (waitStatus >> 8) & 0xff : signal
+    }
+
+    private static func spawn(
+        executableURL: URL,
+        arguments: [String]
+    ) throws -> OmpSpawnedCommand {
+        var outputDescriptors: [Int32] = [0, 0]
+        guard pipe(&outputDescriptors) == 0 else {
+            throw OmpCommandRunnerError.spawnFailed(errno)
+        }
+        var errorDescriptors: [Int32] = [0, 0]
+        guard pipe(&errorDescriptors) == 0 else {
+            let code = errno
+            close(outputDescriptors[0])
+            close(outputDescriptors[1])
+            throw OmpCommandRunnerError.spawnFailed(code)
+        }
+
+        var ownsReadDescriptors = true
+        defer {
+            if ownsReadDescriptors {
+                close(outputDescriptors[0])
+                close(errorDescriptors[0])
+            }
+            close(outputDescriptors[1])
+            close(errorDescriptors[1])
+        }
+
+        var fileActions: posix_spawn_file_actions_t?
+        var attributes: posix_spawnattr_t?
+        var fileActionsInitialized = false
+        var attributesInitialized = false
+        defer {
+            if attributesInitialized { posix_spawnattr_destroy(&attributes) }
+            if fileActionsInitialized { posix_spawn_file_actions_destroy(&fileActions) }
+        }
+
+        var result = posix_spawn_file_actions_init(&fileActions)
+        guard result == 0 else { throw OmpCommandRunnerError.spawnFailed(result) }
+        fileActionsInitialized = true
+        result = posix_spawnattr_init(&attributes)
+        guard result == 0 else { throw OmpCommandRunnerError.spawnFailed(result) }
+        attributesInitialized = true
+
+        let fileActionResults = [
+            posix_spawn_file_actions_adddup2(
+                &fileActions, outputDescriptors[1], STDOUT_FILENO),
+            posix_spawn_file_actions_adddup2(
+                &fileActions, errorDescriptors[1], STDERR_FILENO),
+            posix_spawn_file_actions_addclose(&fileActions, outputDescriptors[0]),
+            posix_spawn_file_actions_addclose(&fileActions, outputDescriptors[1]),
+            posix_spawn_file_actions_addclose(&fileActions, errorDescriptors[0]),
+            posix_spawn_file_actions_addclose(&fileActions, errorDescriptors[1]),
+        ]
+        if let fileActionError = fileActionResults.first(where: { $0 != 0 }) {
+            throw OmpCommandRunnerError.spawnFailed(fileActionError)
+        }
+
+        var defaultSignals = sigset_t()
+        sigemptyset(&defaultSignals)
+        sigaddset(&defaultSignals, SIGTERM)
+        result = posix_spawnattr_setsigdefault(&attributes, &defaultSignals)
+        guard result == 0 else { throw OmpCommandRunnerError.spawnFailed(result) }
+        var signalMask = sigset_t()
+        sigemptyset(&signalMask)
+        result = posix_spawnattr_setsigmask(&attributes, &signalMask)
+        guard result == 0 else { throw OmpCommandRunnerError.spawnFailed(result) }
+        result = posix_spawnattr_setflags(
+            &attributes,
+            Int16(
+                POSIX_SPAWN_SETPGROUP
+                    | POSIX_SPAWN_SETSIGDEF
+                    | POSIX_SPAWN_SETSIGMASK))
+        guard result == 0 else { throw OmpCommandRunnerError.spawnFailed(result) }
+        result = posix_spawnattr_setpgroup(&attributes, 0)
+        guard result == 0 else { throw OmpCommandRunnerError.spawnFailed(result) }
+
+        let executablePath = executableURL.path
+        var argumentPointers = ([executablePath] + arguments).map { strdup($0) }
+        var environmentPointers = ProcessInfo.processInfo.environment.map {
+            strdup("\($0.key)=\($0.value)")
+        }
+        defer {
+            argumentPointers.compactMap { $0 }.forEach { free($0) }
+            environmentPointers.compactMap { $0 }.forEach { free($0) }
+        }
+        guard argumentPointers.allSatisfy({ $0 != nil }),
+              environmentPointers.allSatisfy({ $0 != nil })
+        else { throw OmpCommandRunnerError.spawnFailed(ENOMEM) }
+        argumentPointers.append(nil)
+        environmentPointers.append(nil)
+
+        var processID: pid_t = 0
+        result = executablePath.withCString { path in
+            argumentPointers.withUnsafeMutableBufferPointer { arguments in
+                environmentPointers.withUnsafeMutableBufferPointer { environment in
+                    posix_spawn(
+                        &processID,
+                        path,
+                        &fileActions,
+                        &attributes,
+                        arguments.baseAddress,
+                        environment.baseAddress)
+                }
+            }
+        }
+        guard result == 0 else { throw OmpCommandRunnerError.spawnFailed(result) }
+
+        let output = FileHandle(
+            fileDescriptor: outputDescriptors[0],
+            closeOnDealloc: true)
+        let error = FileHandle(
+            fileDescriptor: errorDescriptors[0],
+            closeOnDealloc: true)
+        ownsReadDescriptors = false
+        return OmpSpawnedCommand(
+            processID: processID,
+            output: output,
+            error: error)
     }
 }

@@ -18,6 +18,37 @@ import Testing
     #expect(!String(decoding: data, as: UTF8.self).contains("secret"))
 }
 
+@Test func ompCommandRunnerPreservesTheInheritedEnvironment() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let executable = try fixture.executable(
+        name: "environment",
+        body: "test -n \"$PATH\" || exit 9; printf 'inherited\\n'")
+
+    let data = try await OmpCommandRunner().run(
+        executableURL: executable,
+        arguments: [])
+
+    #expect(String(decoding: data, as: UTF8.self) == "inherited\n")
+}
+
+@Test func ompCommandRunnerReportsTypedNonzeroExit() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let executable = try fixture.executable(name: "failure", body: "exit 7")
+
+    do {
+        _ = try await OmpCommandRunner().run(
+            executableURL: executable,
+            arguments: [])
+        Issue.record("Expected a typed nonzero exit")
+    } catch OmpCommandRunnerError.nonzeroExit(let status) {
+        #expect(status == 7)
+    } catch {
+        Issue.record("Expected nonzeroExit(7), got \(error)")
+    }
+}
+
 @Test func cancellingOmpCommandRunnerReapsAnIgnoringProcessGroup() async throws {
     let fixture = try OmpCommandFixture()
     defer { fixture.cleanup() }
@@ -36,7 +67,6 @@ import Testing
     await #expect(throws: CancellationError.self) {
         _ = try await operation.value
     }
-    for pid in pids { try await fixture.waitUntilProcessIsGone(pid) }
 
     for pid in pids {
         #expect(kill(pid, 0) == -1)
@@ -63,7 +93,39 @@ import Testing
     await #expect(throws: CancellationError.self) {
         _ = try await operation.value
     }
-    for pid in pids { try await fixture.waitUntilProcessIsGone(pid) }
+
+    for pid in pids {
+        #expect(kill(pid, 0) == -1)
+        #expect(errno == ESRCH)
+    }
+}
+
+@Test func cancellationReapsADescendantSpawnedByTheTerminationHandler() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let pidFile = fixture.root.appending(path: "late-descendant.pid")
+    let executable = try fixture.executable(
+        name: "late-descendant",
+        body: """
+        if [ "$1" = child ]; then trap '' TERM; while :; do sleep 1; done; fi
+        pid_file="$1"
+        trap '"$0" child </dev/null >/dev/null 2>&1 & printf " %s" $! >> "$pid_file"; exit 0' TERM
+        printf '%s' $$ > "$pid_file"
+        while :; do sleep 1; done
+        """)
+    let operation = Task {
+        try await OmpCommandRunner().run(
+            executableURL: executable,
+            arguments: [pidFile.path])
+    }
+    var pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    defer { for pid in pids { kill(pid, SIGKILL) } }
+
+    operation.cancel()
+    await #expect(throws: CancellationError.self) {
+        _ = try await operation.value
+    }
+    pids = try await fixture.waitForPIDs(in: pidFile, count: 2)
 
     for pid in pids {
         #expect(kill(pid, 0) == -1)
@@ -73,7 +135,6 @@ import Testing
 
 enum OmpCommandFixtureError: Error {
     case timedOutWaitingForPIDs
-    case timedOutWaitingForProcess(pid_t)
 }
 
 struct OmpCommandFixture {
@@ -111,17 +172,6 @@ struct OmpCommandFixture {
             try await Task.sleep(for: .milliseconds(10))
         }
         throw OmpCommandFixtureError.timedOutWaitingForPIDs
-    }
-
-    func waitUntilProcessIsGone(_ pid: pid_t) async throws {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while ContinuousClock.now < deadline {
-            if kill(pid, 0) == -1, errno == ESRCH {
-                return
-            }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        throw OmpCommandFixtureError.timedOutWaitingForProcess(pid)
     }
 
     func cleanup() {

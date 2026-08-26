@@ -24,7 +24,6 @@ import Testing
 
     await model.shutdown()
     await load.value
-    try await fixture.waitUntilProcessIsGone(pid)
 
     #expect(kill(pid, 0) == -1)
     #expect(errno == ESRCH)

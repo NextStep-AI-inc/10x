@@ -108,13 +108,9 @@ import Testing
     let pid = try #require(pids.first)
 
     operation.cancel()
-    do {
+    await #expect(throws: CancellationError.self) {
         _ = try await operation.value
-        Issue.record("Expected canceled config command to fail")
-    } catch {
-        #expect(!error.localizedDescription.contains("token=secret"))
     }
-    try await fixture.waitUntilProcessIsGone(pid)
 
     #expect(kill(pid, 0) == -1)
     #expect(errno == ESRCH)

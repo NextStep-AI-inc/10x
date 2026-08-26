@@ -513,6 +513,40 @@ private struct FixedOmpLocator: OmpLocating {
     #expect(model.route == .setup)
 }
 
+@MainActor
+@Test func cancelledOmpInspectionPreservesTheInstalledWorkspace() async throws {
+    let inspectionGate = LoadGate()
+    let locator = InstalledThenCancelledOmpLocator(gate: inspectionGate)
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        ompLocator: locator,
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+    let installation = try #require(model.installation)
+    let processManager = try #require(model.processManager)
+    let settingsModel = try #require(model.settingsModel)
+    let route = model.route
+
+    let inspection = Task {
+        await model.useOmp(at: URL(filePath: "/tmp/cancelled-omp"))
+    }
+    await inspectionGate.waitForStart()
+    inspection.cancel()
+    await inspection.value
+
+    #expect(model.installation == installation)
+    #expect(model.processManager === processManager)
+    #expect(model.settingsModel === settingsModel)
+    #expect(model.providerModel === providerModel)
+    #expect(model.route == route)
+    #expect(model.setupError == nil)
+
+    await processManager.closeAll()
+}
+
 private struct InstalledOmpLocator: OmpLocating {
     func locate(preferredURL: URL?) async -> OmpInstallation? {
         testInstallation
@@ -533,6 +567,25 @@ private actor SequentialOmpLocator: OmpLocating {
     func locate(preferredURL: URL?) async -> OmpInstallation? {
         guard !installations.isEmpty else { return nil }
         return installations.removeFirst()
+    }
+}
+
+private actor InstalledThenCancelledOmpLocator: OmpLocating {
+    private let gate: LoadGate
+    private var isInitialLookup = true
+
+    init(gate: LoadGate) {
+        self.gate = gate
+    }
+
+    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+        if isInitialLookup {
+            isInitialLookup = false
+            return testInstallation
+        }
+        await gate.started()
+        while !Task.isCancelled { await Task.yield() }
+        throw CancellationError()
     }
 }
 

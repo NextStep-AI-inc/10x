@@ -18,7 +18,7 @@ import Testing
         [.posixPermissions: 0o755],
         ofItemAtPath: executable.path)
 
-    let installation = await OmpExecutableLocator().locate(preferredURL: executable)
+    let installation = try await OmpExecutableLocator().locate(preferredURL: executable)
 
     #expect(installation == OmpInstallation(
         executableURL: executable.standardizedFileURL,
@@ -33,14 +33,15 @@ import Testing
         name: "blocked-locator",
         body: "printf '%s' $$ > '\(pidFile.path)'; trap '' TERM; while :; do sleep 1; done")
     let operation = Task {
-        await OmpExecutableLocator().locate(preferredURL: executable)
+        try await OmpExecutableLocator().locate(preferredURL: executable)
     }
     let pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
     let pid = try #require(pids.first)
 
     operation.cancel()
-    _ = await operation.value
-    try await fixture.waitUntilProcessIsGone(pid)
+    await #expect(throws: CancellationError.self) {
+        _ = try await operation.value
+    }
 
     #expect(kill(pid, 0) == -1)
     #expect(errno == ESRCH)

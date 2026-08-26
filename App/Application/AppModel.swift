@@ -43,12 +43,14 @@ final class AppModel {
 
     func bootstrap() async {
         await install(preferredURL: nil)
+        guard !Task.isCancelled else { return }
         await reloadSessions()
         await reloadArchivedSessions()
     }
 
     func useOmp(at url: URL) async {
         await install(preferredURL: url)
+        guard !Task.isCancelled else { return }
         if installation == nil {
             setupError = OmpExecutableLocator.inspectionErrorDescription(for: url)
         }
@@ -288,7 +290,16 @@ final class AppModel {
     }
 
     private func install(preferredURL: URL?) async {
-        let locatedInstallation = await dependencies.ompLocator.locate(preferredURL: preferredURL)
+        let locatedInstallation: OmpInstallation?
+        do {
+            locatedInstallation = try await dependencies.ompLocator.locate(
+                preferredURL: preferredURL)
+            try Task.checkCancellation()
+        } catch is CancellationError {
+            return
+        } catch {
+            return
+        }
         if let providerModel {
             await providerModel.shutdown()
         }

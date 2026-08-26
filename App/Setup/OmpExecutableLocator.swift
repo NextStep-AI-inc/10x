@@ -1,7 +1,7 @@
 import Foundation
 
 protocol OmpLocating: Sendable {
-    func locate(preferredURL: URL?) async -> OmpInstallation?
+    func locate(preferredURL: URL?) async throws -> OmpInstallation?
 }
 
 struct OmpExecutableLocator: OmpLocating {
@@ -22,11 +22,11 @@ struct OmpExecutableLocator: OmpLocating {
         self.pathDirectories = path.split(separator: ":").map(String.init)
     }
 
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
         for candidate in candidates(preferredURL: preferredURL) {
-            guard !Task.isCancelled else { return nil }
-            let installation = await inspect(candidate)
-            guard !Task.isCancelled else { return nil }
+            try Task.checkCancellation()
+            let installation = try await inspect(candidate)
+            try Task.checkCancellation()
             if let installation {
                 return installation
             }
@@ -51,7 +51,7 @@ struct OmpExecutableLocator: OmpLocating {
         }
     }
 
-    private func inspect(_ candidate: URL) async -> OmpInstallation? {
+    private func inspect(_ candidate: URL) async throws -> OmpInstallation? {
         guard FileManager.default.isExecutableFile(atPath: candidate.path) else { return nil }
 
         let data: Data
@@ -59,6 +59,8 @@ struct OmpExecutableLocator: OmpLocating {
             data = try await OmpCommandRunner().run(
                 executableURL: candidate,
                 arguments: ["--version"])
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             return nil
         }
