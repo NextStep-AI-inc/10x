@@ -60,13 +60,16 @@ private final class OmpCommandProcessState: Sendable {
 
         do {
             let waitStatus = try await waitForLeader()
+            let terminationStatus = Self.terminationStatus(from: waitStatus)
+            if terminationStatus != 0 {
+                await terminateAndReapProcessGroup()
+                _ = try? await outputData
+                _ = try? await errorData
+                throw OmpCommandRunnerError.nonzeroExit(terminationStatus)
+            }
             let data = try await outputData
             _ = try await errorData
             try Task.checkCancellation()
-            let terminationStatus = Self.terminationStatus(from: waitStatus)
-            guard terminationStatus == 0 else {
-                throw OmpCommandRunnerError.nonzeroExit(terminationStatus)
-            }
             try finish()
             return data
         } catch is CancellationError {
@@ -74,6 +77,8 @@ private final class OmpCommandProcessState: Sendable {
             _ = try? await outputData
             _ = try? await errorData
             throw CancellationError()
+        } catch OmpCommandRunnerError.nonzeroExit(let status) {
+            throw OmpCommandRunnerError.nonzeroExit(status)
         } catch {
             await terminateAndReapProcessGroup()
             _ = try? await outputData

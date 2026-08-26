@@ -49,6 +49,59 @@ import Testing
     }
 }
 
+@Test func nonzeroExitReapsDescendantBeforeDrainingInheritedPipes() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let pidFile = fixture.root.appending(path: "nonzero-descendant.pid")
+    let executable = try fixture.executable(
+        name: "nonzero-descendant",
+        body: """
+        if [ "$1" = child ]; then trap '' TERM; while :; do sleep 1; done; fi
+        pid_file="$1"
+        "$0" child &
+        child=$!
+        printf '%s %s' $$ $child > "$pid_file"
+        exit 7
+        """)
+
+    let resultBox = OmpCommandResultBox()
+    let operation = Task {
+        do {
+            let data = try await OmpCommandRunner().run(
+                executableURL: executable,
+                arguments: [pidFile.path])
+            await resultBox.store(.success(data))
+        } catch {
+            await resultBox.store(.failure(error))
+        }
+    }
+    let pids = try await fixture.waitForPIDs(in: pidFile, count: 2)
+    defer { for pid in pids { kill(pid, SIGKILL) } }
+
+    let result = await fixture.waitForResult(resultBox, within: .seconds(2))
+    guard let result else {
+        operation.cancel()
+        killpg(pids[0], SIGKILL)
+        _ = await operation.result
+        Issue.record("Expected nonzero exit to terminate descendants before draining inherited pipes")
+        return
+    }
+
+    do {
+        _ = try result.get()
+        Issue.record("Expected a typed nonzero exit")
+    } catch OmpCommandRunnerError.nonzeroExit(let status) {
+        #expect(status == 7)
+    } catch {
+        Issue.record("Expected nonzeroExit(7), got \(error)")
+    }
+
+    for pid in pids {
+        #expect(kill(pid, 0) == -1)
+        #expect(errno == ESRCH)
+    }
+}
+
 @Test func cancellingOmpCommandRunnerReapsAnIgnoringProcessGroup() async throws {
     let fixture = try OmpCommandFixture()
     defer { fixture.cleanup() }
@@ -137,6 +190,18 @@ enum OmpCommandFixtureError: Error {
     case timedOutWaitingForPIDs(file: URL, expectedCount: Int, observedContents: String?)
 }
 
+actor OmpCommandResultBox {
+    private var storedResult: Result<Data, any Error>?
+
+    func store(_ result: Result<Data, any Error>) {
+        storedResult = result
+    }
+
+    func result() -> Result<Data, any Error>? {
+        storedResult
+    }
+}
+
 struct OmpCommandFixture {
     let root: URL
 
@@ -178,6 +243,20 @@ struct OmpCommandFixture {
             file: file,
             expectedCount: count,
             observedContents: observedContents)
+    }
+
+    func waitForResult(
+        _ resultBox: OmpCommandResultBox,
+        within timeout: Duration
+    ) async -> Result<Data, any Error>? {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            if let result = await resultBox.result() {
+                return result
+            }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return nil
     }
 
     func cleanup() {
