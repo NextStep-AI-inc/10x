@@ -230,6 +230,11 @@ private let cursorModel = ComposerModelInfo(
             fastModeActive: false)),
         defaults: FakeComposerDefaults())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
+    session.liveComposerSelection = ComposerLiveSelection(
+        provider: "anthropic",
+        modelID: "claude-opus-4-8",
+        thinkingLevel: "auto",
+        fastModeEnabled: true)
     model.attachActiveSession(session)
     #expect(model.isFastModeEnabled == true)
     #expect(model.isFastModeVisible == true)
@@ -288,6 +293,36 @@ private let cursorModel = ComposerModelInfo(
     #expect(model.isFastModeVisible == true)
     #expect(model.errorMessage != nil)
     #expect(model.errorMessage != "Fast mode isn’t available for this model.")
+}
+
+@MainActor
+@Test func refreshWithActiveSessionPreservesLiveSelectionNotCatalogDefaults() async {
+    let catalog = FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+        models: [anthropicOpus, anthropicSonnet, cursorModel],
+        selected: anthropicOpus,
+        thinkingLevel: "high",
+        fastModeEnabled: true,
+        fastModeActive: false))
+    let session = FakeComposerSessionController()
+    session.liveComposerSelection = ComposerLiveSelection(
+        provider: "cursor",
+        modelID: "gpt-5",
+        thinkingLevel: "low",
+        fastModeEnabled: false)
+    let model = ComposerControlsModel(catalog: catalog, defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
+    model.attachActiveSession(session)
+
+    #expect(model.selectedModel?.modelID == "gpt-5")
+    #expect(model.thinkingLevel == "low")
+    #expect(model.isFastModeEnabled == false)
+
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
+
+    #expect(model.selectedModel?.modelID == "gpt-5")
+    #expect(model.thinkingLevel == "low")
+    #expect(model.isFastModeEnabled == false)
+    #expect(model.models.map(\.modelID) == ["claude-opus-4-8", "claude-sonnet-4-5", "gpt-5"])
 }
 
 @MainActor
@@ -391,6 +426,11 @@ private actor FakeComposerDefaults: ComposerDefaultPersisting {
 
 @MainActor
 private final class FakeComposerSessionController: ComposerSessionControlling {
+    var liveComposerSelection = ComposerLiveSelection(
+        provider: nil,
+        modelID: nil,
+        thinkingLevel: nil,
+        fastModeEnabled: false)
     private(set) var setModelCalls: [(String, String)] = []
     private(set) var setThinkingCalls: [String] = []
     private(set) var setFastModeCalls: [Bool] = []

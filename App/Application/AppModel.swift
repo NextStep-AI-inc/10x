@@ -30,6 +30,7 @@ final class AppModel {
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
     @ObservationIgnored private var archivedReloadGeneration = 0
+    @ObservationIgnored private var composerControlsRefreshGeneration = 0
     @ObservationIgnored private var routeBeforeSettings: AppRoute?
 
     init(
@@ -302,7 +303,14 @@ final class AppModel {
 
     private func detachComposerControlsAndRefresh() {
         composerControls?.detachActiveSession()
-        Task { await refreshComposerControls() }
+        composerControlsRefreshGeneration &+= 1
+        let generation = composerControlsRefreshGeneration
+        Task { await refreshComposerControlsIfCurrent(generation: generation) }
+    }
+
+    private func refreshComposerControlsIfCurrent(generation: Int) async {
+        guard generation == composerControlsRefreshGeneration else { return }
+        await refreshComposerControls()
     }
 
     private func refreshComposerControls() async {

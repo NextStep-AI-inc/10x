@@ -10,6 +10,7 @@ extension OmpModelCatalogService: ComposerCatalogLoading {}
 
 @MainActor
 protocol ComposerSessionControlling: AnyObject {
+    var liveComposerSelection: ComposerLiveSelection { get }
     func setModel(provider: String, modelID: String) async throws
     func setThinkingLevel(_ level: String) async throws
     /// Returns `false` only when Fast mode is unsupported for the current model.
@@ -71,15 +72,19 @@ final class ComposerControlsModel {
             models = ComposerControlsPresentation.authenticatedModels(
                 catalog: snapshot.models,
                 authenticatedProviderIDs: authenticatedProviderIDs)
-            if let selected = snapshot.selected,
-               models.contains(where: { $0.id == selected.id })
-            {
-                selectedModel = selected
+            if let activeSession {
+                applyLiveSelection(activeSession.liveComposerSelection)
             } else {
-                selectedModel = models.first
+                if let selected = snapshot.selected,
+                   models.contains(where: { $0.id == selected.id })
+                {
+                    selectedModel = selected
+                } else {
+                    selectedModel = models.first
+                }
+                thinkingLevel = snapshot.thinkingLevel ?? "auto"
+                applyFastModeVisibility(preservingEnabled: snapshot.fastModeEnabled)
             }
-            thinkingLevel = snapshot.thinkingLevel ?? "auto"
-            applyFastModeVisibility(preservingEnabled: snapshot.fastModeEnabled)
             errorMessage = nil
         } catch {
             errorMessage = "Models couldn’t be loaded."
@@ -205,6 +210,8 @@ final class ComposerControlsModel {
         activeSession = controller
         if let session = controller as? SessionController {
             session.bindComposerControls(self)
+        } else {
+            applyLiveSelection(controller.liveComposerSelection)
         }
     }
 
