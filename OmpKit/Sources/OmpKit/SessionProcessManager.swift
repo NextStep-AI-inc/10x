@@ -32,6 +32,7 @@ public actor SessionProcessManager {
     public typealias ClientFactory = @Sendable (RpcClientConfiguration) -> RpcClient
     public typealias Sleep = @Sendable (Duration) async throws -> Void
     typealias WarmActivationHook = @Sendable () async -> Void
+    typealias WarmRegistrationHook = @Sendable () async -> Void
 
     private struct ManagedClient: Sendable {
         let id: UUID
@@ -74,6 +75,7 @@ public actor SessionProcessManager {
     private let sleep: Sleep
     private let clientFactory: ClientFactory
     private let beforeWarmActivation: WarmActivationHook?
+    private let beforeWarmRegistration: WarmRegistrationHook?
     private var handles: [String: ManagedHandle] = [:]
     private var warmHandles: [String: ManagedWarmHandle] = [:]
     private var opening: [String: Opening] = [:]
@@ -101,7 +103,8 @@ public actor SessionProcessManager {
             warmGracePeriod: warmGracePeriod,
             sleep: sleep,
             clientFactory: clientFactory,
-            beforeWarmActivation: nil)
+            beforeWarmActivation: nil,
+            beforeWarmRegistration: nil)
     }
 
     init(
@@ -111,13 +114,15 @@ public actor SessionProcessManager {
             try await ContinuousClock().sleep(for: duration)
         },
         clientFactory: @escaping ClientFactory = { RpcClient(configuration: $0) },
-        beforeWarmActivation: WarmActivationHook?
+        beforeWarmActivation: WarmActivationHook?,
+        beforeWarmRegistration: WarmRegistrationHook?
     ) {
         self.executable = executable
         self.warmGracePeriod = warmGracePeriod
         self.sleep = sleep
         self.clientFactory = clientFactory
         self.beforeWarmActivation = beforeWarmActivation
+        self.beforeWarmRegistration = beforeWarmRegistration
         (exitStream, exitContinuation) = AsyncStream<UnexpectedExit>.makeStream(
             bufferingPolicy: .unbounded)
         (warmExitStream, warmExitContinuation) = AsyncStream<WarmExit>.makeStream(
@@ -484,6 +489,7 @@ public actor SessionProcessManager {
     private func completeWarmOpening(project: String, opening: WarmOpening) async throws
         -> WarmHandle {
         let opened = try await opening.task.value
+        await beforeWarmRegistration?()
         if let existing = warmHandles[project], existing.managed.id == opened.managed.id {
             return existing.handle
         }

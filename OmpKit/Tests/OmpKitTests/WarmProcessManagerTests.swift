@@ -4,8 +4,13 @@ import Testing
 @testable import OmpKit
 
 actor WarmSleepGate {
+    private struct SleepingWaiter {
+        let count: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     private var sleepers: [Duration: [UUID: CheckedContinuation<Void, any Error>]] = [:]
-    private var sleepingWaiters: [Duration: [CheckedContinuation<Void, Never>]] = [:]
+    private var sleepingWaiters: [Duration: [SleepingWaiter]] = [:]
     private var cancellationCounts: [Duration: Int] = [:]
     private var cancellationWaiters: [Duration: [UUID: CheckedContinuation<Void, Never>]] = [:]
 
@@ -19,18 +24,24 @@ actor WarmSleepGate {
                     return
                 }
                 sleepers[duration, default: [:]][id] = continuation
-                let waiters = sleepingWaiters.removeValue(forKey: duration) ?? []
-                for waiter in waiters { waiter.resume() }
+                let sleeperCount = sleepers[duration, default: [:]].count
+                let waiters = sleepingWaiters[duration, default: []]
+                sleepingWaiters[duration] = waiters.filter { waiter in
+                    guard waiter.count <= sleeperCount else { return true }
+                    waiter.continuation.resume()
+                    return false
+                }
             }
         } onCancel: {
             Task { await self.cancelSleep(id: id, for: duration) }
         }
     }
 
-    func waitUntilSleeping(for duration: Duration) async {
-        guard sleepers[duration]?.isEmpty != false else { return }
+    func waitUntilSleeping(for duration: Duration, count: Int = 1) async {
+        guard sleepers[duration, default: [:]].count < count else { return }
         await withCheckedContinuation { continuation in
-            sleepingWaiters[duration, default: []].append(continuation)
+            sleepingWaiters[duration, default: []].append(
+                SleepingWaiter(count: count, continuation: continuation))
         }
     }
 
@@ -86,12 +97,14 @@ final class WarmManagerFixture {
     let commandLog: URL
     let manager: SessionProcessManager
     private let configurations = ConfigurationRecorder()
+    let clients: ClientCapture
 
     init(
         mode: String = "basic",
         modeArguments: [String] = [],
         warmGracePeriod: Duration = .seconds(300),
         beforeWarmActivation: (@Sendable () async -> Void)? = nil,
+        beforeWarmRegistration: (@Sendable () async -> Void)? = nil,
         sleep: @escaping SessionProcessManager.Sleep = { duration in
             try await ContinuousClock().sleep(for: duration)
         }
@@ -106,10 +119,12 @@ final class WarmManagerFixture {
         self.root = root
         self.project = project
         self.commandLog = commandLog
+        let clients = ClientCapture()
+        self.clients = clients
         self.manager = SessionProcessManager(
             warmGracePeriod: warmGracePeriod,
             sleep: sleep,
-            clientFactory: { [configurations] configuration in
+            clientFactory: { [configurations, clients] configuration in
                 configurations.append(configuration)
                 var fake = configuration
                 fake.executable = "/usr/bin/env"
@@ -118,9 +133,12 @@ final class WarmManagerFixture {
                     + (mode == "command-log" ? [commandLog.path] : [])
                 fake.rawArgv = true
                 fake.cwd = nil
-                return RpcClient(configuration: fake)
+                let client = RpcClient(configuration: fake)
+                clients.append(client)
+                return client
             },
-            beforeWarmActivation: beforeWarmActivation)
+            beforeWarmActivation: beforeWarmActivation,
+            beforeWarmRegistration: beforeWarmRegistration)
     }
 
     var configurationCount: Int { configurations.count() }
@@ -521,56 +539,35 @@ final class WarmManagerFixture {
 }
 
 @Test func joinedWarmWaitersRejectALateResultAfterCancellation() async throws {
-    let configurations = ConfigurationCapture()
-    let clients = ClientCapture()
-    let project = URL(filePath: "/tmp/joined-cancel").resolvingSymlinksInPath().path
-    let manager = SessionProcessManager(clientFactory: { configuration in
-        configurations.append(configuration)
-        var fake = configuration
-        fake.executable = "/usr/bin/env"
-        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
-        fake.rawArgv = true
-        fake.cwd = nil
-        let client = RpcClient(configuration: fake)
-        clients.append(client)
-        return client
-    })
-    let first = Task.detached(priority: .background) {
+    let gate = WarmSleepGate()
+    let fixture = try WarmManagerFixture(
+        mode: "basic",
+        beforeWarmRegistration: { try? await gate.sleep(for: .zero) })
+    defer { fixture.cleanup() }
+    let manager = fixture.manager
+    let project = fixture.project.path
+    let first = Task {
         do { return Result<SessionProcessManager.WarmHandle, any Error>.success(
             try await manager.warm(projectDirectory: project)) }
         catch { return .failure(error) }
     }
-    while clients.snapshot().isEmpty { await Task.yield() }
-    let second = Task.detached(priority: .background) {
+    let second = Task {
         do { return Result<SessionProcessManager.WarmHandle, any Error>.success(
             try await manager.warm(projectDirectory: project)) }
         catch { return .failure(error) }
-    }
-    let canceller = Task.detached(priority: .high) {
-        while await clients.snapshot()[0].negotiatedProtocolVersion != 2 { await Task.yield() }
-        return await manager.cancelWarmings()
     }
 
-    let canceled = await canceller.value
+    await gate.waitUntilSleeping(for: .zero, count: 2)
+    let canceled = await manager.cancelWarmings()
+    await gate.release(.zero)
     let firstResult = await first.value
     let secondResult = await second.value
-    let firstWasCanceled: Bool
-    if case .failure(let error) = firstResult {
-        firstWasCanceled = error is CancellationError
-    } else {
-        firstWasCanceled = false
-    }
-    let secondWasCanceled: Bool
-    if case .failure(let error) = secondResult {
-        secondWasCanceled = error is CancellationError
-    } else {
-        secondWasCanceled = false
-    }
 
     #expect(canceled == [project])
-    #expect(configurations.snapshot().count == 1)
-    #expect(firstWasCanceled)
-    #expect(secondWasCanceled)
-    #expect(await clients.snapshot()[0].exitCode != nil)
+    #expect(fixture.configurationCount == 1)
+    #expect(fixture.clients.snapshot().count == 1)
+    #expect(throws: CancellationError.self) { try firstResult.get() }
+    #expect(throws: CancellationError.self) { try secondResult.get() }
+    #expect(await fixture.clients.snapshot()[0].exitCode != nil)
     await manager.closeAll()
 }
