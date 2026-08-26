@@ -40,16 +40,29 @@ struct AppShellView: View {
                             .padding(.top, 16)
                             .padding(.trailing, 18)
                     }
-                    .overlay(alignment: .bottomTrailing) {
-                        if let providerModel = model.providerModel,
-                           !providerModel.dockProviders.isEmpty {
-                            ProviderUsageDockView(
-                                providers: providerModel.dockProviders,
-                                activeCounts: model.providerActivityCounts,
-                                isForegroundGenerating: model.isForegroundSessionGenerating,
-                                collapsedBottomOffset: collapsedDockBottomOffset)
-                                .padding(.trailing, 16)
-                                .padding(.bottom, 16)
+                    .overlay {
+                        GeometryReader { geometry in
+                            if let providerModel = model.providerModel,
+                               !providerModel.dockProviders.isEmpty {
+                                let dockProviders = providerModel.dockProviders
+                                let compactLayout = ProviderUsageDockLayout.compact(
+                                    shellWidth: geometry.size.width,
+                                    contentLeadingInset: railExpansion.contentLeadingInset,
+                                    providerCount: dockProviders.count,
+                                    hasComposer: hasComposer)
+
+                                ProviderUsageDockView(
+                                    providers: dockProviders,
+                                    activeCounts: model.providerActivityCounts,
+                                    isForegroundGenerating: model.isForegroundSessionGenerating,
+                                    compactLayout: compactLayout)
+                                    .padding(.trailing, 16)
+                                    .padding(.bottom, 16)
+                                    .frame(
+                                        maxWidth: .infinity,
+                                        maxHeight: .infinity,
+                                        alignment: .bottomTrailing)
+                            }
                         }
                     }
                     .overlay {
@@ -109,12 +122,12 @@ struct AppShellView: View {
             .map { .easeInOut(duration: $0) }
     }
 
-    private var collapsedDockBottomOffset: CGFloat {
+    private var hasComposer: Bool {
         switch model.route {
         case .newSession, .session:
-            return ProviderUsageDockView.collapsedComposerClearance
+            return true
         default:
-            return 0
+            return false
         }
     }
 
