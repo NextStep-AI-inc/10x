@@ -89,7 +89,18 @@ final class SessionController: ComposerSessionControlling {
         }
     }
 
-    func openNew(projectURL: URL, selection: ComposerSpawnSelection? = nil) async {
+    enum ComposerFastModeApplyOutcome: Sendable {
+        case notRequested
+        case applied
+        case unsupported
+        case failed
+    }
+
+    @discardableResult
+    func openNew(
+        projectURL: URL,
+        selection: ComposerSpawnSelection? = nil
+    ) async -> ComposerFastModeApplyOutcome {
         self.projectURL = projectURL
         fallbackThreadStartDate = Date()
         title = "New session"
@@ -103,12 +114,16 @@ final class SessionController: ComposerSessionControlling {
                 model: selection?.modelID,
                 thinking: selection?.thinking)
             try await finishOpening(handle)
-            if selection?.fastModeEnabled == true {
-                // Soft unsupported (false) is ignored here; UI clears via return value on live toggles.
-                _ = try? await setFastMode(true)
+            guard selection?.fastModeEnabled == true else { return .notRequested }
+            do {
+                let supported = try await setFastMode(true)
+                return supported ? .applied : .unsupported
+            } catch {
+                return .failed
             }
         } catch {
             fail(error, function: "openNew")
+            return selection?.fastModeEnabled == true ? .failed : .notRequested
         }
     }
 

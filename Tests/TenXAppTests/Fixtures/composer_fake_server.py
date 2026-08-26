@@ -4,6 +4,7 @@
 Modes (argv[1]):
   basic            — ready + get_state; records command types when OMP_FAKE_RECORD is set
   fast-unsupported — set_fast_mode succeeds with active=false
+  fast-rpc-fail    — set_fast_mode returns success=false (transport failure)
   set-model-echo   — set_model returns the requested model id/provider
 """
 import json
@@ -56,7 +57,10 @@ for line in sys.stdin:
         emit({"id": cid, "type": "response", "command": "get_state", "success": True, "data": STATE})
     elif ctype == "set_fast_mode":
         enabled = bool(cmd.get("enabled"))
-        if mode == "fast-unsupported":
+        if mode == "fast-rpc-fail":
+            emit({"id": cid, "type": "response", "command": "set_fast_mode",
+                  "success": False, "error": "fast mode unavailable"})
+        elif mode == "fast-unsupported":
             emit({"id": cid, "type": "response", "command": "set_fast_mode",
                   "success": True, "data": {"enabled": False, "active": False}})
         else:

@@ -127,7 +127,10 @@ final class AppModel {
         let controller = SessionController(processManager: processManager)
         activeSession = controller
         route = .session(metadata.path)
-        Task { await controller.openExisting(metadata) }
+        Task {
+            await controller.openExisting(metadata)
+            composerControls?.attachActiveSession(controller)
+        }
     }
 
     func startNewSession(prompt: String) {
@@ -139,7 +142,12 @@ final class AppModel {
         route = .session("new:\(UUID().uuidString)")
         let selection = composerControls?.spawnSelection
         Task {
-            await controller.openNew(projectURL: selectedProjectURL, selection: selection)
+            let fastOutcome = await controller.openNew(
+                projectURL: selectedProjectURL,
+                selection: selection)
+            if fastOutcome == .unsupported || fastOutcome == .failed {
+                await composerControls?.setFastMode(false, mode: .newSession)
+            }
             composerControls?.attachActiveSession(controller)
             await controller.sendPrompt()
             await reloadSessions()

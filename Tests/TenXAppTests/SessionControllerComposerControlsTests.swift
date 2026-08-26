@@ -101,6 +101,20 @@ import Testing
 }
 
 @MainActor
+@Test func setFastModeThrowsOnRpcFailure() async throws {
+    let manager = composerManager(mode: "fast-rpc-fail")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(
+        projectURL: URL(filePath: "/tmp/composer-project", directoryHint: .isDirectory),
+        selection: nil)
+
+    await #expect(throws: RpcClientError.self) {
+        _ = try await controller.setFastMode(true)
+    }
+    await manager.closeAll()
+}
+
+@MainActor
 @Test func setFastModeReturnsTrueWhenSupported() async throws {
     let manager = composerManager(mode: "basic")
     let controller = SessionController(processManager: manager)
