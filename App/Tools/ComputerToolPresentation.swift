@@ -23,6 +23,11 @@ enum ComputerControlMode: Equatable {
     }
 }
 
+enum ComputerOutputEvidence: Equatable {
+    case output(String)
+    case returnValue(String)
+}
+
 struct ComputerToolPresentation: Equatable {
     let target: String?
     let output: String
@@ -58,6 +63,18 @@ struct ComputerToolPresentation: Equatable {
         } else {
             mode = .background
         }
+    }
+
+    var outputEvidence: [ComputerOutputEvidence] {
+        var evidence: [ComputerOutputEvidence] = []
+        if !output.isEmpty {
+            evidence.append(.output(output))
+        }
+        if let returnValue, !returnValue.isEmpty,
+           output.isEmpty || !output.contains(returnValue) {
+            evidence.append(.returnValue(returnValue))
+        }
+        return evidence
     }
 
     private static let maximumDecodedImageBytes = 20 * 1_024 * 1_024

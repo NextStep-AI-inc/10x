@@ -69,6 +69,17 @@ import Testing
     #expect(parsed.output == "Capture still available")
 }
 
+@Test func returnOnlyResultsExposeOneReturnValueEvidenceRow() throws {
+    let result = JSONValue.object([
+        "details": .object([
+            "returnValue": .string("Verification complete"),
+        ]),
+    ])
+
+    let parsed = try #require(ComputerToolPresentation(computerPresentation(result: result)))
+    #expect(parsed.outputEvidence == [.returnValue("Verification complete")])
+}
+
 @Test func imagePayloadsOverTwentyMiBAreRejectedBeforeDecoding() throws {
     let encodedByteCount = 20 * 1_024 * 1_024 + 1
     let encodedLength = ((encodedByteCount + 2) / 3) * 4

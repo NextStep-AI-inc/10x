@@ -93,13 +93,25 @@ struct ComputerToolCardView: View {
 
     @ViewBuilder
     private func output(_ computer: ComputerToolPresentation) -> some View {
-        let hasSeparateReturnValue = computer.returnValue.map {
-            !computer.output.contains($0)
-        } ?? false
-        if !computer.output.isEmpty {
+        let evidence = computer.outputEvidence
+        if evidence.isEmpty, presentation.phase == .complete {
+            Text("No output")
+                .font(TenXTypography.body(size: 11))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        }
+
+        ForEach(Array(evidence.enumerated()), id: \.offset) { _, item in
+            outputEvidence(item)
+        }
+    }
+
+    @ViewBuilder
+    private func outputEvidence(_ evidence: ComputerOutputEvidence) -> some View {
+        switch evidence {
+        case .output(let value):
             evidenceSection(title: "Output") {
                 BoundedToolOutputView(
-                    text: computer.output,
+                    text: value,
                     lineLimit: 8,
                     font: TenXTypography.mono(size: 10),
                     color: TenXPalette.color(presentation.isError
@@ -107,24 +119,10 @@ struct ComputerToolCardView: View {
                         : TenXPalette.nearBlackHex),
                     isDisclosureAlwaysAvailable: true)
             }
-        } else if let returnValue = computer.returnValue {
+        case .returnValue(let value):
             evidenceSection(title: "Return value") {
                 BoundedToolOutputView(
-                    text: returnValue,
-                    lineLimit: 6,
-                    font: TenXTypography.mono(size: 10),
-                    isDisclosureAlwaysAvailable: true)
-            }
-        } else if presentation.phase == .complete {
-            Text("No output")
-                .font(TenXTypography.body(size: 11))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-        }
-
-        if hasSeparateReturnValue, let returnValue = computer.returnValue {
-            evidenceSection(title: "Return value") {
-                BoundedToolOutputView(
-                    text: returnValue,
+                    text: value,
                     lineLimit: 6,
                     font: TenXTypography.mono(size: 10),
                     isDisclosureAlwaysAvailable: true)
