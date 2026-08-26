@@ -26,7 +26,7 @@ struct ComputerUseSettingsSection: View {
                 .frame(height: 2)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Let this session verify work in dedicated app windows without taking over your desktop.")
+                Text(primaryDescription)
                     .font(TenXTypography.body(size: 12))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     .fixedSize(horizontal: false, vertical: true)
@@ -60,13 +60,6 @@ struct ComputerUseSettingsSection: View {
                     statusRow("Test background input", value: testInputLabel(harmlessTest.backgroundInputSucceeded, outcome: harmlessTest.outcome))
                     statusRow("Test helper", value: testCheckLabel(harmlessTest.helperAvailable, outcome: harmlessTest.outcome))
                     statusRow("Test window placement", value: testPlacementLabel(harmlessTest.windowPlacementOutcome))
-                }
-
-                if model.readiness.ompContract == .legacyBestEffort {
-                    Text("Background control may still interrupt your current app")
-                        .font(TenXTypography.body(size: 11, weight: .medium))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 HStack(spacing: 8) {
@@ -133,6 +126,21 @@ struct ComputerUseSettingsSection: View {
         case .complete: "READY"
         case .legacyBestEffort: "BEST EFFORT"
         case .unavailable: "UNAVAILABLE"
+        }
+    }
+
+    private var primaryDescription: String {
+        Self.primaryDescription(for: model.readiness.ompContract)
+    }
+
+    nonisolated static func primaryDescription(for contract: OmpComputerContract) -> String {
+        switch contract {
+        case .complete:
+            "Let this session verify work in dedicated app windows without taking over your desktop."
+        case .legacyBestEffort:
+            "Computer use can verify work in dedicated app windows, but it may interrupt your current app."
+        case .unavailable:
+            "Computer use is unavailable. Without the complete contract, computer control may interrupt your current app."
         }
     }
 

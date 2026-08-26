@@ -95,6 +95,18 @@ import Testing
         size: CGSize(width: 760, height: 860))
 }
 
+@Test func computerUseSettingsOnlyPromisesNonInterruptionForCompleteContract() {
+    let complete = ComputerUseSettingsSection.primaryDescription(for: .complete)
+    let bestEffort = ComputerUseSettingsSection.primaryDescription(for: .legacyBestEffort)
+    let unavailable = ComputerUseSettingsSection.primaryDescription(for: .unavailable)
+
+    #expect(complete.contains("without taking over your desktop"))
+    #expect(!bestEffort.contains("without taking over your desktop"))
+    #expect(bestEffort.contains("may interrupt your current app"))
+    #expect(!unavailable.contains("without taking over your desktop"))
+    #expect(unavailable.contains("may interrupt your current app"))
+}
+
 @MainActor
 @Test func computerToolCardSnapshot() throws {
     let presentation = computerToolSnapshotPresentation(
