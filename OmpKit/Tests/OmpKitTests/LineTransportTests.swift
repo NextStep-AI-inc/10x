@@ -2,20 +2,11 @@ import Testing
 import Foundation
 @testable import OmpKit
 
-private struct ProviderAccountListEnvelope: Decodable {
-    struct DataPayload: Decodable {
-        let accounts: [ProviderAccountSummary]
+private func providerAccountResponse(from line: String) throws -> RpcResponse {
+    guard case .response(let response) = try RpcFrame.decode(line: Data(line.utf8)) else {
+        throw RpcFrameError.malformedFrame(type: "response", underlying: "not a response")
     }
-
-    let data: DataPayload
-}
-
-private struct ProviderAccountUsageEnvelope: Decodable {
-    struct DataPayload: Decodable {
-        let accounts: [ProviderAccountUsage]
-    }
-
-    let data: DataPayload
+    return response
 }
 
 func fixtureURL(_ name: String) -> URL {
@@ -334,11 +325,11 @@ private func fixturePID(at url: URL) -> pid_t? {
 }
 
 @Test func providerAccountSummaryLineDecodesFullOMPContract() throws {
-    let line = Data("""
+    let response = try providerAccountResponse(from: """
     {"id":"list","type":"response","command":"list_provider_accounts","success":true,"data":{"accounts":[{"providerId":"openai-codex","accountRef":"acct_B","displayLabel":"Tanner","detailLabel":"tanner@example.com","connectionOrder":2,"availability":"limited","isActiveForSession":true,"ignored":"future"}]}}
-    """.utf8)
-    let envelope = try JSONDecoder().decode(ProviderAccountListEnvelope.self, from: line)
-    let account = try #require(envelope.data.accounts.first)
+    """)
+    let result = try response.providerAccountListResult()
+    let account = try #require(result.accounts.first)
 
     #expect(account.providerID == "openai-codex")
     #expect(account.accountRef == "acct_B")
@@ -351,21 +342,21 @@ private func fixturePID(at url: URL) -> pid_t? {
 }
 
 @Test func providerAccountSummaryUnknownAvailabilityFallsBackToUnavailable() throws {
-    let line = Data("""
+    let response = try providerAccountResponse(from: """
     {"id":"list","type":"response","command":"list_provider_accounts","success":true,"data":{"accounts":[{"providerId":"openai-codex","accountRef":"acct_future","displayLabel":"Future","connectionOrder":3,"availability":"temporarilyUnavailable"}]}}
-    """.utf8)
-    let envelope = try JSONDecoder().decode(ProviderAccountListEnvelope.self, from: line)
+    """)
+    let result = try response.providerAccountListResult()
 
-    #expect(envelope.data.accounts.first?.accountRef == "acct_future")
-    #expect(envelope.data.accounts.first?.availability == .unavailable)
+    #expect(result.accounts.first?.accountRef == "acct_future")
+    #expect(result.accounts.first?.availability == .unavailable)
 }
 
 @Test func providerAccountUsageLineDecodesWindowsAndIgnoresUnknownFields() throws {
-    let line = Data("""
+    let response = try providerAccountResponse(from: """
     {"id":"usage","type":"response","command":"get_provider_account_usage","success":true,"data":{"accounts":[{"providerId":"openai-codex","accountRef":"acct_B","refreshedAt":"2026-08-26T09:30:00.000Z","usageWindows":[{"id":"five-hour","label":"5h","duration":{"value":5,"unit":"hour"},"sourceIndex":0,"remainingFraction":0.75,"resetsAt":"2026-08-26T14:30:00.000Z","status":"available","ignored":"future"}],"ignored":"future"}]}}
-    """.utf8)
-    let envelope = try JSONDecoder().decode(ProviderAccountUsageEnvelope.self, from: line)
-    let account = try #require(envelope.data.accounts.first)
+    """)
+    let result = try response.providerAccountUsageResult()
+    let account = try #require(result.accounts.first)
     let window = try #require(account.usageWindows.first)
 
     #expect(account.providerID == "openai-codex")
@@ -377,6 +368,23 @@ private func fixturePID(at url: URL) -> pid_t? {
     #expect(window.remainingFraction == 0.75)
     #expect(window.resetsAt.map { ISO8601DateFormatter().string(from: $0) } == "2026-08-26T14:30:00Z")
     #expect(window.status == "available")
+}
+
+@Test func providerAccountMutationResponsesDecodeFromRpcResponseData() throws {
+    let pinResponse = try providerAccountResponse(from: """
+    {"id":"pin","type":"response","command":"set_session_provider_account","success":true,"data":{"account":{"providerId":"openai-codex","accountRef":"acct_B","displayLabel":"Tanner","connectionOrder":2,"availability":"available","isActiveForSession":true},"sequence":12,"ignored":"future"}}
+    """)
+    let pin = try pinResponse.setSessionProviderAccountResult()
+    #expect(pin.account.accountRef == "acct_B")
+    #expect(pin.account.isActiveForSession == true)
+    #expect(pin.sequence == 12)
+
+    let removalResponse = try providerAccountResponse(from: """
+    {"id":"remove","type":"response","command":"remove_provider_account","success":true,"data":{"removed":true,"accounts":[{"providerId":"openai-codex","accountRef":"acct_C","displayLabel":"Backup","connectionOrder":3,"availability":"limited"}],"ignored":"future"}}
+    """)
+    let removal = try removalResponse.removeProviderAccountResult()
+    #expect(removal.removed)
+    #expect(removal.accounts.map { $0.accountRef } == ["acct_C"])
 }
 
 @Test func providerAccountChangedLineDecodesTypedEventAndUnknownReason() throws {
