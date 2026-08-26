@@ -1,7 +1,7 @@
 import Foundation
 import OmpKit
 
-enum ToolPhase: Equatable {
+enum ToolPhase: Equatable, Sendable {
     case running
     case complete
     case failed
@@ -17,7 +17,7 @@ extension ToolPhase {
     }
 }
 
-struct ToolPresentation: Identifiable, Equatable {
+struct ToolPresentation: Identifiable, Equatable, Sendable {
     let id: String
     var name: String
     var arguments: JSONValue

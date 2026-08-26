@@ -6,6 +6,12 @@
   silent    — ready, then never answers anything (timeout testing)
   slow-exit — basic behavior, then waits briefly after stdin closes
   noisy     — like basic, but emits unknown frames + setWidget before each response
+  transcript-burst — one assistant message streamed as 1,000 growing snapshots
+  transcript-burst-extensions — transcript-burst plus deterministic confirm requests
+  reconciliation-double-boundary — emits two reconciliation boundaries with a gap
+  extension-timeout — emits a short-lived confirm request and surfaces stale responses
+  delayed-prompt-success — delays a prompt success response so controller replacement can race it
+  delayed-prompt-failure — delays a prompt failure response so controller replacement can race it
 """
 import base64
 import json
@@ -135,20 +141,103 @@ for line in sys.stdin:
         else:
             emit({"id": cid, "type": "response", "command": "get_state", "success": True, "data": STATE})
     elif ctype == "prompt":
+        if mode == "delayed-prompt-success":
+            time.sleep(0.3)
+            emit({"id": cid, "type": "response", "command": "prompt", "success": True,
+                  "data": {"agentInvoked": True}})
+            continue
+        if mode == "delayed-prompt-failure":
+            time.sleep(0.3)
+            emit({"id": cid, "type": "response", "command": "prompt", "success": False,
+                  "error": "delayed prompt failure"})
+            continue
         emit({"id": cid, "type": "response", "command": "prompt", "success": True,
               "data": {"agentInvoked": True}})
         if mode == "burst":
             for index in range(100):
                 emit({"type": "message_update", "index": index})
+        elif mode in ("transcript-burst", "transcript-burst-extensions"):
+            def assistant_message(text):
+                return {
+                    "id": "burst-message",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": text}],
+                    "api": "test",
+                    "provider": "test",
+                    "model": "fake",
+                    "stopReason": "stop",
+                    "timestamp": 0,
+                    "usage": {
+                        "input": 0,
+                        "output": 0,
+                        "cacheRead": 0,
+                        "cacheWrite": 0,
+                        "totalTokens": 0,
+                        "cost": {
+                            "input": 0,
+                            "output": 0,
+                            "cacheRead": 0,
+                            "cacheWrite": 0,
+                            "total": 0,
+                        },
+                    },
+                }
+
+            emit({"type": "agent_start"})
+            emit({"type": "message_start", "message": assistant_message("")})
+            text = ""
+            for _ in range(1000):
+                text += "x"
+                emit({
+                    "type": "message_update",
+                    "message": assistant_message(text),
+                    "assistantMessageEvent": {
+                        "type": "text_delta",
+                        "contentIndex": 0,
+                        "delta": "x",
+                        "partial": assistant_message(text),
+                    },
+                })
+                if mode == "transcript-burst-extensions" and len(text) % 200 == 0:
+                    emit({
+                        "type": "extension_ui_request",
+                        "id": f"confirm-{len(text)}",
+                        "method": "confirm",
+                        "title": f"Approve {len(text)}",
+                        "message": "Continue?",
+                    })
+                time.sleep(0.002)
+            emit({"type": "message_end", "message": assistant_message(text)})
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+        elif mode == "reconciliation-double-boundary":
+            emit({"type": "agent_start"})
+            emit({"type": "message_end", "message": {
+                "id": "boundary-message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "done"}],
+                "timestamp": 0,
+            }})
+            time.sleep(0.1)
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+        elif mode == "extension-timeout":
+            emit({"type": "extension_ui_request", "id": "timeout-confirm", "method": "confirm",
+                  "title": "Approve timeout", "message": "Continue?", "timeout": 120})
         if mode == "late-error":
             emit({"id": cid, "type": "response", "command": "prompt", "success": False,
                   "error": "late scheduling failure"})
-        else:
+        elif mode not in (
+            "transcript-burst",
+            "transcript-burst-extensions",
+            "reconciliation-double-boundary",
+        ):
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "isTerminal": True})
     elif ctype == "bad_command_test":
         emit({"id": cid, "type": "response", "command": "bad_command_test",
               "success": False, "error": "nope", "code": "test_code"})
+    elif ctype == "extension_ui_response" and mode == "extension-timeout":
+        emit({"type": "message_update", "message": {"id": "leaked-timeout-response",
+              "role": "assistant", "content": [{"type": "text", "text": "stale timeout leaked"}]}})
     else:
         emit({"id": cid, "type": "response", "command": ctype or "parse", "success": True})
 

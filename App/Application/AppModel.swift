@@ -32,6 +32,7 @@ final class AppModel {
     @ObservationIgnored private var archivedReloadGeneration = 0
     @ObservationIgnored private var composerControlsRefreshGeneration = 0
     @ObservationIgnored private var routeBeforeSettings: AppRoute?
+    @ObservationIgnored private var pendingSessionCloseTask: Task<Void, Never>?
 
     init(
         dependencies: AppDependencies = .live,
@@ -43,6 +44,10 @@ final class AppModel {
         self.ideRegistry = ideRegistry
         idePreferenceStore = IDEPreferenceStore(defaults: preferenceDefaults, registry: ideRegistry)
         self.fileOpenService = fileOpenService
+    }
+
+    var sessionSearch: any SessionSearching {
+        dependencies.sessionSearch
     }
 
     func bootstrap() async {
@@ -61,7 +66,7 @@ final class AppModel {
     func chooseProject(_ url: URL) {
         guard !isSessionMutationInFlight else { return }
         selectedProjectURL = url.standardizedFileURL
-        activeSession = nil
+        clearActiveSession()
         detachComposerControlsAndRefresh()
         route = .newSession
     }
@@ -117,7 +122,7 @@ final class AppModel {
 
     func openNewSession() {
         guard !isSessionMutationInFlight else { return }
-        activeSession = nil
+        clearActiveSession()
         detachComposerControlsAndRefresh()
         route = .newSession
     }
@@ -137,6 +142,7 @@ final class AppModel {
     func openSearch() {
         guard !isSessionMutationInFlight else { return }
         isSearchPresented = true
+        Task { await reloadSessions() }
     }
 
     func closeSearch() {
@@ -158,11 +164,14 @@ final class AppModel {
         }
         guard let processManager else { return }
         let controller = SessionController(processManager: processManager)
-        activeSession = controller
+        let closeTask = replaceActiveSession(with: controller)
         route = .session(metadata.path)
-        Task {
+        Task { [weak self, controller, closeTask] in
+            await closeTask?.value
+            guard let self, self.activeSession === controller else { return }
             await controller.openExisting(metadata)
-            composerControls?.attachActiveSession(controller)
+            guard self.activeSession === controller else { return }
+            self.composerControls?.attachActiveSession(controller)
         }
     }
 
@@ -171,19 +180,24 @@ final class AppModel {
         guard let processManager, let selectedProjectURL else { return }
         let controller = SessionController(processManager: processManager)
         controller.draft = prompt
-        activeSession = controller
+        let closeTask = replaceActiveSession(with: controller)
         route = .session("new:\(UUID().uuidString)")
         let selection = composerControls?.spawnSelection
-        Task {
+        Task { [weak self, controller, closeTask, selectedProjectURL, selection] in
+            await closeTask?.value
+            guard let self, self.activeSession === controller else { return }
             let fastOutcome = await controller.openNew(
                 projectURL: selectedProjectURL,
                 selection: selection)
+            guard self.activeSession === controller else { return }
             if fastOutcome == .unsupported || fastOutcome == .failed {
-                await composerControls?.setFastMode(false, mode: .newSession)
+                await self.composerControls?.setFastMode(false, mode: .newSession)
             }
-            composerControls?.attachActiveSession(controller)
+            guard self.activeSession === controller else { return }
+            self.composerControls?.attachActiveSession(controller)
             await controller.sendPrompt()
-            await reloadSessions()
+            guard self.activeSession === controller else { return }
+            await self.reloadSessions()
         }
     }
 
@@ -293,12 +307,18 @@ final class AppModel {
         }
         guard let matchingPath else { return }
         let processManager = processManager
-        activeSession = nil
+        let hadActiveSession = activeSession != nil
+        let closeTask = clearActiveSession()
         if routePath != nil {
             route = .newSession
             detachComposerControlsAndRefresh()
+        } else if hadActiveSession {
+            detachComposerControlsAndRefresh()
         }
-        await processManager?.close(sessionPath: matchingPath)
+        await closeTask?.value
+        if !hadActiveSession {
+            await processManager?.close(sessionPath: matchingPath)
+        }
     }
 
     private func detachComposerControlsAndRefresh() {
@@ -367,6 +387,7 @@ final class AppModel {
 
         guard let installation = locatedInstallation else {
             exitTask?.cancel()
+            clearActiveSession()
             self.installation = nil
             processManager = nil
             settingsModel = nil
@@ -376,6 +397,7 @@ final class AppModel {
             return
         }
 
+        clearActiveSession()
         self.installation = installation
         let processManager = SessionProcessManager(executable: installation.executableURL.path)
         self.processManager = processManager
@@ -397,6 +419,25 @@ final class AppModel {
         if providerModel.hasAuthenticatedProvider {
             route = .newSession
         }
+    }
+
+    private func replaceActiveSession(with controller: SessionController) -> Task<Void, Never>? {
+        composerControls?.detachActiveSession()
+        let closeTask = clearActiveSession()
+        activeSession = controller
+        return closeTask
+    }
+
+    @discardableResult
+    private func clearActiveSession() -> Task<Void, Never>? {
+        let previousCloseTask = pendingSessionCloseTask
+        let closeTask = activeSession?.dispose()
+        activeSession = nil
+        pendingSessionCloseTask = Task {
+            await previousCloseTask?.value
+            await closeTask?.value
+        }
+        return pendingSessionCloseTask
     }
 
     private func watchUnexpectedExits(from processManager: SessionProcessManager) {

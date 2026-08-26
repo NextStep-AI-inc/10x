@@ -40,19 +40,10 @@ struct MessageBubbleView: View {
         } else if message.role == .assistant {
             VStack(alignment: .leading, spacing: Self.assistantContentSpacing) {
                 ResponseMetadataView(message: message)
-                ForEach(Array(MessageContentParser.parse(message.visibleText).enumerated()), id: \.offset) { _, block in
-                    MessageBlockView(block: block)
-                }
-                let references = TranscriptReference.extract(from: message.visibleText)
-                if !references.isEmpty {
-                    FlowLayout(spacing: 2) {
-                        ForEach(references, id: \.self) { reference in
-                            TranscriptReferenceView(reference: reference)
-                        }
-                    }
-                }
+                AssistantMessageContentView(message: message)
+                    .equatable()
             }
-                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+            .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
         } else {
             Text(message.visibleText)
                 .font(TenXTypography.mono(size: 12))

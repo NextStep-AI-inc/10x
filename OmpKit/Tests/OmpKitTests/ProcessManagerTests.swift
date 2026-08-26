@@ -257,6 +257,74 @@ private func fakeManager(mode: String = "basic") -> SessionProcessManager {
     await manager.closeAll()
 }
 
+@Test func managerPreservesThousandGrowingMessageSnapshots() async throws {
+    let manager = fakeManager(mode: "transcript-burst")
+    let handle = try await manager.open(sessionPath: "/tmp/transcript-burst.jsonl", cwd: "/tmp")
+    let stream = handle.client.events
+
+    let acknowledgement = try await handle.client.send(
+        .prompt(message: "burst", streamingBehavior: nil))
+    #expect(acknowledgement.success)
+
+    let result = await withTimeout(.seconds(10)) { () -> (
+        eventTypes: [String], updates: [String], final: String?, terminalAgentEnds: Int,
+        malformedUpdates: Int
+    ) in
+        var eventTypes: [String] = []
+        var updates: [String] = []
+        var final: String?
+        var terminalAgentEnds = 0
+        var malformedUpdates = 0
+
+        for await frame in stream {
+            guard case .event(let type, let payload) = frame else { continue }
+            eventTypes.append(type)
+            switch type {
+            case "message_update":
+                let message = payload["message"]
+                let event = payload["assistantMessageEvent"]
+                let usage = message?["usage"]
+                let cost = usage?["cost"]
+                let isContractComplete = event?["type"]?.stringValue == "text_delta"
+                    && event?["contentIndex"]?.intValue == 0
+                    && event?["delta"]?.stringValue == "x"
+                    && event?["partial"] == message
+                    && ["input", "output", "cacheRead", "cacheWrite", "totalTokens"]
+                        .allSatisfy { usage?[$0]?.intValue == 0 }
+                    && ["input", "output", "cacheRead", "cacheWrite", "total"]
+                        .allSatisfy { cost?[$0]?.doubleValue == 0 }
+                if !isContractComplete { malformedUpdates += 1 }
+                updates.append(message?["content"]?.arrayValue?.first?["text"]?.stringValue ?? "")
+            case "message_end":
+                final = payload["message"]?["content"]?.arrayValue?.first?["text"]?.stringValue
+            case "agent_end":
+                guard payload["isTerminal"]?.boolValue == true else { continue }
+                terminalAgentEnds += 1
+                return (eventTypes, updates, final, terminalAgentEnds, malformedUpdates)
+            default:
+                break
+            }
+        }
+        return (eventTypes, updates, final, terminalAgentEnds, malformedUpdates)
+    }
+
+    #expect(result != nil)
+    let frames = result ?? (eventTypes: [], updates: [], final: nil, terminalAgentEnds: 0, malformedUpdates: 0)
+    #expect(frames.eventTypes.first == "agent_start")
+    #expect(frames.eventTypes.dropFirst().first == "message_start")
+    #expect(frames.eventTypes.dropFirst(2).dropLast(2).allSatisfy { $0 == "message_update" })
+    #expect(frames.eventTypes.suffix(2) == ["message_end", "agent_end"])
+    #expect(frames.terminalAgentEnds == 1)
+    #expect(frames.updates.count == 1_000)
+    #expect(frames.malformedUpdates == 0)
+    #expect(frames.updates.allSatisfy { !$0.isEmpty })
+    #expect(zip(frames.updates, frames.updates.dropFirst()).allSatisfy { previous, current in
+        current.count > previous.count && current.hasPrefix(previous)
+    })
+    #expect(frames.final == frames.updates.last)
+    await manager.closeAll()
+}
+
 @Test func deliberateCloseDoesNotReportAnExit() async throws {
     let manager = fakeManager()
     _ = try await manager.open(sessionPath: "/tmp/quiet.jsonl", cwd: "/tmp")

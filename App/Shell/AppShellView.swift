@@ -50,6 +50,7 @@ struct AppShellView: View {
                         if model.isSearchPresented {
                             SearchModalView(
                                 sessions: model.sessions,
+                                service: model.sessionSearch,
                                 onOpen: model.openSearchResult,
                                 onClose: model.closeSearch)
                         }

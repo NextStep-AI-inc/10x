@@ -1,6 +1,8 @@
 import Foundation
 import OmpKit
 import Testing
+import Foundation
+import OmpKit
 @testable import TenXApp
 
 @MainActor
@@ -307,11 +309,13 @@ import Testing
 @MainActor
 private func navigationDependencies<Locator: OmpLocating>(
     ompLocator: Locator,
-    sessionLibrary: SessionLibrary
+    sessionLibrary: SessionLibrary,
+    sessionSearch: SessionSearchService = SessionSearchService()
 ) -> AppDependencies {
     AppDependencies(
         ompLocator: ompLocator,
         sessionLibrary: sessionLibrary,
+        sessionSearch: sessionSearch,
         makeProviderModel: { _ in
             providerTestModel(providers: [
                 ProviderLoginProvider(
@@ -664,6 +668,7 @@ private func testDependencies<Locator: OmpLocating>(
         sessionLibrary: SessionLibrary(root: URL(
             filePath: "/tmp/10x-provider-tests-empty",
             directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
         makeProviderModel: makeProviderModel,
         makeComposerControls: makeComposerControls)
 }
@@ -728,4 +733,34 @@ private actor CountingAppComposerCatalog: ComposerCatalogLoading {
 private actor StubAppComposerDefaults: ComposerDefaultPersisting {
     func setDefaultModel(provider: String, modelID: String) async throws {}
     func setDefaultThinkingLevel(_ level: String) async throws {}
+}
+
+@MainActor
+@Test func openingSearchRefreshesSessions() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "tenx-open-search-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let bucket = directory.appending(path: "project", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: bucket, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let session = bucket.appending(path: "session.jsonl")
+    try Data("""
+    {"type":"session","id":"open-search-session","cwd":"/tmp/Prime Radiant","timestamp":"2026-08-24T12:00:00.000Z","version":3,"title":"Open search refresh"}
+    {"type":"message","id":"message-1","timestamp":"2026-08-24T12:01:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Search refresh marker"}]}}
+
+    """.utf8).write(to: session)
+
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: MissingOmpLocator(),
+        sessionLibrary: SessionLibrary(root: directory),
+        sessionSearch: SessionSearchService(
+            databaseURL: directory.appending(path: "SearchIndex-v1.sqlite"))))
+
+    model.openSearch()
+    for _ in 0..<40 where model.sessions.isEmpty {
+        try await Task.sleep(for: .milliseconds(10))
+    }
+
+    #expect(model.isSearchPresented)
+    #expect(model.sessions.map(\.title) == ["Open search refresh"])
 }

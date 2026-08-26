@@ -1,7 +1,7 @@
 import Foundation
 
-struct TranscriptAnnotation: Identifiable, Equatable {
-    enum Kind: Equatable {
+struct TranscriptAnnotation: Identifiable, Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
         case model
         case thinking
         case mode
@@ -11,7 +11,7 @@ struct TranscriptAnnotation: Identifiable, Equatable {
         case notice
     }
 
-    enum Tone: Equatable {
+    enum Tone: Equatable, Sendable {
         case neutral
         case interactive
         case warning
@@ -25,4 +25,3 @@ struct TranscriptAnnotation: Identifiable, Equatable {
     let timestamp: Date?
     let tone: Tone
 }
-

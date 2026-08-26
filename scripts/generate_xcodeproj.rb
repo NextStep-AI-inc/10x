@@ -63,6 +63,10 @@ build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
 build_file.product_ref = product
 app.frameworks_build_phase.files << build_file
 
+sqlite = project.frameworks_group.new_file("usr/lib/libsqlite3.tbd")
+sqlite.source_tree = "SDKROOT"
+app.frameworks_build_phase.add_file_reference(sqlite)
+
 app.build_configurations.each do |configuration|
   configuration.build_settings.merge!({
     "PRODUCT_BUNDLE_IDENTIFIER" => "com.tannerpham.tenx",

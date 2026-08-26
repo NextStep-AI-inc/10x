@@ -48,9 +48,15 @@ struct ToolEventReducer {
             presentations[index].result = payload["partialResult"]
             presentations[index].phase = .running
         case "tool_execution_end":
-            presentations[index].result = payload["result"]
-            presentations[index].phase = payload["isError"]?.boolValue == true ? .failed : .complete
-            presentations[index].endDate = date
+            let result = payload["result"]
+            let phase: ToolPhase = payload["isError"]?.boolValue == true ? .failed : .complete
+            let alreadyApplied = presentations[index].result == result
+                && presentations[index].phase == phase
+            presentations[index].result = result
+            presentations[index].phase = phase
+            if !alreadyApplied {
+                presentations[index].endDate = date
+            }
         default:
             break
         }

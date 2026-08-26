@@ -3,6 +3,170 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func unknownEventsAreDiscardedWithoutMutation() throws {
+    var reducer = TranscriptReducer()
+
+    let nonEvent = try RpcFrame.decode(line: Data(#"{"type":"response","id":"1","command":"get_state","success":true,"data":{}}"#.utf8))
+    #expect(reducer.consume(nonEvent) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"unknown_future_event","payload":{"large":"ignored"}}
+        """)) == .none)
+
+    #expect(reducer.items.isEmpty)
+}
+
+@Test func tenThousandUnknownEventsAddNoRows() throws {
+    var reducer = TranscriptReducer()
+    let frame = try eventFrame("""
+        {"type":"unsupported_progress","index":1,"payload":{"text":"ignored"}}
+        """)
+
+    for _ in 0..<10_000 {
+        #expect(reducer.consume(frame) == .none)
+    }
+
+    #expect(reducer.items.isEmpty)
+}
+
+@Test func malformedKnownEventsDoNotPublish() throws {
+    var reducer = TranscriptReducer()
+
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_start"}
+        """)) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_update"}
+        """)) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_end"}
+        """)) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_start","message":{"role":"toolResult","toolName":"bash","content":[{"type":"text","text":"missing id"}],"isError":false}}
+        """)) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"role":"toolResult","toolName":"bash","content":[{"type":"text","text":"missing id"}],"isError":false}}
+        """)) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"tool_execution_update","toolName":"bash"}
+        """)) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"subagent_progress","payload":{"id":"missing"}}
+        """)) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"subagent_progress","payload":{"progress":{"durationMs":10,"description":"orphan"}}}
+        """)) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"subagent_progress","payload":{"index":0,"progress":{"durationMs":11,"description":"still orphaned"}}}
+        """)) == .none)
+
+    #expect(reducer.items.isEmpty)
+    #expect(reducer.runtimeState == .idle)
+}
+
+@Test func messageAndToolUpdatesAreCoalesced() throws {
+    var reducer = TranscriptReducer()
+
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Draft"}]}}
+        """)) == .coalesced)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Draft"}]}}
+        """)) == .none)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Draft plus"}]}}
+        """)) == .coalesced)
+
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"tool_execution_start","toolCallId":"t1","toolName":"bash","args":{"command":"sleep 1"}}
+        """)) == .immediate)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"tool_execution_update","toolCallId":"t1","toolName":"bash","partialResult":{"content":[{"type":"text","text":"running"}]}}
+        """)) == .coalesced)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"tool_execution_update","toolCallId":"t1","toolName":"bash","partialResult":{"content":[{"type":"text","text":"running"}]}}
+        """)) == .none)
+
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"subagent_lifecycle","payload":{"id":"s1","index":1,"label":"Analyze","status":"running"}}
+        """)) == .immediate)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"subagent_progress","payload":{"progress":{"id":"s1","durationMs":10,"description":"halfway"}}}
+        """)) == .coalesced)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"subagent_progress","payload":{"progress":{"id":"s1","durationMs":10,"description":"halfway"}}}
+        """)) == .none)
+}
+
+@Test func boundariesAndVisibleChangesAreImmediate() throws {
+    var reducer = TranscriptReducer()
+
+    #expect(reducer.load(messages: [try message("""
+        {"role":"user","content":[{"type":"text","text":"Hi"}]}
+        """)]) == .immediate)
+    #expect(reducer.load(messages: [try message("""
+        {"role":"user","content":[{"type":"text","text":"Hi"}]}
+        """)]) == .none)
+
+    let history = TranscriptHistory(items: [
+        .threadStart(id: "thread", date: Date(timeIntervalSince1970: 1))
+    ])
+    #expect(reducer.load(history: history) == .immediate)
+    #expect(reducer.load(history: history) == .none)
+    #expect(reducer.ensureThreadStart(date: .distantFuture) == .none)
+    #expect(reducer.setReconciliationWarning(isPresented: true) == .immediate)
+    #expect(reducer.setReconciliationWarning(isPresented: true) == .none)
+    #expect(reducer.setReconciliationWarning(isPresented: false) == .immediate)
+    #expect(reducer.setReconciliationWarning(isPresented: false) == .none)
+    #expect(reducer.appendNotice(level: "info", message: "Visible") == .immediate)
+
+    let extensionState = ExtensionUIState.confirm(
+        id: "ext-1",
+        title: "Approve",
+        message: "Continue?",
+        timeout: nil)
+    #expect(reducer.upsertExtensionUI(extensionState) == .immediate)
+    #expect(reducer.upsertExtensionUI(extensionState) == .none)
+    #expect(reducer.removeExtensionUI(id: extensionState.id) == .immediate)
+    #expect(reducer.removeExtensionUI(id: extensionState.id) == .none)
+
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"agent_start"}
+        """)) == .immediate)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_start","message":{"id":"m1","role":"assistant","content":[]}}
+        """)) == .immediate)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Done"}]}}
+        """)) == .immediate)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"t1","toolName":"bash","result":{"content":[{"type":"text","text":"done"}]},"isError":false}
+        """)) == .immediate)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"subagent_lifecycle","payload":{"id":"s2","index":2,"label":"Review","status":"completed"}}
+        """)) == .immediate)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"notice","level":"info","message":"Heads up"}
+        """)) == .immediate)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"thinking_level_changed","thinkingLevel":"high","configured":"auto"}
+        """)) == .immediate)
+    #expect(reducer.consume(try eventFrame("""
+        {"type":"agent_end","isTerminal":true}
+        """)) == .immediate)
+
+    let reconciledHistory = TranscriptHistory(items: [
+        .threadStart(id: "thread", date: Date(timeIntervalSince1970: 1)),
+        .message(TranscriptMessage(
+            id: "persisted-message",
+            raw: try message("""
+                {"role":"assistant","content":[{"type":"text","text":"Persisted"}]}
+                """),
+            isFinal: true))
+    ])
+    #expect(reducer.reconcile(history: reconciledHistory) == .immediate)
+    #expect(reducer.reconcile(history: reconciledHistory) == .none)
+}
+
 @Test func messageUpdatesReplaceTheInflightSnapshot() throws {
     var reducer = TranscriptReducer()
 
@@ -122,6 +286,100 @@ import Testing
     }
     #expect(tool.arguments["command"]?.stringValue == "pwd")
     #expect(tool.result?["content"]?.arrayValue?.first?["text"]?.stringValue == "/tmp")
+}
+
+@Test func duplicateTimestamplessToolResultDoesNotRepublishOrChangeDates() throws {
+    var reducer = TranscriptReducer()
+    let toolResult = """
+        {"type":"message_end","message":{"role":"toolResult","toolCallId":"t1","toolName":"bash","content":[{"type":"text","text":"done"}],"isError":false}}
+        """
+
+    #expect(reducer.consume(try eventFrame(toolResult)) == .immediate)
+    let originalItems = reducer.items
+    guard case .tool(let originalTool) = try #require(originalItems.first) else {
+        Issue.record("Expected one tool card")
+        return
+    }
+
+    #expect(reducer.consume(try eventFrame(toolResult)) == .none)
+    #expect(reducer.items == originalItems)
+    guard case .tool(let reloadedTool) = try #require(reducer.items.first) else {
+        Issue.record("Expected one tool card")
+        return
+    }
+    #expect(reloadedTool.startDate == originalTool.startDate)
+    #expect(reloadedTool.endDate == originalTool.endDate)
+}
+
+@Test func timestamplessResultForRunningToolKeepsLiveDuration() throws {
+    var reducer = TranscriptReducer()
+    reducer.load(messages: [
+        try message("""
+            {"role":"assistant","timestamp":1000,"content":[{"type":"toolCall","id":"t1","name":"bash","arguments":{"command":"sleep 1"}}]}
+            """),
+    ])
+    let toolResult = """
+        {"type":"message_end","message":{"role":"toolResult","toolCallId":"t1","toolName":"bash","content":[{"type":"text","text":"done"}],"isError":false}}
+        """
+
+    #expect(reducer.consume(try eventFrame(toolResult)) == .immediate)
+    let originalItems = reducer.items
+    guard case .tool(let completedTool) = try #require(originalItems.first) else {
+        Issue.record("Expected one tool card")
+        return
+    }
+    let completedEndDate = try #require(completedTool.endDate)
+    #expect(completedEndDate > completedTool.startDate)
+
+    #expect(reducer.consume(try eventFrame(toolResult)) == .none)
+    #expect(reducer.items == originalItems)
+    guard case .tool(let duplicateTool) = try #require(reducer.items.first) else {
+        Issue.record("Expected one tool card")
+        return
+    }
+    #expect(duplicateTool.startDate == completedTool.startDate)
+    #expect(duplicateTool.endDate == completedTool.endDate)
+}
+
+@Test func duplicateIdenticalTerminalToolEventDoesNotRepublishOrChangeDates() throws {
+    var reducer = TranscriptReducer()
+    let terminalEvent = """
+        {"type":"tool_execution_end","toolCallId":"t1","toolName":"bash","result":{"content":[{"type":"text","text":"done"}]},"isError":false}
+        """
+
+    #expect(reducer.consume(try eventFrame(terminalEvent)) == .immediate)
+    let originalItems = reducer.items
+    guard case .tool(let originalTool) = try #require(originalItems.first) else {
+        Issue.record("Expected one tool card")
+        return
+    }
+
+    Thread.sleep(forTimeInterval: 0.01)
+    #expect(reducer.consume(try eventFrame(terminalEvent)) == .none)
+    #expect(reducer.items == originalItems)
+    guard case .tool(let duplicateTool) = try #require(reducer.items.first) else {
+        Issue.record("Expected one tool card")
+        return
+    }
+    #expect(duplicateTool.endDate == originalTool.endDate)
+}
+
+@Test func repeatedTimestamplessToolHistoryLoadDoesNotRepublishOrChangeItems() throws {
+    var reducer = TranscriptReducer()
+    let history = [
+        try message("""
+            {"role":"assistant","content":[{"type":"toolCall","id":"t1","name":"bash","arguments":{"command":"pwd"}}]}
+            """),
+        try message("""
+            {"role":"toolResult","toolCallId":"t1","toolName":"bash","content":[{"type":"text","text":"/tmp"}],"isError":false}
+            """),
+    ]
+
+    #expect(reducer.load(messages: history) == .immediate)
+    let originalItems = reducer.items
+
+    #expect(reducer.load(messages: history) == .none)
+    #expect(reducer.items == originalItems)
 }
 
 @Test func liveMessagesKeepTheirOwnTimestampAndModel() throws {

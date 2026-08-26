@@ -1,7 +1,7 @@
 import Foundation
 import OmpKit
 
-struct TranscriptHistory: Equatable {
+struct TranscriptHistory: Equatable, Sendable {
     let items: [TranscriptItem]
 }
 

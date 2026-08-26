@@ -606,6 +606,7 @@ import Testing
         sessionLibrary: SessionLibrary(root: URL(
             filePath: "/tmp/10x-full-shell-snapshot",
             directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
     await model.bootstrap()

@@ -3,6 +3,7 @@ import OmpKit
 
 struct SearchModalView: View {
     let sessions: [SessionMetadata]
+    let service: any SessionSearching
     let onOpen: (SearchResult) -> Void
     let onClose: () -> Void
 
@@ -11,13 +12,15 @@ struct SearchModalView: View {
 
     init(
         sessions: [SessionMetadata],
+        service: any SessionSearching,
         onOpen: @escaping (SearchResult) -> Void,
         onClose: @escaping () -> Void
     ) {
         self.sessions = sessions
+        self.service = service
         self.onOpen = onOpen
         self.onClose = onClose
-        _model = State(initialValue: SearchModalModel(sessions: sessions))
+        _model = State(initialValue: SearchModalModel(sessions: sessions, service: service))
     }
 
     var body: some View {
@@ -45,6 +48,7 @@ struct SearchModalView: View {
             await Task.yield()
             isSearchFocused = true
         }
+        .onDisappear { model.cancelSearch() }
         .onChange(of: sessions) { _, sessions in model.updateSessions(sessions) }
         .onExitCommand(perform: onClose)
         .accessibilityElement(children: .contain)

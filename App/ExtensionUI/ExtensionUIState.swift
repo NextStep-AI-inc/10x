@@ -1,12 +1,12 @@
 import Foundation
 import OmpKit
 
-struct ExtensionSelectOption: Equatable {
+struct ExtensionSelectOption: Equatable, Sendable {
     let label: String
     let detail: String?
 }
 
-enum ExtensionUIState: Identifiable, Equatable {
+enum ExtensionUIState: Identifiable, Equatable, Sendable {
     case confirm(id: String, title: String, message: String, timeout: Int?)
     case select(id: String, title: String, options: [ExtensionSelectOption], timeout: Int?)
     case input(id: String, title: String, placeholder: String?, timeout: Int?)

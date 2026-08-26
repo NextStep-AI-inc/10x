@@ -1,4 +1,4 @@
-enum SessionRuntimeState: Equatable {
+enum SessionRuntimeState: Equatable, Sendable {
     case loading
     case idle
     case streaming

@@ -1,13 +1,13 @@
 import Foundation
 import OmpKit
 
-enum TranscriptMessageRole: String, Equatable {
+enum TranscriptMessageRole: String, Equatable, Sendable {
     case user
     case assistant
     case other
 }
 
-struct TranscriptResponseAttribution: Equatable {
+struct TranscriptResponseAttribution: Equatable, Sendable {
     let provider: String?
     let model: String?
     let mode: String?
@@ -22,7 +22,7 @@ struct TranscriptResponseAttribution: Equatable {
         modelRole: nil)
 }
 
-struct TranscriptMessage: Identifiable, Equatable {
+struct TranscriptMessage: Identifiable, Equatable, Sendable {
     let id: String
     let role: TranscriptMessageRole
     let raw: JSONValue

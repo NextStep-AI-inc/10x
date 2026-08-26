@@ -187,8 +187,6 @@ struct TranscriptView: View {
                 onCopyURL: { url in
                     controller.copyURL(url, requestID: state.id)
                 })
-        case .rawEvent:
-            EmptyView()
         }
     }
 
