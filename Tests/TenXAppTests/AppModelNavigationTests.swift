@@ -434,6 +434,27 @@ private struct FixedOmpLocator: OmpLocating {
 }
 
 @MainActor
+@Test func refreshProvidersIfNeededRefreshesComposerControlsOnForeground() async {
+    let catalog = CountingAppComposerCatalog()
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        providerModel: providerModel,
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+
+    await model.bootstrap()
+    let loadsAfterBootstrap = await catalog.loadCount
+    #expect(loadsAfterBootstrap >= 1)
+
+    await model.refreshProvidersIfNeeded()
+    #expect(await catalog.loadCount == loadsAfterBootstrap + 1)
+}
+
+@MainActor
 @Test func refreshProvidersIfNeededRefreshesAtFiveMinutesButNotBefore() async {
     let clock = ProviderRefreshClock(date: Date(timeIntervalSince1970: 100))
     let usageService = FakeUsageService(snapshot: .empty)
@@ -624,16 +645,19 @@ private final class ProviderModelQueue {
 
 @MainActor
 private func testDependencies(
-    providerModel: ProviderManagementViewModel
+    providerModel: ProviderManagementViewModel,
+    makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel = stubAppComposerControlsFactory
 ) -> AppDependencies {
     testDependencies(
         ompLocator: InstalledOmpLocator(),
-        makeProviderModel: { _ in providerModel })
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: makeComposerControls)
 }
 
 private func testDependencies<Locator: OmpLocating>(
     ompLocator: Locator,
-    makeProviderModel: @escaping @MainActor @Sendable (URL) -> ProviderManagementViewModel
+    makeProviderModel: @escaping @MainActor @Sendable (URL) -> ProviderManagementViewModel,
+    makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel = stubAppComposerControlsFactory
 ) -> AppDependencies {
     AppDependencies(
         ompLocator: ompLocator,
@@ -641,7 +665,7 @@ private func testDependencies<Locator: OmpLocating>(
             filePath: "/tmp/10x-provider-tests-empty",
             directoryHint: .isDirectory)),
         makeProviderModel: makeProviderModel,
-        makeComposerControls: stubAppComposerControlsFactory)
+        makeComposerControls: makeComposerControls)
 }
 
 private final class ProviderRefreshClock: @unchecked Sendable {
@@ -675,6 +699,22 @@ private let stubAppComposerControlsFactory: @MainActor @Sendable (URL) -> Compos
 private actor StubAppComposerCatalog: ComposerCatalogLoading {
     func load() async throws -> ComposerCatalogSnapshot {
         ComposerCatalogSnapshot(
+            models: [],
+            selected: nil,
+            thinkingLevel: nil,
+            fastModeEnabled: false,
+            fastModeActive: false)
+    }
+
+    func shutdown() async {}
+}
+
+private actor CountingAppComposerCatalog: ComposerCatalogLoading {
+    private(set) var loadCount = 0
+
+    func load() async throws -> ComposerCatalogSnapshot {
+        loadCount += 1
+        return ComposerCatalogSnapshot(
             models: [],
             selected: nil,
             thinkingLevel: nil,
