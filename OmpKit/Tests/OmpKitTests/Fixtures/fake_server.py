@@ -56,6 +56,23 @@ if mode == "burst-exit":
     for index in range(200):
         emit({"type": "notice", "index": index})
     raise SystemExit(0)
+if mode == "stderr-burst-exit":
+    child = r"""
+import os, sys, time
+parent_pid = int(sys.argv[1])
+parent_gone, release = sys.argv[2], sys.argv[3]
+while os.getppid() == parent_pid:
+    time.sleep(0.001)
+open(parent_gone, "w", encoding="utf-8").close()
+while not os.path.exists(release):
+    time.sleep(0.001)
+sys.stderr.write("x" * 262144 + "final-stderr-marker\n")
+sys.stderr.flush()
+"""
+    subprocess.Popen(
+        [sys.executable, "-u", "-c", child, str(os.getpid()), sys.argv[2], sys.argv[3]],
+        stdout=subprocess.DEVNULL)
+    raise SystemExit(31)
 if mode == "grandchild":
     heartbeat = sys.argv[2]
     child = """
@@ -145,6 +162,7 @@ for line in sys.stdin:
               "error": "idless failure"})
     elif ctype == "get_state":
         if mode == "close-stdout-before-exit":
+            os.close(sys.stdin.fileno())
             os.close(W.fileno())
             open(sys.argv[2], "w", encoding="utf-8").close()
             while not os.path.exists(sys.argv[3]):

@@ -7,10 +7,16 @@ func fixtureURL(_ name: String) -> URL {
         ?? Bundle.module.resourceURL!.appendingPathComponent("Fixtures/\(name)")
 }
 
-func makeFakeTransport(mode: String) -> LineTransport {
+func makeFakeTransport(mode: String, arguments: [String] = []) -> LineTransport {
     LineTransport(executable: "/usr/bin/env",
-                  arguments: ["python3", fixtureURL("fake_server.py").path, mode],
+                  arguments: ["python3", fixtureURL("fake_server.py").path, mode] + arguments,
                   currentDirectory: nil, environment: nil)
+}
+
+private actor ExitCompletionProbe {
+    private(set) var hasFinished = false
+
+    func markFinished() { hasFinished = true }
 }
 
 /// Fails the test rather than hanging forever when a stream never yields.
@@ -172,4 +178,46 @@ func withTimeout<T: Sendable>(
     }
     #expect(exitCode == 0)
     #expect(await transport.exitStatus == exitCode)
+}
+
+@Test func exitWaitsForFinalStderrDrain() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("StderrExitGate-\(UUID().uuidString)", isDirectory: true)
+    let parentGone = root.appendingPathComponent("parent-gone")
+    let release = root.appendingPathComponent("release")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let transport = makeFakeTransport(
+        mode: "stderr-burst-exit", arguments: [parentGone.path, release.path])
+    try await transport.start()
+    let probe = ExitCompletionProbe()
+    let exit = Task { () -> Int32 in
+        let code: Int32
+        if let observed = await transport.onExit.first(where: { _ in true }) {
+            code = observed
+        } else {
+            code = Int32.min
+        }
+        await probe.markFinished()
+        return code
+    }
+
+    let didExit = await withTimeout(.seconds(5)) { () -> Bool in
+        while !Task.isCancelled {
+            if FileManager.default.fileExists(atPath: parentGone.path) { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+    #expect(didExit)
+    // Parent death is confirmed, so this bounded window distinguishes process
+    // exit notification from the required stderr-completion barrier.
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(await !probe.hasFinished)
+
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    let exitCode = await exit.value
+    #expect(exitCode == 31)
+    #expect(await transport.stderrSnapshot().hasSuffix("final-stderr-marker\n"))
 }

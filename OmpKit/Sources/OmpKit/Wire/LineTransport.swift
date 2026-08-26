@@ -26,6 +26,7 @@ public actor LineTransport {
     private var stdinClosed = false
     private var processGroupID: pid_t?
     private var stdoutDrainer: StdoutDrainer?
+    private var stderrDrainer: StderrDrainer?
 
     /// Read from the process itself so a crash reports its real code, not just
     /// exits observed on the shutdown path.
@@ -108,22 +109,22 @@ public actor LineTransport {
         }
 
         let stderrLog = self.stderrLog
-        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                handle.readabilityHandler = nil
-                return
-            }
-            stderrLog.append(String(decoding: data, as: UTF8.self))
+        let stderrDrainer = StderrDrainer(
+            handle: stderrPipe.fileHandleForReading,
+            log: stderrLog)
+        self.stderrDrainer = stderrDrainer
+        stderrPipe.fileHandleForReading.readabilityHandler = { _ in
+            stderrDrainer.consumeAvailableData()
         }
 
         let exitContinuation = self.exitContinuation
         process.terminationHandler = { proc in
+            // Exit is authoritative only after both output pipes are drained.
+            // RpcClient uses this boundary for its final stderr diagnostics.
+            drainer.finish()
+            stderrDrainer.finish()
             exitContinuation.yield(proc.terminationStatus)
             exitContinuation.finish()
-            // The child's final frames may still be sitting in the pipe when it
-            // exits; drain them before ending the stream or they are lost.
-            drainer.finish()
         }
 
         do {
@@ -218,7 +219,7 @@ public actor LineTransport {
     }
 
     private func finishStreams() {
-        stderrPipe.fileHandleForReading.readabilityHandler = nil
+        stderrDrainer?.finish()
         stdoutDrainer?.finish()
         exitContinuation.finish()
     }
@@ -238,6 +239,44 @@ public actor LineTransport {
         let direct = text.split(whereSeparator: \Character.isWhitespace)
             .compactMap { pid_t($0) }
         return direct + direct.flatMap { descendantPIDs(of: $0) }
+    }
+}
+
+/// Serializes stderr callback reads with the final process-exit drain so the
+/// exit event cannot overtake crash diagnostics still buffered in the pipe.
+private final class StderrDrainer: @unchecked Sendable {
+    private let handle: FileHandle
+    private let log: StderrLog
+    private let lock = NSLock()
+    private var finished = false
+
+    init(handle: FileHandle, log: StderrLog) {
+        self.handle = handle
+        self.log = log
+    }
+
+    func consumeAvailableData() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return }
+        let data = handle.availableData
+        if data.isEmpty {
+            finished = true
+            handle.readabilityHandler = nil
+            return
+        }
+        log.append(String(decoding: data, as: UTF8.self))
+    }
+
+    func finish() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return }
+        finished = true
+        handle.readabilityHandler = nil
+        if let remaining = try? handle.readToEnd(), !remaining.isEmpty {
+            log.append(String(decoding: remaining, as: UTF8.self))
+        }
     }
 }
 
