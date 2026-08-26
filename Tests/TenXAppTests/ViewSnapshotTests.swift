@@ -565,42 +565,75 @@ import Testing
 }
 
 @MainActor
-@Test func providerUsageDockIdleSnapshot() throws {
+@Test func providerAccountMultipleIdleSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
             providers: providerUsageDockProviders,
-            activeCounts: ["anthropic": 2],
+            activeCounts: [:],
+            generatingCounts: [:],
             isForegroundGenerating: false)
             // macOS exposes the public Reduce Motion key as read-only.
             .environment(\._accessibilityReduceMotion, true)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
-        name: "provider-usage-dock-idle",
+        name: "provider-account-multiple-idle",
         size: CGSize(width: 430, height: 460))
 }
 
 @MainActor
-@Test func providerUsageDockGeneratingSnapshot() throws {
+@Test func providerAccountGeneratingGrayscaleSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
             providers: providerUsageDockProviders,
-            activeCounts: ["anthropic": 2],
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
             isForegroundGenerating: true)
             .environment(\._accessibilityReduceMotion, true)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
-        name: "provider-usage-dock-generating",
+        name: "provider-account-generating-grayscale",
         size: CGSize(width: 430, height: 460))
 }
 
 @MainActor
-@Test func providerUsageDockExpandedSnapshot() throws {
+@Test func providerAccountHoveredBackgroundSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
             providers: providerUsageDockProviders,
-            activeCounts: ["anthropic": 2],
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
             isForegroundGenerating: true,
-            initiallySelectedProviderID: "anthropic")
+            visualFocusAccountID: "anthropic:work")
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-account-hovered-background",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerAccountExpandedSemanticSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders,
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            initiallyInspectedAccountID: "anthropic:work")
             .environment(\._accessibilityReduceMotion, true),
-        name: "provider-usage-dock-expanded",
+        name: "provider-account-expanded-semantic",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerAccountSwitchConfirmationSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders,
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            initiallyInspectedAccountID: "anthropic:work",
+            initiallyShowsConfirmation: true)
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-account-switch-confirmation",
         size: CGSize(width: 430, height: 460))
 }
 
@@ -733,6 +766,7 @@ private let providerUsageDockProviders = [
         accounts: [
             providerUsageDockAccount(
                 id: "anthropic:personal",
+                accountRef: "acct_personal",
                 label: "tanner@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -750,6 +784,7 @@ private let providerUsageDockProviders = [
                 ]),
             providerUsageDockAccount(
                 id: "anthropic:work",
+                accountRef: "acct_work",
                 label: "work@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -759,13 +794,16 @@ private let providerUsageDockProviders = [
                         reset: "in 18 days",
                         rank: 43_200),
                 ]),
-        ]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "acct_personal"),
     ProviderUsageProvider(
         id: "openai-codex",
         name: "OpenAI Codex",
         accounts: [
             providerUsageDockAccount(
                 id: "openai-codex:personal",
+                accountRef: "acct_openai",
                 label: "tanner@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -775,13 +813,16 @@ private let providerUsageDockProviders = [
                         reset: "in 2 hours",
                         rank: 300),
                 ]),
-        ]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "acct_openai"),
     ProviderUsageProvider(
         id: "cursor",
         name: "Cursor",
         accounts: [
             providerUsageDockAccount(
                 id: "cursor:personal",
+                accountRef: "acct_cursor",
                 label: "tanner@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -791,11 +832,19 @@ private let providerUsageDockProviders = [
                         reset: "in 5 days",
                         rank: 10_080),
                 ]),
-        ]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "acct_cursor"),
+]
+
+private let providerUsageDockGeneratingCounts = [
+    ProviderAccountKey(providerID: "anthropic", accountRef: "acct_personal"): 2,
+    ProviderAccountKey(providerID: "anthropic", accountRef: "acct_work"): 1,
 ]
 
 private func providerUsageDockAccount(
     id: String,
+    accountRef: String,
     label: String,
     limits: [ProviderUsageLimit]
 ) -> ProviderUsageAccount {
@@ -812,7 +861,9 @@ private func providerUsageDockAccount(
         limits: limits,
         amounts: [],
         notes: [],
-        isUsageAvailable: true)
+        isUsageAvailable: true,
+        accountRef: accountRef,
+        availability: .available)
 }
 
 private func providerUsageDockLimit(
