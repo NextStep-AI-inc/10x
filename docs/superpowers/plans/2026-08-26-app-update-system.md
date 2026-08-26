@@ -274,27 +274,30 @@ git add scripts/generate_xcodeproj.rb App/Info.plist 10x.xcodeproj Tests/TenXApp
 
 **Interfaces:**
 - Consumes: Task 2's build settings.
-- Produces: `import Sparkle` compiles in the app target. `SPUUpdater` and `SPUUserDriver` are available.
+- Produces: `import Sparkle` compiles in the app target, and `Sparkle.framework` is embedded in the built app bundle. `SPUUpdater` and `SPUUserDriver` are available.
 
 - [ ] **Step 1: Write the failing test**
 
 Create `Tests/TenXAppTests/SparkleLinkageTests.swift`:
 
 ```swift
+import Foundation
 import Sparkle
 import Testing
 
-@Test func sparkleIsLinkedIntoTheAppTarget() {
-    #expect(SUAppcastItem.self != nil)
+@Test func sparkleIsEmbeddedAndLoadableAtRuntime() throws {
+    let bundle = try #require(Bundle(for: SPUUpdater.self))
+
+    #expect(bundle.bundleURL.lastPathComponent == "Sparkle.framework")
 }
 ```
 
-This is a compile-time assertion wearing a runtime test's clothes. If Sparkle is not linked, the file does not build, which is the failure this task needs to detect.
+This checks a real failure mode rather than merely that the module compiled. A target that imports Sparkle but fails to embed the framework builds cleanly and then dies at launch with a dyld error, so asserting the class actually resolves to a loaded `Sparkle.framework` is the thing worth testing. Deriving the bundle from `SPUUpdater.self` avoids hardcoding a bundle identifier that a Sparkle release could change.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /private/tmp/tenx-sparkle test '-only-testing:TenXAppTests/sparkleIsLinkedIntoTheAppTarget()' 2>&1 | tail -20
+ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /private/tmp/tenx-sparkle test '-only-testing:TenXAppTests/sparkleIsEmbeddedAndLoadableAtRuntime()' 2>&1 | tail -20
 ```
 
 Expected: FAIL with `no such module 'Sparkle'`.
@@ -325,7 +328,7 @@ app.frameworks_build_phase.files << sparkle_build_file
 - [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
-ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /private/tmp/tenx-sparkle test '-only-testing:TenXAppTests/sparkleIsLinkedIntoTheAppTarget()' 2>&1 | tail -20
+ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /private/tmp/tenx-sparkle test '-only-testing:TenXAppTests/sparkleIsEmbeddedAndLoadableAtRuntime()' 2>&1 | tail -20
 ```
 
 Expected: PASS. The first run resolves the package from the network and is slow.
@@ -3314,24 +3317,25 @@ gh secret list --repo NextStep-AI-inc/10x
 
 If the Apple secrets are absent from this repository and are not organization-level, they must be added here before Task 16's workflow can run.
 
-- [ ] **Step 5: Prove the script locally with a dry run**
+- [ ] **Step 5: Check the script without running it**
+
+Tanner's decision: the local notarization dry run is skipped, and the first real signing and notarization happens in the Task 17 workflow run. That means this script's first execution is in CI, so the cheap static checks matter more than usual.
 
 ```bash
-APPLE_ID="<the Apple ID in the org secret>" \
-APPLE_APP_SPECIFIC_PASSWORD="<the app-specific password>" \
-APPLE_TEAM_ID=345S42BKPY \
-scripts/release.sh 0.1.0-test --no-publish
+bash -n scripts/release.sh && shellcheck scripts/release.sh 2>/dev/null || bash -n scripts/release.sh
 ```
 
-Expected: `notarytool` reports `status: Accepted`, `stapler validate` succeeds, and `dist/` contains both files. Then verify the artifact behaves like a real download:
+Expected: no syntax errors. `shellcheck` is not required; `bash -n` is the floor.
+
+Then confirm the archive and export halves work, which need no Apple credentials beyond the Developer ID already in the keychain:
 
 ```bash
-rm -rf /private/tmp/tenx-gatekeeper && mkdir -p /private/tmp/tenx-gatekeeper && ditto -x -k dist/10x-0.1.0-test.zip /private/tmp/tenx-gatekeeper && spctl --assess --type execute --verbose=4 /private/tmp/tenx-gatekeeper/10x.app
+ruby scripts/generate_xcodeproj.rb && xcodebuild archive -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' -archivePath /private/tmp/tenx-archive-check/10x.xcarchive MARKETING_VERSION=0.1.0 CURRENT_PROJECT_VERSION=99 && xcodebuild -exportArchive -archivePath /private/tmp/tenx-archive-check/10x.xcarchive -exportOptionsPlist scripts/ExportOptions.plist -exportPath /private/tmp/tenx-archive-check/export && codesign -dv --verbose=2 /private/tmp/tenx-archive-check/export/10x.app 2>&1 | grep -E "Authority|flags"
 ```
 
-Expected: `accepted` and `source=Notarized Developer ID`. Anything else means the artifact would show a Gatekeeper warning on a user's machine.
+Expected: the export succeeds and reports `Authority=Developer ID Application: NextStep AI Inc. (345S42BKPY)` with `flags=0x10000(runtime)`. This proves everything up to the notarization call. Only the `notarytool` submission and the Sparkle signing remain unproven until Task 17.
 
-Delete `dist/` afterwards. It is build output and must not be committed.
+Record in the ledger that notarization is unverified until the first workflow run.
 
 - [ ] **Step 6: Commit**
 
