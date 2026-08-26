@@ -156,6 +156,8 @@ struct TranscriptView: View {
             .accessibilityElement(children: .combine)
         case .tool(let presentation):
             switch ToolCardRegistry.kind(for: presentation.name) {
+            case .computer:
+                ComputerToolCardView(presentation: presentation)
             case .read:
                 ReadToolCardView(presentation: presentation)
             case .bash:

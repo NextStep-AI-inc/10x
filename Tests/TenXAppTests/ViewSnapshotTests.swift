@@ -83,6 +83,52 @@ import Testing
 }
 
 @MainActor
+@Test func computerToolCardSnapshot() throws {
+    let presentation = computerToolSnapshotPresentation(
+        id: "computer-card",
+        imageColors: [NSColor(deviceRed: 0, green: 0.65, blue: 0.76, alpha: 1)],
+        capabilities: ComputerCapabilities(
+            backend: "macos",
+            capture: .granted,
+            input: .denied,
+            accessibility: .granted))
+
+    let disclosure = ToolDisclosureState()
+    disclosure.setExpanded(true, id: presentation.id)
+    try assertSnapshot(
+        ComputerToolCardView(presentation: presentation)
+            .frame(width: 520)
+            .environment(\.toolDisclosureState, disclosure),
+        name: "computer-tool-card",
+        size: CGSize(width: 600, height: 650))
+}
+
+@MainActor
+@Test func computerToolGallerySnapshot() throws {
+    let presentation = computerToolSnapshotPresentation(
+        id: "computer-gallery",
+        imageColors: [
+            NSColor(deviceRed: 0.96, green: 0.48, blue: 0.12, alpha: 1),
+            NSColor(deviceRed: 0, green: 0.65, blue: 0.76, alpha: 1),
+            NSColor(deviceRed: 0.55, green: 0.32, blue: 0.75, alpha: 1),
+        ],
+        capabilities: ComputerCapabilities(
+            backend: "macos",
+            capture: .granted,
+            input: .granted,
+            accessibility: .granted))
+
+    let disclosure = ToolDisclosureState()
+    disclosure.setExpanded(true, id: presentation.id)
+    try assertSnapshot(
+        ComputerToolCardView(presentation: presentation)
+            .frame(width: 780)
+            .environment(\.toolDisclosureState, disclosure),
+        name: "computer-tool-gallery",
+        size: CGSize(width: 860, height: 700))
+}
+
+@MainActor
 @Test func userMessageSnapshot() throws {
     let message = TranscriptMessage(
         id: "user-message",
@@ -506,6 +552,84 @@ private func snapshotTextResult(_ text: String) -> JSONValue {
     .object(["content": .array([
         .object(["type": .string("text"), "text": .string(text)]),
     ])])
+}
+
+@MainActor
+private func computerToolSnapshotPresentation(
+    id: String,
+    imageColors: [NSColor],
+    capabilities: ComputerCapabilities
+) -> ToolPresentation {
+    let images = imageColors.enumerated().map { index, color in
+        JSONValue.object([
+            "type": .string("image"),
+            "data": .string(snapshotComputerImage(color: color).base64EncodedString()),
+            "mimeType": .string("image/png"),
+            "detail": .string("original"),
+            "index": .int(index),
+        ])
+    }
+    return ToolPresentation(
+        id: id,
+        name: "computer",
+        arguments: .object([
+            "code": .string("let window = await desktop.windows()[0]\nawait window.screenshot()"),
+            "read_only": .bool(false),
+        ]),
+        result: .object([
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string("Captured the dedicated TextEdit window."),
+                ]),
+            ] + images),
+            "details": .object([
+                "backend": .string(capabilities.backend),
+                "capturePermission": .string(capabilities.capture.rawValue),
+                "inputPermission": .string(capabilities.input.rawValue),
+                "axPermission": .string(capabilities.accessibility.rawValue),
+                "returnValue": .string("Verification complete"),
+                "screenshots": .array([
+                    .object(["target": .string("TextEdit")]),
+                ]),
+            ]),
+        ]),
+        phase: .complete,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 1.8))
+}
+
+@MainActor
+private func snapshotComputerImage(color: NSColor) -> Data {
+    let width = 640
+    let height = 360
+    let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0)!
+    let primary = [color.redComponent, color.greenComponent, color.blueComponent]
+        .map { UInt8(clamping: Int($0 * 255)) }
+    let faded = [color.redComponent, color.greenComponent, color.blueComponent]
+        .map { UInt8(clamping: Int(($0 * 0.55 + 0.45) * 255)) }
+    let pixels = bitmap.bitmapData!
+    for x in 0..<width {
+        for y in 0..<height {
+            let components = ((x / 80) + (y / 60)).isMultiple(of: 2) ? primary : faded
+            let offset = y * bitmap.bytesPerRow + x * 4
+            pixels[offset] = components[0]
+            pixels[offset + 1] = components[1]
+            pixels[offset + 2] = components[2]
+            pixels[offset + 3] = 255
+        }
+    }
+    return bitmap.representation(using: .png, properties: [:])!
 }
 
 @MainActor

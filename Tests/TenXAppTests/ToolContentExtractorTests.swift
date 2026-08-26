@@ -103,6 +103,19 @@ import Testing
     #expect(ToolContentExtractor.web(web)?.results.count == 12)
 }
 
+@Test func outputTextSurvivesAdjacentImageBlocks() {
+    let result = JSONValue.object(["content": .array([
+        .object([
+            "type": .string("image"),
+            "data": .string("malformed"),
+            "mimeType": .string("image/png"),
+        ]),
+        .object(["type": .string("text"), "text": .string("Captured TextEdit")]),
+    ])])
+
+    #expect(ToolContentExtractor.outputText(result) == "Captured TextEdit")
+}
+
 private func presentation(
     name: String,
     arguments: JSONValue,

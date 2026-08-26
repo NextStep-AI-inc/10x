@@ -1,4 +1,5 @@
 enum ToolCardKind: Equatable {
+    case computer
     case read
     case bash
     case edit
@@ -13,6 +14,7 @@ enum ToolCardKind: Equatable {
 enum ToolCardRegistry {
     static func kind(for name: String) -> ToolCardKind {
         switch name.lowercased() {
+        case "computer": .computer
         case "read": .read
         case "bash": .bash
         case "edit": .edit

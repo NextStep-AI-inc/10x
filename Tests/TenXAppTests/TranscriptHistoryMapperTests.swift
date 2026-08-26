@@ -178,6 +178,38 @@ import Testing
     #expect(messages.map(\.visibleText) == ["Provider unavailable", "Response aborted."])
 }
 
+@Test func historyMapperRestoresComputerImagesAndOutput() throws {
+    let header = SessionHeader(
+        id: "session-computer",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    let entries: [SessionEntry] = [
+        .message(
+            base: historyBase("assistant-computer", nil, 1),
+            message: try historyJSON(#"{"role":"assistant","content":[{"type":"toolCall","id":"computer-1","name":"computer","arguments":{"code":"await desktop.screenshot()","read_only":true}}]}"#)),
+        .message(
+            base: historyBase("computer-result", "assistant-computer", 2),
+            message: try historyJSON("""
+                {"role":"toolResult","toolCallId":"computer-1","toolName":"computer","isError":false,"content":[{"type":"text","text":"Captured TextEdit"},{"type":"image","data":"\(image)","mimeType":"image/png"}],"details":{"backend":"macos","capturePermission":"granted","inputPermission":"granted","axPermission":"granted","screenshots":[{"target":"TextEdit"}]}}
+                """)),
+    ]
+
+    let items = TranscriptHistoryMapper.map(header: header, path: entries).items
+    let tool = try #require(items.compactMap { item -> ToolPresentation? in
+        guard case .tool(let presentation) = item else { return nil }
+        return presentation.name == "computer" ? presentation : nil
+    }.first)
+    let computer = try #require(ComputerToolPresentation(tool))
+    #expect(computer.images.count == 1)
+    #expect(computer.output == "Captured TextEdit")
+    #expect(computer.code == "await desktop.screenshot()")
+}
+
 private func historyBase(_ id: String, _ parentID: String?, _ second: Int) -> SessionEntryBase {
     SessionEntryBase(
         id: id,
