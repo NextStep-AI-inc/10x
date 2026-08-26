@@ -1422,14 +1422,17 @@ final class UpdateState {
     }
 
     var signalProgress: Double? {
+        // Every case returns explicitly. A switch in a computed property only gets
+        // implicit-return treatment when EVERY case is a single bare expression, and
+        // the guard in `.downloading` demotes the whole switch to a statement.
         switch phase {
         case .downloading(let received, let expected):
             guard expected > 0 else { return 0 }
             return 0.8 * min(1, Double(received) / Double(expected))
-        case .verifying: 0.8
-        case .installing(let fraction): 0.85 + 0.15 * min(max(fraction, 0), 1)
-        case .relaunching: 1
-        default: nil
+        case .verifying: return 0.8
+        case .installing(let fraction): return 0.85 + 0.15 * min(max(fraction, 0), 1)
+        case .relaunching: return 1
+        default: return nil
         }
     }
 
