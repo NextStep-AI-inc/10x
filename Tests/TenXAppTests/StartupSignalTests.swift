@@ -73,3 +73,16 @@ import Testing
 
     #expect(hasRedPixel)
 }
+
+@Test func determinateTrimClampsToTheUnitInterval() {
+    #expect(StartupSignalMotion.determinateTrim(-0.5) == 0)
+    #expect(StartupSignalMotion.determinateTrim(0) == 0)
+    #expect(StartupSignalMotion.determinateTrim(0.42) == 0.42)
+    #expect(StartupSignalMotion.determinateTrim(1) == 1)
+    #expect(StartupSignalMotion.determinateTrim(1.5) == 1)
+}
+
+@Test func determinateTrimSurvivesNonFiniteInput() {
+    #expect(StartupSignalMotion.determinateTrim(.nan) == 0)
+    #expect(StartupSignalMotion.determinateTrim(.infinity) == 1)
+}
