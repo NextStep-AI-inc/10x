@@ -69,6 +69,7 @@ final class AppModel {
     @ObservationIgnored private(set) var fallbackGeneration = 0
     @ObservationIgnored private(set) var lifecycleGeneration = 0
     @ObservationIgnored private(set) var isShuttingDown = false
+    @ObservationIgnored private var workspaceRuntimeReplacementCount = 0
     @ObservationIgnored private var memoryPressureSource: DispatchSourceMemoryPressure?
     @ObservationIgnored private var hasStartedWarmRetention = false
 
@@ -248,7 +249,8 @@ final class AppModel {
         }
         guard startupState.phase == .recovery,
               let attemptID = startupState.attemptID,
-              !isShuttingDown
+              !isShuttingDown,
+              workspaceRuntimeReplacementCount == 0
         else { return }
         let id = UUID()
         let generation = lifecycleGeneration
@@ -756,7 +758,11 @@ final class AppModel {
 
     private func replaceWorkspaceRuntime(with located: OmpInstallation?) async -> Bool {
         guard !isShuttingDown else { return false }
-        let generation = await cancelWorkspacePreparationForLifecycleChange()
+        workspaceRuntimeReplacementCount += 1
+        lifecycleGeneration &+= 1
+        let generation = lifecycleGeneration
+        defer { workspaceRuntimeReplacementCount -= 1 }
+        await cancelWorkspacePreparationForLifecycleChange()
         guard isCurrentLifecycle(generation) else { return false }
         await stopProviderUsage()
         guard isCurrentLifecycle(generation) else { return false }
@@ -809,9 +815,7 @@ final class AppModel {
         return true
     }
 
-    private func cancelWorkspacePreparationForLifecycleChange() async -> Int {
-        lifecycleGeneration &+= 1
-        let generation = lifecycleGeneration
+    private func cancelWorkspacePreparationForLifecycleChange() async {
         let continuation = continueOperation
         continueOperation = nil
         continuation?.task.cancel()
@@ -823,7 +827,6 @@ final class AppModel {
         if let fallback {
             for task in fallback.tasks { await task.value }
         }
-        return generation
     }
 
     private func isCurrentLifecycle(_ generation: Int) -> Bool {

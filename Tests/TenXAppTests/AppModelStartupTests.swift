@@ -400,6 +400,81 @@ import Testing
 }
 
 @MainActor
+@Test func continueCannotEnterWhileRuntimeReplacementOwnsLifecycleTeardown() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let currentShutdownGate = LoadGate()
+    let currentService = FakeProviderService(
+        providers: [authenticatedProvider],
+        shutdownGate: currentShutdownGate)
+    let currentProvider = startupProviderModel(service: currentService)
+
+    let replacementProviderGate = LoadGate()
+    let replacementService = FakeProviderService(providers: [unauthenticatedProvider])
+    await replacementService.enqueueProviderGate(replacementProviderGate)
+    let replacementUsage = FakeUsageService(snapshot: try usageSnapshotFixture())
+    let replacementProvider = startupProviderModel(
+        service: replacementService,
+        usageService: replacementUsage)
+
+    let unexpectedService = FakeProviderService(providers: [authenticatedProvider])
+    let unexpectedUsage = FakeUsageService(snapshot: .empty)
+    let unexpectedProvider = startupProviderModel(
+        service: unexpectedService,
+        usageService: unexpectedUsage)
+    let providerFactory = StartupProviderModelFactory(
+        models: [currentProvider, replacementProvider, unexpectedProvider])
+    let locator = CountingOmpLocator(installation: fixture.installation)
+    let model = fixture.model(locator: locator, providerFactory: providerFactory)
+    await model.useOmp(at: URL(filePath: "/tmp/current-omp"))
+    enterRuntimeRecovery(model, installation: fixture.installation)
+
+    let firstContinue = Task { await model.continueToWorkspace() }
+    await waitForModelState { await currentService.shutdownCount == 1 }
+    let generationBeforeReplacement = model.lifecycleGeneration
+    let replacement = Task {
+        await model.useOmp(at: URL(filePath: "/tmp/replacement-omp"))
+    }
+    await waitForModelState {
+        await Task.yield()
+        return model.lifecycleGeneration > generationBeforeReplacement
+    }
+
+    await model.continueToWorkspace()
+    if model.fallbackGeneration > 0 {
+        await waitForModelState { await replacementService.providerLoadCount == 1 }
+    }
+    #expect(model.fallbackGeneration == 0)
+    #expect(providerFactory.count == 1)
+    #expect(await replacementService.providerLoadCount == 0)
+    #expect(await replacementUsage.loadCount == 0)
+
+    await currentShutdownGate.release()
+    await waitForModelState { await replacementService.providerLoadCount == 1 }
+    await replacementProviderGate.release()
+    await firstContinue.value
+    await replacement.value
+    if model.providerModel === replacementProvider {
+        await waitForModelState { model.providerUsages.map(\.id) == ["cursor"] }
+    }
+
+    #expect(model.providerModel === replacementProvider)
+    #expect(model.route == .providerSetup)
+    #expect(model.providerUsages.map(\.id) == ["cursor"])
+    #expect(providerFactory.count == 2)
+    #expect(await currentService.shutdownCount == 1)
+    #expect(await replacementService.providerLoadCount == 1)
+    #expect(await replacementUsage.loadCount == 1)
+    #expect(await replacementService.shutdownCount == 0)
+    #expect(await unexpectedService.providerLoadCount == 0)
+    #expect(await unexpectedUsage.loadCount == 0)
+
+    await model.shutdown()
+    #expect(await replacementService.shutdownCount == 1)
+    #expect(await unexpectedService.shutdownCount == 0)
+}
+
+@MainActor
 @Test func workspaceDidOpenRetainsPrimaryAndExpiresOnlySecondaryWarmClient() async throws {
     let fixture = try StartupFixture()
     defer { fixture.cleanup() }
