@@ -285,6 +285,268 @@ import Testing
     #expect(output.isEmpty)
 }
 
+@Test func readAndWriteCardsExposeSourceAndFileSummaries() {
+    let read = ToolContentExtractor.card(
+        name: "read",
+        arguments: .object(["path": .string("Sources/App.swift")]),
+        result: result(text: "let value = 1\nlet next = 2"),
+        phase: .complete)
+    #expect(read.primary == "Sources/App.swift")
+    #expect(read.outcome == "2 lines")
+    guard case .source(let readSource, let previewLines) = read.body else {
+        Issue.record("Read should use the source surface")
+        return
+    }
+    #expect(readSource.language == "swift")
+    #expect(previewLines == 20)
+
+    let write = ToolContentExtractor.card(
+        name: "write",
+        arguments: .object([
+            "path": .string("Scripts/check.py"),
+            "content": .string("def check():\n    return True"),
+        ]),
+        result: result(text: "Wrote Scripts/check.py"),
+        phase: .complete)
+    #expect(write.primary == "Scripts/check.py")
+    #expect(write.outcome == "2 lines")
+    guard case .source(let writtenSource, _) = write.body else {
+        Issue.record("Write should show the created source")
+        return
+    }
+    #expect(writtenSource.language == "py")
+}
+
+@Test func editAliasesPreserveMultiFileDiffsAndCounts() {
+    let patch = """
+    diff --git a/App/A.swift b/App/A.swift
+    --- a/App/A.swift
+    +++ b/App/A.swift
+    @@ -1 +1 @@
+    -let a = 1
+    +let a = 2
+    diff --git a/App/B.swift b/App/B.swift
+    --- a/App/B.swift
+    +++ b/App/B.swift
+    @@ -1 +1 @@
+    -let b = 1
+    +let b = 2
+    """
+    for name in ["edit", "apply_patch"] {
+        let card = ToolContentExtractor.card(
+            name: name,
+            arguments: .object([:]),
+            result: .object(["details": .object(["diff": .string(patch)])]),
+            phase: .complete)
+        #expect(card.primary == "2 files")
+        #expect(card.outcome == "+2 −2")
+        guard case .diff(let diff, _) = card.body else {
+            Issue.record("\(name) should use the diff surface")
+            continue
+        }
+        #expect(diff.files.count == 2)
+    }
+}
+
+@Test func searchStructuralAndLSPCardsUseReferencedCollections() {
+    let grep = ToolContentExtractor.card(
+        name: "grep",
+        arguments: .object(["pattern": .string("Transcript")]),
+        result: .object(["details": .object(["matches": .array([
+            .object([
+                "path": .string("App/Transcript.swift"),
+                "line": .int(12),
+                "text": .string("struct Transcript"),
+            ]),
+        ])])]),
+        phase: .complete)
+    guard case .collection(let grepItems) = grep.body else {
+        Issue.record("Grep should use a referenced collection")
+        return
+    }
+    #expect(grepItems.first?.reference == .file(path: "App/Transcript.swift", line: 12))
+    #expect(grepItems.first?.detail == "struct Transcript")
+
+    let glob = ToolContentExtractor.card(
+        name: "glob",
+        arguments: .object(["pattern": .string("**/*.swift")]),
+        result: .object(["details": .object(["paths": .array([])])]),
+        phase: .complete)
+    #expect(glob.outcome == "No paths found")
+    #expect(glob.body == .empty("No paths found"))
+
+    let ast = ToolContentExtractor.card(
+        name: "ast_grep",
+        arguments: .object(["pattern": .string("struct $NAME")]),
+        result: .object(["details": .object(["matches": .array([
+            .object(["path": .string("App/A.swift"), "line": .int(1)]),
+            .object(["path": .string("App/B.swift"), "line": .int(8)]),
+        ])])]),
+        phase: .complete)
+    #expect(ast.outcome == "2 items")
+    guard case .collection = ast.body else {
+        Issue.record("AST grep should use a collection")
+        return
+    }
+
+    let lsp = ToolContentExtractor.card(
+        name: "lsp",
+        arguments: .object([
+            "operation": .string("references"),
+            "path": .string("App/A.swift"),
+        ]),
+        result: .object(["details": .object(["results": .array([
+            .object(["path": .string("App/B.swift"), "line": .int(14)]),
+        ])])]),
+        phase: .complete)
+    #expect(lsp.primary == "references")
+    guard case .collection(let lspItems) = lsp.body else {
+        Issue.record("LSP should use a referenced collection")
+        return
+    }
+    #expect(lspItems.first?.reference == .file(path: "App/B.swift", line: 14))
+}
+
+@Test func astEditUsesChangedFileCollectionWhenNoPatchIsAvailable() {
+    let card = ToolContentExtractor.card(
+        name: "ast_edit",
+        arguments: .object(["pattern": .string("old($X)")]),
+        result: .object(["details": .object(["changedFiles": .array([
+            .object([
+                "path": .string("App/A.swift"),
+                "additions": .int(2),
+                "removals": .int(1),
+            ]),
+            .object([
+                "path": .string("App/B.swift"),
+                "additions": .int(1),
+                "removals": .int(1),
+            ]),
+        ])])]),
+        phase: .complete)
+
+    #expect(card.primary == "2 files")
+    #expect(card.outcome == "+3 −2")
+    guard case .collection(let files) = card.body else {
+        Issue.record("AST edit should list changed files when it has no patch")
+        return
+    }
+    #expect(files.count == 2)
+}
+
+@Test func bashKeepsCompleteStreamingConsoleOutput() {
+    let output = (1...40).map { "step \($0)" }.joined(separator: "\n")
+    let card = ToolContentExtractor.card(
+        name: "bash",
+        arguments: .object(["command": .string("swift test")]),
+        result: result(text: output),
+        phase: .running)
+
+    #expect(card.outcome == "40 lines")
+    guard case .console(let command, let normalizedOutput, let exitCode) = card.body else {
+        Issue.record("Bash should use the console surface while streaming")
+        return
+    }
+    #expect(command == "swift test")
+    #expect(normalizedOutput == output)
+    #expect(exitCode == nil)
+}
+
+@Test func evalKeepsSourceInputAndStructuredResult() {
+    let card = ToolContentExtractor.card(
+        name: "eval",
+        arguments: .object([
+            "language": .string("python"),
+            "code": .string("sum([1, 2, 3])"),
+        ]),
+        result: .object(["details": .object([
+            "value": .int(6),
+            "type": .string("int"),
+        ])]),
+        phase: .complete)
+
+    guard case .stack(let bodies) = card.body,
+          bodies.count == 2,
+          case .source(let source, _) = bodies[0],
+          case .data(let label, let value) = bodies[1]
+    else {
+        Issue.record("Eval should preserve source input and structured output")
+        return
+    }
+    #expect(source.language == "python")
+    #expect(label == "Result")
+    #expect(value["value"]?.intValue == 6)
+}
+
+@Test func webBrowserAndGitHubCardsChooseSemanticBodies() {
+    let web = ToolContentExtractor.card(
+        name: "web_search",
+        arguments: .object(["query": .string("OMP")]),
+        result: .object(["details": .object(["results": .array([
+            .object([
+                "title": .string("OMP reference"),
+                "url": .string("https://example.com/omp"),
+                "snippet": .string("Protocol docs"),
+            ]),
+        ])])]),
+        phase: .complete)
+    guard case .collection(let sources) = web.body else {
+        Issue.record("Web search should use a linked collection")
+        return
+    }
+    #expect(sources.first?.reference == .web(
+        url: "https://example.com/omp",
+        label: "OMP reference"))
+
+    let browser = ToolContentExtractor.card(
+        name: "browser",
+        arguments: .object([
+            "action": .string("open"),
+            "url": .string("https://example.com/guide"),
+        ]),
+        result: .object([
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string("# Guide\n\nReadable page content."),
+            ])]),
+            "details": .object(["links": .array([
+                .object([
+                    "title": .string("API"),
+                    "url": .string("https://example.com/api"),
+                ]),
+            ])]),
+        ]),
+        phase: .complete)
+    guard case .stack(let browserBodies) = browser.body,
+          case .document = browserBodies.first,
+          case .collection = browserBodies.last
+    else {
+        Issue.record("Browser should show readable content followed by links")
+        return
+    }
+
+    let github = ToolContentExtractor.card(
+        name: "github",
+        arguments: .object([
+            "operation": .string("checks"),
+            "repository": .string("openai/codex"),
+        ]),
+        result: .object(["details": .object(["checks": .array([
+            .object([
+                "name": .string("build"),
+                "status": .string("success"),
+                "url": .string("https://github.com/openai/codex/actions/1"),
+            ]),
+        ])])]),
+        phase: .complete)
+    #expect(github.primary == "openai/codex")
+    guard case .collection(let checks) = github.body else {
+        Issue.record("GitHub should use a linked object collection")
+        return
+    }
+    #expect(checks.first?.state == "success")
+}
+
 private func presentation(
     name: String,
     arguments: JSONValue,

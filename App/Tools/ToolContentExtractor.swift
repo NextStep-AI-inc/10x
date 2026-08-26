@@ -379,7 +379,8 @@ enum ToolContentExtractor {
                     "repository", "repo", "operation", "url",
                 ]),
                 values: firstArray(in: result, paths: [
-                    ["details", "results"], ["results"], ["items"], ["checks"],
+                    ["details", "results"], ["details", "checks"],
+                    ["results"], ["items"], ["checks"],
                 ]),
                 envelope: envelope,
                 arguments: arguments,
@@ -581,7 +582,7 @@ enum ToolContentExtractor {
                 envelope: envelope,
                 phase: phase)
         case .browser:
-            mediaCard(
+            browserCard(
                 title: "Browser",
                 verb: firstString(in: arguments, keys: ["action"]) ?? "Browse",
                 primary: firstString(in: arguments, keys: ["url", "title", "target"]),
@@ -826,23 +827,50 @@ enum ToolContentExtractor {
             ?? firstString(in: arguments, keys: ["diff", "patch"])
             ?? envelope.text
         let unified = patch.flatMap { UnifiedDiffParser.parse($0, fallbackPath: path) }
-        let body = unified.map { ToolBody.diff($0, fallbackPath: path) }
-            ?? envelopeBody(
+        let changedValues = firstArray(in: result, paths: [
+            ["details", "changedFiles"], ["details", "changed_files"],
+            ["changedFiles"], ["changed_files"], ["files"],
+        ])
+        let changedItems = changedValues?.enumerated().map(changedFileItem)
+        let body: ToolBody
+        let outcome: String?
+        let primary: String?
+        if let unified {
+            body = .diff(unified, fallbackPath: path)
+            let additions = unified.files.reduce(0) { $0 + $1.additions }
+            let removals = unified.files.reduce(0) { $0 + $1.removals }
+            outcome = "+\(additions) −\(removals)"
+            primary = path
+                ?? (unified.files.count == 1
+                    ? unified.files.first?.path
+                    : "\(unified.files.count) files")
+        } else if let changedValues, let changedItems {
+            let additions = changedValues.reduce(0) { $0 + ($1["additions"]?.intValue ?? 0) }
+            let removals = changedValues.reduce(0) { $0 + ($1["removals"]?.intValue ?? 0) }
+            body = changedItems.isEmpty
+                ? .empty("No files changed")
+                : .collection(changedItems)
+            outcome = changedItems.isEmpty ? "No files changed" : "+\(additions) −\(removals)"
+            primary = path
+                ?? (changedItems.count == 1
+                    ? changedItems.first?.label
+                    : "\(changedItems.count) files")
+        } else {
+            body = envelopeBody(
                 envelope,
                 arguments: arguments,
                 result: result,
                 phase: phase)
-        let outcome = unified.map { diff in
-            let additions = diff.files.reduce(0) { $0 + $1.additions }
-            let removals = diff.files.reduce(0) { $0 + $1.removals }
-            return "+\(additions) −\(removals)"
-        } ?? envelopeOutcome(envelope, phase: phase)
+            outcome = envelopeOutcome(envelope, phase: phase)
+            primary = path
+        }
         return ToolCardContent(
             title: title,
             verb: verb,
-            primary: path,
+            primary: primary,
             outcome: outcome,
-            reference: path.map { .file(path: $0, line: nil) },
+            reference: path.map { .file(path: $0, line: nil) }
+                ?? (changedItems?.count == 1 ? changedItems?.first?.reference : nil),
             body: body)
     }
 
@@ -886,10 +914,25 @@ enum ToolContentExtractor {
         if let input, !input.isEmpty {
             bodies.append(.source(SourcePresentation(language: language, text: input), previewLines: 12))
         }
-        bodies.append(.console(
-            command: nil,
-            output: ansiSafe(envelope.text ?? ""),
-            exitCode: firstInt(in: result, paths: [["details", "exitCode"], ["exitCode"]])))
+        let output = ansiSafe(envelope.text ?? "")
+        if !output.isEmpty {
+            bodies.append(.console(
+                command: nil,
+                output: output,
+                exitCode: firstInt(
+                    in: result,
+                    paths: [["details", "exitCode"], ["exitCode"]])))
+        }
+        if let details = envelope.details, !details.isEmpty {
+            bodies.append(.data(label: "Result", value: .object(details)))
+        }
+        if bodies.isEmpty {
+            bodies.append(envelopeBody(
+                envelope,
+                arguments: arguments,
+                result: result,
+                phase: phase))
+        }
         return ToolCardContent(
             title: "Evaluate",
             verb: "Evaluate",
@@ -975,10 +1018,28 @@ enum ToolContentExtractor {
             id: "\(index)-\(label)",
             label: label,
             detail: firstString(in: value, keys: [
-                "snippet", "summary", "description", "detail", "message",
+                "snippet", "summary", "description", "detail", "message", "text", "match",
             ]),
             reference: itemReference,
             state: firstString(in: value, keys: ["status", "state", "severity"]))
+    }
+
+    private static func changedFileItem(
+        _ offsetAndValue: EnumeratedSequence<[JSONValue]>.Element
+    ) -> ToolCollectionItem {
+        let (index, value) = offsetAndValue
+        let path = firstString(in: value, keys: ["path", "file", "name"])
+            ?? "File \(index + 1)"
+        let additions = value["additions"]?.intValue ?? 0
+        let removals = value["removals"]?.intValue ?? 0
+        return ToolCollectionItem(
+            id: "\(index)-\(path)",
+            label: path,
+            detail: "+\(additions) −\(removals)",
+            reference: path == "File \(index + 1)"
+                ? nil
+                : .file(path: path, line: nil),
+            state: firstString(in: value, keys: ["status", "state"]))
     }
 
     private static func progressCard(
@@ -1051,6 +1112,58 @@ enum ToolContentExtractor {
             outcome: envelopeOutcome(envelope, phase: phase),
             reference: primary.flatMap { reference(for: $0) },
             body: body)
+    }
+
+    private static func browserCard(
+        title: String,
+        verb: String,
+        primary: String?,
+        arguments: JSONValue,
+        result: JSONValue?,
+        envelope: ToolResultEnvelope,
+        phase: ToolPhase
+    ) -> ToolCardContent {
+        var bodies: [ToolBody] = envelope.blocks.compactMap { block in
+            switch block {
+            case .text(let text):
+                .document(MessageContentParser.parse(text))
+            case .image(let media):
+                .media([media], caption: nil)
+            case .resource(let resource):
+                body(.resource(resource))
+            case .data:
+                nil
+            }
+        }
+        let linkValues = firstArray(in: result, paths: [
+            ["details", "links"], ["links"], ["details", "results"], ["results"],
+        ])
+        let links = linkValues?.enumerated().map(collectionItem) ?? []
+        if !links.isEmpty { bodies.append(.collection(links)) }
+
+        if var remainingDetails = envelope.details {
+            remainingDetails.removeValue(forKey: "links")
+            remainingDetails.removeValue(forKey: "results")
+            if !remainingDetails.isEmpty {
+                bodies.append(.data(label: "Page state", value: .object(remainingDetails)))
+            }
+        }
+        if bodies.isEmpty {
+            bodies.append(envelopeBody(
+                envelope,
+                arguments: arguments,
+                result: result,
+                phase: phase))
+        }
+        return ToolCardContent(
+            title: title,
+            verb: verb,
+            primary: primary,
+            outcome: links.isEmpty
+                ? envelopeOutcome(envelope, phase: phase)
+                : itemCount(links.count),
+            reference: primary.flatMap { reference(for: $0) },
+            body: bodies.count == 1 ? bodies[0] : .stack(bodies))
     }
 
     private static func mediaCard(

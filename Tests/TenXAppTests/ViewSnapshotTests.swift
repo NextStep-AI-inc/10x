@@ -1155,6 +1155,106 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
+@Test func developerToolFlowSnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1)
+    let read = ToolPresentation(
+        id: "developer-read",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptEventProcessor.swift")]),
+        result: snapshotTextResult("actor TranscriptEventProcessor { }"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.2))
+    let patch = """
+    diff --git a/App/Sessions/TranscriptView.swift b/App/Sessions/TranscriptView.swift
+    --- a/App/Sessions/TranscriptView.swift
+    +++ b/App/Sessions/TranscriptView.swift
+    @@ -157,3 +157,5 @@
+    -            GenericToolCardView(presentation: presentation)
+    +            ToolCardView(
+    +                presentation: presentation)
+     }
+    """
+    let edit = ToolPresentation(
+        id: "developer-edit",
+        name: "edit",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: .object(["details": .object(["diff": .string(patch)])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.7))
+    let grep = ToolPresentation(
+        id: "developer-grep",
+        name: "grep",
+        arguments: .object(["pattern": .string("ToolCardView")]),
+        result: .object(["details": .object(["matches": .array([
+            .object([
+                "path": .string("App/Sessions/TranscriptView.swift"),
+                "line": .int(158),
+                "text": .string("ToolCardView(presentation: presentation)"),
+            ]),
+            .object([
+                "path": .string("App/Tools/ToolCardView.swift"),
+                "line": .int(3),
+                "text": .string("struct ToolCardView: View"),
+            ]),
+            .object([
+                "path": .string("Tests/TenXAppTests/ViewSnapshotTests.swift"),
+                "line": .int(20),
+                "text": .string("ToolCardView(presentation: presentation)"),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.4))
+    let bash = ToolPresentation(
+        id: "developer-bash",
+        name: "bash",
+        arguments: .object(["command": .string("xcodebuild test -scheme 10x")]),
+        result: snapshotTextResult((1...14).map { "Test group \($0) passed" }.joined(separator: "\n")),
+        phase: .running,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(4.6))
+    let web = ToolPresentation(
+        id: "developer-web",
+        name: "web_search",
+        arguments: .object(["query": .string("SwiftUI attributed text wrapping")]),
+        result: .object(["details": .object(["results": .array([
+            .object([
+                "title": .string("Text | Apple Developer Documentation"),
+                "url": .string("https://developer.apple.com/documentation/swiftui/text"),
+                "snippet": .string("Display read-only text that can wrap across available width."),
+            ]),
+            .object([
+                "title": .string("Layout fundamentals"),
+                "url": .string("https://developer.apple.com/documentation/swiftui/layout-fundamentals"),
+                "snippet": .string("Compose flexible layouts without nested vertical scrolling."),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.9))
+    let disclosure = ToolDisclosureState()
+    disclosure.expand(ids: [edit.id, grep.id, bash.id, web.id])
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ToolCardView(presentation: read)
+            ToolCardView(presentation: edit)
+            ToolCardView(presentation: grep)
+            ToolCardView(presentation: bash)
+            ToolCardView(presentation: web)
+        }
+        .environment(\.toolDisclosureState, disclosure)
+        .environment(snapshotEmptyIDEStore)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 720, alignment: .leading),
+        name: "developer-tool-flow",
+        size: CGSize(width: 800, height: 1_700))
+}
+
+@MainActor
 @Test func subagentActivitySnapshot() throws {
     let presentation = SubagentPresentation(
         id: "subagent",
