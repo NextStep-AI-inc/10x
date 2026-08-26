@@ -30,14 +30,14 @@ Note: the first OmpKit run hit `lineBacklogOverflowFailsClosedInsteadOfDroppingF
 | AeroSpace | Release | No | No | No | No | FAIL |
 | Hammerspoon | Release | No | No | No | No | FAIL |
 | Background Only | Release | No | No | No | No | FAIL |
-| Older OMP | Release | N/A | N/A | N/A | No | FAIL |
+| Older OMP | Release | N/A | N/A | N/A | Best-effort label Yes | PASS |
 
 ## Physical Desktop Evidence
 
 - AeroSpace was not testable in this environment: `aerospace` was not on PATH from the worktree shell.
 - Hammerspoon was not testable in this environment: macOS could not resolve an installed `Hammerspoon` application by AppleScript.
 - Background Only was not exercised through a live configured agent session in the Release app.
-- Older OMP gating was not exercised because no 18.0.4 binary was available in this worktree.
+- Older OMP gating was exercised through the real Release settings surface using the default `~/.bun/bin/omp` (`omp/18.0.4`). The UI displayed `BEST EFFORT`, reported `OMP: omp/18.0.4 · Best effort`, retained the warning that background control may interrupt the current app, and the setup probe failed closed without claiming window placement.
 - Release UI snapshots for setup complete, setup degraded, Ready, Controlling, Needs handoff, and computer evidence are covered by the automated snapshot suite, not by live physical desktop interaction.
 
 ## Completion Gate
