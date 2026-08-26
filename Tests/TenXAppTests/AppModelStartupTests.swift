@@ -22,10 +22,7 @@ final class AppTerminationDelegateTests: XCTestCase {
         let shutdownGate = LoadGate()
         let counter = TerminationCounter()
         let replies = TerminationReplyRecorder()
-        let delegate = AppTerminationDelegate(
-            terminationGrace: .seconds(10),
-            sleep: { _ in try await ContinuousClock().sleep(for: .seconds(60)) },
-            reply: replies.reply)
+        let delegate = AppTerminationDelegate(reply: replies.reply)
         delegate.shutdown = {
             await counter.increment()
             await shutdownGate.started()
@@ -48,15 +45,11 @@ final class AppTerminationDelegateTests: XCTestCase {
         XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateNow)
     }
 
-    func testTerminationGraceRepliesWhenShutdownDoesNotReturn() async {
+    func testTerminationNeverRepliesBeforeShutdownReturns() async {
         let shutdownGate = LoadGate()
         let counter = TerminationCounter()
-        let sleep = TerminationSleepRecorder()
         let replies = TerminationReplyRecorder()
-        let delegate = AppTerminationDelegate(
-            terminationGrace: .milliseconds(250),
-            sleep: { duration in await sleep.sleep(duration) },
-            reply: replies.reply)
+        let delegate = AppTerminationDelegate(reply: replies.reply)
         delegate.shutdown = {
             await counter.increment()
             await shutdownGate.started()
@@ -65,14 +58,46 @@ final class AppTerminationDelegateTests: XCTestCase {
 
         XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateLater)
         await shutdownGate.waitForStart()
-        await replies.waitForValues([true])
-        XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateNow)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(replies.values.isEmpty)
+        XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateLater)
 
         await shutdownGate.release()
-        await waitForModelState { await counter.currentValue() == 1 }
-        let durations = await sleep.recordedDurations()
-        XCTAssertEqual(durations, [.milliseconds(250)])
+        await replies.waitForValues([true])
+        let shutdownCount = await counter.currentValue()
         XCTAssertEqual(replies.values, [true])
+        XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateNow)
+        XCTAssertEqual(shutdownCount, 1)
+    }
+
+    func testTerminationReplyFollowsWarmAndActiveChildReaping() async throws {
+        let fixture = try StartupFixture()
+        defer { fixture.cleanup() }
+        let warmProject = try fixture.project("TerminationWarm")
+        let activeProject = try fixture.project("TerminationActive")
+        let manager = fixture.processManager(modesByProject: [
+            warmProject.path: "slow-exit",
+            activeProject.path: "slow-exit",
+        ])
+        let model = fixture.model(processManager: manager)
+        await model.bootstrap()
+        let warm = try await manager.warm(projectDirectory: warmProject.path)
+        let active = try await manager.open(
+            sessionPath: "/tmp/termination-active.jsonl",
+            cwd: activeProject.path)
+        let replies = TerminationReplyRecorder()
+        let delegate = AppTerminationDelegate(reply: replies.reply)
+        delegate.shutdown = { await model.shutdown() }
+
+        XCTAssertEqual(delegate.applicationShouldTerminate(.shared), .terminateLater)
+        await replies.waitForValues([true])
+
+        let warmExitCode = await warm.client.exitCode
+        let activeExitCode = await active.client.exitCode
+        let activeHandle = await manager.handle(for: active.sessionPath)
+        XCTAssertNotNil(warmExitCode)
+        XCTAssertNotNil(activeExitCode)
+        XCTAssertNil(activeHandle)
     }
 }
 
@@ -123,6 +148,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     async let first: Void = model.bootstrap()
     async let second: Void = model.bootstrap()
     await minimumGate.waitForStart()
+    await waitForModelState { await locator.count == 1 }
 
     let locateCount = await locator.count
     #expect(locateCount == 1)
@@ -131,6 +157,41 @@ final class AppTerminationDelegateTests: XCTestCase {
     await first
     await second
     #expect(model.startupState.handoffGeneration == 1)
+    await model.shutdown()
+}
+
+@MainActor
+@Test func minimumVisibilityFloorStartsBeforeRuntimeLookupCompletes() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let locatorGate = LoadGate()
+    let floorProbe = StartupFloorProbe()
+    let locator = GatedOmpLocator(
+        installation: fixture.installation,
+        gate: locatorGate)
+    let timing = StartupTiming(
+        minimumVisibility: .milliseconds(350),
+        timeout: .seconds(10),
+        sleep: { duration in
+            if duration == .milliseconds(350) {
+                await floorProbe.recordStart()
+            } else {
+                try await ContinuousClock().sleep(for: .seconds(60))
+            }
+        })
+    let model = fixture.model(locator: locator, timing: timing)
+    let bootstrap = Task { await model.bootstrap() }
+    await locatorGate.waitForStart()
+    for _ in 0..<100 where !(await floorProbe.hasStarted) {
+        await Task.yield()
+    }
+
+    #expect(await floorProbe.hasStarted)
+    #expect(model.startupState.handoffGeneration == 0)
+    await locatorGate.release()
+    await bootstrap.value
+    #expect(model.startupState.handoffGeneration == 1)
+    #expect(await floorProbe.startCount == 1)
     await model.shutdown()
 }
 
@@ -645,18 +706,6 @@ private actor TerminationCounter {
 
     func currentValue() -> Int {
         value
-    }
-}
-
-private actor TerminationSleepRecorder {
-    private var durations: [Duration] = []
-
-    func sleep(_ duration: Duration) {
-        durations.append(duration)
-    }
-
-    func recordedDurations() -> [Duration] {
-        durations
     }
 }
 

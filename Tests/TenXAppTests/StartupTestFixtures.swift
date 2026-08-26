@@ -19,6 +19,33 @@ actor CountingOmpLocator: OmpLocating {
     }
 }
 
+actor GatedOmpLocator: OmpLocating {
+    private let installation: OmpInstallation?
+    private let gate: LoadGate
+
+    init(installation: OmpInstallation?, gate: LoadGate) {
+        self.installation = installation
+        self.gate = gate
+    }
+
+    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+        await gate.started()
+        await gate.waitForRelease()
+        try Task.checkCancellation()
+        return installation
+    }
+}
+
+actor StartupFloorProbe {
+    private(set) var startCount = 0
+
+    var hasStarted: Bool { startCount > 0 }
+
+    func recordStart() {
+        startCount += 1
+    }
+}
+
 actor StartupConfigRunner: OmpConfigRunning {
     private let startedGate: LoadGate?
     private let isFailing: Bool

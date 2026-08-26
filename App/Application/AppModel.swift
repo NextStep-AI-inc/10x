@@ -518,11 +518,7 @@ final class AppModel {
 
     private func runStartupAttempt(id: UUID, stages: Set<StartupStageID>) async {
         let timing = dependencies.startupTiming
-        let (runtimeLocated, runtimeLocatedContinuation) = AsyncStream<Void>.makeStream(
-            bufferingPolicy: .bufferingNewest(1))
         let minimumVisibility = Task {
-            for await _ in runtimeLocated { break }
-            try Task.checkCancellation()
             try await timing.sleep(timing.minimumVisibility)
         }
 
@@ -530,11 +526,7 @@ final class AppModel {
             let preparation = try await withWatchdog(attemptID: id) {
                 try await self.prepareStartup(
                     attemptID: id,
-                    stages: stages,
-                    runtimeLocated: {
-                        runtimeLocatedContinuation.yield()
-                        runtimeLocatedContinuation.finish()
-                    })
+                    stages: stages)
             }
             try await withTaskCancellationHandler {
                 try await minimumVisibility.value
@@ -547,7 +539,6 @@ final class AppModel {
                 startupState.requestHandoff(attemptID: id)
             }
         } catch {
-            runtimeLocatedContinuation.finish()
             minimumVisibility.cancel()
             _ = await minimumVisibility.result
             guard !Task.isCancelled,
@@ -585,16 +576,11 @@ final class AppModel {
 
     private func prepareStartup(
         attemptID: UUID,
-        stages: Set<StartupStageID>,
-        runtimeLocated: @escaping @Sendable () -> Void
+        stages: Set<StartupStageID>
     ) async throws -> StartupPreparation {
         if stages.contains(.runtime) {
-            let hasRuntime = try await prepareRuntime(
-                attemptID: attemptID,
-                runtimeLocated: runtimeLocated)
+            let hasRuntime = try await prepareRuntime(attemptID: attemptID)
             if !hasRuntime { return .missingOmp }
-        } else {
-            runtimeLocated()
         }
 
         try checkStartupAttempt(attemptID)
@@ -617,13 +603,9 @@ final class AppModel {
         return .ready
     }
 
-    private func prepareRuntime(
-        attemptID: UUID,
-        runtimeLocated: @escaping @Sendable () -> Void
-    ) async throws -> Bool {
+    private func prepareRuntime(attemptID: UUID) async throws -> Bool {
         startupState.markLoading(.runtime, attemptID: attemptID)
         let located = try await dependencies.ompLocator.locate(preferredURL: nil)
-        runtimeLocated()
         try checkStartupAttempt(attemptID)
 
         guard let located else {
