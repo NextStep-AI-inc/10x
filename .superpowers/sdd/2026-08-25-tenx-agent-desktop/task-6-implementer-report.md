@@ -10,6 +10,7 @@ DONE
 - Branch: `codex/computer-use-design`
 - Round 1 commit: `62f49e5607c959394a38106f2d2eefcff2313169`
 - Round 2 commit: pending
+- Round 3 commit: pending
 
 ## Implemented
 
@@ -39,6 +40,10 @@ DONE
 - Probe execution uses typed success, failure, and cancellation results. A
   new setup attempt always replaces a prior result and reports failed or
   cancelled checks honestly.
+- Window placement now has an independent typed outcome: completed moves stay
+  passed even when the later OMP probe is cancelled; placement cancellation is
+  cancelled; genuine move errors are failed; and background/no-workspace tests
+  are not applicable. The settings row and all fixtures use this outcome.
 
 ## Verified
 
@@ -49,6 +54,9 @@ DONE
 - Release: `xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round1-release` succeeded.
 - Round 2 full suite: `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round2` passed 185 tests.
 - Round 2 Release: `xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round2-release` succeeded.
+- Round 3 full suite: `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round3-verify` passed 189 tests, including failed/cancelled/no-workspace placement cases and both snapshots.
+- Round 3 snapshot record: updated only `computer-use-settings-degraded.png` after the deterministic placement label changed from Failed to Not applicable; the new 1520×1720 image was visually inspected for readable, unclipped labels.
+- Round 3 Release: `xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-task6-round3-release` succeeded.
 - Focused cleanup coverage uses a production-faithful detached-descendant RPC:
   leader termination fires first, the first confirmation returns false and
   keeps ownership, then confirmed group shutdown clears it once.
@@ -69,6 +77,8 @@ DONE
 - No live OMP session was started. The verified test doubles cover preference
   factory forwarding and disposable cleanup; real machine helper behavior
   remains a manual check.
+- No manual click-through of a real helper-backed move was performed; provider
+  move, cancellation, and no-workspace behavior are covered by the model tests.
 
 ## For reviewer
 

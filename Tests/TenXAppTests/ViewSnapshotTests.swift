@@ -537,7 +537,7 @@ private func computerUseSnapshotModel(contract: OmpComputerContract) -> Computer
             captureSucceeded: isComplete,
             backgroundInputSucceeded: isComplete,
             helperAvailable: isComplete,
-            windowPlacementSucceeded: isComplete),
+            windowPlacementOutcome: isComplete ? .passed : .notApplicable),
         ompVersion: "18.0.5",
         automaticallyChecksReadiness: false)
 }

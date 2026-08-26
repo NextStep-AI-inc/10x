@@ -87,6 +87,71 @@ import Testing
     #expect(report.helperAvailable == false)
 }
 
+@MainActor @Test func cancelledPlacementReportsCancelledBeforePlacementCompletes() async throws {
+    let model = ComputerUseSetupModel(
+        omp: FakeSetupOMP(),
+        providers: [
+            FakeSetupProvider(
+                kind: .background,
+                probe: .healthy,
+                workspaceID: "probe-space",
+                moveFailure: FakeSetupProvider.MoveFailure.cancelled),
+        ])
+
+    await model.runHarmlessTest()
+
+    let report = try #require(model.harmlessTest)
+    #expect(report.outcome == .cancelled)
+    #expect(report.windowPlacementOutcome == .cancelled)
+}
+
+@MainActor @Test func cancelledProbePreservesCompletedPlacement() async throws {
+    let model = ComputerUseSetupModel(
+        omp: FakeSetupOMP(failure: .cancelledProbe),
+        providers: [
+            FakeSetupProvider(
+                kind: .background,
+                probe: .healthy,
+                workspaceID: "probe-space"),
+        ])
+
+    await model.runHarmlessTest()
+
+    let report = try #require(model.harmlessTest)
+    #expect(report.outcome == .cancelled)
+    #expect(report.windowPlacementOutcome == .passed)
+}
+
+@MainActor @Test func failedPlacementReportsFailureAndFailsOverallCheck() async throws {
+    let model = ComputerUseSetupModel(
+        omp: FakeSetupOMP(),
+        providers: [
+            FakeSetupProvider(
+                kind: .background,
+                probe: .healthy,
+                workspaceID: "probe-space",
+                moveFailure: FakeSetupProvider.MoveFailure.failed),
+        ])
+
+    await model.runHarmlessTest()
+
+    let report = try #require(model.harmlessTest)
+    #expect(report.outcome == .failed)
+    #expect(report.windowPlacementOutcome == .failed)
+}
+
+@MainActor @Test func backgroundOnlyPlacementIsNotApplicableWhenNoWorkspaceExists() async throws {
+    let model = ComputerUseSetupModel(
+        omp: FakeSetupOMP(),
+        providers: [FakeSetupProvider(kind: .background, probe: .healthy)])
+
+    await model.runHarmlessTest()
+
+    let report = try #require(model.harmlessTest)
+    #expect(report.outcome == .passed)
+    #expect(report.windowPlacementOutcome == .notApplicable)
+}
+
 @Test func leaderExitKeepsDisposableRPCOwnedUntilGroupShutdownConfirmsDeath() async {
     let rpc = DetachedDescendantRPC()
     let omp = DisposableComputerUseOMP(client: rpc)
@@ -112,7 +177,7 @@ private let passingReport = ComputerUseProbeReport(
     captureSucceeded: true,
     backgroundInputSucceeded: true,
     helperAvailable: true,
-    windowPlacementSucceeded: true)
+    windowPlacementOutcome: .passed)
 
 private actor FakeSetupOMP: ComputerUseSetupOMP {
     enum Failure: Error { case unknownCommand, probe, cancelledProbe }
@@ -215,21 +280,38 @@ private actor DetachedDescendantRPC: DisposableComputerUseRPC {
 }
 
 private struct FakeSetupProvider: AgentDesktopProvider {
+    enum MoveFailure { case failed, cancelled }
+
     let kind: AgentDesktopProviderKind
     let result: ProviderProbe
+    let workspaceID: String?
+    let moveFailure: MoveFailure?
 
-    init(kind: AgentDesktopProviderKind, probe: ProviderAvailability) {
+    init(
+        kind: AgentDesktopProviderKind,
+        probe: ProviderAvailability,
+        workspaceID: String? = nil,
+        moveFailure: MoveFailure? = nil
+    ) {
         self.kind = kind
         result = ProviderProbe(availability: probe, integrationVersion: kind.rawValue, capabilities: .background)
+        self.workspaceID = workspaceID
+        self.moveFailure = moveFailure
     }
 
     func probe() async -> ProviderProbe { result }
     func prepare(sessionToken: String) async throws -> PreparedAgentDesktop {
-        PreparedAgentDesktop(provider: kind, workspaceID: nil, capabilities: result.capabilities)
+        PreparedAgentDesktop(provider: kind, workspaceID: workspaceID, capabilities: result.capabilities)
     }
     func listWindows() async throws -> [AgentWindow] { [] }
     func watchWindows() async throws -> AsyncStream<AgentWindowEvent> { AsyncStream { $0.finish() } }
-    func move(windowID: String, to workspaceID: String) async throws {}
+    func move(windowID: String, to workspaceID: String) async throws {
+        switch moveFailure {
+        case .failed: throw RpcClientError.startupFailed("move failed")
+        case .cancelled: throw CancellationError()
+        case nil: break
+        }
+    }
     func restore(windowID: String, to workspaceID: String) async throws {}
     func openVisibly(workspaceID: String) async throws {}
     func release(workspaceID: String) async {}

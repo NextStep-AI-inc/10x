@@ -48,13 +48,20 @@ enum ComputerUseTestOutcome: Sendable, Equatable {
     case cancelled
 }
 
+enum ComputerUseWindowPlacementOutcome: Sendable, Equatable {
+    case passed
+    case failed
+    case cancelled
+    case notApplicable
+}
+
 struct ComputerUseProbeReport: Sendable, Equatable {
     let outcome: ComputerUseTestOutcome
     let capabilities: ComputerCapabilities
     let captureSucceeded: Bool
     let backgroundInputSucceeded: Bool?
     let helperAvailable: Bool
-    let windowPlacementSucceeded: Bool?
+    let windowPlacementOutcome: ComputerUseWindowPlacementOutcome
 }
 
 enum DisposableProbeResult: Sendable {
@@ -283,6 +290,7 @@ final class ComputerUseSetupModel {
         var prepared: PreparedAgentDesktop?
         var originalWorkspaceID: String?
         var target: AgentDesktopProbeWindow.Target?
+        var placementOutcome: ComputerUseWindowPlacementOutcome = .notApplicable
         do {
             if let selected {
                 prepared = try await selected.provider.prepare(sessionToken: UUID().uuidString.replacingOccurrences(of: "-", with: ""))
@@ -293,19 +301,26 @@ final class ComputerUseSetupModel {
                let workspaceID = prepared?.workspaceID {
                 originalWorkspaceID = try await selected.provider.listWindows()
                     .first(where: { $0.id == opened.windowID })?.workspaceID
-                try await selected.provider.move(windowID: opened.windowID, to: workspaceID)
+                do {
+                    try await selected.provider.move(windowID: opened.windowID, to: workspaceID)
+                    placementOutcome = .passed
+                } catch {
+                    placementOutcome = error is CancellationError ? .cancelled : .failed
+                    throw error
+                }
             }
             let result = await runDisposableProbe(target: opened.windowID, verificationText: opened.verificationText)
             switch result {
             case let .success(contract, probe):
                 harmlessTest = ComputerUseProbeReport(
                     outcome: probe.captureSucceeded && probe.backgroundInputSucceeded == true
-                        && probe.capabilities.accessibility == .granted && helperAvailable ? .passed : .failed,
+                        && probe.capabilities.accessibility == .granted && helperAvailable
+                        && placementOutcome != .failed && placementOutcome != .cancelled ? .passed : .failed,
                     capabilities: probe.capabilities,
                     captureSucceeded: probe.captureSucceeded,
                     backgroundInputSucceeded: probe.backgroundInputSucceeded,
                     helperAvailable: helperAvailable,
-                    windowPlacementSucceeded: prepared?.workspaceID == nil ? nil : true)
+                    windowPlacementOutcome: placementOutcome)
                 readiness = ComputerUseReadiness(
                     ompContract: contract,
                     capabilities: probe.capabilities,
@@ -313,7 +328,7 @@ final class ComputerUseSetupModel {
                     backgroundFallbackAvailable: probes[.background]?.availability == .healthy,
                     providerProbes: probes)
             case let .failed(contract):
-                harmlessTest = failedProbeReport(outcome: .failed, target: target)
+                harmlessTest = failedProbeReport(outcome: .failed, placementOutcome: placementOutcome)
                 readiness = ComputerUseReadiness(
                     ompContract: contract,
                     capabilities: .unknown,
@@ -321,12 +336,12 @@ final class ComputerUseSetupModel {
                     backgroundFallbackAvailable: probes[.background]?.availability == .healthy,
                     providerProbes: probes)
             case .cancelled:
-                harmlessTest = failedProbeReport(outcome: .cancelled, target: target)
+                harmlessTest = failedProbeReport(outcome: .cancelled, placementOutcome: placementOutcome)
             }
         } catch {
             harmlessTest = failedProbeReport(
                 outcome: error is CancellationError ? .cancelled : .failed,
-                target: target)
+                placementOutcome: placementOutcome)
         }
         if let selected, let target, let originalWorkspaceID {
             try? await selected.provider.restore(windowID: target.windowID, to: originalWorkspaceID)
@@ -430,7 +445,7 @@ final class ComputerUseSetupModel {
 
     private func failedProbeReport(
         outcome: ComputerUseTestOutcome,
-        target: AgentDesktopProbeWindow.Target?
+        placementOutcome: ComputerUseWindowPlacementOutcome
     ) -> ComputerUseProbeReport {
         ComputerUseProbeReport(
             outcome: outcome,
@@ -438,7 +453,7 @@ final class ComputerUseSetupModel {
             captureSucceeded: false,
             backgroundInputSucceeded: false,
             helperAvailable: false,
-            windowPlacementSucceeded: target == nil ? nil : false)
+            windowPlacementOutcome: placementOutcome)
     }
 
     private func open(_ value: String) {

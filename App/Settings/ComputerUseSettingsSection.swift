@@ -59,7 +59,7 @@ struct ComputerUseSettingsSection: View {
                     statusRow("Test accessibility", value: testPermissionLabel(harmlessTest.capabilities.accessibility, outcome: harmlessTest.outcome))
                     statusRow("Test background input", value: testInputLabel(harmlessTest.backgroundInputSucceeded, outcome: harmlessTest.outcome))
                     statusRow("Test helper", value: testCheckLabel(harmlessTest.helperAvailable, outcome: harmlessTest.outcome))
-                    statusRow("Test window placement", value: testPlacementLabel(harmlessTest.windowPlacementSucceeded))
+                    statusRow("Test window placement", value: testPlacementLabel(harmlessTest.windowPlacementOutcome))
                 }
 
                 if model.readiness.ompContract == .legacyBestEffort {
@@ -203,8 +203,12 @@ struct ComputerUseSettingsSection: View {
         return testCheckLabel(value, outcome: outcome)
     }
 
-    private func testPlacementLabel(_ value: Bool?) -> String {
-        guard let value else { return "Not applicable" }
-        return value ? "Passed" : "Failed"
+    private func testPlacementLabel(_ outcome: ComputerUseWindowPlacementOutcome) -> String {
+        switch outcome {
+        case .passed: "Passed"
+        case .failed: "Failed"
+        case .cancelled: "Cancelled"
+        case .notApplicable: "Not applicable"
+        }
     }
 }
