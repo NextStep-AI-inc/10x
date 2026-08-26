@@ -77,6 +77,7 @@ actor ProviderManagementService: ProviderManaging {
     private var clientGeneration = 0
     private var isLoginInProgress = false
     private var activeLoginGeneration: Int?
+    private var accountCapabilities: [String: ProviderAccountCapability] = [:]
 
     init<Client: ProviderRPCClient>(
         executableURL: URL,
@@ -110,6 +111,56 @@ actor ProviderManagementService: ProviderManaging {
         let client = try await clientForRequest()
         let response = try await client.send(.getLoginProviders(), timeout: nil)
         return try parseProviders(response.data)
+    }
+
+    func accountCapability(providerID: String) async throws -> ProviderAccountCapability {
+        if let capability = accountCapabilities[providerID] {
+            return capability
+        }
+
+        do {
+            _ = try await accounts(providerID: providerID)
+            return .accountRouting
+        } catch {
+            guard isUnsupportedAccountCommand(error, command: "list_provider_accounts") else {
+                throw error
+            }
+            accountCapabilities[providerID] = .providerOnly
+            return .providerOnly
+        }
+    }
+
+    func accounts(providerID: String) async throws -> [ProviderAccountSummary] {
+        let client = try await clientForRequest()
+        let response = try await client.send(.listProviderAccounts(providerID: providerID), timeout: nil)
+
+        do {
+            let accounts = try response.providerAccountListResult().accounts
+            accountCapabilities[providerID] = .accountRouting
+            return accounts
+        } catch {
+            if isUnsupportedAccountCommand(error, command: "list_provider_accounts") {
+                accountCapabilities[providerID] = .providerOnly
+            }
+            throw error
+        }
+    }
+
+    func accountUsage(providerID: String) async throws -> [ProviderAccountUsage] {
+        let client = try await clientForRequest()
+        let response = try await client.send(.providerAccountUsage(providerID: providerID), timeout: nil)
+        return try response.providerAccountUsageResult().accounts
+    }
+
+    func removeAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> ProviderAccountRemovalResult {
+        let client = try await clientForRequest()
+        let response = try await client.send(
+            .removeProviderAccount(providerID: providerID, accountRef: accountRef),
+            timeout: nil)
+        return try response.removeProviderAccountResult()
     }
 
     func login(providerID: String, generation: Int) async throws {
@@ -295,5 +346,15 @@ actor ProviderManagementService: ProviderManaging {
                 isAvailable: isAvailable,
                 isAuthenticated: isAuthenticated)
         }
+    }
+
+    private func isUnsupportedAccountCommand(_ error: any Error, command: String) -> Bool {
+        guard case ProviderAccountResponseDecodingError.unsuccessful(
+            let failedCommand, let message, let code) = error
+        else { return false }
+
+        return failedCommand == command
+            && message == "unsupported: \(command)"
+            && code == "unsupported_command"
     }
 }

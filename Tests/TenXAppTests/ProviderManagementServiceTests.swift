@@ -32,6 +32,92 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
         "url": .string("https://example.com/login"),
     ])))
 
+private let accountListResponse = RpcResponse(
+    id: "accounts",
+    command: "list_provider_accounts",
+    success: true,
+    data: .object(["accounts": .array([
+        .object([
+            "providerId": .string("openai-codex"),
+            "accountRef": .string("acct_A"),
+            "displayLabel": .string("Tanner"),
+            "detailLabel": .string("Pro"),
+            "connectionOrder": .int(0),
+            "availability": .string("available"),
+            "isActiveForSession": .bool(false),
+        ]),
+        .object([
+            "providerId": .string("openai-codex"),
+            "accountRef": .string("acct_B"),
+            "displayLabel": .string("Work"),
+            "connectionOrder": .int(1),
+            "availability": .string("mystery"),
+        ]),
+    ])]))
+
+private let accountUsageResponse = RpcResponse(
+    id: "usage",
+    command: "get_provider_account_usage",
+    success: true,
+    data: .object(["accounts": .array([
+        .object([
+            "providerId": .string("openai-codex"),
+            "accountRef": .string("acct_A"),
+            "refreshedAt": .string("2026-08-26T12:34:56Z"),
+            "usageWindows": .array([
+                .object([
+                    "id": .string("weekly"),
+                    "label": .string("Weekly"),
+                    "duration": .object([
+                        "value": .int(1),
+                        "unit": .string("week"),
+                    ]),
+                    "sourceIndex": .int(0),
+                    "remainingFraction": .double(0.25),
+                    "resetsAt": .string("2026-08-27T00:00:00Z"),
+                    "status": .string("limited"),
+                ]),
+            ]),
+        ]),
+        .object([
+            "providerId": .string("openai-codex"),
+            "accountRef": .string("acct_B"),
+            "refreshedAt": .string("2026-08-26T12:34:56Z"),
+            "usageWindows": .array([]),
+        ]),
+    ])]))
+
+private let accountRemovalResponse = RpcResponse(
+    id: "remove",
+    command: "remove_provider_account",
+    success: true,
+    data: .object([
+        "removed": .bool(true),
+        "accounts": .array([
+            .object([
+                "providerId": .string("openai-codex"),
+                "accountRef": .string("acct_B"),
+                "displayLabel": .string("Work"),
+                "connectionOrder": .int(1),
+                "availability": .string("limited"),
+            ]),
+        ]),
+    ]))
+
+private let unsupportedAccountsResponse = RpcResponse(
+    id: "unsupported",
+    command: "list_provider_accounts",
+    success: false,
+    error: "unsupported: list_provider_accounts",
+    code: "unsupported_command")
+
+private let failedAccountsResponse = RpcResponse(
+    id: "failed",
+    command: "list_provider_accounts",
+    success: false,
+    error: "backend unavailable",
+    code: "internal_error")
+
 @Test func providerServiceDiscoversTypedProviders() async throws {
     let fake = FakeProviderRPCClient(responses: [providerListResponse])
     let configurations = ConfigurationRecorder()
@@ -52,6 +138,123 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
     let configuration = try #require(await configurations.first)
     #expect(configuration.executable == "/tmp/omp")
     #expect(configuration.noSession)
+}
+
+@Test func providerServiceDetectsAccountRoutingCapabilityFromDecodedAccounts() async throws {
+    let fake = FakeProviderRPCClient(responses: [accountListResponse])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let capability = try await service.accountCapability(providerID: "openai-codex")
+
+    #expect(capability == .accountRouting)
+    #expect(await fake.commands == [
+        ProviderCommand(command: .listProviderAccounts(providerID: "openai-codex"), timeout: nil),
+    ])
+}
+
+@Test func providerServiceDecodesAccountSummaries() async throws {
+    let fake = FakeProviderRPCClient(responses: [accountListResponse])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let accounts = try await service.accounts(providerID: "openai-codex")
+
+    #expect(accounts == [
+        ProviderAccountSummary(
+            providerID: "openai-codex",
+            accountRef: "acct_A",
+            displayLabel: "Tanner",
+            detailLabel: "Pro",
+            connectionOrder: 0,
+            availability: .available,
+            isActiveForSession: false),
+        ProviderAccountSummary(
+            providerID: "openai-codex",
+            accountRef: "acct_B",
+            displayLabel: "Work",
+            connectionOrder: 1,
+            availability: .unavailable),
+    ])
+}
+
+@Test func providerServiceDecodesPartialAccountUsage() async throws {
+    let fake = FakeProviderRPCClient(responses: [accountUsageResponse])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let usage = try await service.accountUsage(providerID: "openai-codex")
+
+    #expect(usage.map(\.accountRef) == ["acct_A", "acct_B"])
+    #expect(usage[0].usageWindows.map(\.id) == ["weekly"])
+    #expect(usage[0].usageWindows[0].remainingFraction == 0.25)
+    #expect(usage[0].usageWindows[0].status == "limited")
+    #expect(usage[1].usageWindows.isEmpty)
+}
+
+@Test func providerServiceRemovesTheExactAccountRef() async throws {
+    let fake = FakeProviderRPCClient(responses: [accountRemovalResponse])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let result = try await service.removeAccount(
+        providerID: "openai-codex",
+        accountRef: "acct_A")
+
+    #expect(result.removed)
+    #expect(result.accounts.map(\.accountRef) == ["acct_B"])
+    #expect(await fake.commands == [
+        ProviderCommand(
+            command: .removeProviderAccount(providerID: "openai-codex", accountRef: "acct_A"),
+            timeout: nil),
+    ])
+}
+
+@Test func providerServiceFallsBackToProviderOnlyForExactUnsupportedAccountCommand() async throws {
+    let fake = FakeProviderRPCClient(responses: [unsupportedAccountsResponse, providerListResponse, loginResponse])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let firstCapability = try await service.accountCapability(providerID: "openai-codex")
+    let secondCapability = try await service.accountCapability(providerID: "openai-codex")
+    let providers = try await service.providers()
+    try await service.login(providerID: "cursor", generation: 1)
+
+    #expect(firstCapability == .providerOnly)
+    #expect(secondCapability == .providerOnly)
+    #expect(providers.map(\.id) == ["cursor"])
+    #expect(await fake.commands == [
+        ProviderCommand(command: .listProviderAccounts(providerID: "openai-codex"), timeout: nil),
+        ProviderCommand(command: .getLoginProviders(), timeout: nil),
+        ProviderCommand(command: .login(providerID: "cursor"), timeout: .seconds(600)),
+    ])
+}
+
+@Test func providerServicePropagatesNonUnsupportedAccountFailures() async {
+    let fake = FakeProviderRPCClient(responses: [failedAccountsResponse])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let result = await Task {
+        try await service.accountCapability(providerID: "openai-codex")
+    }.result
+
+    guard case .failure(let error) = result,
+          case ProviderAccountResponseDecodingError.unsuccessful(
+            let command, let message, let code) = error
+    else {
+        Issue.record("Expected account failure to propagate")
+        return
+    }
+    #expect(command == "list_provider_accounts")
+    #expect(message == "backend unavailable")
+    #expect(code == "internal_error")
 }
 
 @Test func providerServiceLogsInWithTheExpectedCommandAndTimeout() async throws {
