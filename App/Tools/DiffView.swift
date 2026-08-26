@@ -5,6 +5,7 @@ struct DiffView: View {
     let diff: UnifiedDiff
     let fallbackPath: String?
     @State private var revealedRuns: Set<String> = []
+    @State private var isWrapped = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -14,6 +15,13 @@ struct DiffView: View {
                 Text("−\(removals)")
                     .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
                 Spacer()
+                Button(isWrapped ? "Scroll" : "Wrap") {
+                    isWrapped.toggle()
+                }
+                .buttonStyle(GhostActionStyle())
+                .accessibilityLabel(isWrapped
+                    ? "Use horizontal scrolling for diff"
+                    : "Wrap diff lines")
                 Button("Copy patch") { copy(diff.raw) }
                     .buttonStyle(GhostActionStyle())
             }
@@ -42,64 +50,85 @@ struct DiffView: View {
                 }
             }
             ForEach(Array(file.hunks.enumerated()), id: \.offset) { hunkIndex, hunk in
-                hunkView(hunk, idPrefix: "\(fileIndex)-\(hunkIndex)")
+                hunkView(
+                    hunk,
+                    idPrefix: "\(fileIndex)-\(hunkIndex)",
+                    language: SourceTokenizer.languageIdentifier(forPath: file.path))
             }
         }
     }
 
-    private func hunkView(_ hunk: UnifiedDiffHunk, idPrefix: String) -> some View {
+    private func hunkView(
+        _ hunk: UnifiedDiffHunk,
+        idPrefix: String,
+        language: String?
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(hunk.header)
                 .font(TenXTypography.mono(size: 10, weight: .medium))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-            ScrollView([.horizontal, .vertical]) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(hunk.displayRows()) { displayRow in
-                        switch displayRow {
-                        case .line(let index):
-                            lineView(hunk.lines[index])
-                        case .collapsed(let id, let count, let indices):
-                            let runID = "\(idPrefix)-\(id)"
-                            if revealedRuns.contains(runID) {
-                                ForEach(indices, id: \.self) { index in
-                                    lineView(hunk.lines[index])
-                                }
-                            } else {
-                                Button("Show \(count) unchanged lines") {
-                                    revealedRuns.insert(runID)
-                                }
-                                .font(TenXTypography.mono(size: 10))
-                                .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-                                .buttonStyle(.plain)
-                                .frame(minHeight: 24)
-                            }
-                        }
-                    }
+            if isWrapped {
+                hunkRows(hunk, idPrefix: idPrefix, language: language)
+            } else {
+                ScrollView(.horizontal) {
+                    hunkRows(hunk, idPrefix: idPrefix, language: language)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
-                .fixedSize(horizontal: true, vertical: false)
             }
-            .frame(height: hunkHeight(hunk))
         }
     }
 
-    private func lineView(_ line: UnifiedDiffLine) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+    private func hunkRows(
+        _ hunk: UnifiedDiffHunk,
+        idPrefix: String,
+        language: String?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(hunk.displayRows()) { displayRow in
+                switch displayRow {
+                case .line(let index):
+                    lineView(hunk.lines[index], language: language)
+                case .collapsed(let id, let count, let indices):
+                    let runID = "\(idPrefix)-\(id)"
+                    if revealedRuns.contains(runID) {
+                        ForEach(indices, id: \.self) { index in
+                            lineView(hunk.lines[index], language: language)
+                        }
+                    } else {
+                        Button("Show \(count) unchanged lines") {
+                            revealedRuns.insert(runID)
+                        }
+                        .font(TenXTypography.mono(size: 10))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
+                        .buttonStyle(.plain)
+                        .frame(minHeight: 24)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
+    }
+
+    private func lineView(_ line: UnifiedDiffLine, language: String?) -> some View {
+        HStack(alignment: .top, spacing: 6) {
             Text(line.oldLine.map(String.init) ?? "")
                 .frame(width: 30, alignment: .trailing)
             Text(line.newLine.map(String.init) ?? "")
                 .frame(width: 30, alignment: .trailing)
             Text(marker(for: line.kind))
                 .frame(width: 10)
-            Text(line.text)
+                .foregroundStyle(color(for: line.kind))
+            SourceTextView(
+                spans: SourceTokenizer.spans(line.text, language: language),
+                isWrapped: isWrapped)
+                .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
         }
         .font(TenXTypography.mono(size: 10))
-        .foregroundStyle(color(for: line.kind))
-        .textSelection(.enabled)
-    }
-
-    private func hunkHeight(_ hunk: UnifiedDiffHunk) -> CGFloat {
-        let visible = hunk.displayRows().count
-        return min(360, max(52, CGFloat(visible) * 16 + 8))
+        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        .padding(.vertical, 2)
+        .background(backgroundColor(for: line.kind))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label(for: line.kind)), \(line.text)")
     }
 
     private var additions: Int { diff.files.reduce(0) { $0 + $1.additions } }
@@ -120,6 +149,26 @@ struct DiffView: View {
         case .removal: TenXPalette.color(TenXPalette.signalRedHex)
         case .context: TenXPalette.color(TenXPalette.nearBlackHex)
         case .noNewline: TenXPalette.color(TenXPalette.mutedTextHex)
+        }
+    }
+
+    private func backgroundColor(for kind: UnifiedDiffLine.Kind) -> Color {
+        switch kind {
+        case .addition:
+            TenXPalette.color(TenXPalette.cyanHex).opacity(0.08)
+        case .removal:
+            TenXPalette.color(TenXPalette.signalRedHex).opacity(0.07)
+        case .context, .noNewline:
+            .clear
+        }
+    }
+
+    private func label(for kind: UnifiedDiffLine.Kind) -> String {
+        switch kind {
+        case .addition: "Added line"
+        case .removal: "Removed line"
+        case .context: "Unchanged line"
+        case .noNewline: "No newline marker"
         }
     }
 

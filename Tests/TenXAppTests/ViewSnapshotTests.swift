@@ -940,11 +940,18 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             - Structured code with copy
             - Actionable [documentation](https://example.com/docs)
 
+            | Surface | Behavior |
+            | --- | --- |
+            | Source | Wraps by default without losing indentation |
+            | References | Stay where the response introduced them |
+
             > Changes stay quiet until they need attention.
 
             ```swift
-            let state = TranscriptState.compact
-            render(state, references: true)
+            let state = TranscriptState.compact // preserve the reader's place
+            if state.isReady {
+                render(state, references: true, maximumVisibleCharacters: 120)
+            }
             ```
             """),
         ]),
@@ -957,9 +964,48 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             modelRole: nil),
         isFinal: true)
     try assertSnapshot(
-        MessageBubbleView(message: message).frame(width: 720),
+        MessageBubbleView(message: message)
+            .environment(snapshotEmptyIDEStore)
+            .frame(width: 720),
         name: "chat-rich-assistant",
-        size: CGSize(width: 800, height: 560))
+        size: CGSize(width: 800, height: 700))
+}
+
+@MainActor
+@Test func wrappedSourceSurfaceSnapshot() throws {
+    let source = SourcePresentation(language: "swift", text: """
+    struct TranscriptRow: View {
+        let count = 12 // preserve indentation and explain the line
+
+        var body: some View {
+            Text("A deliberately long source line that wraps inside the transcript instead of escaping underneath the activity card")
+        }
+    }
+    """)
+
+    try assertSnapshot(
+        SourceSurface(presentation: source)
+            .frame(width: 430),
+        name: "source-wrapped",
+        size: CGSize(width: 500, height: 340))
+}
+
+@MainActor
+@Test func scrollingSourceSurfaceSnapshot() throws {
+    let source = SourcePresentation(language: "swift", text: """
+    struct TranscriptRow: View {
+        let count = 12 // preserve indentation and explain the line
+        let title = "A deliberately long source line kept at its exact width for horizontal inspection"
+    }
+    """)
+
+    try assertSnapshot(
+        SourceSurface(
+            presentation: source,
+            isInitiallyWrapped: false)
+            .frame(width: 430),
+        name: "source-scrolling",
+        size: CGSize(width: 500, height: 250))
 }
 
 @MainActor
@@ -1064,14 +1110,14 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     @@ -1,10 +1,10 @@
      import SwiftUI
      struct Transcript {
-     let id: String
-     let role: String
-     let model: String
-     let mode: String
-     let date: Date
-     let state: State
+         let id: String
+         let role: String
+         let model: String
+         let mode: String
+         let date: Date
+         let state: State
     -let title = "Old transcript"
-    +\(longLine)
+    +    \(longLine) // 10 repeated segments
     diff --git a/App/Palette.swift b/App/Palette.swift
     --- a/App/Palette.swift
     +++ b/App/Palette.swift

@@ -104,8 +104,3 @@ struct ContentTable: Equatable, Sendable {
     let headers: [InlineContent]
     let rows: [[InlineContent]]
 }
-
-struct SourcePresentation: Equatable, Sendable {
-    let language: String?
-    let text: String
-}

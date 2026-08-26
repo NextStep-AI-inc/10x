@@ -38,7 +38,7 @@ struct MessageBlockView: View {
         case .divider:
             Divider()
         case .source(let source):
-            CodeBlockView(language: source.language, code: source.text)
+            CodeBlockView(source: source)
         case .unsupported(let label):
             Text(label)
                 .font(TenXTypography.body(size: 12))
