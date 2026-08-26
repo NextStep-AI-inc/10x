@@ -2,8 +2,8 @@
 
 **Status:** Approved for implementation planning
 
-**Date:** 2026-08-25  
-**Platform:** macOS 15+, Swift 6.1, SwiftUI  
+**Date:** 2026-08-25
+**Platform:** macOS 15+, Swift 6.1, SwiftUI
 **Builds on:** `2026-08-25-provider-setup-usage-design.md`
 
 ## Goal
