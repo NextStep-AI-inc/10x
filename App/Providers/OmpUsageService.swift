@@ -14,7 +14,12 @@ actor OmpUsageService<Runner: OmpUsageRunning>: OmpUsageLoading {
     func loadUsage() async throws -> OmpUsageSnapshot {
         do {
             let data = try await runner.run(arguments: ["usage", "--json"])
-            return try JSONDecoder().decode(OmpUsageSnapshot.self, from: data)
+            try Task.checkCancellation()
+            let snapshot = try JSONDecoder().decode(OmpUsageSnapshot.self, from: data)
+            try Task.checkCancellation()
+            return snapshot
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw OmpUsageServiceError.loadFailed
         }

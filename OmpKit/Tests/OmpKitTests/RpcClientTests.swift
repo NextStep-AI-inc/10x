@@ -4,17 +4,94 @@ import Foundation
 
 func makeClient(
     mode: String,
+    modeArguments: [String] = [],
     startupTimeout: Duration = .seconds(30),
-    requestTimeout: Duration = .seconds(30)
+    requestTimeout: Duration = .seconds(30),
+    testHooks: RpcClientTestHooks = RpcClientTestHooks()
 ) -> RpcClient {
     var cfg = RpcClientConfiguration()
     cfg.executable = "/usr/bin/env"
     cfg.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
+        + modeArguments
     cfg.rawArgv = true   // extraArguments become the full argv — no omp flags prepended
     cfg.noSession = true
     cfg.startupTimeout = startupTimeout
     cfg.requestTimeout = requestTimeout
-    return RpcClient(configuration: cfg)
+    return RpcClient(configuration: cfg, testHooks: testHooks)
+}
+
+private actor RpcCompletionProbe {
+    private(set) var hasPendingFinished = false
+    private(set) var hasTerminationFinished = false
+
+    func markPendingFinished() { hasPendingFinished = true }
+    func markTerminationFinished() { hasTerminationFinished = true }
+}
+
+private actor RpcSuspensionGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    var isWaiting: Bool { continuation != nil }
+
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private func waitForSuspensionGate(_ gate: RpcSuspensionGate) async -> Bool {
+    await withTimeout(.seconds(5)) { () -> Bool in
+        while !Task.isCancelled {
+            if await gate.isWaiting { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+}
+
+private func waitUntilAwaitingAuthoritativeExit(_ client: RpcClient) async -> Bool {
+    await withTimeout(.seconds(5)) { () -> Bool in
+        while !Task.isCancelled {
+            if await client.isAwaitingAuthoritativeExit { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+}
+
+private func waitForExitRelatedWriteFailure(_ client: RpcClient) async -> Bool {
+    await withTimeout(.seconds(5)) { () -> Bool in
+        while !Task.isCancelled {
+            if await client.exitRelatedWriteFailureCount > 0 { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+}
+
+private func waitForReadyTimeoutAttempt(_ client: RpcClient) async -> Bool {
+    await withTimeout(.seconds(5)) { () -> Bool in
+        while !Task.isCancelled {
+            if await client.readyTimeoutAttemptCount > 0 { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+}
+
+private func waitForReadyWaiter(_ client: RpcClient) async -> Bool {
+    await withTimeout(.seconds(5)) { () -> Bool in
+        while !Task.isCancelled {
+            if await client.hasReadyWaiter { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
 }
 
 @Test func startNegotiatesV2() async throws {
@@ -23,6 +100,82 @@ func makeClient(
     #expect(ready.supportedProtocolVersions?.contains(2) == true)
     #expect(await c.negotiatedProtocolVersion == 2)
     await c.shutdown()
+}
+
+@Test func queuedReadyTimeoutDefersToAuthoritativeExit() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("RpcReadyTimeoutGate-\(UUID().uuidString)", isDirectory: true)
+    let closeStdout = root.appendingPathComponent("close-stdout")
+    let releaseExit = root.appendingPathComponent("release-exit")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let timeoutGate = RpcSuspensionGate()
+    var hooks = RpcClientTestHooks()
+    hooks.readyTimeoutSleep = { _ in await timeoutGate.wait() }
+    let client = makeClient(
+        mode: "close-before-ready",
+        modeArguments: [closeStdout.path, releaseExit.path],
+        startupTimeout: .milliseconds(1),
+        testHooks: hooks)
+    let start = Task { () -> Result<ReadyFrame, any Error> in
+        do { return .success(try await client.start()) }
+        catch { return .failure(error) }
+    }
+
+    #expect(await waitForSuspensionGate(timeoutGate))
+    FileManager.default.createFile(atPath: closeStdout.path, contents: nil)
+    #expect(await waitUntilAwaitingAuthoritativeExit(client))
+    await timeoutGate.release()
+    #expect(await waitForReadyTimeoutAttempt(client))
+    FileManager.default.createFile(atPath: releaseExit.path, contents: nil)
+
+    guard case .failure(let error) = await start.value,
+          case .processExited(let code, _) = error as? RpcClientError else {
+        Issue.record("authoritative process exit should resolve startup")
+        await client.shutdown()
+        return
+    }
+    #expect(code == 24)
+    await client.shutdown()
+}
+
+@Test func readyWaitStartedAfterStdoutEOFDoesNotArmTimeout() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("RpcReadyArmGate-\(UUID().uuidString)", isDirectory: true)
+    let closeStdout = root.appendingPathComponent("close-stdout")
+    let releaseExit = root.appendingPathComponent("release-exit")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let beforeReadyGate = RpcSuspensionGate()
+    var hooks = RpcClientTestHooks()
+    hooks.beforeWaitForReady = { await beforeReadyGate.wait() }
+    let client = makeClient(
+        mode: "close-before-ready",
+        modeArguments: [closeStdout.path, releaseExit.path],
+        testHooks: hooks)
+    let start = Task { () -> Result<ReadyFrame, any Error> in
+        do { return .success(try await client.start()) }
+        catch { return .failure(error) }
+    }
+
+    #expect(await waitForSuspensionGate(beforeReadyGate))
+    FileManager.default.createFile(atPath: closeStdout.path, contents: nil)
+    #expect(await waitUntilAwaitingAuthoritativeExit(client))
+    await beforeReadyGate.release()
+    #expect(await waitForReadyWaiter(client))
+    #expect(await !client.isReadyTimeoutArmed)
+    FileManager.default.createFile(atPath: releaseExit.path, contents: nil)
+
+    guard case .failure(let error) = await start.value,
+          case .processExited(let code, _) = error as? RpcClientError else {
+        Issue.record("authoritative process exit should resolve startup")
+        await client.shutdown()
+        return
+    }
+    #expect(code == 24)
+    await client.shutdown()
 }
 
 @Test func getStateRoundTrip() async throws {
@@ -129,6 +282,134 @@ func makeClient(
     #expect(code == 5)
     #expect(stderr.contains("eof-on-get-state"))
     await c.shutdown()
+}
+
+@Test func stdoutEOFWaitsForAuthoritativeExitStatus() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("RpcExitGate-\(UUID().uuidString)", isDirectory: true)
+    let stdoutClosed = root.appendingPathComponent("stdout-closed")
+    let release = root.appendingPathComponent("release")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let client = makeClient(
+        mode: "close-stdout-before-exit",
+        modeArguments: [stdoutClosed.path, release.path])
+    _ = try await client.start()
+    let probe = RpcCompletionProbe()
+    let pending = Task { () -> Result<RpcResponse, any Error> in
+        let result: Result<RpcResponse, any Error>
+        do { result = .success(try await client.send(.getState(), timeout: .milliseconds(100))) }
+        catch { result = .failure(error) }
+        await probe.markPendingFinished()
+        return result
+    }
+    let termination = Task {
+        for await _ in client.termination {}
+        await probe.markTerminationFinished()
+    }
+
+    let isAwaitingExit = await waitUntilAwaitingAuthoritativeExit(client)
+    #expect(isAwaitingExit)
+    // Cross the configured request deadline only after RpcClient confirms that
+    // it drained stdout and suspended request timeouts for authoritative exit.
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(await !probe.hasPendingFinished)
+    #expect(await !probe.hasTerminationFinished)
+
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    let result = await pending.value
+    await termination.value
+
+    guard case .failure(let error) = result,
+          case .processExited(let code, let stderr) = error as? RpcClientError else {
+        Issue.record("expected the pending request to fail with processExited")
+        await client.shutdown()
+        return
+    }
+    #expect(code == 23)
+    #expect(stderr.contains("close-stdout-before-exit"))
+    #expect(await client.exitCode == 23)
+    await client.shutdown()
+}
+
+@Test func writeFailureDuringStdoutEOFAwaitsAuthoritativeExit() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("RpcWriteExitGate-\(UUID().uuidString)", isDirectory: true)
+    let stdoutClosed = root.appendingPathComponent("stdout-closed")
+    let release = root.appendingPathComponent("release")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let client = makeClient(
+        mode: "close-stdout-before-exit",
+        modeArguments: [stdoutClosed.path, release.path])
+    _ = try await client.start()
+    let trigger = Task { try await client.send(.getState(), timeout: .seconds(10)) }
+    let observedStdoutClose = await withTimeout(.seconds(5)) { () -> Bool in
+        while !Task.isCancelled {
+            if FileManager.default.fileExists(atPath: stdoutClosed.path) { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+    #expect(observedStdoutClose)
+
+    let probe = RpcCompletionProbe()
+    let racedWrite = Task { () -> Result<RpcResponse, any Error> in
+        let result: Result<RpcResponse, any Error>
+        do {
+            result = .success(try await client.send(
+                RpcCommand(type: "get_session_stats"), timeout: .seconds(10)))
+        } catch {
+            result = .failure(error)
+        }
+        await probe.markPendingFinished()
+        return result
+    }
+    #expect(await waitUntilAwaitingAuthoritativeExit(client))
+    #expect(await waitForExitRelatedWriteFailure(client))
+    #expect(await !probe.hasPendingFinished)
+
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    let triggerResult = await trigger.result
+    let racedResult = await racedWrite.value
+
+    for result in [triggerResult, racedResult] {
+        guard case .failure(let error) = result,
+              case .processExited(let code, _) = error as? RpcClientError else {
+            Issue.record("expected processExited for pending request")
+            continue
+        }
+        #expect(code == 23)
+    }
+    #expect(await client.exitCode == 23)
+    await client.shutdown()
+}
+
+@Test func shutdownRemainsBoundedWhileAwaitingAuthoritativeExit() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("RpcShutdownExitGate-\(UUID().uuidString)", isDirectory: true)
+    let stdoutClosed = root.appendingPathComponent("stdout-closed")
+    let release = root.appendingPathComponent("release")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let client = makeClient(
+        mode: "close-stdout-before-exit",
+        modeArguments: [stdoutClosed.path, release.path])
+    _ = try await client.start()
+    let pending = Task { try await client.send(.getState(), timeout: .seconds(10)) }
+    #expect(await waitUntilAwaitingAuthoritativeExit(client))
+
+    let clock = ContinuousClock()
+    let started = clock.now
+    await client.shutdown()
+    #expect(clock.now - started < .seconds(3))
+    guard case .failure = await pending.result else {
+        Issue.record("shutdown should fail the pending request")
+        return
+    }
 }
 
 @Test func sendBeforeStartThrows() async {

@@ -51,7 +51,11 @@ actor OmpConfigService {
         key: String? = nil
     ) async throws -> Data {
         do {
-            return try await runner.run(arguments: arguments)
+            let data = try await runner.run(arguments: arguments)
+            try Task.checkCancellation()
+            return data
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw OmpConfigServiceError.commandFailed(action: action, key: key)
         }

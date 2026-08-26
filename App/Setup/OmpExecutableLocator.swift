@@ -1,7 +1,7 @@
 import Foundation
 
 protocol OmpLocating: Sendable {
-    func locate(preferredURL: URL?) async -> OmpInstallation?
+    func locate(preferredURL: URL?) async throws -> OmpInstallation?
 }
 
 struct OmpExecutableLocator: OmpLocating {
@@ -22,9 +22,12 @@ struct OmpExecutableLocator: OmpLocating {
         self.pathDirectories = path.split(separator: ":").map(String.init)
     }
 
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
         for candidate in candidates(preferredURL: preferredURL) {
-            if let installation = inspect(candidate) {
+            try Task.checkCancellation()
+            let installation = try await inspect(candidate)
+            try Task.checkCancellation()
+            if let installation {
                 return installation
             }
         }
@@ -48,25 +51,20 @@ struct OmpExecutableLocator: OmpLocating {
         }
     }
 
-    private func inspect(_ candidate: URL) -> OmpInstallation? {
+    private func inspect(_ candidate: URL) async throws -> OmpInstallation? {
         guard FileManager.default.isExecutableFile(atPath: candidate.path) else { return nil }
 
-        let output = Pipe()
-        let process = Process()
-        process.executableURL = candidate
-        process.arguments = ["--version"]
-        process.standardOutput = output
-        process.standardError = Pipe()
-
+        let data: Data
         do {
-            try process.run()
-            process.waitUntilExit()
+            data = try await OmpCommandRunner().run(
+                executableURL: candidate,
+                arguments: ["--version"])
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             return nil
         }
 
-        guard process.terminationStatus == 0 else { return nil }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
         guard let text = String(data: data, encoding: .utf8),
               let firstLine = text.split(whereSeparator: \Character.isNewline).first
         else { return nil }

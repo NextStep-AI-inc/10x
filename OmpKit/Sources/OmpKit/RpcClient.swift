@@ -55,6 +55,13 @@ public struct RpcClientConfiguration: Sendable {
     }
 }
 
+struct RpcClientTestHooks: Sendable {
+    var beforeWaitForReady: (@Sendable () async -> Void)?
+    var readyTimeoutSleep: (@Sendable (Duration) async throws -> Void)?
+
+    init() {}
+}
+
 /// Speaks omp's newline-delimited RPC protocol over a spawned child process.
 ///
 /// Responses are matched to requests by id — never by arrival order, since omp
@@ -63,6 +70,7 @@ public struct RpcClientConfiguration: Sendable {
 public actor RpcClient {
     private let configuration: RpcClientConfiguration
     private let transport: LineTransport
+    private let testHooks: RpcClientTestHooks
 
     private struct PendingRequest {
         let command: String
@@ -76,6 +84,10 @@ public actor RpcClient {
     private var readerTask: Task<Void, Never>?
     private var started = false
     private var terminated = false
+    private var authoritativeExitCode: Int32?
+    private var awaitingAuthoritativeExit = false
+    private var observedExitRelatedWriteFailures = 0
+    private var observedReadyTimeoutAttempts = 0
 
     private let eventStream: AsyncStream<RpcFrame>
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
@@ -95,8 +107,20 @@ public actor RpcClient {
     public private(set) var protocolErrors: [RpcProtocolError] = []
     private static let maxProtocolErrors = 128
 
+    /// Internal lifecycle seams used by deterministic transport-order tests.
+    var isAwaitingAuthoritativeExit: Bool { awaitingAuthoritativeExit }
+    var exitRelatedWriteFailureCount: Int { observedExitRelatedWriteFailures }
+    var readyTimeoutAttemptCount: Int { observedReadyTimeoutAttempts }
+    var hasReadyWaiter: Bool { readyContinuation != nil }
+    var isReadyTimeoutArmed: Bool { readyTimeoutTask != nil }
+
     public init(configuration: RpcClientConfiguration) {
+        self.init(configuration: configuration, testHooks: RpcClientTestHooks())
+    }
+
+    init(configuration: RpcClientConfiguration, testHooks: RpcClientTestHooks) {
         self.configuration = configuration
+        self.testHooks = testHooks
         self.transport = LineTransport(
             executable: configuration.executable,
             arguments: configuration.resolvedArguments,
@@ -138,6 +162,7 @@ public actor RpcClient {
     private func performStart() async throws -> ReadyFrame {
         try await transport.start()
         startReader()
+        await testHooks.beforeWaitForReady?()
 
         let ready = try await waitForReady()
 
@@ -179,14 +204,14 @@ public actor RpcClient {
                     command: command.type,
                     continuation: continuation,
                     timeoutTask: nil)
-                let timeoutTask = Task { [weak self] in
-                    do { try await Task.sleep(for: requestTimeout) }
-                    catch { return }
-                    await self?.failPending(
-                        id: id,
-                        with: RpcClientError.timeout(command: command.type))
+                if !awaitingAuthoritativeExit {
+                    let timeoutTask = Task { [weak self] in
+                        do { try await Task.sleep(for: requestTimeout) }
+                        catch { return }
+                        await self?.timeoutPending(id: id, command: command.type)
+                    }
+                    pending[id]?.timeoutTask = timeoutTask
                 }
-                pending[id]?.timeoutTask = timeoutTask
                 Task { [weak self] in
                     await self?.write(line, for: id)
                 }
@@ -206,12 +231,16 @@ public actor RpcClient {
 
     /// The child's exit code once it has exited, nil while it is running.
     public var exitCode: Int32? {
-        get async { await transport.exitStatus }
+        get async {
+            if let authoritativeExitCode { return authoritativeExitCode }
+            return await transport.exitStatus
+        }
     }
 
     public func shutdown() async {
         if !terminated {
             terminated = true
+            awaitingAuthoritativeExit = false
             failAllPending(
                 exitCode: await transport.exitStatus,
                 stderrTail: await transport.stderrSnapshot())
@@ -229,6 +258,7 @@ public actor RpcClient {
         record(RpcProtocolError(command: nil, requestId: nil, remoteError: reason))
         guard !terminated else { return }
         terminated = true
+        awaitingAuthoritativeExit = false
         failAllPending(
             exitCode: await transport.exitStatus,
             stderrTail: await transport.stderrSnapshot())
@@ -254,8 +284,25 @@ public actor RpcClient {
             for await line in self.transport.lines {
                 await self.handle(line: line)
             }
-            await self.handleStreamEnd()
+            await self.didDrainStdout()
+            for await exitCode in self.transport.onExit {
+                await self.handleStreamEnd(
+                    exitCode: exitCode,
+                    stderrTail: await self.transport.stderrSnapshot())
+                return
+            }
         }
+    }
+
+    private func didDrainStdout() {
+        guard !terminated else { return }
+        awaitingAuthoritativeExit = true
+        for id in Array(pending.keys) {
+            pending[id]?.timeoutTask?.cancel()
+            pending[id]?.timeoutTask = nil
+        }
+        readyTimeoutTask?.cancel()
+        readyTimeoutTask = nil
     }
 
     private func handle(line: Data) async {
@@ -347,12 +394,12 @@ public actor RpcClient {
         }
     }
 
-    private func handleStreamEnd() async {
+    private func handleStreamEnd(exitCode: Int32, stderrTail: String) {
         guard !terminated else { return }
+        awaitingAuthoritativeExit = false
+        authoritativeExitCode = exitCode
         terminated = true
-        failAllPending(
-            exitCode: await transport.exitStatus,
-            stderrTail: await transport.stderrSnapshot())
+        failAllPending(exitCode: exitCode, stderrTail: stderrTail)
         finishStreams()
     }
 
@@ -400,10 +447,20 @@ public actor RpcClient {
                     return
                 }
                 readyContinuation = continuation
-                readyTimeoutTask = Task { [weak self, timeout = configuration.startupTimeout] in
-                    do { try await Task.sleep(for: timeout) }
-                    catch { return }
-                    await self?.failReady(with: RpcClientError.timeout(command: "ready"))
+                if !awaitingAuthoritativeExit {
+                    readyTimeoutTask = Task {
+                        [weak self, timeout = configuration.startupTimeout,
+                         readyTimeoutSleep = testHooks.readyTimeoutSleep] in
+                        do {
+                            if let readyTimeoutSleep {
+                                try await readyTimeoutSleep(timeout)
+                            } else {
+                                try await Task.sleep(for: timeout)
+                            }
+                        }
+                        catch { return }
+                        await self?.timeoutReady()
+                    }
                 }
             }
         } onCancel: {
@@ -414,11 +471,20 @@ public actor RpcClient {
     private func write(_ line: Data, for id: String) async {
         do {
             try await transport.write(line)
+        } catch TransportError.closed {
+            observedExitRelatedWriteFailures += 1
+            // The reader owns exit arbitration. Keep the waiter pending so a
+            // closed pipe cannot beat the authoritative onExit status.
         } catch {
             failPending(id: id, with: RpcClientError.processExited(
                 code: await transport.exitStatus,
                 stderrTail: await transport.stderrSnapshot()))
         }
+    }
+
+    private func timeoutPending(id: String, command: String) {
+        guard !terminated, !awaitingAuthoritativeExit else { return }
+        failPending(id: id, with: RpcClientError.timeout(command: command))
     }
 
     private func failPending(id: String, with error: any Error) {
@@ -432,5 +498,11 @@ public actor RpcClient {
         readyTimeoutTask = nil
         readyContinuation?.resume(throwing: error)
         readyContinuation = nil
+    }
+
+    private func timeoutReady() {
+        observedReadyTimeoutAttempts += 1
+        guard !terminated, !awaitingAuthoritativeExit else { return }
+        failReady(with: RpcClientError.timeout(command: "ready"))
     }
 }

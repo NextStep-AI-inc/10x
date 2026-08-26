@@ -178,11 +178,20 @@ final class ProviderManagementViewModel {
     }
 
     func shutdown() async {
-        let task = eventTask
+        let events = eventTask
         eventTask = nil
-        task?.cancel()
+        events?.cancel()
+        let providers = providerRefreshOperation
+        providerRefreshOperation = nil
+        providers?.task.cancel()
+        let usage = usageRefreshOperation
+        usageRefreshOperation = nil
+        usage?.task.cancel()
+
         await providerService.shutdown()
-        await task?.value
+        await events?.value
+        await providers?.task.value
+        await usage?.task.value
     }
 
     func respond(to request: ExtensionUIState, with response: ExtensionUIResponse) async {

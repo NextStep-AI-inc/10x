@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import OmpKit
 import Testing
@@ -82,6 +83,18 @@ import Testing
     #expect(shouldRelinquishSearchFocus)
 }
 
+@MainActor
+@Test func settingsLoadReportsWhetherCatalogAndPathAreReady() async {
+    let ready = SettingsViewModel(service: OmpConfigService(runner: FakeConfigRunner()))
+    let failed = SettingsViewModel(service: OmpConfigService(runner: FailingConfigRunner()))
+
+    #expect(await ready.load())
+    #expect(ready.settingCount > 0)
+    #expect(!ready.configPath.isEmpty)
+    #expect(await !failed.load())
+    #expect(failed.loadError != nil)
+}
+
 @Test func configErrorsNeverIncludeTheSecretValue() async {
     let service = OmpConfigService(runner: FailingConfigRunner())
     do {
@@ -91,6 +104,28 @@ import Testing
         #expect(error.localizedDescription.contains("auth.broker.token"))
         #expect(!error.localizedDescription.contains("do-not-leak"))
     }
+}
+
+@Test func cancellingConfigServiceReapsTheCommand() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let pidFile = fixture.root.appending(path: "config.pid")
+    let executable = try fixture.executable(
+        name: "blocked-config",
+        body: "printf '%s' $$ > '\(pidFile.path)'; printf 'token=secret\\n' >&2; trap '' TERM; while :; do sleep 1; done")
+    let service = OmpConfigService(
+        runner: OmpConfigProcessRunner(executableURL: executable))
+    let operation = Task { try await service.path() }
+    let pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    let pid = try #require(pids.first)
+
+    operation.cancel()
+    await #expect(throws: CancellationError.self) {
+        _ = try await operation.value
+    }
+
+    #expect(kill(pid, 0) == -1)
+    #expect(errno == ESRCH)
 }
 
 private actor FakeConfigRunner: OmpConfigRunning {
