@@ -1,6 +1,26 @@
 import Testing
 @testable import TenXApp
 
+@Test func inlineFileReferencesRoundTripThroughAttributedLinks() throws {
+    let reference = TranscriptReference.file(path: "App/Foo.swift", line: 8)
+    let url = try #require(reference.inlineURL)
+
+    #expect(TranscriptReference(inlineURL: url) == reference)
+}
+
+@Test func inlineMarkdownKeepsReferencesInTheirWrittenPosition() {
+    let content = MessageContentParser.inline(
+        "Open `App/Foo.swift:8` and [the docs](https://example.com/docs).")
+    let references = content.attributed.runs
+        .compactMap(\.link)
+        .compactMap(TranscriptReference.init(inlineURL:))
+
+    #expect(references == [
+        .file(path: "App/Foo.swift", line: 8),
+        .web(url: "https://example.com/docs", label: nil),
+    ])
+}
+
 @Test func codeAndMarkdownAcceptRelativeFilesButPlainTextDoesNot() {
     #expect(TranscriptReference.extract(from: "`App/Foo.swift:8`") == [
         .file(path: "App/Foo.swift", line: 8),

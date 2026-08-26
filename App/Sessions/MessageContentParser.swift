@@ -10,8 +10,26 @@ enum MessageContentParser {
         let options = AttributedString.MarkdownParsingOptions(
             interpretedSyntax: .inlineOnlyPreservingWhitespace,
             failurePolicy: .returnPartiallyParsedIfPossible)
-        let attributed = (try? AttributedString(markdown: source, options: options))
+        var attributed = (try? AttributedString(markdown: source, options: options))
             ?? AttributedString(source)
+        let inlineReferences = attributed.runs.compactMap { run -> (Range<AttributedString.Index>, URL)? in
+            let text = String(attributed.characters[run.range])
+            if let link = run.link,
+               let reference = TranscriptReference.parseInline(
+                   link.absoluteString,
+                   label: text),
+               let inlineURL = reference.inlineURL {
+                return (run.range, inlineURL)
+            }
+            guard run.inlinePresentationIntent?.contains(.code) == true,
+                  let reference = TranscriptReference.parseInline(text),
+                  let inlineURL = reference.inlineURL
+            else { return nil }
+            return (run.range, inlineURL)
+        }
+        for (range, inlineURL) in inlineReferences {
+            attributed[range].link = inlineURL
+        }
         return InlineContent(source: source, attributed: attributed)
     }
 
