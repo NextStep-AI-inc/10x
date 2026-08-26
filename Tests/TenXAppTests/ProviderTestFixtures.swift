@@ -13,7 +13,16 @@ actor FakeProviderService: ProviderManaging {
     private var loginGates: [LoginGate]
     private let shutdownGate: LoadGate?
     private var providerGates: [LoadGate] = []
+    private var capabilities: [String: ProviderAccountCapability]
+    private var accountCapabilityError: FakeProviderError?
+    private var storedAccounts: [String: [ProviderAccountSummary]]
+    private var storedAccountUsage: [String: [ProviderAccountUsage]]
+    private var accountUsageError: FakeProviderError?
+    private var accountUsageGates: [LoadGate] = []
     private(set) var providerLoadCount = 0
+    private(set) var accountCapabilityIDs: [String] = []
+    private(set) var accountLoadIDs: [String] = []
+    private(set) var accountUsageLoadIDs: [String] = []
     private(set) var loginIDs: [String] = []
     private(set) var responses: [(String, [String: JSONValue])] = []
     private(set) var cancelCount = 0
@@ -24,13 +33,23 @@ actor FakeProviderService: ProviderManaging {
         providerError: (any Error & Sendable)? = nil,
         loginError: FakeProviderError? = nil,
         loginGate: LoginGate? = nil,
-        shutdownGate: LoadGate? = nil
+        shutdownGate: LoadGate? = nil,
+        capabilities: [String: ProviderAccountCapability] = [:],
+        accountCapabilityError: FakeProviderError? = nil,
+        accounts: [String: [ProviderAccountSummary]] = [:],
+        accountUsage: [String: [ProviderAccountUsage]] = [:],
+        accountUsageError: FakeProviderError? = nil
     ) {
         storedProviders = providers
         self.providerError = providerError
         self.loginError = loginError
         self.loginGates = loginGate.map { [$0] } ?? []
         self.shutdownGate = shutdownGate
+        self.capabilities = capabilities
+        self.accountCapabilityError = accountCapabilityError
+        storedAccounts = accounts
+        storedAccountUsage = accountUsage
+        self.accountUsageError = accountUsageError
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .unbounded)
     }
 
@@ -42,6 +61,26 @@ actor FakeProviderService: ProviderManaging {
         await gate?.waitForRelease()
         if let providerError { throw providerError }
         return result
+    }
+
+    func accountCapability(providerID: String) async throws -> ProviderAccountCapability {
+        accountCapabilityIDs.append(providerID)
+        if let accountCapabilityError { throw accountCapabilityError }
+        return capabilities[providerID] ?? .providerOnly
+    }
+
+    func accounts(providerID: String) async throws -> [ProviderAccountSummary] {
+        accountLoadIDs.append(providerID)
+        return storedAccounts[providerID] ?? []
+    }
+
+    func accountUsage(providerID: String) async throws -> [ProviderAccountUsage] {
+        accountUsageLoadIDs.append(providerID)
+        let gate = accountUsageGates.isEmpty ? nil : accountUsageGates.removeFirst()
+        await gate?.started()
+        await gate?.waitForRelease()
+        if let accountUsageError { throw accountUsageError }
+        return storedAccountUsage[providerID] ?? []
     }
 
     func login(providerID: String, generation: Int) async throws {
@@ -82,6 +121,10 @@ actor FakeProviderService: ProviderManaging {
 
     func enqueueProviderGate(_ gate: LoadGate) {
         providerGates.append(gate)
+    }
+
+    func enqueueAccountUsageGate(_ gate: LoadGate) {
+        accountUsageGates.append(gate)
     }
 
     func enqueueLoginGate(_ gate: LoginGate) {
@@ -182,6 +225,8 @@ actor LoadGate {
 enum FakeProviderError: Error, Sendable {
     case discoveryFailed
     case loginFailed
+    case accountUsageFailed
+    case accountCapabilityFailed
 }
 
 actor FakeUsageService: OmpUsageLoading {
@@ -284,4 +329,52 @@ func providerTestModel(
         openURL: { _ in },
         now: now,
         formatTime: { _ in "4:00 PM" })
+}
+
+func providerAccountFixture(
+    providerID: String,
+    ref: String,
+    label: String,
+    order: Int,
+    availability: ProviderAccountAvailability = .available,
+    detailLabel: String? = nil
+) -> ProviderAccountSummary {
+    ProviderAccountSummary(
+        providerID: providerID,
+        accountRef: ref,
+        displayLabel: label,
+        detailLabel: detailLabel,
+        connectionOrder: order,
+        availability: availability)
+}
+
+func providerAccountUsageFixture(
+    providerID: String,
+    ref: String,
+    windows: [ProviderAccountUsageWindow]
+) -> ProviderAccountUsage {
+    ProviderAccountUsage(
+        providerID: providerID,
+        accountRef: ref,
+        refreshedAt: Date(timeIntervalSince1970: 1),
+        usageWindows: windows)
+}
+
+func providerAccountUsageWindowFixture(
+    id: String,
+    label: String,
+    sourceIndex: Int = 0,
+    duration: ProviderAccountUsageWindow.Duration? = nil,
+    remainingFraction: Double? = 0.5,
+    resetsAt: Date? = nil,
+    status: String? = nil
+) -> ProviderAccountUsageWindow {
+    ProviderAccountUsageWindow(
+        id: id,
+        label: label,
+        duration: duration,
+        sourceIndex: sourceIndex,
+        remainingFraction: remainingFraction,
+        resetsAt: resetsAt,
+        status: status)
 }

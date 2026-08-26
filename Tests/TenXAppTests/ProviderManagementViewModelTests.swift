@@ -5,6 +5,144 @@ import Synchronization
 import Testing
 @testable import TenXApp
 
+@Suite @MainActor struct ProviderManagementViewModelTests {
+
+@Test func accountMetadataAppearsBeforeAccountUsageCompletes() async throws {
+    let providerID = "openai-codex"
+    let usageGate = LoadGate()
+    let service = FakeProviderService(
+        providers: [ProviderLoginProvider(
+            id: providerID,
+            name: "ChatGPT",
+            isAvailable: true,
+            isAuthenticated: true)],
+        capabilities: [providerID: .accountRouting],
+        accounts: [providerID: [
+            providerAccountFixture(providerID: providerID, ref: "acct_B", label: "Work", order: 2),
+            providerAccountFixture(providerID: providerID, ref: "acct_A", label: "Personal", order: 1),
+        ]])
+    await service.enqueueAccountUsageGate(usageGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+
+    let load = Task { await model.load() }
+    await usageGate.waitForStart()
+
+    let provider = try #require(model.dockProviders.first)
+    #expect(provider.accounts.map(\.accountRef) == ["acct_A", "acct_B"])
+    #expect(provider.accounts.allSatisfy { $0.usageState == .loading })
+    #expect(provider.showsAccountSelectors)
+    #expect(provider.showsAccountSwitch)
+    #expect(provider.showsAccountRemoval)
+
+    await usageGate.release()
+    await load.value
+}
+
+@Test func accountUsageFailurePreservesAccountsWithoutGuessingCLIIdentity() async throws {
+    let providerID = "cursor"
+    let service = FakeProviderService(
+        providers: [ProviderLoginProvider(
+            id: providerID,
+            name: "Cursor",
+            isAvailable: true,
+            isAuthenticated: true)],
+        capabilities: [providerID: .accountRouting],
+        accounts: [providerID: [
+            providerAccountFixture(
+                providerID: providerID,
+                ref: "opaque-real-ref",
+                label: "same@example.com",
+                order: 0),
+        ]],
+        accountUsageError: .accountUsageFailed)
+    let cliSnapshot = try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data(#"""
+    {
+      "generatedAt":1,
+      "reports":[{
+        "provider":"cursor",
+        "fetchedAt":1,
+        "limits":[{
+          "id":"cli-only",
+          "label":"CLI identity must not join",
+          "scope":{"provider":"cursor"},
+          "amount":{"remainingFraction":0.99,"unit":"percent"}
+        }],
+        "metadata":{"email":"same@example.com"}
+      }],
+      "accountsWithoutUsage":[],
+      "disabledCredentials":[]
+    }
+    """#.utf8))
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: cliSnapshot),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+
+    await model.load()
+
+    let provider = try #require(model.dockProviders.first)
+    let account = try #require(provider.accounts.first)
+    #expect(account.accountRef == "opaque-real-ref")
+    #expect(account.limits.isEmpty)
+    #expect(account.usageState == .unavailable)
+    #expect(account.usageStatusText == "Usage unavailable")
+    #expect(provider.capability == .accountRouting)
+    #expect(model.usageMessage == "Usage couldn’t be loaded.")
+}
+
+@Test func providerOnlyCapabilityUsesCLIUsageAndHidesAccountControls() async throws {
+    let providerID = "cursor"
+    let snapshot = try usageSnapshotFixture()
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "Cursor",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: snapshot),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+
+    await model.load()
+
+    let provider = try #require(model.dockProviders.first)
+    #expect(provider.capability == .providerOnly)
+    #expect(provider.accounts.count == 1)
+    #expect(provider.ringLimits.map(\.label) == ["Cursor Models"])
+    #expect(!provider.showsAccountSelectors)
+    #expect(!provider.showsAccountSwitch)
+    #expect(!provider.showsAccountRemoval)
+    #expect(await service.accountLoadIDs.isEmpty)
+    #expect(await service.accountUsageLoadIDs.isEmpty)
+}
+
+@Test func accountCapabilityFailureDoesNotEnterProviderOnlyCompatibilityMode() async throws {
+    let providerID = "cursor"
+    let service = FakeProviderService(
+        providers: [ProviderLoginProvider(
+            id: providerID,
+            name: "Cursor",
+            isAvailable: true,
+            isAuthenticated: true)],
+        accountCapabilityError: .accountCapabilityFailed)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try usageSnapshotFixture()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+
+    await model.load()
+
+    #expect(model.dockProviders.isEmpty)
+    #expect(model.providerMessage == "Provider accounts couldn’t be loaded.")
+}
+
 @MainActor
 @Test func providerShutdownCancelsAndAwaitsAnInflightUsageCommand() async throws {
     let fixture = try OmpCommandFixture()
@@ -464,4 +602,6 @@ final class MutableClock: Sendable {
     func set(_ date: Date) {
         self.date.withLock { $0 = date }
     }
+}
+
 }

@@ -15,7 +15,7 @@ struct ProviderUsagePresentation: Equatable, Sendable {
         providers.compactMap { provider in
             let accounts: [ProviderUsageAccount] = provider.accounts.compactMap { account in
                 let limits = account.limits.filter { $0.hasComputablePercentage }
-                guard !limits.isEmpty else { return nil }
+                guard !limits.isEmpty || provider.capability == .accountRouting else { return nil }
                 return ProviderUsageAccount(
                     id: account.id,
                     label: account.label,
@@ -23,10 +23,19 @@ struct ProviderUsagePresentation: Equatable, Sendable {
                     limits: limits,
                     amounts: [],
                     notes: [],
-                    isUsageAvailable: true)
+                    isUsageAvailable: account.isUsageAvailable,
+                    accountRef: account.accountRef,
+                    detailLabel: account.detailLabel,
+                    availability: account.availability,
+                    usageState: account.usageState)
             }
             guard !accounts.isEmpty else { return nil }
-            return ProviderUsageProvider(id: provider.id, name: provider.name, accounts: accounts)
+            return ProviderUsageProvider(
+                id: provider.id,
+                name: provider.name,
+                accounts: accounts,
+                capability: provider.capability,
+                foregroundAccountRef: provider.foregroundAccountRef)
         }
     }
 
@@ -84,6 +93,126 @@ struct ProviderUsagePresentation: Equatable, Sendable {
             providers: providers,
             accountsWithoutUsage: missingAccounts,
             credentialIssues: credentialIssues)
+    }
+
+    static func makeAccountRouting(
+        providerNames: [String: String],
+        accounts: [ProviderAccountSummary],
+        usage: [ProviderAccountUsage],
+        activeAccountRefs: [String: String] = [:],
+        primaryAccountRefs: [String: String] = [:],
+        loadedUsageProviderIDs: Set<String>? = nil,
+        usageUnavailableProviderIDs: Set<String> = [],
+        now: Date
+    ) -> ProviderUsagePresentation {
+        let loadedProviderIDs = loadedUsageProviderIDs ?? Set(usage.map(\.providerID))
+        var usageByKey: [ProviderAccountKey: ProviderAccountUsage] = [:]
+        for accountUsage in usage {
+            usageByKey[ProviderAccountKey(
+                providerID: accountUsage.providerID,
+                accountRef: accountUsage.accountRef)] = accountUsage
+        }
+
+        var providerOrder: [String] = []
+        var indexedAccounts: [String: [(Int, ProviderAccountSummary)]] = [:]
+        for (index, account) in accounts.enumerated() {
+            if indexedAccounts[account.providerID] == nil {
+                providerOrder.append(account.providerID)
+            }
+            indexedAccounts[account.providerID, default: []].append((index, account))
+        }
+
+        let providers = providerOrder.map { providerID in
+            let summaries = (indexedAccounts[providerID] ?? [])
+                .sorted { lhs, rhs in
+                    if lhs.1.connectionOrder != rhs.1.connectionOrder {
+                        return lhs.1.connectionOrder < rhs.1.connectionOrder
+                    }
+                    return lhs.0 < rhs.0
+                }
+                .map(\.1)
+            let presentedAccounts = summaries.map { summary in
+                let key = ProviderAccountKey(providerID: providerID, accountRef: summary.accountRef)
+                let state: ProviderUsageState = if usageUnavailableProviderIDs.contains(providerID) {
+                    .unavailable
+                } else if usageByKey[key] != nil {
+                    .available
+                } else if loadedProviderIDs.contains(providerID) {
+                    .unavailable
+                } else {
+                    .loading
+                }
+                return account(
+                    from: summary,
+                    usage: usageByKey[key],
+                    state: state,
+                    now: now)
+            }
+            let foreground = foregroundAccountRef(
+                summaries: summaries,
+                activeAccountRef: activeAccountRefs[providerID],
+                primaryAccountRef: primaryAccountRefs[providerID])
+            let providerName = providerNames[providerID] ?? providerID
+            return ProviderUsageProvider(
+                id: providerID,
+                name: ProviderLoginProvider.companyName(id: providerID, fallback: providerName),
+                accounts: presentedAccounts,
+                capability: .accountRouting,
+                foregroundAccountRef: foreground)
+        }
+
+        return ProviderUsagePresentation(
+            providers: providers,
+            accountsWithoutUsage: [],
+            credentialIssues: [])
+    }
+
+    private static func account(
+        from summary: ProviderAccountSummary,
+        usage: ProviderAccountUsage?,
+        state: ProviderUsageState,
+        now: Date
+    ) -> ProviderUsageAccount {
+        let limits = usage?.usageWindows.compactMap { window -> ProviderUsageLimit? in
+            guard let remainingFraction = window.remainingFraction else { return nil }
+            return ProviderUsageLimit(
+                id: window.id,
+                label: usageLimitLabel(providerID: summary.providerID, label: window.label),
+                percentage: Int((clamp(remainingFraction) * 100).rounded()),
+                detailReset: detailResetText(date: window.resetsAt),
+                railReset: railResetText(date: window.resetsAt, now: now),
+                windowDurationRank: windowDurationRank(for: window.duration),
+                sourceIndex: window.sourceIndex)
+        } ?? []
+        return ProviderUsageAccount(
+            id: summary.id,
+            label: summary.displayLabel,
+            identity: ProviderUsageAccountIdentity.empty,
+            limits: limits,
+            amounts: [],
+            notes: [],
+            isUsageAvailable: state == .available,
+            accountRef: summary.accountRef,
+            detailLabel: summary.detailLabel,
+            availability: summary.availability,
+            usageState: state)
+    }
+
+    private static func foregroundAccountRef(
+        summaries: [ProviderAccountSummary],
+        activeAccountRef: String?,
+        primaryAccountRef: String?
+    ) -> String? {
+        if let activeAccountRef,
+           summaries.contains(where: { $0.accountRef == activeAccountRef }) {
+            return activeAccountRef
+        }
+        if let primaryAccountRef,
+           summaries.contains(where: { $0.accountRef == primaryAccountRef }) {
+            return primaryAccountRef
+        }
+        return summaries.first(where: { $0.availability != .unavailable })?.accountRef
+            ?? summaries.first?.accountRef
     }
 
     private static func account(
@@ -203,6 +332,25 @@ struct ProviderUsagePresentation: Equatable, Sendable {
             .first
     }
 
+    private static func windowDurationRank(
+        for duration: ProviderAccountUsageWindow.Duration?
+    ) -> Int? {
+        guard let duration, duration.value > 0 else { return nil }
+        let multiplier: Int
+        switch duration.unit {
+        case .minute: multiplier = 1
+        case .hour: multiplier = 60
+        case .day: multiplier = 1_440
+        case .week: multiplier = 10_080
+        case .month: multiplier = 43_200
+        case .year: multiplier = 525_600
+        case .unknown: return nil
+        }
+        return duration.value.multipliedReportingOverflow(by: multiplier).overflow
+            ? nil
+            : duration.value * multiplier
+    }
+
     private static func accountID(
         providerID: String,
         identity: ProviderUsageAccountIdentity,
@@ -261,6 +409,15 @@ struct ProviderUsagePresentation: Equatable, Sendable {
         return formatter.string(from: date(fromMilliseconds: resetsAt))
     }
 
+    private static func detailResetText(date: Date?) -> String? {
+        guard let date else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
     private static func railResetText(window: OmpUsageWindow?, now: Date) -> String {
         guard let resetsAt = window?.resetsAt else { return window?.label ?? "" }
         let formatter = RelativeDateTimeFormatter()
@@ -268,12 +425,43 @@ struct ProviderUsagePresentation: Equatable, Sendable {
         formatter.unitsStyle = .short
         return formatter.localizedString(for: date(fromMilliseconds: resetsAt), relativeTo: now)
     }
+
+    private static func railResetText(date: Date?, now: Date) -> String {
+        guard let date else { return "" }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: now)
+    }
 }
 
 struct ProviderUsageProvider: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let accounts: [ProviderUsageAccount]
+    let capability: ProviderAccountCapability
+    let foregroundAccountRef: String?
+
+    init(
+        id: String,
+        name: String,
+        accounts: [ProviderUsageAccount],
+        capability: ProviderAccountCapability = .providerOnly,
+        foregroundAccountRef: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.accounts = accounts
+        self.capability = capability
+        self.foregroundAccountRef = foregroundAccountRef
+    }
+
+    var showsAccountSelectors: Bool {
+        capability == .accountRouting && accounts.count > 1
+    }
+
+    var showsAccountSwitch: Bool { capability == .accountRouting }
+    var showsAccountRemoval: Bool { capability == .accountRouting }
 
     var limits: [ProviderUsageLimit] {
         accounts.flatMap(\.limits)
@@ -354,7 +542,44 @@ struct ProviderUsageAccount: Identifiable, Equatable, Sendable {
     let limits: [ProviderUsageLimit]
     let amounts: [ProviderUsageAmount]
     let notes: [String]
-    let isUsageAvailable: Bool
+    let accountRef: String?
+    let detailLabel: String?
+    let availability: ProviderAccountAvailability?
+    let usageState: ProviderUsageState
+
+    init(
+        id: String,
+        label: String,
+        identity: ProviderUsageAccountIdentity,
+        limits: [ProviderUsageLimit],
+        amounts: [ProviderUsageAmount],
+        notes: [String],
+        isUsageAvailable: Bool,
+        accountRef: String? = nil,
+        detailLabel: String? = nil,
+        availability: ProviderAccountAvailability? = nil,
+        usageState: ProviderUsageState? = nil
+    ) {
+        self.id = id
+        self.label = label
+        self.identity = identity
+        self.limits = limits
+        self.amounts = amounts
+        self.notes = notes
+        self.accountRef = accountRef
+        self.detailLabel = detailLabel
+        self.availability = availability
+        self.usageState = usageState ?? (isUsageAvailable ? .available : .unavailable)
+    }
+
+    var isUsageAvailable: Bool { usageState != .unavailable }
+    var usageStatusText: String? { usageState == .unavailable ? "Usage unavailable" : nil }
+}
+
+enum ProviderUsageState: Equatable, Sendable {
+    case loading
+    case available
+    case unavailable
 }
 
 struct ProviderUsageAccountIdentity: Equatable, Sendable {
@@ -364,6 +589,14 @@ struct ProviderUsageAccountIdentity: Equatable, Sendable {
     let enterpriseURL: String?
     let orgID: String?
     let orgName: String?
+
+    static let empty = ProviderUsageAccountIdentity(
+        email: nil,
+        accountID: nil,
+        projectID: nil,
+        enterpriseURL: nil,
+        orgID: nil,
+        orgName: nil)
 }
 
 struct ProviderUsageLimit: Identifiable, Equatable, Sendable {

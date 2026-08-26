@@ -11,6 +11,9 @@ enum ProviderWorkspaceSection: Equatable, Sendable {
 private struct ProviderServiceBox: Sendable {
     let events: AsyncStream<ProviderLoginEvent>
     let providers: @Sendable () async throws -> [ProviderLoginProvider]
+    let accountCapability: @Sendable (String) async throws -> ProviderAccountCapability
+    let accounts: @Sendable (String) async throws -> [ProviderAccountSummary]
+    let accountUsage: @Sendable (String) async throws -> [ProviderAccountUsage]
     let login: @Sendable (String, Int) async throws -> Void
     let respond: @Sendable (String, [String: JSONValue]) async throws -> Void
     let cancelLogin: @Sendable () async -> Void
@@ -19,6 +22,9 @@ private struct ProviderServiceBox: Sendable {
     init<Service: ProviderManaging>(_ service: Service) {
         events = service.events
         providers = { try await service.providers() }
+        accountCapability = { try await service.accountCapability(providerID: $0) }
+        accounts = { try await service.accounts(providerID: $0) }
+        accountUsage = { try await service.accountUsage(providerID: $0) }
         login = { providerID, generation in
             try await service.login(providerID: providerID, generation: generation)
         }
@@ -72,6 +78,12 @@ final class ProviderManagementViewModel {
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var loginGeneration = 0
     @ObservationIgnored private var lastUsageSnapshot: OmpUsageSnapshot?
+    @ObservationIgnored private var accountCapabilities: [String: ProviderAccountCapability] = [:]
+    @ObservationIgnored private var accountSummaries: [String: [ProviderAccountSummary]] = [:]
+    @ObservationIgnored private var accountUsage: [String: [ProviderAccountUsage]] = [:]
+    @ObservationIgnored private var loadedAccountUsageProviderIDs: Set<String> = []
+    @ObservationIgnored private var unavailableAccountUsageProviderIDs: Set<String> = []
+    @ObservationIgnored private var failedAccountCapabilityProviderIDs: Set<String> = []
     @ObservationIgnored private var usageFailureGeneration = 0
     @ObservationIgnored private var nextRefreshOperationID = 0
     @ObservationIgnored private var providerRefreshOperation: RefreshOperation?
@@ -243,12 +255,52 @@ final class ProviderManagementViewModel {
 
         do {
             providers = try await providerService.providers()
-            if usageFailureGeneration == self.usageFailureGeneration, let lastUsageSnapshot {
-                usage = usagePresentation(from: lastUsageSnapshot, at: lastUsageRefresh ?? now())
+            if usageFailureGeneration == self.usageFailureGeneration {
+                rebuildUsage(at: lastUsageRefresh ?? now())
             }
             providerMessage = nil
+            await refreshAccountUsage(for: providers.filter(\.isAuthenticated))
         } catch {
             providerMessage = "Providers couldn’t be loaded."
+        }
+    }
+
+    private func refreshAccountUsage(for authenticatedProviders: [ProviderLoginProvider]) async {
+        for provider in authenticatedProviders {
+            do {
+                let capability = try await providerService.accountCapability(provider.id)
+                accountCapabilities[provider.id] = capability
+                failedAccountCapabilityProviderIDs.remove(provider.id)
+                guard capability == .accountRouting else {
+                    accountSummaries.removeValue(forKey: provider.id)
+                    accountUsage.removeValue(forKey: provider.id)
+                    loadedAccountUsageProviderIDs.remove(provider.id)
+                    unavailableAccountUsageProviderIDs.remove(provider.id)
+                    rebuildUsage(at: lastUsageRefresh ?? now())
+                    continue
+                }
+
+                accountSummaries[provider.id] = try await providerService.accounts(provider.id)
+                rebuildUsage(at: lastUsageRefresh ?? now())
+                do {
+                    accountUsage[provider.id] = try await providerService.accountUsage(provider.id)
+                    loadedAccountUsageProviderIDs.insert(provider.id)
+                    unavailableAccountUsageProviderIDs.remove(provider.id)
+                    if unavailableAccountUsageProviderIDs.isEmpty {
+                        usageMessage = nil
+                    }
+                } catch {
+                    accountUsage.removeValue(forKey: provider.id)
+                    loadedAccountUsageProviderIDs.remove(provider.id)
+                    unavailableAccountUsageProviderIDs.insert(provider.id)
+                    usageMessage = "Usage couldn’t be loaded."
+                }
+                rebuildUsage(at: now())
+            } catch {
+                failedAccountCapabilityProviderIDs.insert(provider.id)
+                providerMessage = "Provider accounts couldn’t be loaded."
+                rebuildUsage(at: lastUsageRefresh ?? now())
+            }
         }
     }
 
@@ -290,7 +342,9 @@ final class ProviderManagementViewModel {
             lastUsageSnapshot = snapshot
             usage = usagePresentation(from: snapshot, at: refreshDate)
             lastUsageRefresh = refreshDate
-            usageMessage = nil
+            if unavailableAccountUsageProviderIDs.isEmpty {
+                usageMessage = nil
+            }
         } catch {
             usageFailureGeneration += 1
             usage = previousUsage
@@ -352,10 +406,58 @@ final class ProviderManagementViewModel {
     }
 
     private func usagePresentation(from snapshot: OmpUsageSnapshot, at date: Date) -> ProviderUsagePresentation {
-        ProviderUsagePresentation.make(
-            snapshot: snapshot,
-            providerNames: Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) }),
+        lastUsageSnapshot = snapshot
+        return combinedUsagePresentation(at: date)
+    }
+
+    private func rebuildUsage(at date: Date) {
+        usage = combinedUsagePresentation(at: date)
+    }
+
+    private func combinedUsagePresentation(at date: Date) -> ProviderUsagePresentation {
+        let providerNames = Dictionary(uniqueKeysWithValues: providers.map { ($0.id, $0.name) })
+        let providerOnly = ProviderUsagePresentation.make(
+            snapshot: lastUsageSnapshot ?? .empty,
+            providerNames: providerNames,
             now: date)
+        let routedProviderIDs = Set(accountCapabilities.compactMap { key, value in
+            value == .accountRouting ? key : nil
+        })
+        let providerOnlyExcludedIDs = routedProviderIDs.union(failedAccountCapabilityProviderIDs)
+        let accountPresentation = ProviderUsagePresentation.makeAccountRouting(
+            providerNames: providerNames,
+            accounts: providers.flatMap { accountSummaries[$0.id] ?? [] },
+            usage: providers.flatMap { accountUsage[$0.id] ?? [] },
+            loadedUsageProviderIDs: loadedAccountUsageProviderIDs,
+            usageUnavailableProviderIDs: unavailableAccountUsageProviderIDs,
+            now: date)
+        let accountProviders = Dictionary(
+            uniqueKeysWithValues: accountPresentation.providers.map { ($0.id, $0) })
+        let providerOnlyProviders = Dictionary(
+            uniqueKeysWithValues: providerOnly.providers.map { ($0.id, $0) })
+        var orderedProviderIDs = providers.map(\.id)
+        for providerID in providerOnly.providers.map(\.id) + accountPresentation.providers.map(\.id)
+        where !orderedProviderIDs.contains(providerID) {
+            orderedProviderIDs.append(providerID)
+        }
+        let presentedProviders = orderedProviderIDs.compactMap { providerID in
+            if routedProviderIDs.contains(providerID) {
+                return accountProviders[providerID]
+            }
+            if providerOnlyExcludedIDs.contains(providerID) { return nil }
+            return providerOnlyProviders[providerID]
+        }
+        let fallbackAccounts = providerOnly.accountsWithoutUsage.filter { account in
+            let providerID = account.id.split(separator: ":", maxSplits: 1).first.map(String.init)
+            return providerID.map { !providerOnlyExcludedIDs.contains($0) } ?? true
+        }
+        let fallbackIssues = providerOnly.credentialIssues.filter {
+            !providerOnlyExcludedIDs.contains($0.providerID)
+        }
+        return ProviderUsagePresentation(
+            providers: presentedProviders,
+            accountsWithoutUsage: fallbackAccounts,
+            credentialIssues: fallbackIssues)
     }
 
     private static let staleRefreshInterval: TimeInterval = 300
