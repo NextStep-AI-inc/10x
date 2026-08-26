@@ -2,7 +2,8 @@ import SwiftUI
 
 enum ChooseProjectFlyoutMetrics {
     static let width: CGFloat = 220
-    static let maxHeight: CGFloat = 220
+    static let rowHeight: CGFloat = 36
+    static let maxListHeight: CGFloat = 180
 }
 
 struct ChooseProjectFlyout: View {
@@ -11,10 +12,15 @@ struct ChooseProjectFlyout: View {
     let onChoose: (URL) -> Void
     let onAddExistingFolder: () -> Void
 
+    private var listHeight: CGFloat {
+        let rows = CGFloat(max(projectURLs.count, 1))
+        return min(rows * ChooseProjectFlyoutMetrics.rowHeight, ChooseProjectFlyoutMetrics.maxListHeight)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
-                LazyVStack(spacing: 0) {
+                VStack(spacing: 0) {
                     if projectURLs.isEmpty {
                         Text("No projects yet")
                             .font(TenXTypography.body(size: 12))
@@ -22,14 +28,16 @@ struct ChooseProjectFlyout: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: ChooseProjectFlyoutMetrics.rowHeight)
                     } else {
                         ForEach(projectURLs, id: \.path) { url in
                             projectRow(url)
+                                .frame(height: ChooseProjectFlyoutMetrics.rowHeight)
                         }
                     }
                 }
             }
-            .frame(maxHeight: ChooseProjectFlyoutMetrics.maxHeight - 36)
+            .frame(width: ChooseProjectFlyoutMetrics.width, height: listHeight)
 
             Rectangle()
                 .fill(TenXPalette.color(TenXPalette.separatorHex))
@@ -42,6 +50,7 @@ struct ChooseProjectFlyout: View {
             .padding(2)
         }
         .frame(width: ChooseProjectFlyoutMetrics.width, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: true)
         .background(.white)
         .overlay {
             Rectangle()
@@ -58,11 +67,11 @@ struct ChooseProjectFlyout: View {
             onChoose(url)
         } label: {
             HStack(spacing: 8) {
-                Rectangle()
-                    .fill(isSelected
-                        ? TenXPalette.color(TenXPalette.cyanHex)
-                        : .clear)
-                    .frame(width: 2)
+                Image(systemName: "folder")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(TenXPalette.color(
+                        isSelected ? TenXPalette.cyanHex : TenXPalette.mutedTextHex))
+                    .frame(width: 14)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(url.lastPathComponent)
                         .font(TenXTypography.body(size: 12, weight: .semibold))
@@ -76,9 +85,8 @@ struct ChooseProjectFlyout: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.vertical, 7)
-            .padding(.trailing, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -113,16 +121,7 @@ struct ChooseProjectControl: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Button {
-            isPresented.toggle()
-        } label: {
-            Label(projectURL?.lastPathComponent ?? "Choose project", systemImage: "folder")
-        }
-        .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
-        .accessibilityLabel("Choose project")
-        .accessibilityValue(projectURL?.lastPathComponent ?? "None")
-        .accessibilityHint(isPresented ? "Menu open" : "Shows project menu")
-        .background(alignment: .bottomLeading) {
+        VStack(alignment: .leading, spacing: 0) {
             if isPresented {
                 ChooseProjectFlyout(
                     projectURLs: projectURLs,
@@ -135,10 +134,18 @@ struct ChooseProjectControl: View {
                         isPresented = false
                         onAddExistingFolder()
                     })
-                // Sit flush on the control: bottom of flyout meets top of button.
-                .offset(y: -28)
                 .transition(reduceMotion ? .identity : .opacity)
             }
+
+            Button {
+                isPresented.toggle()
+            } label: {
+                Label(projectURL?.lastPathComponent ?? "Choose project", systemImage: "folder")
+            }
+            .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
+            .accessibilityLabel("Choose project")
+            .accessibilityValue(projectURL?.lastPathComponent ?? "None")
+            .accessibilityHint(isPresented ? "Menu open" : "Shows project menu")
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isPresented)
         .zIndex(isPresented ? 1 : 0)
