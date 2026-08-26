@@ -48,6 +48,16 @@ import Testing
     #expect(urls.map(\.path) == ["/tmp/alpha"])
 }
 
+@Test func chooseProjectShelfKeepsFolderPanelWiderThanTrigger() {
+    let short = ChooseProjectFlyoutMetrics.panelWidths(triggerWidth: 96)
+    #expect(short.top == 220)
+    #expect(short.bottom == 96)
+
+    let wide = ChooseProjectFlyoutMetrics.panelWidths(triggerWidth: 400)
+    #expect(wide.top == 280)
+    #expect(wide.bottom == 280)
+}
+
 private func session(path: String, cwd: String, modified: TimeInterval) -> SessionMetadata {
     SessionMetadata(
         path: path,

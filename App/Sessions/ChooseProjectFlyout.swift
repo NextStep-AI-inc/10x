@@ -1,24 +1,156 @@
 import SwiftUI
 
 enum ChooseProjectFlyoutMetrics {
-    static let width: CGFloat = 220
+    static let folderPanelWidth: CGFloat = 220
     static let rowHeight: CGFloat = 36
+    static let addRowHeight: CGFloat = 32
+    static let separatorHeight: CGFloat = 1
     static let maxListHeight: CGFloat = 180
+    static let triggerHeight: CGFloat = 28
+    static let maxPanelWidth: CGFloat = 280
+
+    static func listHeight(projectCount: Int) -> CGFloat {
+        let rows = CGFloat(max(projectCount, 1))
+        return min(rows * rowHeight, maxListHeight)
+    }
+
+    static func topHeight(projectCount: Int) -> CGFloat {
+        addRowHeight + separatorHeight + listHeight(projectCount: projectCount)
+    }
+
+    /// Folder panel is at least `folderPanelWidth` and never narrower than the trigger.
+    static func panelWidths(triggerWidth: CGFloat) -> (top: CGFloat, bottom: CGFloat) {
+        let bottom = min(max(44, triggerWidth), maxPanelWidth)
+        let top = min(max(folderPanelWidth, bottom), maxPanelWidth)
+        return (top, bottom)
+    }
 }
 
-struct ChooseProjectFlyout: View {
+/// Stepped silhouette: wide folder panel over a narrower choose-project rect.
+private struct TwoRectShelfShape: Shape {
+    var topWidth: CGFloat
+    var topHeight: CGFloat
+    var bottomWidth: CGFloat
+    var bottomHeight: CGFloat
+
+    var animatableData: AnimatablePair<
+        AnimatablePair<CGFloat, CGFloat>,
+        AnimatablePair<CGFloat, CGFloat>
+    > {
+        get {
+            AnimatablePair(
+                AnimatablePair(topWidth, topHeight),
+                AnimatablePair(bottomWidth, bottomHeight))
+        }
+        set {
+            topWidth = newValue.first.first
+            topHeight = newValue.first.second
+            bottomWidth = newValue.second.first
+            bottomHeight = newValue.second.second
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let topW = min(topWidth, rect.width)
+        let bottomW = min(bottomWidth, topW)
+        let topH = topHeight
+        let bottomH = bottomHeight
+
+        var path = Path()
+        path.move(to: .zero)
+        path.addLine(to: CGPoint(x: topW, y: 0))
+        path.addLine(to: CGPoint(x: topW, y: topH))
+        path.addLine(to: CGPoint(x: bottomW, y: topH))
+        path.addLine(to: CGPoint(x: bottomW, y: topH + bottomH))
+        path.addLine(to: CGPoint(x: 0, y: topH + bottomH))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct ShelfTriggerWidthKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+struct ChooseProjectShelf: View {
     let projectURLs: [URL]
     let selectedProjectURL: URL?
+    let triggerTitle: String
     let onChoose: (URL) -> Void
     let onAddExistingFolder: () -> Void
+    let onToggle: () -> Void
 
-    private var listHeight: CGFloat {
-        let rows = CGFloat(max(projectURLs.count, 1))
-        return min(rows * ChooseProjectFlyoutMetrics.rowHeight, ChooseProjectFlyoutMetrics.maxListHeight)
+    @State private var measuredTriggerWidth: CGFloat = 0
+
+    private var widths: (top: CGFloat, bottom: CGFloat) {
+        // ~intrinsic width of "📁 Choose project" until the real measure lands.
+        let trigger = measuredTriggerWidth > 0 ? measuredTriggerWidth : 148
+        return ChooseProjectFlyoutMetrics.panelWidths(triggerWidth: trigger)
+    }
+
+    private var topHeight: CGFloat {
+        ChooseProjectFlyoutMetrics.topHeight(projectCount: projectURLs.count)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            listPiece
+                .frame(width: widths.top, height: topHeight, alignment: .topLeading)
+
+            triggerPiece
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(height: ChooseProjectFlyoutMetrics.triggerHeight)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.preference(
+                            key: ShelfTriggerWidthKey.self,
+                            value: geometry.size.width)
+                    }
+                }
+        }
+        .onPreferenceChange(ShelfTriggerWidthKey.self) { measuredTriggerWidth = $0 }
+        .frame(
+            width: widths.top,
+            height: topHeight + ChooseProjectFlyoutMetrics.triggerHeight,
+            alignment: .topLeading)
+        .background {
+            TwoRectShelfShape(
+                topWidth: widths.top,
+                topHeight: topHeight,
+                bottomWidth: widths.bottom,
+                bottomHeight: ChooseProjectFlyoutMetrics.triggerHeight)
+            .fill(Color.white)
+        }
+        .overlay {
+            TwoRectShelfShape(
+                topWidth: widths.top,
+                topHeight: topHeight,
+                bottomWidth: widths.bottom,
+                bottomHeight: ChooseProjectFlyoutMetrics.triggerHeight)
+            .stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Choose project")
+    }
+
+    private var listPiece: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onAddExistingFolder) {
+                Label("Add folder…", systemImage: "folder.badge.plus")
+            }
+            .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: ChooseProjectFlyoutMetrics.addRowHeight)
+
+            Rectangle()
+                .fill(TenXPalette.color(TenXPalette.separatorHex))
+                .frame(height: ChooseProjectFlyoutMetrics.separatorHeight)
+                .padding(.horizontal, 8)
+
             ScrollView {
                 VStack(spacing: 0) {
                     if projectURLs.isEmpty {
@@ -26,8 +158,7 @@ struct ChooseProjectFlyout: View {
                             .font(TenXTypography.body(size: 12))
                             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                             .frame(height: ChooseProjectFlyoutMetrics.rowHeight)
                     } else {
                         ForEach(projectURLs, id: \.path) { url in
@@ -37,27 +168,21 @@ struct ChooseProjectFlyout: View {
                     }
                 }
             }
-            .frame(width: ChooseProjectFlyoutMetrics.width, height: listHeight)
-
-            Rectangle()
-                .fill(TenXPalette.color(TenXPalette.separatorHex))
-                .frame(height: 1)
-
-            Button(action: onAddExistingFolder) {
-                Label("Add folder…", systemImage: "folder.badge.plus")
-            }
-            .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
-            .padding(2)
+            .frame(
+                width: widths.top,
+                height: ChooseProjectFlyoutMetrics.listHeight(projectCount: projectURLs.count))
         }
-        .frame(width: ChooseProjectFlyoutMetrics.width, alignment: .leading)
-        .fixedSize(horizontal: true, vertical: true)
-        .background(.white)
-        .overlay {
-            Rectangle()
-                .stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
+    }
+
+    private var triggerPiece: some View {
+        Button(action: onToggle) {
+            Label(triggerTitle, systemImage: "folder")
+                .lineLimit(1)
         }
-        .accessibilityElement(children: .contain)
+        .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
         .accessibilityLabel("Choose project")
+        .accessibilityValue(triggerTitle)
+        .accessibilityHint("Menu open")
     }
 
     private func projectRow(_ url: URL) -> some View {
@@ -113,44 +238,20 @@ private struct FlyoutRowBackground: View {
 
 struct ChooseProjectControl: View {
     let projectURL: URL?
-    let projectURLs: [URL]
-    let onChoose: (URL) -> Void
-    let onAddExistingFolder: () -> Void
-
     @Binding var isPresented: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if isPresented {
-                ChooseProjectFlyout(
-                    projectURLs: projectURLs,
-                    selectedProjectURL: projectURL,
-                    onChoose: {
-                        onChoose($0)
-                        isPresented = false
-                    },
-                    onAddExistingFolder: {
-                        isPresented = false
-                        onAddExistingFolder()
-                    })
-                .transition(reduceMotion ? .identity : .opacity)
-            }
-
-            Button {
-                isPresented.toggle()
-            } label: {
-                Label(projectURL?.lastPathComponent ?? "Choose project", systemImage: "folder")
-            }
-            .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
-            .accessibilityLabel("Choose project")
-            .accessibilityValue(projectURL?.lastPathComponent ?? "None")
-            .accessibilityHint(isPresented ? "Menu open" : "Shows project menu")
+        Button {
+            isPresented.toggle()
+        } label: {
+            Label(projectURL?.lastPathComponent ?? "Choose project", systemImage: "folder")
+                .lineLimit(1)
         }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isPresented)
-        .zIndex(isPresented ? 1 : 0)
-        .onExitCommand {
-            isPresented = false
-        }
+        .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
+        .opacity(isPresented ? 0 : 1)
+        .accessibilityHidden(isPresented)
+        .accessibilityLabel("Choose project")
+        .accessibilityValue(projectURL?.lastPathComponent ?? "None")
+        .accessibilityHint("Shows project menu")
     }
 }

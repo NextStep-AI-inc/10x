@@ -18,6 +18,8 @@ struct ComposerView: View {
     let controlsMode: ComposerControlsMode
     let onSend: () -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     init(
         draft: Binding<String>,
         isProjectFlyoutPresented: Binding<Bool> = .constant(false),
@@ -48,9 +50,14 @@ struct ComposerView: View {
 
     var body: some View {
         composerCard
+            .animation(shelfAnimation, value: isProjectFlyoutPresented)
             .onExitCommand {
                 isProjectFlyoutPresented = false
             }
+    }
+
+    private var shelfAnimation: Animation? {
+        reduceMotion ? nil : .easeOut(duration: 0.16)
     }
 
     private var composerCard: some View {
@@ -72,11 +79,13 @@ struct ComposerView: View {
                 Button(action: onSend) {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(canSend
+                            ? Color.white
+                            : TenXPalette.color(TenXPalette.mutedTextHex))
                         .frame(width: 28, height: 28)
                         .background(canSend
                             ? TenXPalette.color(TenXPalette.nearBlackHex)
-                            : TenXPalette.color(TenXPalette.separatorHex))
+                            : TenXPalette.color(TenXPalette.hoverNeutralHex))
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)
@@ -84,7 +93,6 @@ struct ComposerView: View {
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
-            .zIndex(isProjectFlyoutPresented ? 1 : 0)
 
             if let errorMessage = controls?.errorMessage {
                 Text(errorMessage)
@@ -101,17 +109,54 @@ struct ComposerView: View {
             Rectangle()
                 .stroke(borderColor, lineWidth: 1)
         }
+        .overlay(alignment: .bottomLeading) {
+            projectShelfOverlay
+        }
+    }
+
+    @ViewBuilder
+    private var projectShelfOverlay: some View {
+        if isProjectFlyoutPresented,
+           case .newSession(
+            let projectURL,
+            let projectURLs,
+            let onChooseProject,
+            let onAddExistingFolder
+           ) = presentation {
+            ChooseProjectShelf(
+                projectURLs: projectURLs,
+                selectedProjectURL: projectURL,
+                triggerTitle: projectURL?.lastPathComponent ?? "Choose project",
+                onChoose: {
+                    onChooseProject($0)
+                    isProjectFlyoutPresented = false
+                },
+                onAddExistingFolder: {
+                    isProjectFlyoutPresented = false
+                    onAddExistingFolder()
+                },
+                onToggle: {
+                    isProjectFlyoutPresented = false
+                })
+            .padding(.leading, 10)
+            .padding(.bottom, 10)
+            .transition(shelfTransition)
+        }
+    }
+
+    private var shelfTransition: AnyTransition {
+        if reduceMotion { return .identity }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 8)),
+            removal: .opacity.combined(with: .offset(y: 4)))
     }
 
     @ViewBuilder
     private var footerControls: some View {
         switch presentation {
-        case .newSession(let projectURL, let projectURLs, let onChooseProject, let onAddExistingFolder):
+        case .newSession(let projectURL, _, _, _):
             ChooseProjectControl(
                 projectURL: projectURL,
-                projectURLs: projectURLs,
-                onChoose: onChooseProject,
-                onAddExistingFolder: onAddExistingFolder,
                 isPresented: $isProjectFlyoutPresented)
 
             Button("Local") {}
