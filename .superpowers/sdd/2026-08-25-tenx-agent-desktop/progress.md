@@ -78,7 +78,7 @@
 | 5. Per-Session Controller and OMP Lifecycle Integration | complete | `ac0e6abef95c8e41e7e4ebf2053271125d6fccb5` | `b905c92c6bb0458e3698a1b0b9eb9b647d411d9c` | Approved after stronger rounds 4–8 | Commits through `b905c92`; OmpKit 165 pass, app 174 pass, universal Release build passes. |
 | 6. Specialized Setup and Readiness UI | complete | `b905c92c6bb0458e3698a1b0b9eb9b647d411d9c` | `b4b9744f5f03008e043828b9ed8849fe42bd4460` | Approved after fix round 4 | Commits through `b4b9744`; app tests 190 pass, Release build passes, and placement outcomes distinguish cancellation, non-applicability, failure, and success. |
 | 7. Computer Tool Evidence and Persisted Images | complete | `b4b9744f5f03008e043828b9ed8849fe42bd4460` | `4711e0f` | Approved after owner fix round 1 | Commits `c0658ce`, `4711e0f`; app tests 200 pass, Release build passes, reference images inspected. |
-| 8. Foreground Handoff, Header Controls, Menu Bar Stop, and Fail-Closed Lifecycle | pending | — | — | — | Requires `writing-ui` and `visual-ui`. |
+| 8. Foreground Handoff, Header Controls, Menu Bar Stop, and Fail-Closed Lifecycle | complete | `6d97ff5` | `59e90407b129818bb1d41858240b5b95da8b2ff7` | Approved by code-owner review | Commit `59e9040`; app tests 210 pass, universal Release build passes, and handoff/ready/controlling snapshots inspected. |
 | 9. Release-Build End-to-End Acceptance | pending | — | — | — | Requires `launching-local-builds`. |
 
 ## Rulings and follow-ups
