@@ -284,22 +284,34 @@ git commit -m "fix(composer): stop offering auto thinking to models that require
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `Tests/TenXAppTests/ComposerControlsModelTests.swift`. Match the file's existing fixture and harness style (read the top of that file first; it already defines a catalog stub, a defaults stub, and an active-session stub used by the tests around it).
+Append to `Tests/TenXAppTests/ComposerControlsModelTests.swift`. That file defines
+`anthropicOpus` (efforts `["low", "high"]`, `requiresEffort: false`), `FakeComposerCatalog`,
+`FakeComposerDefaults`, `FakeComposerSessionController` (with a settable `setModelError`),
+and `FakeComposerError`. Reuse all of them. Add one new fixture, since no existing model
+requires an effort:
 
 ```swift
+private let codexRequiredEffort = ComposerModelInfo(
+    modelID: "gpt-5.2-codex",
+    name: "GPT-5.2 Codex",
+    provider: "openai-codex",
+    api: "openai-codex-responses",
+    thinkingEfforts: ["low", "medium", "high"],
+    requiresEffort: true)
+
 @MainActor
 @Test func selectingARequiredEffortModelDropsAutoFromTheThinkingLevel() async {
-    let optional = ComposerModelInfo(
-        modelID: "claude-opus-4-5", name: "Claude Opus 4.5", provider: "anthropic",
-        api: "anthropic-messages", thinkingEfforts: ["low", "high"], requiresEffort: false)
-    let required = ComposerModelInfo(
-        modelID: "gpt-5.2-codex", name: "GPT-5.2 Codex", provider: "openai-codex",
-        api: "openai-codex-responses", thinkingEfforts: ["low", "medium", "high"],
-        requiresEffort: true)
-    let model = await makeControlsModel(
-        models: [optional, required], selected: optional, thinkingLevel: "auto")
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
 
-    await model.selectModel(required, mode: .newSession)
+    await model.selectModel(codexRequiredEffort, mode: .newSession)
 
     #expect(model.thinkingLevel == "medium")
     #expect(model.spawnSelection.thinking == "medium")
@@ -307,42 +319,43 @@ Append to `Tests/TenXAppTests/ComposerControlsModelTests.swift`. Match the file'
 
 @MainActor
 @Test func selectingAModelKeepsAThinkingLevelItStillOffers() async {
-    let a = ComposerModelInfo(
-        modelID: "a", name: "A", provider: "anthropic", api: "anthropic-messages",
-        thinkingEfforts: ["low", "high"], requiresEffort: false)
-    let b = ComposerModelInfo(
-        modelID: "b", name: "B", provider: "anthropic", api: "anthropic-messages",
-        thinkingEfforts: ["low", "high"], requiresEffort: false)
-    let model = await makeControlsModel(models: [a, b], selected: a, thinkingLevel: "high")
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "high",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
 
-    await model.selectModel(b, mode: .newSession)
+    await model.selectModel(codexRequiredEffort, mode: .newSession)
 
     #expect(model.thinkingLevel == "high")
 }
 
 @MainActor
 @Test func aFailedActiveSwitchRestoresTheThinkingLevelToo() async {
-    let optional = ComposerModelInfo(
-        modelID: "claude-opus-4-5", name: "Claude Opus 4.5", provider: "anthropic",
-        api: "anthropic-messages", thinkingEfforts: ["low", "high"], requiresEffort: false)
-    let required = ComposerModelInfo(
-        modelID: "gpt-5.2-codex", name: "GPT-5.2 Codex", provider: "openai-codex",
-        api: "openai-codex-responses", thinkingEfforts: ["low", "medium", "high"],
-        requiresEffort: true)
-    let model = await makeControlsModel(
-        models: [optional, required], selected: optional, thinkingLevel: "auto")
-    let session = FailingComposerSession()
+    let session = FakeComposerSessionController()
+    session.setModelError = FakeComposerError.rpcFailed
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
     model.attachActiveSession(session)
 
-    await model.selectModel(required, mode: .activeSession)
+    await model.selectModel(codexRequiredEffort, mode: .activeSession)
 
-    #expect(model.selectedModel == optional)
+    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
     #expect(model.thinkingLevel == "auto")
     #expect(model.errorMessage != nil)
 }
 ```
-
-If `makeControlsModel(models:selected:thinkingLevel:)` and `FailingComposerSession` do not already exist in that file under those exact names, reuse whatever equivalent helpers it defines and rename these calls to match. Do not add a second parallel set of helpers.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -768,7 +781,7 @@ Append to `Tests/TenXAppTests/ComposerControlsPresentationTests.swift`:
     #expect(ModelPickerMetrics.listHeight(rowCount: 2, sectionCount: 1)
         == 2 * ModelPickerMetrics.rowHeight + ModelPickerMetrics.headerHeight)
     #expect(ModelPickerMetrics.listHeight(rowCount: 0, sectionCount: 0)
-        == ModelPickerMetrics.rowHeight)
+        == 2 * ModelPickerMetrics.rowHeight)
     #expect(ModelPickerMetrics.listHeight(rowCount: 400, sectionCount: 40)
         == ModelPickerMetrics.maxListHeight)
 }
@@ -806,10 +819,12 @@ enum ModelPickerMetrics {
     static let triggerHeight: CGFloat = 28
     static let separatorHeight: CGFloat = 1
 
-    /// Empty content still reserves one row so the message line has somewhere to sit.
+    /// Empty content reserves two rows: the connect-a-provider line wraps at this
+    /// width, and a one-row frame would clip its second line.
     static func listHeight(rowCount: Int, sectionCount: Int) -> CGFloat {
+        guard rowCount > 0 else { return 2 * rowHeight }
         let content = CGFloat(rowCount) * rowHeight + CGFloat(sectionCount) * headerHeight
-        return min(max(content, rowHeight), maxListHeight)
+        return min(content, maxListHeight)
     }
 
     /// Trigger step of the silhouette: never narrower than 44, never wider than the panel.
@@ -1215,6 +1230,32 @@ Wire it in exactly three places:
 3. In `selectModel(_:mode:)`, `.activeSession` branch, inside the `do` block after `activeSession.setModel(...)` returns successfully, add `recordRecent(model)`.
 
 Never record on the failure path. A model that could not be switched to is not a model the user used.
+
+**Isolate the store in tests before running anything.** The new `recents` parameter defaults
+to `RecentModelStore()`, which is backed by `UserDefaults.standard`. Left alone, every
+existing test that calls `selectModel` would read and write the developer's real app
+defaults, making the suite both polluting and machine-dependent. Add this helper to
+`Tests/TenXAppTests/ComposerControlsModelTests.swift`:
+
+```swift
+@MainActor
+private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
+    let defaults = UserDefaults(suiteName: "tests.\(name)")!
+    defaults.removePersistentDomain(forName: "tests.\(name)")
+    return RecentModelStore(defaults: defaults, key: "recent-model-keys")
+}
+```
+
+Then pass `recents: isolatedRecents()` at all fifteen `ComposerControlsModel(...)` call
+sites in that file, and at the one inside `snapshotComposerControls` in
+`Tests/TenXAppTests/ViewSnapshotTests.swift`. Grep to confirm none are missed:
+
+```bash
+grep -c "recents: isolatedRecents()" Tests/TenXAppTests/ComposerControlsModelTests.swift
+grep -n "ComposerControlsModel(" Tests/TenXAppTests/*.swift
+```
+
+Expected: 15 in the first command, and every hit in the second passing an isolated store.
 
 - [ ] **Step 2: Rewrite the composer controls view**
 
