@@ -18,7 +18,7 @@ struct MessageBubbleView: View {
             content
                 .frame(
                     maxWidth: message.role == .user ? 620 : Self.assistantMaxWidth,
-                    alignment: .leading)
+                    alignment: message.role == .user ? .trailing : .leading)
 
         }
         .frame(maxWidth: .infinity)
