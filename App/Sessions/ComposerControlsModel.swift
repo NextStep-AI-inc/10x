@@ -9,9 +9,11 @@ extension OmpModelCatalogService: ComposerCatalogLoading {}
 
 @MainActor
 protocol ComposerSessionControlling: AnyObject {
-    func setModel(provider: String, modelID: String) async
-    func setThinkingLevel(_ level: String) async
-    func setFastMode(_ enabled: Bool) async -> Bool
+    func setModel(provider: String, modelID: String) async throws
+    func setThinkingLevel(_ level: String) async throws
+    /// Returns `false` only when Fast mode is unsupported for the current model.
+    /// Transport / OMP command failures must throw — do not report them as unsupported.
+    func setFastMode(_ enabled: Bool) async throws -> Bool
 }
 
 enum ComposerControlsMode {
@@ -100,10 +102,19 @@ final class ComposerControlsModel {
             guard let activeSession else { return }
             isMutating = true
             defer { isMutating = false }
-            await activeSession.setModel(provider: model.provider, modelID: model.id)
+            let prior = selectedModel
             selectedModel = model
             applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
-            errorMessage = nil
+            do {
+                try await activeSession.setModel(provider: model.provider, modelID: model.id)
+                errorMessage = nil
+            } catch {
+                selectedModel = prior
+                applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
+                errorMessage = Self.sanitizedMessage(
+                    from: error,
+                    fallback: "Couldn’t update the model.")
+            }
         }
     }
 
@@ -124,9 +135,17 @@ final class ComposerControlsModel {
             guard let activeSession else { return }
             isMutating = true
             defer { isMutating = false }
-            await activeSession.setThinkingLevel(level)
+            let prior = thinkingLevel
             thinkingLevel = level
-            errorMessage = nil
+            do {
+                try await activeSession.setThinkingLevel(level)
+                errorMessage = nil
+            } catch {
+                thinkingLevel = prior
+                errorMessage = Self.sanitizedMessage(
+                    from: error,
+                    fallback: "Couldn’t update the thinking level.")
+            }
         }
     }
 
@@ -140,14 +159,24 @@ final class ComposerControlsModel {
             guard let activeSession else { return }
             isMutating = true
             defer { isMutating = false }
-            let supported = await activeSession.setFastMode(enabled)
-            if supported {
-                isFastModeEnabled = enabled
-                errorMessage = nil
-            } else {
-                isFastModeEnabled = false
-                isFastModeVisible = false
-                errorMessage = "Fast mode isn’t available for this model."
+            let priorEnabled = isFastModeEnabled
+            isFastModeEnabled = enabled
+            do {
+                let supported = try await activeSession.setFastMode(enabled)
+                if supported {
+                    errorMessage = nil
+                } else {
+                    // Soft unsupported only — hide chip and clear intent.
+                    isFastModeEnabled = false
+                    isFastModeVisible = false
+                    errorMessage = "Fast mode isn’t available for this model."
+                }
+            } catch {
+                // Transport / OMP failure — keep chip; restore prior intent.
+                isFastModeEnabled = priorEnabled
+                errorMessage = Self.sanitizedMessage(
+                    from: error,
+                    fallback: "Couldn’t update Fast mode.")
             }
         }
     }
@@ -167,5 +196,14 @@ final class ComposerControlsModel {
         } else {
             isFastModeEnabled = false
         }
+    }
+
+    /// One-line user copy; strips absolute paths so raw OMP text stays out of the footer.
+    private static func sanitizedMessage(from error: Error, fallback: String) -> String {
+        let raw = error.localizedDescription
+            .replacingOccurrences(of: #"/[^\s]+"#, with: "…", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, raw.count <= 120 else { return fallback }
+        return raw
     }
 }

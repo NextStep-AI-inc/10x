@@ -172,6 +172,98 @@ private let cursorModel = ComposerModelInfo(
     #expect(model.isFastModeEnabled == true)
 }
 
+@MainActor
+@Test func activeSessionSelectModelRevertsWhenSetModelThrows() async {
+    let session = FakeComposerSessionController()
+    session.setModelError = FakeComposerError.rpcFailed
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, anthropicSonnet],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    model.attachActiveSession(session)
+
+    await model.selectModel(anthropicSonnet, mode: .activeSession)
+
+    #expect(session.setModelCalls.count == 1)
+    #expect(model.selectedModel?.id == "claude-opus-4-8")
+    #expect(model.errorMessage != nil)
+}
+
+@MainActor
+@Test func activeSessionSelectThinkingRevertsWhenSetThinkingThrows() async {
+    let session = FakeComposerSessionController()
+    session.setThinkingError = FakeComposerError.rpcFailed
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    model.attachActiveSession(session)
+
+    await model.selectThinking("high", mode: .activeSession)
+
+    #expect(session.setThinkingCalls == ["high"])
+    #expect(model.thinkingLevel == "auto")
+    #expect(model.errorMessage != nil)
+}
+
+@MainActor
+@Test func activeSessionUnsupportedSetFastModeHidesChip() async {
+    let session = FakeComposerSessionController()
+    session.setFastModeSupported = false
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    model.attachActiveSession(session)
+    #expect(model.isFastModeVisible == true)
+
+    await model.setFastMode(true, mode: .activeSession)
+
+    #expect(session.setFastModeCalls == [true])
+    #expect(model.isFastModeEnabled == false)
+    #expect(model.isFastModeVisible == false)
+    #expect(model.errorMessage == "Fast mode isn’t available for this model.")
+}
+
+@MainActor
+@Test func activeSessionSetFastModeTransportErrorKeepsChip() async {
+    let session = FakeComposerSessionController()
+    session.setFastModeError = FakeComposerError.rpcFailed
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    model.attachActiveSession(session)
+
+    await model.setFastMode(true, mode: .activeSession)
+
+    #expect(session.setFastModeCalls == [true])
+    #expect(model.isFastModeEnabled == false)
+    #expect(model.isFastModeVisible == true)
+    #expect(model.errorMessage != nil)
+    #expect(model.errorMessage != "Fast mode isn’t available for this model.")
+}
+
 // MARK: - Fakes
 
 private actor FakeComposerCatalog: ComposerCatalogLoading {
@@ -211,21 +303,29 @@ private final class FakeComposerSessionController: ComposerSessionControlling {
     private(set) var setModelCalls: [(String, String)] = []
     private(set) var setThinkingCalls: [String] = []
     private(set) var setFastModeCalls: [Bool] = []
+    var setModelError: Error?
+    var setThinkingError: Error?
+    var setFastModeError: Error?
+    var setFastModeSupported = true
 
-    func setModel(provider: String, modelID: String) async {
+    func setModel(provider: String, modelID: String) async throws {
         setModelCalls.append((provider, modelID))
+        if let setModelError { throw setModelError }
     }
 
-    func setThinkingLevel(_ level: String) async {
+    func setThinkingLevel(_ level: String) async throws {
         setThinkingCalls.append(level)
+        if let setThinkingError { throw setThinkingError }
     }
 
-    func setFastMode(_ enabled: Bool) async -> Bool {
+    func setFastMode(_ enabled: Bool) async throws -> Bool {
         setFastModeCalls.append(enabled)
-        return true
+        if let setFastModeError { throw setFastModeError }
+        return setFastModeSupported
     }
 }
 
 private enum FakeComposerError: Error {
     case persistFailed
+    case rpcFailed
 }
