@@ -8,6 +8,28 @@ enum ComposerControlsPresentation {
         catalog.filter { authenticatedProviderIDs.contains($0.provider) }
     }
 
+    static func matching(_ models: [ComposerModelInfo], query: String) -> [ComposerModelInfo] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return models }
+        return models.filter { model in
+            model.name.lowercased().contains(needle)
+                || model.provider.lowercased().contains(needle)
+        }
+    }
+
+    /// Preserves first-appearance provider order and catalog order within a provider.
+    static func groupedByProvider(
+        _ models: [ComposerModelInfo]
+    ) -> [(provider: String, models: [ComposerModelInfo])] {
+        var order: [String] = []
+        var buckets: [String: [ComposerModelInfo]] = [:]
+        for model in models {
+            if buckets[model.provider] == nil { order.append(model.provider) }
+            buckets[model.provider, default: []].append(model)
+        }
+        return order.map { (provider: $0, models: buckets[$0] ?? []) }
+    }
+
     static func thinkingOptions(for model: ComposerModelInfo?) -> [String] {
         guard let model, !model.thinkingEfforts.isEmpty else { return [] }
         return ["auto"] + model.thinkingEfforts
