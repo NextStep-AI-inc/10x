@@ -1,6 +1,21 @@
 import Foundation
+import AppKit
 import Testing
 @testable import TenXApp
+
+@Test func workspaceLauncherOpensANewInstanceWithoutActivatingIt() async throws {
+    let opener = RecordingWorkspaceApplicationOpener()
+    let launcher = WorkspaceApplicationLauncher(opener: opener)
+
+    let process = try await launcher.launch(AgentApplication(
+        bundleIdentifier: "com.apple.TextEdit",
+        strategy: .newInstance))
+
+    #expect(process.processID == 99)
+    #expect(opener.recordedConfigurations() == [
+        RecordedOpenConfiguration(createsNewApplicationInstance: true, activates: false),
+    ])
+}
 
 @Test func launcherClaimsOnlyTheWindowIDCreatedAfterLaunch() async throws {
     let provider = LaunchingWindowProvider(snapshots: [
@@ -172,6 +187,36 @@ private struct StaticApplicationLauncher: AgentApplicationLaunching {
 
     func launch(_ application: AgentApplication) async throws -> AgentLaunchedProcess {
         AgentLaunchedProcess(processID: processID)
+    }
+}
+
+private struct RecordedOpenConfiguration: Sendable, Equatable {
+    let createsNewApplicationInstance: Bool
+    let activates: Bool
+}
+
+private final class RecordingWorkspaceApplicationOpener: WorkspaceApplicationOpening, @unchecked Sendable {
+    private let lock = NSLock()
+    private var configurations: [RecordedOpenConfiguration] = []
+
+    func applicationURL(withBundleIdentifier bundleIdentifier: String) -> URL? {
+        URL(filePath: "/Applications/TextEdit.app")
+    }
+
+    func openApplication(
+        at applicationURL: URL,
+        configuration: NSWorkspace.OpenConfiguration
+    ) async throws -> AgentLaunchedProcess {
+        lock.withLock {
+            configurations.append(RecordedOpenConfiguration(
+                createsNewApplicationInstance: configuration.createsNewApplicationInstance,
+                activates: configuration.activates))
+        }
+        return AgentLaunchedProcess(processID: 99)
+    }
+
+    func recordedConfigurations() -> [RecordedOpenConfiguration] {
+        lock.withLock { configurations }
     }
 }
 

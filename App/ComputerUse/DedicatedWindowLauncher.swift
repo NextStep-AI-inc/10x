@@ -19,6 +19,30 @@ protocol AgentApplicationLaunching: Sendable {
     func launch(_ application: AgentApplication) async throws -> AgentLaunchedProcess
 }
 
+protocol WorkspaceApplicationOpening: Sendable {
+    func applicationURL(withBundleIdentifier bundleIdentifier: String) async -> URL?
+    func openApplication(
+        at applicationURL: URL,
+        configuration: NSWorkspace.OpenConfiguration
+    ) async throws -> AgentLaunchedProcess
+}
+
+struct SystemWorkspaceApplicationOpener: WorkspaceApplicationOpening {
+    func applicationURL(withBundleIdentifier bundleIdentifier: String) async -> URL? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+    }
+
+    func openApplication(
+        at applicationURL: URL,
+        configuration: NSWorkspace.OpenConfiguration
+    ) async throws -> AgentLaunchedProcess {
+        let runningApplication = try await NSWorkspace.shared.openApplication(
+            at: applicationURL,
+            configuration: configuration)
+        return AgentLaunchedProcess(processID: runningApplication.processIdentifier)
+    }
+}
+
 enum DedicatedWindowLaunchError: Error, Sendable, Equatable {
     case applicationNotFound
     case noNewWindow
@@ -27,18 +51,24 @@ enum DedicatedWindowLaunchError: Error, Sendable, Equatable {
 }
 
 struct WorkspaceApplicationLauncher: AgentApplicationLaunching {
+    private let opener: any WorkspaceApplicationOpening
+
+    init(opener: any WorkspaceApplicationOpening = SystemWorkspaceApplicationOpener()) {
+        self.opener = opener
+    }
+
     func launch(_ application: AgentApplication) async throws -> AgentLaunchedProcess {
         switch application.strategy {
         case .newInstance:
-            guard let applicationURL = NSWorkspace.shared.urlForApplication(
+            guard let applicationURL = await opener.applicationURL(
                 withBundleIdentifier: application.bundleIdentifier)
             else { throw DedicatedWindowLaunchError.applicationNotFound }
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.createsNewApplicationInstance = true
-            let runningApplication = try await NSWorkspace.shared.openApplication(
+            configuration.activates = false
+            return try await opener.openApplication(
                 at: applicationURL,
                 configuration: configuration)
-            return AgentLaunchedProcess(processID: runningApplication.processIdentifier)
         case .newWindow:
             // No generic documented native new-window action exists. Callers may
             // only provide this strategy once an application-specific seam exists.
@@ -120,6 +150,7 @@ struct DedicatedWindowLauncher: Sendable {
         var lastChange = clock.now
         while clock.now < deadline {
             try Task.checkCancellation()
+            if let failure = await eventMonitor.failure() { throw failure }
             let windows = try await provider.listWindows()
             let currentNewWindowIDs = Set(windows.map(\.id)).subtracting(before)
             let currentEventRevision = await eventMonitor.revision()
@@ -141,10 +172,13 @@ extension DedicatedWindowLauncher: DedicatedWindowLaunching {}
 
 private actor AgentWindowEventMonitor {
     private var changeRevision = 0
+    private var watcherFailure: AgentDesktopProviderError?
 
     func record(_ event: AgentWindowEvent) {
         changeRevision += 1
+        if case .failed(let error) = event { watcherFailure = error }
     }
 
     func revision() -> Int { changeRevision }
+    func failure() -> AgentDesktopProviderError? { watcherFailure }
 }
