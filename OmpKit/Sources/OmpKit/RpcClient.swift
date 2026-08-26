@@ -351,7 +351,7 @@ public actor RpcClient {
             deliver(response)
         case .chunk:
             break   // handled above
-        case .extensionUIRequest, .event:
+        case .extensionUIRequest, .providerAccountChanged, .event:
             eventContinuation.yield(frame)
         }
     }

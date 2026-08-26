@@ -2,6 +2,22 @@ import Testing
 import Foundation
 @testable import OmpKit
 
+private struct ProviderAccountListEnvelope: Decodable {
+    struct DataPayload: Decodable {
+        let accounts: [ProviderAccountSummary]
+    }
+
+    let data: DataPayload
+}
+
+private struct ProviderAccountUsageEnvelope: Decodable {
+    struct DataPayload: Decodable {
+        let accounts: [ProviderAccountUsage]
+    }
+
+    let data: DataPayload
+}
+
 func fixtureURL(_ name: String) -> URL {
     Bundle.module.url(forResource: "Fixtures/\(name)", withExtension: nil)
         ?? Bundle.module.resourceURL!.appendingPathComponent("Fixtures/\(name)")
@@ -315,4 +331,72 @@ private func fixturePID(at url: URL) -> pid_t? {
     #expect(stderr.contains("parent-final-stderr\n"))
     #expect(!stderr.contains("late-stderr-marker"))
     #expect(stderr.utf8.count < 1_024)
+}
+
+@Test func providerAccountSummaryLineDecodesFullOMPContract() throws {
+    let line = Data("""
+    {"id":"list","type":"response","command":"list_provider_accounts","success":true,"data":{"accounts":[{"providerId":"openai-codex","accountRef":"acct_B","displayLabel":"Tanner","detailLabel":"tanner@example.com","connectionOrder":2,"availability":"limited","isActiveForSession":true,"ignored":"future"}]}}
+    """.utf8)
+    let envelope = try JSONDecoder().decode(ProviderAccountListEnvelope.self, from: line)
+    let account = try #require(envelope.data.accounts.first)
+
+    #expect(account.providerID == "openai-codex")
+    #expect(account.accountRef == "acct_B")
+    #expect(account.displayLabel == "Tanner")
+    #expect(account.detailLabel == "tanner@example.com")
+    #expect(account.connectionOrder == 2)
+    #expect(account.availability == .limited)
+    #expect(account.isActiveForSession == true)
+    #expect(account.id == "openai-codex:acct_B")
+}
+
+@Test func providerAccountSummaryUnknownAvailabilityFallsBackToUnavailable() throws {
+    let line = Data("""
+    {"id":"list","type":"response","command":"list_provider_accounts","success":true,"data":{"accounts":[{"providerId":"openai-codex","accountRef":"acct_future","displayLabel":"Future","connectionOrder":3,"availability":"temporarilyUnavailable"}]}}
+    """.utf8)
+    let envelope = try JSONDecoder().decode(ProviderAccountListEnvelope.self, from: line)
+
+    #expect(envelope.data.accounts.first?.accountRef == "acct_future")
+    #expect(envelope.data.accounts.first?.availability == .unavailable)
+}
+
+@Test func providerAccountUsageLineDecodesWindowsAndIgnoresUnknownFields() throws {
+    let line = Data("""
+    {"id":"usage","type":"response","command":"get_provider_account_usage","success":true,"data":{"accounts":[{"providerId":"openai-codex","accountRef":"acct_B","refreshedAt":"2026-08-26T09:30:00.000Z","usageWindows":[{"id":"five-hour","label":"5h","duration":{"value":5,"unit":"hour"},"sourceIndex":0,"remainingFraction":0.75,"resetsAt":"2026-08-26T14:30:00.000Z","status":"available","ignored":"future"}],"ignored":"future"}]}}
+    """.utf8)
+    let envelope = try JSONDecoder().decode(ProviderAccountUsageEnvelope.self, from: line)
+    let account = try #require(envelope.data.accounts.first)
+    let window = try #require(account.usageWindows.first)
+
+    #expect(account.providerID == "openai-codex")
+    #expect(account.accountRef == "acct_B")
+    #expect(ISO8601DateFormatter().string(from: account.refreshedAt) == "2026-08-26T09:30:00Z")
+    #expect(window.id == "five-hour")
+    #expect(window.duration == ProviderAccountUsageWindow.Duration(value: 5, unit: .hour))
+    #expect(window.sourceIndex == 0)
+    #expect(window.remainingFraction == 0.75)
+    #expect(window.resetsAt.map { ISO8601DateFormatter().string(from: $0) } == "2026-08-26T14:30:00Z")
+    #expect(window.status == "available")
+}
+
+@Test func providerAccountChangedLineDecodesTypedEventAndUnknownReason() throws {
+    let manual = Data("""
+    {"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_B","reason":"manual","sequence":7}
+    """.utf8)
+    guard case .providerAccountChanged(let event) = try RpcFrame.decode(line: manual) else {
+        Issue.record("not a provider account event"); return
+    }
+    #expect(event.providerID == "openai-codex")
+    #expect(event.accountRef == "acct_B")
+    #expect(event.reason == .manual)
+    #expect(event.sequence == 7)
+
+    let future = Data("""
+    {"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_future","reason":"serverSideMigration","sequence":8}
+    """.utf8)
+    guard case .providerAccountChanged(let unknown) = try RpcFrame.decode(line: future) else {
+        Issue.record("future provider account event was dropped"); return
+    }
+    #expect(unknown.accountRef == "acct_future")
+    #expect(unknown.reason == .unknown("serverSideMigration"))
 }
