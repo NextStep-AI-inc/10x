@@ -349,12 +349,12 @@ actor ProviderManagementService: ProviderManaging {
     }
 
     private func isUnsupportedAccountCommand(_ error: any Error, command: String) -> Bool {
-        guard case ProviderAccountResponseDecodingError.unsuccessful(
+        guard case RpcClientError.commandFailed(
             let failedCommand, let message, let code) = error
         else { return false }
 
         return failedCommand == command
-            && message == "unsupported: \(command)"
-            && code == "unsupported_command"
+            && message == "Unknown command: \(command)"
+            && (code == nil || code == "unsupported_command")
     }
 }

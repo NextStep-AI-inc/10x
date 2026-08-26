@@ -108,13 +108,16 @@ private let unsupportedAccountsResponse = RpcResponse(
     id: "unsupported",
     command: "list_provider_accounts",
     success: false,
-    error: "unsupported: list_provider_accounts",
+    error: "Unknown command: list_provider_accounts",
     code: "unsupported_command")
 
-private let failedAccountsResponse = RpcResponse(
-    id: "failed",
+private let unsupportedAccountsError = RpcClientError.commandFailed(
     command: "list_provider_accounts",
-    success: false,
+    error: "Unknown command: list_provider_accounts",
+    code: nil)
+
+private let failedAccountsError = RpcClientError.commandFailed(
+    command: "list_provider_accounts",
     error: "backend unavailable",
     code: "internal_error")
 
@@ -215,7 +218,11 @@ private let failedAccountsResponse = RpcResponse(
 }
 
 @Test func providerServiceFallsBackToProviderOnlyForExactUnsupportedAccountCommand() async throws {
-    let fake = FakeProviderRPCClient(responses: [unsupportedAccountsResponse, providerListResponse, loginResponse])
+    let fake = FakeProviderRPCClient(outcomes: [
+        .failure(unsupportedAccountsError),
+        .response(providerListResponse),
+        .response(loginResponse),
+    ])
     let service = ProviderManagementService(
         executableURL: URL(fileURLWithPath: "/tmp/omp"),
         clientFactory: { _ in fake })
@@ -235,8 +242,8 @@ private let failedAccountsResponse = RpcResponse(
     ])
 }
 
-@Test func providerServicePropagatesNonUnsupportedAccountFailures() async {
-    let fake = FakeProviderRPCClient(responses: [failedAccountsResponse])
+@Test func providerServiceDoesNotFallbackForDecodedUnsupportedResponses() async {
+    let fake = FakeProviderRPCClient(responses: [unsupportedAccountsResponse])
     let service = ProviderManagementService(
         executableURL: URL(fileURLWithPath: "/tmp/omp"),
         clientFactory: { _ in fake })
@@ -247,6 +254,28 @@ private let failedAccountsResponse = RpcResponse(
 
     guard case .failure(let error) = result,
           case ProviderAccountResponseDecodingError.unsuccessful(
+            let command, let message, let code) = error
+    else {
+        Issue.record("Expected decoded unsuccessful response to propagate")
+        return
+    }
+    #expect(command == "list_provider_accounts")
+    #expect(message == "Unknown command: list_provider_accounts")
+    #expect(code == "unsupported_command")
+}
+
+@Test func providerServicePropagatesNonUnsupportedAccountFailures() async {
+    let fake = FakeProviderRPCClient(outcomes: [.failure(failedAccountsError)])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let result = await Task {
+        try await service.accountCapability(providerID: "openai-codex")
+    }.result
+
+    guard case .failure(let error) = result,
+          case RpcClientError.commandFailed(
             let command, let message, let code) = error
     else {
         Issue.record("Expected account failure to propagate")
@@ -520,10 +549,15 @@ private struct ProviderCommand: Sendable, Equatable {
     let timeout: Duration?
 }
 
+private enum FakeSendOutcome: Sendable {
+    case response(RpcResponse)
+    case failure(RpcClientError)
+}
+
 private actor FakeProviderRPCClient: ProviderRPCClient {
     private let eventStream: AsyncStream<RpcFrame>
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
-    private var responses: [RpcResponse]
+    private var outcomes: [FakeSendOutcome]
     private let startGate: StartGate?
     private let loginGate: StartGate?
     private let startFailure: ProviderTestError?
@@ -539,7 +573,20 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
         loginGate: StartGate? = nil,
         startFailure: ProviderTestError? = nil
     ) {
-        self.responses = responses
+        self.outcomes = responses.map(FakeSendOutcome.response)
+        self.startGate = startGate
+        self.loginGate = loginGate
+        self.startFailure = startFailure
+        (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream()
+    }
+
+    init(
+        outcomes: [FakeSendOutcome],
+        startGate: StartGate? = nil,
+        loginGate: StartGate? = nil,
+        startFailure: ProviderTestError? = nil
+    ) {
+        self.outcomes = outcomes
         self.startGate = startGate
         self.loginGate = loginGate
         self.startFailure = startFailure
@@ -568,7 +615,12 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
             await loginGate?.started()
             await loginGate?.waitForRelease()
         }
-        return responses.removeFirst()
+        switch outcomes.removeFirst() {
+        case .response(let response):
+            return response
+        case .failure(let error):
+            throw error
+        }
     }
 
     func sendRaw(_ command: RpcCommand) async throws {
