@@ -3,6 +3,8 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Suite @MainActor struct SessionControllerTests {
+
 @MainActor @Test func contextPercentageIsClampedToItsDisplayRange() {
     #expect(SessionController.contextPercent(.object(["percentage": .double(210)])) == 100)
     #expect(SessionController.contextPercent(.object(["percentage": .double(-0.2)])) == 0)
@@ -16,6 +18,47 @@ import Testing
     ])) == "anthropic")
     #expect(SessionController.providerID(from: .string("claude-sonnet")) == nil)
     #expect(SessionController.providerID(from: nil) == nil)
+}
+
+@MainActor @Test func activeProviderAccountStateKeepsOnlyOpaqueStringReferences() {
+    #expect(SessionController.activeProviderAccountRefs(from: .object([
+        "activeProviderAccounts": .object([
+            "openai-codex": .string("acct_A"),
+            "anthropic": .string("acct_B"),
+            "invalid": .int(3),
+        ]),
+    ])) == [
+        "openai-codex": "acct_A",
+        "anthropic": "acct_B",
+    ])
+    #expect(SessionController.activeProviderAccountRefs(from: nil).isEmpty)
+}
+
+@MainActor @Test func controllerForwardsOnlyMonotonicallyNewerAccountChangesToTheCoordinator() {
+    let coordinator = ProviderAccountCoordinator()
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .streaming,
+        providerID: "openai-codex",
+        activityRegistry: coordinator)
+
+    controller.handleProviderAccountChange(ProviderAccountChangedEvent(
+        providerID: "openai-codex",
+        accountRef: "acct_B",
+        reason: .automaticFailover,
+        sequence: 2))
+    controller.handleProviderAccountChange(ProviderAccountChangedEvent(
+        providerID: "openai-codex",
+        accountRef: "acct_A",
+        reason: .manual,
+        sequence: 1))
+
+    let key = ProviderAccountKey(providerID: "openai-codex", accountRef: "acct_B")
+    #expect(controller.currentProviderAccountRef == "acct_B")
+    #expect(controller.providerAccountSequence == 2)
+    #expect(coordinator.activeAccountRefs[controller.id] == "acct_B")
+    #expect(coordinator.generatingCounts == [key: 1])
 }
 
 @MainActor @Test func unexpectedExitPreservesDraftAndOffersRecovery() {
@@ -123,6 +166,33 @@ import Testing
     await processManager.closeAll()
 }
 
+@MainActor @Test func accountEventsAndPinResponsesShareTheControllerEventConsumer() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = try makeProviderAccountExecutable(in: directory)
+    let manager = SessionProcessManager(executable: executable.path)
+    let coordinator = ProviderAccountCoordinator()
+    let controller = SessionController(processManager: manager, activityRegistry: coordinator)
+
+    await controller.openExisting(metadata(path: "/tmp/account-session.jsonl", cwd: "/tmp"))
+
+    #expect(await eventually {
+        controller.currentProviderAccountRef == "acct_B" && controller.runtimeState == .idle
+    })
+
+    let result = try await controller.setProviderAccount(
+        providerID: "openai-codex",
+        accountRef: "acct_C")
+
+    #expect(result.sequence == 3)
+    #expect(controller.currentProviderAccountRef == "acct_C")
+    #expect(controller.providerAccountSequence == 3)
+    #expect(coordinator.activeAccountRefs[controller.id] == "acct_C")
+    await manager.closeAll()
+}
+
+}
+
 @MainActor
 private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     for _ in 0..<100 {
@@ -131,6 +201,8 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     }
     return predicate()
 }
+
+@MainActor extension SessionControllerTests {
 
 @MainActor @Test func controllerRejectsSnapshotFromReplacedProcessor() {
     let activeID = UUID()
@@ -456,6 +528,8 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     await manager.closeAll()
 }
 
+}
+
 private func fakeManager(mode: String) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
@@ -525,6 +599,47 @@ private func writeHistoryMessage(_ text: String, to url: URL) throws {
     {"type":"session","version":3,"id":"s","timestamp":"2026-08-24T20:00:00.000Z","cwd":"/tmp"}
     {"type":"message","id":"hist-message","parentId":null,"timestamp":"2026-08-24T20:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"\(text)"}],"timestamp":1787601601000}}
     """.utf8).write(to: url)
+}
+
+private func makeProviderAccountExecutable(in directory: URL) throws -> URL {
+    let executable = directory.appending(path: "provider-account-server.py")
+    let source = #"""
+    #!/usr/bin/env python3
+    import json
+    import sys
+
+    def emit(value):
+        print(json.dumps(value, separators=(",", ":")), flush=True)
+
+    emit({"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864})
+    for line in sys.stdin:
+        command = json.loads(line)
+        request_id = command.get("id")
+        command_type = command.get("type")
+        if command_type == "negotiate_protocol":
+            data = {"protocolVersion":2}
+        elif command_type == "get_state":
+            data = {"model":{"id":"gpt-test","provider":"openai-codex"},"isStreaming":True,"sessionFile":"/tmp/account-session.jsonl","activeProviderAccounts":{"openai-codex":"acct_A"}}
+        elif command_type == "get_messages_page":
+            data = {"messages":[],"nextCursor":None}
+        elif command_type == "set_subagent_subscription":
+            data = {}
+            emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_B","reason":"automaticFailover","sequence":2})
+            emit({"type":"agent_end","messages":[],"isTerminal":True})
+            continue
+        elif command_type == "set_session_provider_account":
+            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_C","reason":"manual","sequence":3})
+            data = {"account":{"providerId":"openai-codex","accountRef":"acct_C","displayLabel":"Account C","connectionOrder":2,"availability":"available","isActiveForSession":True},"sequence":3}
+        else:
+            data = {}
+        emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+    """#
+    try Data(source.utf8).write(to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    return executable
 }
 
 @MainActor

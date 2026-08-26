@@ -7,7 +7,7 @@ import UserNotifications
 
 @MainActor
 @Observable
-final class SessionController: ComposerSessionControlling {
+final class SessionController: ComposerSessionControlling, ProviderAccountSession {
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
     private(set) var items: [TranscriptItem] = []
     private(set) var runtimeState: SessionRuntimeState = .loading
@@ -32,12 +32,14 @@ final class SessionController: ComposerSessionControlling {
     private(set) var logText = ""
     let id: UUID
     private(set) var providerID: String?
+    private(set) var activeProviderAccounts: [String: String] = [:]
+    private(set) var providerAccountSequence = 0
     var draft = ""
     var streamingBehavior: StreamingBehavior? = .steer
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
-    private let activityRegistry: SessionActivityRegistry?
+    private weak var accountCoordinator: ProviderAccountCoordinator?
     private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
@@ -74,8 +76,9 @@ final class SessionController: ComposerSessionControlling {
     ) {
         self.processManager = processManager
         self.id = id
-        self.activityRegistry = activityRegistry
+        self.accountCoordinator = activityRegistry
         self.historyLoader = historyLoader
+        activityRegistry?.register(self)
     }
 
     init(
@@ -104,7 +107,12 @@ final class SessionController: ComposerSessionControlling {
         self.headerMetadata = headerMetadata
         self.id = id
         self.providerID = providerID
-        self.activityRegistry = activityRegistry
+        self.accountCoordinator = activityRegistry
+        activityRegistry?.register(self)
+    }
+
+    var currentProviderAccountRef: String? {
+        providerID.flatMap { activeProviderAccounts[$0] }
     }
 
     var isComposerAvailable: Bool {
@@ -258,6 +266,25 @@ final class SessionController: ComposerSessionControlling {
         publishLiveComposerSelection()
     }
 
+    func setProviderAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> SetSessionProviderAccountResult {
+        guard let handle else { throw RpcClientError.notStarted }
+        let context = currentPipelineContext()
+        let response = try await handle.client.send(.setSessionProviderAccount(
+            providerID: providerID,
+            accountRef: accountRef))
+        guard isCurrent(context) else { throw RpcClientError.notStarted }
+        let result = try response.setSessionProviderAccountResult()
+        handleProviderAccountChange(ProviderAccountChangedEvent(
+            providerID: result.account.providerID,
+            accountRef: result.account.accountRef,
+            reason: .manual,
+            sequence: result.sequence))
+        return result
+    }
+
     /// Returns `false` only when Fast mode is unsupported (`active == false`).
     /// Transport / OMP command failures throw.
     func setFastMode(_ enabled: Bool) async throws -> Bool {
@@ -396,12 +423,12 @@ final class SessionController: ComposerSessionControlling {
         runtimeState = .stopped(code: code, stderrTail: stderrTail)
         isRecoveryPresented = true
         logText = stderrTail.isEmpty ? "OMP exited without stderr output." : stderrTail
-        activityRegistry?.remove(sessionID: id)
+        reportActivity()
     }
 
     func stopActivityTracking() {
         stopEventPipeline()
-        activityRegistry?.remove(sessionID: id)
+        accountCoordinator?.unregister(sessionID: id)
     }
 
     func close() async {
@@ -415,7 +442,7 @@ final class SessionController: ComposerSessionControlling {
         self.sessionPath = nil
         items = []
         runtimeState = .stopped(code: nil, stderrTail: "")
-        activityRegistry?.remove(sessionID: id)
+        accountCoordinator?.unregister(sessionID: id)
         guard let sessionPath else {
             return openingCloseTask
         }
@@ -504,8 +531,15 @@ final class SessionController: ComposerSessionControlling {
     }
 
     private func startEventPipeline(processor: TranscriptEventProcessor, client: RpcClient) {
-        eventTask = Task { [processor, events = client.events] in
-            await processor.run(events: events)
+        eventTask = Task { [weak self, processor, events = client.events] in
+            for await frame in events {
+                guard !Task.isCancelled else { break }
+                await processor.consume(frame)
+                if case .providerAccountChanged(let event) = frame {
+                    self?.handleProviderAccountChange(event)
+                }
+            }
+            await processor.stop()
         }
         snapshotTask = Task { [weak self, processor] in
             for await snapshot in processor.snapshots {
@@ -725,10 +759,13 @@ final class SessionController: ComposerSessionControlling {
         contextPercentage = Self.contextPercent(data["contextUsage"])
         queuedMessageCount = data["queuedMessageCount"]?.intValue ?? 0
         runtimeState = data["isStreaming"]?.boolValue == true ? .streaming : .idle
+        activeProviderAccounts = Self.activeProviderAccountRefs(from: data)
+        providerAccountSequence = 0
         if let reportedPath = data["sessionFile"]?.stringValue {
             sessionPath = reportedPath
         }
         publishLiveComposerSelection()
+        accountCoordinator?.register(self)
         reportActivity()
     }
 
@@ -784,6 +821,13 @@ final class SessionController: ComposerSessionControlling {
             ?? liveComposerSelection.modelID
         providerID = Self.providerID(from: value)
         reportActivity()
+    }
+
+    func handleProviderAccountChange(_ event: ProviderAccountChangedEvent) {
+        guard event.sequence > providerAccountSequence else { return }
+        providerAccountSequence = event.sequence
+        activeProviderAccounts[event.providerID] = event.accountRef
+        accountCoordinator?.session(id, didChangeAccount: event)
     }
 
     private func publishLiveComposerSelection() {
@@ -911,10 +955,15 @@ final class SessionController: ComposerSessionControlling {
     }
 
     private func reportActivity() {
-        activityRegistry?.update(
+        accountCoordinator?.update(
             sessionID: id,
             providerID: providerID,
             isGenerating: runtimeState == .streaming)
+        if runtimeState == .idle {
+            Task { [weak accountCoordinator] in
+                await accountCoordinator?.sessionDidBecomeIdle(id)
+            }
+        }
     }
 
     private static func modelLabel(_ value: JSONValue?) -> String? {
@@ -930,6 +979,15 @@ final class SessionController: ComposerSessionControlling {
             return nil
         }
         return providerID
+    }
+
+    static func activeProviderAccountRefs(from value: JSONValue?) -> [String: String] {
+        guard let accounts = value?["activeProviderAccounts"]?.objectValue else { return [:] }
+        return accounts.reduce(into: [:]) { refs, entry in
+            if let accountRef = entry.value.stringValue {
+                refs[entry.key] = accountRef
+            }
+        }
     }
 
     static func contextPercent(_ value: JSONValue?) -> Int? {
