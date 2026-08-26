@@ -5,7 +5,7 @@ struct MessageBubbleView: View {
     let message: TranscriptMessage
 
     static let assistantContentSpacing: CGFloat = 14
-    static let assistantMaxWidth: CGFloat = 720
+    static let assistantMaxWidth = TranscriptView.contentMaxWidth
 
     static func visibleText(from message: JSONValue) -> String {
         TranscriptMessage.visibleText(from: message)
@@ -20,7 +20,6 @@ struct MessageBubbleView: View {
                     maxWidth: message.role == .user ? 620 : Self.assistantMaxWidth,
                     alignment: .leading)
 
-            if message.role != .user { Spacer(minLength: 80) }
         }
         .frame(maxWidth: .infinity)
     }

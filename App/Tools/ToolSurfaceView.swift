@@ -355,7 +355,9 @@ private struct ProgressSurfaceView: View {
                 Spacer(minLength: 8)
                 Text(progress.status.replacingOccurrences(of: "_", with: " ").capitalized)
                     .font(TenXTypography.body(size: 10, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+                    .foregroundStyle(TenXPalette.color(progress.isFailure
+                        ? TenXPalette.signalRedHex
+                        : TenXPalette.cyanHex))
             }
             if let completed = progress.completed, let total = progress.total {
                 Text("\(completed) of \(total)")

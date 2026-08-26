@@ -459,10 +459,10 @@ import Testing
 
     try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
-            ReadToolCardView(presentation: read)
-            EditToolCardView(presentation: edit)
-            WriteToolCardView(presentation: write)
-            ReadToolCardView(presentation: read)
+            ToolCardView(presentation: read)
+            ToolCardView(presentation: edit)
+            ToolCardView(presentation: write)
+            ToolCardView(presentation: read)
                 .frame(width: 360, alignment: .leading)
         }
         .environment(\.toolDisclosureState, disclosureState)
@@ -1170,9 +1170,10 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     --- a/App/Sessions/TranscriptView.swift
     +++ b/App/Sessions/TranscriptView.swift
     @@ -157,3 +157,5 @@
-    -            GenericToolCardView(presentation: presentation)
-    +            ToolCardView(
-    +                presentation: presentation)
+    -            .frame(maxWidth: 720, alignment: .leading)
+    +            .frame(
+    +                maxWidth: TranscriptView.contentMaxWidth,
+    +                alignment: .leading)
      }
     """
     let edit = ToolPresentation(
@@ -1585,7 +1586,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         startDate: Date(timeIntervalSince1970: 1),
         endDate: Date(timeIntervalSince1970: 1.7))
     try assertSnapshot(
-        EditToolCardView(presentation: presentation)
+        ToolCardView(presentation: presentation)
             .environment(snapshotEmptyIDEStore)
             .frame(width: 720),
         name: "activity-structured-diff",
@@ -1608,6 +1609,28 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             .environment(snapshotEmptyIDEStore),
         name: "chat-full-1440",
         size: CGSize(width: 1_440, height: 900))
+}
+
+@MainActor
+@Test func richTranscriptCompactSnapshot() throws {
+    try assertSnapshot(
+        TranscriptView(controller: richTranscriptController())
+            .environment(snapshotEmptyIDEStore)
+            .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+            .environment(\.fileOpenService, snapshotFileOpenService),
+        name: "rich-transcript-compact",
+        size: CGSize(width: 700, height: 2_100))
+}
+
+@MainActor
+@Test func richTranscriptWideSnapshot() throws {
+    try assertSnapshot(
+        TranscriptView(controller: richTranscriptController())
+            .environment(snapshotEmptyIDEStore)
+            .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+            .environment(\.fileOpenService, snapshotFileOpenService),
+        name: "rich-transcript-wide",
+        size: CGSize(width: 1_180, height: 2_000))
 }
 
 @MainActor
@@ -1832,6 +1855,129 @@ private func compactTranscriptController() -> SessionController {
         ],
         runtimeState: .streaming,
         title: "Transcript experience")
+}
+
+@MainActor
+private func richTranscriptController() -> SessionController {
+    let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
+    let longValue = String(repeating: "unbrokentranscriptvalue", count: 16)
+    let user = TranscriptMessage(
+        id: "rich-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Make the transcript readable without hiding the work."),
+        ]),
+        timestamp: timestamp,
+        isFinal: true)
+    let assistant = TranscriptMessage(
+        id: "rich-assistant",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("""
+            ## Transcript result
+
+            The response keeps [the design notes](https://example.com/design) and `App/Sessions/TranscriptView.swift:42` exactly where they explain the work.
+
+            - Semantic prose stays unboxed.
+              - Nested context keeps its indentation.
+            - Tool calls share one compact two-corner contract.
+
+            | Surface | Default |
+            | --- | --- |
+            | Source and diff | Wrap |
+            | Routine tool | Collapsed |
+
+            ```swift
+            let path = "App/Sessions/" + String(repeating: "deeply-nested-segment/", count: 6) + "TranscriptView.swift"
+            render(path, preservingIndentation: true)
+            ```
+            """ + "\n\nLong values remain contained: " + longValue),
+        ]),
+        timestamp: timestamp.addingTimeInterval(1),
+        attribution: TranscriptResponseAttribution(
+            provider: "openai-codex",
+            model: "gpt-5.6-sol",
+            mode: "implementation",
+            agent: nil,
+            modelRole: nil),
+        isFinal: true)
+    let read = snapshotToolPresentation(
+        id: "rich-read",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: snapshotTextResult("struct TranscriptView: View { }"),
+        phase: .complete,
+        duration: 0.2)
+    let patch = """
+    diff --git a/App/Sessions/MessageBubbleView.swift b/App/Sessions/MessageBubbleView.swift
+    --- a/App/Sessions/MessageBubbleView.swift
+    +++ b/App/Sessions/MessageBubbleView.swift
+    @@ -7,3 +7,3 @@
+    -static let assistantMaxWidth: CGFloat = 720
+    +static let assistantMaxWidth = TranscriptView.contentMaxWidth
+     static let assistantContentSpacing: CGFloat = 14
+    """
+    let edit = snapshotToolPresentation(
+        id: "rich-edit",
+        name: "edit",
+        arguments: .object(["path": .string("App/Sessions/MessageBubbleView.swift")]),
+        result: .object(["details": .object(["diff": .string(patch)])]),
+        phase: .complete,
+        duration: 0.7)
+    let command = snapshotToolPresentation(
+        id: "rich-command",
+        name: "bash",
+        arguments: .object(["command": .string("xcodebuild test -project 10x.xcodeproj -scheme 10x")]),
+        result: snapshotTextResult((1...14).map { "Test group \($0) passed" }.joined(separator: "\n")),
+        phase: .running,
+        duration: 4.2)
+    let mcp = snapshotToolPresentation(
+        id: "rich-mcp",
+        name: "mcp__workspace__inspect",
+        arguments: .object([
+            "path": .string(String(repeating: "nestedvalue", count: 30)),
+        ]),
+        result: .object([
+            "content": .array([
+                .object(["type": .string("text"), "text": .string("Inspected the current workspace.")]),
+                .object([
+                    "type": .string("resource_link"),
+                    "name": .string("Workspace report"),
+                    "uri": .string("https://example.com/workspace-report"),
+                ]),
+            ]),
+            "details": .object([
+                "status": .string("running"),
+                "files": .int(42),
+            ]),
+        ]),
+        phase: .running,
+        duration: 1.3)
+    let failed = snapshotToolPresentation(
+        id: "rich-failed",
+        name: "security_scan",
+        arguments: .object(["target": .string("App/Sessions")]),
+        result: .object([
+            "error": .string("Scan stopped after an unreadable fixture"),
+            "details": .object(["status": .string("failed")]),
+        ]),
+        phase: .failed,
+        duration: 0.9)
+
+    return SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [
+            .threadStart(id: "rich-start", date: timestamp),
+            .message(user),
+            .message(assistant),
+            .tool(read),
+            .tool(edit),
+            .tool(command),
+            .tool(mcp),
+            .tool(failed),
+        ],
+        runtimeState: .streaming,
+        title: "Rich transcript")
 }
 
 @MainActor

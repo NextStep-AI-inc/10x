@@ -72,7 +72,8 @@ import Testing
     #expect(MessageBlockView.proseFontSize == 15)
     #expect(MessageBlockView.proseLineSpacing == 4)
     #expect(MessageBubbleView.assistantContentSpacing == 14)
-    #expect(MessageBubbleView.assistantMaxWidth == 720)
+    #expect(TranscriptView.contentMaxWidth == 860)
+    #expect(MessageBubbleView.assistantMaxWidth == TranscriptView.contentMaxWidth)
 }
 
 @Test func responseMetadataNamesActualModelModeAgentAndState() {

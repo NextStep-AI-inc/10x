@@ -375,6 +375,25 @@ import Testing
     #expect(glob.outcome == "No paths found")
     #expect(glob.body == .empty("No paths found"))
 
+    let onePath = ToolContentExtractor.card(
+        name: "glob",
+        arguments: .object(["pattern": .string("**/*.swift")]),
+        result: .object(["details": .object(["paths": .array([
+            .string("App/Transcript.swift"),
+        ])])]),
+        phase: .complete)
+    #expect(onePath.outcome == "1 path")
+
+    let matches = ToolContentExtractor.card(
+        name: "grep",
+        arguments: .object(["pattern": .string("Transcript")]),
+        result: .object(["details": .object(["matches": .array([
+            .object(["path": .string("App/A.swift"), "line": .int(1)]),
+            .object(["path": .string("App/B.swift"), "line": .int(8)]),
+        ])])]),
+        phase: .complete)
+    #expect(matches.outcome == "2 matches")
+
     let ast = ToolContentExtractor.card(
         name: "ast_grep",
         arguments: .object(["pattern": .string("struct $NAME")]),
@@ -383,7 +402,7 @@ import Testing
             .object(["path": .string("App/B.swift"), "line": .int(8)]),
         ])])]),
         phase: .complete)
-    #expect(ast.outcome == "2 items")
+    #expect(ast.outcome == "2 matches")
     guard case .collection = ast.body else {
         Issue.record("AST grep should use a collection")
         return
@@ -788,6 +807,28 @@ import Testing
     }
     #expect(rows.first?.label == "Use one semantic card contract")
     #expect(rows.first?.detail == nil)
+}
+
+@Test func progressFailureStatusUsesTheErrorTreatment() {
+    let failed = ToolProgress(
+        title: "Security scan",
+        status: "failed",
+        detail: nil,
+        completed: nil,
+        total: nil,
+        history: [],
+        document: nil)
+    let running = ToolProgress(
+        title: "Security scan",
+        status: "running",
+        detail: nil,
+        completed: nil,
+        total: nil,
+        history: [],
+        document: nil)
+
+    #expect(failed.isFailure)
+    #expect(!running.isFailure)
 }
 
 private enum ToolBodyCategory: CustomStringConvertible {

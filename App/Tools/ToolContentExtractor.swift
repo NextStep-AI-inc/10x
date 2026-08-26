@@ -62,6 +62,11 @@ struct ToolProgress: Equatable, Sendable {
     let total: Int?
     let history: [String]
     let document: ContentDocument?
+
+    var isFailure: Bool {
+        ["failed", "failure", "error", "stopped"].contains(
+            status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
 }
 
 enum ToolResultBlock: Equatable, Sendable {
@@ -318,6 +323,8 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase,
+                singular: "match",
+                plural: "matches",
                 emptyText: "No matches")
         case .grep:
             collectionCard(
@@ -331,6 +338,8 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase,
+                singular: "match",
+                plural: "matches",
                 emptyText: "No matches")
         case .glob:
             collectionCard(
@@ -344,6 +353,8 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase,
+                singular: "path",
+                plural: "paths",
                 emptyText: "No paths found")
         case .lsp:
             collectionCard(
@@ -357,6 +368,8 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase,
+                singular: "result",
+                plural: "results",
                 emptyText: "No results")
         case .webSearch:
             collectionCard(
@@ -370,6 +383,8 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase,
+                singular: "source",
+                plural: "sources",
                 emptyText: "No sources found")
         case .github:
             collectionCard(
@@ -386,6 +401,8 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase,
+                singular: "result",
+                plural: "results",
                 emptyText: completionText(phase))
         case .recall:
             collectionCard(
@@ -399,6 +416,8 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase,
+                singular: "memory",
+                plural: "memories",
                 emptyText: "No memories found")
         case .retain:
             collectionCard(
@@ -412,6 +431,8 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase,
+                singular: "memory",
+                plural: "memories",
                 emptyText: completionText(phase))
         case .todo:
             todoCard(
@@ -938,6 +959,8 @@ enum ToolContentExtractor {
         arguments: JSONValue,
         result: JSONValue?,
         phase: ToolPhase,
+        singular: String,
+        plural: String,
         emptyText: String
     ) -> ToolCardContent {
         let items: [ToolCollectionItem]
@@ -971,7 +994,9 @@ enum ToolContentExtractor {
             title: title,
             verb: verb,
             primary: primary,
-            outcome: items.isEmpty ? emptyText : itemCount(items.count),
+            outcome: items.isEmpty
+                ? emptyText
+                : itemCount(items.count, singular: singular, plural: plural),
             reference: primary.flatMap { reference(for: $0) },
             body: body)
     }
@@ -1318,7 +1343,7 @@ enum ToolContentExtractor {
             primary: primary,
             outcome: links.isEmpty
                 ? envelopeOutcome(envelope, phase: phase)
-                : itemCount(links.count),
+                : itemCount(links.count, singular: "link", plural: "links"),
             reference: primary.flatMap { reference(for: $0) },
             body: bodies.count == 1 ? bodies[0] : .stack(bodies))
     }
@@ -1364,7 +1389,9 @@ enum ToolContentExtractor {
             title: title,
             verb: verb,
             primary: primary,
-            outcome: media.isEmpty ? envelopeOutcome(envelope, phase: phase) : itemCount(media.count),
+            outcome: media.isEmpty
+                ? envelopeOutcome(envelope, phase: phase)
+                : itemCount(media.count, singular: "image", plural: "images"),
             reference: primary.flatMap { reference(for: $0) },
             body: body)
     }
@@ -1477,8 +1504,12 @@ enum ToolContentExtractor {
         return "\(count) \(count == 1 ? "line" : "lines")"
     }
 
-    private static func itemCount(_ count: Int) -> String {
-        "\(count) \(count == 1 ? "item" : "items")"
+    private static func itemCount(
+        _ count: Int,
+        singular: String,
+        plural: String
+    ) -> String {
+        "\(count) \(count == 1 ? singular : plural)"
     }
 
     private static func isCompletedState(_ value: String) -> Bool {

@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct TranscriptView: View {
+    static let contentMaxWidth: CGFloat = 860
+
     let controller: SessionController
     @State private var disclosureState = ToolDisclosureState()
     @State private var isNearBottom = true
@@ -33,7 +35,7 @@ struct TranscriptView: View {
                             .id(item.id)
                     }
                 }
-                .frame(maxWidth: 860)
+                .frame(maxWidth: Self.contentMaxWidth)
                 .padding(.horizontal, 42)
                 .padding(.vertical, 28)
                 .frame(maxWidth: .infinity)

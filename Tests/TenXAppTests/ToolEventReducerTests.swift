@@ -57,7 +57,7 @@ import Testing
 
     #expect(presentation.content.title == "Search")
     #expect(presentation.content.primary == "Session")
-    #expect(presentation.content.outcome == "1 item")
+    #expect(presentation.content.outcome == "1 match")
 }
 
 @Test func unknownToolsAlwaysUseTheCustomCard() {
