@@ -16,6 +16,11 @@ final class SessionController: ComposerSessionControlling {
         worktreePath: nil)
     private(set) var modelName = "Model"
     private(set) var thinkingLevel = "Thinking"
+    private(set) var liveComposerSelection = ComposerLiveSelection(
+        provider: nil,
+        modelID: nil,
+        thinkingLevel: nil,
+        fastModeEnabled: false)
     private(set) var contextPercentage: Int?
     private(set) var queuedMessageCount = 0
     private(set) var sessionPath: String?
@@ -36,6 +41,7 @@ final class SessionController: ComposerSessionControlling {
     private var eventTask: Task<Void, Never>?
     private var reconciliationTask: Task<Void, Never>?
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private weak var attachedComposerControls: ComposerControlsModel?
 
     init(processManager: SessionProcessManager) {
         self.processManager = processManager
@@ -127,11 +133,17 @@ final class SessionController: ComposerSessionControlling {
         }
     }
 
+    func bindComposerControls(_ controls: ComposerControlsModel?) {
+        attachedComposerControls = controls
+        controls?.applyLiveSelection(liveComposerSelection)
+    }
+
     func setModel(provider: String, modelID: String) async throws {
         guard let handle else { throw RpcClientError.notStarted }
         let response = try await handle.client.send(.setModel(provider: provider, modelId: modelID))
-        if let label = Self.modelLabel(response.data) {
-            modelName = label
+        if let data = response.data {
+            applyModelPayload(data)
+            publishLiveComposerSelection()
         } else {
             await refreshState()
         }
@@ -141,6 +153,8 @@ final class SessionController: ComposerSessionControlling {
         guard let handle else { throw RpcClientError.notStarted }
         _ = try await handle.client.send(.setThinkingLevel(level))
         thinkingLevel = level.capitalized
+        liveComposerSelection.thinkingLevel = level
+        publishLiveComposerSelection()
     }
 
     /// Returns `false` only when Fast mode is unsupported (`active == false`).
@@ -149,8 +163,12 @@ final class SessionController: ComposerSessionControlling {
         guard let handle else { throw RpcClientError.notStarted }
         let response = try await handle.client.send(.setFastMode(enabled: enabled))
         if response.data?["active"]?.boolValue == false {
+            liveComposerSelection.fastModeEnabled = false
+            publishLiveComposerSelection()
             return false
         }
+        liveComposerSelection.fastModeEnabled = enabled
+        publishLiveComposerSelection()
         return true
     }
 
@@ -360,14 +378,25 @@ final class SessionController: ComposerSessionControlling {
             return
         }
         title = data["sessionName"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
-        modelName = Self.modelLabel(data["model"]) ?? modelName
-        thinkingLevel = data["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
+        if let model = data["model"] {
+            applyModelPayload(model)
+        }
+        if let thinking = data["thinkingLevel"]?.stringValue {
+            thinkingLevel = thinking.capitalized
+            liveComposerSelection.thinkingLevel = thinking
+        }
+        if let fastEnabled = data["fastModeEnabled"]?.boolValue
+            ?? data["fastModeActive"]?.boolValue
+        {
+            liveComposerSelection.fastModeEnabled = fastEnabled
+        }
         contextPercentage = Self.contextPercent(data["contextUsage"])
         queuedMessageCount = data["queuedMessageCount"]?.intValue ?? 0
         runtimeState = data["isStreaming"]?.boolValue == true ? .streaming : .idle
         if let reportedPath = data["sessionFile"]?.stringValue {
             sessionPath = reportedPath
         }
+        publishLiveComposerSelection()
     }
 
     private func applyEventMetadata(_ frame: RpcFrame) {
@@ -376,10 +405,20 @@ final class SessionController: ComposerSessionControlling {
         case "session_info_update":
             title = payload["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
         case "config_update":
-            modelName = Self.modelLabel(payload["model"]) ?? modelName
-            thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
+            if let model = payload["model"] {
+                applyModelPayload(model)
+            }
+            if let thinking = payload["thinkingLevel"]?.stringValue {
+                thinkingLevel = thinking.capitalized
+                liveComposerSelection.thinkingLevel = thinking
+            }
+            publishLiveComposerSelection()
         case "thinking_level_changed":
-            thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
+            if let thinking = payload["thinkingLevel"]?.stringValue {
+                thinkingLevel = thinking.capitalized
+                liveComposerSelection.thinkingLevel = thinking
+                publishLiveComposerSelection()
+            }
         case "model_changed":
             Task { [weak self] in await self?.refreshState() }
         default:
@@ -395,6 +434,21 @@ final class SessionController: ComposerSessionControlling {
         } catch {
             fail(error, function: "refreshState")
         }
+    }
+
+    private func applyModelPayload(_ value: JSONValue) {
+        if let label = Self.modelLabel(value) {
+            modelName = label
+        }
+        liveComposerSelection.provider = value["provider"]?.stringValue
+            ?? liveComposerSelection.provider
+        liveComposerSelection.modelID = value["id"]?.stringValue
+            ?? value["modelId"]?.stringValue
+            ?? liveComposerSelection.modelID
+    }
+
+    private func publishLiveComposerSelection() {
+        attachedComposerControls?.applyLiveSelection(liveComposerSelection)
     }
 
     private func syncReducerState() {

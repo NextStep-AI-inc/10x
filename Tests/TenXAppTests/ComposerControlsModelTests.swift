@@ -3,7 +3,7 @@ import Testing
 @testable import TenXApp
 
 private let anthropicOpus = ComposerModelInfo(
-    id: "claude-opus-4-8",
+    modelID: "claude-opus-4-8",
     name: "Claude Opus 4.8",
     provider: "anthropic",
     api: "anthropic-messages",
@@ -11,7 +11,7 @@ private let anthropicOpus = ComposerModelInfo(
     requiresEffort: false)
 
 private let anthropicSonnet = ComposerModelInfo(
-    id: "claude-sonnet-4-5",
+    modelID: "claude-sonnet-4-5",
     name: "Claude Sonnet 4.5",
     provider: "anthropic",
     api: "anthropic-messages",
@@ -19,7 +19,7 @@ private let anthropicSonnet = ComposerModelInfo(
     requiresEffort: false)
 
 private let cursorModel = ComposerModelInfo(
-    id: "gpt-5",
+    modelID: "gpt-5",
     name: "GPT-5",
     provider: "cursor",
     api: "cursor-agent",
@@ -38,8 +38,9 @@ private let cursorModel = ComposerModelInfo(
 
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
-    #expect(model.models.map(\.id) == ["claude-opus-4-8", "claude-sonnet-4-5"])
-    #expect(model.selectedModel?.id == "claude-opus-4-8")
+    #expect(model.models.map(\.modelID) == ["claude-opus-4-8", "claude-sonnet-4-5"])
+    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
+    #expect(model.selectedModel?.id == "anthropic/claude-opus-4-8")
     #expect(model.thinkingLevel == "high")
     #expect(model.isFastModeEnabled == true)
     #expect(model.isFastModeVisible == true)
@@ -81,7 +82,7 @@ private let cursorModel = ComposerModelInfo(
     #expect(modelCalls.count == 1)
     #expect(modelCalls.first?.0 == "anthropic")
     #expect(modelCalls.first?.1 == "claude-sonnet-4-5")
-    #expect(model.selectedModel?.id == "claude-sonnet-4-5")
+    #expect(model.selectedModel?.modelID == "claude-sonnet-4-5")
     #expect(model.errorMessage == nil)
 }
 
@@ -101,7 +102,7 @@ private let cursorModel = ComposerModelInfo(
 
     await model.selectModel(anthropicSonnet, mode: .newSession)
 
-    #expect(model.selectedModel?.id == "claude-opus-4-8")
+    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
     #expect(model.errorMessage != nil)
     #expect(await defaults.modelCalls.count == 1)
 }
@@ -128,7 +129,7 @@ private let cursorModel = ComposerModelInfo(
     #expect(session.setModelCalls.first?.1 == "claude-sonnet-4-5")
     #expect(await defaults.modelCalls.isEmpty)
     #expect(await defaults.thinkingCalls.isEmpty)
-    #expect(model.selectedModel?.id == "claude-sonnet-4-5")
+    #expect(model.selectedModel?.modelID == "claude-sonnet-4-5")
 }
 
 @MainActor
@@ -190,7 +191,7 @@ private let cursorModel = ComposerModelInfo(
     await model.selectModel(anthropicSonnet, mode: .activeSession)
 
     #expect(session.setModelCalls.count == 1)
-    #expect(model.selectedModel?.id == "claude-opus-4-8")
+    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
     #expect(model.errorMessage != nil)
 }
 
@@ -235,7 +236,7 @@ private let cursorModel = ComposerModelInfo(
 
     await model.selectModel(cursorModel, mode: .activeSession)
 
-    #expect(model.selectedModel?.id == "claude-opus-4-8")
+    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
     #expect(model.isFastModeEnabled == true)
     #expect(model.isFastModeVisible == true)
     #expect(model.errorMessage != nil)
@@ -287,6 +288,69 @@ private let cursorModel = ComposerModelInfo(
     #expect(model.isFastModeVisible == true)
     #expect(model.errorMessage != nil)
     #expect(model.errorMessage != "Fast mode isn’t available for this model.")
+}
+
+@MainActor
+@Test func applyLiveSelectionSeedsModelThinkingAndFastFromSession() async {
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, anthropicSonnet, cursorModel],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
+    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
+
+    model.applyLiveSelection(ComposerLiveSelection(
+        provider: "cursor",
+        modelID: "gpt-5",
+        thinkingLevel: "low",
+        fastModeEnabled: true))
+
+    #expect(model.selectedModel?.modelID == "gpt-5")
+    #expect(model.thinkingLevel == "low")
+    #expect(model.isFastModeVisible == false)
+    #expect(model.isFastModeEnabled == false)
+}
+
+@MainActor
+@Test func spawnSelectionOmitsThinkingWhenModelHasNoThinkingOptions() async {
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicSonnet],
+            selected: anthropicSonnet,
+            thinkingLevel: "high",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults())
+    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+
+    #expect(model.thinkingOptions.isEmpty)
+    #expect(model.spawnSelection.thinking == nil)
+    #expect(model.spawnSelection.modelID == "claude-sonnet-4-5")
+}
+
+@MainActor
+@Test func composerModelInfoIdentityIncludesProvider() {
+    let left = ComposerModelInfo(
+        modelID: "shared",
+        name: "A",
+        provider: "anthropic",
+        api: nil,
+        thinkingEfforts: [],
+        requiresEffort: false)
+    let right = ComposerModelInfo(
+        modelID: "shared",
+        name: "B",
+        provider: "cursor",
+        api: nil,
+        thinkingEfforts: [],
+        requiresEffort: false)
+    #expect(left.id == "anthropic/shared")
+    #expect(right.id == "cursor/shared")
+    #expect(left.id != right.id)
 }
 
 // MARK: - Fakes

@@ -31,6 +31,8 @@ def record(ctype):
 STATE = {
     "model": {"id": "fake", "provider": "test", "name": "Fake"},
     "thinkingLevel": "auto",
+    "fastModeEnabled": False,
+    "fastModeActive": False,
     "isStreaming": False,
     "sessionId": "fake-session",
     "sessionFile": "/tmp/fake.jsonl",

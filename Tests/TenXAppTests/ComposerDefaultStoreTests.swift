@@ -22,6 +22,17 @@ import Testing
     #expect(await runner.lastSetValue == "high")
 }
 
+@Test func storeFailsClosedWhenModelRolesValueIsNotObject() async {
+    let runner = RecordingConfigRunner(initialListJSON: """
+    {"modelRoles":{"value":"anthropic/claude-opus-4-8","type":"string"}}
+    """)
+    let store = OmpComposerDefaultStore(config: OmpConfigService(runner: runner))
+    await #expect(throws: OmpComposerDefaultStoreError.malformedModelRoles) {
+        try await store.setDefaultModel(provider: "anthropic", modelID: "claude-sonnet-4-5")
+    }
+    #expect(await runner.lastSetKey == nil)
+}
+
 private actor RecordingConfigRunner: OmpConfigRunning {
     private let initialListJSON: String
     private(set) var lastSetKey: String?

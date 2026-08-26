@@ -1072,7 +1072,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 @MainActor
 @Test func composerFooterFastPresentSnapshot() async throws {
     let anthropic = ComposerModelInfo(
-        id: "claude-opus-4-8",
+        modelID: "claude-opus-4-8",
         name: "Claude Opus 4.8",
         provider: "anthropic",
         api: "anthropic-messages",
@@ -1102,7 +1102,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 @MainActor
 @Test func composerFooterFastAbsentSnapshot() async throws {
     let cursor = ComposerModelInfo(
-        id: "gpt-5",
+        modelID: "gpt-5",
         name: "GPT-5",
         provider: "cursor",
         api: "cursor-agent",

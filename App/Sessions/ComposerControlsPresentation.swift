@@ -34,7 +34,7 @@ enum ComposerControlsPresentation {
     private static func serviceTierFamily(for model: ComposerModelInfo) -> String? {
         let provider = model.provider
         if provider == "openrouter" {
-            let id = model.id.lowercased()
+            let id = model.modelID.lowercased()
             if id.hasPrefix("anthropic/") { return "anthropic" }
             if id.hasPrefix("google/") { return "google" }
             if id.hasPrefix("openai/") { return "openai" }
@@ -52,7 +52,7 @@ enum ComposerControlsPresentation {
         guard let api = model.api else { return false }
         let openAIAPIs: Set<String> = ["openai-completions", "openai-responses", "openai-codex-responses"]
         guard openAIAPIs.contains(api) else { return false }
-        return isOpenAIModelID(model.id)
+        return isOpenAIModelID(model.modelID)
     }
 
     private static func isOpenAIModelID(_ id: String) -> Bool {

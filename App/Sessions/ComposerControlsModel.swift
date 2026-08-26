@@ -57,8 +57,9 @@ final class ComposerControlsModel {
     var spawnSelection: ComposerSpawnSelection {
         ComposerSpawnSelection(
             provider: selectedModel?.provider,
-            modelID: selectedModel?.id,
-            thinking: thinkingLevel,
+            modelID: selectedModel?.modelID,
+            // Spec: --thinking only when the selected model has thinking options.
+            thinking: thinkingOptions.isEmpty ? nil : thinkingLevel,
             fastModeEnabled: isFastModeEnabled)
     }
 
@@ -71,7 +72,7 @@ final class ComposerControlsModel {
                 catalog: snapshot.models,
                 authenticatedProviderIDs: authenticatedProviderIDs)
             if let selected = snapshot.selected,
-               models.contains(where: { $0.id == selected.id && $0.provider == selected.provider })
+               models.contains(where: { $0.id == selected.id })
             {
                 selectedModel = selected
             } else {
@@ -85,6 +86,20 @@ final class ComposerControlsModel {
         }
     }
 
+    /// Seeds / mirrors chips from live session `get_state` / `config_update` / model events.
+    func applyLiveSelection(_ selection: ComposerLiveSelection) {
+        guard !isMutating else { return }
+        if let provider = selection.provider, let modelID = selection.modelID,
+           let match = models.first(where: { $0.provider == provider && $0.modelID == modelID })
+        {
+            selectedModel = match
+        }
+        if let thinking = selection.thinkingLevel {
+            thinkingLevel = thinking
+        }
+        applyFastModeVisibility(preservingEnabled: selection.fastModeEnabled)
+    }
+
     func selectModel(_ model: ComposerModelInfo, mode: ComposerControlsMode) async {
         guard !isMutating else { return }
         switch mode {
@@ -92,7 +107,7 @@ final class ComposerControlsModel {
             isMutating = true
             defer { isMutating = false }
             do {
-                try await defaults.setDefaultModel(provider: model.provider, modelID: model.id)
+                try await defaults.setDefaultModel(provider: model.provider, modelID: model.modelID)
                 selectedModel = model
                 applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
                 errorMessage = nil
@@ -108,7 +123,7 @@ final class ComposerControlsModel {
             selectedModel = model
             applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
             do {
-                try await activeSession.setModel(provider: model.provider, modelID: model.id)
+                try await activeSession.setModel(provider: model.provider, modelID: model.modelID)
                 errorMessage = nil
             } catch {
                 selectedModel = prior
@@ -184,10 +199,19 @@ final class ComposerControlsModel {
     }
 
     func attachActiveSession(_ controller: any ComposerSessionControlling) {
+        if let previous = activeSession as? SessionController {
+            previous.bindComposerControls(nil)
+        }
         activeSession = controller
+        if let session = controller as? SessionController {
+            session.bindComposerControls(self)
+        }
     }
 
     func detachActiveSession() {
+        if let session = activeSession as? SessionController {
+            session.bindComposerControls(nil)
+        }
         activeSession = nil
     }
 

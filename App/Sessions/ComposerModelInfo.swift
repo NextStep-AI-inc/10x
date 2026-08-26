@@ -1,10 +1,21 @@
 import Foundation
 
 struct ComposerModelInfo: Equatable, Sendable, Identifiable {
-    let id: String
+    /// OMP model id (not unique across providers).
+    let modelID: String
     let name: String
     let provider: String
     let api: String?
     let thinkingEfforts: [String]
     let requiresEffort: Bool
+
+    /// Stable ForEach / selection key across multi-provider catalogs.
+    var id: String { "\(provider)/\(modelID)" }
+}
+
+struct ComposerLiveSelection: Equatable, Sendable {
+    var provider: String?
+    var modelID: String?
+    var thinkingLevel: String?
+    var fastModeEnabled: Bool
 }

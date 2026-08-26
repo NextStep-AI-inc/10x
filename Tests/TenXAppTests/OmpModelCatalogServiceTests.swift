@@ -60,7 +60,7 @@ private let modelsResponse = RpcResponse(
 
     let snapshot = try await service.load()
 
-    #expect(snapshot.selected?.id == "claude-opus-4-8")
+    #expect(snapshot.selected?.modelID == "claude-opus-4-8")
     #expect(snapshot.models.count == 2)
     #expect(snapshot.thinkingLevel == "high")
     #expect(snapshot.fastModeEnabled == false)

@@ -129,6 +129,56 @@ import Testing
 }
 
 @MainActor
+@Test func openNewSeedsLiveComposerSelectionFromGetState() async throws {
+    let manager = composerManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(
+        projectURL: URL(filePath: "/tmp/composer-project", directoryHint: .isDirectory),
+        selection: nil)
+
+    #expect(controller.liveComposerSelection.provider == "test")
+    #expect(controller.liveComposerSelection.modelID == "fake")
+    #expect(controller.liveComposerSelection.thinkingLevel == "auto")
+    #expect(controller.liveComposerSelection.fastModeEnabled == false)
+    await manager.closeAll()
+}
+
+@MainActor
+@Test func bindComposerControlsAppliesLiveSelection() async throws {
+    let manager = composerManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(
+        projectURL: URL(filePath: "/tmp/composer-project", directoryHint: .isDirectory),
+        selection: nil)
+
+    let catalogModel = ComposerModelInfo(
+        modelID: "fake",
+        name: "Fake",
+        provider: "test",
+        api: "anthropic-messages",
+        thinkingEfforts: ["low"],
+        requiresEffort: false)
+    let controls = ComposerControlsModel(
+        catalog: StaticComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [catalogModel],
+            selected: catalogModel,
+            thinkingLevel: "high",
+            fastModeEnabled: true,
+            fastModeActive: false)),
+        defaults: NoopComposerDefaults())
+    await controls.refresh(authenticatedProviderIDs: ["test"])
+    #expect(controls.thinkingLevel == "high")
+    #expect(controls.isFastModeEnabled == true)
+
+    controls.attachActiveSession(controller)
+
+    #expect(controls.selectedModel?.modelID == "fake")
+    #expect(controls.thinkingLevel == "auto")
+    #expect(controls.isFastModeEnabled == false)
+    await manager.closeAll()
+}
+
+@MainActor
 @Test func sessionControllerConformsToComposerSessionControlling() async throws {
     let manager = composerManager(mode: "basic")
     let controller = SessionController(processManager: manager)
@@ -201,4 +251,20 @@ private func composerFakeServerURL() -> URL {
     URL(filePath: #filePath)
         .deletingLastPathComponent()
         .appendingPathComponent("Fixtures/composer_fake_server.py")
+}
+
+private actor StaticComposerCatalog: ComposerCatalogLoading {
+    private let snapshot: ComposerCatalogSnapshot
+
+    init(snapshot: ComposerCatalogSnapshot) {
+        self.snapshot = snapshot
+    }
+
+    func load() async throws -> ComposerCatalogSnapshot { snapshot }
+    func shutdown() async {}
+}
+
+private actor NoopComposerDefaults: ComposerDefaultPersisting {
+    func setDefaultModel(provider: String, modelID: String) async throws {}
+    func setDefaultThinkingLevel(_ level: String) async throws {}
 }

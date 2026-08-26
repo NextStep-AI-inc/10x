@@ -137,7 +137,7 @@ actor OmpModelCatalogService {
         }
         let thinking = object["thinking"]?.objectValue
         return ComposerModelInfo(
-            id: id,
+            modelID: id,
             name: name,
             provider: provider,
             api: object["api"]?.stringValue,
