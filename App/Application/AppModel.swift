@@ -10,6 +10,20 @@ final class AppModel {
         let task: Task<Void, Never>
     }
 
+    private struct FallbackOperation {
+        let id: UUID
+        let attemptID: UUID
+        let generation: Int
+        let lifecycleGeneration: Int
+        let tasks: [Task<Void, Never>]
+    }
+
+    private struct ProviderUsageOperation {
+        let id: UUID
+        let lifecycleGeneration: Int
+        let task: Task<Void, Never>
+    }
+
     private enum StartupAttemptError: Error {
         case timeout
         case settingsUnavailable
@@ -45,10 +59,16 @@ final class AppModel {
     @ObservationIgnored private var exitTask: Task<Void, Never>?
     @ObservationIgnored private var archivedReloadGeneration = 0
     @ObservationIgnored private var startupOperation: StartupOperation?
+    @ObservationIgnored private var continueOperation: StartupOperation?
     @ObservationIgnored private var sessionChangeTask: Task<Void, Never>?
+    @ObservationIgnored private var sessionChangeGeneration = 0
     @ObservationIgnored private var warmExitTask: Task<Void, Never>?
-    @ObservationIgnored private var providerUsageTask: Task<Void, Never>?
-    @ObservationIgnored private var fallbackTasks: [Task<Void, Never>] = []
+    @ObservationIgnored private var processWatcherGeneration = 0
+    @ObservationIgnored private var providerUsageOperation: ProviderUsageOperation?
+    @ObservationIgnored private var fallbackOperation: FallbackOperation?
+    @ObservationIgnored private(set) var fallbackGeneration = 0
+    @ObservationIgnored private(set) var lifecycleGeneration = 0
+    @ObservationIgnored private(set) var isShuttingDown = false
     @ObservationIgnored private var memoryPressureSource: DispatchSourceMemoryPressure?
     @ObservationIgnored private var hasStartedWarmRetention = false
 
@@ -66,6 +86,7 @@ final class AppModel {
     }
 
     func bootstrap() async {
+        guard !isShuttingDown else { return }
         if let operation = startupOperation {
             await operation.task.value
             return
@@ -83,6 +104,7 @@ final class AppModel {
     }
 
     func retryStartup() async {
+        guard !isShuttingDown else { return }
         guard startupState.phase == .recovery else { return }
         if let operation = startupOperation {
             await operation.task.value
@@ -109,8 +131,10 @@ final class AppModel {
         } catch {
             return
         }
-        await replaceWorkspaceRuntime(with: locatedInstallation)
-        guard !Task.isCancelled else { return }
+        guard await replaceWorkspaceRuntime(with: locatedInstallation),
+              !Task.isCancelled,
+              !isShuttingDown
+        else { return }
         setupError = locatedInstallation == nil
             ? OmpExecutableLocator.inspectionErrorDescription(for: url)
             : nil
@@ -218,30 +242,79 @@ final class AppModel {
     }
 
     func continueToWorkspace() async {
+        if let operation = continueOperation {
+            await operation.task.value
+            return
+        }
         guard startupState.phase == .recovery,
-              let attemptID = startupState.attemptID
+              let attemptID = startupState.attemptID,
+              !isShuttingDown
         else { return }
+        let id = UUID()
+        let generation = lifecycleGeneration
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.performContinueToWorkspace(
+                id: id,
+                attemptID: attemptID,
+                lifecycleGeneration: generation)
+        }
+        continueOperation = StartupOperation(id: id, task: task)
+        await task.value
+        if continueOperation?.id == id { continueOperation = nil }
+    }
+
+    private func performContinueToWorkspace(
+        id: UUID,
+        attemptID: UUID,
+        lifecycleGeneration generation: Int
+    ) async {
         let operation = startupOperation
         startupOperation = nil
         operation?.task.cancel()
-        await cancelUnfinishedStartupWork(attemptID: attemptID)
+        await cancelUnfinishedStartupWork(
+            attemptID: attemptID,
+            lifecycleGeneration: generation)
+        guard isCurrentContinueOperation(
+            id: id,
+            attemptID: attemptID,
+            lifecycleGeneration: generation)
+        else {
+            await operation?.task.value
+            return
+        }
         await operation?.task.value
+        guard isCurrentContinueOperation(
+            id: id,
+            attemptID: attemptID,
+            lifecycleGeneration: generation)
+        else { return }
         startupState.requestHandoff(attemptID: attemptID)
-        startFallbackLoadsForStoppedStages()
+        guard startupState.phase == .handoff else { return }
+        startFallbackLoadsForStoppedStages(
+            attemptID: attemptID,
+            lifecycleGeneration: generation)
     }
 
     func workspaceDidOpen() async {
-        guard !hasStartedWarmRetention else { return }
+        guard !hasStartedWarmRetention,
+              !isShuttingDown,
+              let processManager,
+              let selectedProjectURL
+        else { return }
         hasStartedWarmRetention = true
-        await processManager?.beginWarmRetention(
-            primaryProjectDirectory: selectedProjectURL?.path)
+        await processManager.beginWarmRetention(
+            primaryProjectDirectory: selectedProjectURL.path)
     }
 
     func handleMemoryPressure() async {
-        guard let processManager else { return }
+        guard !isShuttingDown, let processManager else { return }
         let evicted = await processManager.evictWarmClients()
+        guard !isShuttingDown, self.processManager === processManager else { return }
         let canceled = await processManager.cancelWarmings()
-        guard !evicted.isEmpty || !canceled.isEmpty,
+        guard !isShuttingDown,
+              self.processManager === processManager,
+              !evicted.isEmpty || !canceled.isEmpty,
               startupState.phase == .preparing,
               let attemptID = startupState.attemptID
         else { return }
@@ -249,40 +322,58 @@ final class AppModel {
         startupOperation = nil
         operation?.task.cancel()
         await operation?.task.value
+        guard !isShuttingDown,
+              self.processManager === processManager,
+              startupState.attemptID == attemptID,
+              startupState.phase == .preparing
+        else { return }
         startupState.markStopped(.recentProjects, attemptID: attemptID)
         startupState.enterRecovery(attemptID: attemptID)
     }
 
     func shutdown() async {
+        guard !isShuttingDown else { return }
+        isShuttingDown = true
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
+        lifecycleGeneration &+= 1
+        let continuation = continueOperation
+        continueOperation = nil
+        continuation?.task.cancel()
+        let fallbacks = fallbackOperation
+        fallbackOperation = nil
+        fallbacks?.tasks.forEach { $0.cancel() }
         let startup = startupOperation
         startupOperation = nil
         startup?.task.cancel()
+
+        await continuation?.task.value
+        if let fallbacks {
+            for fallback in fallbacks.tasks { await fallback.value }
+        }
+        await startup?.task.value
+
         let sessionChanges = sessionChangeTask
         sessionChangeTask = nil
+        sessionChangeGeneration &+= 1
         sessionChanges?.cancel()
         let warmExits = warmExitTask
         warmExitTask = nil
+        processWatcherGeneration &+= 1
         warmExits?.cancel()
         let activeExits = exitTask
         exitTask = nil
         activeExits?.cancel()
-        let usage = providerUsageTask
-        providerUsageTask = nil
-        usage?.cancel()
-        let fallbacks = fallbackTasks
-        fallbackTasks.removeAll()
-        fallbacks.forEach { $0.cancel() }
+        let usage = providerUsageOperation
+        providerUsageOperation = nil
+        usage?.task.cancel()
 
         await providerModel?.shutdown()
         await processManager?.closeAll()
-        await startup?.task.value
         await sessionChanges?.value
         await warmExits?.value
         await activeExits?.value
-        await usage?.value
-        for fallback in fallbacks { await fallback.value }
+        await usage?.task.value
     }
 
     func requestDeleteSession(_ metadata: SessionMetadata) {
@@ -642,30 +733,41 @@ final class AppModel {
         startupState.markReady(.recentProjects, attemptID: attemptID)
     }
 
-    private func cancelUnfinishedStartupWork(attemptID: UUID) async {
+    private func cancelUnfinishedStartupWork(
+        attemptID: UUID,
+        lifecycleGeneration expectedLifecycleGeneration: Int? = nil
+    ) async {
         _ = await processManager?.cancelWarmings()
-        guard startupState.attemptID == attemptID,
+        guard !Task.isCancelled,
+              expectedLifecycleGeneration.map({ $0 == lifecycleGeneration }) ?? true,
+              !isShuttingDown,
+              startupState.attemptID == attemptID,
               startupState.status(of: .runtime) != .ready
         else { return }
         let provider = providerModel
         providerModel = nil
         providerUsages = []
-        let usage = providerUsageTask
-        providerUsageTask = nil
-        usage?.cancel()
+        let usage = providerUsageOperation
+        providerUsageOperation = nil
+        usage?.task.cancel()
         await provider?.shutdown()
-        await usage?.value
+        await usage?.task.value
     }
 
-    private func replaceWorkspaceRuntime(with located: OmpInstallation?) async {
+    private func replaceWorkspaceRuntime(with located: OmpInstallation?) async -> Bool {
+        guard !isShuttingDown else { return false }
+        let generation = await cancelWorkspacePreparationForLifecycleChange()
+        guard isCurrentLifecycle(generation) else { return false }
         await stopProviderUsage()
+        guard isCurrentLifecycle(generation) else { return false }
         let oldProvider = providerModel
         let oldManager = processManager
         await oldProvider?.shutdown()
+        guard isCurrentLifecycle(generation) else { return false }
         await oldManager?.closeAll()
-        guard !Task.isCancelled else { return }
+        guard isCurrentLifecycle(generation) else { return false }
         await stopProcessWatchers()
-        guard !Task.isCancelled else { return }
+        guard isCurrentLifecycle(generation) else { return false }
 
         guard let located else {
             installation = nil
@@ -674,12 +776,17 @@ final class AppModel {
             providerModel = nil
             providerUsages = []
             route = .setup
-            return
+            return true
         }
 
         let manager = dependencies.makeProcessManager(located.executableURL.path)
         let settings = dependencies.makeSettingsModel(located.executableURL)
         let provider = dependencies.makeProviderModel(located.executableURL)
+        guard isCurrentLifecycle(generation) else {
+            await provider.shutdown()
+            await manager.closeAll()
+            return false
+        }
         installation = located
         processManager = manager
         settingsModel = settings
@@ -688,25 +795,118 @@ final class AppModel {
         setupError = nil
         route = .providerSetup
         await restartProcessWatchers(for: manager)
-        guard !Task.isCancelled else { return }
+        guard isCurrentLifecycle(generation),
+              processManager === manager,
+              providerModel === provider
+        else { return false }
         startProviderUsage(for: provider)
         await provider.loadProviders()
-        guard !Task.isCancelled, providerModel === provider else { return }
+        guard isCurrentLifecycle(generation),
+              processManager === manager,
+              providerModel === provider
+        else { return false }
         route = provider.hasAuthenticatedProvider ? .newSession : .providerSetup
+        return true
     }
 
-    private func startFallbackLoadsForStoppedStages() {
+    private func cancelWorkspacePreparationForLifecycleChange() async -> Int {
+        lifecycleGeneration &+= 1
+        let generation = lifecycleGeneration
+        let continuation = continueOperation
+        continueOperation = nil
+        continuation?.task.cancel()
+        let fallback = fallbackOperation
+        fallbackOperation = nil
+        fallback?.tasks.forEach { $0.cancel() }
+
+        await continuation?.task.value
+        if let fallback {
+            for task in fallback.tasks { await task.value }
+        }
+        return generation
+    }
+
+    private func isCurrentLifecycle(_ generation: Int) -> Bool {
+        !Task.isCancelled
+            && !isShuttingDown
+            && lifecycleGeneration == generation
+    }
+
+    private func isCurrentContinueOperation(
+        id: UUID,
+        attemptID: UUID,
+        lifecycleGeneration: Int
+    ) -> Bool {
+        !Task.isCancelled
+            && !isShuttingDown
+            && self.lifecycleGeneration == lifecycleGeneration
+            && continueOperation?.id == id
+            && startupState.attemptID == attemptID
+            && startupState.phase == .recovery
+    }
+
+    private func isCurrentFallback(
+        id: UUID,
+        attemptID: UUID,
+        generation: Int,
+        lifecycleGeneration: Int
+    ) -> Bool {
+        !Task.isCancelled
+            && !isShuttingDown
+            && self.lifecycleGeneration == lifecycleGeneration
+            && fallbackOperation?.id == id
+            && fallbackOperation?.attemptID == attemptID
+            && fallbackOperation?.generation == generation
+            && fallbackOperation?.lifecycleGeneration == lifecycleGeneration
+            && startupState.attemptID == attemptID
+            && startupState.phase == .handoff
+    }
+
+    private func isCurrentSessionChange(generation: Int) -> Bool {
+        !Task.isCancelled
+            && !isShuttingDown
+            && sessionChangeTask != nil
+            && sessionChangeGeneration == generation
+    }
+
+    private func startFallbackLoadsForStoppedStages(
+        attemptID: UUID,
+        lifecycleGeneration: Int
+    ) {
+        guard fallbackOperation == nil,
+              !isShuttingDown,
+              self.lifecycleGeneration == lifecycleGeneration,
+              startupState.attemptID == attemptID,
+              startupState.phase == .handoff
+        else { return }
         let stages = StartupStageID.allCases.filter {
             startupState.status(of: $0) == .stopped
         }
+        let id = UUID()
+        fallbackGeneration &+= 1
+        let generation = fallbackGeneration
         var tasks: [Task<Void, Never>] = []
         if stages.contains(.sessions) {
             tasks.append(Task { [weak self] in
                 guard let self else { return }
+                guard self.isCurrentFallback(
+                    id: id,
+                    attemptID: attemptID,
+                    generation: generation,
+                    lifecycleGeneration: lifecycleGeneration)
+                else { return }
+                self.archivedReloadGeneration &+= 1
+                let archivedGeneration = self.archivedReloadGeneration
                 async let active = self.dependencies.sessionLibrary.listAll()
                 async let archived = self.dependencies.sessionLibrary.listArchived()
                 let loaded = await (active, archived)
-                guard self.startupState.phase == .handoff else { return }
+                guard self.isCurrentFallback(
+                    id: id,
+                    attemptID: attemptID,
+                    generation: generation,
+                    lifecycleGeneration: lifecycleGeneration),
+                      archivedGeneration == self.archivedReloadGeneration
+                else { return }
                 self.sessions = loaded.0
                 self.archivedSessions = loaded.1
                 self.startSessionChangeWatching()
@@ -714,64 +914,163 @@ final class AppModel {
         }
         if stages.contains(.settings) {
             tasks.append(Task { [weak self] in
-                _ = await self?.settingsModel?.load()
+                guard let self,
+                      self.isCurrentFallback(
+                        id: id,
+                        attemptID: attemptID,
+                        generation: generation,
+                        lifecycleGeneration: lifecycleGeneration),
+                      let settings = self.settingsModel
+                else { return }
+                _ = await settings.load()
+                guard self.isCurrentFallback(
+                    id: id,
+                    attemptID: attemptID,
+                    generation: generation,
+                    lifecycleGeneration: lifecycleGeneration),
+                      self.settingsModel === settings
+                else { return }
             })
         }
         if stages.contains(.runtime) {
             tasks.append(Task { [weak self] in
-                await self?.loadProviderFallback()
+                await self?.loadProviderFallback(
+                    id: id,
+                    attemptID: attemptID,
+                    generation: generation,
+                    lifecycleGeneration: lifecycleGeneration)
             })
         }
-        fallbackTasks = tasks
+        fallbackOperation = FallbackOperation(
+            id: id,
+            attemptID: attemptID,
+            generation: generation,
+            lifecycleGeneration: lifecycleGeneration,
+            tasks: tasks)
     }
 
-    private func loadProviderFallback() async {
-        guard startupState.phase == .handoff,
+    private func loadProviderFallback(
+        id: UUID,
+        attemptID: UUID,
+        generation: Int,
+        lifecycleGeneration: Int
+    ) async {
+        guard isCurrentFallback(
+            id: id,
+            attemptID: attemptID,
+            generation: generation,
+            lifecycleGeneration: lifecycleGeneration),
               let installation
         else { return }
         let provider = providerModel ?? dependencies.makeProviderModel(installation.executableURL)
         if providerModel == nil {
+            guard isCurrentFallback(
+                id: id,
+                attemptID: attemptID,
+                generation: generation,
+                lifecycleGeneration: lifecycleGeneration)
+            else {
+                await provider.shutdown()
+                return
+            }
             providerModel = provider
             startProviderUsage(for: provider)
         }
         await provider.loadProviders()
-        guard startupState.phase == .handoff, providerModel === provider else { return }
+        guard isCurrentFallback(
+            id: id,
+            attemptID: attemptID,
+            generation: generation,
+            lifecycleGeneration: lifecycleGeneration),
+              providerModel === provider
+        else { return }
         route = provider.hasAuthenticatedProvider ? .newSession : .providerSetup
     }
 
     private func startSessionChangeWatching() {
         guard sessionChangeTask == nil else { return }
+        sessionChangeGeneration &+= 1
+        let generation = sessionChangeGeneration
         let library = dependencies.sessionLibrary
         sessionChangeTask = Task { [weak self] in
             for await _ in library.changes {
-                guard let self, !Task.isCancelled else { return }
-                await self.reloadSessions()
-                await self.reloadArchivedSessions()
+                guard let self,
+                      self.isCurrentSessionChange(generation: generation)
+                else { return }
+                self.archivedReloadGeneration &+= 1
+                let archivedGeneration = self.archivedReloadGeneration
+                async let active = library.listAll()
+                async let archived = library.listArchived()
+                let loaded = await (active, archived)
+                guard self.isCurrentSessionChange(generation: generation),
+                      archivedGeneration == self.archivedReloadGeneration
+                else { return }
+                self.sessions = loaded.0
+                self.archivedSessions = loaded.1
             }
         }
     }
 
     private func startProviderUsage(for provider: ProviderManagementViewModel) {
-        providerUsageTask = Task { [weak self, weak provider] in
-            guard let provider else { return }
+        guard providerUsageOperation == nil, !isShuttingDown else { return }
+        let id = UUID()
+        let lifecycleGeneration = self.lifecycleGeneration
+        let task = Task { [weak self, weak provider] in
+            guard let self,
+                  let provider,
+                  self.isCurrentProviderUsage(
+                    id: id,
+                    lifecycleGeneration: lifecycleGeneration,
+                    provider: provider)
+            else { return }
             await provider.loadUsage()
-            guard let self, self.providerModel === provider else { return }
+            guard self.isCurrentProviderUsage(
+                id: id,
+                lifecycleGeneration: lifecycleGeneration,
+                provider: provider)
+            else { return }
             self.providerUsages = provider.railProviders
         }
+        providerUsageOperation = ProviderUsageOperation(
+            id: id,
+            lifecycleGeneration: lifecycleGeneration,
+            task: task)
     }
 
     private func stopProviderUsage() async {
-        let usage = providerUsageTask
-        providerUsageTask = nil
-        usage?.cancel()
-        await usage?.value
+        let usage = providerUsageOperation
+        providerUsageOperation = nil
+        usage?.task.cancel()
+        await usage?.task.value
+    }
+
+    private func isCurrentProviderUsage(
+        id: UUID,
+        lifecycleGeneration: Int,
+        provider: ProviderManagementViewModel
+    ) -> Bool {
+        !Task.isCancelled
+            && !isShuttingDown
+            && self.lifecycleGeneration == lifecycleGeneration
+            && providerUsageOperation?.id == id
+            && providerUsageOperation?.lifecycleGeneration == lifecycleGeneration
+            && providerModel === provider
     }
 
     private func restartProcessWatchers(for processManager: SessionProcessManager) async {
         await stopProcessWatchers()
+        guard !Task.isCancelled,
+              !isShuttingDown,
+              self.processManager === processManager
+        else { return }
+        processWatcherGeneration &+= 1
+        let generation = processWatcherGeneration
         exitTask = Task { [weak self] in
             for await exit in processManager.unexpectedExits {
-                guard let self, !Task.isCancelled,
+                guard let self,
+                      self.isCurrentProcessWatcher(
+                        generation: generation,
+                        processManager: processManager),
                       self.activeSession?.sessionPath == exit.sessionPath
                 else { continue }
                 self.activeSession?.handleUnexpectedExit(
@@ -781,13 +1080,18 @@ final class AppModel {
         }
         warmExitTask = Task { [weak self] in
             for await _ in processManager.unexpectedWarmExits {
-                guard let self, !Task.isCancelled else { return }
+                guard let self,
+                      self.isCurrentProcessWatcher(
+                        generation: generation,
+                        processManager: processManager)
+                else { return }
                 await self.handleWarmExit(from: processManager)
             }
         }
     }
 
     private func stopProcessWatchers() async {
+        processWatcherGeneration &+= 1
         let active = exitTask
         exitTask = nil
         active?.cancel()
@@ -798,8 +1102,19 @@ final class AppModel {
         await warm?.value
     }
 
+    private func isCurrentProcessWatcher(
+        generation: Int,
+        processManager: SessionProcessManager
+    ) -> Bool {
+        !Task.isCancelled
+            && !isShuttingDown
+            && processWatcherGeneration == generation
+            && self.processManager === processManager
+    }
+
     private func handleWarmExit(from manager: SessionProcessManager) async {
-        guard processManager === manager,
+        guard !isShuttingDown,
+              processManager === manager,
               startupState.phase == .preparing,
               let attemptID = startupState.attemptID
         else { return }
@@ -808,7 +1123,9 @@ final class AppModel {
         operation?.task.cancel()
         _ = await manager.cancelWarmings()
         await operation?.task.value
-        guard startupState.attemptID == attemptID,
+        guard !isShuttingDown,
+              processManager === manager,
+              startupState.attemptID == attemptID,
               startupState.phase == .preparing
         else { return }
         startupState.markStopped(.recentProjects, attemptID: attemptID)

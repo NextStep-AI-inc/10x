@@ -270,3 +270,197 @@ import Testing
     #expect(model.sessions.first?.cwd.hasSuffix("Watched") == true)
     await model.shutdown()
 }
+
+@MainActor
+@Test func concurrentContinueCallsStartOnlyOneFallbackGeneration() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let providerGate = LoadGate()
+    let providerService = FakeProviderService(providers: [authenticatedProvider])
+    await providerService.enqueueProviderGate(providerGate)
+    let provider = startupProviderModel(service: providerService)
+    let providerFactory = StartupProviderModelFactory(models: [provider])
+    let model = fixture.model(providerFactory: providerFactory)
+    enterRuntimeRecovery(model, installation: fixture.installation)
+
+    async let first: Void = model.continueToWorkspace()
+    async let second: Void = model.continueToWorkspace()
+    await providerGate.waitForStart()
+    await first
+    await second
+
+    #expect(model.startupState.handoffGeneration == 1)
+    #expect(model.fallbackGeneration == 1)
+    #expect(providerFactory.count == 1)
+    #expect(await providerService.providerLoadCount == 1)
+    await providerGate.release()
+    await model.shutdown()
+}
+
+@MainActor
+@Test func shutdownDuringBlockedFallbackReapsBeforeStateCanMutate() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let startupProviderGate = LoadGate()
+    let timeoutGate = LoadGate()
+    let startupProviderService = FakeProviderService(providers: [authenticatedProvider])
+    await startupProviderService.enqueueProviderGate(startupProviderGate)
+    let startupProvider = startupProviderModel(service: startupProviderService)
+
+    let fallbackProviderGate = LoadGate()
+    let usageGate = LoadGate()
+    let fallbackProviderService = FakeProviderService(providers: [authenticatedProvider])
+    let usageService = FakeUsageService(snapshot: try usageSnapshotFixture())
+    await fallbackProviderService.enqueueProviderGate(fallbackProviderGate)
+    await usageService.enqueueLoadGate(usageGate)
+    let fallbackProvider = startupProviderModel(
+        service: fallbackProviderService,
+        usageService: usageService)
+    let providerFactory = StartupProviderModelFactory(
+        models: [startupProvider, fallbackProvider])
+    let model = fixture.model(
+        timing: .controlledTimeout(timeoutGate),
+        providerFactory: providerFactory)
+    let bootstrap = Task { await model.bootstrap() }
+    await startupProviderGate.waitForStart()
+    await timeoutGate.waitForStart()
+    await timeoutGate.release()
+    await waitForModelState {
+        await startupProviderService.shutdownCount == 1
+    }
+    await startupProviderGate.release()
+    await bootstrap.value
+    #expect(model.startupState.phase == .recovery)
+
+    let manager = try #require(model.processManager)
+    let warmProject = try fixture.project("ShutdownWarm")
+    let warm = try await manager.warm(projectDirectory: warmProject.path)
+    await model.continueToWorkspace()
+    await fallbackProviderGate.waitForStart()
+    await usageGate.waitForStart()
+    let routeBeforeShutdown = model.route
+
+    let shutdown = Task { await model.shutdown() }
+    await waitForModelState {
+        await Task.yield()
+        return model.isShuttingDown
+    }
+    #expect(await fallbackProviderService.shutdownCount == 0)
+    await fallbackProviderGate.release()
+    await usageGate.release()
+    await shutdown.value
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(model.route == routeBeforeShutdown)
+    #expect(model.providerUsages.isEmpty)
+    #expect(providerFactory.count == 2)
+    #expect(await startupProviderService.shutdownCount == 1)
+    #expect(await fallbackProviderService.shutdownCount == 1)
+    #expect(await usageService.loadCount == 1)
+    #expect(await warm.client.exitCode != nil)
+    #expect(await !manager.isWarm(projectDirectory: warmProject.path))
+}
+
+@MainActor
+@Test func replacementWaitsForBlockedFallbackBeforeCapturingRuntimeOwners() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let providerGate = LoadGate()
+    let fallbackService = FakeProviderService(providers: [authenticatedProvider])
+    await fallbackService.enqueueProviderGate(providerGate)
+    let fallbackProvider = startupProviderModel(service: fallbackService)
+    let replacementService = FakeProviderService(providers: [unauthenticatedProvider])
+    let replacementProvider = startupProviderModel(service: replacementService)
+    let providerFactory = StartupProviderModelFactory(
+        models: [fallbackProvider, replacementProvider])
+    let locator = CountingOmpLocator(installation: fixture.installation)
+    let model = fixture.model(locator: locator, providerFactory: providerFactory)
+    enterRuntimeRecovery(model, installation: fixture.installation)
+    await model.continueToWorkspace()
+    await providerGate.waitForStart()
+
+    let lifecycleGeneration = model.lifecycleGeneration
+    let replacement = Task {
+        await model.useOmp(at: URL(filePath: "/tmp/replacement-omp"))
+    }
+    await waitForModelState {
+        await Task.yield()
+        return model.lifecycleGeneration > lifecycleGeneration
+    }
+    #expect(await fallbackService.shutdownCount == 0)
+    await providerGate.release()
+    await replacement.value
+
+    #expect(model.providerModel === replacementProvider)
+    #expect(model.route == .providerSetup)
+    #expect(providerFactory.count == 2)
+    #expect(await fallbackService.shutdownCount == 1)
+    await model.shutdown()
+    #expect(await replacementService.shutdownCount == 1)
+}
+
+@MainActor
+@Test func workspaceDidOpenRetainsPrimaryAndExpiresOnlySecondaryWarmClient() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let gate = StartupRetentionGate()
+    let manager = fixture.retentionManager(gate: gate)
+    let primary = try fixture.project("RetentionPrimary")
+    let secondary = try fixture.project("RetentionSecondary")
+    let primaryHandle = try await manager.warm(projectDirectory: primary.path)
+    let secondaryHandle = try await manager.warm(projectDirectory: secondary.path)
+    let model = fixture.model(processManager: manager)
+    model.chooseProject(primary)
+    await model.bootstrap()
+    #expect(await manager.isWarm(projectDirectory: primary.path))
+    #expect(await manager.isWarm(projectDirectory: secondary.path))
+
+    await model.workspaceDidOpen()
+    await gate.waitForStart()
+    await model.workspaceDidOpen()
+    await gate.release()
+    await waitForModelState { await secondaryHandle.client.exitCode != nil }
+
+    #expect(await manager.isWarm(projectDirectory: primary.path))
+    #expect(await !manager.isWarm(projectDirectory: secondary.path))
+    #expect(await primaryHandle.client.exitCode == nil)
+    await model.shutdown()
+}
+
+private let authenticatedProvider = ProviderLoginProvider(
+    id: "cursor",
+    name: "Cursor",
+    isAvailable: true,
+    isAuthenticated: true)
+
+private let unauthenticatedProvider = ProviderLoginProvider(
+    id: "cursor",
+    name: "Cursor",
+    isAvailable: true,
+    isAuthenticated: false)
+
+@MainActor
+private func startupProviderModel(
+    service: FakeProviderService,
+    usageService: FakeUsageService = FakeUsageService(snapshot: .empty)
+) -> ProviderManagementViewModel {
+    ProviderManagementViewModel(
+        providerService: service,
+        usageService: usageService,
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+}
+
+@MainActor
+private func enterRuntimeRecovery(
+    _ model: AppModel,
+    installation: OmpInstallation
+) {
+    let attemptID = UUID()
+    model.installation = installation
+    model.startupState.beginAttempt(id: attemptID)
+    for stage in StartupStageID.allCases where stage != .runtime {
+        model.startupState.markReady(stage, attemptID: attemptID)
+    }
+    model.startupState.enterRecovery(attemptID: attemptID)
+}

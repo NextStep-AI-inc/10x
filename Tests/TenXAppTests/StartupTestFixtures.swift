@@ -105,7 +105,7 @@ func makeStartupDependencies(
     defaults: UserDefaults,
     timing: StartupTiming,
     settingsRunner: any OmpConfigRunning,
-    providerModel: ProviderManagementViewModel,
+    makeProviderModel: @escaping @MainActor @Sendable (URL) -> ProviderManagementViewModel,
     makeProcessManager: @escaping @Sendable (String) -> SessionProcessManager
 ) -> AppDependencies {
     AppDependencies(
@@ -117,7 +117,65 @@ func makeStartupDependencies(
         makeSettingsModel: { _ in
             SettingsViewModel(service: OmpConfigService(runner: settingsRunner))
         },
-        makeProviderModel: { _ in providerModel })
+        makeProviderModel: makeProviderModel)
+}
+
+@MainActor
+final class StartupProviderModelFactory {
+    private let models: [ProviderManagementViewModel]
+    private(set) var count = 0
+
+    init(models: [ProviderManagementViewModel]) {
+        self.models = models
+    }
+
+    func next() -> ProviderManagementViewModel {
+        let model = models[min(count, models.count - 1)]
+        count += 1
+        return model
+    }
+}
+
+actor StartupRetentionGate {
+    private var sleeper: (UUID, CheckedContinuation<Void, any Error>)?
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func sleep(for duration: Duration) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, any Error>) in
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                sleeper = (id, continuation)
+                let waiters = startWaiters
+                startWaiters.removeAll()
+                for waiter in waiters { waiter.resume() }
+            }
+        } onCancel: {
+            Task { await self.cancel(id: id) }
+        }
+    }
+
+    func waitForStart() async {
+        guard sleeper == nil else { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func release() {
+        let continuation = sleeper?.1
+        sleeper = nil
+        continuation?.resume()
+    }
+
+    private func cancel(id: UUID) {
+        guard sleeper?.0 == id else { return }
+        let continuation = sleeper?.1
+        sleeper = nil
+        continuation?.resume(throwing: CancellationError())
+    }
 }
 
 private struct StartupProcessCaptureState: Sendable {
@@ -216,7 +274,8 @@ final class StartupFixture {
         processManager: SessionProcessManager? = nil,
         timing: StartupTiming = .live,
         settingsRunner: any OmpConfigRunning = StartupConfigRunner(),
-        providerModel: ProviderManagementViewModel? = nil
+        providerModel: ProviderManagementViewModel? = nil,
+        providerFactory: StartupProviderModelFactory? = nil
     ) -> AppModel {
         let manager = processManager ?? self.processManager()
         let provider = providerModel ?? providerTestModel(providers: [
@@ -226,13 +285,19 @@ final class StartupFixture {
                 isAvailable: true,
                 isAuthenticated: true),
         ])
+        let makeProvider: @MainActor @Sendable (URL) -> ProviderManagementViewModel
+        if let providerFactory {
+            makeProvider = { _ in providerFactory.next() }
+        } else {
+            makeProvider = { _ in provider }
+        }
         let dependencies = makeStartupDependencies(
             locator: locator ?? CountingOmpLocator(installation: installation),
             library: library,
             defaults: defaults,
             timing: timing,
             settingsRunner: settingsRunner,
-            providerModel: provider,
+            makeProviderModel: makeProvider,
             makeProcessManager: { _ in manager })
         return AppModel(dependencies: dependencies, preferenceDefaults: defaults)
     }
@@ -246,6 +311,14 @@ final class StartupFixture {
         return manager { project in
             (canonicalModes[project] ?? "basic", [])
         }
+    }
+
+    func retentionManager(gate: StartupRetentionGate) -> SessionProcessManager {
+        manager(
+            warmGracePeriod: .seconds(300),
+            sleep: { duration in try await gate.sleep(for: duration) }) { _ in
+                ("basic", [])
+            }
     }
 
     func mixedWarmManager(
@@ -285,22 +358,29 @@ final class StartupFixture {
 
     private func manager(
         capture: StartupProcessCapture = StartupProcessCapture(),
+        warmGracePeriod: Duration = .seconds(300),
+        sleep: @escaping SessionProcessManager.Sleep = { duration in
+            try await ContinuousClock().sleep(for: duration)
+        },
         mode: @escaping @Sendable (String) -> (String, [String])
     ) -> SessionProcessManager {
         let fakeServerURL = fakeServerURL
-        return SessionProcessManager(clientFactory: { configuration in
-            let project = canonicalProject(configuration.cwd?.path ?? "")
-            let selection = mode(project)
-            var fake = configuration
-            fake.executable = "/usr/bin/env"
-            fake.extraArguments = ["python3", fakeServerURL.path, selection.0] + selection.1
-            fake.rawArgv = true
-            fake.cwd = nil
-            fake.startupTimeout = .seconds(30)
-            let client = RpcClient(configuration: fake)
-            capture.record(project: project, client: client)
-            return client
-        })
+        return SessionProcessManager(
+            warmGracePeriod: warmGracePeriod,
+            sleep: sleep,
+            clientFactory: { configuration in
+                let project = canonicalProject(configuration.cwd?.path ?? "")
+                let selection = mode(project)
+                var fake = configuration
+                fake.executable = "/usr/bin/env"
+                fake.extraArguments = ["python3", fakeServerURL.path, selection.0] + selection.1
+                fake.rawArgv = true
+                fake.cwd = nil
+                fake.startupTimeout = .seconds(30)
+                let client = RpcClient(configuration: fake)
+                capture.record(project: project, client: client)
+                return client
+            })
     }
 }
 
