@@ -122,10 +122,10 @@ import Testing
     defer { for pid in pids { kill(pid, SIGKILL) } }
 
     operation.cancel()
+    pids = try await fixture.waitForPIDs(in: pidFile, count: 2)
     await #expect(throws: CancellationError.self) {
         _ = try await operation.value
     }
-    pids = try await fixture.waitForPIDs(in: pidFile, count: 2)
 
     for pid in pids {
         #expect(kill(pid, 0) == -1)
