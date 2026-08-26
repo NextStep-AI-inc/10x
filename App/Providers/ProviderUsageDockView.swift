@@ -2,17 +2,17 @@ import SwiftUI
 
 struct ProviderUsageDockView: View {
     static let compactWheelSpacing: CGFloat = 8
-    static let compactWheelLabelSpacing: CGFloat = 5
-    static let compactLabelHeight: CGFloat = 11
-    static let compactHeight = ProviderUsageRingGeometry.diameter
-        + compactWheelLabelSpacing + compactLabelHeight
+    static let collapsedComposerClearance: CGFloat = 112
 
     let providers: [ProviderUsageProvider]
     let activeCounts: [String: Int]
     let isForegroundGenerating: Bool
+    let collapsedBottomOffset: CGFloat
 
     @State private var selectedProviderID: String?
-    @FocusState private var focusedProviderID: String?
+    @State private var focusRestoration = ProviderUsageDockFocusRestoration()
+    @FocusState private var compactFocusedProviderID: String?
+    @FocusState private var expandedFocusedProviderID: String?
     @Namespace private var expansionNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -20,11 +20,13 @@ struct ProviderUsageDockView: View {
         providers: [ProviderUsageProvider],
         activeCounts: [String: Int],
         isForegroundGenerating: Bool,
+        collapsedBottomOffset: CGFloat = 0,
         initiallySelectedProviderID: String? = nil
     ) {
         self.providers = providers
         self.activeCounts = activeCounts
         self.isForegroundGenerating = isForegroundGenerating
+        self.collapsedBottomOffset = collapsedBottomOffset
         _selectedProviderID = State(initialValue: providers.contains(where: {
             $0.id == initiallySelectedProviderID
         }) ? initiallySelectedProviderID : nil)
@@ -44,6 +46,7 @@ struct ProviderUsageDockView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             } else {
                 collapsedDock
+                    .padding(.bottom, collapsedBottomOffset)
             }
         }
         .onExitCommand(perform: collapse)
@@ -56,16 +59,17 @@ struct ProviderUsageDockView: View {
     private var collapsedDock: some View {
         HStack(alignment: .bottom, spacing: Self.compactWheelSpacing) {
             ForEach(providers) { provider in
-                providerButton(provider, isGrayscale: isForegroundGenerating)
+                compactProviderButton(provider, isGrayscale: isForegroundGenerating)
             }
         }
+        .onAppear(perform: restoreCompactFocusIfNeeded)
     }
 
     private func expandedPanel(_ provider: ProviderUsageProvider) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 8) {
                 ForEach(providers) { candidate in
-                    providerButton(candidate, isGrayscale: false)
+                    expandedProviderButton(candidate, isGrayscale: false)
                 }
             }
 
@@ -102,7 +106,7 @@ struct ProviderUsageDockView: View {
         }
         .padding(16)
         .frame(width: 360)
-        .frame(maxHeight: .infinity, alignment: .bottom)
+        .frame(maxHeight: 440, alignment: .bottom)
         .background(TenXPalette.color(TenXPalette.canvasHex))
         .overlay {
             Rectangle()
@@ -122,11 +126,26 @@ struct ProviderUsageDockView: View {
         }
         .buttonStyle(.plain)
         .focusEffectDisabled()
-        .focused($focusedProviderID, equals: provider.id)
         .accessibilityLabel(provider.name)
         .accessibilityValue(ProviderUsageAccessibility.wheelValue(
             provider: provider,
             activeCount: activeCounts[provider.id] ?? 0))
+    }
+
+    private func compactProviderButton(
+        _ provider: ProviderUsageProvider,
+        isGrayscale: Bool
+    ) -> some View {
+        providerButton(provider, isGrayscale: isGrayscale)
+            .focused($compactFocusedProviderID, equals: provider.id)
+    }
+
+    private func expandedProviderButton(
+        _ provider: ProviderUsageProvider,
+        isGrayscale: Bool
+    ) -> some View {
+        providerButton(provider, isGrayscale: isGrayscale)
+            .focused($expandedFocusedProviderID, equals: provider.id)
     }
 
     @ViewBuilder
@@ -183,13 +202,24 @@ struct ProviderUsageDockView: View {
 
     private func select(_ provider: ProviderUsageProvider) {
         applySelection(provider.id)
+        Task { @MainActor in
+            await Task.yield()
+            expandedFocusedProviderID = provider.id
+        }
     }
 
     private func collapse() {
         guard let providerID = selectedProviderID else { return }
+        focusRestoration.scheduleReturn(to: providerID)
+        expandedFocusedProviderID = nil
         applySelection(nil)
+    }
+
+    private func restoreCompactFocusIfNeeded() {
         Task { @MainActor in
-            focusedProviderID = providerID
+            await Task.yield()
+            guard let providerID = focusRestoration.consumeOnCompactMount() else { return }
+            compactFocusedProviderID = providerID
         }
     }
 
@@ -201,5 +231,18 @@ struct ProviderUsageDockView: View {
             return
         }
         selectedProviderID = providerID
+    }
+}
+
+struct ProviderUsageDockFocusRestoration {
+    private var pendingProviderID: String?
+
+    mutating func scheduleReturn(to providerID: String) {
+        pendingProviderID = providerID
+    }
+
+    mutating func consumeOnCompactMount() -> String? {
+        defer { pendingProviderID = nil }
+        return pendingProviderID
     }
 }
