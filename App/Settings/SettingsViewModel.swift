@@ -20,19 +20,22 @@ final class SettingsViewModel {
         self.service = service
     }
 
-    func load() async {
-        guard !isLoading else { return }
+    @discardableResult
+    func load() async -> Bool {
+        guard !isLoading else { return loadError == nil && !configPath.isEmpty }
         isLoading = true
         loadError = nil
+        defer { isLoading = false }
         do {
             async let values = service.list()
             async let path = service.path()
             catalog = SettingsCatalog.build(from: .object(try await values))
             configPath = try await path
+            return true
         } catch {
             loadError = "[Settings:SettingsViewModel] Unable to load settings — \(error.localizedDescription)"
+            return false
         }
-        isLoading = false
     }
 
     @discardableResult

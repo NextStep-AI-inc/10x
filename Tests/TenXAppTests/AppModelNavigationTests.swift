@@ -253,9 +253,19 @@ private func navigationDependencies<Locator: OmpLocating>(
     ompLocator: Locator,
     sessionLibrary: SessionLibrary
 ) -> AppDependencies {
-    AppDependencies(
+    let defaults = appModelTestDefaults()
+    return AppDependencies(
         ompLocator: ompLocator,
         sessionLibrary: sessionLibrary,
+        recentProjectStore: RecentProjectStore(defaults: defaults),
+        startupTiming: appModelTestTiming,
+        makeProcessManager: { executable in
+            SessionProcessManager(executable: executable)
+        },
+        makeSettingsModel: { _ in
+            SettingsViewModel(service: OmpConfigService(
+                runner: AppModelTestConfigRunner()))
+        },
         makeProviderModel: { _ in
             providerTestModel(providers: [
                 ProviderLoginProvider(
@@ -611,16 +621,53 @@ private func testDependencies(
         makeProviderModel: { _ in providerModel })
 }
 
+@MainActor
 private func testDependencies<Locator: OmpLocating>(
     ompLocator: Locator,
     makeProviderModel: @escaping @MainActor @Sendable (URL) -> ProviderManagementViewModel
 ) -> AppDependencies {
-    AppDependencies(
+    let defaults = appModelTestDefaults()
+    return AppDependencies(
         ompLocator: ompLocator,
         sessionLibrary: SessionLibrary(root: URL(
             filePath: "/tmp/10x-provider-tests-empty",
             directoryHint: .isDirectory)),
+        recentProjectStore: RecentProjectStore(defaults: defaults),
+        startupTiming: appModelTestTiming,
+        makeProcessManager: { executable in
+            SessionProcessManager(executable: executable)
+        },
+        makeSettingsModel: { _ in
+            SettingsViewModel(service: OmpConfigService(
+                runner: AppModelTestConfigRunner()))
+        },
         makeProviderModel: makeProviderModel)
+}
+
+private let appModelTestTiming = StartupTiming(
+    minimumVisibility: .zero,
+    timeout: .seconds(10),
+    sleep: { duration in
+        guard duration == .seconds(10) else { return }
+        try await ContinuousClock().sleep(for: .seconds(60))
+    })
+
+private struct AppModelTestConfigRunner: OmpConfigRunning {
+    func run(arguments: [String]) async throws -> Data {
+        if arguments == ["config", "path"] {
+            return Data("/tmp/omp/config.json\n".utf8)
+        }
+        return Data(#"{"autoResume":{"value":false,"type":"boolean","description":"Automatically resume"}}"#.utf8)
+    }
+}
+
+private func appModelTestDefaults() -> UserDefaults {
+    let suiteName = "AppModelNavigationTests.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("[Tests:AppModelNavigation] Unable to create defaults suite")
+    }
+    defaults.removePersistentDomain(forName: suiteName)
+    return defaults
 }
 
 private final class ProviderRefreshClock: @unchecked Sendable {

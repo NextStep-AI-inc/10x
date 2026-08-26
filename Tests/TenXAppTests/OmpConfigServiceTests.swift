@@ -83,6 +83,18 @@ import Testing
     #expect(shouldRelinquishSearchFocus)
 }
 
+@MainActor
+@Test func settingsLoadReportsWhetherCatalogAndPathAreReady() async {
+    let ready = SettingsViewModel(service: OmpConfigService(runner: FakeConfigRunner()))
+    let failed = SettingsViewModel(service: OmpConfigService(runner: FailingConfigRunner()))
+
+    #expect(await ready.load())
+    #expect(ready.settingCount > 0)
+    #expect(!ready.configPath.isEmpty)
+    #expect(await !failed.load())
+    #expect(failed.loadError != nil)
+}
+
 @Test func configErrorsNeverIncludeTheSecretValue() async {
     let service = OmpConfigService(runner: FailingConfigRunner())
     do {
