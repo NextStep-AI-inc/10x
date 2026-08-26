@@ -19,4 +19,14 @@ func providerUsageRingMetricsScaleWithoutDroppingRings(limitCount: Int) {
 @Test func providerUsageRingMetricsRetainDenseLimits() {
     #expect(ProviderUsageRingGeometry.metrics(limitCount: 12).count == 12)
 }
+
+@Test func constrainedUsageRingMetricsScaleTheCoreAndRetainEveryLimit() {
+    let metrics = ProviderUsageRingGeometry.metrics(limitCount: 12, outerDiameter: 44)
+    let scaledCore = ProviderUsageRingGeometry.coreDiameter(for: 44)
+
+    #expect(metrics.count == 12)
+    #expect(abs(scaledCore - 44 / 3) < 0.001)
+    #expect(metrics.first.map { ($0.diameter - $0.lineWidth) / 2 > scaledCore / 2 } ?? false)
+    #expect(metrics.last.map { ($0.diameter + $0.lineWidth) / 2 <= 22 } ?? false)
+}
 }

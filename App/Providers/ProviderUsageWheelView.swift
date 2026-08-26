@@ -10,14 +10,22 @@ enum ProviderUsageRingGeometry {
     static let diameter: CGFloat = 54
     static let coreDiameter: CGFloat = 18
 
-    static func metrics(limitCount: Int) -> [ProviderUsageRingMetric] {
+    static func coreDiameter(for outerDiameter: CGFloat) -> CGFloat {
+        coreDiameter * outerDiameter / diameter
+    }
+
+    static func metrics(
+        limitCount: Int,
+        outerDiameter: CGFloat = diameter
+    ) -> [ProviderUsageRingMetric] {
         guard limitCount > 0 else { return [] }
-        let availableRadius = (diameter - coreDiameter) / 2
+        let scaledCoreDiameter = coreDiameter(for: outerDiameter)
+        let availableRadius = (outerDiameter - scaledCoreDiameter) / 2
         let slotWidth = availableRadius / CGFloat(limitCount)
         let lineWidth = slotWidth * 0.68
 
         return (0..<limitCount).map { index in
-            let radius = coreDiameter / 2 + slotWidth * (CGFloat(index) + 0.5)
+            let radius = scaledCoreDiameter / 2 + slotWidth * (CGFloat(index) + 0.5)
             return ProviderUsageRingMetric(diameter: radius * 2, lineWidth: lineWidth)
         }
     }
@@ -27,15 +35,32 @@ struct ProviderUsageWheelView: View {
     let provider: ProviderUsageProvider
     let activeCount: Int
     let isGrayscale: Bool
+    let diameter: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(
+        provider: ProviderUsageProvider,
+        activeCount: Int,
+        isGrayscale: Bool,
+        diameter: CGFloat = ProviderUsageRingGeometry.diameter
+    ) {
+        self.provider = provider
+        self.activeCount = activeCount
+        self.isGrayscale = isGrayscale
+        self.diameter = diameter
+    }
 
     private var ringLimits: [ProviderUsageLimit] {
         provider.ringLimits
     }
 
     private var metrics: [ProviderUsageRingMetric] {
-        ProviderUsageRingGeometry.metrics(limitCount: ringLimits.count)
+        ProviderUsageRingGeometry.metrics(limitCount: ringLimits.count, outerDiameter: diameter)
+    }
+
+    private var activityCoreDiameter: CGFloat {
+        ProviderUsageRingGeometry.coreDiameter(for: diameter)
     }
 
     var body: some View {
@@ -49,8 +74,8 @@ struct ProviderUsageWheelView: View {
                 activityCore
             }
             .frame(
-                width: ProviderUsageRingGeometry.diameter,
-                height: ProviderUsageRingGeometry.diameter)
+                width: diameter,
+                height: diameter)
 
             Text(provider.abbreviation)
                 .font(TenXTypography.mono(size: 9, weight: .semibold))
@@ -95,8 +120,8 @@ struct ProviderUsageWheelView: View {
         Circle()
             .stroke(TenXPalette.color(TenXPalette.cyanHex), lineWidth: 1)
             .frame(
-                width: ProviderUsageRingGeometry.coreDiameter,
-                height: ProviderUsageRingGeometry.coreDiameter)
+                width: activityCoreDiameter,
+                height: activityCoreDiameter)
     }
 
     private var activityCore: some View {
@@ -105,8 +130,8 @@ struct ProviderUsageWheelView: View {
                 ? TenXPalette.color(TenXPalette.nearBlackHex)
                 : TenXPalette.color(TenXPalette.separatorHex))
             .frame(
-                width: ProviderUsageRingGeometry.coreDiameter,
-                height: ProviderUsageRingGeometry.coreDiameter)
+                width: activityCoreDiameter,
+                height: activityCoreDiameter)
             .overlay {
                 if activeCount > 0 {
                     Text("\(activeCount)")
