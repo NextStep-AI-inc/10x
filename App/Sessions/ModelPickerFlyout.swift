@@ -255,20 +255,25 @@ struct ModelPickerFlyout: View {
         }
 
         if isFastModeVisible {
-            Toggle("Fast mode", isOn: Binding(
-                get: { isFastModeEnabled },
-                set: onToggleFastMode))
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-                .tint(TenXPalette.color(TenXPalette.cyanHex))
-                .font(TenXTypography.body(size: 12))
-                .padding(.horizontal, 10)
-                .frame(
-                    width: ModelPickerMetrics.panelWidth,
-                    height: ModelPickerMetrics.settingsRowHeight)
-                .disabled(isMutating)
-                .accessibilityLabel("Fast mode")
-                .accessibilityValue(isFastModeEnabled ? "On" : "Off")
+            HStack(spacing: 2) {
+                Text("Fast mode")
+                    .font(TenXTypography.body(size: 12))
+                Spacer()
+                Toggle("Fast mode", isOn: Binding(
+                    get: { isFastModeEnabled },
+                    set: onToggleFastMode))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .tint(TenXPalette.color(TenXPalette.cyanHex))
+                    .disabled(isMutating)
+                    .accessibilityLabel("Fast mode")
+                    .accessibilityValue(isFastModeEnabled ? "On" : "Off")
+            }
+            .padding(.horizontal, 10)
+            .frame(
+                width: ModelPickerMetrics.panelWidth,
+                height: ModelPickerMetrics.settingsRowHeight)
         }
     }
 
