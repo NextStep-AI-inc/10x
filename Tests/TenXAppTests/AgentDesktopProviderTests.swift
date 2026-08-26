@@ -52,6 +52,7 @@ import Testing
 
     #expect(template.contains("hs.spaces.spaceType"))
     #expect(template.contains("~= \"user\""))
+    #expect(template.contains("workspaceID = checkedUserSpace(tenx.workspaceID)"))
 }
 
 @Test func hammerspoonSpaceOperationsVerifyTheirPostconditions() throws {
@@ -65,6 +66,8 @@ import Testing
 
     #expect(template.contains("hs.spaces.windowSpaces"))
     #expect(template.contains("hs.spaces.focusedSpace"))
+    #expect(template.contains("containsSpace(spaces, space)"))
+    #expect(template.contains("tonumber(focused) == space"))
 }
 
 @Test func aeroSpaceWorkspaceIDsRejectUnsafeSessionTokens() async {
