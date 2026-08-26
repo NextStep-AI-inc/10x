@@ -352,7 +352,7 @@ git commit -m "feat(providers): bundle and load the account extension"
 
 - [ ] **Step 1: Generate the fixtures from OMP itself**
 
-Hand-written expectations would only prove the Swift matches itself. Generate them from OMP's own function, in the OMP worktree at `/Users/tannerpham/CS Projects/.worktrees/oh-my-pi-provider-account-rpc`:
+Hand-written expectations would only prove the Swift matches itself. Generate them from OMP's own function, in an OMP checkout. The worktree at `/Users/tannerpham/CS Projects/.worktrees/oh-my-pi-provider-account-rpc` has one at the right version; if it is gone, clone `can1357/oh-my-pi` at tag `18.0.6` and run this there. The generated file is committed, so this runs once and nothing later depends on that checkout:
 
 ```bash
 cat > /tmp/gen-pin-hashes.ts <<'TS'
@@ -765,11 +765,17 @@ test("a safe account carries no credential material", () => {
 });
 
 test("the account ref matches omp's credential pin hash", async () => {
-	const { credentialPinHash } = await import(
-		"/Users/tannerpham/CS Projects/.worktrees/oh-my-pi-provider-account-rpc/packages/coding-agent/src/session/credential-pin"
+	// Asserts against the fixtures Task 3 generated from OMP's own
+	// credentialPinHash. Do not import OMP at test time — that worktree is
+	// scratch and may be gone.
+	const fixtures = (await Bun.file(
+		new URL("../../Tests/TenXAppTests/Fixtures/credential-pin-hashes.json", import.meta.url),
+	).json()) as { input: Record<string, string>; hash: string | null }[];
+	const expected = fixtures.find(
+		f => f.input.provider === "anthropic" && f.input.accountId === "acc-1" && f.input.email === "a@example.com" && !f.input.orgId && !f.input.projectId,
 	);
-	const safe = toSafeAccount("anthropic", row(), 0);
-	expect(safe.accountRef).toBe(credentialPinHash("anthropic", { accountId: "acc-1", email: "a@example.com" }));
+	expect(expected?.hash).toBeTruthy();
+	expect(toSafeAccount("anthropic", row(), 0).accountRef).toBe(expected!.hash);
 });
 
 test("enterprise labels are redacted to a safe detail", () => {
