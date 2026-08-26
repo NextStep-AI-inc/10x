@@ -2,6 +2,31 @@ import Foundation
 import Testing
 @testable import TenXApp
 
+@Test func startupAndWorkspaceUseDistinctStableSceneIDs() {
+    #expect(AppWindowID.startup == "startup")
+    #expect(AppWindowID.workspace == "workspace")
+    #expect(AppWindowID.startup != AppWindowID.workspace)
+}
+
+@MainActor
+@Test func shutdownCancelsBootstrapAndReapsWarmAndActiveChildren() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let manager = fixture.processManager()
+    let model = fixture.model(processManager: manager)
+    await model.bootstrap()
+    let warm = try await manager.warm(projectDirectory: try fixture.project("Warm").path)
+    let active = try await manager.open(
+        sessionPath: "/tmp/active.jsonl",
+        cwd: try fixture.project("Active").path)
+
+    await model.shutdown()
+
+    #expect(await warm.client.exitCode != nil)
+    #expect(await active.client.exitCode != nil)
+    #expect(await manager.handle(for: active.sessionPath) == nil)
+}
+
 @MainActor
 @Test func concurrentBootstrapCallsShareOneAttemptAndRespectTheFloor() async throws {
     let fixture = try StartupFixture()
