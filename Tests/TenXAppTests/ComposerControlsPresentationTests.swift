@@ -101,3 +101,50 @@ private let pickerCatalog = [
     #expect(groups.flatMap(\.models).count == pickerCatalog.count)
     #expect(ComposerControlsPresentation.groupedByProvider([]).isEmpty)
 }
+
+private let requiredEffortModel = ComposerModelInfo(
+    modelID: "gpt-5.2-codex", name: "GPT-5.2 Codex", provider: "openai-codex",
+    api: "openai-codex-responses", thinkingEfforts: ["low", "medium", "high"],
+    requiresEffort: true)
+
+private let optionalEffortModel = ComposerModelInfo(
+    modelID: "claude-opus-4-5", name: "Claude Opus 4.5", provider: "anthropic",
+    api: "anthropic-messages", thinkingEfforts: ["low", "high"], requiresEffort: false)
+
+private let noEffortModel = ComposerModelInfo(
+    modelID: "claude-opus-4-5", name: "Claude Opus 4.5", provider: "cursor",
+    api: "cursor-agent", thinkingEfforts: [], requiresEffort: false)
+
+@Test func thinkingOptionsOmitAutoWhenEffortIsRequired() {
+    #expect(ComposerControlsPresentation.thinkingOptions(for: requiredEffortModel)
+        == ["low", "medium", "high"])
+}
+
+@Test func thinkingOptionsKeepAutoWhenEffortIsOptional() {
+    #expect(ComposerControlsPresentation.thinkingOptions(for: optionalEffortModel)
+        == ["auto", "low", "high"])
+}
+
+@Test func resolvedThinkingLevelKeepsAStillValidLevel() {
+    #expect(ComposerControlsPresentation.resolvedThinkingLevel(
+        current: "high", for: requiredEffortModel) == "high")
+    #expect(ComposerControlsPresentation.resolvedThinkingLevel(
+        current: "auto", for: optionalEffortModel) == "auto")
+}
+
+@Test func resolvedThinkingLevelFallsBackToAutoWhenOffered() {
+    #expect(ComposerControlsPresentation.resolvedThinkingLevel(
+        current: "medium", for: optionalEffortModel) == "auto")
+}
+
+@Test func resolvedThinkingLevelFallsBackToMiddleEffortWhenAutoIsUnavailable() {
+    #expect(ComposerControlsPresentation.resolvedThinkingLevel(
+        current: "auto", for: requiredEffortModel) == "medium")
+}
+
+@Test func resolvedThinkingLevelIsUnchangedForModelsWithoutThinking() {
+    #expect(ComposerControlsPresentation.resolvedThinkingLevel(
+        current: "high", for: noEffortModel) == "high")
+    #expect(ComposerControlsPresentation.resolvedThinkingLevel(
+        current: "high", for: nil) == "high")
+}

@@ -32,7 +32,20 @@ enum ComposerControlsPresentation {
 
     static func thinkingOptions(for model: ComposerModelInfo?) -> [String] {
         guard let model, !model.thinkingEfforts.isEmpty else { return [] }
-        return ["auto"] + model.thinkingEfforts
+        // A model that requires an explicit effort must never be offered "auto".
+        return model.requiresEffort ? model.thinkingEfforts : ["auto"] + model.thinkingEfforts
+    }
+
+    /// Keeps a level the incoming model still offers, else "auto", else the middle effort.
+    static func resolvedThinkingLevel(
+        current: String,
+        for model: ComposerModelInfo?
+    ) -> String {
+        let options = thinkingOptions(for: model)
+        guard !options.isEmpty else { return current }
+        if options.contains(current) { return current }
+        if options.contains("auto") { return "auto" }
+        return options[options.count / 2]
     }
 
     static func supportsFastMode(model: ComposerModelInfo?) -> Bool {
