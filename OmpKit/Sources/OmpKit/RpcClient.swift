@@ -49,6 +49,13 @@ public struct RpcClientConfiguration: Sendable {
     }
 }
 
+struct RpcClientTestHooks: Sendable {
+    var beforeWaitForReady: (@Sendable () async -> Void)?
+    var readyTimeoutSleep: (@Sendable (Duration) async throws -> Void)?
+
+    init() {}
+}
+
 /// Speaks omp's newline-delimited RPC protocol over a spawned child process.
 ///
 /// Responses are matched to requests by id — never by arrival order, since omp
@@ -57,6 +64,7 @@ public struct RpcClientConfiguration: Sendable {
 public actor RpcClient {
     private let configuration: RpcClientConfiguration
     private let transport: LineTransport
+    private let testHooks: RpcClientTestHooks
 
     private struct PendingRequest {
         let command: String
@@ -73,6 +81,7 @@ public actor RpcClient {
     private var authoritativeExitCode: Int32?
     private var awaitingAuthoritativeExit = false
     private var observedExitRelatedWriteFailures = 0
+    private var observedReadyTimeoutAttempts = 0
 
     private let eventStream: AsyncStream<RpcFrame>
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
@@ -95,9 +104,17 @@ public actor RpcClient {
     /// Internal lifecycle seams used by deterministic transport-order tests.
     var isAwaitingAuthoritativeExit: Bool { awaitingAuthoritativeExit }
     var exitRelatedWriteFailureCount: Int { observedExitRelatedWriteFailures }
+    var readyTimeoutAttemptCount: Int { observedReadyTimeoutAttempts }
+    var hasReadyWaiter: Bool { readyContinuation != nil }
+    var isReadyTimeoutArmed: Bool { readyTimeoutTask != nil }
 
     public init(configuration: RpcClientConfiguration) {
+        self.init(configuration: configuration, testHooks: RpcClientTestHooks())
+    }
+
+    init(configuration: RpcClientConfiguration, testHooks: RpcClientTestHooks) {
         self.configuration = configuration
+        self.testHooks = testHooks
         self.transport = LineTransport(
             executable: configuration.executable,
             arguments: configuration.resolvedArguments,
@@ -139,6 +156,7 @@ public actor RpcClient {
     private func performStart() async throws -> ReadyFrame {
         try await transport.start()
         startReader()
+        await testHooks.beforeWaitForReady?()
 
         let ready = try await waitForReady()
 
@@ -423,10 +441,20 @@ public actor RpcClient {
                     return
                 }
                 readyContinuation = continuation
-                readyTimeoutTask = Task { [weak self, timeout = configuration.startupTimeout] in
-                    do { try await Task.sleep(for: timeout) }
-                    catch { return }
-                    await self?.failReady(with: RpcClientError.timeout(command: "ready"))
+                if !awaitingAuthoritativeExit {
+                    readyTimeoutTask = Task {
+                        [weak self, timeout = configuration.startupTimeout,
+                         readyTimeoutSleep = testHooks.readyTimeoutSleep] in
+                        do {
+                            if let readyTimeoutSleep {
+                                try await readyTimeoutSleep(timeout)
+                            } else {
+                                try await Task.sleep(for: timeout)
+                            }
+                        }
+                        catch { return }
+                        await self?.timeoutReady()
+                    }
                 }
             }
         } onCancel: {
@@ -464,5 +492,11 @@ public actor RpcClient {
         readyTimeoutTask = nil
         readyContinuation?.resume(throwing: error)
         readyContinuation = nil
+    }
+
+    private func timeoutReady() {
+        observedReadyTimeoutAttempts += 1
+        guard !terminated, !awaitingAuthoritativeExit else { return }
+        failReady(with: RpcClientError.timeout(command: "ready"))
     }
 }

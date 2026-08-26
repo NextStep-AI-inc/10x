@@ -72,7 +72,8 @@ public actor LineTransport {
     /// Lines from the child's stdout. Finishes when stdout closes.
     public nonisolated var lines: AsyncStream<Data> { lineStream }
 
-    /// Fires once with the child's exit code.
+    /// Fires once with the child's exit code after draining output bytes that
+    /// are available at direct-child exit. Inherited writers do not delay it.
     public nonisolated var onExit: AsyncStream<Int32> { exitStream }
 
     public func start() throws {
@@ -99,13 +100,8 @@ public actor LineTransport {
             continuation: lineContinuation,
             maxLineBytes: Self.maxLineBytes)
         stdoutDrainer = drainer
-        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            if data.isEmpty {
-                drainer.finish()
-                return
-            }
-            drainer.ingest(data)
+        stdoutPipe.fileHandleForReading.readabilityHandler = { _ in
+            drainer.consumeAvailableData()
         }
 
         let stderrLog = self.stderrLog
@@ -274,9 +270,35 @@ private final class StderrDrainer: @unchecked Sendable {
         guard !finished else { return }
         finished = true
         handle.readabilityHandler = nil
-        if let remaining = try? handle.readToEnd(), !remaining.isEmpty {
+        let remaining = readCurrentlyAvailable(from: handle.fileDescriptor)
+        if !remaining.isEmpty {
             log.append(String(decoding: remaining, as: UTF8.self))
         }
+    }
+}
+
+private func readCurrentlyAvailable(from descriptor: Int32) -> Data {
+    let originalFlags = fcntl(descriptor, F_GETFL)
+    guard originalFlags >= 0,
+          fcntl(descriptor, F_SETFL, originalFlags | O_NONBLOCK) == 0 else {
+        return Data()
+    }
+    defer { _ = fcntl(descriptor, F_SETFL, originalFlags) }
+
+    var result = Data()
+    var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+    while true {
+        let bytesRead = buffer.withUnsafeMutableBytes { bytes in
+            read(descriptor, bytes.baseAddress, bytes.count)
+        }
+        if bytesRead > 0 {
+            result.append(contentsOf: buffer[..<bytesRead])
+            continue
+        }
+        if bytesRead < 0, errno == EINTR { continue }
+        // EOF and EAGAIN both end the direct-child snapshot. Waiting for a
+        // descendant's inherited writer would make process exit unbounded.
+        return result
     }
 }
 
@@ -333,10 +355,17 @@ private final class StdoutDrainer: @unchecked Sendable {
         self.maxLineBytes = maxLineBytes
     }
 
-    func ingest(_ data: Data) {
+    func consumeAvailableData() {
         lock.lock()
         defer { lock.unlock() }
         guard !finished else { return }
+        let data = handle.availableData
+        if data.isEmpty {
+            finished = true
+            handle.readabilityHandler = nil
+            continuation.finish()
+            return
+        }
         for line in buffer.append(data, maxLineBytes: maxLineBytes) {
             continuation.yield(line)
         }
@@ -348,7 +377,8 @@ private final class StdoutDrainer: @unchecked Sendable {
         guard !finished else { return }
         finished = true
         handle.readabilityHandler = nil
-        if let remaining = try? handle.readToEnd(), !remaining.isEmpty {
+        let remaining = readCurrentlyAvailable(from: handle.fileDescriptor)
+        if !remaining.isEmpty {
             for line in buffer.append(remaining, maxLineBytes: maxLineBytes) {
                 continuation.yield(line)
             }
