@@ -664,7 +664,9 @@ git add App/Startup/StartupSignalView.swift Tests/TenXAppTests/StartupSignalTest
 - Modify: `App/Startup/StartupLedgerView.swift:4`
 - Modify: `App/Startup/SplashView.swift` (whole file)
 - Modify: `App/Startup/StartupSceneView.swift:12-24`
-- Test: `Tests/TenXAppTests/StartupStateTests.swift`, `Tests/TenXAppTests/StartupSplashSnapshotTests.swift`
+- Test: `Tests/TenXAppTests/StartupStateTests.swift`, `Tests/TenXAppTests/StartupSplashSnapshotTests.swift`, `Tests/TenXAppTests/StartupSignalTests.swift`
+
+Every construction of `SplashView` in the test suite changes signature. Find them all before starting: `grep -rn "SplashView(" App Tests`. At the time of writing there are three test call sites across two snapshot tests and one pixel-sampling test.
 
 **Interfaces:**
 - Consumes: Task 5's `StartupSignalView` signature.
