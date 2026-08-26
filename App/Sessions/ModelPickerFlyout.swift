@@ -118,7 +118,7 @@ struct ModelPickerFlyout: View {
             width: ModelPickerMetrics.panelWidth,
             height: topHeight + ModelPickerMetrics.triggerHeight,
             alignment: .topLeading)
-        .background { silhouette.fill(Color.white) }
+        .background { silhouette.fill(TenXPalette.color(TenXPalette.canvasHex)) }
         .overlay {
             silhouette.stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
         }
@@ -188,7 +188,7 @@ struct ModelPickerFlyout: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(sections.enumerated()), id: \.element.id) { offset, section in
                         sectionHeader(section.title)
-                        ForEach(Array(section.models.enumerated()), id: \.offset) { index, model in
+                        ForEach(Array(section.models.enumerated()), id: \.element.id) { index, model in
                             ModelPickerRow(
                                 model: model,
                                 showsProviderTag: section.showsProviderTag,
