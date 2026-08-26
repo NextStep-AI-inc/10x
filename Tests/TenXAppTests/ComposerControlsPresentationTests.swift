@@ -148,3 +148,53 @@ private let noEffortModel = ComposerModelInfo(
     #expect(ComposerControlsPresentation.resolvedThinkingLevel(
         current: "high", for: nil) == "high")
 }
+
+@Test func pickerSectionsLeadWithRecentsThenProviders() {
+    let recents = [pickerCatalog[3], pickerCatalog[0]]
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: pickerCatalog, recents: recents, query: "")
+
+    #expect(sections.map(\.id) == ["recent", "anthropic", "openai-codex", "cursor"])
+    #expect(sections[0].title == "RECENT")
+    #expect(sections[0].showsProviderTag)
+    #expect(sections[0].models.map(\.id) == ["cursor/claude-opus-4-5", "anthropic/claude-opus-4-5"])
+    #expect(sections[1].title == "ANTHROPIC")
+    #expect(!sections[1].showsProviderTag)
+}
+
+@Test func pickerSectionsOmitRecentsWhenEmpty() {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: pickerCatalog, recents: [], query: "")
+    #expect(sections.map(\.id) == ["anthropic", "openai-codex", "cursor"])
+}
+
+@Test func pickerSectionsOmitRecentsWhileSearching() {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: pickerCatalog, recents: [pickerCatalog[0]], query: "opus")
+    #expect(sections.map(\.id) == ["anthropic", "cursor"])
+    #expect(sections.flatMap(\.models).count == 2)
+}
+
+@Test func pickerSectionsDropProvidersWithNoMatches() {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: pickerCatalog, recents: [], query: "sonnet")
+    #expect(sections.map(\.id) == ["anthropic"])
+    #expect(sections[0].models.map(\.modelID) == ["claude-sonnet-4-5"])
+}
+
+@Test func pickerSectionsAreEmptyWhenNothingMatches() {
+    #expect(ComposerControlsPresentation.pickerSections(
+        models: pickerCatalog, recents: [], query: "llama").isEmpty)
+}
+
+@Test func triggerTitleNamesTheModelOrFallsBack() {
+    #expect(ComposerControlsPresentation.triggerTitle(for: pickerCatalog[0]) == "Claude Opus 4.5")
+    #expect(ComposerControlsPresentation.triggerTitle(for: nil) == "Model")
+}
+
+@Test func rowAccessibilityValueNamesTheProviderAndSelection() {
+    #expect(ComposerControlsPresentation.rowAccessibilityValue(
+        provider: "anthropic", isSelected: true) == "anthropic, selected")
+    #expect(ComposerControlsPresentation.rowAccessibilityValue(
+        provider: "cursor", isSelected: false) == "cursor")
+}

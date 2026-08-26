@@ -94,4 +94,38 @@ enum ComposerControlsPresentation {
         let lower = id.lowercased()
         return lower.hasPrefix("gpt-") || lower.hasPrefix("o1") || lower.hasPrefix("o3") || lower.hasPrefix("o4") || lower.hasPrefix("chatgpt-")
     }
+
+    static let recentSectionID = "recent"
+
+    static func pickerSections(
+        models: [ComposerModelInfo],
+        recents: [ComposerModelInfo],
+        query: String
+    ) -> [ModelPickerSection] {
+        let filtered = matching(models, query: query)
+        let providerSections = groupedByProvider(filtered).map { group in
+            ModelPickerSection(
+                id: group.provider,
+                title: group.provider.uppercased(),
+                models: group.models,
+                showsProviderTag: false)
+        }
+        let isSearching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !isSearching, !recents.isEmpty else { return providerSections }
+        return [
+            ModelPickerSection(
+                id: recentSectionID,
+                title: "RECENT",
+                models: recents,
+                showsProviderTag: true),
+        ] + providerSections
+    }
+
+    static func triggerTitle(for model: ComposerModelInfo?) -> String {
+        model?.name ?? "Model"
+    }
+
+    static func rowAccessibilityValue(provider: String, isSelected: Bool) -> String {
+        isSelected ? "\(provider), selected" : provider
+    }
 }
