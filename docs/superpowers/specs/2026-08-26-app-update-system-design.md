@@ -217,10 +217,12 @@ The rules are absolute:
 - It resolves to `Ready` on success, on an up-to-date result, on a network failure, on a DNS failure, and on timeout.
 - It cannot trigger recovery, and recovery does not mark it stopped.
 - It is capped at 3 seconds. If the four gating stages finish first and the check has not answered, the launch proceeds and the check is abandoned for that launch.
+- A check that errors before producing a result shows nothing. The failure surface belongs to updates the user asked for or accepted, never to a launch.
+- When OMP is missing, no check runs and the row resolves immediately. That launch is going straight to setup, and an update offer in front of it would be noise.
 
 The 3 second cap overlaps work that is already running, so in the common case it adds no wall-clock time. The cap sits inside the existing 10 second watchdog and cannot extend it.
 
-If the check is abandoned but later resolves with an update available, the workspace shows a quiet affordance rather than pulling the window back. Activating it takes the same path as the menu item.
+A check that has not answered by the cap is cancelled through the cancellation handler Sparkle supplies with the check, not merely ignored. Leaving it running would either strand a decision continuation with no window to resolve it, or pull the splash back over a workspace the user is already using. The update is offered on the next launch, or immediately through `Check for Updates…`.
 
 ### Presentation refactor
 
@@ -297,12 +299,14 @@ Two existing defects block this and are in scope.
 | --- | --- |
 | No network at launch | Advisory row resolves `Ready`, launch proceeds, nothing is shown |
 | Feed reachable, no newer version | Advisory row resolves `Ready`, launch proceeds. From the menu, a brief up-to-date confirmation |
+| Check errors during launch | Silent. The row resolves `Ready` and no failure is shown. The same error from the menu is shown |
+| Update fails after the user accepted it | `failed` with `Try again` and `Not now`. Dismissing it releases the launch and opens the workspace, so a failed update can never strand the splash |
 | Signature verification fails | `failed` with `The download could not be verified.` The partial download is discarded |
 | Download interrupted | `failed` with a network message and a `Try again` action |
 | App is in a read-only location | Sparkle raises an installation error, surfaced through `showUpdaterError`. No custom handling |
 | App is in `/Applications` and owned by root | Sparkle's installer requests authorization. This is a system prompt and is expected |
 | User quits during download | Termination cancels the download. No partial install is possible, because Sparkle installs only after full extraction |
-| Update found after the 3 second cap | Workspace affordance, not a window takeover |
+| Update found after the 3 second cap | Cannot happen. The check is cancelled at the cap, so it produces no result |
 | A second check is requested while one is running | The second request is ignored while `UpdateState` is not `idle` |
 
 ## Phases
@@ -328,7 +332,7 @@ Implementation is not complete until the following evidence exists.
 - Handoff is held while an update offer is pending and proceeds on `Not now`.
 - The handoff latch lives in `StartupState` and does not re-fire when the startup window is reopened after handoff.
 - `SplashUpdateDriver` maps every callback in the table above to the expected `UpdateState` phase, driven directly against the driver without a running Sparkle instance.
-- Byte and fraction accumulation produce the expected composite progress at the phase boundaries 0.8 and 0.95.
+- Byte and fraction accumulation produce the expected composite progress at the phase boundaries 0.8 and 0.85.
 - Snapshot tests cover the 640 × 400 compositions for update available, downloading at a fixed fraction, and update failed.
 - Accessibility tests cover update ledger labels, focus order on the update offer, and the Reduce Motion state retaining the determinate fill.
 - Existing OmpKit and macOS app suites remain green.
