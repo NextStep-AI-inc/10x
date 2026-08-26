@@ -125,6 +125,7 @@ struct ProviderUsageDockView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusable()
         .focusEffectDisabled()
         .accessibilityLabel(provider.name)
         .accessibilityValue(ProviderUsageAccessibility.wheelValue(
