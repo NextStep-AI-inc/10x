@@ -92,6 +92,9 @@ final class AppModel {
     @ObservationIgnored private var hasStartedWarmRetention = false
     @ObservationIgnored private var managedSessions: [UUID: SessionController] = [:]
     @ObservationIgnored private var managedSessionPaths: [String: UUID] = [:]
+    @ObservationIgnored private var pendingUnexpectedExits: [
+        String: SessionProcessManager.UnexpectedExit
+    ] = [:]
 
     init(
         dependencies: AppDependencies = .live,
@@ -304,13 +307,14 @@ final class AppModel {
         guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
         guard sessionActivityRegistry.canCreateManagedSession else { return }
+        let primarySnapshot = sessionActivityRegistry.newSessionPrimarySnapshot()
         let controller = makeSessionController(processManager: processManager)
         controller.draft = prompt
         composerControls?.detachActiveSession()
         route = .session("new:\(UUID().uuidString)")
         let selection = composerControls?.spawnSelection
         activeSession = controller
-        Task { [weak self, controller, selectedProjectURL, selection] in
+        Task { [weak self, controller, selectedProjectURL, selection, primarySnapshot] in
             guard let self else { return }
             let fastOutcome = await controller.openNew(
                 projectURL: selectedProjectURL,
@@ -327,7 +331,9 @@ final class AppModel {
                 return
             }
             self.indexManagedSessionPath(for: controller)
-            await self.applyPrimaryAccount(to: controller)
+            await self.sessionActivityRegistry.prepareForFirstPrompt(
+                sessionID: controller.id,
+                primarySnapshot: primarySnapshot)
             if self.activeSession === controller {
                 if fastOutcome == .unsupported || fastOutcome == .failed {
                     await self.composerControls?.setFastMode(false, mode: .newSession)
@@ -682,17 +688,6 @@ final class AppModel {
         activeSession = nil
     }
 
-    private func applyPrimaryAccount(to controller: SessionController) async {
-        guard let providerID = controller.providerID,
-              let accountRef = sessionActivityRegistry.primaryAccountRef(providerID: providerID)
-        else { return }
-        await sessionActivityRegistry.useAccount(
-            accountRef,
-            providerID: providerID,
-            scope: .thisSession,
-            openSessionID: controller.id)
-    }
-
     private func makeSessionController(
         processManager: SessionProcessManager,
         intendedSessionPath: String? = nil
@@ -721,6 +716,28 @@ final class AppModel {
               let sessionPath = controller.sessionPath
         else { return }
         managedSessionPaths[sessionPath] = controller.id
+        if let exit = pendingUnexpectedExits.removeValue(forKey: sessionPath) {
+            handleUnexpectedExit(exit, controller: controller)
+        }
+    }
+
+    private func receiveUnexpectedExit(_ exit: SessionProcessManager.UnexpectedExit) {
+        if let controller = managedController(for: exit.sessionPath)
+            ?? managedSessions.values.first(where: { $0.sessionPath == exit.sessionPath })
+        {
+            managedSessionPaths[exit.sessionPath] = controller.id
+            handleUnexpectedExit(exit, controller: controller)
+        } else {
+            pendingUnexpectedExits[exit.sessionPath] = exit
+        }
+    }
+
+    private func handleUnexpectedExit(
+        _ exit: SessionProcessManager.UnexpectedExit,
+        controller: SessionController
+    ) {
+        controller.handleUnexpectedExit(code: exit.code, stderrTail: exit.stderrTail)
+        sessionActivityRegistry.unregister(sessionID: controller.id)
     }
 
     private func removeManagedSession(_ controller: SessionController) {
@@ -741,6 +758,7 @@ final class AppModel {
         }
         managedSessions.removeAll()
         managedSessionPaths.removeAll()
+        pendingUnexpectedExits.removeAll()
         activeSession = nil
     }
 
@@ -1344,11 +1362,7 @@ final class AppModel {
                         generation: generation,
                         processManager: processManager)
                 else { continue }
-                guard let controller = self.managedController(for: exit.sessionPath) else { continue }
-                controller.handleUnexpectedExit(
-                    code: exit.code,
-                    stderrTail: exit.stderrTail)
-                self.sessionActivityRegistry.unregister(sessionID: controller.id)
+                self.receiveUnexpectedExit(exit)
             }
         }
         warmExitTask = Task { [weak self] in
@@ -1373,6 +1387,7 @@ final class AppModel {
         warm?.cancel()
         await active?.value
         await warm?.value
+        pendingUnexpectedExits.removeAll()
     }
 
     private func isCurrentProcessWatcher(

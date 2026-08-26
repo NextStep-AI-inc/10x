@@ -13,6 +13,10 @@ final class ProviderPrimaryPreferenceStore {
         primaryAccountRefs()[providerID]
     }
 
+    func primaryAccountRefsSnapshot() -> [String: String] {
+        primaryAccountRefs()
+    }
+
     func setPrimaryAccountRef(_ accountRef: String?, providerID: String) {
         var refs = primaryAccountRefs()
         refs[providerID] = accountRef

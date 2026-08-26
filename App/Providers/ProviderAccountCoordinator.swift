@@ -19,6 +19,11 @@ enum ProviderAccountRemovalError: Error, Equatable {
     case reassignmentFailed(Int)
 }
 
+struct NewSessionPrimarySnapshot: Sendable {
+    fileprivate let accountRefs: [String: String]
+    fileprivate let routingVersion: UInt64
+}
+
 @MainActor
 protocol ProviderAccountSession: AnyObject {
     var id: UUID { get }
@@ -87,6 +92,7 @@ final class ProviderAccountCoordinator {
     @ObservationIgnored private var routingCompletions: [UUID: RoutingCompletion] = [:]
     @ObservationIgnored private var activeManagedTurns: Set<UUID> = []
     @ObservationIgnored private var stateChangeWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var latestRouteOperationIDs: [UUID: UInt64] = [:]
     @ObservationIgnored private var failureRecord: FailureRecord?
     @ObservationIgnored private var nextOperationID: UInt64 = 0
 
@@ -119,6 +125,7 @@ final class ProviderAccountCoordinator {
         routingTails.removeValue(forKey: sessionID)?.task.cancel()
         routingCompletions.removeValue(forKey: sessionID)
         activeManagedTurns.remove(sessionID)
+        latestRouteOperationIDs.removeValue(forKey: sessionID)
         publishSessionState()
     }
 
@@ -176,6 +183,12 @@ final class ProviderAccountCoordinator {
         primaryStore.repairPrimary(providerID: providerID, accounts: accounts)
     }
 
+    func newSessionPrimarySnapshot() -> NewSessionPrimarySnapshot {
+        NewSessionPrimarySnapshot(
+            accountRefs: primaryStore.primaryAccountRefsSnapshot(),
+            routingVersion: nextOperationID)
+    }
+
     func pendingAccountRef(sessionID: UUID) -> String? {
         pendingRoutes[sessionID]?.accountRef
     }
@@ -224,6 +237,7 @@ final class ProviderAccountCoordinator {
             operationID: operationID)
         var tasks: [Task<RoutingOutcome, Never>] = []
         for sessionID in targetIDs {
+            latestRouteOperationIDs[sessionID] = operationID
             desiredRoutes[sessionID] = route
             guard let session = managedSessions[sessionID] else { continue }
             if session.runtimeState == .streaming {
@@ -239,6 +253,38 @@ final class ProviderAccountCoordinator {
         }
         recordFailure(count: failureCount, operationID: operationID)
         notifyStateChange()
+    }
+
+    func prepareForFirstPrompt(
+        sessionID: UUID,
+        primarySnapshot: NewSessionPrimarySnapshot
+    ) async {
+        var primaryTask: Task<RoutingOutcome, Never>?
+        if let session = managedSessions[sessionID],
+           let providerID = session.providerID,
+           let accountRef = primarySnapshot.accountRefs[providerID],
+           latestRouteOperationIDs[sessionID] ?? 0 <= primarySnapshot.routingVersion
+        {
+            let route = DesiredRoute(
+                providerID: providerID,
+                accountRef: accountRef,
+                operationID: primarySnapshot.routingVersion)
+            latestRouteOperationIDs[sessionID] = primarySnapshot.routingVersion
+            desiredRoutes[sessionID] = route
+            if session.runtimeState == .streaming {
+                pendingRoutes[sessionID] = route
+            } else {
+                pendingRoutes.removeValue(forKey: sessionID)
+                primaryTask = enqueue(route, sessionID: sessionID)
+            }
+        }
+
+        if let primaryTask, await primaryTask.value == .failed {
+            recordFailure(count: 1, operationID: primarySnapshot.routingVersion)
+        }
+        while let latest = routingTails[sessionID]?.task {
+            _ = await latest.value
+        }
     }
 
     func sessionDidBecomeIdle(_ sessionID: UUID) async {

@@ -258,7 +258,7 @@ import OmpKit
     await manager.closeAll()
 }
 
-@MainActor
+@Suite @MainActor struct AppModelNavigationTests {
 @Test func newSessionPinsPrimaryAfterStateAndBeforeFirstPrompt() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-primary-order-\(UUID().uuidString)")
@@ -365,6 +365,7 @@ import OmpKit
 }
 
 @MainActor
+
 @Test func resumedSessionKeepsReportedAccountInsteadOfCurrentPrimary() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-resumed-primary-\(UUID().uuidString)")
@@ -405,7 +406,6 @@ import OmpKit
     if let manager = model.processManager { await manager.closeAll() }
 }
 
-@MainActor
 @Test func unexpectedExitUnregistersTheRetainedControllerFromAccountRouting() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-account-exit-\(UUID().uuidString)")
@@ -433,6 +433,76 @@ import OmpKit
     #expect(model.activeSession?.isRecoveryPresented == true)
     #expect(coordinator.managedSessions.isEmpty)
     if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func newSessionUsesThePrimaryCapturedWhenCreationStarted() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-primary-snapshot-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let commandLog = container.appendingPathComponent("commands.log")
+    let executable = try makeProviderRoutingExecutable(in: container, commandLog: commandLog)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let defaults = appModelTestDefaults()
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+    model.chooseProject(project)
+
+    model.startNewSession(prompt: "Start")
+    await coordinator.useAccount(
+        "acct_B",
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+
+    #expect(await navigationLog(commandLog, eventuallyContains: "prompt"))
+    #expect(try navigationCommands(in: commandLog).filter {
+        $0.hasPrefix("set_session_provider_account:")
+    } == ["set_session_provider_account:acct_A"])
+    #expect(coordinator.primaryAccountRef(providerID: "openai-codex") == "acct_B")
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func newSessionExitBeforePathIndexingUnregistersItsRetainedController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-new-account-exit-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: container.appendingPathComponent("commands.log"),
+        activeAccountRef: "acct_A",
+        exitsAfterSubscription: true)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let coordinator = ProviderAccountCoordinator()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+    model.chooseProject(project)
+
+    model.startNewSession(prompt: "Start")
+
+    for _ in 0..<100 where model.activeSession?.isRecoveryPresented != true {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(model.activeSession?.isRecoveryPresented == true)
+    #expect(coordinator.managedSessions.isEmpty)
+    if let manager = model.processManager { await manager.closeAll() }
+}
 }
 
 @MainActor

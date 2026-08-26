@@ -291,6 +291,95 @@ import Testing
         #expect(second.pins.last == "acct_D")
     }
 
+    @Test func preparingFirstPromptWaitsThroughANewerCurrentSessionRoute() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        await coordinator.useAccount(
+            "acct_A",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+        let creationSnapshot = coordinator.newSessionPrimarySnapshot()
+        let pause = PinPause()
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: nil,
+            pinHook: { accountRef in
+                if accountRef == "acct_A" { await pause.pause() }
+            })
+        coordinator.register(session)
+
+        let preparation = Task {
+            await coordinator.prepareForFirstPrompt(
+                sessionID: session.id,
+                primarySnapshot: creationSnapshot)
+        }
+        await pause.waitUntilStarted()
+        let newerRoute = Task {
+            await coordinator.useAccount(
+                "acct_B",
+                providerID: providerID,
+                scope: .allCurrentSessions,
+                openSessionID: nil)
+        }
+        await pause.release()
+        await preparation.value
+
+        #expect(session.currentProviderAccountRef == "acct_B")
+        #expect(session.pins.last == "acct_B")
+        await newerRoute.value
+    }
+
+    @Test func creationSnapshotKeepsItsPrimaryWhenTheNewSessionPreferenceChanges() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        await coordinator.useAccount(
+            "acct_A",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+        let creationSnapshot = coordinator.newSessionPrimarySnapshot()
+        await coordinator.useAccount(
+            "acct_B",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+        let session = FakeProviderAccountSession(providerID: providerID, accountRef: nil)
+        coordinator.register(session)
+
+        await coordinator.prepareForFirstPrompt(
+            sessionID: session.id,
+            primarySnapshot: creationSnapshot)
+
+        #expect(session.pins == ["acct_A"])
+        #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_B")
+    }
+
+    @Test func completedRouteNewerThanCreationSnapshotIsNotReplacedByThePrimary() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        await coordinator.useAccount(
+            "acct_A",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+        let creationSnapshot = coordinator.newSessionPrimarySnapshot()
+        let session = FakeProviderAccountSession(providerID: providerID, accountRef: nil)
+        coordinator.register(session)
+        await coordinator.useAccount(
+            "acct_B",
+            providerID: providerID,
+            scope: .allCurrentSessions,
+            openSessionID: nil)
+
+        await coordinator.prepareForFirstPrompt(
+            sessionID: session.id,
+            primarySnapshot: creationSnapshot)
+
+        #expect(session.pins == ["acct_B"])
+        #expect(session.currentProviderAccountRef == "acct_B")
+    }
+
     @Test func queuedSuccessDoesNotClearAnUnrelatedPartialFailure() async throws {
         let (coordinator, defaults, suiteName) = try makeCoordinator()
         defer { defaults.removePersistentDomain(forName: suiteName) }
