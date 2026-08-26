@@ -56,6 +56,14 @@ struct OmpExecutableLocator: OmpLocating {
 
         let data: Data
         do {
+            // Deliberately no `-e <extension path>` here. This probe never
+            // reaches `session_start` (the extension's only hook) — a plain
+            // `--version` invocation isn't an RPC session, so loading the
+            // extension would buy nothing. It would only add risk: OMP
+            // discovery itself would then depend on the extension parsing
+            // correctly, and a broken extension would make the app unable to
+            // find `omp` at all (Setup screen) instead of only losing account
+            // routing. See task-2-report.md's exclusion list.
             data = try await OmpCommandRunner().run(
                 executableURL: candidate,
                 arguments: ["--version"])
