@@ -63,6 +63,23 @@ build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
 build_file.product_ref = product
 app.frameworks_build_phase.files << build_file
 
+sparkle_package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+sparkle_package.repositoryURL = "https://github.com/sparkle-project/Sparkle"
+sparkle_package.requirement = {
+  "kind" => "upToNextMajorVersion",
+  "minimumVersion" => "2.6.0",
+}
+project.root_object.package_references << sparkle_package
+
+sparkle_product = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+sparkle_product.package = sparkle_package
+sparkle_product.product_name = "Sparkle"
+app.package_product_dependencies << sparkle_product
+
+sparkle_build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
+sparkle_build_file.product_ref = sparkle_product
+app.frameworks_build_phase.files << sparkle_build_file
+
 sqlite = project.frameworks_group.new_file("usr/lib/libsqlite3.tbd")
 sqlite.source_tree = "SDKROOT"
 app.frameworks_build_phase.add_file_reference(sqlite)
