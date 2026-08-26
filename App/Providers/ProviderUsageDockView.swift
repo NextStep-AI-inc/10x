@@ -1,8 +1,17 @@
 import Observation
 import SwiftUI
 
+enum ProviderUsageDockExpansionMotion: Equatable {
+    case matchedGeometry
+    case identity
+
+    static func mode(reduceMotion: Bool) -> Self {
+        reduceMotion ? .identity : .matchedGeometry
+    }
+}
+
 struct ProviderUsageDockRoutingEligibility {
-    static func canSelect(
+    static func canSwitch(
         _ account: ProviderUsageAccount,
         providerID: String,
         pendingRemovalAccounts: Set<ProviderAccountKey>
@@ -63,6 +72,12 @@ final class ProviderUsageDockInteraction {
         isShowingConfirmation = false
     }
 
+    func inspectProvider(providerID: String) {
+        inspectedProviderID = providerID
+        inspectedAccountID = nil
+        isShowingConfirmation = false
+    }
+
     func beginConfirmation(satisfaction: ProviderAccountScopeSatisfaction) {
         guard inspectedAccountID != nil,
               let firstUnsatisfiedScope = satisfaction.firstUnsatisfiedScope
@@ -88,17 +103,15 @@ final class ProviderUsageDockInteraction {
         satisfaction: ProviderAccountScopeSatisfaction
     ) {
         guard isShowingConfirmation,
-              let scope = satisfaction.isSatisfied(selectedScope)
-                ? satisfaction.firstUnsatisfiedScope
-                : selectedScope
+              !satisfaction.isSatisfied(selectedScope)
         else { return }
-        onUseAccount(accountRef, scope.routingScope)
+        onUseAccount(accountRef, selectedScope.routingScope)
         dismiss()
     }
 
     func dismiss() {
-        guard let inspectedAccountID else { return }
-        focusRestoration.scheduleReturn(to: inspectedAccountID)
+        guard let inspectedProviderID else { return }
+        focusRestoration.scheduleReturn(to: inspectedAccountID ?? inspectedProviderID)
         clearInspection()
     }
 
@@ -132,8 +145,9 @@ struct ProviderUsageDockView: View {
     let onManageAccounts: (String) -> Void
 
     @State private var interaction: ProviderUsageDockInteraction
-    @FocusState private var compactFocusedAccountID: String?
-    @FocusState private var expandedFocusedAccountID: String?
+    @FocusState private var compactFocusedSelectorID: String?
+    @FocusState private var expandedFocusedSelectorID: String?
+    @Namespace private var expansionNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
@@ -168,9 +182,12 @@ struct ProviderUsageDockView: View {
                 provider.accounts.contains(where: { $0.id == accountID })
             })
         } ?? providers.first(where: { $0.id == initiallySelectedProviderID })
-        let initialAccount = initiallyInspectedAccountID.flatMap { accountID in
-            initialProvider?.accounts.first(where: { $0.id == accountID })
-        } ?? initialProvider.flatMap(Self.foregroundAccount)
+        let initialAccount: ProviderUsageAccount? = initialProvider.flatMap { provider in
+            guard provider.capability == .accountRouting else { return nil }
+            return initiallyInspectedAccountID.flatMap { accountID in
+                provider.accounts.first(where: { $0.id == accountID })
+            } ?? Self.foregroundAccount(provider)
+        }
         let initialSatisfaction = initialProvider.flatMap { provider in
             initialAccount.flatMap { account in
                 Self.accountKey(provider: provider, account: account)
@@ -187,15 +204,14 @@ struct ProviderUsageDockView: View {
 
     var body: some View {
         Group {
-            if let provider = inspectedProvider,
-               let account = inspectedAccount(in: provider) {
+            if let provider = inspectedProvider {
                 ZStack(alignment: .bottomTrailing) {
                     Color.clear
                         .contentShape(Rectangle())
                         .onTapGesture(perform: collapse)
 
-                    expandedPanel(provider: provider, account: account)
-                        .transition(reduceMotion ? .opacity : .identity)
+                    expandedPanel(provider: provider)
+                        .transition(.identity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             } else {
@@ -222,13 +238,13 @@ struct ProviderUsageDockView: View {
         HStack(alignment: .bottom, spacing: Self.compactWheelSpacing) {
             ForEach(providers) { provider in
                 if provider.capability == .accountRouting, !provider.accounts.isEmpty {
-                    ProviderAccountStackView(
+                    accountStack(
                         provider: provider,
-                        generatingCounts: effectiveGeneratingCounts,
                         isGrayscale: isForegroundGenerating,
                         diameter: compactLayout.wheelDiameter,
-                        focusedAccountID: $compactFocusedAccountID,
-                        visualFocusAccountID: visualFocusAccountID
+                        focus: $compactFocusedSelectorID,
+                        visualFocusAccountID: visualFocusAccountID,
+                        isSource: true
                     ) { account in
                         inspect(provider: provider, account: account)
                     }
@@ -240,25 +256,27 @@ struct ProviderUsageDockView: View {
         .onAppear(perform: restoreCompactFocusIfNeeded)
     }
 
-    private func expandedPanel(
-        provider: ProviderUsageProvider,
-        account: ProviderUsageAccount
-    ) -> some View {
+    private func expandedPanel(provider: ProviderUsageProvider) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            if interaction.isShowingConfirmation {
+            if provider.capability == .accountRouting,
+               let account = inspectedAccount(in: provider),
+               interaction.isShowingConfirmation {
                 ScrollView {
                     ProviderAccountSwitchConfirmationView(
                         accountLabel: account.label,
                         satisfaction: satisfaction(provider: provider, account: account),
-                        isAccountAvailable: canSelect(provider: provider, account: account),
+                        isSwitchAvailable: canSwitch(provider: provider, account: account),
                         selectedScope: selectedScopeBinding(provider: provider, account: account),
                         onCancel: interaction.cancelConfirmation,
                         onConfirm: { confirm(provider: provider, account: account) })
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollIndicators(.hidden)
-            } else {
+            } else if provider.capability == .accountRouting,
+                      let account = inspectedAccount(in: provider) {
                 accountDetails(provider: provider, account: account)
+            } else {
+                providerDetails(provider)
             }
         }
         .padding(16)
@@ -271,6 +289,47 @@ struct ProviderUsageDockView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {}
+    }
+
+    private func providerDetails(_ provider: ProviderUsageProvider) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 8) {
+                ForEach(providers) { candidate in
+                    expandedProviderButton(candidate)
+                }
+            }
+
+            Rectangle()
+                .fill(TenXPalette.color(TenXPalette.separatorHex))
+                .frame(height: 1)
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(provider.name)
+                    .font(TenXTypography.accent(size: 19))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                Spacer(minLength: 8)
+                Text(providerActiveSessionText(for: provider))
+                    .font(TenXTypography.body(size: 12))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    ForEach(provider.accounts) { account in
+                        accountSection(
+                            account,
+                            provider: provider,
+                            showsAccountLabel: provider.accounts.count > 1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .scrollIndicators(.hidden)
+
+            Button("Close usage details", action: collapse)
+                .buttonStyle(GhostActionStyle())
+                .accessibilityLabel("Close usage details")
+        }
     }
 
     private func accountDetails(
@@ -321,7 +380,7 @@ struct ProviderUsageDockView: View {
                                     satisfaction: satisfaction(provider: provider, account: account))
                             }
                             .buttonStyle(GhostActionStyle())
-                            .disabled(!canSelect(provider: provider, account: account)
+                            .disabled(!canSwitch(provider: provider, account: account)
                                 || satisfaction(
                                     provider: provider,
                                     account: account).areAllScopesSatisfied)
@@ -350,69 +409,124 @@ struct ProviderUsageDockView: View {
         inspectedAccount: ProviderUsageAccount
     ) -> some View {
         if provider.capability == .accountRouting, !provider.accounts.isEmpty {
-            ProviderAccountStackView(
+            accountStack(
                 provider: ProviderUsageDockPresentation.expandedProvider(
                     provider,
                     inspectedAccount: inspectedAccount),
-                generatingCounts: effectiveGeneratingCounts,
                 isGrayscale: false,
                 diameter: ProviderUsageRingGeometry.diameter,
-                focusedAccountID: $expandedFocusedAccountID
+                focus: $expandedFocusedSelectorID,
+                isSource: false
             ) { account in
                 inspect(provider: provider, account: account)
             }
-        } else {
-            providerButton(
-                provider,
-                focusID: Self.providerFocusID(provider.id),
-                isGrayscale: false,
-                diameter: ProviderUsageRingGeometry.diameter,
-                focus: $expandedFocusedAccountID)
         }
     }
 
     private func compactProviderButton(_ provider: ProviderUsageProvider) -> some View {
         providerButton(
             provider,
-            focusID: Self.providerFocusID(provider.id),
             isGrayscale: isForegroundGenerating,
             diameter: compactLayout.wheelDiameter,
-            focus: $compactFocusedAccountID)
+            focus: $compactFocusedSelectorID)
+    }
+
+    private func expandedProviderButton(_ provider: ProviderUsageProvider) -> some View {
+        providerButton(
+            provider,
+            isGrayscale: false,
+            diameter: ProviderUsageRingGeometry.diameter,
+            focus: $expandedFocusedSelectorID)
     }
 
     private func providerButton(
         _ provider: ProviderUsageProvider,
-        focusID: String,
         isGrayscale: Bool,
         diameter: CGFloat,
         focus: FocusState<String?>.Binding
     ) -> some View {
         Button {
-            guard let account = Self.foregroundAccount(provider) else { return }
-            inspect(provider: provider, account: account)
+            inspectProvider(provider)
         } label: {
-            ProviderUsageWheelView(
-                provider: provider,
-                activeCount: activeCounts[provider.id] ?? 0,
-                isGrayscale: isGrayscale,
-                diameter: diameter)
+            providerWheel(provider, isGrayscale: isGrayscale, diameter: diameter)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusable()
         .focusEffectDisabled()
-        .focused(focus, equals: focusID)
+        .focused(focus, equals: provider.id)
         .accessibilityLabel(provider.name)
         .accessibilityValue(ProviderUsageAccessibility.wheelValue(
             provider: provider,
             activeCount: activeCounts[provider.id] ?? 0))
     }
 
+    @ViewBuilder
+    private func accountStack(
+        provider: ProviderUsageProvider,
+        isGrayscale: Bool,
+        diameter: CGFloat,
+        focus: FocusState<String?>.Binding,
+        visualFocusAccountID: String? = nil,
+        isSource: Bool,
+        onSelect: @escaping (ProviderUsageAccount) -> Void
+    ) -> some View {
+        let stack = ProviderAccountStackView(
+            provider: provider,
+            generatingCounts: effectiveGeneratingCounts,
+            isGrayscale: isGrayscale,
+            diameter: diameter,
+            focusedAccountID: focus,
+            visualFocusAccountID: visualFocusAccountID,
+            onSelect: onSelect)
+        if ProviderUsageDockExpansionMotion.mode(reduceMotion: reduceMotion) == .matchedGeometry {
+            stack.matchedGeometryEffect(
+                id: expansionID(provider.id),
+                in: expansionNamespace,
+                isSource: isSource)
+        } else {
+            stack
+        }
+    }
+
+    @ViewBuilder
+    private func providerWheel(
+        _ provider: ProviderUsageProvider,
+        isGrayscale: Bool,
+        diameter: CGFloat
+    ) -> some View {
+        let wheel = ProviderUsageWheelView(
+            provider: provider,
+            activeCount: activeCounts[provider.id] ?? 0,
+            isGrayscale: isGrayscale,
+            diameter: diameter)
+        if ProviderUsageDockExpansionMotion.mode(reduceMotion: reduceMotion) == .matchedGeometry {
+            wheel.matchedGeometryEffect(
+                id: expansionID(provider.id),
+                in: expansionNamespace,
+                isSource: interaction.inspectedProviderID == nil
+                    || provider.id != interaction.inspectedProviderID)
+        } else {
+            wheel
+        }
+    }
+
+    private func expansionID(_ providerID: String) -> String {
+        "usage-wheel-\(providerID)"
+    }
+
     private func accountSection(
         _ account: ProviderUsageAccount,
-        provider: ProviderUsageProvider
+        provider: ProviderUsageProvider,
+        showsAccountLabel: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
+            if showsAccountLabel {
+                Text(account.label)
+                    .font(TenXTypography.body(size: 13, weight: .medium))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+            }
+
             if let usageStatusText = account.usageStatusText {
                 Text(usageStatusText)
                     .font(TenXTypography.body(size: 12))
@@ -454,6 +568,15 @@ struct ProviderUsageDockView: View {
         }
     }
 
+    private func providerActiveSessionText(for provider: ProviderUsageProvider) -> String {
+        let count = activeCounts[provider.id] ?? 0
+        return switch count {
+        case ...0: "No active sessions"
+        case 1: "1 active session"
+        default: "\(count) active sessions"
+        }
+    }
+
     private func satisfaction(
         provider: ProviderUsageProvider,
         account: ProviderUsageAccount
@@ -462,11 +585,11 @@ struct ProviderUsageDockView: View {
             .flatMap { accountScopeSatisfaction[$0] } ?? .none
     }
 
-    private func canSelect(
+    private func canSwitch(
         provider: ProviderUsageProvider,
         account: ProviderUsageAccount
     ) -> Bool {
-        ProviderUsageDockRoutingEligibility.canSelect(
+        ProviderUsageDockRoutingEligibility.canSwitch(
             account,
             providerID: provider.id,
             pendingRemovalAccounts: pendingRemovalAccounts)
@@ -489,15 +612,22 @@ struct ProviderUsageDockView: View {
         provider: ProviderUsageProvider,
         account: ProviderUsageAccount
     ) {
-        guard provider.capability != .accountRouting
-            || canSelect(provider: provider, account: account)
-        else { return }
         applyAnimation {
             interaction.inspect(providerID: provider.id, accountID: account.id)
         }
         Task { @MainActor in
             await Task.yield()
-            expandedFocusedAccountID = account.id
+            expandedFocusedSelectorID = account.id
+        }
+    }
+
+    private func inspectProvider(_ provider: ProviderUsageProvider) {
+        applyAnimation {
+            interaction.inspectProvider(providerID: provider.id)
+        }
+        Task { @MainActor in
+            await Task.yield()
+            expandedFocusedSelectorID = provider.id
         }
     }
 
@@ -505,7 +635,7 @@ struct ProviderUsageDockView: View {
         provider: ProviderUsageProvider,
         account: ProviderUsageAccount
     ) {
-        guard canSelect(provider: provider, account: account),
+        guard canSwitch(provider: provider, account: account),
               let accountRef = account.accountRef
         else { return }
         interaction.confirm(
@@ -514,15 +644,15 @@ struct ProviderUsageDockView: View {
     }
 
     private func collapse() {
-        guard interaction.inspectedAccountID != nil else { return }
-        expandedFocusedAccountID = nil
+        guard interaction.inspectedProviderID != nil else { return }
+        expandedFocusedSelectorID = nil
         applyAnimation(interaction.dismiss)
     }
 
     private func restoreCompactFocusIfNeeded() {
         Task { @MainActor in
-            await interaction.restoreFocusAfterCompactMount { accountID in
-                compactFocusedAccountID = accountID
+            await interaction.restoreFocusAfterCompactMount { selectorID in
+                compactFocusedSelectorID = selectorID
             }
         }
     }
@@ -552,24 +682,20 @@ struct ProviderUsageDockView: View {
             providerID: provider.id,
             accountRef: $0) }
     }
-
-    private static func providerFocusID(_ providerID: String) -> String {
-        "provider:\(providerID)"
-    }
 }
 
 @MainActor
 final class ProviderUsageDockFocusRestorationCoordinator {
-    private var pendingAccountID: String?
+    private var pendingSelectorID: String?
 
-    func scheduleReturn(to accountID: String) {
-        pendingAccountID = accountID
+    func scheduleReturn(to selectorID: String) {
+        pendingSelectorID = selectorID
     }
 
     func restoreAfterCompactMount(_ assignCompactFocus: (String) -> Void) async {
         await Task.yield()
-        guard let accountID = pendingAccountID else { return }
-        pendingAccountID = nil
-        assignCompactFocus(accountID)
+        guard let selectorID = pendingSelectorID else { return }
+        pendingSelectorID = nil
+        assignCompactFocus(selectorID)
     }
 }

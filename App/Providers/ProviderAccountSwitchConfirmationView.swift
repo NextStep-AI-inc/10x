@@ -1,5 +1,19 @@
 import SwiftUI
 
+enum ProviderAccountSwitchConfirmationFocusTarget: Equatable, Sendable {
+    case cancel
+}
+
+@MainActor
+enum ProviderAccountSwitchConfirmationFocus {
+    static func assignInitialFocus(
+        _ assign: (ProviderAccountSwitchConfirmationFocusTarget) -> Void
+    ) async {
+        await Task.yield()
+        assign(.cancel)
+    }
+}
+
 enum ProviderAccountScopeOption: CaseIterable, Hashable, Identifiable, Sendable {
     case thisSession
     case allCurrentSessions
@@ -84,10 +98,13 @@ struct ProviderAccountSwitchConfirmationPresentation: Equatable, Sendable {
 struct ProviderAccountSwitchConfirmationView: View {
     let accountLabel: String
     let satisfaction: ProviderAccountScopeSatisfaction
-    let isAccountAvailable: Bool
+    let isSwitchAvailable: Bool
     @Binding var selectedScope: ProviderAccountScopeOption
     let onCancel: () -> Void
     let onConfirm: () -> Void
+
+    @FocusState private var isCancelFocused: Bool
+    @AccessibilityFocusState private var isCancelAccessibilityFocused: Bool
 
     private var presentation: ProviderAccountSwitchConfirmationPresentation {
         ProviderAccountSwitchConfirmationPresentation(accountLabel: accountLabel)
@@ -130,14 +147,28 @@ struct ProviderAccountSwitchConfirmationView: View {
                     .buttonStyle(GhostActionStyle(
                         color: TenXPalette.color(TenXPalette.nearBlackHex)))
                     .keyboardShortcut(.cancelAction)
+                    .focused($isCancelFocused)
+                    .accessibilityFocused($isCancelAccessibilityFocused)
+                    .onKeyPress(.escape) {
+                        onCancel()
+                        return .handled
+                    }
                 Button(presentation.confirmActionLabel, action: onConfirm)
                     .buttonStyle(.borderedProminent)
                     .tint(TenXPalette.color(TenXPalette.interactiveCyanHex))
-                    .disabled(satisfaction.areAllScopesSatisfied || !isAccountAvailable)
+                    .disabled(satisfaction.areAllScopesSatisfied || !isSwitchAvailable)
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(presentation.title)
         .accessibilityAddTraits(.isModal)
+        .onExitCommand(perform: onCancel)
+        .task {
+            await ProviderAccountSwitchConfirmationFocus.assignInitialFocus { target in
+                guard target == .cancel else { return }
+                isCancelFocused = true
+                isCancelAccessibilityFocused = true
+            }
+        }
     }
 }

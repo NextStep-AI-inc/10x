@@ -564,11 +564,12 @@ import Testing
         size: CGSize(width: 1180, height: 760))
 }
 
+@Suite struct ViewSnapshotTests {
 @MainActor
 @Test func providerAccountMultipleIdleSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
-            providers: providerUsageDockProviders,
+            providers: providerUsageDockProviders(),
             activeCounts: [:],
             generatingCounts: [:],
             isForegroundGenerating: false)
@@ -583,7 +584,7 @@ import Testing
 @Test func providerAccountGeneratingGrayscaleSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
-            providers: providerUsageDockProviders,
+            providers: providerUsageDockProviders(),
             activeCounts: [:],
             generatingCounts: providerUsageDockGeneratingCounts,
             isForegroundGenerating: true)
@@ -597,7 +598,7 @@ import Testing
 @Test func providerAccountHoveredBackgroundSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
-            providers: providerUsageDockProviders,
+            providers: providerUsageDockProviders(workPercentage: 36),
             activeCounts: [:],
             generatingCounts: providerUsageDockGeneratingCounts,
             isForegroundGenerating: true,
@@ -612,7 +613,7 @@ import Testing
 @Test func providerAccountExpandedSemanticSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
-            providers: providerUsageDockProviders,
+            providers: providerUsageDockProviders(),
             activeCounts: [:],
             generatingCounts: providerUsageDockGeneratingCounts,
             isForegroundGenerating: true,
@@ -626,7 +627,7 @@ import Testing
 @Test func providerAccountSwitchConfirmationSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
-            providers: providerUsageDockProviders,
+            providers: providerUsageDockProviders(),
             activeCounts: [:],
             generatingCounts: providerUsageDockGeneratingCounts,
             isForegroundGenerating: true,
@@ -635,6 +636,20 @@ import Testing
             .environment(\._accessibilityReduceMotion, true),
         name: "provider-account-switch-confirmation",
         size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerUsageDockLegacyExpandedSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockLegacyProviders,
+            activeCounts: ["anthropic": 2],
+            isForegroundGenerating: true,
+            initiallySelectedProviderID: "anthropic")
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-usage-dock-expanded",
+        size: CGSize(width: 430, height: 460))
+}
 }
 
 @MainActor
@@ -759,7 +774,7 @@ private struct SnapshotOmpLocator: OmpLocating {
     }
 }
 
-private let providerUsageDockProviders = [
+private func providerUsageDockProviders(workPercentage: Int = 0) -> [ProviderUsageProvider] { [
     ProviderUsageProvider(
         id: "anthropic",
         name: "Anthropic",
@@ -790,7 +805,7 @@ private let providerUsageDockProviders = [
                     providerUsageDockLimit(
                         id: "anthropic:work:monthly",
                         label: "Monthly",
-                        percentage: 0,
+                        percentage: workPercentage,
                         reset: "in 18 days",
                         rank: 43_200),
                 ]),
@@ -835,12 +850,19 @@ private let providerUsageDockProviders = [
         ],
         capability: .accountRouting,
         foregroundAccountRef: "acct_cursor"),
-]
+] }
 
 private let providerUsageDockGeneratingCounts = [
     ProviderAccountKey(providerID: "anthropic", accountRef: "acct_personal"): 2,
     ProviderAccountKey(providerID: "anthropic", accountRef: "acct_work"): 1,
 ]
+
+private let providerUsageDockLegacyProviders = providerUsageDockProviders().map { provider in
+    ProviderUsageProvider(
+        id: provider.id,
+        name: provider.name,
+        accounts: provider.accounts)
+}
 
 private func providerUsageDockAccount(
     id: String,

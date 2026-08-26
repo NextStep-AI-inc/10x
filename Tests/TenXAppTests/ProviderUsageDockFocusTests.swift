@@ -25,6 +25,21 @@ import Testing
 }
 
 @MainActor
+@Test func providerOnlyInspectionRestoresTheProviderFocusID() async {
+    let interaction = ProviderUsageDockInteraction(
+        initiallyInspectedProviderID: "cursor",
+        onUseAccount: { _, _ in })
+    var focusedIDs: [String] = []
+
+    interaction.dismiss()
+    await interaction.restoreFocusAfterCompactMount { focusedIDs.append($0) }
+
+    #expect(interaction.inspectedProviderID == nil)
+    #expect(interaction.inspectedAccountID == nil)
+    #expect(focusedIDs == ["cursor"])
+}
+
+@MainActor
 @Test func inspectingAnAccountNeverRoutesUntilSwitchConfirmation() {
     var routedAccounts: [String] = []
     var routedScope: ProviderAccountScope?
@@ -100,13 +115,42 @@ import Testing
 }
 
 @MainActor
+@Test func staleSatisfiedScopeRequiresExplicitUnsatisfiedSelection() {
+    var routedScope: ProviderAccountScope?
+    let interaction = ProviderUsageDockInteraction { _, scope in
+        routedScope = scope
+    }
+    interaction.inspect(providerID: "anthropic", accountID: "anthropic:work")
+    interaction.beginConfirmation(satisfaction: .none)
+    let updatedSatisfaction = ProviderAccountScopeSatisfaction(
+        isThisSessionSatisfied: true,
+        areAllCurrentSessionsSatisfied: false,
+        isAllNewSessionsSatisfied: false)
+
+    interaction.confirm(accountRef: "acct_work", satisfaction: updatedSatisfaction)
+
+    #expect(routedScope == nil)
+    #expect(interaction.isShowingConfirmation)
+    #expect(interaction.selectedScope == .thisSession)
+
+    interaction.selectScope(.allNewSessions, satisfaction: updatedSatisfaction)
+    interaction.confirm(accountRef: "acct_work", satisfaction: updatedSatisfaction)
+    if case .allNewSessions = routedScope {
+        // The explicitly selected unsatisfied scope is routed.
+    } else {
+        Issue.record("Expected all-new-sessions routing after explicit reselection")
+    }
+}
+
+@MainActor
 @Test func confirmationActionDisablesOnlyWhenEveryScopeIsSatisfied() {
     #expect(!ProviderAccountScopeSatisfaction.none.areAllScopesSatisfied)
     #expect(ProviderAccountScopeSatisfaction.all.areAllScopesSatisfied)
 }
 
 @MainActor
-@Test func unavailableAndPendingRemovalAccountsCannotBeSelected() {
+@Test func unavailableAndPendingRemovalAccountsRemainInspectableButCannotSwitch() {
+    let interaction = ProviderUsageDockInteraction { _, _ in }
     let unavailable = dockAccount(
         id: "anthropic:unavailable",
         accountRef: "acct_unavailable",
@@ -116,17 +160,22 @@ import Testing
         accountRef: "acct_available",
         availability: .available)
 
-    #expect(!ProviderUsageDockRoutingEligibility.canSelect(
+    interaction.inspect(providerID: "anthropic", accountID: unavailable.id)
+    #expect(interaction.inspectedAccountID == unavailable.id)
+    #expect(!ProviderUsageDockRoutingEligibility.canSwitch(
         unavailable,
         providerID: "anthropic",
         pendingRemovalAccounts: []))
-    #expect(!ProviderUsageDockRoutingEligibility.canSelect(
+
+    interaction.inspect(providerID: "anthropic", accountID: available.id)
+    #expect(interaction.inspectedAccountID == available.id)
+    #expect(!ProviderUsageDockRoutingEligibility.canSwitch(
         available,
         providerID: "anthropic",
         pendingRemovalAccounts: [ProviderAccountKey(
             providerID: "anthropic",
             accountRef: "acct_available")]))
-    #expect(ProviderUsageDockRoutingEligibility.canSelect(
+    #expect(ProviderUsageDockRoutingEligibility.canSwitch(
         available,
         providerID: "anthropic",
         pendingRemovalAccounts: []))
@@ -155,6 +204,23 @@ import Testing
 
     #expect(expanded.foregroundAccountRef == "acct_work")
     #expect(expanded.accounts == provider.accounts)
+}
+
+@MainActor
+@Test func dockExpansionUsesMatchedGeometryUnlessReduceMotionIsEnabled() {
+    #expect(ProviderUsageDockExpansionMotion.mode(reduceMotion: false) == .matchedGeometry)
+    #expect(ProviderUsageDockExpansionMotion.mode(reduceMotion: true) == .identity)
+}
+
+@MainActor
+@Test func switchConfirmationAssignsInitialFocusToCancelDeterministically() async {
+    var targets: [ProviderAccountSwitchConfirmationFocusTarget] = []
+
+    await ProviderAccountSwitchConfirmationFocus.assignInitialFocus {
+        targets.append($0)
+    }
+
+    #expect(targets == [.cancel])
 }
 }
 
