@@ -383,10 +383,12 @@ If nothing is found, the artifact bundle has not been extracted yet. Run the Tas
 The private key goes to a file outside the repository. Never inside it.
 
 ```bash
-"$(find ~/Library/Developer/Xcode/DerivedData /private/tmp/tenx-sparkle -type f -name generate_keys -perm +111 2>/dev/null | head -1)" -x ~/sparkle-10x-private-key.pem
+KEYS="$(find ~/Library/Developer/Xcode/DerivedData /private/tmp/tenx-sparkle -type f -name generate_keys -perm +111 2>/dev/null | head -1)" && "$KEYS" && "$KEYS" -x ~/sparkle-10x-private-key.pem
 ```
 
-`generate_keys` prints the base64 public key and stores the private key in the login keychain; `-x` also exports it to the named file so it can be pasted into a GitHub secret. Record the printed public key for the next step.
+Two invocations, in that order. Plain `generate_keys` creates the keypair, stores the private half in the login keychain, and prints the base64 public key. `-x` only exports a key that already exists, so calling it first fails with `No existing signing key found!`. Record the printed public key for the next step.
+
+Never print, `cat`, or echo the `.pem`. The public key is safe to handle; the private key must go from the keychain to the GitHub secret without passing through a terminal or a file that outlives the next step.
 
 - [ ] **Step 3: Store the private key as a repository secret and delete the export**
 
