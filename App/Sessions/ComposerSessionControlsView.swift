@@ -51,7 +51,7 @@ struct ComposerSessionControlsView: View {
                         model.isFastModeEnabled
                             ? TenXPalette.cyanHex
                             : TenXPalette.nearBlackHex)))
-                .disabled(model.isMutating)
+                .disabled(model.isLoading || model.isMutating)
                 .accessibilityLabel("Fast mode")
                 .accessibilityValue(model.isFastModeEnabled ? "On" : "Off")
             }

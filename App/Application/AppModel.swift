@@ -81,6 +81,7 @@ final class AppModel {
 
     func refreshProvidersIfNeeded() async {
         await providerModel?.refreshIfStale()
+        await refreshComposerControls()
     }
 
     func openNewSession() {
