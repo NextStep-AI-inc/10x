@@ -5,6 +5,11 @@ require "xcodeproj"
 
 root = File.expand_path("..", __dir__)
 project_path = File.join(root, "10x.xcodeproj")
+
+resolved_relative = "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+resolved_path = File.join(project_path, resolved_relative)
+preserved_resolved = File.exist?(resolved_path) ? File.read(resolved_path) : nil
+
 FileUtils.rm_rf(project_path)
 
 project = Xcodeproj::Project.new(project_path)
@@ -142,6 +147,11 @@ test_proxy_uuid = "7405643B58C04A0D4C4F6864B6221DB8"
 test_dependency.instance_variable_set(:@uuid, test_dependency_uuid)
 test_dependency.target_proxy.instance_variable_set(:@uuid, test_proxy_uuid)
 project.save
+
+if preserved_resolved
+  FileUtils.mkdir_p(File.dirname(resolved_path))
+  File.write(resolved_path, preserved_resolved)
+end
 
 scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(app)

@@ -26,5 +26,13 @@
     <string>NSApplication</string>
     <key>ATSApplicationFontsPath</key>
     <string>Fonts</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/NextStep-AI-inc/10x/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>wwawdb9QZnhSSuVVE79cj2A9GRlCnaNy6GHvAlKbLZ4=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <false/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <false/>
 </dict>
 </plist>
