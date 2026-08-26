@@ -331,14 +331,14 @@ import Testing
 }
 
 @MainActor
-@Test func archivingAPendingSessionClosesItsLaterOpenedProcess() async throws {
+@Test func archivingAPendingStreamingSessionClosesAndRemovesActivity() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-pending-archive-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: container) }
     try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
     let project = container.appendingPathComponent("project")
     try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-    let executable = try makeNavigationExecutable(in: container)
+    let executable = try makeNavigationExecutable(in: container, mode: "pending-streaming")
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: FixedOmpLocator(executableURL: executable),
         sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
@@ -351,6 +351,7 @@ import Testing
     try await Task.sleep(for: .milliseconds(500))
 
     #expect(await manager.handle(for: metadata.path) == nil)
+    #expect(model.providerActivityCounts.isEmpty)
     await manager.closeAll()
 }
 

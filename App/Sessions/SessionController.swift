@@ -210,6 +210,10 @@ final class SessionController {
     }
 
     func stopActivityTracking() {
+        eventTask?.cancel()
+        eventTask = nil
+        reconciliationTask?.cancel()
+        reconciliationTask = nil
         activityRegistry?.remove(sessionID: id)
     }
 

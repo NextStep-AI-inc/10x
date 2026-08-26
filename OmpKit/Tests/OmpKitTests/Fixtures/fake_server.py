@@ -7,6 +7,7 @@
   slow-exit — basic behavior, then waits briefly after stdin closes
   slow-turn — prompt starts an agent turn that finishes after two seconds
   background-exit — starts a turn, then exits one second after accepting event subscription
+  pending-streaming — reports an active turn while a pending app open is archived
   noisy     — like basic, but emits unknown frames + setWidget before each response
   activity-lifecycle — scripted provider/config/runtime events for controller activity tests
 """
@@ -64,7 +65,7 @@ while True:
 
 STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
          "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
-if mode == "activity-lifecycle":
+if mode in ("activity-lifecycle", "pending-streaming"):
     STATE = {"model": {"id": "initial-model", "provider": "initial-provider"},
              "isStreaming": True, "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
 reverse_commands = []
@@ -172,9 +173,11 @@ for line in sys.stdin:
     elif ctype == "bad_command_test":
         emit({"id": cid, "type": "response", "command": "bad_command_test",
               "success": False, "error": "nope", "code": "test_code"})
-    elif mode == "background-exit" and ctype == "set_subagent_subscription":
+    elif mode in ("background-exit", "pending-streaming") and ctype == "set_subagent_subscription":
         emit({"id": cid, "type": "response", "command": ctype, "success": True})
         emit({"type": "agent_start"})
+        if mode == "pending-streaming":
+            continue
         time.sleep(1)
         sys.stderr.write("background-exit\n")
         sys.stderr.flush()
@@ -182,5 +185,5 @@ for line in sys.stdin:
     else:
         emit({"id": cid, "type": "response", "command": ctype or "parse", "success": True})
 
-if mode == "slow-exit":
+if mode in ("slow-exit", "pending-streaming"):
     time.sleep(0.6)

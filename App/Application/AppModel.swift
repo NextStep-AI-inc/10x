@@ -146,6 +146,7 @@ final class AppModel {
         Task {
             await controller.openExisting(metadata)
             guard managedSessions[controller.id] === controller else {
+                controller.stopActivityTracking()
                 await processManager.close(sessionPath: controller.sessionPath ?? metadata.path)
                 return
             }
@@ -163,6 +164,7 @@ final class AppModel {
         Task {
             await controller.openNew(projectURL: selectedProjectURL)
             guard managedSessions[controller.id] === controller else {
+                controller.stopActivityTracking()
                 if let sessionPath = controller.sessionPath {
                     await processManager.close(sessionPath: sessionPath)
                 }
