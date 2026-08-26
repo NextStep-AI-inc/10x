@@ -42,11 +42,19 @@ struct ComputerUseReadiness: Sendable, Equatable {
         providerProbes: [:])
 }
 
+enum ComputerUseTestOutcome: Sendable, Equatable {
+    case passed
+    case failed
+    case cancelled
+}
+
 struct ComputerUseProbeReport: Sendable, Equatable {
+    let outcome: ComputerUseTestOutcome
     let capabilities: ComputerCapabilities
     let captureSucceeded: Bool
     let backgroundInputSucceeded: Bool?
     let helperAvailable: Bool
+    let windowPlacementSucceeded: Bool?
 }
 
 enum ComputerUseSetupAction {
@@ -61,12 +69,14 @@ protocol ComputerUseSetupOMP: Sendable {
     func getComputerUse() async throws -> ComputerUseRPCState
     func setComputerUse(enabled: Bool, policy: ComputerForegroundPolicy) async throws -> ComputerUseRPCState
     func probeComputerUse(target: String?, verificationText: String?) async throws -> ComputerProbeResult
-    func shutdown() async
+    /// Returns false while the process still owns the disposable RPC session.
+    func shutdown() async -> Bool
 }
 
 actor DisposableComputerUseOMP: ComputerUseSetupOMP {
     private let executable: String
     private var client: RpcClient?
+    private var terminationTask: Task<Void, Never>?
 
     init(executable: String) {
         self.executable = executable
@@ -96,10 +106,17 @@ actor DisposableComputerUseOMP: ComputerUseSetupOMP {
         return result
     }
 
-    func shutdown() async {
-        guard let client else { return }
-        _ = await client.shutdown()
-        self.client = nil
+    func shutdown() async -> Bool {
+        guard let client else { return true }
+        let isTerminated = await client.shutdown()
+        if isTerminated {
+            self.client = nil
+            terminationTask?.cancel()
+            terminationTask = nil
+        } else {
+            observeTermination(of: client)
+        }
+        return isTerminated
     }
 
     private func rpc() async throws -> RpcClient {
@@ -111,6 +128,22 @@ actor DisposableComputerUseOMP: ComputerUseSetupOMP {
         try await client.start()
         self.client = client
         return client
+    }
+
+    private func observeTermination(of client: RpcClient) {
+        guard terminationTask == nil else { return }
+        terminationTask = Task { [weak self] in
+            for await _ in client.termination {
+                await self?.releaseTerminatedClient(client)
+                return
+            }
+        }
+    }
+
+    private func releaseTerminatedClient(_ terminatedClient: RpcClient) {
+        guard client === terminatedClient else { return }
+        client = nil
+        terminationTask = nil
     }
 }
 
@@ -130,12 +163,14 @@ final class ComputerUseSetupModel {
     @ObservationIgnored private let omp: any ComputerUseSetupOMP
     @ObservationIgnored private let providers: [AgentDesktopProviderKind: any AgentDesktopProvider]
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private var cleanupTask: Task<Void, Never>?
 
     init(
         omp: any ComputerUseSetupOMP = DisposableComputerUseOMP(executable: "omp"),
         providers: [any AgentDesktopProvider] = [AeroSpaceProvider(), HammerspoonProvider(), BackgroundProvider()],
         preference: AgentDesktopPreference? = nil,
         readiness: ComputerUseReadiness = .unavailable,
+        harmlessTest: ComputerUseProbeReport? = nil,
         ompVersion: String = "Unavailable",
         automaticallyChecksReadiness: Bool = true,
         defaults: UserDefaults = .standard
@@ -145,6 +180,7 @@ final class ComputerUseSetupModel {
         self.defaults = defaults
         self.preference = preference ?? ComputerUsePreferenceStore.preference(defaults: defaults)
         self.readiness = readiness
+        self.harmlessTest = harmlessTest
         self.ompVersion = ompVersion
         self.automaticallyChecksReadiness = automaticallyChecksReadiness
     }
@@ -205,10 +241,13 @@ final class ComputerUseSetupModel {
             let result = await runDisposableProbe(target: opened.windowID, verificationText: opened.verificationText)
             if let probe = result.probe {
                 harmlessTest = ComputerUseProbeReport(
+                    outcome: probe.captureSucceeded && probe.backgroundInputSucceeded != false
+                        && probe.capabilities.accessibility == .granted ? .passed : .failed,
                     capabilities: probe.capabilities,
                     captureSucceeded: probe.captureSucceeded,
                     backgroundInputSucceeded: probe.backgroundInputSucceeded,
-                    helperAvailable: helperAvailable)
+                    helperAvailable: helperAvailable,
+                    windowPlacementSucceeded: prepared?.workspaceID == nil ? nil : true)
                 readiness = ComputerUseReadiness(
                     ompContract: result.contract,
                     capabilities: probe.capabilities,
@@ -218,10 +257,12 @@ final class ComputerUseSetupModel {
             }
         } catch {
             harmlessTest = ComputerUseProbeReport(
+                outcome: error is CancellationError ? .cancelled : .failed,
                 capabilities: .unknown,
                 captureSucceeded: false,
                 backgroundInputSucceeded: nil,
-                helperAvailable: helperAvailable)
+                helperAvailable: false,
+                windowPlacementSucceeded: target == nil ? nil : false)
         }
         if let selected, let target, let originalWorkspaceID {
             try? await selected.provider.restore(windowID: target.windowID, to: originalWorkspaceID)
@@ -245,6 +286,11 @@ final class ComputerUseSetupModel {
         case .aeroSpace: [.aeroSpace]
         case .hammerspoon: [.hammerspoon]
         case .backgroundOnly: [.background]
+        }
+        if preference == .automatic {
+            for kind in candidates where probes[kind]?.availability == .healthy {
+                return probes[kind]!
+            }
         }
         for kind in candidates where probes[kind] != nil { return probes[kind]! }
         return ComputerUseReadiness.unavailable.preferredProvider
@@ -277,20 +323,37 @@ final class ComputerUseSetupModel {
             didAttemptEnable = true
             let enabled = try await omp.setComputerUse(enabled: true, policy: .requireHandoff)
             guard enabled.enabled, enabled.foregroundPolicy == .requireHandoff else {
-                _ = try? await omp.setComputerUse(enabled: false, policy: .requireHandoff)
-                await omp.shutdown()
+                await settleDisposableCleanup(requiresDisable: true)
                 return (.unavailable, nil)
             }
             let probe = try await omp.probeComputerUse(target: target, verificationText: verificationText)
             let disabled = try await omp.setComputerUse(enabled: false, policy: .requireHandoff)
-            await omp.shutdown()
+            await settleDisposableCleanup(requiresDisable: false)
             guard !disabled.enabled else { return (.unavailable, probe) }
             return (.complete, probe)
         } catch {
-            if didAttemptEnable { _ = try? await omp.setComputerUse(enabled: false, policy: .requireHandoff) }
-            await omp.shutdown()
+            await settleDisposableCleanup(requiresDisable: didAttemptEnable)
             return (isUnknownComputerCommand(error) ? .legacyBestEffort : .unavailable, nil)
         }
+    }
+
+    private func settleDisposableCleanup(requiresDisable: Bool) async {
+        if let cleanupTask {
+            await cleanupTask.value
+            return
+        }
+        let omp = omp
+        let task = Task {
+            if requiresDisable {
+                _ = try? await omp.setComputerUse(enabled: false, policy: .requireHandoff)
+            }
+            while !(await omp.shutdown()) {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        cleanupTask = task
+        await task.value
+        cleanupTask = nil
     }
 
     private func isUnknownComputerCommand(_ error: any Error) -> Bool {

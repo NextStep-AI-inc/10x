@@ -27,20 +27,50 @@ import Testing
     #expect(await omp.commands == ["get", "shutdown"])
 }
 
+@MainActor @Test func failedProbeRetriesConfirmedShutdownAfterDisabling() async {
+    let omp = FakeSetupOMP(failure: .probe, shutdownResults: [false, true])
+    let model = ComputerUseSetupModel(
+        omp: omp,
+        providers: [FakeSetupProvider(kind: .background, probe: .healthy)])
+
+    await model.runReadinessCheck()
+
+    #expect(await omp.commands == ["get", "enable", "probe", "disable", "shutdown", "shutdown"])
+    #expect(model.readiness.ompContract == .unavailable)
+}
+
+@MainActor @Test func automaticPreferenceReportsTheFirstHealthyHelper() async {
+    let omp = FakeSetupOMP()
+    let model = ComputerUseSetupModel(
+        omp: omp,
+        providers: [
+            FakeSetupProvider(kind: .aeroSpace, probe: .missing),
+            FakeSetupProvider(kind: .hammerspoon, probe: .healthy),
+            FakeSetupProvider(kind: .background, probe: .healthy),
+        ],
+        preference: .automatic)
+
+    await model.runReadinessCheck()
+
+    #expect(model.readiness.preferredProvider.integrationVersion == "hammerspoon")
+}
+
 private actor FakeSetupOMP: ComputerUseSetupOMP {
-    enum Failure: Error { case unknownCommand }
+    enum Failure: Error { case unknownCommand, probe }
 
     private(set) var commands: [String] = []
     private(set) var didCreateSessionHistory = false
-    private let hasUnknownContract: Bool
+    private let failure: Failure?
+    private var shutdownResults: [Bool]
 
-    init(failure: Failure? = nil) {
-        hasUnknownContract = failure != nil
+    init(failure: Failure? = nil, shutdownResults: [Bool] = [true]) {
+        self.failure = failure
+        self.shutdownResults = shutdownResults
     }
 
     func getComputerUse() async throws -> ComputerUseRPCState {
         commands.append("get")
-        if hasUnknownContract {
+        if failure == .unknownCommand {
             throw RpcClientError.commandFailed(command: "get_computer_use", error: "unknown command", code: nil)
         }
         return ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff)
@@ -53,6 +83,7 @@ private actor FakeSetupOMP: ComputerUseSetupOMP {
 
     func probeComputerUse(target: String?, verificationText: String?) async throws -> ComputerProbeResult {
         commands.append("probe")
+        if failure == .probe { throw Failure.probe }
         return ComputerProbeResult(json: .object([
             "capabilities": .object([
                 "backend": .string("macos"),
@@ -65,8 +96,9 @@ private actor FakeSetupOMP: ComputerUseSetupOMP {
         ]))!
     }
 
-    func shutdown() async {
+    func shutdown() async -> Bool {
         commands.append("shutdown")
+        return shutdownResults.isEmpty ? true : shutdownResults.removeFirst()
     }
 }
 
@@ -76,7 +108,7 @@ private struct FakeSetupProvider: AgentDesktopProvider {
 
     init(kind: AgentDesktopProviderKind, probe: ProviderAvailability) {
         self.kind = kind
-        result = ProviderProbe(availability: probe, integrationVersion: "1.0", capabilities: .background)
+        result = ProviderProbe(availability: probe, integrationVersion: kind.rawValue, capabilities: .background)
     }
 
     func probe() async -> ProviderProbe { result }

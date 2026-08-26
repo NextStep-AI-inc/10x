@@ -17,13 +17,15 @@ final class AppModel {
     private(set) var settingsModel: SettingsViewModel?
 
     @ObservationIgnored private let dependencies: AppDependencies
+    @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var exitTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     @ObservationIgnored private var sessionTransitionTask: Task<Void, Never>?
     @ObservationIgnored private var retiringSessions: [ObjectIdentifier: SessionController] = [:]
     @ObservationIgnored private var sessionTransitionGeneration = 0
 
-    init(dependencies: AppDependencies = .live) {
+    init(dependencies: AppDependencies = .live, defaults: UserDefaults = .standard) {
         self.dependencies = dependencies
+        self.defaults = defaults
     }
 
     func bootstrap() async {
@@ -85,7 +87,8 @@ final class AppModel {
             else { return }
             let controller = self.dependencies.makeSessionController(
                 processManager,
-                self.dependencies.computerUseRegistry)
+                self.dependencies.computerUseRegistry,
+                ComputerUsePreferenceStore.preference(defaults: self.defaults))
             self.activeSession = controller
             await controller.openExisting(metadata)
             if self.sessionTransitionGeneration != generation {
@@ -108,7 +111,8 @@ final class AppModel {
             else { return }
             let controller = self.dependencies.makeSessionController(
                 processManager,
-                self.dependencies.computerUseRegistry)
+                self.dependencies.computerUseRegistry,
+                ComputerUsePreferenceStore.preference(defaults: self.defaults))
             controller.draft = prompt
             self.activeSession = controller
             await controller.openNew(projectURL: selectedProjectURL)

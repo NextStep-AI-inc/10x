@@ -53,10 +53,19 @@ struct ComputerUseSettingsSection: View {
                 statusRow("Background input", value: backgroundInputLabel)
                 statusRow("Helper", value: helperLabel)
 
+                if let harmlessTest = model.harmlessTest {
+                    statusRow("Setup test", value: testOutcomeLabel(harmlessTest.outcome))
+                    statusRow("Test capture", value: harmlessTest.captureSucceeded ? "Passed" : "Failed")
+                    statusRow("Test accessibility", value: permissionLabel(harmlessTest.capabilities.accessibility))
+                    statusRow("Test background input", value: testInputLabel(harmlessTest.backgroundInputSucceeded))
+                    statusRow("Test helper", value: harmlessTest.helperAvailable ? "Passed" : "Failed")
+                    statusRow("Test window placement", value: testPlacementLabel(harmlessTest.windowPlacementSucceeded))
+                }
+
                 if model.readiness.ompContract == .legacyBestEffort {
                     Text("Background control may still interrupt your current app")
                         .font(TenXTypography.body(size: 11, weight: .medium))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.yellowHex))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -168,5 +177,23 @@ struct ComputerUseSettingsSection: View {
         case .unavailable: "Unavailable"
         case .unknown: "Not checked"
         }
+    }
+
+    private func testOutcomeLabel(_ outcome: ComputerUseTestOutcome) -> String {
+        switch outcome {
+        case .passed: "Passed"
+        case .failed: "Failed"
+        case .cancelled: "Cancelled"
+        }
+    }
+
+    private func testInputLabel(_ value: Bool?) -> String {
+        guard let value else { return "Not checked" }
+        return value ? "Passed" : "Failed"
+    }
+
+    private func testPlacementLabel(_ value: Bool?) -> String {
+        guard let value else { return "Not applicable" }
+        return value ? "Passed" : "Failed"
     }
 }

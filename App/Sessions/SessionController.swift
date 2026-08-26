@@ -24,6 +24,7 @@ final class SessionController {
     private(set) var isLogPresented = false
     private(set) var logText = ""
     private(set) var computerUse: ComputerUseController
+    private(set) var computerUsePreference: AgentDesktopPreference
     var draft = ""
     var streamingBehavior: StreamingBehavior? = .steer
 
@@ -43,11 +44,15 @@ final class SessionController {
         processManager: SessionProcessManager,
         computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry(),
         computerUse: ComputerUseController? = nil,
+        computerUsePreference: AgentDesktopPreference = .automatic,
         terminateProcess: (@Sendable (ContinuousClock.Instant) async -> Bool)? = nil
     ) {
         self.processManager = processManager
         self.terminateProcess = terminateProcess
-        self.computerUse = computerUse ?? ComputerUseController(registry: computerUseRegistry)
+        self.computerUsePreference = computerUsePreference
+        self.computerUse = computerUse ?? ComputerUseController(
+            registry: computerUseRegistry,
+            preference: computerUsePreference)
     }
 
     init(
@@ -60,12 +65,16 @@ final class SessionController {
         headerMetadata: SessionHeaderMetadata = SessionHeaderMetadata(
             branch: "",
             repo: "",
-            worktreePath: nil),
-        computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry()
+        worktreePath: nil),
+        computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry(),
+        computerUsePreference: AgentDesktopPreference = .automatic
     ) {
         self.processManager = processManager
         terminateProcess = nil
-        computerUse = ComputerUseController(registry: computerUseRegistry)
+        self.computerUsePreference = computerUsePreference
+        computerUse = ComputerUseController(
+            registry: computerUseRegistry,
+            preference: computerUsePreference)
         self.items = previewItems
         self.runtimeState = runtimeState
         self.title = title

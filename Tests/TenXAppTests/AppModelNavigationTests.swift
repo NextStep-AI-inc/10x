@@ -34,6 +34,39 @@ import Testing
 }
 
 @MainActor
+@Test(arguments: AgentDesktopPreference.allCases)
+func appModelPassesCurrentDesktopPreferenceToEverySessionFactory(
+    preference: AgentDesktopPreference
+) async throws {
+    let suiteName = "tenx-preference-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    ComputerUsePreferenceStore.save(preference, defaults: defaults)
+    let capture = PreferenceCapture()
+    let dependencies = AppDependencies(
+        ompLocator: FixedModelOmpLocator(),
+        sessionLibrary: SessionLibrary(root: FileManager.default.temporaryDirectory),
+        computerUseRegistry: ComputerUseRegistry(),
+        makeProcessManager: { _ in SessionProcessManager() },
+        makeSessionController: { processManager, registry, selectedPreference in
+            capture.value = selectedPreference
+            return SessionController(
+                processManager: processManager,
+                computerUseRegistry: registry,
+                computerUsePreference: selectedPreference)
+        })
+    let model = AppModel(dependencies: dependencies, defaults: defaults)
+    await model.bootstrap()
+
+    model.openSession(modelSession(path: "/tmp/preference-\(preference.rawValue).jsonl"))
+    for _ in 0..<50 where capture.value == nil {
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+
+    #expect(capture.value == preference)
+}
+
+@MainActor
 @Test func rapidTransitionsRetainEveryUnconfirmedSessionUntilItsOriginatingManagerReportsExit() async throws {
     let harness = ModelLifecycleHarness()
     let model = harness.makeModel()
@@ -214,6 +247,11 @@ import Testing
 }
 
 @MainActor
+private final class PreferenceCapture {
+    var value: AgentDesktopPreference?
+}
+
+@MainActor
 private final class ModelLifecycleHarness {
     private(set) var logs: [ModelLifecycleLog] = []
     private(set) var managers: [SessionProcessManager] = []
@@ -240,13 +278,13 @@ private final class ModelLifecycleHarness {
                 self?.managers.append(manager)
                 return manager
             },
-            makeSessionController: { [weak self] processManager, _ in
+            makeSessionController: { [weak self] processManager, _, preference in
                 let log = ModelLifecycleLog()
                 self?.logs.append(log)
                 let computerUse = ComputerUseController(
                     sessionID: UUID().uuidString,
                     lifecycle: .modelLifecycle(log, cleanupGate: self?.cleanupGate),
-                    preference: .automatic)
+                    preference: preference)
                 return SessionController(
                     processManager: processManager,
                     computerUse: computerUse,

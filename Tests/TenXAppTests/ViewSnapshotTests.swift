@@ -66,20 +66,20 @@ import Testing
 @Test func computerUseSettingsSnapshot() throws {
     try assertSnapshot(
         ComputerUseSettingsSection(model: computerUseSnapshotModel(contract: .complete))
-            .frame(width: 720)
+            .frame(width: 600)
             .frame(maxHeight: .infinity, alignment: .topLeading),
         name: "computer-use-settings",
-        size: CGSize(width: 800, height: 620))
+        size: CGSize(width: 760, height: 860))
 }
 
 @MainActor
 @Test func degradedComputerUseSettingsSnapshot() throws {
     try assertSnapshot(
         ComputerUseSettingsSection(model: computerUseSnapshotModel(contract: .legacyBestEffort))
-            .frame(width: 720)
+            .frame(width: 600)
             .frame(maxHeight: .infinity, alignment: .topLeading),
         name: "computer-use-settings-degraded",
-        size: CGSize(width: 800, height: 620))
+        size: CGSize(width: 760, height: 860))
 }
 
 @MainActor
@@ -531,6 +531,13 @@ private func computerUseSnapshotModel(contract: OmpComputerContract) -> Computer
                 availability: .healthy,
                 integrationVersion: nil,
                 capabilities: .background)]),
+        harmlessTest: ComputerUseProbeReport(
+            outcome: isComplete ? .passed : .failed,
+            capabilities: capabilities,
+            captureSucceeded: isComplete,
+            backgroundInputSucceeded: isComplete,
+            helperAvailable: isComplete,
+            windowPlacementSucceeded: isComplete),
         ompVersion: "18.0.5",
         automaticallyChecksReadiness: false)
 }

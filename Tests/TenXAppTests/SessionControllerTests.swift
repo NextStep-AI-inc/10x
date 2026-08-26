@@ -2,6 +2,18 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@MainActor
+@Test(arguments: AgentDesktopPreference.allCases)
+func sessionControllerPassesItsDesktopPreferenceToComputerUse(
+    preference: AgentDesktopPreference
+) {
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        computerUsePreference: preference)
+
+    #expect(controller.computerUsePreference == preference)
+}
+
 @MainActor @Test func contextPercentageIsClampedToItsDisplayRange() {
     #expect(SessionController.contextPercent(.object(["percentage": .double(210)])) == 100)
     #expect(SessionController.contextPercent(.object(["percentage": .double(-0.2)])) == 0)

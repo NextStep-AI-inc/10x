@@ -6,7 +6,7 @@ struct AppDependencies {
     let sessionLibrary: SessionLibrary
     let computerUseRegistry: ComputerUseRegistry
     let makeProcessManager: (String) -> SessionProcessManager
-    let makeSessionController: (SessionProcessManager, ComputerUseRegistry) -> SessionController
+    let makeSessionController: (SessionProcessManager, ComputerUseRegistry, AgentDesktopPreference) -> SessionController
 
     init(
         ompLocator: any OmpLocating,
@@ -15,8 +15,8 @@ struct AppDependencies {
         makeProcessManager: @escaping (String) -> SessionProcessManager = {
             SessionProcessManager(executable: $0)
         },
-        makeSessionController: @escaping (SessionProcessManager, ComputerUseRegistry) -> SessionController = {
-            SessionController(processManager: $0, computerUseRegistry: $1)
+        makeSessionController: @escaping (SessionProcessManager, ComputerUseRegistry, AgentDesktopPreference) -> SessionController = {
+            SessionController(processManager: $0, computerUseRegistry: $1, computerUsePreference: $2)
         }
     ) {
         self.ompLocator = ompLocator
