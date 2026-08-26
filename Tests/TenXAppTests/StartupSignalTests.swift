@@ -7,9 +7,9 @@ import Testing
 @Test func startupSignalEntersSmoothlyAndGrowsIntoAContinuousRipple() {
     let geometry = StartupSignalGeometry(width: 640, midY: 24, amplitude: 18)
 
-    #expect(geometry.waveStart.x == 450)
+    #expect(geometry.waveStart.x == 465)
     #expect(geometry.wavePoint(progress: 0).y == 24)
-    #expect(abs(geometry.wavePoint(progress: 0.01).y - 24) < 0.05)
+    #expect(abs(geometry.wavePoint(progress: 0.02).y - 24) < 0.02)
     #expect(abs(geometry.wavePoint(progress: 0.25).y - 24) < 0.001)
     #expect(abs(geometry.wavePoint(progress: 0.5).y - 24) < 0.001)
     #expect(abs(geometry.wavePoint(progress: 0.75).y - 24) < 0.001)
@@ -19,7 +19,7 @@ import Testing
     let secondPeak = 24 - geometry.wavePoint(progress: 0.375).y
     let thirdPeak = geometry.wavePoint(progress: 0.625).y - 24
     let fourthPeak = 24 - geometry.wavePoint(progress: 0.875).y
-    #expect(firstPeak > 5 && firstPeak < 7)
+    #expect(firstPeak > 5 && firstPeak < 6)
     #expect(secondPeak > 10 && secondPeak < 12)
     #expect(thirdPeak > 13 && thirdPeak < 15)
     #expect(fourthPeak > 16 && fourthPeak < 18)

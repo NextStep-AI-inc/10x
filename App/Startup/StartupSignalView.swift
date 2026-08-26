@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct StartupSignalGeometry {
-    static let waveWidth: CGFloat = 190
+    static let waveWidth: CGFloat = 175
 
     let width: CGFloat
     let midY: CGFloat
@@ -13,8 +13,11 @@ struct StartupSignalGeometry {
 
     func wavePoint(progress: CGFloat) -> CGPoint {
         let clampedProgress = min(max(progress, 0), 1)
-        let entryProgress = min(clampedProgress / 0.08, 1)
-        let entryEase = entryProgress * entryProgress * (3 - 2 * entryProgress)
+        let entryProgress = min(clampedProgress / 0.18, 1)
+        let entryEase = entryProgress
+            * entryProgress
+            * entryProgress
+            * (entryProgress * (entryProgress * 6 - 15) + 10)
         let envelope = clampedProgress.squareRoot() * entryEase
         let phase = Double(clampedProgress) * 4 * .pi
         let verticalOffset = CGFloat(sin(phase)) * amplitude * envelope
