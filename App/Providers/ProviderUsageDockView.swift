@@ -81,7 +81,7 @@ struct ProviderUsageDockView: View {
                         accountSection(
                             account,
                             provider: provider,
-                            showsAccountLabel: true)
+                            showsAccountLabel: provider.accounts.count > 1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

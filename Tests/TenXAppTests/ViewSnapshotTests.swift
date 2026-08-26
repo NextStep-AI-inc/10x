@@ -553,6 +553,7 @@ import Testing
             providers: providerUsageDockProviders,
             activeCounts: ["anthropic": 2],
             isForegroundGenerating: false)
+            // macOS exposes the public Reduce Motion key as read-only.
             .environment(\._accessibilityReduceMotion, true),
         name: "provider-usage-dock-idle",
         size: CGSize(width: 430, height: 460))
