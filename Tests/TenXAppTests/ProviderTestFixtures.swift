@@ -134,6 +134,10 @@ actor FakeProviderService: ProviderManaging {
     func setProviders(_ providers: [ProviderLoginProvider]) {
         storedProviders = providers
     }
+
+    func setAccountUsage(_ usage: [String: [ProviderAccountUsage]]) {
+        storedAccountUsage = usage
+    }
 }
 
 actor LoginGate {

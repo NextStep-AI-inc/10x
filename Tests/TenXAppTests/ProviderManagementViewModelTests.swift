@@ -143,6 +143,112 @@ import Testing
     #expect(model.providerMessage == "Provider accounts couldn’t be loaded.")
 }
 
+@Test func lateCLIFailureDoesNotOverwriteNewerAccountRPCUsage() async throws {
+    let providerID = "cursor"
+    let account = providerAccountFixture(
+        providerID: providerID,
+        ref: "acct_A",
+        label: "Account",
+        order: 0)
+    let service = FakeProviderService(
+        providers: [ProviderLoginProvider(
+            id: providerID,
+            name: "Cursor",
+            isAvailable: true,
+            isAuthenticated: true)],
+        capabilities: [providerID: .accountRouting],
+        accounts: [providerID: [account]],
+        accountUsage: [providerID: [providerAccountUsageFixture(
+            providerID: providerID,
+            ref: "acct_A",
+            windows: [providerAccountUsageWindowFixture(
+                id: "monthly",
+                label: "Monthly",
+                remainingFraction: 0.25)])]])
+    let cliUsage = FakeUsageService(snapshot: try usageSnapshotFixture())
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: cliUsage,
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    #expect(model.dockProviders.first?.accounts.first?.limits.first?.percentage == 25)
+    let lateCLIGate = LoadGate()
+    await cliUsage.enqueueLoadGate(lateCLIGate)
+    await cliUsage.setFailing(true)
+    await service.setAccountUsage([providerID: [providerAccountUsageFixture(
+        providerID: providerID,
+        ref: "acct_A",
+        windows: [providerAccountUsageWindowFixture(
+            id: "monthly",
+            label: "Monthly",
+            remainingFraction: 0.8)])]])
+
+    let refresh = Task { await model.refresh() }
+    await lateCLIGate.waitForStart()
+    await waitForModelState {
+        model.dockProviders.first?.accounts.first?.limits.first?.percentage == 80
+    }
+    await lateCLIGate.release()
+    await refresh.value
+
+    let provider = try #require(model.dockProviders.first)
+    #expect(provider.capability == .accountRouting)
+    #expect(provider.accounts.first?.accountRef == "acct_A")
+    #expect(provider.accounts.first?.limits.first?.percentage == 80)
+}
+
+@Test func disconnectedAndMissingProvidersDiscardAccountPresentationCaches() async throws {
+    let providerID = "cursor"
+    let authenticated = ProviderLoginProvider(
+        id: providerID,
+        name: "Cursor",
+        isAvailable: true,
+        isAuthenticated: true)
+    let service = FakeProviderService(
+        providers: [authenticated],
+        capabilities: [providerID: .accountRouting],
+        accounts: [providerID: [providerAccountFixture(
+            providerID: providerID,
+            ref: "acct_A",
+            label: "Account",
+            order: 0)]],
+        accountUsage: [providerID: [providerAccountUsageFixture(
+            providerID: providerID,
+            ref: "acct_A",
+            windows: [providerAccountUsageWindowFixture(id: "monthly", label: "Monthly")])]])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try usageSnapshotFixture()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    #expect(model.dockProviders.first?.capability == .accountRouting)
+
+    await service.setProviders([ProviderLoginProvider(
+        id: providerID,
+        name: "Cursor",
+        isAvailable: true,
+        isAuthenticated: false)])
+    await model.refresh()
+
+    var fallback = try #require(model.dockProviders.first)
+    #expect(fallback.capability == .providerOnly)
+    #expect(fallback.accounts.allSatisfy { $0.accountRef == nil })
+    #expect(!fallback.showsAccountSelectors)
+    #expect(!fallback.showsAccountSwitch)
+    #expect(!fallback.showsAccountRemoval)
+
+    await service.setProviders([])
+    await model.refresh()
+
+    fallback = try #require(model.dockProviders.first)
+    #expect(fallback.capability == .providerOnly)
+    #expect(fallback.accounts.allSatisfy { $0.accountRef == nil })
+    #expect(!fallback.showsAccountSwitch)
+    #expect(!fallback.showsAccountRemoval)
+}
+
 @MainActor
 @Test func providerShutdownCancelsAndAwaitsAnInflightUsageCommand() async throws {
     let fixture = try OmpCommandFixture()

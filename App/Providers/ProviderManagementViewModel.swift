@@ -84,6 +84,7 @@ final class ProviderManagementViewModel {
     @ObservationIgnored private var loadedAccountUsageProviderIDs: Set<String> = []
     @ObservationIgnored private var unavailableAccountUsageProviderIDs: Set<String> = []
     @ObservationIgnored private var failedAccountCapabilityProviderIDs: Set<String> = []
+    @ObservationIgnored private var usagePresentationRevision: UInt64 = 0
     @ObservationIgnored private var usageFailureGeneration = 0
     @ObservationIgnored private var nextRefreshOperationID = 0
     @ObservationIgnored private var providerRefreshOperation: RefreshOperation?
@@ -255,6 +256,7 @@ final class ProviderManagementViewModel {
 
         do {
             providers = try await providerService.providers()
+            retainAccountState(for: Set(providers.filter(\.isAuthenticated).map(\.id)))
             if usageFailureGeneration == self.usageFailureGeneration {
                 rebuildUsage(at: lastUsageRefresh ?? now())
             }
@@ -304,6 +306,15 @@ final class ProviderManagementViewModel {
         }
     }
 
+    private func retainAccountState(for providerIDs: Set<String>) {
+        accountCapabilities = accountCapabilities.filter { providerIDs.contains($0.key) }
+        accountSummaries = accountSummaries.filter { providerIDs.contains($0.key) }
+        accountUsage = accountUsage.filter { providerIDs.contains($0.key) }
+        loadedAccountUsageProviderIDs.formIntersection(providerIDs)
+        unavailableAccountUsageProviderIDs.formIntersection(providerIDs)
+        failedAccountCapabilityProviderIDs.formIntersection(providerIDs)
+    }
+
     private func refreshUsage(forceFresh: Bool) async {
         while let operation = usageRefreshOperation {
             await operation.task.value
@@ -335,19 +346,23 @@ final class ProviderManagementViewModel {
         isRefreshingUsage = true
         defer { isRefreshingUsage = false }
         let previousUsage = usage
+        let startingPresentationRevision = usagePresentationRevision
 
         do {
             let snapshot = try await usageService.loadUsage()
             let refreshDate = now()
             lastUsageSnapshot = snapshot
             usage = usagePresentation(from: snapshot, at: refreshDate)
+            usagePresentationRevision &+= 1
             lastUsageRefresh = refreshDate
             if unavailableAccountUsageProviderIDs.isEmpty {
                 usageMessage = nil
             }
         } catch {
             usageFailureGeneration += 1
-            usage = previousUsage
+            if usagePresentationRevision == startingPresentationRevision {
+                usage = previousUsage
+            }
             if let lastUsageRefresh {
                 usageMessage = "Usage couldn’t be refreshed. Showing data from \(formatTime(lastUsageRefresh))."
             } else {
@@ -412,6 +427,7 @@ final class ProviderManagementViewModel {
 
     private func rebuildUsage(at date: Date) {
         usage = combinedUsagePresentation(at: date)
+        usagePresentationRevision &+= 1
     }
 
     private func combinedUsagePresentation(at date: Date) -> ProviderUsagePresentation {
