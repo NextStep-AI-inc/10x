@@ -191,6 +191,21 @@ import Testing
     await manager.closeAll()
 }
 
+@MainActor @Test func sameProcessStateRefreshPreservesAccountEventSequence() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = try makeProviderAccountRefreshExecutable(in: directory)
+    let manager = SessionProcessManager(executable: executable.path)
+    let controller = SessionController(processManager: manager)
+
+    await controller.openExisting(metadata(path: "/tmp/account-refresh.jsonl", cwd: "/tmp"))
+
+    #expect(await eventually { controller.title == "Refresh complete" })
+    #expect(controller.currentProviderAccountRef == "acct_C")
+    #expect(controller.providerAccountSequence == 3)
+    await manager.closeAll()
+}
+
 }
 
 @MainActor
@@ -203,6 +218,25 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
 }
 
 @MainActor extension SessionControllerTests {
+
+@MainActor @Test func accountEventCapturedFromClosedPipelineIsIgnored() async throws {
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(metadata(path: "/tmp/stale-account-event.jsonl", cwd: "/tmp"))
+    let consumeStaleEvent = try #require(controller.testingCapturedAccountEventConsumer(
+        .providerAccountChanged(ProviderAccountChangedEvent(
+            providerID: "openai-codex",
+            accountRef: "acct_stale",
+            reason: .automaticFailover,
+            sequence: 10))))
+
+    await controller.close()
+    await consumeStaleEvent()
+
+    #expect(controller.currentProviderAccountRef == nil)
+    #expect(controller.providerAccountSequence == 0)
+    await manager.closeAll()
+}
 
 @MainActor @Test func controllerRejectsSnapshotFromReplacedProcessor() {
     let activeID = UUID()
@@ -634,6 +668,51 @@ private func makeProviderAccountExecutable(in directory: URL) throws -> URL {
         else:
             data = {}
         emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+    """#
+    try Data(source.utf8).write(to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    return executable
+}
+
+private func makeProviderAccountRefreshExecutable(in directory: URL) throws -> URL {
+    let executable = directory.appending(path: "provider-account-refresh-server.py")
+    let source = #"""
+    #!/usr/bin/env python3
+    import json
+    import sys
+    import time
+
+    def emit(value):
+        print(json.dumps(value, separators=(",", ":")), flush=True)
+
+    state_requests = 0
+    emit({"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864})
+    for line in sys.stdin:
+        command = json.loads(line)
+        request_id = command.get("id")
+        command_type = command.get("type")
+        if command_type == "negotiate_protocol":
+            data = {"protocolVersion":2}
+        elif command_type == "get_state":
+            state_requests += 1
+            account_ref = "acct_A" if state_requests == 1 else "acct_C"
+            data = {"sessionName":"Refresh","model":{"id":"gpt-test","provider":"openai-codex"},"isStreaming":False,"sessionFile":"/tmp/account-refresh.jsonl","activeProviderAccounts":{"openai-codex":account_ref}}
+        elif command_type == "get_messages_page":
+            data = {"messages":[],"nextCursor":None}
+        elif command_type == "set_subagent_subscription":
+            emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":{}})
+            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_C","reason":"automaticFailover","sequence":3})
+            emit({"type":"model_changed","model":{"id":"gpt-test","provider":"openai-codex"}})
+            continue
+        else:
+            data = {}
+        emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+        if command_type == "get_state" and state_requests == 2:
+            time.sleep(0.05)
+            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_B","reason":"automaticFailover","sequence":2})
+            emit({"type":"session_info_update","title":"Refresh complete"})
     """#
     try Data(source.utf8).write(to: executable)
     try FileManager.default.setAttributes(

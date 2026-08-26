@@ -184,6 +184,118 @@ import Testing
         #expect(coordinator.activeCounts == ["anthropic": 1])
     }
 
+    @Test func queuedRoutesFailSafelyWhenTheSessionProviderChangesOrDisappears() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let changed = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            runtimeState: .streaming)
+        let missing = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_B",
+            runtimeState: .streaming)
+        coordinator.register(changed)
+        coordinator.register(missing)
+
+        await coordinator.useAccount(
+            "acct_private",
+            providerID: providerID,
+            scope: .allCurrentSessions,
+            openSessionID: nil)
+        changed.setProvider("anthropic", accountRef: nil)
+        changed.setGenerating(false)
+        coordinator.update(sessionID: changed.id, providerID: "anthropic", isGenerating: false)
+        missing.setProvider(nil, accountRef: nil)
+        missing.setGenerating(false)
+        coordinator.update(sessionID: missing.id, providerID: nil, isGenerating: false)
+
+        await coordinator.sessionDidBecomeIdle(changed.id)
+        await coordinator.sessionDidBecomeIdle(missing.id)
+
+        #expect(changed.pins.isEmpty)
+        #expect(missing.pins.isEmpty)
+        #expect(coordinator.pendingAccountRef(sessionID: changed.id) == nil)
+        #expect(coordinator.pendingAccountRef(sessionID: missing.id) == nil)
+        #expect(coordinator.failureSummary == "Couldn’t switch 2 sessions.")
+        #expect(coordinator.failureSummary?.contains(providerID) == false)
+        #expect(coordinator.failureSummary?.contains("acct_private") == false)
+    }
+
+    @Test func newerReentrantChoiceWinsAcrossEveryRecordedCurrentSession() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let pause = PinPause()
+        let first = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            pinHook: { accountRef in
+                if accountRef == "acct_C" { await pause.pause() }
+            })
+        let second = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_B",
+            pinHook: { accountRef in
+                if accountRef == "acct_C" { await pause.pause() }
+            })
+        coordinator.register(first)
+        coordinator.register(second)
+
+        let older = Task {
+            await coordinator.useAccount(
+                "acct_C",
+                providerID: providerID,
+                scope: .allCurrentSessions,
+                openSessionID: nil)
+        }
+        await pause.waitUntilStarted()
+        let newer = Task {
+            await coordinator.useAccount(
+                "acct_D",
+                providerID: providerID,
+                scope: .allCurrentSessions,
+                openSessionID: nil)
+        }
+        await Task.yield()
+        await pause.release()
+        await older.value
+        await newer.value
+
+        #expect(first.currentProviderAccountRef == "acct_D")
+        #expect(second.currentProviderAccountRef == "acct_D")
+        #expect(first.pins.last == "acct_D")
+        #expect(second.pins.last == "acct_D")
+    }
+
+    @Test func queuedSuccessDoesNotClearAnUnrelatedPartialFailure() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let failing = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            failingAccountRefs: ["acct_C"])
+        let generating = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_B",
+            runtimeState: .streaming)
+        coordinator.register(failing)
+        coordinator.register(generating)
+
+        await coordinator.useAccount(
+            "acct_C",
+            providerID: providerID,
+            scope: .allCurrentSessions,
+            openSessionID: nil)
+        #expect(coordinator.failureSummary == "Couldn’t switch 1 session.")
+
+        generating.setGenerating(false)
+        coordinator.update(sessionID: generating.id, providerID: providerID, isGenerating: false)
+        await coordinator.sessionDidBecomeIdle(generating.id)
+
+        #expect(generating.currentProviderAccountRef == "acct_C")
+        #expect(coordinator.failureSummary == "Couldn’t switch 1 session.")
+    }
+
     private func accountEvent(ref: String, sequence: Int) -> ProviderAccountChangedEvent {
         ProviderAccountChangedEvent(
             providerID: providerID,
@@ -202,19 +314,22 @@ private final class FakeProviderAccountSession: ProviderAccountSession {
     private(set) var providerAccountSequence: Int
     private(set) var pins: [String] = []
     private let failingAccountRefs: Set<String>
+    private let pinHook: @MainActor (String) async -> Void
 
     init(
         providerID: String?,
         accountRef: String?,
         sequence: Int = 0,
         runtimeState: SessionRuntimeState = .idle,
-        failingAccountRefs: Set<String> = []
+        failingAccountRefs: Set<String> = [],
+        pinHook: @escaping @MainActor (String) async -> Void = { _ in }
     ) {
         self.providerID = providerID
         currentProviderAccountRef = accountRef
         providerAccountSequence = sequence
         self.runtimeState = runtimeState
         self.failingAccountRefs = failingAccountRefs
+        self.pinHook = pinHook
     }
 
     func setGenerating(_ isGenerating: Bool) {
@@ -230,6 +345,7 @@ private final class FakeProviderAccountSession: ProviderAccountSession {
         providerID: String,
         accountRef: String
     ) async throws -> SetSessionProviderAccountResult {
+        await pinHook(accountRef)
         if failingAccountRefs.contains(accountRef) {
             throw FakeProviderAccountError.failed("credential acct_secret should stay private")
         }
@@ -245,6 +361,36 @@ private final class FakeProviderAccountSession: ProviderAccountSession {
                 availability: .available,
                 isActiveForSession: true),
             sequence: providerAccountSequence)
+    }
+}
+
+private actor PinPause {
+    private var isReleased = false
+    private var didStart = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func pause() async {
+        didStart = true
+        startWaiters.forEach { $0.resume() }
+        startWaiters.removeAll()
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilStarted() async {
+        guard !didStart else { return }
+        await withCheckedContinuation { continuation in
+            startWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        isReleased = true
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
     }
 }
 

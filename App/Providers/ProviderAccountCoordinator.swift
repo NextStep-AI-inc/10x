@@ -30,6 +30,29 @@ protocol ProviderAccountSession: AnyObject {
 @MainActor
 @Observable
 final class ProviderAccountCoordinator {
+    private struct DesiredRoute: Equatable {
+        let providerID: String
+        let accountRef: String
+        let operationID: UInt64
+    }
+
+    private enum RoutingOutcome {
+        case applied
+        case queued
+        case failed
+        case superseded
+    }
+
+    private struct RoutingTail {
+        let operationID: UInt64
+        let task: Task<RoutingOutcome, Never>
+    }
+
+    private struct FailureRecord {
+        let operationID: UInt64
+        var count: Int
+    }
+
     private struct SessionState {
         var providerID: String?
         var accountRef: String?
@@ -45,7 +68,11 @@ final class ProviderAccountCoordinator {
 
     @ObservationIgnored private let primaryStore: ProviderPrimaryPreferenceStore
     @ObservationIgnored private var sessionStates: [UUID: SessionState] = [:]
-    @ObservationIgnored private var pendingAccountRefs: [UUID: String] = [:]
+    @ObservationIgnored private var desiredRoutes: [UUID: DesiredRoute] = [:]
+    @ObservationIgnored private var pendingRoutes: [UUID: DesiredRoute] = [:]
+    @ObservationIgnored private var routingTails: [UUID: RoutingTail] = [:]
+    @ObservationIgnored private var failureRecord: FailureRecord?
+    @ObservationIgnored private var nextOperationID: UInt64 = 0
 
     init(primaryStore: ProviderPrimaryPreferenceStore = ProviderPrimaryPreferenceStore()) {
         self.primaryStore = primaryStore
@@ -64,7 +91,9 @@ final class ProviderAccountCoordinator {
     func unregister(sessionID: UUID) {
         managedSessions.removeValue(forKey: sessionID)
         sessionStates.removeValue(forKey: sessionID)
-        pendingAccountRefs.removeValue(forKey: sessionID)
+        desiredRoutes.removeValue(forKey: sessionID)
+        pendingRoutes.removeValue(forKey: sessionID)
+        routingTails.removeValue(forKey: sessionID)?.task.cancel()
         publishSessionState()
     }
 
@@ -93,7 +122,7 @@ final class ProviderAccountCoordinator {
     }
 
     func pendingAccountRef(sessionID: UUID) -> String? {
-        pendingAccountRefs[sessionID]
+        pendingRoutes[sessionID]?.accountRef
     }
 
     func useAccount(
@@ -102,52 +131,58 @@ final class ProviderAccountCoordinator {
         scope: ProviderAccountScope,
         openSessionID: UUID?
     ) async {
-        failureSummary = nil
         if scope == .allNewSessions {
             primaryStore.setPrimaryAccountRef(accountRef, providerID: providerID)
             return
         }
+        nextOperationID &+= 1
+        let operationID = nextOperationID
 
-        let targets: [any ProviderAccountSession]
+        let targetIDs: [UUID]
         switch scope {
         case .thisSession:
-            targets = openSessionID
-                .flatMap { managedSessions[$0] }
-                .map { $0.providerID == providerID ? [$0] : [] }
-                ?? []
+            guard let openSessionID,
+                  managedSessions[openSessionID]?.providerID == providerID
+            else { return }
+            targetIDs = [openSessionID]
         case .allCurrentSessions:
-            targets = managedSessions.values.filter { $0.providerID == providerID }
+            targetIDs = managedSessions.values
+                .filter { $0.providerID == providerID }
+                .map(\.id)
         case .allNewSessions:
-            targets = []
+            targetIDs = []
         }
 
-        var failureCount = 0
-        for session in targets {
+        let route = DesiredRoute(
+            providerID: providerID,
+            accountRef: accountRef,
+            operationID: operationID)
+        var tasks: [Task<RoutingOutcome, Never>] = []
+        for sessionID in targetIDs {
+            desiredRoutes[sessionID] = route
+            guard let session = managedSessions[sessionID] else { continue }
             if session.runtimeState == .streaming {
-                pendingAccountRefs[session.id] = accountRef
+                pendingRoutes[sessionID] = route
                 continue
             }
-            do {
-                try await applyAccount(accountRef, providerID: providerID, to: session)
-            } catch {
-                failureCount += 1
-            }
+            pendingRoutes.removeValue(forKey: sessionID)
+            tasks.append(enqueue(route, sessionID: sessionID))
         }
-        publishFailure(count: failureCount)
+        var failureCount = 0
+        for task in tasks where await task.value == .failed {
+            failureCount += 1
+        }
+        recordFailure(count: failureCount, operationID: operationID)
     }
 
     func sessionDidBecomeIdle(_ sessionID: UUID) async {
         guard let session = managedSessions[sessionID],
               session.runtimeState == .idle,
-              let accountRef = pendingAccountRefs.removeValue(forKey: sessionID),
-              let providerID = session.providerID
+              let route = pendingRoutes.removeValue(forKey: sessionID)
         else { return }
-
-        do {
-            try await applyAccount(accountRef, providerID: providerID, to: session)
-            failureSummary = nil
-        } catch {
-            publishFailure(count: 1)
+        let outcome = await enqueue(route, sessionID: sessionID).value
+        if outcome == .failed {
+            recordFailure(count: 1, operationID: route.operationID)
         }
     }
 
@@ -169,14 +204,50 @@ final class ProviderAccountCoordinator {
         publishSessionState()
     }
 
-    private func applyAccount(
-        _ accountRef: String,
-        providerID: String,
-        to session: any ProviderAccountSession
-    ) async throws {
-        let result = try await session.setProviderAccount(
-            providerID: providerID,
-            accountRef: accountRef)
+    private func enqueue(
+        _ route: DesiredRoute,
+        sessionID: UUID
+    ) -> Task<RoutingOutcome, Never> {
+        let previous = routingTails[sessionID]?.task
+        let task = Task { @MainActor [weak self] in
+            _ = await previous?.value
+            guard let self else { return RoutingOutcome.superseded }
+            let outcome = await self.apply(route, sessionID: sessionID)
+            self.finishRouting(sessionID: sessionID, operationID: route.operationID)
+            return outcome
+        }
+        routingTails[sessionID] = RoutingTail(operationID: route.operationID, task: task)
+        return task
+    }
+
+    private func apply(
+        _ route: DesiredRoute,
+        sessionID: UUID
+    ) async -> RoutingOutcome {
+        guard desiredRoutes[sessionID] == route,
+              let session = managedSessions[sessionID]
+        else { return .superseded }
+        guard session.runtimeState != .streaming else {
+            pendingRoutes[sessionID] = route
+            return .queued
+        }
+        guard session.providerID == route.providerID else {
+            clear(route, sessionID: sessionID)
+            return .failed
+        }
+
+        let result: SetSessionProviderAccountResult
+        do {
+            result = try await session.setProviderAccount(
+                providerID: route.providerID,
+                accountRef: route.accountRef)
+        } catch {
+            guard desiredRoutes[sessionID] == route else { return .superseded }
+            clear(route, sessionID: sessionID)
+            return .failed
+        }
+        guard desiredRoutes[sessionID] == route else { return .superseded }
+        clear(route, sessionID: sessionID)
         self.session(
             session.id,
             didChangeAccount: ProviderAccountChangedEvent(
@@ -184,6 +255,21 @@ final class ProviderAccountCoordinator {
                 accountRef: result.account.accountRef,
                 reason: .manual,
                 sequence: result.sequence))
+        return .applied
+    }
+
+    private func clear(_ route: DesiredRoute, sessionID: UUID) {
+        if desiredRoutes[sessionID] == route {
+            desiredRoutes.removeValue(forKey: sessionID)
+        }
+        if pendingRoutes[sessionID] == route {
+            pendingRoutes.removeValue(forKey: sessionID)
+        }
+    }
+
+    private func finishRouting(sessionID: UUID, operationID: UInt64) {
+        guard routingTails[sessionID]?.operationID == operationID else { return }
+        routingTails.removeValue(forKey: sessionID)
     }
 
     private func publishSessionState() {
@@ -205,11 +291,20 @@ final class ProviderAccountCoordinator {
         }
     }
 
-    private func publishFailure(count: Int) {
+    private func recordFailure(count: Int, operationID: UInt64) {
         guard count > 0 else { return }
-        failureSummary = count == 1
+        if let current = failureRecord {
+            guard operationID >= current.operationID else { return }
+            failureRecord = FailureRecord(
+                operationID: operationID,
+                count: operationID == current.operationID ? current.count + count : count)
+        } else {
+            failureRecord = FailureRecord(operationID: operationID, count: count)
+        }
+        guard let failureRecord else { return }
+        failureSummary = failureRecord.count == 1
             ? "Couldn’t switch 1 session."
-            : "Couldn’t switch \(count) sessions."
+            : "Couldn’t switch \(failureRecord.count) sessions."
     }
 
     private func normalized(_ value: String?) -> String? {

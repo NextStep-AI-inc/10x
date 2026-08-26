@@ -469,6 +469,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         failureFunction: String
     ) async {
         stopEventPipeline()
+        providerAccountSequence = 0
         self.handle = handle
         sessionPath = handle.sessionPath
         let openingContext = currentPipelineContext()
@@ -531,13 +532,11 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     }
 
     private func startEventPipeline(processor: TranscriptEventProcessor, client: RpcClient) {
+        guard let context = currentPipelineContext(for: processor) else { return }
         eventTask = Task { [weak self, processor, events = client.events] in
             for await frame in events {
                 guard !Task.isCancelled else { break }
-                await processor.consume(frame)
-                if case .providerAccountChanged(let event) = frame {
-                    self?.handleProviderAccountChange(event)
-                }
+                await self?.consume(frame, processor: processor, context: context)
             }
             await processor.stop()
         }
@@ -552,6 +551,19 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
                 guard !Task.isCancelled else { return }
                 await self?.handleControl(frame, processor: processor)
             }
+        }
+    }
+
+    private func consume(
+        _ frame: RpcFrame,
+        processor: TranscriptEventProcessor,
+        context: PipelineContext
+    ) async {
+        guard isCurrent(context) else { return }
+        await processor.consume(frame)
+        guard isCurrent(context) else { return }
+        if case .providerAccountChanged(let event) = frame {
+            handleProviderAccountChange(event)
         }
     }
 
@@ -705,6 +717,17 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     }
 
 #if DEBUG
+    func testingCapturedAccountEventConsumer(
+        _ frame: RpcFrame
+    ) -> (@MainActor () async -> Void)? {
+        guard let processor,
+              let context = currentPipelineContext(for: processor)
+        else { return nil }
+        return { [weak self, processor] in
+            await self?.consume(frame, processor: processor, context: context)
+        }
+    }
+
     func testingCapturedExtensionRemoval(id: String) -> @MainActor () async -> Void {
         let context = currentPipelineContext()
         return { [weak self] in
@@ -760,7 +783,6 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         queuedMessageCount = data["queuedMessageCount"]?.intValue ?? 0
         runtimeState = data["isStreaming"]?.boolValue == true ? .streaming : .idle
         activeProviderAccounts = Self.activeProviderAccountRefs(from: data)
-        providerAccountSequence = 0
         if let reportedPath = data["sessionFile"]?.stringValue {
             sessionPath = reportedPath
         }
