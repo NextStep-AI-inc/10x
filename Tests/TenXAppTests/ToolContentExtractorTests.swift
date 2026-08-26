@@ -706,6 +706,73 @@ import Testing
     }
 }
 
+@Test func askCardsPresentPersistedQuestionOptionsAndSelection() throws {
+    let arguments = JSONValue.object([
+        "i": .string("Locking the plan"),
+        "questions": .array([.object([
+            "id": .string("direction"),
+            "question": .string("Which follow-up should the plan lock to?"),
+            "options": .array([
+                .object([
+                    "label": .string("Ship the profile fix"),
+                    "description": .string("Sync main and archive stale plans."),
+                ]),
+                .object([
+                    "label": .string("Resume the reskin"),
+                    "description": .string("Continue the visual identity track."),
+                ]),
+            ]),
+            "recommended": .int(0),
+        ])]),
+    ])
+    let running = ToolContentExtractor.card(
+        name: "ask",
+        arguments: arguments,
+        result: nil,
+        phase: .running)
+
+    #expect(running.primary == "1 question")
+    #expect(running.outcome == "Waiting")
+
+    let answered = ToolContentExtractor.card(
+        name: "ask",
+        arguments: arguments,
+        result: .object([
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string("User selected: Ship the profile fix"),
+            ])]),
+            "details": .object([
+                "question": .string("Which follow-up should the plan lock to?"),
+                "options": .array([
+                    .string("Ship the profile fix"),
+                    .string("Resume the reskin"),
+                ]),
+                "multi": .bool(false),
+                "selectedOptions": .array([.string("Ship the profile fix")]),
+            ]),
+        ]),
+        phase: .complete)
+
+    #expect(answered.primary == "1 question")
+    #expect(answered.outcome == "Answered")
+    guard case .stack(let bodies) = answered.body,
+          bodies.count == 2,
+          case .document(let prompt) = bodies[0],
+          case .collection(let options) = bodies[1]
+    else {
+        Issue.record("Ask should use the shared document and collection surfaces")
+        return
+    }
+    #expect(prompt.plainText == "Which follow-up should the plan lock to?")
+    #expect(options.map(\.label) == ["Ship the profile fix", "Resume the reskin"])
+    #expect(options.map(\.detail) == [
+        "Sync main and archive stale plans.",
+        "Continue the visual identity track.",
+    ])
+    #expect(options.map(\.state) == ["Selected", nil])
+}
+
 @Test func proposalAndVibeAdaptersKeepTheirSpecificState() {
     let expectedResolutionOutcomes = [
         "resolve": "Applied",

@@ -1436,17 +1436,39 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             id: "media-question",
             name: "ask",
             arguments: .object([
-                "question": .string("Use the compact card while keeping expanded screenshots and metadata at full transcript width?"),
+                "questions": .array([.object([
+                    "id": .string("tool-card-density"),
+                    "question": .string("How should completed tool calls balance scanability and detail?"),
+                    "options": .array([
+                        .object([
+                            "label": .string("Compact until expanded"),
+                            "description": .string("Keep the two-corner summary row and reveal semantic detail on demand."),
+                        ]),
+                        .object([
+                            "label": .string("Always expanded"),
+                            "description": .string("Show every tool result directly in the transcript."),
+                        ]),
+                    ]),
+                    "recommended": .int(0),
+                ])]),
             ]),
-            result: nil,
-            phase: .running,
+            result: .object([
+                "content": .array([.object([
+                    "type": .string("text"),
+                    "text": .string("User selected: Compact until expanded"),
+                ])]),
+                "details": .object([
+                    "selectedOptions": .array([.string("Compact until expanded")]),
+                ]),
+            ]),
+            phase: .complete,
             duration: 3.4),
     ]
 
     try assertSnapshot(
         snapshotToolCardStack(cards, width: 520),
         name: "tool-cards-media",
-        size: CGSize(width: 600, height: 1_150))
+        size: CGSize(width: 600, height: 1_300))
 }
 
 @MainActor

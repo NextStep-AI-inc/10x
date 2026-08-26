@@ -254,6 +254,18 @@ struct WebToolContent: Equatable {
 }
 
 enum ToolContentExtractor {
+    private struct AskPrompt {
+        let id: String
+        let text: String
+        let options: [AskOption]
+        let recommendedIndex: Int?
+    }
+
+    private struct AskOption {
+        let label: String
+        let detail: String?
+    }
+
     static func card(
         name: String,
         arguments: JSONValue,
@@ -533,11 +545,7 @@ enum ToolContentExtractor {
                 envelope: envelope,
                 phase: phase)
         case .ask:
-            documentCard(
-                title: "Question",
-                verb: "Ask",
-                primary: firstString(in: arguments, keys: ["question", "title"]),
-                preferredText: firstString(in: arguments, keys: ["question", "prompt"]),
+            askCard(
                 arguments: arguments,
                 result: result,
                 envelope: envelope,
@@ -820,6 +828,116 @@ enum ToolContentExtractor {
             outcome: text.map(lineSummary) ?? envelopeOutcome(envelope, phase: phase),
             reference: path.flatMap { reference(forPath: $0) },
             body: body)
+    }
+
+    private static func askCard(
+        arguments: JSONValue,
+        result: JSONValue?,
+        envelope: ToolResultEnvelope,
+        phase: ToolPhase
+    ) -> ToolCardContent {
+        let prompts = askPrompts(arguments: arguments, result: result)
+        let selections = Set(
+            (firstArray(in: result, paths: [
+                ["details", "selectedOptions"], ["details", "selected_options"],
+                ["selectedOptions"], ["selected_options"],
+            ]) ?? []).compactMap { value in
+                value.stringValue ?? firstString(in: value, keys: ["label", "value", "text"])
+            })
+        var bodies: [ToolBody] = []
+        for prompt in prompts {
+            bodies.append(.document(MessageContentParser.parse(prompt.text)))
+            if !prompt.options.isEmpty {
+                bodies.append(.collection(prompt.options.enumerated().map { index, option in
+                    let state: String? = if selections.contains(option.label) {
+                        "Selected"
+                    } else if selections.isEmpty, prompt.recommendedIndex == index {
+                        "Recommended"
+                    } else {
+                        nil
+                    }
+                    return ToolCollectionItem(
+                        id: "\(prompt.id)-\(index)-\(option.label)",
+                        label: option.label,
+                        detail: option.detail == option.label ? nil : option.detail,
+                        reference: nil,
+                        state: state)
+                }))
+            }
+        }
+        let body = if bodies.isEmpty {
+            envelopeBody(
+                envelope,
+                arguments: arguments,
+                result: result,
+                phase: phase)
+        } else if bodies.count == 1 {
+            bodies[0]
+        } else {
+            ToolBody.stack(bodies)
+        }
+        let outcome = switch phase {
+        case .running: "Waiting"
+        case .complete: "Answered"
+        case .failed: "Failed"
+        }
+        return ToolCardContent(
+            title: "Question",
+            verb: "Ask",
+            primary: prompts.isEmpty
+                ? nil
+                : itemCount(prompts.count, singular: "question", plural: "questions"),
+            outcome: outcome,
+            reference: nil,
+            body: body)
+    }
+
+    private static func askPrompts(
+        arguments: JSONValue,
+        result: JSONValue?
+    ) -> [AskPrompt] {
+        if let values = arguments["questions"]?.arrayValue, !values.isEmpty {
+            return values.enumerated().compactMap { index, value in
+                guard let text = firstString(
+                    in: value,
+                    keys: ["question", "prompt", "title"])
+                else { return nil }
+                return AskPrompt(
+                    id: firstString(in: value, keys: ["id"]) ?? "question-\(index)",
+                    text: text,
+                    options: askOptions(value["options"]?.arrayValue ?? []),
+                    recommendedIndex: value["recommended"]?.intValue)
+            }
+        }
+
+        guard let text = firstString(
+            in: arguments,
+            keys: ["question", "prompt", "title"])
+            ?? nestedString(in: result, paths: [["details", "question"], ["question"]])
+        else { return [] }
+        let values = arguments["options"]?.arrayValue
+            ?? firstArray(in: result, paths: [["details", "options"], ["options"]])
+            ?? []
+        return [AskPrompt(
+            id: "question",
+            text: text,
+            options: askOptions(values),
+            recommendedIndex: arguments["recommended"]?.intValue)]
+    }
+
+    private static func askOptions(_ values: [JSONValue]) -> [AskOption] {
+        values.compactMap { value in
+            if let label = value.stringValue {
+                return AskOption(label: label, detail: nil)
+            }
+            guard let label = firstString(
+                in: value,
+                keys: ["label", "value", "text", "title"])
+            else { return nil }
+            return AskOption(
+                label: label,
+                detail: firstString(in: value, keys: ["description", "detail"]))
+        }
     }
 
     private static func normalizedReadText(_ text: String) -> String {
