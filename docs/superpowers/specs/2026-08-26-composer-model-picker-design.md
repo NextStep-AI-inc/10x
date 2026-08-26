@@ -1,0 +1,231 @@
+# Composer Model Picker
+
+**Status:** Approved by product direction
+**Date:** 2026-08-26
+**Parent spec:** `docs/superpowers/specs/2026-08-24-10x-omp-macos-gui-design.md`
+
+## Goal
+
+Make the composer's model selection usable against a full OMP catalog. Today the
+picker is a flat native `Menu` over every model from every authenticated
+provider, rendering only `item.name`. Three problems follow from that:
+
+1. No search and no structure, so finding a model is a linear scan.
+2. Models offered by more than one vendor (Claude Opus via `anthropic` and via
+   `cursor`) render as identical rows with nothing to tell them apart.
+3. Model, thinking level, and Fast mode are three separate chips, even though
+   thinking options are derived from the model you just picked.
+
+The replacement is one flyout that covers all three settings, searchable by model
+name and by provider, grouped by provider.
+
+## Scope
+
+In scope: the composer footer controls in both modes (`newSession`,
+`activeSession`) and the pure presentation functions behind them.
+
+Out of scope: `ComposerControlsModel`'s selection semantics. Both modes already
+work correctly through it (`newSession` persists a default via
+`ComposerDefaultPersisting`; `activeSession` calls `setModel` with optimistic
+rollback). This is a view-layer replacement plus additive presentation logic.
+
+## Design direction
+
+The panel reuses the composer's existing flyout language rather than inventing a
+new one. `ChooseProjectShelf` already establishes the pattern: a stepped
+two-rectangle silhouette, white fill, single near-black hairline, no corner
+radius, no shadow, panel growing upward from a trigger that stays in place. The
+model flyout is constructed the same way, so the two are indistinguishable in
+build.
+
+```text
+┌──────────────────────────────────────┐
+│ ⌕ Search models                      │  filters on name + provider
+├──────────────────────────────────────┤
+│ RECENT                               │  omitted when empty or while searching
+│ │ Claude Opus 4.5         anthropic  │  cyan rail marks current selection
+│   GPT-5.2 Codex        openai-codex  │
+├──────────────────────────────────────┤
+│ ANTHROPIC                            │  provider section headers, mono caps
+│   Claude Opus 4.5                    │
+│   Claude Sonnet 4.5                  │
+│ CURSOR                               │
+│   Claude Opus 4.5                    │
+├──────────────────────────────────────┤
+│ EFFORT   auto  low  medium  high     │  hidden when the model has no efforts
+│ Fast mode                       [ ●] │  hidden when the family has no tier
+├──────────────────────────────────────┤
+│ Claude Opus 4.5                      │  trigger, stays in the footer
+└──────────────────────────────────────┘
+```
+
+Section headers are the fix for duplicate model names: the vendor is the header,
+so two rows reading "Claude Opus 4.5" are unambiguous. Recent rows sit outside
+their section, so they carry a mono provider tag instead.
+
+Colors and type come from the existing tokens only: `TenXPalette.canvasHex`,
+`nearBlackHex`, `cyanHex`, `mutedTextHex`, `separatorHex`, `hoverNeutralHex`, and
+`TenXTypography.body` / `.mono`. No new tokens, no shadow, no radius.
+
+## Search
+
+One field, focused when the panel opens. The query matches case-insensitively
+against both the model's display name and its provider id, so "opus" narrows to
+Claude models across every vendor and "cursor" lists everything Cursor offers.
+Matching is a plain substring test; no fuzzy ranking.
+
+While the query is non-empty the recents section is hidden and the list shows
+only matching rows, with provider headers retained so duplicates stay
+distinguishable. Sections with no matches are dropped entirely.
+
+## Effort selection
+
+Effort options are already per-model on the wire: `ComposerModelInfo` carries
+`thinkingEfforts` and `requiresEffort`, parsed from the catalog's `thinking`
+object. The row renders those efforts as a segmented control and is hidden
+entirely when the model reports none, so the control adapts to whatever the
+selected model's family supports without any per-family table in the app.
+
+This corrects a live defect. `ComposerControlsPresentation.thinkingOptions`
+prepends `"auto"` unconditionally, and `requiresEffort` is parsed, stored on
+`ComposerModelInfo`, and never read by any call site. A model that requires an
+explicit effort is therefore offered "auto" today. Under this spec:
+
+- `requiresEffort == false` → options are `["auto"] + thinkingEfforts`.
+- `requiresEffort == true` → options are `thinkingEfforts` alone.
+
+When a model switch leaves the current thinking level absent from the new
+model's options, the selection falls back to `"auto"` where it is offered, and
+otherwise to `thinkingEfforts[thinkingEfforts.count / 2]`.
+
+## Fast mode
+
+Unchanged in behavior: a binary toggle, shown only when
+`ComposerControlsPresentation.supportsFastMode` returns true for the selected
+model, cleared when it does not. It moves from a footer chip into the panel and
+renders as a labeled toggle rather than a colored text button.
+
+## Recent models
+
+A `RecentModelStore` backed by `UserDefaults`, mirroring `RecentProjectStore`:
+`recordSelection(_:)` pushes a `provider/modelID` key to the front of a capped
+list, `rankedModels(from:)` resolves those keys against the current catalog and
+drops any that no longer resolve. Cap is three.
+
+OMP's own config is shared with the CLI, so 10x-local interface state is not
+written there. `ComposerDefaultPersisting` keeps its existing job of writing the
+default model role and default thinking level, and gains nothing.
+
+## Keyboard and pointer
+
+- Typing filters. The search field holds focus while the panel is open.
+- Up and Down move a highlight across the flat visible row order, skipping
+  section headers. The highlight starts on the current selection, or on the first
+  row when the query is non-empty.
+- Return commits the highlighted row and closes the panel.
+- Escape closes the panel without committing, via `onExitCommand`.
+- Clicking a row commits it. Clicking outside closes the panel.
+- Rows highlight on hover with `hoverNeutralHex`, matching `FlyoutRowBackground`.
+
+## Flyout coordination
+
+`ComposerView` currently takes `isProjectFlyoutPresented` as a `Binding<Bool>`,
+owned as `@State` by `NewSessionView` and left at `.constant(false)` by
+`ActiveSessionView`. A second flyout in the same corner needs only one open at a
+time.
+
+`ComposerView` gains a single `ComposerFlyout?` enum (`.project`, `.model`)
+replacing the boolean. `NewSessionView` binds to it for its scrim and dismissals;
+`ActiveSessionView` continues to pass nothing and gets the model flyout for free.
+Opening either sets the enum, which closes the other by construction.
+
+## Copy
+
+Every user-facing string in the panel:
+
+- Search placeholder: `Search models`
+- Section headers: the provider id, uppercased (`ANTHROPIC`, `OPENAI-CODEX`)
+- Recents header: `RECENT`
+- Effort row label: `EFFORT`
+- Fast mode row label: `Fast mode`
+- Empty catalog: `No models available. Connect a provider in Settings.`
+- Empty search result: `No models match that search.`
+- Loading: `Loading models…`
+
+Error copy stays where it is, in `ComposerControlsModel.errorMessage`, rendered
+by the existing composer footer row.
+
+## Components
+
+| Unit | Responsibility | Depends on |
+| --- | --- | --- |
+| `ModelPickerFlyout` | Panel chrome, regions, keyboard handling | presentation funcs, palette, typography |
+| `ModelPickerRow` | One model row: name, provider tag, selected rail, hover | palette, typography |
+| `ComposerSessionControlsView` | Trigger chip, hosts the flyout | `ComposerControlsModel` |
+| `ComposerControlsPresentation` | Grouping, filtering, effort options — pure | `ComposerModelInfo` |
+| `RecentModelStore` | MRU persistence | `UserDefaults` |
+
+New presentation functions, all pure and directly testable:
+
+```swift
+static func groupedByProvider(_ models: [ComposerModelInfo])
+    -> [(provider: String, models: [ComposerModelInfo])]
+
+static func matching(_ models: [ComposerModelInfo], query: String)
+    -> [ComposerModelInfo]
+
+static func thinkingOptions(for model: ComposerModelInfo?) -> [String]   // amended
+
+static func resolvedThinkingLevel(current: String, for model: ComposerModelInfo?)
+    -> String
+```
+
+## States
+
+The panel owns its own states rather than deferring to the composer.
+
+- **Loading** — `isLoading` with an empty catalog shows `Loading models…` in the
+  list region. Search, effort, and fast rows are hidden, not disabled-and-empty.
+- **Empty** — a loaded but empty catalog shows the connect-a-provider line. The
+  trigger chip stays enabled so that line is reachable, which changes today's
+  gating: `menusDisabled` currently includes `models.isEmpty`, leaving the user
+  with a dead chip and no explanation. Disabled-on-empty is dropped; the trigger
+  reads `Model` when nothing is selected.
+- **No search match** — list region shows the no-match line; effort and fast rows
+  stay visible, since they describe the still-selected model.
+- **Mutating** — `isMutating` disables row commits so a second click cannot race
+  an in-flight `setModel`. The panel stays open; rollback on failure is already
+  handled by `ComposerControlsModel` and surfaces in the footer error row.
+
+## Testing
+
+Unit tests extend `ComposerControlsPresentationTests`:
+
+- Grouping preserves catalog order within a provider and groups every model.
+- Search matches on name, matches on provider id, is case-insensitive, and an
+  empty query returns everything.
+- `thinkingOptions` omits `"auto"` when `requiresEffort` is true and includes it
+  otherwise.
+- `resolvedThinkingLevel` keeps a still-valid level, falls back to `"auto"` when
+  offered, and to the middle effort when not.
+
+`RecentModelStoreTests` mirrors `RecentProjectStoreTests`: most-recent-first
+ordering, deduplication on re-selection, cap enforcement, and dropping keys that
+no longer resolve against the catalog.
+
+Snapshot coverage in `ViewSnapshotTests` for the open panel in three states:
+default, active search with results, and empty catalog. Recording requires the
+`TEST_RUNNER_RECORD_SNAPSHOTS` environment prefix.
+
+`AccessibilityLabelTests` covers the trigger and rows: the trigger keeps its
+`Model` label and selected-model value; each row is labeled with its model name
+and valued with its provider plus selection state; the effort control and fast
+toggle keep label and value parity with the chips they replace.
+
+## Verification
+
+Design work is verified by looking at it. A release build is launched and the
+panel screenshotted in the three snapshot states plus the duplicate-model case,
+confirming no clipping at the panel's height cap, no collision with the composer
+border, and correct upward growth when the composer sits at the bottom of a short
+window.
