@@ -66,6 +66,11 @@ import Testing
     ])
 }
 
+@Test func virtualResourceSchemesAreNotPresentedAsLocalFiles() {
+    #expect(TranscriptReference.parseInline("omp://models.md") == nil)
+    #expect(TranscriptReference.parseInline("local://implementation-plan.md") == nil)
+}
+
 @Test func plainAbsolutePathWithWhitespaceContinuationNeverUsesItsPrefix() {
     let references = TranscriptReference.extract(from: """
     Open /Users/tannerpham/CS Projects/.worktrees/10x/App/Sessions/MessageBubbleView.swift:1 next.

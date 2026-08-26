@@ -300,6 +300,21 @@ import Testing
     #expect(readSource.language == "swift")
     #expect(previewLines == 20)
 
+    let virtualRead = ToolContentExtractor.card(
+        name: "read",
+        arguments: .object(["path": .string("omp://models.md")]),
+        result: result(text: "# Models"),
+        phase: .complete)
+    #expect(virtualRead.primary == "omp://models.md")
+    #expect(virtualRead.reference == nil)
+
+    let homeRead = ToolContentExtractor.card(
+        name: "read",
+        arguments: .object(["path": .string("~/.omp/agent/config.yml")]),
+        result: result(text: "theme: titanium"),
+        phase: .complete)
+    #expect(homeRead.reference == .file(path: "~/.omp/agent/config.yml", line: nil))
+
     let write = ToolContentExtractor.card(
         name: "write",
         arguments: .object([

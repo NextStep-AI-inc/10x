@@ -30,6 +30,8 @@ struct FileReferenceResolver {
         let url: URL?
         if path.hasPrefix("/") {
             url = URL(filePath: path).standardizedFileURL
+        } else if path == "~" || path.hasPrefix("~/") {
+            url = URL(filePath: NSString(string: path).expandingTildeInPath).standardizedFileURL
         } else if let baseURL {
             url = baseURL.appending(path: path).standardizedFileURL
         } else {

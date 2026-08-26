@@ -152,6 +152,7 @@ enum TranscriptReference: Equatable, Hashable, Sendable {
             guard let url = URL(string: value), url.host != nil else { return nil }
             return .web(url: value, label: label)
         }
+        guard !value.contains("://") else { return nil }
         let suffix = lineSuffix(in: value)
         guard suffix.path.hasPrefix("/") || (allowsRelativeFile && isRelativeFilePath(suffix.path)) else {
             return nil

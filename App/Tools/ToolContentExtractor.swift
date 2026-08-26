@@ -813,7 +813,7 @@ enum ToolContentExtractor {
             verb: verb,
             primary: path,
             outcome: text.map(lineSummary) ?? envelopeOutcome(envelope, phase: phase),
-            reference: path.map { .file(path: $0, line: nil) },
+            reference: path.flatMap { reference(forPath: $0) },
             body: body)
     }
 
@@ -877,7 +877,7 @@ enum ToolContentExtractor {
             verb: verb,
             primary: primary,
             outcome: outcome,
-            reference: path.map { .file(path: $0, line: nil) }
+            reference: path.flatMap { reference(forPath: $0) }
                 ?? (changedItems?.count == 1 ? changedItems?.first?.reference : nil),
             body: body)
     }
@@ -1056,7 +1056,7 @@ enum ToolContentExtractor {
                                                     target.hasPrefix("/") || target.contains("/") {
             target.hasPrefix("http")
                 ? .web(url: target, label: label)
-                : .file(path: target, line: line)
+                : reference(forPath: target, line: line)
         } else {
             nil
         }
@@ -1085,7 +1085,7 @@ enum ToolContentExtractor {
             detail: "+\(additions) −\(removals)",
             reference: path == "File \(index + 1)"
                 ? nil
-                : .file(path: path, line: nil),
+                : reference(forPath: path),
             state: firstString(in: value, keys: ["status", "state"]))
     }
 
@@ -1292,7 +1292,7 @@ enum ToolContentExtractor {
                 in: result,
                 paths: [["details", "status"], ["status"]])
                 ?? envelopeOutcome(envelope, phase: phase),
-            reference: path.map { .file(path: $0, line: nil) },
+            reference: path.flatMap { reference(forPath: $0) },
             body: bodies.count == 1 ? bodies[0] : .stack(bodies))
     }
 
@@ -1533,6 +1533,14 @@ enum ToolContentExtractor {
 
     private static func reference(for value: String) -> TranscriptReference? {
         TranscriptReference.parseInline(value)
+    }
+
+    private static func reference(
+        forPath path: String,
+        line: Int? = nil
+    ) -> TranscriptReference? {
+        guard !path.contains("://") else { return nil }
+        return .file(path: path, line: line)
     }
 
     private static func reference(forResource resource: ToolResourceItem) -> TranscriptReference? {
