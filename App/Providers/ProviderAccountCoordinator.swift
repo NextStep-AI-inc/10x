@@ -92,7 +92,7 @@ final class ProviderAccountCoordinator {
     @ObservationIgnored private var routingCompletions: [UUID: RoutingCompletion] = [:]
     @ObservationIgnored private var activeManagedTurns: Set<UUID> = []
     @ObservationIgnored private var stateChangeWaiters: [CheckedContinuation<Void, Never>] = []
-    @ObservationIgnored private var latestRouteOperationIDs: [UUID: UInt64] = [:]
+    @ObservationIgnored private var appliedRoutes: [UUID: DesiredRoute] = [:]
     @ObservationIgnored private var failureRecord: FailureRecord?
     @ObservationIgnored private var nextOperationID: UInt64 = 0
 
@@ -125,7 +125,7 @@ final class ProviderAccountCoordinator {
         routingTails.removeValue(forKey: sessionID)?.task.cancel()
         routingCompletions.removeValue(forKey: sessionID)
         activeManagedTurns.remove(sessionID)
-        latestRouteOperationIDs.removeValue(forKey: sessionID)
+        appliedRoutes.removeValue(forKey: sessionID)
         publishSessionState()
     }
 
@@ -237,7 +237,6 @@ final class ProviderAccountCoordinator {
             operationID: operationID)
         var tasks: [Task<RoutingOutcome, Never>] = []
         for sessionID in targetIDs {
-            latestRouteOperationIDs[sessionID] = operationID
             desiredRoutes[sessionID] = route
             guard let session = managedSessions[sessionID] else { continue }
             if session.runtimeState == .streaming {
@@ -259,31 +258,48 @@ final class ProviderAccountCoordinator {
         sessionID: UUID,
         primarySnapshot: NewSessionPrimarySnapshot
     ) async {
-        var primaryTask: Task<RoutingOutcome, Never>?
-        if let session = managedSessions[sessionID],
-           let providerID = session.providerID,
-           let accountRef = primarySnapshot.accountRefs[providerID],
-           latestRouteOperationIDs[sessionID] ?? 0 <= primarySnapshot.routingVersion
-        {
+        var didApplyPrimary = false
+        while true {
+            await waitForRoutingTail(sessionID: sessionID)
+            guard let session = managedSessions[sessionID],
+                  let providerID = session.providerID,
+                  let accountRef = primarySnapshot.accountRefs[providerID]
+            else { return }
+            if hasNewerValidRoute(
+                appliedRoutes[sessionID],
+                than: primarySnapshot.routingVersion,
+                for: session)
+                || hasNewerValidRoute(
+                    pendingRoutes[sessionID],
+                    than: primarySnapshot.routingVersion,
+                    for: session)
+            {
+                return
+            }
+            guard !didApplyPrimary else { return }
+
             let route = DesiredRoute(
                 providerID: providerID,
                 accountRef: accountRef,
                 operationID: primarySnapshot.routingVersion)
-            latestRouteOperationIDs[sessionID] = primarySnapshot.routingVersion
             desiredRoutes[sessionID] = route
             if session.runtimeState == .streaming {
                 pendingRoutes[sessionID] = route
-            } else {
-                pendingRoutes.removeValue(forKey: sessionID)
-                primaryTask = enqueue(route, sessionID: sessionID)
+                return
             }
-        }
+            pendingRoutes.removeValue(forKey: sessionID)
 
-        if let primaryTask, await primaryTask.value == .failed {
-            recordFailure(count: 1, operationID: primarySnapshot.routingVersion)
-        }
-        while let latest = routingTails[sessionID]?.task {
-            _ = await latest.value
+            switch await enqueue(route, sessionID: sessionID).value {
+            case .applied:
+                didApplyPrimary = true
+            case .queued:
+                return
+            case .failed:
+                recordFailure(count: 1, operationID: primarySnapshot.routingVersion)
+                return
+            case .superseded:
+                continue
+            }
         }
     }
 
@@ -587,6 +603,7 @@ final class ProviderAccountCoordinator {
             return .failed
         }
         guard desiredRoutes[sessionID] == route else { return .superseded }
+        appliedRoutes[sessionID] = route
         clear(route, sessionID: sessionID)
         self.session(
             session.id,
@@ -611,6 +628,21 @@ final class ProviderAccountCoordinator {
         guard routingTails[sessionID]?.route.operationID == operationID else { return }
         routingTails.removeValue(forKey: sessionID)
         notifyStateChange()
+    }
+
+    private func waitForRoutingTail(sessionID: UUID) async {
+        while let latest = routingTails[sessionID]?.task {
+            _ = await latest.value
+        }
+    }
+
+    private func hasNewerValidRoute(
+        _ route: DesiredRoute?,
+        than routingVersion: UInt64,
+        for session: any ProviderAccountSession
+    ) -> Bool {
+        guard let route else { return false }
+        return route.operationID > routingVersion && route.providerID == session.providerID
     }
 
     private func publishSessionState() {

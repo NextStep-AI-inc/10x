@@ -380,6 +380,47 @@ import Testing
         #expect(session.currentProviderAccountRef == "acct_B")
     }
 
+    @Test func inFlightFailedRouteNewerThanCreationFallsBackToCapturedPrimary() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        await coordinator.useAccount(
+            "acct_A",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+        let creationSnapshot = coordinator.newSessionPrimarySnapshot()
+        let pause = PinPause()
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: nil,
+            failingAccountRefs: ["acct_B"],
+            pinHook: { accountRef in
+                if accountRef == "acct_B" { await pause.pause() }
+            })
+        coordinator.register(session)
+        let newerRoute = Task {
+            await coordinator.useAccount(
+                "acct_B",
+                providerID: providerID,
+                scope: .allCurrentSessions,
+                openSessionID: nil)
+        }
+        await pause.waitUntilStarted()
+
+        let preparation = Task {
+            await coordinator.prepareForFirstPrompt(
+                sessionID: session.id,
+                primarySnapshot: creationSnapshot)
+        }
+        await pause.release()
+        await preparation.value
+        await newerRoute.value
+
+        #expect(session.pins == ["acct_A"])
+        #expect(session.currentProviderAccountRef == "acct_A")
+        #expect(coordinator.failureSummary == "Couldn’t switch 1 session.")
+    }
+
     @Test func queuedSuccessDoesNotClearAnUnrelatedPartialFailure() async throws {
         let (coordinator, defaults, suiteName) = try makeCoordinator()
         defer { defaults.removePersistentDomain(forName: suiteName) }
