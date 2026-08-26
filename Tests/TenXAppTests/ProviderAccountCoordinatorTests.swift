@@ -296,6 +296,93 @@ import Testing
         #expect(coordinator.failureSummary == "Couldn’t switch 1 session.")
     }
 
+    @Test func successfulExplicitOperationClearsThePreviousFailure() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            failingAccountRefs: ["acct_bad"])
+        coordinator.register(session)
+
+        await coordinator.useAccount(
+            "acct_bad",
+            providerID: providerID,
+            scope: .thisSession,
+            openSessionID: session.id)
+        #expect(coordinator.failureSummary == "Couldn’t switch 1 session.")
+
+        await coordinator.useAccount(
+            "acct_B",
+            providerID: providerID,
+            scope: .thisSession,
+            openSessionID: session.id)
+
+        #expect(session.currentProviderAccountRef == "acct_B")
+        #expect(coordinator.failureSummary == nil)
+    }
+
+    @Test func olderFailureCompletionCannotOverwriteANewerSuccessfulChoice() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let pause = PinPause()
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            failingAccountRefs: ["acct_bad"],
+            pinHook: { accountRef in
+                if accountRef == "acct_bad" { await pause.pause() }
+            })
+        coordinator.register(session)
+
+        let older = Task {
+            await coordinator.useAccount(
+                "acct_bad",
+                providerID: providerID,
+                scope: .thisSession,
+                openSessionID: session.id)
+        }
+        await pause.waitUntilStarted()
+        let newer = Task {
+            await coordinator.useAccount(
+                "acct_B",
+                providerID: providerID,
+                scope: .thisSession,
+                openSessionID: session.id)
+        }
+        await pause.release()
+        await older.value
+        await newer.value
+
+        #expect(session.currentProviderAccountRef == "acct_B")
+        #expect(coordinator.failureSummary == nil)
+    }
+
+    @Test func allNewSessionsSuccessClearsThePreviousFailure() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let session = FakeProviderAccountSession(
+            providerID: providerID,
+            accountRef: "acct_A",
+            failingAccountRefs: ["acct_bad"])
+        coordinator.register(session)
+        await coordinator.useAccount(
+            "acct_bad",
+            providerID: providerID,
+            scope: .thisSession,
+            openSessionID: session.id)
+        #expect(coordinator.failureSummary == "Couldn’t switch 1 session.")
+
+        await coordinator.useAccount(
+            "acct_primary",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+
+        #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_primary")
+        #expect(coordinator.failureSummary == nil)
+    }
+
     private func accountEvent(ref: String, sequence: Int) -> ProviderAccountChangedEvent {
         ProviderAccountChangedEvent(
             providerID: providerID,

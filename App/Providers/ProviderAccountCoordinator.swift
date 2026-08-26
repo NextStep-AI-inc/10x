@@ -131,12 +131,14 @@ final class ProviderAccountCoordinator {
         scope: ProviderAccountScope,
         openSessionID: UUID?
     ) async {
+        nextOperationID &+= 1
+        let operationID = nextOperationID
+        failureRecord = FailureRecord(operationID: operationID, count: 0)
+        failureSummary = nil
         if scope == .allNewSessions {
             primaryStore.setPrimaryAccountRef(accountRef, providerID: providerID)
             return
         }
-        nextOperationID &+= 1
-        let operationID = nextOperationID
 
         let targetIDs: [UUID]
         switch scope {
