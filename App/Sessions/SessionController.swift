@@ -223,6 +223,13 @@ final class SessionController {
         }
     }
 
+    func respondToComputerHandoff(_ state: ExtensionUIState, approved: Bool) async {
+        guard case .computerHandoff(let id, _, _, _) = state else { return }
+        if await computerUse.respondToHandoff(id: id, approved: approved) {
+            removeExtensionRequest(id: id)
+        }
+    }
+
     func openURL(_ url: URL, requestID: String) {
         NSWorkspace.shared.open(url)
         removeExtensionRequest(id: requestID)
@@ -270,6 +277,11 @@ final class SessionController {
                 return await processManager.forceClose(
                     sessionPath: path,
                     deadline: deadline)
+            },
+            handoffResponder: { id, approved in
+                try await handle.client.sendRaw(.computerForegroundHandoffResponse(
+                    id: id,
+                    approved: approved))
             })
 
         let state = try await handle.client.send(.getState())
@@ -457,6 +469,9 @@ final class SessionController {
         extensionRouter.consume(request)
 
         switch state {
+        case .computerHandoff(let id, let target, _, let reason):
+            computerUse.requestHandoff(id: id, target: target, reason: reason)
+            reducer.upsertExtensionUI(state)
         case .confirm, .select:
             reducer.upsertExtensionUI(state)
             scheduleTimeout(for: state)

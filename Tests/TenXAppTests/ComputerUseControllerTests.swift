@@ -86,6 +86,75 @@ import Testing
     #expect(log.values.contains("rpc.abort"))
 }
 
+@MainActor @Test func stopDeniesPendingHandoffBeforeAbort() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let controller = ComputerUseController(
+        sessionID: "session-handoff", lifecycle: .recording(log), preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-handoff.jsonl")
+    await controller.enable()
+    controller.handleToolStarted(.object([
+        "toolName": .string("computer"),
+        "target": .string("TextEdit"),
+    ]))
+    controller.requestHandoff(
+        id: "handoff-1",
+        target: "TextEdit",
+        reason: "Background keyboard delivery is unavailable")
+    log.reset()
+
+    await controller.stopComputerUse()
+
+    #expect(Array(log.values.prefix(2)) == [
+        "rpc.handoff.handoff-1.false",
+        "rpc.abort",
+    ])
+}
+
+@MainActor @Test func approvingHandoffOpensDesktopBeforeOneResponse() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let controller = ComputerUseController(
+        sessionID: "session-approve", lifecycle: .recording(log), preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-approve.jsonl")
+    await controller.enable()
+    controller.handleToolStarted(.object([
+        "toolName": .string("computer"),
+        "target": .string("TextEdit"),
+    ]))
+    controller.requestHandoff(
+        id: "handoff-approve",
+        target: "TextEdit",
+        reason: "Background keyboard delivery is unavailable")
+    log.reset()
+
+    #expect(await controller.respondToHandoff(id: "handoff-approve", approved: true))
+    #expect(await !controller.respondToHandoff(id: "handoff-approve", approved: true))
+
+    #expect(log.values == [
+        "desktop.openVisibly",
+        "rpc.handoff.handoff-approve.true",
+    ])
+    #expect(controller.phase == .controlling(target: "TextEdit"))
+}
+
+@MainActor @Test func aSecondHandoffCannotReplaceThePendingRequest() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let controller = ComputerUseController(
+        sessionID: "session-pending", lifecycle: .recording(log), preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-pending.jsonl")
+    await controller.enable()
+    controller.requestHandoff(id: "handoff-first", target: "TextEdit", reason: "Input required")
+    controller.requestHandoff(id: "handoff-second", target: "Safari", reason: "Input required")
+    log.reset()
+
+    await controller.stopComputerUse()
+
+    #expect(log.values.first == "rpc.handoff.handoff-first.false")
+    #expect(!log.values.contains("rpc.handoff.handoff-second.false"))
+}
+
 @MainActor @Test func exactAgentDesktopHostToolRoutesAndUnknownToolGetsOneError() async {
     let log = LifecycleLog()
     let rpc = ControllerRPC(log: log)
@@ -413,7 +482,7 @@ private enum TestFailure: Error { case failed }
     func reset() { values = [] }
 }
 
-private actor ControllerRPC: ComputerUseRPC {
+private actor ControllerRPC: ComputerUseRPC, ComputerForegroundHandoffResponding {
     private let log: LifecycleLog
     private let enableError: (any Error)?
     private let disableError: (any Error)?
@@ -492,6 +561,10 @@ private actor ControllerRPC: ComputerUseRPC {
 
     func abort() async throws { await log.append("rpc.abort") }
 
+    func respondToComputerForegroundHandoff(id: String, approved: Bool) async throws {
+        await log.append("rpc.handoff.\(id).\(approved)")
+    }
+
     func remoteSnapshot() -> (enabled: Bool, toolNames: [String]) {
         (remoteEnabled, remoteToolNames)
     }
@@ -523,6 +596,7 @@ private extension ComputerUseControllerLifecycle {
                 log.append("desktop.cleanup")
                 return CleanupReport(preservedApplicationNames: [], restoredWindowCount: 0)
             },
+            openVisibly: { _ in log.append("desktop.openVisibly") },
             releaseDesktop: { _ in log.append("desktop.release") })
     }
 

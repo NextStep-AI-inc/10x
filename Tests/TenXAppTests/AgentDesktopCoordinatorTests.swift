@@ -79,6 +79,20 @@ import OmpKit
     #expect(await provider.recordedReleasedWorkspaces() == ["workspace"])
 }
 
+@Test func visibleOpenUsesOnlyThePreparedProvider() async throws {
+    let aero = FakeAgentDesktopProvider(kind: .aeroSpace, probe: .healthy)
+    let hammerspoon = FakeAgentDesktopProvider(kind: .hammerspoon, probe: .healthy)
+    let coordinator = AgentDesktopCoordinator(providers: [aero, hammerspoon])
+
+    try await coordinator.openVisibly(PreparedAgentDesktop(
+        provider: .hammerspoon,
+        workspaceID: "agent-desktop",
+        capabilities: .isolated))
+
+    #expect(await aero.recordedVisibleWorkspaces().isEmpty)
+    #expect(await hammerspoon.recordedVisibleWorkspaces() == ["agent-desktop"])
+}
+
 @MainActor @Test func captureFailureIsReturnedForControllerHandoff() async throws {
     let provider = FakeAgentDesktopProvider(kind: .background, probe: .healthy)
     let coordinator = AgentDesktopCoordinator(providers: [provider])
@@ -123,6 +137,7 @@ private actor FakeAgentDesktopProvider: AgentDesktopProvider {
     private let result: ProviderAvailability
     private var prepareTokens: [String] = []
     private var releasedWorkspaces: [String] = []
+    private var visibleWorkspaces: [String] = []
 
     init(kind: AgentDesktopProviderKind, probe: ProviderAvailability) {
         self.kind = kind
@@ -149,9 +164,10 @@ private actor FakeAgentDesktopProvider: AgentDesktopProvider {
 
     func move(windowID: String, to workspaceID: String) async throws {}
     func restore(windowID: String, to workspaceID: String) async throws {}
-    func openVisibly(workspaceID: String) async throws {}
+    func openVisibly(workspaceID: String) async throws { visibleWorkspaces.append(workspaceID) }
     func release(workspaceID: String) async { releasedWorkspaces.append(workspaceID) }
 
     func recordedPrepareTokens() -> [String] { prepareTokens }
     func recordedReleasedWorkspaces() -> [String] { releasedWorkspaces }
+    func recordedVisibleWorkspaces() -> [String] { visibleWorkspaces }
 }

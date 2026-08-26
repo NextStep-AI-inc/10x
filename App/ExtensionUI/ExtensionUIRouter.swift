@@ -14,7 +14,7 @@ struct ExtensionUIRouter {
     mutating func consume(_ request: ExtensionUIRequest) {
         guard let state = Self.parse(request) else { return }
         switch state {
-        case .confirm, .select:
+        case .computerHandoff, .confirm, .select:
             replaceOrAppend(state, in: &inlineRequests)
         case .input, .editor:
             sheetRequest = state
@@ -49,6 +49,13 @@ struct ExtensionUIRouter {
     static func parse(_ request: ExtensionUIRequest) -> ExtensionUIState? {
         let payload = request.payload
         switch request.method {
+        case "computer_foreground_handoff":
+            guard let handoff = request.computerForegroundHandoff else { return nil }
+            return .computerHandoff(
+                id: handoff.id,
+                target: sanitizedTarget(handoff.target),
+                action: handoff.action,
+                reason: sanitizedReason(handoff.reason))
         case "confirm":
             guard let title = payload["title"]?.stringValue,
                   let message = payload["message"]?.stringValue else { return nil }
@@ -123,6 +130,29 @@ struct ExtensionUIRouter {
               ["http", "https"].contains(scheme), url.host != nil
         else { return nil }
         return url
+    }
+
+    private static func sanitizedTarget(_ value: String) -> String {
+        let leaf = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "/")
+            .last
+            .map(String.init) ?? "Application"
+        let allowed = leaf.unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0)
+                || CharacterSet.whitespaces.contains($0)
+                || "._-".unicodeScalars.contains($0)
+        }
+        let sanitized = String(String.UnicodeScalarView(allowed)).prefix(64)
+        return sanitized.isEmpty ? "Application" : String(sanitized)
+    }
+
+    private static func sanitizedReason(_ value: String) -> String {
+        let words = value
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+        let sanitized = words.joined(separator: " ").prefix(160)
+        return sanitized.isEmpty ? "Foreground access is required" : String(sanitized)
     }
 
     private func replaceOrAppend(_ state: ExtensionUIState, in requests: inout [ExtensionUIState]) {

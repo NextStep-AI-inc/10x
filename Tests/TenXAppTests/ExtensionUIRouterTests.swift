@@ -32,6 +32,34 @@ import Testing
     #expect(router.inlineRequests.isEmpty)
 }
 
+@Test func parsesComputerForegroundHandoff() throws {
+    let state = ExtensionUIRouter.parse(try request("""
+        {"type":"extension_ui_request","id":"handoff-1","method":"computer_foreground_handoff","target":"TextEdit","action":"foreground-input","reason":"Background keyboard delivery is unavailable"}
+        """))
+
+    #expect(state == .computerHandoff(
+        id: "handoff-1",
+        target: "TextEdit",
+        action: .foregroundInput,
+        reason: "Background keyboard delivery is unavailable"))
+}
+
+@Test func handoffRequiresAKnownActionAndSanitizesDisplayedFields() throws {
+    let sanitized = ExtensionUIRouter.parse(try request("""
+        {"type":"extension_ui_request","id":"handoff-2","method":"computer_foreground_handoff","target":" /Applications/TextEdit.app\\n","action":"window-raise","reason":"  Background\\twindow raising is unavailable.  "}
+        """))
+    let unknown = ExtensionUIRouter.parse(try request("""
+        {"type":"extension_ui_request","id":"handoff-3","method":"computer_foreground_handoff","target":"TextEdit","action":"arbitrary-script","reason":"Run a script"}
+        """))
+
+    #expect(sanitized == .computerHandoff(
+        id: "handoff-2",
+        target: "TextEdit.app",
+        action: .windowRaise,
+        reason: "Background window raising is unavailable."))
+    #expect(unknown == nil)
+}
+
 @Test func extensionResponsesUseTheExactWireBodies() {
     #expect(ExtensionUIResponse.confirmed(true).body == ["confirmed": .bool(true)])
     #expect(ExtensionUIResponse.value("Fast").body == ["value": .string("Fast")])

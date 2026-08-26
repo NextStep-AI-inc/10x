@@ -39,6 +39,19 @@ import Testing
 }
 
 @MainActor
+@Test func computerHandoffSnapshot() throws {
+    try assertSnapshot(
+        ComputerHandoffCardView(
+            target: "TextEdit",
+            reason: "Background keyboard delivery is unavailable",
+            onApprove: {},
+            onCancel: {})
+            .frame(width: 680),
+        name: "computer-handoff",
+        size: CGSize(width: 760, height: 240))
+}
+
+@MainActor
 @Test func setupSnapshot() throws {
     try assertSnapshot(SetupView(model: AppModel()), name: "omp-missing")
 }
@@ -346,6 +359,32 @@ import Testing
 }
 
 @MainActor
+@Test func computerSessionReadySnapshot() throws {
+    let controller = computerHeaderSnapshotController(title: "Desktop verification")
+    try assertSnapshot(
+        SessionHeaderView(
+            controller: controller,
+            phaseOverride: .ready,
+            safetyModeOverride: .focusIsolated,
+            isCompleteContractOverride: true),
+        name: "computer-session-ready",
+        size: CGSize(width: 760, height: 80))
+}
+
+@MainActor
+@Test func computerSessionControllingSnapshot() throws {
+    let controller = computerHeaderSnapshotController(title: "Desktop verification")
+    try assertSnapshot(
+        SessionHeaderView(
+            controller: controller,
+            phaseOverride: .controlling(target: "TextEdit"),
+            safetyModeOverride: .legacyBestEffort,
+            isCompleteContractOverride: false),
+        name: "computer-session-controlling",
+        size: CGSize(width: 1_180, height: 80))
+}
+
+@MainActor
 @Test func collapsedRailSnapshot() throws {
     let (model, expansion) = snapshotRail(isExpanded: false)
 
@@ -503,6 +542,19 @@ private func wideTranscriptController() -> SessionController {
         ],
         runtimeState: .streaming,
         title: "Agent transcript")
+}
+
+@MainActor
+private func computerHeaderSnapshotController(title: String) -> SessionController {
+    SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .streaming,
+        title: title,
+        headerMetadata: SessionHeaderMetadata(
+            branch: "codex/computer-use-design",
+            repo: "10x",
+            worktreePath: ".worktrees/computer-use-design"))
 }
 
 @MainActor

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import OmpKit
@@ -15,6 +16,7 @@ final class AppModel {
     private(set) var activeSession: SessionController?
     private(set) var processManager: SessionProcessManager?
     private(set) var settingsModel: SettingsViewModel?
+    var activeComputerUse: ComputerUseController? { activeSession?.computerUse }
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private let defaults: UserDefaults
@@ -22,6 +24,9 @@ final class AppModel {
     @ObservationIgnored private var sessionTransitionTask: Task<Void, Never>?
     @ObservationIgnored private var retiringSessions: [ObjectIdentifier: SessionController] = [:]
     @ObservationIgnored private var sessionTransitionGeneration = 0
+    @ObservationIgnored private let emergencyShortcut = GlobalEmergencyShortcut()
+    @ObservationIgnored private var lifecycleTokens: [NSObjectProtocol] = []
+    @ObservationIgnored private var selectedHelperProcessID: pid_t?
 
     init(dependencies: AppDependencies = .live, defaults: UserDefaults = .standard) {
         self.dependencies = dependencies
@@ -29,8 +34,27 @@ final class AppModel {
     }
 
     func bootstrap() async {
+        installComputerUseLifecycleObservers()
         await install(preferredURL: nil)
         await reloadSessions()
+    }
+
+    func computerUsePhaseDidChange() {
+        let phase = activeComputerUse?.phase ?? .off
+        emergencyShortcut.update(phase: phase) { [weak self] in
+            Task { @MainActor in await self?.stopActiveComputerUse() }
+        }
+        selectedHelperProcessID = helperProcessID(for: activeComputerUse?.isolation)
+    }
+
+    func stopActiveComputerUse() async {
+        await activeComputerUse?.stopComputerUse()
+        computerUsePhaseDidChange()
+    }
+
+    func failClosedActiveComputerUse() async {
+        await activeComputerUse?.failClosed()
+        computerUsePhaseDidChange()
     }
 
     func useOmp(at url: URL) async {
@@ -236,5 +260,56 @@ final class AppModel {
               !retiringSessions.values.contains(where: { $0.usesProcessManager(manager) })
         else { return }
         exitTasks.removeValue(forKey: ObjectIdentifier(manager))?.cancel()
+    }
+
+    private func installComputerUseLifecycleObservers() {
+        guard lifecycleTokens.isEmpty else { return }
+        let workspace = NSWorkspace.shared
+        for name in [
+            NSWorkspace.sessionDidResignActiveNotification,
+            NSWorkspace.willSleepNotification,
+        ] {
+            lifecycleTokens.append(workspace.notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main)
+            { [weak self] _ in
+                Task { @MainActor in await self?.failClosedActiveComputerUse() }
+            })
+        }
+        lifecycleTokens.append(workspace.notificationCenter.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification,
+            object: nil,
+            queue: .main)
+        { [weak self] notification in
+            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                    as? NSRunningApplication
+            else { return }
+            let processID = application.processIdentifier
+            Task { @MainActor [weak self] in
+                guard let self, processID == self.selectedHelperProcessID else { return }
+                await self.failClosedActiveComputerUse()
+            }
+        })
+        lifecycleTokens.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main)
+        { [weak self] _ in
+            Task { @MainActor in await self?.failClosedActiveComputerUse() }
+        })
+    }
+
+    private func helperProcessID(for provider: AgentDesktopProviderKind?) -> pid_t? {
+        let identity: (bundleID: String, name: String)? = switch provider {
+        case .aeroSpace: ("bobko.aerospace", "AeroSpace")
+        case .hammerspoon: ("org.hammerspoon.Hammerspoon", "Hammerspoon")
+        case .background, nil: nil
+        }
+        guard let identity else { return nil }
+        return NSWorkspace.shared.runningApplications.first {
+            $0.bundleIdentifier == identity.bundleID
+                || $0.localizedName?.caseInsensitiveCompare(identity.name) == .orderedSame
+        }?.processIdentifier
     }
 }

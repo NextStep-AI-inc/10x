@@ -2,6 +2,10 @@ import Foundation
 import Observation
 import OmpKit
 
+protocol ComputerForegroundHandoffResponding: Sendable {
+    func respondToComputerForegroundHandoff(id: String, approved: Bool) async throws
+}
+
 @MainActor
 struct ComputerUseControllerLifecycle {
     let activate: (ComputerUseStopping) async -> Void
@@ -11,6 +15,7 @@ struct ComputerUseControllerLifecycle {
     let prepare: (AgentDesktopPreference) async throws -> PreparedAgentDesktop
     let probe: (PreparedAgentDesktop, @escaping @Sendable (String?, String?) async throws -> ComputerProbeResult) async throws -> ComputerProbeResult
     let cleanup: (AgentDesktopManifest) async -> CleanupReport
+    let openVisibly: (PreparedAgentDesktop) async throws -> Void
     let releaseDesktop: (PreparedAgentDesktop) async -> Void
 
     init(
@@ -21,6 +26,7 @@ struct ComputerUseControllerLifecycle {
         prepare: @escaping (AgentDesktopPreference) async throws -> PreparedAgentDesktop,
         probe: @escaping (PreparedAgentDesktop, @escaping @Sendable (String?, String?) async throws -> ComputerProbeResult) async throws -> ComputerProbeResult,
         cleanup: @escaping (AgentDesktopManifest) async -> CleanupReport,
+        openVisibly: @escaping (PreparedAgentDesktop) async throws -> Void = { _ in },
         releaseDesktop: @escaping (PreparedAgentDesktop) async -> Void
     ) {
         self.activate = activate
@@ -30,6 +36,7 @@ struct ComputerUseControllerLifecycle {
         self.prepare = prepare
         self.probe = probe
         self.cleanup = cleanup
+        self.openVisibly = openVisibly
         self.releaseDesktop = releaseDesktop
     }
 
@@ -44,6 +51,7 @@ struct ComputerUseControllerLifecycle {
                 try await coordinator.probePreparedWorkspace(prepared) { try await operation($0, $1) }
             },
             cleanup: { await coordinator.cleanup(manifest: $0) },
+            openVisibly: { try await coordinator.openVisibly($0) },
             releaseDesktop: { await coordinator.release($0) })
     }
 }
@@ -58,6 +66,8 @@ final class ComputerUseController: ComputerUseStopping {
     private(set) var cleanupReport: CleanupReport?
     private(set) var safetyMode: ComputerUseSafetyMode = .focusIsolated
     private(set) var isAwaitingConfirmedProcessExit = false
+    private(set) var isCompleteContractAvailable = true
+    private(set) var isSessionAttached = false
 
     private let sessionID: String
     private let lifecycle: ComputerUseControllerLifecycle
@@ -84,6 +94,9 @@ final class ComputerUseController: ComputerUseStopping {
     private var computerMutationAttempted = false
     private var hostToolsMutationAttempted = false
     private var isComputerToolLive = false
+    private var pendingHandoff: PendingComputerHandoff?
+    private var respondedHandoffIDs: Set<String> = []
+    private var handoffResponder: (@Sendable (String, Bool) async throws -> Void)?
 
     init(sessionID: String = UUID().uuidString, registry: ComputerUseRegistry = ComputerUseRegistry(), lease: ComputerUseLease = ComputerUseLease(), coordinator: AgentDesktopCoordinator = AgentDesktopCoordinator(), preference: AgentDesktopPreference = .automatic) {
         self.sessionID = sessionID
@@ -102,15 +115,29 @@ final class ComputerUseController: ComputerUseStopping {
 
     func attach(rpc: any ComputerUseRPC, sessionPath: String, terminateProcess: @escaping @Sendable (ContinuousClock.Instant) async -> Bool = { _ in false }) {
         self.rpc = rpc
+        isSessionAttached = true
+        pendingHandoff = nil
+        respondedHandoffIDs.removeAll()
+        handoffResponder = nil
+        if let responder = rpc as? any ComputerForegroundHandoffResponding {
+            handoffResponder = { try await responder.respondToComputerForegroundHandoff(id: $0, approved: $1) }
+        }
         self.terminateProcess = terminateProcess
         isAwaitingConfirmedProcessExit = false
     }
 
-    func attachAndReconcile(rpc: any ComputerUseRPC, sessionPath: String, terminateProcess: @escaping @Sendable (ContinuousClock.Instant) async -> Bool = { _ in false }) async {
+    func attachAndReconcile(
+        rpc: any ComputerUseRPC,
+        sessionPath: String,
+        terminateProcess: @escaping @Sendable (ContinuousClock.Instant) async -> Bool = { _ in false },
+        handoffResponder: (@Sendable (String, Bool) async throws -> Void)? = nil
+    ) async {
         attach(rpc: rpc, sessionPath: sessionPath, terminateProcess: terminateProcess)
+        if let handoffResponder { self.handoffResponder = handoffResponder }
         let deadline = ContinuousClock.now.advanced(by: Self.stopLimit)
         do {
             let state = try await bounded(deadline: deadline) { try await rpc.state() }
+            isCompleteContractAvailable = true
             guard state.enabled else { phase = .off; return }
             computerMutationAttempted = true
             if await disableRemoteComputerUse(deadline: deadline) { phase = .off }
@@ -119,6 +146,7 @@ final class ComputerUseController: ComputerUseStopping {
             guard Self.isUnknownComputerCommand(error) else {
                 _ = await terminateAndRelease(deadline: deadline); phase = unavailablePhase(); return
             }
+            isCompleteContractAvailable = false
             safetyMode = .legacyBestEffort
             computerMutationAttempted = true
             if await disableRemoteComputerUse(deadline: deadline) { phase = .off }
@@ -230,6 +258,43 @@ final class ComputerUseController: ComputerUseStopping {
 
     func handlePermissionLoss() async { await failClosed() }
 
+    func requestHandoff(id: String, target: String, reason: String) {
+        guard isLocallyEnabled,
+              pendingHandoff == nil,
+              !respondedHandoffIDs.contains(id),
+              !id.isEmpty
+        else { return }
+        pendingHandoff = PendingComputerHandoff(id: id, target: target)
+        phase = .needsHandoff(target: target, reason: reason)
+    }
+
+    @discardableResult
+    func respondToHandoff(id: String, approved: Bool) async -> Bool {
+        guard let pendingHandoff,
+              pendingHandoff.id == id,
+              !respondedHandoffIDs.contains(id),
+              let handoffResponder
+        else { return false }
+
+        var response = approved
+        if approved, let preparedDesktop {
+            do { try await lifecycle.openVisibly(preparedDesktop) }
+            catch { response = false }
+        }
+        respondedHandoffIDs.insert(id)
+        self.pendingHandoff = nil
+        do {
+            try await handoffResponder(id, response)
+        } catch {
+            await failClosed()
+            return true
+        }
+        phase = response && isComputerToolLive
+            ? .controlling(target: pendingHandoff.target)
+            : .ready
+        return true
+    }
+
     /// The event stream never awaits a launch: cancellation can be consumed immediately.
     func handleHostToolCall(_ call: HostToolCall) {
         guard call.name == AgentDesktopHostTool.definition.name else { sendHostErrorOnce(call.id, message: "Unknown host tool"); return }
@@ -310,6 +375,8 @@ final class ComputerUseController: ComputerUseStopping {
         }
     }
 
+    var isEnabled: Bool { isLocallyEnabled }
+
     private var isControlling: Bool { if case .controlling = phase { true } else { false } }
 
     private func isCurrentEnable(_ operation: Int) -> Bool {
@@ -337,6 +404,11 @@ final class ComputerUseController: ComputerUseStopping {
         watcherTask?.cancel()
         watcherTask = nil
         let deadline = ContinuousClock.now.advanced(by: Self.stopLimit)
+        guard await denyPendingHandoff(deadline: deadline) else {
+            _ = await terminateAndRelease(deadline: deadline)
+            phase = unavailablePhase()
+            return
+        }
         guard await settleRemoteMutations(deadline: deadline) else {
             _ = await terminateAndRelease(deadline: deadline)
             phase = unavailablePhase()
@@ -356,6 +428,21 @@ final class ComputerUseController: ComputerUseStopping {
         } else {
             _ = await terminateAndRelease(deadline: deadline)
             phase = unavailablePhase()
+        }
+    }
+
+    private func denyPendingHandoff(deadline: ContinuousClock.Instant) async -> Bool {
+        guard let pendingHandoff else { return true }
+        guard let handoffResponder else { return false }
+        respondedHandoffIDs.insert(pendingHandoff.id)
+        self.pendingHandoff = nil
+        do {
+            try await bounded(deadline: deadline) {
+                try await handoffResponder(pendingHandoff.id, false)
+            }
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -606,6 +693,11 @@ final class ComputerUseController: ComputerUseStopping {
         guard case let RpcClientError.commandFailed(_, message, _) = error else { return false }
         return message.localizedCaseInsensitiveContains("unknown command")
     }
+}
+
+private struct PendingComputerHandoff {
+    let id: String
+    let target: String
 }
 
 private enum ComputerUseControllerError: Error {

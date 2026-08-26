@@ -178,17 +178,30 @@ struct TranscriptView: View {
                 GenericToolCardView(presentation: presentation)
             }
         case .extensionUI(let state):
-            ApprovalCardView(
-                state: state,
-                onRespond: { response in
-                    Task { await controller.respond(to: state, with: response) }
-                },
-                onOpenURL: { url in
-                    controller.openURL(url, requestID: state.id)
-                },
-                onCopyURL: { url in
-                    controller.copyURL(url, requestID: state.id)
-                })
+            switch state {
+            case .computerHandoff(_, let target, _, let reason):
+                ComputerHandoffCardView(
+                    target: target,
+                    reason: reason,
+                    onApprove: {
+                        Task { await controller.respondToComputerHandoff(state, approved: true) }
+                    },
+                    onCancel: {
+                        Task { await controller.respondToComputerHandoff(state, approved: false) }
+                    })
+            default:
+                ApprovalCardView(
+                    state: state,
+                    onRespond: { response in
+                        Task { await controller.respond(to: state, with: response) }
+                    },
+                    onOpenURL: { url in
+                        controller.openURL(url, requestID: state.id)
+                    },
+                    onCopyURL: { url in
+                        controller.copyURL(url, requestID: state.id)
+                    })
+            }
         case .rawEvent:
             EmptyView()
         }

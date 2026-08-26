@@ -112,6 +112,13 @@ struct AgentDesktopCoordinator: Sendable {
         await provider.release(workspaceID: workspaceID)
     }
 
+    func openVisibly(_ prepared: PreparedAgentDesktop) async throws {
+        guard let provider = providers[prepared.provider] else {
+            throw AgentDesktopProviderError.unavailable(prepared.provider, .missing)
+        }
+        try await provider.openVisibly(workspaceID: prepared.workspaceID ?? "")
+    }
+
     @MainActor
     func probePreparedWorkspace(
         _ prepared: PreparedAgentDesktop,

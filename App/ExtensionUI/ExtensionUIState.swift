@@ -7,6 +7,11 @@ struct ExtensionSelectOption: Equatable {
 }
 
 enum ExtensionUIState: Identifiable, Equatable {
+    case computerHandoff(
+        id: String,
+        target: String,
+        action: ComputerForegroundAction,
+        reason: String)
     case confirm(id: String, title: String, message: String, timeout: Int?)
     case select(id: String, title: String, options: [ExtensionSelectOption], timeout: Int?)
     case input(id: String, title: String, placeholder: String?, timeout: Int?)
@@ -21,7 +26,8 @@ enum ExtensionUIState: Identifiable, Equatable {
 
     var id: String {
         switch self {
-        case .confirm(let id, _, _, _),
+        case .computerHandoff(let id, _, _, _),
+             .confirm(let id, _, _, _),
              .select(let id, _, _, _),
              .input(let id, _, _, _),
              .editor(let id, _, _, _),
