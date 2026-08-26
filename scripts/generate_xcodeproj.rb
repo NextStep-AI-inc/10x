@@ -71,6 +71,18 @@ if File.directory?(snapshot_path)
   tests.resources_build_phase.add_file_reference(reference)
 end
 
+# Parity fixtures (e.g. credential-pin-hashes.json) are looked up the same
+# way as reference images: Bundle(for: SnapshotToken.self).url(forResource:
+# withExtension:subdirectory: "Fixtures"). A folder reference preserves the
+# `Fixtures/` nesting in the built test bundle, which flat file references
+# on the resources phase do not.
+fixtures_path = File.join(root, "Tests/TenXAppTests/Fixtures")
+if File.directory?(fixtures_path)
+  reference = test_group.new_file("Tests/TenXAppTests/Fixtures")
+  reference.last_known_file_type = "folder"
+  tests.resources_build_phase.add_file_reference(reference)
+end
+
 package = project.new(Xcodeproj::Project::Object::XCLocalSwiftPackageReference)
 package.relative_path = "OmpKit"
 project.root_object.package_references << package
