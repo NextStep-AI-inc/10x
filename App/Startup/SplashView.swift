@@ -32,7 +32,9 @@ struct SplashView: View {
             .padding(.bottom, 10)
             .frame(height: 248)
 
-            StartupSignalView(isAnimating: state.isSignalAnimating)
+            StartupSignalView(
+                isAnimating: state.isSignalAnimating,
+                isFailed: state.phase == .recovery)
                 .frame(height: 48)
 
             footer

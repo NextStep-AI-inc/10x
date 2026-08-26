@@ -1,7 +1,18 @@
 import SwiftUI
 
 struct StartupSignalGeometry {
-    static let waveWidth: CGFloat = 160
+    static let waveWidth: CGFloat = 190
+
+    private static let waveSegments: [(
+        start: CGFloat,
+        end: CGFloat,
+        multiplier: CGFloat
+    )] = [
+        (0, 0.18, 1.10),
+        (0.18, 0.46, -0.72),
+        (0.46, 0.68, 1),
+        (0.68, 1, -0.62),
+    ]
 
     let width: CGFloat
     let midY: CGFloat
@@ -12,16 +23,24 @@ struct StartupSignalGeometry {
     }
 
     func wavePoint(progress: CGFloat) -> CGPoint {
-        CGPoint(
-            x: waveStart.x + Self.waveWidth * progress,
-            y: midY + CGFloat(sin(Double(progress) * 2 * .pi)) * amplitude)
+        let clampedProgress = min(max(progress, 0), 1)
+        guard let segment = Self.waveSegments.first(where: { clampedProgress <= $0.end }) else {
+            return CGPoint(x: waveStart.x + Self.waveWidth, y: midY)
+        }
+        let localProgress = (clampedProgress - segment.start) / (segment.end - segment.start)
+        let verticalOffset = CGFloat(sin(Double(localProgress) * .pi))
+            * amplitude
+            * segment.multiplier
+
+        return CGPoint(
+            x: waveStart.x + Self.waveWidth * clampedProgress,
+            y: midY + verticalOffset)
     }
 }
 
 enum StartupSignalMotion {
-    static func amplitude(elapsed: TimeInterval, reduceMotion: Bool) -> CGFloat {
-        guard !reduceMotion else { return 16 }
-        return CGFloat(16 + 2 * sin(elapsed * 2 * .pi / 2.8))
+    static func amplitude(elapsed _: TimeInterval, reduceMotion _: Bool) -> CGFloat {
+        18
     }
 
     static func progress(elapsed: TimeInterval, reduceMotion: Bool) -> CGFloat {
@@ -32,6 +51,7 @@ enum StartupSignalMotion {
 
 struct StartupSignalView: View {
     let isAnimating: Bool
+    let isFailed: Bool
 
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.startupSignalReduceMotionOverride) private var reduceMotionOverride
@@ -40,7 +60,7 @@ struct StartupSignalView: View {
 
     var body: some View {
         let reduceMotion = reduceMotionOverride ?? systemReduceMotion
-        let shouldAnimate = isAnimating && !reduceMotion
+        let shouldAnimate = isAnimating && !reduceMotion && !isFailed
 
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !shouldAnimate)) { context in
             let liveElapsed = context.date.timeIntervalSince(startDate)
@@ -55,10 +75,14 @@ struct StartupSignalView: View {
             ZStack {
                 StartupSignalShape(amplitude: amplitude)
                     .stroke(
-                        TenXPalette.color(TenXPalette.nearBlackHex),
+                        isFailed
+                            ? TenXPalette.color(TenXPalette.signalRedHex)
+                            : TenXPalette.color(TenXPalette.nearBlackHex),
                         style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 travelingSegment(amplitude: amplitude, progress: progress)
+                    .opacity(isFailed ? 0 : 1)
             }
+            .animation(.easeOut(duration: 0.35), value: isFailed)
             .onChange(of: shouldAnimate, initial: true) { _, newValue in
                 if reduceMotion {
                     startDate = context.date
@@ -120,8 +144,8 @@ private struct StartupSignalShape: Shape {
         var path = Path()
         path.move(to: CGPoint(x: rect.minX, y: rect.midY))
         path.addLine(to: geometry.waveStart)
-        for index in 1...64 {
-            path.addLine(to: geometry.wavePoint(progress: CGFloat(index) / 64))
+        for index in 1...96 {
+            path.addLine(to: geometry.wavePoint(progress: CGFloat(index) / 96))
         }
         return path
     }
