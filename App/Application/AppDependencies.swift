@@ -11,6 +11,7 @@ struct AppDependencies: Sendable {
     let makeSettingsModel: @MainActor @Sendable (URL) -> SettingsViewModel
     let makeProviderModel: @MainActor @Sendable (URL) -> ProviderManagementViewModel
     let makeComposerControls: @MainActor @Sendable (URL) -> ComposerControlsModel
+    let makeProviderAccountCoordinator: @MainActor @Sendable () -> ProviderAccountCoordinator
 
     @MainActor
     init(
@@ -24,7 +25,10 @@ struct AppDependencies: Sendable {
         },
         makeSettingsModel: (@MainActor @Sendable (URL) -> SettingsViewModel)? = nil,
         makeProviderModel: @escaping @MainActor @Sendable (URL) -> ProviderManagementViewModel,
-        makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel
+        makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel,
+        makeProviderAccountCoordinator: @escaping @MainActor @Sendable () -> ProviderAccountCoordinator = {
+            ProviderAccountCoordinator()
+        }
     ) {
         self.ompLocator = ompLocator
         self.sessionLibrary = sessionLibrary
@@ -38,6 +42,7 @@ struct AppDependencies: Sendable {
         }
         self.makeProviderModel = makeProviderModel
         self.makeComposerControls = makeComposerControls
+        self.makeProviderAccountCoordinator = makeProviderAccountCoordinator
     }
 
     @MainActor static let live = AppDependencies(
@@ -68,5 +73,9 @@ struct AppDependencies: Sendable {
                 defaults: OmpComposerDefaultStore(
                     config: OmpConfigService(
                         runner: OmpConfigProcessRunner(executableURL: executableURL))))
+        },
+        makeProviderAccountCoordinator: {
+            ProviderAccountCoordinator(
+                primaryStore: ProviderPrimaryPreferenceStore(defaults: .standard))
         })
 }

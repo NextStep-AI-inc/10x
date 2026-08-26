@@ -253,8 +253,134 @@ import OmpKit
 
     #expect(model.route == .newSession)
     #expect(model.activeSession == nil)
+    #expect(model.sessionActivityRegistry.managedSessions.isEmpty)
     #expect(await manager.handle(for: "/tmp/fake.jsonl") == nil)
     await manager.closeAll()
+}
+
+@MainActor
+@Test func newSessionPinsPrimaryAfterStateAndBeforeFirstPrompt() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-primary-order-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let commandLog = container.appendingPathComponent("commands.log")
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: commandLog)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let defaults = appModelTestDefaults()
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+    model.chooseProject(project)
+
+    model.startNewSession(prompt: "Start")
+
+    #expect(await navigationLog(commandLog, eventuallyContains: "prompt"))
+    let lifecycle = try navigationCommands(in: commandLog).filter {
+        $0 == "open"
+            || $0 == "get_state"
+            || $0.hasPrefix("set_session_provider_account:")
+            || $0 == "prompt"
+    }
+    #expect(lifecycle == [
+        "open",
+        "get_state",
+        "get_state",
+        "set_session_provider_account:acct_A",
+        "prompt",
+    ])
+    let controller = try #require(model.activeSession)
+    #expect(coordinator.activeAccountRefs[controller.id] == "acct_A")
+    let identity = try #require(model.activeSessionIdentityToken)
+    #expect(identity == model.activeSession?.id)
+
+    model.openNewSession()
+
+    #expect(model.activeSessionIdentityToken == nil)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@MainActor
+@Test func resumedSessionKeepsReportedAccountInsteadOfCurrentPrimary() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-resumed-primary-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let commandLog = container.appendingPathComponent("commands.log")
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: commandLog,
+        activeAccountRef: "acct_B")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let defaults = appModelTestDefaults()
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+
+    #expect(await navigationLog(commandLog, eventuallyContains: "set_subagent_subscription"))
+    let controller = try #require(model.activeSession)
+    #expect(controller.currentProviderAccountRef == "acct_B")
+    #expect(coordinator.activeAccountRefs[controller.id] == "acct_B")
+    #expect(coordinator.managedSessions.count == 1)
+    #expect(coordinator.primaryAccountRef(providerID: "openai-codex") == "acct_A")
+    #expect(try navigationCommands(in: commandLog).contains {
+        $0.hasPrefix("set_session_provider_account:")
+    } == false)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@MainActor
+@Test func unexpectedExitUnregistersTheRetainedControllerFromAccountRouting() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-account-exit-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: container.appendingPathComponent("commands.log"),
+        activeAccountRef: "acct_A",
+        exitsAfterSubscription: true)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let coordinator = ProviderAccountCoordinator()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+
+    for _ in 0..<100 where model.activeSession?.isRecoveryPresented != true {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(model.activeSession?.isRecoveryPresented == true)
+    #expect(coordinator.managedSessions.isEmpty)
+    if let manager = model.processManager { await manager.closeAll() }
 }
 
 @MainActor
@@ -533,7 +659,10 @@ import OmpKit
 private func navigationDependencies<Locator: OmpLocating>(
     ompLocator: Locator,
     sessionLibrary: SessionLibrary,
-    sessionSearch: SessionSearchService = SessionSearchService()
+    sessionSearch: SessionSearchService = SessionSearchService(),
+    makeProviderAccountCoordinator: @escaping @MainActor @Sendable () -> ProviderAccountCoordinator = {
+        ProviderAccountCoordinator()
+    }
 ) -> AppDependencies {
     let defaults = appModelTestDefaults()
     return AppDependencies(
@@ -558,7 +687,8 @@ private func navigationDependencies<Locator: OmpLocating>(
                     isAuthenticated: true),
             ])
         },
-        makeComposerControls: stubAppComposerControlsFactory)
+        makeComposerControls: stubAppComposerControlsFactory,
+        makeProviderAccountCoordinator: makeProviderAccountCoordinator)
 }
 
 private func navigationMetadata(_ path: String, cwd: String = "/tmp/Project") -> SessionMetadata {
@@ -606,6 +736,80 @@ func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws 
         [.posixPermissions: 0o755],
         ofItemAtPath: executable.path)
     return executable
+}
+
+private func makeProviderRoutingExecutable(
+    in directory: URL,
+    commandLog: URL,
+    activeAccountRef: String? = nil,
+    exitsAfterSubscription: Bool = false
+) throws -> URL {
+    let executable = directory.appendingPathComponent("provider-routing-server.py")
+    let logPath = String(reflecting: commandLog.path)
+    let initialAccount = activeAccountRef.map(String.init(reflecting:)) ?? "None"
+    let source = #"""
+    #!/usr/bin/env python3
+    import json
+    import sys
+
+    command_log = \#(logPath)
+    initial_account = \#(initialAccount)
+
+    def emit(value):
+        print(json.dumps(value, separators=(",", ":")), flush=True)
+
+    with open(command_log, "a", encoding="utf-8") as log:
+        log.write("open\n")
+
+    emit({"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864})
+    for line in sys.stdin:
+        command = json.loads(line)
+        request_id = command.get("id")
+        command_type = command.get("type")
+        logged = command_type
+        if command_type == "set_session_provider_account":
+            logged += ":" + command.get("accountRef", "")
+        with open(command_log, "a", encoding="utf-8") as log:
+            log.write(logged + "\n")
+        if command_type == "negotiate_protocol":
+            data = {"protocolVersion":2}
+        elif command_type == "get_state":
+            data = {"model":{"id":"gpt-test","provider":"openai-codex"},"isStreaming":False,"sessionFile":"/tmp/fake.jsonl"}
+            if initial_account is not None:
+                data["activeProviderAccounts"] = {"openai-codex":initial_account}
+        elif command_type == "get_messages_page":
+            data = {"messages":[],"nextCursor":None}
+        elif command_type == "set_session_provider_account":
+            account_ref = command.get("accountRef")
+            data = {"account":{"providerId":"openai-codex","accountRef":account_ref,"displayLabel":"Account","connectionOrder":0,"availability":"available","isActiveForSession":True},"sequence":1}
+        else:
+            data = {}
+        emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+        if command_type == "set_subagent_subscription" and \#(exitsAfterSubscription ? "True" : "False"):
+            raise SystemExit(7)
+        if command_type == "prompt":
+            emit({"type":"agent_start"})
+            emit({"type":"agent_end","messages":[],"isTerminal":True})
+    """#
+    try Data(source.utf8).write(to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    return executable
+}
+
+private func navigationCommands(in url: URL) throws -> [String] {
+    try String(contentsOf: url, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map(String.init)
+}
+
+private func navigationLog(_ url: URL, eventuallyContains expected: String) async -> Bool {
+    for _ in 0..<100 {
+        if (try? navigationCommands(in: url).contains(expected)) == true { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return (try? navigationCommands(in: url).contains(expected)) == true
 }
 
 private struct MissingOmpLocator: OmpLocating {

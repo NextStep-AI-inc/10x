@@ -79,6 +79,30 @@ import Testing
         #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_C")
     }
 
+    @Test func automaticFailoverChangesOnlyTheAffectedSessionAndKeepsThePrimary() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let affected = FakeProviderAccountSession(providerID: providerID, accountRef: "acct_A")
+        let unrelated = FakeProviderAccountSession(providerID: providerID, accountRef: "acct_A")
+        coordinator.register(affected)
+        coordinator.register(unrelated)
+        await coordinator.useAccount(
+            "acct_A",
+            providerID: providerID,
+            scope: .allNewSessions,
+            openSessionID: nil)
+
+        coordinator.session(
+            affected.id,
+            didChangeAccount: accountEvent(ref: "acct_B", sequence: 1))
+
+        #expect(coordinator.activeAccountRefs[affected.id] == "acct_B")
+        #expect(coordinator.activeAccountRefs[unrelated.id] == "acct_A")
+        #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_A")
+        #expect(affected.pins.isEmpty)
+        #expect(unrelated.pins.isEmpty)
+    }
+
     @Test func partialFailureContinuesAndPublishesOnlyASanitizedSummary() async throws {
         let (coordinator, defaults, suiteName) = try makeCoordinator()
         defer { defaults.removePersistentDomain(forName: suiteName) }

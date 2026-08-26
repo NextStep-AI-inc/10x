@@ -56,7 +56,7 @@ final class AppModel {
     private(set) var providerModel: ProviderManagementViewModel?
     private(set) var composerControls: ComposerControlsModel?
     private(set) var startupState = StartupState()
-    let sessionActivityRegistry = SessionActivityRegistry()
+    let sessionActivityRegistry: SessionActivityRegistry
 
     var providerActivityCounts: [String: Int] {
         sessionActivityRegistry.activeCounts
@@ -65,6 +65,10 @@ final class AppModel {
     var isForegroundSessionGenerating: Bool {
         guard case .session = route else { return false }
         return activeSession?.runtimeState == .streaming
+    }
+
+    var activeSessionIdentityToken: UUID? {
+        activeSession?.id
     }
 
     @ObservationIgnored private let dependencies: AppDependencies
@@ -96,6 +100,7 @@ final class AppModel {
         fileOpenService: FileOpenService = .live
     ) {
         self.dependencies = dependencies
+        sessionActivityRegistry = dependencies.makeProviderAccountCoordinator()
         self.ideRegistry = ideRegistry
         idePreferenceStore = IDEPreferenceStore(defaults: preferenceDefaults, registry: ideRegistry)
         self.fileOpenService = fileOpenService
@@ -320,6 +325,7 @@ final class AppModel {
                 return
             }
             self.indexManagedSessionPath(for: controller)
+            await self.applyPrimaryAccount(to: controller)
             if self.activeSession === controller {
                 if fastOutcome == .unsupported || fastOutcome == .failed {
                     await self.composerControls?.setFastMode(false, mode: .newSession)
@@ -672,6 +678,17 @@ final class AppModel {
     private func clearActiveSession() {
         composerControls?.detachActiveSession()
         activeSession = nil
+    }
+
+    private func applyPrimaryAccount(to controller: SessionController) async {
+        guard let providerID = controller.providerID,
+              let accountRef = sessionActivityRegistry.primaryAccountRef(providerID: providerID)
+        else { return }
+        await sessionActivityRegistry.useAccount(
+            accountRef,
+            providerID: providerID,
+            scope: .thisSession,
+            openSessionID: controller.id)
     }
 
     private func makeSessionController(
@@ -1329,6 +1346,7 @@ final class AppModel {
                 controller.handleUnexpectedExit(
                     code: exit.code,
                     stderrTail: exit.stderrTail)
+                self.sessionActivityRegistry.unregister(sessionID: controller.id)
             }
         }
         warmExitTask = Task { [weak self] in
