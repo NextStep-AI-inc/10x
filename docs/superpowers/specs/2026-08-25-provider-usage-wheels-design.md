@@ -41,8 +41,15 @@ the expanded state preserves precise percentages, accounts, and reset times.
   chat is generating.
 - Selecting a compact wheel grows the control up and left into an anchored
   panel. It does not navigate away from the current chat.
-- The compact wheels are approximately 54 points in diameter, smaller than the
-  initial visual concept, with labels outside the circle.
+- When a composer is visible and its trailing gutter can contain the complete
+  provider group, the compact wheels sit beside it on the bottom row. Their
+  labels share the composer's 28-point bottom inset.
+- When that trailing gutter cannot contain the group, the wheels move directly
+  above the composer, align to its trailing edge, and use 44-point visible
+  rings. The three-letter labels and minimum 44-point hit targets remain.
+- Responsive placement never changes the composer's frame or bottom inset.
+- Routes without a composer keep the 54-point group at the shell's bottom-right
+  inset.
 
 ## Shell interaction
 
@@ -74,10 +81,28 @@ show it. An empty usage presentation does not reserve space.
 
 ### Collapsed layout
 
-Provider wheels form a trailing horizontal group above the bottom and trailing
-safe-area insets. The dock is independent from the composer, so it stays in a
-stable window position and does not compete with send, model, or thinking-level
-controls.
+Provider wheels form a trailing horizontal group whose placement responds to
+the space around the composer without participating in the composer's layout.
+
+On New Session and Active Session routes, the shell derives the composer's
+actual frame from the post-rail route canvas. In the preferred side layout, the
+group uses 54-point rings, sits at the shell's trailing edge, and shares the
+composer's 28-point bottom inset. The side layout is allowed only when the
+space from the composer's trailing edge to the shell edge can contain the full
+provider group, the 16-point shell trailing inset, and a 16-point minimum gap
+from the composer.
+
+If the complete group does not fit, it switches as one unit to the above
+layout. The visible rings become 44 points, the group's trailing edge aligns
+with the composer's trailing edge, and its lower edge sits 8 points above the
+composer. Labels remain below their rings. The composer's width, height,
+position, and bottom inset remain identical across both layouts.
+
+Provider count is part of the fit calculation, so resizing the window or
+adding a provider can select the above layout without a fixed window-width
+breakpoint. Routes without a composer retain the original 54-point
+bottom-right placement. Expanded content remains the existing bounded corner
+popup and does not adopt the compact responsive size.
 
 Each provider wheel includes:
 
@@ -102,11 +127,13 @@ hourly, 5-hour, daily, weekly, monthly, and annual. Unknown windows preserve
 OMP's source order. Equal-duration limits also preserve source order. The
 presentation model retains the source index so refreshes do not reorder ties.
 
-The wheel has a fixed outer diameter. The available annulus between the
-activity core and outer edge is divided across every limit, scaling stroke and
-gap widths together. No limit is omitted. This intentionally accepts greater
-visual density for providers with many limits; selecting the wheel restores the
-full readable breakdown.
+The wheel accepts a compact outer diameter of either 54 points in the side and
+non-composer layouts or 44 points in the above-composer layout. The activity
+core and ring strokes scale with that diameter. The available annulus between
+the activity core and outer edge is divided across every limit, scaling stroke
+and gap widths together. No limit is omitted. This intentionally accepts
+greater visual density for providers with many limits; selecting the wheel
+restores the full readable breakdown.
 
 ### Color states
 
@@ -236,6 +263,13 @@ the post-setup shell. It supplies:
 - whether the foreground controller is streaming;
 - Reduce Motion state.
 
+A small, pure responsive-layout calculation receives the shell width, current
+rail inset, provider count, and compact group metrics. It returns either the
+54-point side placement or the 44-point above-composer placement together with
+the trailing and bottom offsets. `AppShellView` applies that result only to the
+dock overlay, leaving `NewSessionView`, `ActiveSessionView`, and `ComposerView`
+unchanged.
+
 `FloatingRailView` removes `ProviderUsageLedgerView`, its dynamic ledger height,
 and the rail padding reserved for usage. The provider workspace and refresh
 behavior do not change.
@@ -280,6 +314,10 @@ The minimal UI split is:
   unknown-window stability, and every-limit retention.
 - Abbreviation tests for known and fallback providers.
 - Geometry tests for one, two, three, and dense multi-limit wheels.
+- Responsive-layout tests proving a wide trailing gutter selects 54-point side
+  placement, a constrained gutter selects 44-point above placement, provider
+  count participates in the decision, and the composer's geometry is not an
+  output of the calculation.
 - Activity-registry tests for multiple sessions on one provider, sessions on
   different providers, provider changes, idle transitions, exits, and cleanup.
 - App-model tests proving background controllers remain observed and reopened
@@ -288,7 +326,8 @@ The minimal UI split is:
   reset summaries.
 - Snapshots for collapsed idle color, collapsed foreground-generation
   grayscale, expanded generation-time color, multiple providers, all limits,
-  and the smallest supported window.
+  a wide shell with bottom-row placement, and a constrained shell with the
+  smaller group above the unchanged composer.
 - Existing provider detail and rail snapshots are updated only where the usage
   ledger removal changes the expected shell.
 
@@ -305,8 +344,13 @@ Verify a production build with realistic provider data:
 7. another managed session can remain active while the foreground chat is
    idle, producing colored rings with a still-pulsing provider core;
 8. Reduce Motion removes the pulse and morph without hiding state;
-9. compact and expanded layouts do not collide with the composer, safe area,
-   top actions, or small-window bounds.
+9. a wide window places 54-point wheels beside the composer with matching
+   bottom inset;
+10. resizing until the trailing gutter no longer fits the group moves 44-point
+    wheels above the composer and aligns their trailing edges;
+11. the composer does not move or resize during either transition;
+12. compact and expanded layouts do not collide with the safe area, top
+    actions, rail, or small-window bounds.
 
 Screenshots from the built application must cover collapsed idle, collapsed
 generating, and expanded generating states.
