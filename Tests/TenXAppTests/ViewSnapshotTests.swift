@@ -1816,6 +1816,106 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         size: CGSize(width: 780, height: 140))
 }
 
+private let modelPickerAnthropicOpus = ComposerModelInfo(
+    modelID: "claude-opus-4-8",
+    name: "Claude Opus 4.8",
+    provider: "anthropic",
+    api: "anthropic-messages",
+    thinkingEfforts: ["low", "high"],
+    requiresEffort: false)
+
+private let modelPickerOpenRouterOpus = ComposerModelInfo(
+    modelID: "anthropic/claude-opus-4-8",
+    name: "Claude Opus 4.8",
+    provider: "openrouter",
+    api: "openai-completions",
+    thinkingEfforts: [],
+    requiresEffort: false)
+
+@MainActor
+@Test func modelPickerDefaultSnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        recents: [modelPickerAnthropicOpus],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: modelPickerAnthropicOpus,
+            thinkingOptions: ["auto", "low", "high"],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: modelPickerAnthropicOpus),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-default",
+        size: CGSize(width: 340, height: 420))
+}
+
+@MainActor
+@Test func modelPickerSearchingSnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        recents: [modelPickerAnthropicOpus],
+        query: "opus")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: modelPickerAnthropicOpus,
+            thinkingOptions: ["auto", "low", "high"],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: modelPickerAnthropicOpus),
+            query: .constant("opus"),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-searching",
+        size: CGSize(width: 340, height: 420))
+}
+
+@MainActor
+@Test func modelPickerEmptySnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [],
+        recents: [],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: nil,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: false,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: false,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: nil),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-empty",
+        size: CGSize(width: 340, height: 420))
+}
+
 @MainActor
 private func compactTranscriptController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
@@ -2218,6 +2318,13 @@ private let snapshotEmptyIDEStore: IDEPreferenceStore = {
 }()
 
 @MainActor
+private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
+    let defaults = UserDefaults(suiteName: "tests.\(name)")!
+    defaults.removePersistentDomain(forName: "tests.\(name)")
+    return RecentModelStore(defaults: defaults, key: "recent-model-keys")
+}
+
+@MainActor
 private func snapshotComposerControls(
     models: [ComposerModelInfo],
     selected: ComposerModelInfo,
@@ -2232,7 +2339,8 @@ private func snapshotComposerControls(
         fastModeActive: false))
     let model = ComposerControlsModel(
         catalog: catalog,
-        defaults: SnapshotComposerDefaults())
+        defaults: SnapshotComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)))
     return model
 }

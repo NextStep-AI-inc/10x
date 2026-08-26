@@ -5,15 +5,15 @@ struct NewSessionView: View {
     let model: AppModel
 
     @State private var draft = ""
-    @State private var isProjectFlyoutPresented = false
+    @State private var flyout: ComposerFlyout?
 
     var body: some View {
         ZStack {
-            if isProjectFlyoutPresented {
+            if flyout != nil {
                 Color.clear
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
-                    .onTapGesture { isProjectFlyoutPresented = false }
+                    .onTapGesture { flyout = nil }
             }
 
             VStack(spacing: 0) {
@@ -21,7 +21,7 @@ struct NewSessionView: View {
 
                 ComposerView(
                     draft: $draft,
-                    isProjectFlyoutPresented: $isProjectFlyoutPresented,
+                    flyout: $flyout,
                     presentation: .newSession(
                         projectURL: model.selectedProjectURL,
                         projectURLs: ProjectSessionGrouper.choosableProjectURLs(
@@ -32,7 +32,7 @@ struct NewSessionView: View {
                     controls: model.composerControls,
                     controlsMode: .newSession,
                     onSend: {
-                        isProjectFlyoutPresented = false
+                        flyout = nil
                         model.startNewSession(prompt: draft)
                     })
                 .frame(maxWidth: 780)
@@ -43,7 +43,7 @@ struct NewSessionView: View {
             .zIndex(1)
         }
         .onExitCommand {
-            isProjectFlyoutPresented = false
+            flyout = nil
         }
     }
 

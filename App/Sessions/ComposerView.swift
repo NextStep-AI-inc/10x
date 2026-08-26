@@ -1,6 +1,11 @@
 import OmpKit
 import SwiftUI
 
+enum ComposerFlyout: Equatable {
+    case project
+    case model
+}
+
 enum ComposerPresentation {
     case newSession(
         projectURL: URL?,
@@ -12,7 +17,7 @@ enum ComposerPresentation {
 
 struct ComposerView: View {
     @Binding var draft: String
-    @Binding var isProjectFlyoutPresented: Bool
+    @Binding var flyout: ComposerFlyout?
     let presentation: ComposerPresentation
     let controls: ComposerControlsModel?
     let controlsMode: ComposerControlsMode
@@ -22,14 +27,14 @@ struct ComposerView: View {
 
     init(
         draft: Binding<String>,
-        isProjectFlyoutPresented: Binding<Bool> = .constant(false),
+        flyout: Binding<ComposerFlyout?> = .constant(nil),
         presentation: ComposerPresentation,
         controls: ComposerControlsModel? = nil,
         controlsMode: ComposerControlsMode = .newSession,
         onSend: @escaping () -> Void
     ) {
         _draft = draft
-        _isProjectFlyoutPresented = isProjectFlyoutPresented
+        _flyout = flyout
         self.presentation = presentation
         self.controls = controls
         self.controlsMode = controlsMode
@@ -64,9 +69,9 @@ struct ComposerView: View {
 
     var body: some View {
         composerCard
-            .animation(shelfAnimation, value: isProjectFlyoutPresented)
+            .animation(shelfAnimation, value: flyout)
             .onExitCommand {
-                isProjectFlyoutPresented = false
+                flyout = nil
             }
     }
 
@@ -136,7 +141,7 @@ struct ComposerView: View {
 
     @ViewBuilder
     private var projectShelfOverlay: some View {
-        if isProjectFlyoutPresented,
+        if flyout == .project,
            case .newSession(
             let projectURL,
             let projectURLs,
@@ -149,14 +154,14 @@ struct ComposerView: View {
                 triggerTitle: projectURL?.lastPathComponent ?? "Choose project",
                 onChoose: {
                     onChooseProject($0)
-                    isProjectFlyoutPresented = false
+                    flyout = nil
                 },
                 onAddExistingFolder: {
-                    isProjectFlyoutPresented = false
+                    flyout = nil
                     onAddExistingFolder()
                 },
                 onToggle: {
-                    isProjectFlyoutPresented = false
+                    flyout = nil
                 })
             .padding(.leading, 10)
             .padding(.bottom, 10)
@@ -177,13 +182,20 @@ struct ComposerView: View {
         case .newSession(let projectURL, _, _, _):
             ChooseProjectControl(
                 projectURL: projectURL,
-                isPresented: $isProjectFlyoutPresented)
+                isPresented: Binding(
+                    get: { flyout == .project },
+                    set: { flyout = $0 ? .project : nil }))
 
             Button("Local") {}
                 .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
 
             if let controls {
-                ComposerSessionControlsView(model: controls, mode: controlsMode)
+                ComposerSessionControlsView(
+                    model: controls,
+                    mode: controlsMode,
+                    isPresented: Binding(
+                        get: { flyout == .model },
+                        set: { flyout = $0 ? .model : nil }))
             }
 
         case .active(let controller):
@@ -192,7 +204,12 @@ struct ComposerView: View {
                 behaviorButton("Follow up", behavior: .followUp, controller: controller)
             }
             if let controls {
-                ComposerSessionControlsView(model: controls, mode: controlsMode)
+                ComposerSessionControlsView(
+                    model: controls,
+                    mode: controlsMode,
+                    isPresented: Binding(
+                        get: { flyout == .model },
+                        set: { flyout = $0 ? .model : nil }))
             } else {
                 Text(controller.modelName)
                     .font(TenXTypography.body(size: 10, weight: .medium))

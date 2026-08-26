@@ -41,14 +41,21 @@ final class ComposerControlsModel {
     private(set) var isLoading: Bool = false
     private(set) var isMutating: Bool = false
     private(set) var errorMessage: String?
+    private(set) var recentModels: [ComposerModelInfo] = []
 
     @ObservationIgnored private let catalog: any ComposerCatalogLoading
     @ObservationIgnored private let defaults: any ComposerDefaultPersisting
+    @ObservationIgnored private let recents: RecentModelStore
     @ObservationIgnored private weak var activeSession: (any ComposerSessionControlling)?
 
-    init(catalog: any ComposerCatalogLoading, defaults: any ComposerDefaultPersisting) {
+    init(
+        catalog: any ComposerCatalogLoading,
+        defaults: any ComposerDefaultPersisting,
+        recents: RecentModelStore = RecentModelStore()
+    ) {
         self.catalog = catalog
         self.defaults = defaults
+        self.recents = recents
     }
 
     var thinkingOptions: [String] {
@@ -72,6 +79,7 @@ final class ComposerControlsModel {
             models = ComposerControlsPresentation.authenticatedModels(
                 catalog: snapshot.models,
                 authenticatedProviderIDs: authenticatedProviderIDs)
+            recentModels = recents.rankedModels(from: models)
             if let activeSession {
                 applyLiveSelection(activeSession.liveComposerSelection)
             } else {
@@ -114,6 +122,7 @@ final class ComposerControlsModel {
             do {
                 try await defaults.setDefaultModel(provider: model.provider, modelID: model.modelID)
                 selectedModel = model
+                recordRecent(model)
                 thinkingLevel = ComposerControlsPresentation.resolvedThinkingLevel(
                     current: thinkingLevel,
                     for: model)
@@ -136,6 +145,7 @@ final class ComposerControlsModel {
             applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
             do {
                 try await activeSession.setModel(provider: model.provider, modelID: model.modelID)
+                recordRecent(model)
                 errorMessage = nil
             } catch {
                 selectedModel = prior
@@ -233,6 +243,11 @@ final class ComposerControlsModel {
     func shutdown() async {
         detachActiveSession()
         await catalog.shutdown()
+    }
+
+    private func recordRecent(_ model: ComposerModelInfo) {
+        recents.recordSelection(model)
+        recentModels = recents.rankedModels(from: models)
     }
 
     private func applyFastModeVisibility(preservingEnabled enabled: Bool) {

@@ -4,38 +4,51 @@ struct ActiveSessionView: View {
     let controller: SessionController
     var controls: ComposerControlsModel?
 
+    @State private var flyout: ComposerFlyout?
+
     var body: some View {
-        VStack(spacing: 0) {
-            SessionHeaderView(controller: controller)
-
-            TranscriptView(controller: controller)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            if controller.isRecoveryPresented,
-               case .stopped(let code, _) = controller.runtimeState {
-                RuntimeRecoveryView(
-                    exitCode: code,
-                    onRestart: { Task { await controller.restart() } },
-                    onOpenLog: controller.openLog,
-                    onDismiss: controller.dismissRecovery)
-                .frame(maxWidth: 780)
-                .padding(.horizontal, 42)
-                .padding(.bottom, 16)
+        ZStack {
+            if flyout != nil {
+                Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture { flyout = nil }
             }
 
-            ComposerView(
-                draft: Bindable(controller).draft,
-                presentation: .active(controller: controller),
-                controls: controls,
-                controlsMode: .activeSession,
-                onSend: {
-                    Task { await controller.sendPrompt() }
-                })
-            .frame(maxWidth: 780)
-            .padding(.horizontal, 42)
-            .padding(.bottom, 28)
+            VStack(spacing: 0) {
+                SessionHeaderView(controller: controller)
+
+                TranscriptView(controller: controller)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                if controller.isRecoveryPresented,
+                   case .stopped(let code, _) = controller.runtimeState {
+                    RuntimeRecoveryView(
+                        exitCode: code,
+                        onRestart: { Task { await controller.restart() } },
+                        onOpenLog: controller.openLog,
+                        onDismiss: controller.dismissRecovery)
+                    .frame(maxWidth: 780)
+                    .padding(.horizontal, 42)
+                    .padding(.bottom, 16)
+                }
+
+                ComposerView(
+                    draft: Bindable(controller).draft,
+                    flyout: $flyout,
+                    presentation: .active(controller: controller),
+                    controls: controls,
+                    controlsMode: .activeSession,
+                    onSend: {
+                        Task { await controller.sendPrompt() }
+                    })
+                .frame(maxWidth: 780)
+                .padding(.horizontal, 42)
+                .padding(.bottom, 28)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .zIndex(1)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .environment(\.fileReferenceBaseURL, controller.projectURL)
         .sheet(item: extensionSheetBinding) { request in
             ExtensionInputSheet(
@@ -61,6 +74,7 @@ struct ActiveSessionView: View {
             }
             .frame(minWidth: 620, minHeight: 360)
         }
+        .onExitCommand { flyout = nil }
     }
 
     private var extensionSheetBinding: Binding<ExtensionUIState?> {

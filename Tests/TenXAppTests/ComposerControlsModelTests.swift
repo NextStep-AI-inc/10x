@@ -35,6 +35,13 @@ private let codexRequiredEffort = ComposerModelInfo(
     requiresEffort: true)
 
 @MainActor
+private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
+    let defaults = UserDefaults(suiteName: "tests.\(name)")!
+    defaults.removePersistentDomain(forName: "tests.\(name)")
+    return RecentModelStore(defaults: defaults, key: "recent-model-keys")
+}
+
+@MainActor
 @Test func refreshFiltersToAuthenticatedProvidersAndSeedsSelection() async {
     let catalog = FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
         models: [anthropicOpus, anthropicSonnet, cursorModel],
@@ -42,7 +49,8 @@ private let codexRequiredEffort = ComposerModelInfo(
         thinkingLevel: "high",
         fastModeEnabled: true,
         fastModeActive: false))
-    let model = ComposerControlsModel(catalog: catalog, defaults: FakeComposerDefaults())
+    let model = ComposerControlsModel(
+        catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
 
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
@@ -63,7 +71,8 @@ private let codexRequiredEffort = ComposerModelInfo(
         thinkingLevel: "auto",
         fastModeEnabled: false,
         fastModeActive: false))
-    let model = ComposerControlsModel(catalog: catalog, defaults: FakeComposerDefaults())
+    let model = ComposerControlsModel(
+        catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
 
     await model.refresh(authenticatedProviderIDs: ["cursor"])
 
@@ -81,7 +90,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: defaults)
+        defaults: defaults,
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
     await model.selectModel(anthropicSonnet, mode: .newSession)
@@ -105,7 +115,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: defaults)
+        defaults: defaults,
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
     await model.selectModel(anthropicSonnet, mode: .newSession)
@@ -126,7 +137,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: defaults)
+        defaults: defaults,
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -150,7 +162,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: defaults)
+        defaults: defaults,
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
     await model.setFastMode(true, mode: .newSession)
@@ -171,7 +184,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -192,7 +206,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -214,7 +229,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -236,7 +252,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: true,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
     session.liveComposerSelection = ComposerLiveSelection(
         provider: "anthropic",
@@ -266,7 +283,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
     #expect(model.isFastModeVisible == true)
@@ -290,7 +308,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -317,7 +336,8 @@ private let codexRequiredEffort = ComposerModelInfo(
         modelID: "gpt-5",
         thinkingLevel: "low",
         fastModeEnabled: false)
-    let model = ComposerControlsModel(catalog: catalog, defaults: FakeComposerDefaults())
+    let model = ComposerControlsModel(
+        catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
     model.attachActiveSession(session)
 
@@ -342,7 +362,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
     #expect(model.selectedModel?.modelID == "claude-opus-4-8")
 
@@ -367,7 +388,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "high",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
     #expect(model.thinkingOptions.isEmpty)
@@ -405,7 +427,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
 
     await model.selectModel(codexRequiredEffort, mode: .newSession)
@@ -423,7 +446,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "high",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
 
     await model.selectModel(codexRequiredEffort, mode: .newSession)
@@ -442,7 +466,8 @@ private let codexRequiredEffort = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
     model.attachActiveSession(session)
 
