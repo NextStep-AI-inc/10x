@@ -30,11 +30,14 @@ final class SessionController: ComposerSessionControlling {
     private(set) var isRecoveryPresented = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
+    let id: UUID
+    private(set) var providerID: String?
     var draft = ""
     var streamingBehavior: StreamingBehavior? = .steer
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
+    private let activityRegistry: SessionActivityRegistry?
     private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
@@ -65,9 +68,13 @@ final class SessionController: ComposerSessionControlling {
 
     init(
         processManager: SessionProcessManager,
+        id: UUID = UUID(),
+        activityRegistry: SessionActivityRegistry? = nil,
         historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
     ) {
         self.processManager = processManager
+        self.id = id
+        self.activityRegistry = activityRegistry
         self.historyLoader = historyLoader
     }
 
@@ -82,6 +89,9 @@ final class SessionController: ComposerSessionControlling {
             branch: "",
             repo: "",
             worktreePath: nil),
+        id: UUID = UUID(),
+        providerID: String? = nil,
+        activityRegistry: SessionActivityRegistry? = nil,
         historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
     ) {
         self.processManager = processManager
@@ -92,6 +102,9 @@ final class SessionController: ComposerSessionControlling {
         self.modelName = modelName
         self.thinkingLevel = thinkingLevel
         self.headerMetadata = headerMetadata
+        self.id = id
+        self.providerID = providerID
+        self.activityRegistry = activityRegistry
     }
 
     var isComposerAvailable: Bool {
@@ -125,6 +138,7 @@ final class SessionController: ComposerSessionControlling {
         guard pipelineGeneration == openingGeneration else { return }
         self.headerMetadata = headerMetadata
         runtimeState = .loading
+        reportActivity()
 
         let sessionPath = metadata.path
         let cwd = metadata.cwd
@@ -179,6 +193,7 @@ final class SessionController: ComposerSessionControlling {
         guard pipelineGeneration == openingGeneration else { return failureOutcome }
         self.headerMetadata = headerMetadata
         runtimeState = .loading
+        reportActivity()
 
         let projectPath = projectURL.path
         let provider = selection?.provider
@@ -283,6 +298,7 @@ final class SessionController: ComposerSessionControlling {
             guard isCurrent(context) else { return }
             draft = ""
             runtimeState = .streaming
+            reportActivity()
             await context.processor?.setRuntimeState(.streaming)
         } catch {
             fail(error, function: "sendPrompt", context: context)
@@ -313,6 +329,7 @@ final class SessionController: ComposerSessionControlling {
             handle: nil,
             processor: nil)
         runtimeState = .loading
+        reportActivity()
         isRecoveryPresented = false
         let projectPath = projectURL.path
         let (openingToken, openTask) = beginOpening { [processManager] in
@@ -379,6 +396,12 @@ final class SessionController: ComposerSessionControlling {
         runtimeState = .stopped(code: code, stderrTail: stderrTail)
         isRecoveryPresented = true
         logText = stderrTail.isEmpty ? "OMP exited without stderr output." : stderrTail
+        activityRegistry?.remove(sessionID: id)
+    }
+
+    func stopActivityTracking() {
+        stopEventPipeline()
+        activityRegistry?.remove(sessionID: id)
     }
 
     func close() async {
@@ -392,6 +415,7 @@ final class SessionController: ComposerSessionControlling {
         self.sessionPath = nil
         items = []
         runtimeState = .stopped(code: nil, stderrTail: "")
+        activityRegistry?.remove(sessionID: id)
         guard let sessionPath else {
             return openingCloseTask
         }
@@ -682,6 +706,7 @@ final class SessionController: ComposerSessionControlling {
     private func applyState(_ data: JSONValue?) {
         guard let data else {
             runtimeState = .idle
+            reportActivity()
             return
         }
         title = data["sessionName"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
@@ -704,6 +729,7 @@ final class SessionController: ComposerSessionControlling {
             sessionPath = reportedPath
         }
         publishLiveComposerSelection()
+        reportActivity()
     }
 
     private func applyEventMetadata(_ frame: RpcFrame) {
@@ -720,6 +746,7 @@ final class SessionController: ComposerSessionControlling {
                 liveComposerSelection.thinkingLevel = thinking
             }
             publishLiveComposerSelection()
+            reportActivity()
         case "thinking_level_changed":
             if let thinking = payload["thinkingLevel"]?.stringValue {
                 thinkingLevel = thinking.capitalized
@@ -755,6 +782,8 @@ final class SessionController: ComposerSessionControlling {
         liveComposerSelection.modelID = value["id"]?.stringValue
             ?? value["modelId"]?.stringValue
             ?? liveComposerSelection.modelID
+        providerID = Self.providerID(from: value)
+        reportActivity()
     }
 
     private func publishLiveComposerSelection() {
@@ -852,6 +881,7 @@ final class SessionController: ComposerSessionControlling {
     ) {
         guard isCurrent(context) else { return }
         runtimeState = .failed("[Session:\(function)] Session command failed: \(error)")
+        reportActivity()
         let state = runtimeState
         let failedProcessor = context.processor
         Task { await failedProcessor?.setRuntimeState(state) }
@@ -877,6 +907,14 @@ final class SessionController: ComposerSessionControlling {
             name: "TranscriptSnapshotInstalled",
             "revision %{public}llu",
             snapshot.revision)
+        reportActivity()
+    }
+
+    private func reportActivity() {
+        activityRegistry?.update(
+            sessionID: id,
+            providerID: providerID,
+            isGenerating: runtimeState == .streaming)
     }
 
     private static func modelLabel(_ value: JSONValue?) -> String? {
@@ -884,6 +922,14 @@ final class SessionController: ComposerSessionControlling {
             ?? value?["id"]?.stringValue
             ?? value?["modelId"]?.stringValue
             ?? value?["name"]?.stringValue
+    }
+
+    static func providerID(from value: JSONValue?) -> String? {
+        guard let providerID = value?["provider"]?.stringValue,
+              !providerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return providerID
     }
 
     static func contextPercent(_ value: JSONValue?) -> Int? {

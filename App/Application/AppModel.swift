@@ -26,13 +26,24 @@ final class AppModel {
     let fileOpenService: FileOpenService
     private(set) var providerModel: ProviderManagementViewModel?
     private(set) var composerControls: ComposerControlsModel?
+    let sessionActivityRegistry = SessionActivityRegistry()
+
+    var providerActivityCounts: [String: Int] {
+        sessionActivityRegistry.activeCounts
+    }
+
+    var isForegroundSessionGenerating: Bool {
+        guard case .session = route else { return false }
+        return activeSession?.runtimeState == .streaming
+    }
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
     @ObservationIgnored private var archivedReloadGeneration = 0
     @ObservationIgnored private var composerControlsRefreshGeneration = 0
     @ObservationIgnored private var routeBeforeSettings: AppRoute?
-    @ObservationIgnored private var pendingSessionCloseTask: Task<Void, Never>?
+    @ObservationIgnored private var managedSessions: [UUID: SessionController] = [:]
+    @ObservationIgnored private var managedSessionPaths: [String: UUID] = [:]
 
     init(
         dependencies: AppDependencies = .live,
@@ -163,13 +174,32 @@ final class AppModel {
                 .standardizedFileURL
         }
         guard let processManager else { return }
-        let controller = SessionController(processManager: processManager)
-        let closeTask = replaceActiveSession(with: controller)
+        if let controller = managedController(for: metadata.path) {
+            composerControls?.detachActiveSession()
+            activeSession = controller
+            route = .session(metadata.path)
+            composerControls?.attachActiveSession(controller)
+            return
+        }
+        let controller = makeSessionController(
+            processManager: processManager,
+            intendedSessionPath: metadata.path)
+        activeSession = controller
         route = .session(metadata.path)
-        Task { [weak self, controller, closeTask] in
-            await closeTask?.value
-            guard let self, self.activeSession === controller else { return }
+        composerControls?.detachActiveSession()
+        Task { [weak self, controller] in
+            guard let self else { return }
             await controller.openExisting(metadata)
+            guard self.managedSessions[controller.id] === controller else {
+                controller.stopActivityTracking()
+                await processManager.close(sessionPath: controller.sessionPath ?? metadata.path)
+                return
+            }
+            guard controller.sessionPath != nil else {
+                self.removeManagedSession(controller)
+                return
+            }
+            self.indexManagedSessionPath(for: controller)
             guard self.activeSession === controller else { return }
             self.composerControls?.attachActiveSession(controller)
         }
@@ -178,25 +208,38 @@ final class AppModel {
     func startNewSession(prompt: String) {
         guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
-        let controller = SessionController(processManager: processManager)
+        let controller = makeSessionController(processManager: processManager)
         controller.draft = prompt
-        let closeTask = replaceActiveSession(with: controller)
+        composerControls?.detachActiveSession()
         route = .session("new:\(UUID().uuidString)")
         let selection = composerControls?.spawnSelection
-        Task { [weak self, controller, closeTask, selectedProjectURL, selection] in
-            await closeTask?.value
-            guard let self, self.activeSession === controller else { return }
+        activeSession = controller
+        Task { [weak self, controller, selectedProjectURL, selection] in
+            guard let self else { return }
             let fastOutcome = await controller.openNew(
                 projectURL: selectedProjectURL,
                 selection: selection)
-            guard self.activeSession === controller else { return }
-            if fastOutcome == .unsupported || fastOutcome == .failed {
-                await self.composerControls?.setFastMode(false, mode: .newSession)
+            guard self.managedSessions[controller.id] === controller else {
+                controller.stopActivityTracking()
+                if let sessionPath = controller.sessionPath {
+                    await processManager.close(sessionPath: sessionPath)
+                }
+                return
             }
-            guard self.activeSession === controller else { return }
-            self.composerControls?.attachActiveSession(controller)
+            guard controller.sessionPath != nil else {
+                self.removeManagedSession(controller)
+                return
+            }
+            self.indexManagedSessionPath(for: controller)
+            if self.activeSession === controller {
+                if fastOutcome == .unsupported || fastOutcome == .failed {
+                    await self.composerControls?.setFastMode(false, mode: .newSession)
+                }
+                if self.activeSession === controller {
+                    self.composerControls?.attachActiveSession(controller)
+                }
+            }
             await controller.sendPrompt()
-            guard self.activeSession === controller else { return }
             await self.reloadSessions()
         }
     }
@@ -277,7 +320,7 @@ final class AppModel {
         defer { endSessionMutation() }
         pendingDeletion = nil
         invalidateArchivedSessionReloads()
-        await closeActiveSessionIfNeeded(paths: request.paths)
+        await closeManagedSessions(paths: request.paths)
         await finish(
             await dependencies.sessionLibrary.delete(paths: request.paths),
             action: "delete",
@@ -291,33 +334,50 @@ final class AppModel {
         operation: () async -> SessionMutationReport
     ) async {
         invalidateArchivedSessionReloads()
-        await closeActiveSessionIfNeeded(paths: paths)
+        await closeManagedSessions(paths: paths)
         await finish(await operation(), action: action, subject: subject)
     }
 
-    private func closeActiveSessionIfNeeded(paths: [String]) async {
-        let activePath = activeSession?.sessionPath
+    private func closeManagedSessions(paths: [String]) async {
         let routePath: String? = if case .session(let path) = route { path } else { nil }
-        let matchingPath: String? = if let activePath {
-            paths.contains(activePath) ? activePath : nil
-        } else if let routePath, paths.contains(routePath) {
-            routePath
+        let indexedIDs = Set(paths.compactMap { managedSessionPaths[$0] })
+        let matchingControllers = managedSessions.values.filter { controller in
+            indexedIDs.contains(controller.id) || controller.sessionPath.map(paths.contains) == true
+        }
+        let matchingIDs = Set(matchingControllers.map(\.id))
+        let matchingPaths = Set(matchingControllers.compactMap(\.sessionPath))
+        let matchingIndexedPaths = Set(paths.filter { path in
+            managedSessionPaths[path].map(matchingIDs.contains) == true
+        })
+
+        for controller in matchingControllers {
+            removeManagedSession(controller)
+        }
+        let didRemoveActiveSession = if let activeSession {
+            matchingIDs.contains(activeSession.id)
         } else {
-            nil
+            false
         }
-        guard let matchingPath else { return }
-        let processManager = processManager
-        let hadActiveSession = activeSession != nil
-        let closeTask = clearActiveSession()
-        if routePath != nil {
-            route = .newSession
-            detachComposerControlsAndRefresh()
-        } else if hadActiveSession {
+        if didRemoveActiveSession {
+            self.activeSession = nil
+        }
+        if didRemoveActiveSession || (routePath.map(paths.contains) == true) {
+            activeSession = nil
+            if routePath != nil {
+                route = .newSession
+            }
             detachComposerControlsAndRefresh()
         }
-        await closeTask?.value
-        if !hadActiveSession {
-            await processManager?.close(sessionPath: matchingPath)
+
+        let pathsToClose = if matchingPaths.union(matchingIndexedPaths).isEmpty,
+                              let routePath,
+                              paths.contains(routePath) {
+            [routePath]
+        } else {
+            matchingPaths.union(matchingIndexedPaths).sorted()
+        }
+        for path in pathsToClose {
+            await processManager?.close(sessionPath: path)
         }
     }
 
@@ -384,12 +444,10 @@ final class AppModel {
         if let composerControls {
             await composerControls.shutdown()
         }
+        await discardManagedSessions()
 
         guard let installation = locatedInstallation else {
-            exitTask?.cancel()
-            clearActiveSession()
             self.installation = nil
-            processManager = nil
             settingsModel = nil
             providerModel = nil
             composerControls = nil
@@ -397,7 +455,6 @@ final class AppModel {
             return
         }
 
-        clearActiveSession()
         self.installation = installation
         let processManager = SessionProcessManager(executable: installation.executableURL.path)
         self.processManager = processManager
@@ -421,33 +478,73 @@ final class AppModel {
         }
     }
 
-    private func replaceActiveSession(with controller: SessionController) -> Task<Void, Never>? {
+    private func clearActiveSession() {
         composerControls?.detachActiveSession()
-        let closeTask = clearActiveSession()
-        activeSession = controller
-        return closeTask
+        activeSession = nil
     }
 
-    @discardableResult
-    private func clearActiveSession() -> Task<Void, Never>? {
-        let previousCloseTask = pendingSessionCloseTask
-        let closeTask = activeSession?.dispose()
-        activeSession = nil
-        pendingSessionCloseTask = Task {
-            await previousCloseTask?.value
-            await closeTask?.value
+    private func makeSessionController(
+        processManager: SessionProcessManager,
+        intendedSessionPath: String? = nil
+    ) -> SessionController {
+        let controller = SessionController(
+            processManager: processManager,
+            activityRegistry: sessionActivityRegistry)
+        managedSessions[controller.id] = controller
+        if let intendedSessionPath {
+            managedSessionPaths[intendedSessionPath] = controller.id
         }
-        return pendingSessionCloseTask
+        return controller
+    }
+
+    private func managedController(for sessionPath: String) -> SessionController? {
+        guard let controllerID = managedSessionPaths[sessionPath] else { return nil }
+        guard let controller = managedSessions[controllerID] else {
+            managedSessionPaths.removeValue(forKey: sessionPath)
+            return nil
+        }
+        return controller
+    }
+
+    private func indexManagedSessionPath(for controller: SessionController) {
+        guard managedSessions[controller.id] === controller,
+              let sessionPath = controller.sessionPath
+        else { return }
+        managedSessionPaths[sessionPath] = controller.id
+    }
+
+    private func removeManagedSession(_ controller: SessionController) {
+        controller.stopActivityTracking()
+        managedSessions.removeValue(forKey: controller.id)
+        let paths = managedSessionPaths.compactMap { entry in
+            entry.value == controller.id ? entry.key : nil
+        }
+        for path in paths {
+            managedSessionPaths.removeValue(forKey: path)
+        }
+    }
+
+    private func discardManagedSessions() async {
+        for controller in managedSessions.values {
+            controller.stopActivityTracking()
+        }
+        managedSessions.removeAll()
+        managedSessionPaths.removeAll()
+        activeSession = nil
+        exitTask?.cancel()
+        exitTask = nil
+        let previousProcessManager = processManager
+        processManager = nil
+        await previousProcessManager?.closeAll()
     }
 
     private func watchUnexpectedExits(from processManager: SessionProcessManager) {
         exitTask?.cancel()
         exitTask = Task { [weak self] in
             for await exit in processManager.unexpectedExits {
-                guard let self, !Task.isCancelled,
-                      self.activeSession?.sessionPath == exit.sessionPath
-                else { continue }
-                self.activeSession?.handleUnexpectedExit(
+                guard let self, !Task.isCancelled else { return }
+                guard let controller = managedController(for: exit.sessionPath) else { continue }
+                controller.handleUnexpectedExit(
                     code: exit.code,
                     stderrTail: exit.stderrTail)
             }

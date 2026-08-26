@@ -111,8 +111,8 @@ final class ProviderManagementViewModel {
         return matching.sorted(by: Self.providerOrder)
     }
 
-    var railProviders: [ProviderUsageProvider] {
-        usage.railProviders
+    var dockProviders: [ProviderUsageProvider] {
+        usage.dockProviders
     }
 
     func load() async {

@@ -23,10 +23,6 @@ struct FloatingRailView: View {
             expandedProjectIDs: expansion.isExpanded ? expandedProjectIDs : [])
     }
 
-    private var providers: [ProviderUsageProvider] {
-        model.providerModel?.railProviders ?? []
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             brandMenuAnchor
@@ -65,17 +61,6 @@ struct FloatingRailView: View {
             .help("Archived sessions")
             .accessibilityLabel("Archived sessions")
 
-            if !providers.isEmpty {
-                ProviderUsageLedgerView(providers: providers) {
-                    model.openProviders(.usage)
-                }
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 18)
-                    .frame(height: usageLedgerHeight)
-                    .opacity(expansion.isExpanded ? 1 : 0)
-                    .allowsHitTesting(expansion.isExpanded)
-                    .accessibilityHidden(!expansion.isExpanded)
-            }
         }
         .frame(width: expansion.contentLeadingInset, alignment: .leading)
         .contentShape(Rectangle())
@@ -148,16 +133,6 @@ struct FloatingRailView: View {
                 scrollChevron(.down)
             }
         }
-    }
-
-    private var usageLedgerHeight: CGFloat {
-        let visibleAccountCount = providers.reduce(0) { count, provider in
-            count + (provider.accounts.count > 1 ? provider.accounts.count : 0)
-        }
-        let limitCount = providers.reduce(0) { count, provider in
-            count + provider.limits.count
-        }
-        return min(210, CGFloat(44 + providers.count * 20 + visibleAccountCount * 16 + limitCount * 25))
     }
 
     private var selectedSessionPath: String? {
