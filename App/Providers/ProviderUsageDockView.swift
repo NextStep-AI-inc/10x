@@ -1,6 +1,12 @@
 import SwiftUI
 
 struct ProviderUsageDockView: View {
+    static let compactWheelSpacing: CGFloat = 8
+    static let compactWheelLabelSpacing: CGFloat = 5
+    static let compactLabelHeight: CGFloat = 11
+    static let compactHeight = ProviderUsageRingGeometry.diameter
+        + compactWheelLabelSpacing + compactLabelHeight
+
     let providers: [ProviderUsageProvider]
     let activeCounts: [String: Int]
     let isForegroundGenerating: Bool
@@ -25,19 +31,21 @@ struct ProviderUsageDockView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        Group {
             if let provider = selectedProvider {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: collapse)
+                ZStack(alignment: .bottomTrailing) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: collapse)
 
-                expandedPanel(provider)
-                    .transition(reduceMotion ? .opacity : .identity)
+                    expandedPanel(provider)
+                        .transition(reduceMotion ? .opacity : .identity)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             } else {
                 collapsedDock
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         .onExitCommand(perform: collapse)
     }
 
@@ -46,7 +54,7 @@ struct ProviderUsageDockView: View {
     }
 
     private var collapsedDock: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: .bottom, spacing: Self.compactWheelSpacing) {
             ForEach(providers) { provider in
                 providerButton(provider, isGrayscale: isForegroundGenerating)
             }

@@ -554,7 +554,8 @@ import Testing
             activeCounts: ["anthropic": 2],
             isForegroundGenerating: false)
             // macOS exposes the public Reduce Motion key as read-only.
-            .environment(\._accessibilityReduceMotion, true),
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
         name: "provider-usage-dock-idle",
         size: CGSize(width: 430, height: 460))
 }
@@ -566,7 +567,8 @@ import Testing
             providers: providerUsageDockProviders,
             activeCounts: ["anthropic": 2],
             isForegroundGenerating: true)
-            .environment(\._accessibilityReduceMotion, true),
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
         name: "provider-usage-dock-generating",
         size: CGSize(width: 430, height: 460))
 }

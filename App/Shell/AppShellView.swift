@@ -27,7 +27,7 @@ struct AppShellView: View {
                         routeCanvas
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding(.leading, railExpansion.contentLeadingInset)
-                            .padding(.trailing, composerDockReservation)
+                            .padding(.bottom, composerDockLaneHeight)
                             .environment(model.idePreferenceStore)
                             .environment(\.fileOpenService, model.fileOpenService)
                             .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
@@ -109,9 +109,7 @@ struct AppShellView: View {
             .map { .easeInOut(duration: $0) }
     }
 
-    private var composerDockReservation: CGFloat {
-        guard !railExpansion.isExpanded else { return 0 }
-
+    private var composerDockLaneHeight: CGFloat {
         switch model.route {
         case .newSession, .session:
             break
@@ -123,11 +121,8 @@ struct AppShellView: View {
         let providerCount = providerModel.dockProviders.count
         guard providerCount > 0 else { return 0 }
 
-        let interWheelSpacing: CGFloat = 8
-        let shellTrailingInset: CGFloat = 16
-        return CGFloat(providerCount) * ProviderUsageRingGeometry.diameter
-            + CGFloat(providerCount - 1) * interWheelSpacing
-            + shellTrailingInset
+        let shellBottomInset: CGFloat = 16
+        return ProviderUsageDockView.compactHeight + shellBottomInset
     }
 
     @ViewBuilder
