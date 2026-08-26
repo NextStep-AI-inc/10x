@@ -184,7 +184,7 @@ import Testing
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
         try await Task.sleep(for: .milliseconds(20))
     }
     let manager = try #require(model.processManager)
@@ -249,9 +249,10 @@ import Testing
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
         try await Task.sleep(for: .milliseconds(20))
     }
+    #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
     let original = try #require(model.activeSession)
 
     model.openNewSession()
