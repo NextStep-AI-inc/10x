@@ -40,6 +40,68 @@ import Testing
     ])
 }
 
+@MainActor @Test func watcherStartupFailureRollsBackRemoteAuthorizationAndResources() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let controller = ComputerUseController(
+        sessionID: "session-watcher-start",
+        lifecycle: .recording(log, watchWindows: { _ in
+            throw AgentDesktopProviderError.operationFailed(.aeroSpace)
+        }),
+        preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-watcher-start.jsonl")
+
+    await controller.enable()
+
+    #expect(controller.phase == .unavailable(
+        message: "Computer use could not start", isBestEffortAvailable: false))
+    #expect(log.values.suffix(6) == [
+        "rpc.hostTools.clear", "rpc.disable", "desktop.cleanup", "desktop.release", "lease.release",
+        "registry.release",
+    ])
+    #expect(log.values.last == "registry.release")
+    #expect(await rpc.remoteSnapshot().enabled == false)
+    #expect(await rpc.remoteSnapshot().toolNames.isEmpty)
+}
+
+@MainActor @Test func postEnableWatcherFailureAbortsAndFailsClosed() async {
+    let log = LifecycleLog()
+    let rpc = ControllerRPC(log: log)
+    let source = AsyncStream<AgentWindowEvent>.makeStream()
+    let controller = ComputerUseController(
+        sessionID: "session-watcher-runtime",
+        lifecycle: .recording(log, watchWindows: { _ in source.stream }),
+        preference: .automatic)
+    controller.attach(rpc: rpc, sessionPath: "/tmp/session-watcher-runtime.jsonl")
+    await controller.enable()
+    #expect(controller.phase == .ready)
+    controller.handleToolStarted(.object([
+        "toolName": .string("computer"), "target": .string("TextEdit"),
+    ]))
+    log.reset()
+
+    source.continuation.yield(.failed(.operationFailed(.aeroSpace)))
+    for _ in 0..<100 where !log.values.contains("rpc.abort") {
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    controller.handleToolEnded(.object(["toolName": .string("computer")]))
+    for _ in 0..<100 where controller.phase != .unavailable(
+        message: "Computer use stopped because its session could not be secured",
+        isBestEffortAvailable: false)
+    {
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+
+    #expect(controller.phase == .unavailable(
+        message: "Computer use stopped because its session could not be secured",
+        isBestEffortAvailable: false))
+    #expect(log.values.contains("rpc.abort"))
+    #expect(log.values.contains("rpc.hostTools.clear"))
+    #expect(log.values.contains("rpc.disable"))
+    #expect(log.values.contains("desktop.cleanup"))
+    #expect(log.values.last == "registry.release")
+}
+
 @MainActor @Test func concurrentStopsRunOneCleanupAndLeaveTheSessionOff() async {
     let log = LifecycleLog()
     let rpc = ControllerRPC(log: log)
@@ -576,7 +638,12 @@ private actor ControllerRPC: ComputerUseRPC, ComputerForegroundHandoffResponding
 }
 
 private extension ComputerUseControllerLifecycle {
-    static func recording(_ log: LifecycleLog) -> Self {
+    static func recording(
+        _ log: LifecycleLog,
+        watchWindows: @escaping @Sendable (PreparedAgentDesktop) async throws -> AsyncStream<AgentWindowEvent> = { _ in
+            AsyncStream { $0.finish() }
+        }
+    ) -> Self {
         Self(
             activate: { _ in log.append("registry.activate") },
             release: { _ in log.append("registry.release") },
@@ -596,6 +663,7 @@ private extension ComputerUseControllerLifecycle {
                 log.append("desktop.cleanup")
                 return CleanupReport(preservedApplicationNames: [], restoredWindowCount: 0)
             },
+            watchWindows: watchWindows,
             openVisibly: { _ in log.append("desktop.openVisibly") },
             releaseDesktop: { _ in log.append("desktop.release") })
     }

@@ -72,6 +72,7 @@ struct AgentWindow: Sendable, Equatable, Hashable {
 enum AgentWindowEvent: Sendable, Equatable {
     case appeared(AgentWindow)
     case disappeared(id: String)
+    case failed(AgentDesktopProviderError)
 }
 
 enum AgentDesktopProviderError: Error, Sendable, Equatable {

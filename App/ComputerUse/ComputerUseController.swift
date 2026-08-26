@@ -15,6 +15,7 @@ struct ComputerUseControllerLifecycle {
     let prepare: (AgentDesktopPreference) async throws -> PreparedAgentDesktop
     let probe: (PreparedAgentDesktop, @escaping @Sendable (String?, String?) async throws -> ComputerProbeResult) async throws -> ComputerProbeResult
     let cleanup: (AgentDesktopManifest) async -> CleanupReport
+    let watchWindows: @Sendable (PreparedAgentDesktop) async throws -> AsyncStream<AgentWindowEvent>
     let openVisibly: (PreparedAgentDesktop) async throws -> Void
     let releaseDesktop: (PreparedAgentDesktop) async -> Void
 
@@ -26,6 +27,9 @@ struct ComputerUseControllerLifecycle {
         prepare: @escaping (AgentDesktopPreference) async throws -> PreparedAgentDesktop,
         probe: @escaping (PreparedAgentDesktop, @escaping @Sendable (String?, String?) async throws -> ComputerProbeResult) async throws -> ComputerProbeResult,
         cleanup: @escaping (AgentDesktopManifest) async -> CleanupReport,
+        watchWindows: @escaping @Sendable (PreparedAgentDesktop) async throws -> AsyncStream<AgentWindowEvent> = { _ in
+            AsyncStream { $0.finish() }
+        },
         openVisibly: @escaping (PreparedAgentDesktop) async throws -> Void = { _ in },
         releaseDesktop: @escaping (PreparedAgentDesktop) async -> Void
     ) {
@@ -36,6 +40,7 @@ struct ComputerUseControllerLifecycle {
         self.prepare = prepare
         self.probe = probe
         self.cleanup = cleanup
+        self.watchWindows = watchWindows
         self.openVisibly = openVisibly
         self.releaseDesktop = releaseDesktop
     }
@@ -51,6 +56,7 @@ struct ComputerUseControllerLifecycle {
                 try await coordinator.probePreparedWorkspace(prepared) { try await operation($0, $1) }
             },
             cleanup: { await coordinator.cleanup(manifest: $0) },
+            watchWindows: { try await coordinator.watchWindows(in: $0) },
             openVisibly: { try await coordinator.openVisibly($0) },
             releaseDesktop: { await coordinator.release($0) })
     }
@@ -71,7 +77,6 @@ final class ComputerUseController: ComputerUseStopping {
 
     private let sessionID: String
     private let lifecycle: ComputerUseControllerLifecycle
-    private let coordinator: AgentDesktopCoordinator?
     private let preference: AgentDesktopPreference
     private let cancellationBag = TaskCancellationBag()
     private var rpc: (any ComputerUseRPC)?
@@ -101,7 +106,6 @@ final class ComputerUseController: ComputerUseStopping {
     init(sessionID: String = UUID().uuidString, registry: ComputerUseRegistry = ComputerUseRegistry(), lease: ComputerUseLease = ComputerUseLease(), coordinator: AgentDesktopCoordinator = AgentDesktopCoordinator(), preference: AgentDesktopPreference = .automatic) {
         self.sessionID = sessionID
         lifecycle = .live(registry: registry, lease: lease, coordinator: coordinator, sessionToken: UUID().uuidString)
-        self.coordinator = coordinator
         self.preference = preference
         hostTool = AgentDesktopHostTool(coordinator: coordinator)
     }
@@ -109,7 +113,6 @@ final class ComputerUseController: ComputerUseStopping {
     init(sessionID: String, lifecycle: ComputerUseControllerLifecycle, preference: AgentDesktopPreference) {
         self.sessionID = sessionID
         self.lifecycle = lifecycle
-        coordinator = nil
         self.preference = preference
     }
 
@@ -213,8 +216,9 @@ final class ComputerUseController: ComputerUseStopping {
                 guard isCurrentEnable(operation) else { return }
             }
             guard isCurrentEnable(operation) else { return }
+            try await startManifestWatcher()
+            guard isCurrentEnable(operation) else { return }
             phase = needsHandoff ? .needsHandoff(target: "Agent Desktop", reason: "Background capture or input is unavailable") : .ready
-            startManifestWatcher()
         } catch {
             guard isCurrentEnable(operation) else { return }
             let stopped = await rollbackEnable()
@@ -638,14 +642,25 @@ final class ComputerUseController: ComputerUseStopping {
         }
     }
 
-    private func startManifestWatcher() {
-        guard let coordinator, let preparedDesktop else { return }
+    private func startManifestWatcher() async throws {
+        guard let preparedDesktop else { return }
+        let stream = try await lifecycle.watchWindows(preparedDesktop)
+        let generation = lifecycleGeneration
         watcherTask?.cancel()
-        watcherTask = Task { [weak self, coordinator, preparedDesktop] in
-            guard let stream = try? await coordinator.watchWindows(in: preparedDesktop) else { return }
+        watcherTask = Task { [weak self] in
             for await event in stream {
                 guard !Task.isCancelled else { return }
-                await MainActor.run { [weak self] in self?.manifest?.apply(event) }
+                if case .failed = event {
+                    Task { @MainActor [weak self] in
+                        guard let self, generation == self.lifecycleGeneration else { return }
+                        await self.failClosed()
+                    }
+                    return
+                }
+                await MainActor.run { [weak self] in
+                    guard let self, generation == self.lifecycleGeneration else { return }
+                    self.manifest?.apply(event)
+                }
             }
         }
         if let watcherTask { cancellationBag.insert(watcherTask) }

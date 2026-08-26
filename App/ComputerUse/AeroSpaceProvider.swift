@@ -5,13 +5,16 @@ struct AeroSpaceProvider: AgentDesktopProvider {
     let kind: AgentDesktopProviderKind = .aeroSpace
     private let executable: URL
     private let runner: any AgentDesktopCommandRunning
+    private let watcherPollInterval: Duration
 
     init(
         executable: URL = URL(filePath: "/opt/homebrew/bin/aerospace"),
-        runner: any AgentDesktopCommandRunning = AgentDesktopCommandRunner()
+        runner: any AgentDesktopCommandRunning = AgentDesktopCommandRunner(),
+        watcherPollInterval: Duration = .seconds(1)
     ) {
         self.executable = executable
         self.runner = runner
+        self.watcherPollInterval = watcherPollInterval
     }
 
     func probe() async -> ProviderProbe {
@@ -56,16 +59,32 @@ struct AeroSpaceProvider: AgentDesktopProvider {
     }
 
     func watchWindows() async throws -> AsyncStream<AgentWindowEvent> {
-        AsyncStream { continuation in
+        let initialWindows: Set<AgentWindow>
+        do {
+            initialWindows = Set(try await listWindows())
+        } catch {
+            throw typedOperationError(error)
+        }
+        return AsyncStream<AgentWindowEvent> { continuation in
             let task = Task {
-                var previous = Set((try? await listWindows()) ?? [])
+                var previous = initialWindows
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(1))
+                    do {
+                        try await Task.sleep(for: watcherPollInterval)
+                    } catch {
+                        break
+                    }
                     guard !Task.isCancelled else { break }
-                    let current = Set((try? await listWindows()) ?? [])
-                    for window in current.subtracting(previous) { continuation.yield(.appeared(window)) }
-                    for window in previous.subtracting(current) { continuation.yield(.disappeared(id: window.id)) }
-                    previous = current
+                    do {
+                        let current = Set(try await listWindows())
+                        for window in current.subtracting(previous) { continuation.yield(.appeared(window)) }
+                        for window in previous.subtracting(current) { continuation.yield(.disappeared(id: window.id)) }
+                        previous = current
+                    } catch {
+                        guard !Task.isCancelled else { break }
+                        continuation.yield(.failed(typedOperationError(error)))
+                        break
+                    }
                 }
                 continuation.finish()
             }
@@ -98,6 +117,10 @@ struct AeroSpaceProvider: AgentDesktopProvider {
 
     private func unavailable(_ availability: ProviderAvailability) -> ProviderProbe {
         ProviderProbe(availability: availability, integrationVersion: nil, capabilities: .background)
+    }
+
+    private func typedOperationError(_ error: any Error) -> AgentDesktopProviderError {
+        (error as? AgentDesktopProviderError) ?? .operationFailed(kind)
     }
 
     private func workspaceID(for sessionToken: String) throws -> String {

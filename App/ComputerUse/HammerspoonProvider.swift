@@ -5,13 +5,16 @@ struct HammerspoonProvider: AgentDesktopProvider {
     let kind: AgentDesktopProviderKind = .hammerspoon
     private let executable: URL
     private let runner: any AgentDesktopCommandRunning
+    private let watcherPollInterval: Duration
 
     init(
         executable: URL = URL(filePath: "/usr/local/bin/hs"),
-        runner: any AgentDesktopCommandRunning = AgentDesktopCommandRunner()
+        runner: any AgentDesktopCommandRunning = AgentDesktopCommandRunner(),
+        watcherPollInterval: Duration = .seconds(1)
     ) {
         self.executable = executable
         self.runner = runner
+        self.watcherPollInterval = watcherPollInterval
     }
 
     func probe() async -> ProviderProbe {
@@ -59,18 +62,39 @@ struct HammerspoonProvider: AgentDesktopProvider {
     }
 
     func watchWindows() async throws -> AsyncStream<AgentWindowEvent> {
-        try requireSuccessfulOperation(
-            try await invoke("return hs.json.encode(tenx.startWatcher())"))
+        do {
+            try requireSuccessfulOperation(
+                try await invoke("return hs.json.encode(tenx.startWatcher())"))
+        } catch {
+            throw typedOperationError(error)
+        }
+        let initialWindows: Set<AgentWindow>
+        do {
+            initialWindows = Set(try await listWindows())
+        } catch {
+            _ = try? await invoke("return hs.json.encode(tenx.stopWatcher())")
+            throw typedOperationError(error)
+        }
         return AsyncStream { continuation in
             let task = Task {
-                var previous = Set((try? await listWindows()) ?? [])
+                var previous = initialWindows
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(1))
+                    do {
+                        try await Task.sleep(for: watcherPollInterval)
+                    } catch {
+                        break
+                    }
                     guard !Task.isCancelled else { break }
-                    let current = Set((try? await listWindows()) ?? [])
-                    for window in current.subtracting(previous) { continuation.yield(.appeared(window)) }
-                    for window in previous.subtracting(current) { continuation.yield(.disappeared(id: window.id)) }
-                    previous = current
+                    do {
+                        let current = Set(try await listWindows())
+                        for window in current.subtracting(previous) { continuation.yield(.appeared(window)) }
+                        for window in previous.subtracting(current) { continuation.yield(.disappeared(id: window.id)) }
+                        previous = current
+                    } catch {
+                        guard !Task.isCancelled else { break }
+                        continuation.yield(.failed(typedOperationError(error)))
+                        break
+                    }
                 }
                 _ = try? await invoke("return hs.json.encode(tenx.stopWatcher())")
                 continuation.finish()
@@ -145,6 +169,10 @@ struct HammerspoonProvider: AgentDesktopProvider {
 
     private func unavailable(_ availability: ProviderAvailability) -> ProviderProbe {
         ProviderProbe(availability: availability, integrationVersion: nil, capabilities: .background)
+    }
+
+    private func typedOperationError(_ error: any Error) -> AgentDesktopProviderError {
+        (error as? AgentDesktopProviderError) ?? .operationFailed(kind)
     }
 
     private func parseWindow(_ value: JSONValue) throws -> AgentWindow {

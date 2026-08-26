@@ -68,6 +68,35 @@ import Testing
     ]])
 }
 
+@Test func aeroSpaceWatcherStartFailureIsTyped() async {
+    let provider = AeroSpaceProvider(
+        executable: URL(filePath: "/bin/true"),
+        runner: FakeDesktopRunner(outputs: []),
+        watcherPollInterval: .milliseconds(1))
+
+    do {
+        _ = try await provider.watchWindows()
+        Issue.record("Expected watcher startup to fail")
+    } catch let error as AgentDesktopProviderError {
+        #expect(error == .operationFailed(.aeroSpace))
+    } catch {
+        Issue.record("Expected typed provider error")
+    }
+}
+
+@Test func aeroSpaceWatcherSurfacesPostStartListFailure() async throws {
+    let runner = FailingWatcherDesktopRunner(kind: .aeroSpace)
+    let provider = AeroSpaceProvider(
+        executable: URL(filePath: "/bin/true"),
+        runner: runner,
+        watcherPollInterval: .milliseconds(1))
+
+    let stream = try await provider.watchWindows()
+    var iterator = stream.makeAsyncIterator()
+
+    #expect(await iterator.next() == .failed(.operationFailed(.aeroSpace)))
+}
+
 @Test func hammerspoonRejectsAnyMalformedWindowInASnapshot() async {
     let runner = FakeDesktopRunner(outputs: [
         .init(json: .array([
@@ -119,6 +148,39 @@ import Testing
     await runner.waitForStop()
 }
 
+@Test func hammerspoonWatcherRejectsFailedHelperStartup() async {
+    let runner = FakeDesktopRunner(outputs: [
+        .init(json: .object(["ok": .bool(false)]), exitStatus: 0),
+    ])
+    let provider = HammerspoonProvider(
+        executable: URL(filePath: "/bin/true"),
+        runner: runner,
+        watcherPollInterval: .milliseconds(1))
+
+    do {
+        _ = try await provider.watchWindows()
+        Issue.record("Expected watcher startup to fail")
+    } catch let error as AgentDesktopProviderError {
+        #expect(error == .operationFailed(.hammerspoon))
+    } catch {
+        Issue.record("Expected typed provider error")
+    }
+}
+
+@Test func hammerspoonWatcherSurfacesPostStartListFailureAndStopsHelper() async throws {
+    let runner = FailingWatcherDesktopRunner(kind: .hammerspoon)
+    let provider = HammerspoonProvider(
+        executable: URL(filePath: "/bin/true"),
+        runner: runner,
+        watcherPollInterval: .milliseconds(1))
+
+    let stream = try await provider.watchWindows()
+    var iterator = stream.makeAsyncIterator()
+
+    #expect(await iterator.next() == .failed(.operationFailed(.hammerspoon)))
+    await runner.waitForStop()
+}
+
 private actor FakeDesktopRunner: AgentDesktopCommandRunning {
     private var outputs: [AgentDesktopCommandOutput]
     private var arguments: [[String]] = []
@@ -137,6 +199,42 @@ private actor FakeDesktopRunner: AgentDesktopCommandRunning {
 }
 
 private enum FakeDesktopRunnerError: Error { case noOutput }
+
+private actor FailingWatcherDesktopRunner: AgentDesktopCommandRunning {
+    private let kind: AgentDesktopProviderKind
+    private var listCount = 0
+    private var didStop = false
+    private var stopContinuation: CheckedContinuation<Void, Never>?
+
+    init(kind: AgentDesktopProviderKind) {
+        self.kind = kind
+    }
+
+    func run(executable: URL, arguments: [String], timeout: Duration) async throws -> AgentDesktopCommandOutput {
+        let command = arguments.last ?? ""
+        if command.contains("stopWatcher") {
+            didStop = true
+            stopContinuation?.resume()
+            stopContinuation = nil
+            return .init(json: .object(["ok": .bool(true)]), exitStatus: 0)
+        }
+        if kind == .hammerspoon, command.contains("startWatcher") {
+            return .init(json: .object(["ok": .bool(true)]), exitStatus: 0)
+        }
+        let isList = kind == .aeroSpace || command.contains("listWindows")
+        if isList {
+            listCount += 1
+            if listCount == 1 { return .init(json: .array([]), exitStatus: 0) }
+            throw FakeDesktopRunnerError.noOutput
+        }
+        return .init(json: .object(["ok": .bool(true)]), exitStatus: 0)
+    }
+
+    func waitForStop() async {
+        guard !didStop else { return }
+        await withCheckedContinuation { stopContinuation = $0 }
+    }
+}
 
 private actor WatchingDesktopRunner: AgentDesktopCommandRunning {
     private var didStop = false
