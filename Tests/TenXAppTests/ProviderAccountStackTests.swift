@@ -133,7 +133,7 @@ import Testing
 }
 
 @MainActor
-@Test func accountStackLoadingUnavailableAndFocusedForegroundSnapshot() throws {
+@Test func focusedForegroundAccountShowsInteractiveCyanOutlineSnapshot() throws {
     try assertSnapshot(
         ProviderAccountStackSnapshotHarness(),
         name: "provider-account-stack-states",
@@ -150,10 +150,8 @@ private struct ProviderAccountStackSnapshotHarness: View {
             generatingCounts: [:],
             isGrayscale: false,
             focusedAccountID: $focusedAccountID,
+            visualFocusAccountID: "anthropic:personal",
             onSelect: { _ in })
-            .onAppear {
-                focusedAccountID = "anthropic:personal"
-            }
     }
 
     private static let provider = ProviderUsageProvider(

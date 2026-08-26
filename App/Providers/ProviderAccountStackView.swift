@@ -98,6 +98,7 @@ struct ProviderAccountStackView: View {
     let diameter: CGFloat
     let onSelect: (ProviderUsageAccount) -> Void
     @FocusState.Binding var focusedAccountID: String?
+    let visualFocusAccountID: String?
 
     @State private var hoveredAccountID: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -108,6 +109,7 @@ struct ProviderAccountStackView: View {
         isGrayscale: Bool,
         diameter: CGFloat = ProviderUsageRingGeometry.diameter,
         focusedAccountID: FocusState<String?>.Binding,
+        visualFocusAccountID: String? = nil,
         onSelect: @escaping (ProviderUsageAccount) -> Void
     ) {
         self.provider = provider
@@ -116,6 +118,7 @@ struct ProviderAccountStackView: View {
         self.diameter = diameter
         self.onSelect = onSelect
         self._focusedAccountID = focusedAccountID
+        self.visualFocusAccountID = visualFocusAccountID
     }
 
     private var geometry: ProviderAccountStackGeometry {
@@ -158,7 +161,7 @@ struct ProviderAccountStackView: View {
         let visualState = geometry.visualState(
             for: item,
             isHovered: hoveredAccountID == account.id,
-            isFocused: focusedAccountID == account.id,
+            isFocused: (visualFocusAccountID ?? focusedAccountID) == account.id,
             isGrayscale: isGrayscale,
             reduceMotion: reduceMotion)
 
