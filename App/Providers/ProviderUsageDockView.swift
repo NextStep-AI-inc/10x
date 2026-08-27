@@ -5,7 +5,6 @@ struct ProviderUsageDockView: View {
 
     let providers: [ProviderUsageProvider]
     let activeCounts: [String: Int]
-    let isForegroundGenerating: Bool
     let compactLayout: ProviderUsageDockCompactLayout
 
     @State private var selectedProviderID: String?
@@ -18,13 +17,11 @@ struct ProviderUsageDockView: View {
     init(
         providers: [ProviderUsageProvider],
         activeCounts: [String: Int],
-        isForegroundGenerating: Bool,
         compactLayout: ProviderUsageDockCompactLayout = .standalone,
         initiallySelectedProviderID: String? = nil
     ) {
         self.providers = providers
         self.activeCounts = activeCounts
-        self.isForegroundGenerating = isForegroundGenerating
         self.compactLayout = compactLayout
         _selectedProviderID = State(initialValue: providers.contains(where: {
             $0.id == initiallySelectedProviderID
@@ -59,10 +56,7 @@ struct ProviderUsageDockView: View {
     private var collapsedDock: some View {
         HStack(alignment: .bottom, spacing: Self.compactWheelSpacing) {
             ForEach(providers) { provider in
-                compactProviderButton(
-                    provider,
-                    isGrayscale: isForegroundGenerating,
-                    diameter: compactLayout.wheelDiameter)
+                compactProviderButton(provider, diameter: compactLayout.wheelDiameter)
             }
         }
         .onAppear(perform: restoreCompactFocusIfNeeded)
@@ -72,10 +66,7 @@ struct ProviderUsageDockView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 8) {
                 ForEach(providers) { candidate in
-                    expandedProviderButton(
-                        candidate,
-                        isGrayscale: false,
-                        diameter: ProviderUsageRingGeometry.diameter)
+                    expandedProviderButton(candidate, diameter: ProviderUsageRingGeometry.diameter)
                 }
             }
 
@@ -122,13 +113,12 @@ struct ProviderUsageDockView: View {
 
     private func providerButton(
         _ provider: ProviderUsageProvider,
-        isGrayscale: Bool,
         diameter: CGFloat
     ) -> some View {
         Button {
             select(provider)
         } label: {
-            providerWheel(provider, isGrayscale: isGrayscale, diameter: diameter)
+            providerWheel(provider, diameter: diameter)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -142,32 +132,28 @@ struct ProviderUsageDockView: View {
 
     private func compactProviderButton(
         _ provider: ProviderUsageProvider,
-        isGrayscale: Bool,
         diameter: CGFloat
     ) -> some View {
-        providerButton(provider, isGrayscale: isGrayscale, diameter: diameter)
+        providerButton(provider, diameter: diameter)
             .focused($compactFocusedProviderID, equals: provider.id)
     }
 
     private func expandedProviderButton(
         _ provider: ProviderUsageProvider,
-        isGrayscale: Bool,
         diameter: CGFloat
     ) -> some View {
-        providerButton(provider, isGrayscale: isGrayscale, diameter: diameter)
+        providerButton(provider, diameter: diameter)
             .focused($expandedFocusedProviderID, equals: provider.id)
     }
 
     @ViewBuilder
     private func providerWheel(
         _ provider: ProviderUsageProvider,
-        isGrayscale: Bool,
         diameter: CGFloat
     ) -> some View {
         let wheel = ProviderUsageWheelView(
             provider: provider,
             activeCount: activeCounts[provider.id] ?? 0,
-            isGrayscale: isGrayscale,
             diameter: diameter)
 
         if !reduceMotion {

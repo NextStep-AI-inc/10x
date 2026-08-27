@@ -34,7 +34,6 @@ enum ProviderUsageRingGeometry {
 struct ProviderUsageWheelView: View {
     let provider: ProviderUsageProvider
     let activeCount: Int
-    let isGrayscale: Bool
     let diameter: CGFloat
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -42,12 +41,10 @@ struct ProviderUsageWheelView: View {
     init(
         provider: ProviderUsageProvider,
         activeCount: Int,
-        isGrayscale: Bool,
         diameter: CGFloat = ProviderUsageRingGeometry.diameter
     ) {
         self.provider = provider
         self.activeCount = activeCount
-        self.isGrayscale = isGrayscale
         self.diameter = diameter
     }
 
@@ -61,6 +58,12 @@ struct ProviderUsageWheelView: View {
 
     private var activityCoreDiameter: CGFloat {
         ProviderUsageRingGeometry.coreDiameter(for: diameter)
+    }
+
+    /// Below this the core is under ~13pt and the abbreviation crowds the row,
+    /// so the inline-composer size drops both and reads as rings alone.
+    private var showsText: Bool {
+        diameter >= 40
     }
 
     var body: some View {
@@ -77,9 +80,11 @@ struct ProviderUsageWheelView: View {
                 width: diameter,
                 height: diameter)
 
-            Text(provider.abbreviation)
-                .font(TenXTypography.mono(size: 9, weight: .semibold))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            if showsText {
+                Text(provider.abbreviation)
+                    .font(TenXTypography.mono(size: 9, weight: .semibold))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
         }
         .accessibilityElement(children: .ignore)
     }
@@ -133,7 +138,7 @@ struct ProviderUsageWheelView: View {
                 width: activityCoreDiameter,
                 height: activityCoreDiameter)
             .overlay {
-                if activeCount > 0 {
+                if activeCount > 0, showsText {
                     Text("\(activeCount)")
                         .font(TenXTypography.mono(size: 9, weight: .semibold))
                         .foregroundStyle(.white)
@@ -142,10 +147,6 @@ struct ProviderUsageWheelView: View {
     }
 
     private func progressColor(for limit: ProviderUsageLimit) -> Color {
-        if isGrayscale {
-            return TenXPalette.color(TenXPalette.mutedTextHex)
-        }
-
         switch limit.tone {
         case .standard:
             return TenXPalette.color(TenXPalette.cyanHex)

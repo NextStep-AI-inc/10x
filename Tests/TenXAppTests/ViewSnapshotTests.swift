@@ -576,25 +576,11 @@ import Testing
     try assertSnapshot(
         ProviderUsageDockView(
             providers: providerUsageDockProviders,
-            activeCounts: ["anthropic": 2],
-            isForegroundGenerating: false)
+            activeCounts: ["anthropic": 2])
             // macOS exposes the public Reduce Motion key as read-only.
             .environment(\._accessibilityReduceMotion, true)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
         name: "provider-usage-dock-idle",
-        size: CGSize(width: 430, height: 460))
-}
-
-@MainActor
-@Test func providerUsageDockGeneratingSnapshot() throws {
-    try assertSnapshot(
-        ProviderUsageDockView(
-            providers: providerUsageDockProviders,
-            activeCounts: ["anthropic": 2],
-            isForegroundGenerating: true)
-            .environment(\._accessibilityReduceMotion, true)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
-        name: "provider-usage-dock-generating",
         size: CGSize(width: 430, height: 460))
 }
 
@@ -604,7 +590,6 @@ import Testing
         ProviderUsageDockView(
             providers: providerUsageDockProviders,
             activeCounts: ["anthropic": 2],
-            isForegroundGenerating: true,
             initiallySelectedProviderID: "anthropic")
             .environment(\._accessibilityReduceMotion, true),
         name: "provider-usage-dock-expanded",
