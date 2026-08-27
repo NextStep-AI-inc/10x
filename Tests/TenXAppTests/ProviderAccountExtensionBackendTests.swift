@@ -21,19 +21,20 @@ private actor StubChannel: ProviderAccountChannel {
 
 /// A channel whose extension accepted the command but never answers —
 /// `StubChannel` above always resolves immediately (success, failure, or
-/// `.unavailable`), so it cannot exercise `hello`'s own timeout race; this
-/// simulates the one case that can. `Task.sleep` is cancellation-aware, so
-/// `hello`'s `group.cancelAll()` after the timeout wins does stop this
-/// particular hang — unlike the real `ProviderAccountExtensionChannel`,
-/// whose in-flight `withCheckedThrowingContinuation` is not
-/// cancellation-aware (see `hello`'s own doc comment) — but that
-/// distinction is the real channel's problem, not this test's: the goal
-/// here is proving `hello`'s bound is real, not reproducing every property
-/// of the concrete channel.
+/// `.unavailable`), so it cannot exercise `hello`'s own timeout bound.
+/// Deliberately non-cancellable (an unresumed `withCheckedContinuation`,
+/// not `Task.sleep`): `Task.sleep` throws promptly on cancellation, which
+/// would make this hang trivially bounded regardless of whether `hello`'s
+/// own timeout logic actually works — exactly the gap that let an earlier,
+/// broken `hello()` implementation pass this same test (see `hello`'s doc
+/// comment for the full story). An unresumed continuation matches how the
+/// real `ProviderAccountExtensionChannel` actually hangs: its waits don't
+/// check `Task.isCancelled` either.
 private actor HangingChannel: ProviderAccountChannel {
     func send(_ command: ProviderAccountChannelCommand) async throws -> JSONValue {
-        try await Task.sleep(for: .seconds(3600))
-        return .null
+        try await withCheckedThrowingContinuation { (_: CheckedContinuation<JSONValue, any Error>) in
+            // Never resumed — this is the point.
+        }
     }
 }
 
@@ -161,7 +162,8 @@ private actor HangingChannel: ProviderAccountChannel {
 /// evidentiary bar: measures wall-clock elapsed time, not just "eventually
 /// returned," to prove `hello`'s own bound (independent of
 /// `ProviderAccountExtensionChannel`'s 30s `openRequestTimeout`) is real.
-/// `HangingChannel` never resolves `send` at all, simulating a channel whose
+/// `HangingChannel` never resolves `send` at all (non-cancellably — see its
+/// own doc comment for why that matters here), simulating a channel whose
 /// extension accepted the command but never answers — the case
 /// `helloTimeout` exists to bound.
 @Test func helloThatNeverAnswersDegradesWithinTheTimeoutInsteadOfHanging() async throws {
@@ -178,6 +180,43 @@ private actor HangingChannel: ProviderAccountChannel {
     // 50ms," so it stays robust to scheduler jitter under load while still
     // failing hard on an accidental return to an unbounded wait.
     #expect(elapsed < .seconds(2))
+}
+
+/// The discriminating test: exercises the real, concrete
+/// `ProviderAccountExtensionChannel` — not a stub — with its own
+/// `openRequestTimeout` injected *longer* than `hello`'s timeout, so the
+/// only way this passes quickly is if `hello`'s bound genuinely wins
+/// without waiting on the channel's internal wait to resolve first. This is
+/// the test that actually would have caught the `withTaskGroup` version of
+/// `hello()`: that implementation's `cancelAll()` did not stop the
+/// underlying `send` from running to completion (structured concurrency
+/// awaits every group child before the group returns, cancelled or not),
+/// so it inherited whichever of the channel's own waits `send` was blocked
+/// on — here, the full 5s `openRequestTimeout` — rather than actually
+/// bounding at 50ms. `HangingChannel` above is now also non-cancellable and
+/// would catch the same bug, but this test additionally proves the fix
+/// against the exact production type, not a hand-rolled stand-in for it.
+@Test func helloAgainstARealChannelThatNeverOpensDegradesWithinItsOwnTimeoutNotTheChannels() async throws {
+    let (stream, _) = AsyncStream<RpcFrame>.makeStream()
+    // Same "continuation deliberately dropped unused" setup as
+    // `aChannelThatNeverOpensDegradesWithinTheTimeoutInsteadOfHanging` —
+    // simulates an extension that never opens its first request.
+    let channel = ProviderAccountExtensionChannel(
+        events: stream,
+        openRequestTimeout: .seconds(5),
+        respond: { _, _ in })
+    let backend = ProviderAccountExtensionBackend(channel: channel)
+
+    let clock = ContinuousClock()
+    let start = clock.now
+    let hello = await backend.hello(timeout: .milliseconds(50))
+    let elapsed = clock.now - start
+
+    #expect(hello == nil)
+    // Well under the channel's own 5s bound — if `hello` were silently
+    // inheriting that wait instead of its own 50ms one, this would fail at
+    // ~5s, not pass at ~50ms.
+    #expect(elapsed < .seconds(1))
 }
 
 @MainActor

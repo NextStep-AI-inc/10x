@@ -128,32 +128,61 @@ struct ProviderAccountExtensionBackend: ProviderAccountRouting {
     /// isn't one: `detect` already fails closed to `.stockOMP` on a nil
     /// hello, so a redundant do/catch at each call site would add nothing.
     ///
-    /// The timeout races `channel.send` against a sleep and takes whichever
-    /// finishes first; it does not cancel a losing send. Actors don't
-    /// interrupt an in-flight `withCheckedThrowingContinuation` on task
-    /// cancellation (see `ProviderAccountExtensionChannel.send`), so an
-    /// abandoned send keeps running against the channel's single-flight
-    /// queue until the channel itself resolves it — a real reply, or its
-    /// own `handleStreamEnded`/`openRequestTimeout`. That's a pre-existing
-    /// property of every command on this channel, not something new to
-    /// `hello`: a wedged channel already risks queuing behind whatever was
-    /// sent to it before this method existed.
+    /// **Not a `withTaskGroup` race — deliberately.** An earlier version of
+    /// this method raced `channel.send` against a sleep as two group child
+    /// tasks and called `cancelAll()` once the first resolved. That does
+    /// not bound the wait: `withTaskGroup` structurally awaits every child
+    /// before the group scope exits, cancelled or not, and cancellation is
+    /// cooperative — `ProviderAccountExtensionChannel.send`'s
+    /// `withCheckedContinuation` waits do not check `Task.isCancelled`, so
+    /// a cancelled-but-still-running send still had to finish before
+    /// `withTaskGroup` (and therefore this method) could return. Against
+    /// the real channel that means inheriting whatever the send was
+    /// actually blocked on — `claimOpenRequestID`'s full 30s
+    /// `openRequestTimeout` if the extension never opens a request, or an
+    /// unbounded hang if it opened one but never replies (that wait has no
+    /// timeout of its own at all). A unit test built on `Task.sleep` (which
+    /// *is* cancellation-aware) didn't catch this, because cancelling a
+    /// sleeping task genuinely stops it — the bug only shows up against a
+    /// channel whose wait doesn't respond to cancellation, which is every
+    /// real one.
+    ///
+    /// Fixed by making the send genuinely unstructured: two plain `Task`s
+    /// (not group children) race by yielding into a shared stream, and this
+    /// method returns on the *first* yield — `iterator.next()` returning
+    /// does not wait for the loser. The loser is cancelled in `defer`, but
+    /// that cancellation is now advisory, not blocking: an abandoned send
+    /// keeps running against the channel's single-flight queue in the
+    /// background until the channel itself resolves it (a real reply, or
+    /// its own `handleStreamEnded`/`openRequestTimeout`), same as before —
+    /// but that no longer holds this method's caller hostage to it. A
+    /// pre-existing property of every command on this channel, not
+    /// something new to `hello`: a wedged channel already risks queuing
+    /// behind whatever was sent to it before this method existed.
     func hello(timeout: Duration = Self.helloTimeout) async -> ProviderExtensionHello? {
-        await withTaskGroup(of: ProviderExtensionHello?.self) { group in
-            group.addTask {
-                guard let reply = try? await self.send(command: "hello", params: [:]),
-                      let version = reply["contractVersion"]?.intValue
-                else { return nil }
-                return ProviderExtensionHello(contractVersion: version)
+        let (stream, continuation) = AsyncStream<ProviderExtensionHello?>.makeStream()
+
+        let sendTask = Task {
+            let result: ProviderExtensionHello?
+            if let reply = try? await self.send(command: "hello", params: [:]),
+               let version = reply["contractVersion"]?.intValue {
+                result = ProviderExtensionHello(contractVersion: version)
+            } else {
+                result = nil
             }
-            group.addTask {
-                try? await Task.sleep(for: timeout)
-                return nil
-            }
-            let first = (await group.next()) ?? nil
-            group.cancelAll()
-            return first
+            continuation.yield(result)
         }
+        let timeoutTask = Task {
+            try? await Task.sleep(for: timeout)
+            continuation.yield(nil)
+        }
+        defer {
+            sendTask.cancel()
+            timeoutTask.cancel()
+        }
+
+        var iterator = stream.makeAsyncIterator()
+        return (await iterator.next()) ?? nil
     }
 
     private func send(
