@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Sparkle
 
@@ -9,6 +10,7 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
     private let state: UpdateState
     private let currentVersion: String
     private let prepareForInstall: @MainActor () async -> Void
+    private let terminate: @MainActor () -> Void
     private var decision: CheckedContinuation<SPUUserUpdateChoice, Never>?
     private var checkCancellation: (() -> Void)?
 
@@ -20,11 +22,13 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
     init(
         state: UpdateState,
         currentVersion: String,
-        prepareForInstall: @escaping @MainActor () async -> Void
+        prepareForInstall: @escaping @MainActor () async -> Void,
+        terminate: @escaping @MainActor () -> Void = { NSApplication.shared.terminate(nil) }
     ) {
         self.state = state
         self.currentVersion = currentVersion
         self.prepareForInstall = prepareForInstall
+        self.terminate = terminate
         super.init()
     }
 
@@ -120,11 +124,21 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
         return .install
     }
 
+    /// Sparkle cannot swap the bundle while the app it is replacing is still running.
+    /// `applicationTerminated == false` means it is waiting on us to quit, and the
+    /// driver owns that: nothing else in the app knows an install is in flight. Without
+    /// this the installer sits waiting forever while the splash shows `Relaunching 10x`,
+    /// and the only way out is quitting by hand.
+    ///
+    /// `AppModel.shutdown()` has already run, awaited in `showReadyToInstallAndRelaunch`
+    /// before we consented, so the OMP children are already reaped by this point.
     func showInstallingUpdate(
         withApplicationTerminated applicationTerminated: Bool,
         retryTerminatingApplication: @escaping () -> Void
     ) {
         state.beginRelaunching()
+        guard !applicationTerminated else { return }
+        terminate()
     }
 
     func showUpdateInstalledAndRelaunched(_ relaunched: Bool) async {

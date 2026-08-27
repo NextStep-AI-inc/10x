@@ -8,8 +8,11 @@ private func makeDriver(
     _ state: UpdateState,
     prepareForInstall: @escaping @MainActor () async -> Void = {}
 ) -> SplashUpdateDriver {
+    // terminate is a no-op here on purpose: the real default quits NSApplication, which
+    // in a test process means quitting the test runner mid-suite.
     SplashUpdateDriver(
-        state: state, currentVersion: "0.1.0", prepareForInstall: prepareForInstall)
+        state: state, currentVersion: "0.1.0", prepareForInstall: prepareForInstall,
+        terminate: {})
 }
 
 @MainActor
@@ -44,6 +47,46 @@ private func makeDriver(
     driver.showExtractionReceivedProgress(0.5)
 
     #expect(state.phase == .installing(extractionFraction: 0.5))
+}
+
+@MainActor
+@Test func installingTerminatesTheAppSoSparkleCanSwapTheBundle() {
+    // Sparkle cannot replace a running bundle. When it reports the app has not
+    // terminated, the driver must quit it; nothing else in the app knows an install
+    // is in flight. Without this the installer waits forever and the splash sits on
+    // "Relaunching 10x" until the user quits by hand.
+    let state = UpdateState()
+    let terminated = Counter()
+    let driver = SplashUpdateDriver(
+        state: state, currentVersion: "0.1.0", prepareForInstall: {},
+        terminate: { terminated.bump() })
+
+    driver.showInstallingUpdate(
+        withApplicationTerminated: false, retryTerminatingApplication: {})
+
+    #expect(terminated.count == 1)
+    #expect(state.phase == .relaunching)
+}
+
+@MainActor
+@Test func installingDoesNotTerminateAgainWhenAlreadyTerminated() {
+    let state = UpdateState()
+    let terminated = Counter()
+    let driver = SplashUpdateDriver(
+        state: state, currentVersion: "0.1.0", prepareForInstall: {},
+        terminate: { terminated.bump() })
+
+    driver.showInstallingUpdate(
+        withApplicationTerminated: true, retryTerminatingApplication: {})
+
+    #expect(terminated.count == 0)
+    #expect(state.phase == .relaunching)
+}
+
+@MainActor
+final class Counter {
+    private(set) var count = 0
+    func bump() { count += 1 }
 }
 
 @MainActor
