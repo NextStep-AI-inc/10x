@@ -1,3 +1,14 @@
+> **Superseded.** The RPC transport this document verifies was replaced. It
+> required four protocol-v2 commands added to a local fork of `oh-my-pi`, which
+> is a third-party dependency consumed as a published package, so those commands
+> would never exist in any `omp` a user installs. The replacement uses mechanisms
+> already present in stock OMP and is verified in
+> `docs/superpowers/evidence/2026-08-26-provider-account-extension/`.
+>
+> What this document verified remains accurate for the code as it stood. The
+> coordinator, removal barrier, scope semantics, and account UI it covers all
+> survived unchanged; only the transport beneath them was replaced.
+
 # Multi-account provider routing — verification evidence
 
 Branch: `tannerpham/resume-codex-implementation-833cbd`, rebased onto `main` @ `d8f2853`
