@@ -1794,6 +1794,7 @@ private func makeDriver(
     let driver = makeDriver(state)
 
     async let choice = driver.awaitDecisionForTesting()
+    while !driver.hasPendingDecisionForTesting { await Task.yield() }
     driver.acceptUpdate()
 
     #expect(await choice == .install)
@@ -1805,6 +1806,7 @@ private func makeDriver(
     let driver = makeDriver(state)
 
     async let choice = driver.awaitDecisionForTesting()
+    while !driver.hasPendingDecisionForTesting { await Task.yield() }
     driver.dismissUpdate()
 
     #expect(await choice == .dismiss)
@@ -1846,6 +1848,7 @@ private func makeDriver(
     })
 
     async let choice = driver.awaitDecisionForTesting()
+    while !driver.hasPendingDecisionForTesting { await Task.yield() }
     driver.cancelCheck()
 
     #expect(await choice == .dismiss)
@@ -1873,6 +1876,8 @@ enum SplashUpdateDriverTestError: Error {
 
 `notNowDismissesRatherThanSkippingTheVersionPermanently` exists because `.skip` and `.dismiss` look interchangeable and are not. `.skip` makes Sparkle never offer that version again, which would silently strand a user on an old build.
 
+The three tests that start an `async let` awaiter and then call `acceptUpdate()`, `dismissUpdate()`, or `cancelCheck()` in the same scope loop on `driver.hasPendingDecisionForTesting` before triggering. This is not cosmetic: on a serial `@MainActor` executor the `async let` child task cannot preempt the parent's next synchronous line, so the trigger would otherwise always fire before `awaitDecision()` has registered its continuation, resolving nothing and hanging the test forever. The loop makes registration a precondition instead of a hope; if a real bug ever stops the continuation from registering, the test still hangs — same failure mode as an un-guarded race, which is acceptable, since a passing-by-luck ordering is not. `hasPendingDecisionForTesting` is a read-only test hook (`decision != nil`); nothing in the driver's production code reads it.
+
 - [ ] **Step 3: Write the driver**
 
 Create `App/Updates/SplashUpdateDriver.swift`:
@@ -1891,6 +1896,11 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
     private let prepareForInstall: @MainActor () async -> Void
     private var decision: CheckedContinuation<SPUUserUpdateChoice, Never>?
     private var checkCancellation: (() -> Void)?
+
+    /// Guards `showDownloadDidReceiveExpectedContentLength` against Sparkle invoking it
+    /// more than once for the same download (for example across a redirect). Only the
+    /// first value is applied; see that method for why.
+    private var hasReceivedExpectedContentLength = false
 
     init(
         state: UpdateState,
@@ -1960,10 +1970,18 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
     func showUpdateReleaseNotesFailedToDownloadWithError(_ error: any Error) {}
 
     func showDownloadInitiated(cancellation: @escaping () -> Void) {
+        hasReceivedExpectedContentLength = false
         state.beginDownload()
     }
 
+    /// Sparkle's header for this method notes it "may be called more than once for the
+    /// same download in rare scenarios" (e.g. a redirect). `UpdateState.setExpectedBytes`
+    /// overwrites the expected total unconditionally, so a later, larger value would make
+    /// the progress fraction jump backward for bytes already received. Only the first
+    /// value seen for a given download is applied; later calls are ignored.
     func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {
+        guard !hasReceivedExpectedContentLength else { return }
+        hasReceivedExpectedContentLength = true
         state.setExpectedBytes(expectedContentLength)
     }
 
@@ -2041,6 +2059,13 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
     func awaitDecisionForTesting() async -> SPUUserUpdateChoice {
         await awaitDecision()
     }
+
+    /// Read-only test hook: true once `awaitDecision()`'s continuation is registered.
+    /// Production code never reads this. Tests that trigger a decision via `acceptUpdate()`,
+    /// `dismissUpdate()`, or `cancelCheck()` after starting an `async let` awaiter poll this
+    /// instead of assuming the child task has already registered — on a serial actor it has
+    /// not necessarily done so yet, so triggering too early would resolve nothing.
+    var hasPendingDecisionForTesting: Bool { decision != nil }
 
     private func awaitDecision() async -> SPUUserUpdateChoice {
         await withCheckedContinuation { continuation in
