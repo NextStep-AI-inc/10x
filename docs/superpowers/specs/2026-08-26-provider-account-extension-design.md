@@ -60,6 +60,14 @@ noted, against the published `omp/18.0.4` installed on this machine.
   and re-applied on session adoption by `seedCredentialPins`, which calls
   `AuthStorage.pinSessionOAuthAccount`. It is a no-op when the account is gone or
   when a live sticky already exists.
+- **A `credential_pin` entry has SIX keys, not three.** Corrected during Task 9.
+  `CredentialPinEntry extends SessionEntryBase`, so alongside `type`, `provider`,
+  and `hash` it carries `id`, `parentId: string | null`, and `timestamp`. This is
+  not cosmetic: `SessionEntryIndex.insert()` sets the file's leaf to the last
+  entry on disk unconditionally, and every read walks back through `parentId`. An
+  entry written without a correct `parentId` becomes the leaf and severs the
+  chain, so a resumed session renders with EMPTY history. Anything writing into a
+  session file must reproduce the full base shape.
 - **`AgentSession.listCurrentProviderOAuthAccounts()`** and
   **`AgentSession.pinCurrentProviderOAuthAccount(credentialId)`** are public
   stock methods. `/session pin` is built on them and refuses while the session is
