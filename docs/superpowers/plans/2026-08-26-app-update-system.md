@@ -2175,9 +2175,69 @@ final class StubUpdateChecker: UpdateChecking {
     #expect(checker.state.phase == .idle)
     #expect(!checker.state.isPresentingUpdate)
 }
+
+/// Closes a review finding on `SplashUpdateDriver.isUserInitiated`: it is mutable,
+/// long-lived state with no internal reset. If a menu-initiated check left it `true`,
+/// a later launch-time check that errored would surface a visible `Update failed` on a
+/// cold launch, which the advisory launch gate forbids. `UpdateController.check(isUserInitiated:)`
+/// closes this by assigning the flag at the top of every check path, so a launch check
+/// that follows a menu check is never mistaken for user-initiated.
+@MainActor
+@Test func aLaunchCheckAfterAMenuCheckIsNotTreatedAsUserInitiated() {
+    let controller = UpdateController(prepareForInstall: {})
+
+    controller.check(isUserInitiated: true)
+    #expect(controller.isUserInitiatedForTesting)
+
+    controller.check(isUserInitiated: false)
+    #expect(!controller.isUserInitiatedForTesting)
+}
+
+/// Invariant I5: `state.phase` must become `.checking` synchronously, before
+/// `checkAtLaunch` ever awaits anything. `SPUUpdater.checkForUpdates()` does not call
+/// back into the user driver synchronously (confirmed by reading `SPUUpdater.m`) — it
+/// hops through an install-status probe and back onto the main queue first. If nothing
+/// set the phase until that callback landed, the launch gate could observe `.idle`
+/// immediately after `check()` returned, treat "hasn't started yet" as "already
+/// finished," and return with the real check still silently in flight.
+/// `UpdateController.check(isUserInitiated:)` closes this by calling `state.beginCheck()`
+/// itself, before asking Sparkle to check at all.
+@MainActor
+@Test func checkingBeginsSynchronouslyBeforeSparkleIsAskedToCheck() {
+    let controller = UpdateController(prepareForInstall: {})
+
+    controller.check(isUserInitiated: false)
+
+    #expect(controller.state.phase == .checking)
+}
+
+/// Invariant I4: a deadline that elapses after the check has already answered must not
+/// touch state. `cancelCheck()` calls `state.reset()`, so firing it late would silently
+/// wipe a legitimate `.available` offer off the splash. This drives the deadline task
+/// past its `sleep` and into its phase guard only after the real answer has already
+/// landed, proving the guard — not merely the task's own cancellation flag — is what
+/// protects the offer.
+@MainActor
+@Test func aDeadlineThatElapsesAfterTheAnswerLeavesTheOfferUntouched() async {
+    let checker = StubUpdateChecker()
+
+    // Rather than racing two independently-scheduled tasks against each other (which
+    // proved to be a genuine, unpredictable scheduling race — not merely a slow test —
+    // when tried), the answer is applied synchronously from inside the `sleep`
+    // closure itself. This deterministically reproduces "the real answer already
+    // landed by the time the deadline task wakes up and checks state," which is the
+    // condition the guard exists to handle, without depending on which of two
+    // continuations a scheduler happens to run first.
+    await checker.checkAtLaunch(deadline: .seconds(1), sleep: { @MainActor _ in
+        checker.state.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+    })
+
+    #expect(checker.cancelCount == 0)
+    #expect(checker.state.phase == .available(newVersion: "0.2.0", currentVersion: "0.1.0"))
+}
 ```
 
-The second test is the safety property in miniature: a check that never answers must leave the launch free to proceed, and must not produce a failure surface.
+The second test is the safety property in miniature: a check that never answers must leave the launch free to proceed, and must not produce a failure surface. The third through fifth tests close a review finding and prove two more invariants that the first pass at this task's `checkAtLaunch` did not actually satisfy — see the note after Step 3 for what was wrong and why.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -2209,28 +2269,39 @@ extension UpdateChecking {
     /// elapses, whichever comes first. It never throws, never fails, and never reports a
     /// problem to the user, because a launch must not depend on network health.
     ///
-    /// A check that misses the deadline is cancelled rather than left running. An
-    /// abandoned check that answered later would strand a decision continuation with no
-    /// window left to resolve it.
+    /// The deadline runs as an independent, unstructured task rather than inside a
+    /// `TaskGroup`. A `TaskGroup` implicitly awaits every child before returning, and
+    /// `UpdateState`'s wait is not cancellation-aware — pairing the two would deadlock
+    /// whenever the deadline elapsed first, because nothing would be left to resume the
+    /// still-suspended waiter. An unstructured task has no such join: this function's
+    /// own progress depends only on `state.waitForCheckOutcome()`, and the deadline task
+    /// either resolves that wait itself (by cancelling the check) or is discarded once
+    /// the real answer already resolved it.
+    ///
+    /// The deadline task re-checks `state.phase` before cancelling: if the real answer
+    /// already landed by the time the deadline fires, cancelling would call
+    /// `cancelCheck()` → `state.reset()` and silently wipe a legitimate offer off the
+    /// splash. Guarding on the phase (not just on the task's own cancellation flag)
+    /// closes that window even if the deadline and the real answer land at nearly the
+    /// same instant.
     func checkAtLaunch(
         deadline: Duration,
         sleep: @escaping @Sendable (Duration) async throws -> Void
     ) async {
         check(isUserInitiated: false)
-        let didAnswer = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { @MainActor [state] in
-                await state.waitForCheckOutcome()
-                return true
-            }
-            group.addTask {
-                try? await sleep(deadline)
-                return false
-            }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
+        // If the check already answered synchronously inside `check()` (as a test
+        // double may), skip the deadline task entirely rather than spawning it and
+        // relying on cancellation to stop it in time — a debug-build async call can
+        // still interleave a queued task's body before a synchronous caller reaches
+        // its next line, so a spawn-then-cancel race is not a reliable guarantee.
+        guard case .checking = state.phase else { return }
+        let deadlineTask = Task { @MainActor in
+            try? await sleep(deadline)
+            guard !Task.isCancelled, case .checking = state.phase else { return }
+            cancelCheck()
         }
-        if !didAnswer { cancelCheck() }
+        await state.waitForCheckOutcome()
+        deadlineTask.cancel()
     }
 }
 
@@ -2272,8 +2343,21 @@ final class UpdateController: UpdateChecking {
     /// Both paths use `checkForUpdates()` rather than `checkForUpdatesInBackground()`.
     /// The background variant is governed by Sparkle's own scheduling permission, which
     /// `SUEnableAutomaticChecks = NO` disables, so it would silently do nothing.
+    ///
+    /// `state.beginCheck()` runs here, synchronously, rather than being left to the
+    /// driver's `showUserInitiatedUpdateCheck` callback. `SPUUpdater.checkForUpdates()`
+    /// does not reach the user driver synchronously — it hops through an install-status
+    /// probe and back onto the main queue before Sparkle calls back into `driver`. If
+    /// the launch gate relied on that callback alone, `waitForCheckOutcome()` could see
+    /// `state.phase` still `.idle` immediately after this call returns, treat "hasn't
+    /// started yet" as "already finished," and return with the check still silently in
+    /// flight — exactly the abandoned-check hazard `cancelCheck()` exists to prevent.
+    /// The driver's own later `beginCheck()` call is harmless: `waitForCheckOutcome`
+    /// loops on `while case .checking`, so a redundant transition re-suspends instead
+    /// of escaping.
     func check(isUserInitiated: Bool) {
         driver.isUserInitiated = isUserInitiated
+        state.beginCheck()
         updater.checkForUpdates()
     }
 
@@ -2282,16 +2366,94 @@ final class UpdateController: UpdateChecking {
     func accept() { driver.acceptUpdate() }
 
     func dismiss() { driver.dismissUpdate() }
+
+    /// Read-only test hook exposing the flag `check(isUserInitiated:)` sets on the
+    /// driver. Production code never reads this; it exists so a test can prove a menu
+    /// check followed by a launch check leaves the flag `false` for the launch check.
+    var isUserInitiatedForTesting: Bool { driver.isUserInitiated }
 }
 ```
+
+**Why the `TaskGroup` version above was wrong.** An earlier draft of `checkAtLaunch` raced
+`state.waitForCheckOutcome()` against the deadline inside a single `withTaskGroup`,
+taking whichever child finished first via `group.next()` and calling `group.cancelAll()`
+on the loser. Three independent problems, found by reasoning through it and confirmed
+against the real toolchain (Xcode 26.6, Swift 6.3.3) rather than assumed:
+
+1. It does not compile. `group.addTask { @MainActor [state] in ... }`, capturing `state`
+   out of a generic `Self: UpdateChecking` protocol extension into a `TaskGroup`'s
+   `sending` child-task closure, crashes the region-based isolation checker outright
+   (`error: pattern that the region-based isolation checker does not understand how to
+   check. Please file a bug`). Dropping the explicit capture list turns it into an
+   ordinary (still fatal) `sending`-parameter diagnostic, confirming this is a real
+   Sendability problem and not a quirk of that one capture-list spelling.
+2. Deadlock by construction. `UpdateState.nextPhaseChange()` suspends on a plain
+   `withCheckedContinuation` that is not cancellation-aware — only `setPhase` (via
+   `reset()`, `fail()`, etc.) resumes it. `withTaskGroup` implicitly awaits every child
+   task, cancelled or not, before returning. When the deadline task won the race,
+   `group.cancelAll()` marked the still-suspended `waitForCheckOutcome()` task as
+   cancelled but could not wake it — and the only thing that would have woken it,
+   `cancelCheck()` → `state.reset()`, ran *after* the `withTaskGroup` call, which could
+   not return while still draining that same suspended child. A check that missed its
+   deadline hung the launch gate forever — the exact failure this task exists to
+   prevent.
+3. Even granting a hypothetical fix for (1) and (2), the deadline task was not
+   MainActor-bound in a way that guaranteed it couldn't run its body concurrently with
+   the "answered" fast path: the brief's own first test (`Issue.record` if the deadline
+   is ever awaited once the check has answered) failed empirically once (1) was
+   worked around, because the sleep child task is not required to wait for the
+   MainActor caller's next line before its body executes.
+
+**What changed in the fix above, versus a straightforward transcription of a
+plain-Task version.**
+
+- `checkAtLaunch` stays a protocol extension method rather than moving onto
+  `UpdateController` alone. Task 12 calls `updateChecker.checkAtLaunch(...)` on an
+  `any UpdateChecking` existential (`App/Application/AppModel.swift`, `prepareUpdates`);
+  moving the method to concrete types only would have broken that call site. The
+  `TaskGroup`-specific capture that crashed the compiler does not reproduce with a
+  plain `Task { @MainActor in ... }` — confirmed by direct build, not assumption — so
+  no such move was needed.
+- `checkAtLaunch` early-returns before ever creating the deadline task if `check()`
+  already resolved the phase away from `.checking` synchronously (true of the given
+  `StubUpdateChecker`, whose `onCheck` runs inline). This is what makes the "answered
+  before the deadline" test pass deterministically instead of racing a spawned task
+  against a cancellation call.
+- The deadline task's guard checks `state.phase` in addition to `Task.isCancelled`.
+  `cancelCheck()` calls `state.reset()`, so a deadline that fires after the real answer
+  already landed would otherwise silently wipe the offer off the splash. This is
+  covered by a dedicated test (`aDeadlineThatElapsesAfterTheAnswerLeavesTheOfferUntouched`)
+  whose failure-detection was itself verified by mutation: temporarily deleting
+  `case .checking = state.phase` from the guard makes that test fail with
+  `cancelCheck()` having fired and the offer wiped to `.idle`; restoring it fixes the
+  test.
+- `UpdateController.check(isUserInitiated:)` now calls `state.beginCheck()` itself,
+  synchronously, before `updater.checkForUpdates()`. `SPUUpdater.checkForUpdates()`
+  (confirmed by reading `SPUUpdater.m` in the checked-out Sparkle 2.9.6 source) does
+  not call back into the user driver synchronously — it hops through an install-status
+  probe and back onto the main queue first. Without this, `waitForCheckOutcome()`
+  could observe `state.phase` still `.idle` immediately after `check()` returns, treat
+  "hasn't started yet" the same as "already finished," and return with the real check
+  still silently in flight — the exact stranded-continuation hazard `cancelCheck()`
+  exists to prevent. The driver's own later `beginCheck()` call is harmless:
+  `waitForCheckOutcome()` loops on `while case .checking`, so a redundant transition
+  just re-suspends instead of escaping.
+- One known, accepted behavior change from the original draft: `check()` now calls
+  `beginCheck()` unconditionally, so a launch check issued after a failed `start()`
+  will move the phase `.failed(.unknown) → .checking → .idle` (silently, at the
+  deadline) rather than preserving the `.failed` surface. `start()` failing is a build
+  defect (missing feed/key), not a user-facing condition, so silent is arguably more
+  aligned with the advisory design intent than surfacing it — but it is a real
+  behavior change nobody explicitly ruled on, flagged here rather than decided
+  unilaterally.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /private/tmp/tenx-controller test '-only-testing:TenXAppTests/theLaunchCheckReturnsAsSoonAsSparkleAnswers()' '-only-testing:TenXAppTests/theLaunchCheckGivesUpAtTheDeadlineWithoutFailing()'
+ruby scripts/generate_xcodeproj.rb && xcodebuild -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /private/tmp/tenx-controller test '-only-testing:TenXAppTests/theLaunchCheckReturnsAsSoonAsSparkleAnswers()' '-only-testing:TenXAppTests/theLaunchCheckGivesUpAtTheDeadlineWithoutFailing()' '-only-testing:TenXAppTests/aLaunchCheckAfterAMenuCheckIsNotTreatedAsUserInitiated()' '-only-testing:TenXAppTests/checkingBeginsSynchronouslyBeforeSparkleIsAskedToCheck()' '-only-testing:TenXAppTests/aDeadlineThatElapsesAfterTheAnswerLeavesTheOfferUntouched()'
 ```
 
-Expected: PASS.
+Expected: PASS. Run `theLaunchCheckGivesUpAtTheDeadlineWithoutFailing()` standalone too, at least once — it is the one that deadlocked under the original `TaskGroup` draft, and a hang there is a sign this task's central safety property has regressed.
 
 - [ ] **Step 5: Verify a real check against a local feed**
 
@@ -2312,7 +2474,7 @@ Expected in Console: Sparkle resolves the feed and reports a newer version. Ther
 - [ ] **Step 6: Commit**
 
 ```bash
-git add App/Updates/UpdateController.swift Tests/TenXAppTests/UpdateControllerTests.swift 10x.xcodeproj && git commit -m "feat(updates): own the Sparkle updater behind a testable protocol"
+git add App/Updates/UpdateController.swift Tests/TenXAppTests/UpdateControllerTests.swift 10x.xcodeproj docs/superpowers/plans/2026-08-26-app-update-system.md && git commit -m "feat(updates): own the Sparkle updater behind a testable protocol"
 ```
 
 ---
