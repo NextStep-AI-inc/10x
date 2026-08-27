@@ -1405,6 +1405,8 @@ import SwiftUI
 
 struct OnboardingProjectStepView: View {
     let model: AppModel
+    /// Injectable so a snapshot test can point the scan at a fixture tree.
+    var scanner = GitRepositoryScanner()
 
     @State private var suggestions: [GitRepositorySuggestion] = []
     @State private var chosen: Set<String> = []
@@ -1458,7 +1460,7 @@ struct OnboardingProjectStepView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .task {
             // Cancelled automatically when the step goes away.
-            suggestions = (try? await GitRepositoryScanner().scan()) ?? []
+            suggestions = (try? await scanner.scan()) ?? []
             isScanning = false
         }
     }
@@ -1570,7 +1572,7 @@ Replace the two `SetupView` tests:
 }
 ```
 
-The populated and skeleton states need the scanner pointed at a fixture. Give `OnboardingProjectStepView` an injectable scanner (`var scanner: GitRepositoryScanner = .init()`) and pass one rooted at a temporary tree, following the fixture in `GitRepositoryScannerTests`. Name the references `onboarding-project-populated` and `onboarding-project-scanning`.
+The populated and skeleton states need the scan pointed at a fixture. `OnboardingProjectStepView` already takes an injectable `scanner`; pass one rooted at a temporary tree, following the fixture in `GitRepositoryScannerTests`. Name the references `onboarding-project-populated` and `onboarding-project-scanning`.
 
 - [ ] **Step 3: Re-target the provider snapshots**
 
