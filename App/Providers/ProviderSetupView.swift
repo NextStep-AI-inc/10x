@@ -59,7 +59,9 @@ struct ProviderSetupView: View {
                 if let loginMessage = model.loginMessage {
                     Text(loginMessage)
                         .font(TenXTypography.body(size: 13))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                        .foregroundStyle(model.loginMessageIsError
+                            ? TenXPalette.color(TenXPalette.signalRedHex)
+                            : TenXPalette.color(TenXPalette.mutedTextHex))
                 }
 
                 if model.isShowingAllProviders {
