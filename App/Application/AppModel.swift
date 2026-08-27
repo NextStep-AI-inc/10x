@@ -150,7 +150,14 @@ final class AppModel {
     }
 
     func checkForUpdatesFromMenu() {
-        guard !isShuttingDown, !updateState.isPresentingUpdate else { return }
+        // `isPresentingUpdate` is false while a check is still running, so it alone does
+        // not stop a second check from starting on top of an in-flight one. The menu item
+        // is disabled until handoff, which keeps a launch check safe, but a user can click
+        // twice in the workspace. One check at a time.
+        guard !isShuttingDown,
+              !updateState.isPresentingUpdate,
+              updateState.phase != .checking
+        else { return }
         beginMenuUpdateCheck()
     }
 

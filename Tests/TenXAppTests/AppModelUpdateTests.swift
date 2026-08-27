@@ -186,3 +186,55 @@ private let updateTestTiming = StartupTiming(
     #expect(model.updateState.phase == .failed(.unknown))
     if let manager = model.processManager { await manager.closeAll() }
 }
+
+/// Pins the condition `App/TenXApp.swift` gates `Check for Updates…`'s `.disabled(...)`
+/// on. That SwiftUI `Button` isn't directly unit-testable, so this proves the
+/// *underlying* condition (`startupState.phase != .handoff`) is true before bootstrap
+/// and false once handoff happens — read `TenXApp.swift` to confirm the modifier itself
+/// still reads exactly this expression. This is what closes the review's race: the
+/// advisory launch check (`checkAtLaunch`) is fully resolved by the time
+/// `requestHandoff` runs (`prepareStartup`'s task group awaits `prepareUpdates` before
+/// `runStartupAttempt` ever reaches `requestHandoff`), so the menu item can only become
+/// clickable once `updateState.phase` is guaranteed no longer `.checking` from the
+/// launch path — there is never a second, concurrent check for a menu click to race.
+@MainActor
+@Test func theMenuCommandsUnderlyingConditionIsDisabledUntilHandoffThenEnabled() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let checker = stubUpdateCheckerReportingNoUpdate()
+    let model = fixture.model(timing: updateTestTiming, updateChecker: checker)
+
+    #expect(model.startupState.phase != .handoff)
+
+    await model.bootstrap()
+
+    #expect(model.startupState.phase == .handoff)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+/// Defense in depth for the same race, at the layer below the UI gate. The `.disabled`
+/// modifier is what keeps a real user from clicking `Check for Updates…` while the
+/// launch check is in flight, but `checkForUpdatesFromMenu()`'s own
+/// `!isPresentingUpdate` guard is what actually makes a call during `.checking` safe —
+/// pinning it here means a future change to (or bypass of) the UI gate cannot silently
+/// reopen the hole: a second, concurrent Sparkle check racing the launch's own 3-second
+/// deadline against the menu's 15-second one.
+@MainActor
+@Test func checkForUpdatesFromMenuIsANoOpWhileACheckIsAlreadyInFlight() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let checker = StubUpdateChecker()
+    let model = fixture.model(timing: updateTestTiming, updateChecker: checker)
+
+    let bootstrap = Task { await model.bootstrap() }
+    while model.updateState.phase != .checking { await Task.yield() }
+    #expect(checker.checkCount == 1)
+
+    model.checkForUpdatesFromMenu()
+
+    #expect(checker.checkCount == 1)
+    #expect(checker.lastCheckWasUserInitiated == false)
+
+    await bootstrap.value
+    if let manager = model.processManager { await manager.closeAll() }
+}

@@ -39,9 +39,22 @@ struct TenXApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(after: .appInfo) {
+                // Disabled rather than hidden until handoff: the menu bar is global and
+                // this command is reachable while only the splash is showing, but there
+                // is nothing to check from there — the advisory launch check already
+                // owns `updateState` for that whole window, and a menu click racing it
+                // would collide with it. Gating on `phase == .handoff` (rather than
+                // `updateState.phase` directly) means the item is disabled for the exact
+                // stretch during which a launch check could be in flight, and enabled
+                // only once `prepareUpdates` has unconditionally finished (it is awaited
+                // by the same task group `requestHandoff` waits on) — so whenever this
+                // is clickable, `updateState.phase` can never still be `.checking` from
+                // the launch path. A disabled-but-visible item is preferable to one that
+                // appears and disappears, which reads as broken.
                 Button("Check for Updates…") {
                     model.checkForUpdatesFromMenu()
                 }
+                .disabled(model.startupState.phase != .handoff)
             }
         }
     }

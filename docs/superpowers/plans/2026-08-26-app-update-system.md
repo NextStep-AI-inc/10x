@@ -3230,6 +3230,61 @@ Screenshot the splash and the menu. Real update behavior is verified in Task 17.
 git add App 10x.xcodeproj && git commit -m "feat(updates): present updates in the splash and reach them from the menu"
 ```
 
+**Update (post-implementation review, 2026-08-27):** Steps 1-3 shipped exactly as
+written above, in `823d669`. Review of that commit found one gap the brief didn't
+anticipate and one race that a first attempt at closing it introduced. Both are
+recorded here because they change what `App/TenXApp.swift` and
+`App/Updates/UpdateController.swift`/`App/Updates/SplashUpdateDriver.swift` actually
+contain today, beyond what Steps 1-3's code blocks show.
+
+*Gap: a menu-triggered check had no deadline.* `checkAtLaunch` (Task 12) races the
+advisory launch check against a 3-second deadline so a broken updater (`start()`
+throws, so Sparkle never calls back into the driver) can never stall the launch.
+`checkForUpdatesFromMenu()` had no equivalent — against the same broken updater, a
+menu click would enter `.checking` and stay there forever, with no watchdog and no way
+for the user to discover anything went wrong. Fixed by adding, in the same commit:
+- `StartupTiming.menuUpdateCheckDeadline` (`.seconds(15)` live) — deliberately longer
+  than the 3-second `updateCheckDeadline`, which is sized to protect launch speed for
+  a check nobody asked for. A user-initiated check should not fail merely for being
+  slow.
+- `UpdateChecking.checkFromMenu(deadline:sleep:)`, mirroring `checkAtLaunch`'s deadline
+  race but returning the watchdog `Task` (its caller has nothing to await — a menu
+  click has no waiting caller) and resolving a stall into a *visible* `.failed(.unknown)`
+  state with a `Try again` action rather than `checkAtLaunch`'s silent reset. The user
+  asked, so per the rule `SplashUpdateDriver.showUpdaterError` already applies to a live
+  Sparkle error on a user-initiated check, silence would look like the click did
+  nothing.
+- `AppModel.beginMenuUpdateCheck()`, called by both `checkForUpdatesFromMenu()` and
+  `retryUpdate()`, tracking the watchdog in `menuUpdateCheckTask` and cancelling any
+  prior one first — otherwise a stale watchdog from an earlier check (or a retry) could
+  still be asleep when a newer one begins, wake at its own deadline, and incorrectly
+  fail the newer check.
+
+*Race: the menu is global, so it was clickable during the launch check.* A first fix
+attempt made `SplashUpdateDriver.cancelCheck()`'s outcome depend on `isUserInitiated`
+(fail visibly if the user had asked, reset silently otherwise) and added a
+`promoteToUserInitiated()` path so a menu click arriving while the launch check was
+already in flight would mark the existing check user-initiated rather than starting a
+second, concurrent one. This was **abandoned before landing** in favor of a simpler
+correction: `Check for Updates…` has no reason to be clickable before the workspace
+exists, so `App/TenXApp.swift` now disables it until then —
+`.disabled(model.startupState.phase != .handoff)` — rather than coordinating two
+watchdogs over shared state. This closes the race by removing the only way to open it:
+`prepareStartup`'s task group always finishes `prepareUpdates` (and therefore
+`checkAtLaunch`) before `runStartupAttempt` calls `requestHandoff`, so by the moment
+the menu item becomes enabled, `updateState.phase` can never still be `.checking` from
+the launch path. `checkForUpdatesFromMenu()`'s existing `!isPresentingUpdate` guard is
+kept as defense in depth (pinned by
+`checkForUpdatesFromMenuIsANoOpWhileACheckIsAlreadyInFlight` in
+`Tests/TenXAppTests/AppModelUpdateTests.swift`), but nothing in the shipped code makes
+`SplashUpdateDriver.cancelCheck()` conditional or adds a promotion path — it stays
+exactly as it was before this review.
+
+*`Tests/TenXAppTests/UpdateSnapshotTests.swift` was deliberately not created in this
+task*, despite the file manifest above listing it — Task 14 Step 1 creates that file
+from scratch with a different test list than anything Task 13's own steps call for.
+Creating it here would only be clobbered by Task 14's own "Create" step.
+
 ---
 
 ### Task 14: Update snapshots and accessibility coverage
