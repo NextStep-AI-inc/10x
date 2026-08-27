@@ -6,7 +6,9 @@ export interface ChannelCommand {
 	params?: unknown;
 }
 
-export type ChannelReply = { id: string; ok: true; data: unknown } | { id: string; ok: false; error: string };
+export type ChannelReply =
+	| { id: string; ok: true; data: unknown; events?: unknown[] }
+	| { id: string; ok: false; error: string; events?: unknown[] };
 
 interface ChannelUI {
 	input(title: string, placeholder?: string): Promise<string | undefined>;
@@ -16,11 +18,29 @@ interface ChannelUI {
  * Holds one awaited request open at all times. The client answers it with a
  * command; the extension carries the previous reply forward in `placeholder`,
  * so a single primitive serves both directions.
+ *
+ * This is also the only way an unsolicited event (an availability change, a
+ * failover OMP applied on its own) reaches the client: there is no push
+ * primitive, only this request/reply turn. `drainEvents` is polled once per
+ * turn, right before a reply is carried forward, and whatever it returns
+ * rides along under an `events` key on THAT reply — the same reply the
+ * client's own command triggered. Two consequences worth being explicit
+ * about, since neither is a bug: (1) an event that fires while no command is
+ * pending (the common case — the client mostly sits idle on the open
+ * `input()` call) is not lost, but it is not delivered either, until the
+ * client happens to send its next command, whatever that command is; there
+ * is no bound on how long that can take. (2) `events` is omitted entirely
+ * — not sent as `events: []` — whenever `drainEvents` returns nothing, so a
+ * reply with nothing to report is byte-identical to what this function
+ * produced before `drainEvents` existed (see the Task 1 test in
+ * `command-channel.test.ts`, which spawns a real `omp` and asserts the
+ * pinged reply's exact shape).
  */
 export async function openCommandChannel(
 	ui: ChannelUI,
 	handle: (command: ChannelCommand) => Promise<unknown>,
 	shouldContinue: () => boolean = () => true,
+	drainEvents: () => unknown[] = () => [],
 ): Promise<void> {
 	let carry: string | undefined;
 	while (shouldContinue()) {
@@ -40,6 +60,9 @@ export async function openCommandChannel(
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}
-		carry = JSON.stringify(reply);
+		// Attached on the error path too — a malformed or failing command must
+		// not blackhole a frame that was already waiting to go out.
+		const events = drainEvents();
+		carry = JSON.stringify(events.length > 0 ? { ...reply, events } : reply);
 	}
 }

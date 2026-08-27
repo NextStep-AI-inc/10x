@@ -1,8 +1,28 @@
 import { expect, test } from "bun:test";
 import os from "node:os";
 import path from "node:path";
+import { openCommandChannel } from "../src/command-channel";
 
 const MARKER = "tenx.provider-accounts.v1";
+
+/**
+ * Scripted `ChannelUI` fake: each `input()` call records the placeholder it
+ * was given (the carried reply from the previous turn) and returns the next
+ * queued raw command, or `undefined` once the queue is exhausted — which
+ * `openCommandChannel` treats as "the client hung up" and returns. Lets the
+ * `drainEvents` integration be exercised without spawning a real `omp`.
+ */
+class FakeUI {
+	calls: (string | undefined)[] = [];
+	#queue: (string | undefined)[];
+	constructor(commands: string[]) {
+		this.#queue = [...commands, undefined];
+	}
+	async input(_title: string, placeholder?: string): Promise<string | undefined> {
+		this.calls.push(placeholder);
+		return this.#queue.shift();
+	}
+}
 
 test("the extension receives a command from the client and answers it", async () => {
 	const sessionDir = path.join(os.tmpdir(), `tenx-channel-${Date.now()}`);
@@ -53,3 +73,65 @@ test("the extension receives a command from the client and answers it", async ()
 
 	expect(JSON.parse(answered.placeholder as string)).toEqual({ id: "c1", ok: true, data: "pong" });
 }, 60_000);
+
+// --- drainEvents: piggybacking availability/failover frames onto the next carried reply ---
+
+test("omits the events key entirely when nothing is queued, keeping the reply byte-identical to before drainEvents existed", async () => {
+	const ui = new FakeUI([JSON.stringify({ id: "c1", command: "ping" })]);
+
+	await openCommandChannel(
+		ui,
+		async () => "pong",
+		() => true,
+		() => [],
+	);
+
+	expect(JSON.parse(ui.calls[1] as string)).toEqual({ id: "c1", ok: true, data: "pong" });
+});
+
+test("attaches queued events to the next successful reply", async () => {
+	const ui = new FakeUI([JSON.stringify({ id: "c1", command: "ping" })]);
+	const events = [{ type: "provider_account_changed", providerId: "anthropic", accountRef: "ref-a", reason: "automaticFailover", sequence: 1 }];
+
+	await openCommandChannel(
+		ui,
+		async () => "pong",
+		() => true,
+		() => events,
+	);
+
+	expect(JSON.parse(ui.calls[1] as string)).toEqual({ id: "c1", ok: true, data: "pong", events });
+});
+
+test("attaches queued events to an error reply too, so a bad command never blackholes a pending frame", async () => {
+	const ui = new FakeUI([JSON.stringify({ id: "c1", command: "boom" })]);
+	const events = [{ type: "provider_account_changed", providerId: "anthropic", accountRef: "ref-a", reason: "manual", sequence: 1 }];
+
+	await openCommandChannel(
+		ui,
+		async () => {
+			throw new Error("nope");
+		},
+		() => true,
+		() => events,
+	);
+
+	expect(JSON.parse(ui.calls[1] as string)).toEqual({ id: "c1", ok: false, error: "nope", events });
+});
+
+test("drainEvents runs only after a command has been handled, never before the channel has anything to reply to", async () => {
+	const ui = new FakeUI([JSON.stringify({ id: "c1", command: "ping" })]);
+	let drainCalls = 0;
+
+	await openCommandChannel(
+		ui,
+		async () => "pong",
+		() => true,
+		() => {
+			drainCalls += 1;
+			return [];
+		},
+	);
+
+	expect(drainCalls).toBe(1);
+});

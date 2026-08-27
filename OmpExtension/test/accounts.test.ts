@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { listAccounts, pinAccount, removeAccount, toSafeAccount } from "../src/accounts";
+import { activeAccountRef, listAccounts, pinAccount, reapplyPin, removeAccount, shouldReapplyPin, toSafeAccount } from "../src/accounts";
 import type { AccountAuthStorage, AccountCommandContext } from "../src/accounts";
 
 const row = (over: Record<string, unknown> = {}) => ({
@@ -9,6 +9,11 @@ const row = (over: Record<string, unknown> = {}) => ({
 	accountId: "acc-1",
 	access: "sk-secret",
 	refresh: "refresh-secret",
+	// `active` mirrors stock `OAuthAccountSummary.active`: "True when this
+	// account is the session-sticky OAuth credential requested by
+	// listOAuthAccounts" (auth-storage.ts:905). Defaults to false so existing
+	// fixtures that never mention it don't accidentally register as active.
+	active: false,
 	...over,
 });
 
@@ -200,4 +205,75 @@ test("removeAccount reports removed:false for an already-gone credential without
 	const result = await removeAccount(ctx, "anthropic", ref);
 
 	expect(result.removed).toBe(false);
+});
+
+// --- activeAccountRef: Task 7's only source of "current account" independent of any event payload ---
+
+test("activeAccountRef resolves the ref of the session-sticky row", () => {
+	const authStorage = makeAuthStorage([
+		row({ credentialId: 1, email: "one@example.com", active: false }),
+		row({ credentialId: 2, email: "two@example.com", accountId: "acc-2", active: true }),
+	]);
+
+	const ref = activeAccountRef(authStorage, "anthropic", "session-1");
+
+	expect(ref).toBe(toSafeAccount("anthropic", row({ credentialId: 2, email: "two@example.com", accountId: "acc-2" }), 0).accountRef);
+});
+
+test("activeAccountRef returns undefined when no row is marked active", () => {
+	const authStorage = makeAuthStorage([row({ credentialId: 1, email: "one@example.com", active: false })]);
+
+	expect(activeAccountRef(authStorage, "anthropic", "session-1")).toBeUndefined();
+});
+
+test("activeAccountRef returns undefined when the active row has no addressable ref", () => {
+	const authStorage = makeAuthStorage([row({ credentialId: 1, accountId: undefined, email: undefined, active: true })]);
+
+	expect(activeAccountRef(authStorage, "anthropic", "session-1")).toBeUndefined();
+});
+
+// --- reapplyPin: the unguarded enforcement path (before_provider_request fires mid-request, never idle) ---
+
+test("reapplyPin re-pins while the session is streaming, unlike pinAccount", async () => {
+	const authStorage = makeAuthStorage([row({ credentialId: 9, email: "pin-me@example.com" })]);
+	const ctx = makeCtx(authStorage, { provider: "anthropic", idle: false, sessionId: "sess-1" });
+	const ref = toSafeAccount("anthropic", row({ credentialId: 9, email: "pin-me@example.com" }), 0).accountRef;
+	if (!ref) throw new Error("test setup: expected a ref");
+
+	const account = await reapplyPin(ctx, "anthropic", ref);
+
+	expect(account?.accountRef).toBe(ref);
+});
+
+test("reapplyPin resolves to undefined instead of throwing for a stale ref", async () => {
+	const authStorage = makeAuthStorage([row({ credentialId: 9, email: "pin-me@example.com" })]);
+	const ctx = makeCtx(authStorage, { provider: "anthropic", idle: false });
+
+	const account = await reapplyPin(ctx, "anthropic", "not-a-real-ref");
+
+	expect(account).toBeUndefined();
+});
+
+// --- shouldReapplyPin: the anti-wedge predicate ---
+//
+// `pinSessionOAuthAccount` does not itself check availability (stock
+// auth-storage.ts:5793 — "Normal auth retry and usage-limit handling may
+// still route around an unavailable account"), so nothing stops enforcement
+// from re-pinning a blocked credential except this check. Skipping it would
+// wedge every session that legitimately failed over: each
+// before_provider_request would force the session back onto the dead
+// credential, guaranteeing a failed request before OMP's own rotation
+// undoes it again, forever.
+
+test("shouldReapplyPin refuses an unavailable pinned account", () => {
+	expect(shouldReapplyPin("unavailable")).toBe(false);
+});
+
+test("shouldReapplyPin refuses when the pinned account is no longer listed at all", () => {
+	expect(shouldReapplyPin(undefined)).toBe(false);
+});
+
+test("shouldReapplyPin allows re-pinning an available or a merely rate-limited (limited) account", () => {
+	expect(shouldReapplyPin("available")).toBe(true);
+	expect(shouldReapplyPin("limited")).toBe(true);
 });

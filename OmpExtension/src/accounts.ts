@@ -199,6 +199,28 @@ export async function listAccounts(ctx: AccountCommandContext, providerId: strin
 }
 
 /**
+ * Resolves the session's current session-sticky account for `providerId`,
+ * via `OAuthAccountSummary.active` — "True when this account is the
+ * session-sticky OAuth credential requested by `listOAuthAccounts`" (stock
+ * `b4e8e856a` `packages/ai/src/auth-storage.ts:905`). This is Task 7's only
+ * way to answer "what account is this session on right now": none of the
+ * four `ExtensionAPI` events it subscribes to carry account identity in
+ * their payload (`retry_fallback_applied`/`succeeded` carry model selector
+ * strings, `before_provider_request` carries an opaque `payload: unknown`,
+ * and `credential_disabled` carries only `provider` + `disabledCause`) — see
+ * `task-7-report.md` for the full verification trail. Returns `undefined`
+ * when no row is active, or the active row has no addressable ref (no
+ * `accountId`/`email` — the same condition `listSafeAccounts` already
+ * filters on).
+ */
+export function activeAccountRef(authStorage: AccountAuthStorage, providerId: string, sessionId: string): string | undefined {
+	const rows = authStorage.listOAuthAccounts(providerId, sessionId);
+	const active = rows.find(row => row.active);
+	if (!active) return undefined;
+	return toSafeAccount(providerId, active, active.position).accountRef;
+}
+
+/**
  * Resolves an `accountRef` back to its stored row by recomputing
  * `credentialPinHash` per row until one matches — the ref carries no
  * `credentialId` itself (that's exactly the redaction the ref exists for).
@@ -212,6 +234,24 @@ function resolveAccountRow(rows: readonly OAuthAccountSummary[], providerId: str
 	const match = rows.find(row => credentialPinHash(providerId, row) === accountRef);
 	if (!match) throw new Error(`No account found for ref "${accountRef}" on provider "${providerId}"`);
 	return match;
+}
+
+/**
+ * The unguarded core both `pinAccount` (command path) and `reapplyPin`
+ * (Task 7's `before_provider_request` enforcement path) share: resolve
+ * `accountRef` back to its stored row, pin it, and resolve to its
+ * `SafeAccount`. Split out because the two callers need different guards —
+ * see `reapplyPin`'s doc comment for why enforcement cannot reuse
+ * `pinAccount` itself.
+ */
+async function pinResolvedAccount(ctx: AccountCommandContext, providerId: string, accountRef: string): Promise<SafeAccount> {
+	const authStorage = ctx.modelRegistry.authStorage;
+	const sessionId = ctx.sessionManager.getSessionId();
+	const row = resolveAccountRow(authStorage.listOAuthAccounts(providerId, sessionId), providerId, accountRef);
+	const pinned = authStorage.pinSessionOAuthAccount(providerId, sessionId, row.credentialId);
+	if (!pinned) throw new Error(`Unable to pin account for provider "${providerId}"`);
+	const availability = credentialAvailability(authStorage, providerId, [row.credentialId]);
+	return toSafeAccount(providerId, row, row.position, availability.get(row.credentialId) ?? "available");
 }
 
 /**
@@ -245,21 +285,52 @@ function resolveAccountRow(rows: readonly OAuthAccountSummary[], providerId: str
  * that resolved at all is guaranteed to have `accountId` or `email` (that's
  * the same condition `credentialPinHash` requires to produce the `accountRef`
  * this function was called with). `sequence` is deliberately not part of
- * this result — Task 7 owns the sequencer and will extend the shape to
- * `{ account, sequence }` when it lands.
+ * this result at this layer — `index.ts` extends it to `{ account, sequence }`
+ * using Task 7's shared sequencer.
  */
 export async function pinAccount(ctx: AccountCommandContext, providerId: string, accountRef: string): Promise<SafeAccount> {
 	if (providerId !== ctx.model?.provider) {
 		throw new Error(`Cannot pin account: "${providerId}" is not the session's current provider`);
 	}
 	if (!ctx.isIdle()) throw new Error("streaming");
-	const authStorage = ctx.modelRegistry.authStorage;
-	const sessionId = ctx.sessionManager.getSessionId();
-	const row = resolveAccountRow(authStorage.listOAuthAccounts(providerId, sessionId), providerId, accountRef);
-	const pinned = authStorage.pinSessionOAuthAccount(providerId, sessionId, row.credentialId);
-	if (!pinned) throw new Error(`Unable to pin account for provider "${providerId}"`);
-	const availability = credentialAvailability(authStorage, providerId, [row.credentialId]);
-	return toSafeAccount(providerId, row, row.position, availability.get(row.credentialId) ?? "available");
+	return pinResolvedAccount(ctx, providerId, accountRef);
+}
+
+/**
+ * Re-applies a previously pinned account without `pinAccount`'s command-path
+ * guards. Used exclusively by Task 7's `before_provider_request`
+ * enforcement, which by definition fires while a provider request is being
+ * assembled — i.e. never idle, `pinAccount`'s `!ctx.isIdle()` guard would
+ * throw `"streaming"` on every single enforcement attempt if reused as-is —
+ * and may run after `ctx.model` has already moved past the provider being
+ * enforced for one turn's tail requests. Resolves to `undefined` instead of
+ * throwing when the ref no longer resolves (stale/removed) or the pin call
+ * itself fails: enforcement is a best-effort background correction, not a
+ * client-facing command, so there is no channel to report a failure through
+ * and swallowing it here is correct rather than crashing the provider
+ * request it is guarding.
+ */
+export async function reapplyPin(ctx: AccountCommandContext, providerId: string, accountRef: string): Promise<SafeAccount | undefined> {
+	try {
+		return await pinResolvedAccount(ctx, providerId, accountRef);
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Whether enforcement should re-pin, given the pinned account's current
+ * classification (`undefined` when it is no longer listed at all). Refusing
+ * on `"unavailable"` is what keeps enforcement from fighting OMP's own
+ * failover: `pinSessionOAuthAccount` does not check availability itself
+ * (stock `auth-storage.ts:5793` — "Normal auth retry and usage-limit
+ * handling may still route around an unavailable account"), so nothing else
+ * stops a naive re-pin from forcing the session back onto a credential OMP
+ * just legitimately rotated away from, guaranteeing another failed request
+ * next turn and wedging the session in a pin/fail/rotate loop forever.
+ */
+export function shouldReapplyPin(pinnedAvailability: AccountAvailability | undefined): boolean {
+	return pinnedAvailability !== undefined && pinnedAvailability !== "unavailable";
 }
 
 export interface RemoveAccountResult {
