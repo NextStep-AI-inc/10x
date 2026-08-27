@@ -49,4 +49,50 @@ private actor StubChannel: ProviderAccountChannel {
     }
 }
 
+@Test func firstSendSucceedsEvenWhenTheOpeningFrameWasAlreadyBuffered() async throws {
+    let (stream, continuation) = AsyncStream<RpcFrame>.makeStream()
+
+    // Simulate the extension's session_start handler opening its first
+    // request before anything ever calls `send` — `AsyncStream` buffers
+    // this (unbounded by default), exactly like the real gap between a
+    // session's omp process starting and 10x's first `pin_account` call.
+    continuation.yield(.extensionUIRequest(ExtensionUIRequest(
+        id: "req-1",
+        method: "input",
+        payload: .object([
+            "type": .string("extension_ui_request"),
+            "id": .string("req-1"),
+            "method": .string("input"),
+            "title": .string(ExtensionUIRouter.providerAccountChannelTitle),
+        ]))))
+
+    let channel = ProviderAccountExtensionChannel(events: stream) { _, body in
+        guard let value = body["value"]?.stringValue,
+              let sent = try? JSONDecoder().decode(JSONValue.self, from: Data(value.utf8)),
+              let commandID = sent["id"]?.stringValue
+        else { return }
+        let reply = JSONValue.object([
+            "id": .string(commandID),
+            "ok": .bool(true),
+            "data": .object(["applied": .bool(true)]),
+        ])
+        let replyData = try JSONEncoder().encode(reply)
+        continuation.yield(.extensionUIRequest(ExtensionUIRequest(
+            id: "req-2",
+            method: "input",
+            payload: .object([
+                "type": .string("extension_ui_request"),
+                "id": .string("req-2"),
+                "method": .string("input"),
+                "title": .string(ExtensionUIRouter.providerAccountChannelTitle),
+                "placeholder": .string(String(decoding: replyData, as: UTF8.self)),
+            ]))))
+    }
+
+    let result = try await channel.send(ProviderAccountChannelCommand(
+        id: "cmd-1", command: "pin_account", params: [:]))
+
+    #expect(result == .object(["applied": .bool(true)]))
+}
+
 }

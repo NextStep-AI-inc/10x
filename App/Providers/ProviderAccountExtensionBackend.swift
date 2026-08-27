@@ -128,6 +128,7 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
 
     private var listenerTask: Task<Void, Never>?
     private var openRequestID: String?
+    private var readyWaiter: CheckedContinuation<String?, Never>?
     private var inFlight: (commandID: String, continuation: CheckedContinuation<JSONValue, any Error>)?
     private var isBusy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -169,10 +170,9 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         await waitForTurn()
         defer { releaseTurn() }
 
-        guard !isDropped, let requestID = openRequestID else {
+        guard let requestID = await claimOpenRequestID() else {
             throw ProviderAccountChannelError.unavailable
         }
-        openRequestID = nil
 
         let body: [String: JSONValue] = ["value": .string(Self.encode(command))]
         return try await withCheckedThrowingContinuation { continuation in
@@ -209,6 +209,45 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         waiters.removeFirst().resume()
     }
 
+    /// Awaits the extension's open request slot rather than checking it
+    /// synchronously. `waitForTurn()`'s fast (uncontended) path returns
+    /// without ever suspending, so a plain `if let requestID = openRequestID`
+    /// performed right after it can run before the just-scheduled listener
+    /// `Task` (`startListeningIfNeeded`) has had any opportunity to drain
+    /// even an *already-buffered* frame — `AsyncStream` buffers unboundedly
+    /// by default, so a frame can be sitting there the whole time. Proven
+    /// empirically: a fresh channel's first `send` threw `.unavailable`
+    /// despite a request already present in `events`
+    /// (`firstSendSucceedsEvenWhenTheOpeningFrameWasAlreadyBuffered`).
+    /// A `nil` result here means the channel is genuinely gone
+    /// (`isDropped`), never merely "not scheduled yet" — `.unavailable`
+    /// must keep meaning "degrade to the stock tier," not "raced our own
+    /// startup."
+    private func claimOpenRequestID() async -> String? {
+        if isDropped { return nil }
+        if let requestID = openRequestID {
+            openRequestID = nil
+            return requestID
+        }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+            readyWaiter = continuation
+        }
+    }
+
+    /// The `handle`-side counterpart to `claimOpenRequestID`: hands a newly
+    /// opened request straight to whichever `send` is already waiting on
+    /// it, or stores it for the next `send` to claim if none is waiting.
+    /// Single-flight (`waitForTurn`) guarantees at most one `readyWaiter`
+    /// is ever registered at a time.
+    private func provideOpenRequestID(_ requestID: String) {
+        if let readyWaiter {
+            self.readyWaiter = nil
+            readyWaiter.resume(returning: requestID)
+        } else {
+            openRequestID = requestID
+        }
+    }
+
     // MARK: - Frame handling
 
     private func handle(_ frame: RpcFrame) {
@@ -217,7 +256,7 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         else { return }
 
         resolveIfMatching(placeholder: request.payload["placeholder"]?.stringValue)
-        openRequestID = request.id
+        provideOpenRequestID(request.id)
     }
 
     private func resolveIfMatching(placeholder: String?) {
@@ -242,6 +281,10 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         if let inFlight {
             self.inFlight = nil
             inFlight.continuation.resume(throwing: ProviderAccountChannelError.unavailable)
+        }
+        if let readyWaiter {
+            self.readyWaiter = nil
+            readyWaiter.resume(returning: nil)
         }
         let queued = waiters
         waiters.removeAll()
