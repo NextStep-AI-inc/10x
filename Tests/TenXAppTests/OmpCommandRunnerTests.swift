@@ -78,7 +78,11 @@ import Testing
     let pids = try await fixture.waitForPIDs(in: pidFile, count: 2)
     defer { for pid in pids { kill(pid, SIGKILL) } }
 
-    let result = await fixture.waitForResult(resultBox, within: .seconds(2))
+    // The runner needs its 500ms SIGTERM grace plus a reap before it can
+    // return, so a 2s budget leaves nothing for a loaded machine. This still
+    // fails a runner that drains the pipes first — it just waits like
+    // waitForPIDs does rather than racing the escalation.
+    let result = await fixture.waitForResult(resultBox, within: .seconds(10))
     guard let result else {
         operation.cancel()
         killpg(pids[0], SIGKILL)
@@ -163,8 +167,14 @@ import Testing
         if [ "$1" = child ]; then trap '' TERM; while :; do sleep 1; done; fi
         pid_file="$1"
         trap '"$0" child </dev/null >/dev/null 2>&1 & printf " %s" $! >> "$pid_file"; exit 0' TERM
+        # Blocks in `wait`, which a trapped signal interrupts at once. A
+        # `sleep` loop would instead fork a fresh sleep that can miss the
+        # process-group SIGTERM, deferring this trap by a whole second — past
+        # the runner's 500ms escalation to SIGKILL, so no descendant is ever
+        # spawned and the test times out waiting for its pid.
+        sleep 2147483647 &
         printf '%s' $$ > "$pid_file"
-        while :; do sleep 1; done
+        wait
         """)
     let operation = Task {
         try await OmpCommandRunner().run(

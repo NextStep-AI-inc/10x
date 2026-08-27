@@ -788,7 +788,9 @@ final class AppModel {
         return controller
     }
 
-    private func managedController(for sessionPath: String) -> SessionController? {
+    // Not private: the navigation tests wait on the reuse registry rather than on
+    // activeSession.sessionPath, which a controller sets partway through its open.
+    func managedController(for sessionPath: String) -> SessionController? {
         if let controllerID = managedSessionPaths[sessionPath] {
             if let controller = managedSessions[controllerID] { return controller }
             managedSessionPaths.removeValue(forKey: sessionPath)
