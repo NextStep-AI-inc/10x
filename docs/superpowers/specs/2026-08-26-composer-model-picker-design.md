@@ -107,9 +107,18 @@ the model has options, so a stale `"auto"` held while switching to a
 prevent. `selectModel` therefore assigns the reconciled level to in-memory
 `thinkingLevel` in both modes. It does not write that value to config: only an
 explicit effort pick persists, so switching models never silently rewrites the
-user's stored default. In `activeSession` the reconciled level is the optimistic
-value, and `applyLiveSelection` corrects it from OMP's reported state, so no
-extra `setThinkingLevel` call is issued on a model switch.
+user's stored default.
+
+In `activeSession` the reconciled level has to reach the runtime explicitly. It
+cannot ride back on OMP's echo: `SessionController.setModel` publishes its live
+selection while `selectModel` is still awaiting, so `applyLiveSelection`'s
+`isMutating` guard drops it, and the echo carries only `provider` and `modelID`
+anyway — never a thinking level. So after `setModel` succeeds, `selectModel`
+compares the reconciled level against the level held before the switch and, when
+they differ, issues one `setThinkingLevel` with the reconciled value. A switch
+that leaves the level alone issues none. Either call throwing rolls back the
+model, the level, and the Fast-mode intent together, the same way a failed
+`setModel` already does.
 
 ## Fast mode
 

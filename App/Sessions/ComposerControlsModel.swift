@@ -145,6 +145,12 @@ final class ComposerControlsModel {
             applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
             do {
                 try await activeSession.setModel(provider: model.provider, modelID: model.modelID)
+                // OMP's model echo carries provider and id only, so a reconciled
+                // level would never reach the runtime. Send it, and only when it
+                // actually moved — a same-value RPC per switch is waste.
+                if thinkingLevel != priorThinking {
+                    try await activeSession.setThinkingLevel(thinkingLevel)
+                }
                 recordRecent(model)
                 errorMessage = nil
             } catch {

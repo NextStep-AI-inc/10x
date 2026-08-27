@@ -478,6 +478,82 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     #expect(model.errorMessage != nil)
 }
 
+@MainActor
+@Test func anActiveSwitchThatMovesTheThinkingLevelSendsItOnce() async {
+    let defaults = FakeComposerDefaults()
+    let session = FakeComposerSessionController()
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: defaults,
+        recents: isolatedRecents())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    model.attachActiveSession(session)
+
+    await model.selectModel(codexRequiredEffort, mode: .activeSession)
+
+    #expect(model.thinkingLevel == "medium")
+    #expect(session.setModelCalls.count == 1)
+    #expect(session.setThinkingCalls == ["medium"])
+    #expect(await defaults.thinkingCalls.isEmpty)
+    #expect(await defaults.modelCalls.isEmpty)
+    #expect(model.errorMessage == nil)
+}
+
+@MainActor
+@Test func anActiveSwitchThatKeepsTheThinkingLevelSendsNoThinkingRPC() async {
+    let defaults = FakeComposerDefaults()
+    let session = FakeComposerSessionController()
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "high",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: defaults,
+        recents: isolatedRecents())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    model.attachActiveSession(session)
+
+    await model.selectModel(codexRequiredEffort, mode: .activeSession)
+
+    #expect(model.thinkingLevel == "high")
+    #expect(session.setModelCalls.count == 1)
+    #expect(session.setThinkingCalls.isEmpty)
+    #expect(await defaults.thinkingCalls.isEmpty)
+    #expect(await defaults.modelCalls.isEmpty)
+}
+
+@MainActor
+@Test func aFailedThinkingReconciliationRollsBackTheModelSwitchToo() async {
+    let session = FakeComposerSessionController()
+    session.setThinkingError = FakeComposerError.rpcFailed
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    model.attachActiveSession(session)
+
+    await model.selectModel(codexRequiredEffort, mode: .activeSession)
+
+    #expect(session.setModelCalls.count == 1)
+    #expect(session.setThinkingCalls == ["medium"])
+    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
+    #expect(model.thinkingLevel == "auto")
+    #expect(model.errorMessage != nil)
+}
+
 // MARK: - Fakes
 
 private actor FakeComposerCatalog: ComposerCatalogLoading {
