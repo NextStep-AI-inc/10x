@@ -24,6 +24,12 @@ struct ComposerView: View {
     let onSend: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var isEditorFocused: Bool
+    static let editorPadding: CGFloat = 16
+    /// SwiftUI's padding plus the line-fragment padding NSTextView adds inside it.
+    static let textInset: CGFloat = 21
+    static let minEditorHeight: CGFloat = 58
+    static let maxEditorHeight: CGFloat = 220
 
     init(
         draft: Binding<String>,
@@ -73,6 +79,12 @@ struct ComposerView: View {
             .onExitCommand {
                 flyout = nil
             }
+            // The composer is the only thing to type into on either screen, so
+            // it takes focus as soon as it can accept a keystroke.
+            .onAppear { isEditorFocused = isAvailable }
+            .onChange(of: isAvailable) { _, isAvailable in
+                if isAvailable { isEditorFocused = true }
+            }
     }
 
     private var shelfAnimation: Animation? {
@@ -81,40 +93,14 @@ struct ComposerView: View {
 
     private var composerCard: some View {
         VStack(spacing: 0) {
-            TextEditor(text: $draft)
-                .font(TenXTypography.body(size: 14))
-                .scrollContentBackground(.hidden)
-                .padding(16)
-                .frame(height: 58)
-                .disabled(!isAvailable)
-                .onKeyPress(keys: [.return], phases: .down) { press in
-                    Self.handleReturn(
-                        modifiers: press.modifiers,
-                        canSend: canSend,
-                        send: onSend)
-                }
-                .accessibilityLabel("Session prompt")
-                .accessibilityHint(composerModeLabel)
+            editor
 
             HStack(spacing: 4) {
                 footerControls
 
                 Spacer()
 
-                Button(action: onSend) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(canSend
-                            ? Color.white
-                            : TenXPalette.color(TenXPalette.mutedTextHex))
-                        .frame(width: 28, height: 28)
-                        .background(canSend
-                            ? TenXPalette.color(TenXPalette.nearBlackHex)
-                            : TenXPalette.color(TenXPalette.hoverNeutralHex))
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
-                .accessibilityLabel(sendLabel)
+                primaryAction
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
@@ -181,6 +167,113 @@ struct ComposerView: View {
             removal: .opacity.combined(with: .offset(y: 4)))
     }
 
+    /// Grows with the draft instead of scrolling a fixed two-line window, so a
+    /// paragraph-length prompt stays readable while it is being written.
+    private var editor: some View {
+        // A hidden copy of the draft is the only thing in this stack with an
+        // intrinsic height, and the editor rides above it as an overlay so it
+        // cannot push the box taller. Sizing therefore lands in the same layout
+        // pass that draws the text, with no measure-then-resize frame.
+        Text(draft.isEmpty || draft.hasSuffix("\n") ? draft + " " : draft)
+            .font(TenXTypography.body(size: 14))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Self.textInset)
+            .padding(.vertical, Self.editorPadding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .hidden()
+            .overlay(alignment: .topLeading) {
+                if draft.isEmpty {
+                    Text(placeholder)
+                        .font(TenXTypography.body(size: 14))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                        .padding(.horizontal, Self.textInset)
+                        .padding(.vertical, Self.editorPadding)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .overlay {
+                TextEditor(text: $draft)
+                    .font(TenXTypography.body(size: 14))
+                    .scrollContentBackground(.hidden)
+                    .padding(Self.editorPadding)
+                    .focused($isEditorFocused)
+                    .disabled(!isAvailable)
+                    .onKeyPress(keys: [.return], phases: .down) { press in
+                        Self.handleReturn(
+                            modifiers: press.modifiers,
+                            canSend: canSend,
+                            send: onSend)
+                    }
+                    .accessibilityLabel("Session prompt")
+                    .accessibilityHint(composerModeLabel)
+            }
+            .frame(minHeight: Self.minEditorHeight, maxHeight: Self.maxEditorHeight)
+            // Without this the clamp is a range the parent can fill, and any
+            // spare vertical space in the window inflates the box to its cap.
+            .fixedSize(horizontal: false, vertical: true)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: draft)
+    }
+
+    private var placeholder: String {
+        switch presentation {
+        case .newSession:
+            return "Describe the task"
+        case .active(let controller) where controller.runtimeState == .streaming:
+            return "Steer or follow up"
+        case .active:
+            return "Send a message"
+        }
+    }
+
+    /// One button, because there is only ever one obvious next move: send what
+    /// is typed, or stop the run there is nothing to add to.
+    private var primaryAction: some View {
+        let isStop = stoppableController != nil
+        let isEnabled = isStop || canSend
+        return Button {
+            if let controller = stoppableController {
+                Task { await controller.abort() }
+            } else {
+                onSend()
+            }
+            isEditorFocused = true
+        } label: {
+            Group {
+                if isStop {
+                    // A square, not stop.fill: the symbol's rounded corners are
+                    // the only radius in a composer built from straight edges.
+                    Rectangle().frame(width: 9, height: 9)
+                } else {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 12, weight: .bold))
+                }
+            }
+                .foregroundStyle(isEnabled
+                    ? Color.white
+                    : TenXPalette.color(TenXPalette.mutedTextHex))
+                .frame(width: 28, height: 28)
+                .background(isEnabled
+                    ? TenXPalette.color(TenXPalette.nearBlackHex)
+                    : TenXPalette.color(TenXPalette.hoverNeutralHex))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .help(isStop ? "Stop the response" : sendLabel)
+        .accessibilityLabel(isStop ? "Stop response" : sendLabel)
+    }
+
+    /// Stop takes over only when there is no draft to send: with text in the
+    /// box the button still has to send it, or Steer and Follow up are dead.
+    private var stoppableController: SessionController? {
+        guard case .active(let controller) = presentation,
+              controller.runtimeState == .streaming,
+              draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return controller
+    }
+
     @ViewBuilder
     private var footerControls: some View {
         switch presentation {
@@ -190,9 +283,6 @@ struct ComposerView: View {
                 isPresented: Binding(
                     get: { flyout == .project },
                     set: { flyout = $0 ? .project : nil }))
-
-            Button("Local") {}
-                .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
 
             if let controls {
                 ComposerSessionControlsView(

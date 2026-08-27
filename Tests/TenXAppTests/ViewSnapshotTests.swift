@@ -2430,3 +2430,78 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
             fastModeActive: false)),
         defaults: SnapshotComposerDefaults())
 }
+
+@MainActor
+@Test func transcriptWorkingIndicatorSnapshot() throws {
+    try assertSnapshot(
+        TranscriptView(controller: awaitingOutputController())
+            .environment(snapshotEmptyIDEStore),
+        name: "transcript-working-indicator",
+        size: CGSize(width: 700, height: 260))
+}
+
+@MainActor
+@Test func composerStopsARunWithNothingToSendSnapshot() throws {
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant(""),
+            presentation: .active(controller: awaitingOutputController()),
+            controlsMode: .activeSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-stop-control",
+        size: CGSize(width: 700, height: 180))
+}
+
+@MainActor
+private func awaitingOutputController() -> SessionController {
+    let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
+    let user = TranscriptMessage(
+        id: "awaiting-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Summarize the failing tests."),
+        ]),
+        timestamp: timestamp,
+        isFinal: true)
+    return SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [.message(user)],
+        runtimeState: .streaming,
+        title: "Working session")
+}
+
+@MainActor
+@Test func composerGrowsWithALongDraftSnapshot() throws {
+    let draft = """
+        Rework the transcript so a long prompt stays visible while it is being \
+        written, instead of scrolling inside a two line window. Keep the send \
+        control in the same place and do not change the footer height.
+        """
+    try assertSnapshot(
+        VStack(spacing: 24) {
+            ComposerView(
+                draft: .constant(""),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controlsMode: .newSession,
+                onSend: {})
+            ComposerView(
+                draft: .constant(draft),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controlsMode: .newSession,
+                onSend: {})
+        }
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-placeholder-and-growth",
+        size: CGSize(width: 700, height: 420))
+}

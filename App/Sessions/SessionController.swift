@@ -10,7 +10,16 @@ import UserNotifications
 final class SessionController: ComposerSessionControlling {
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
     private(set) var items: [TranscriptItem] = []
-    private(set) var runtimeState: SessionRuntimeState = .loading
+    private(set) var runtimeState: SessionRuntimeState = .loading {
+        didSet {
+            guard runtimeState != oldValue else { return }
+            // One place, so every path that ends a run also stops the clock.
+            turnStartedAt = runtimeState == .streaming ? (turnStartedAt ?? Date()) : nil
+        }
+    }
+
+    /// When the current run began, for the working indicator's elapsed time.
+    private(set) var turnStartedAt: Date?
     private(set) var title = "Untitled session"
     private(set) var headerMetadata = SessionHeaderMetadata(
         branch: "",
@@ -55,6 +64,7 @@ final class SessionController: ComposerSessionControlling {
     private var pipelineGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var isSendInFlight = false
     @ObservationIgnored private weak var attachedComposerControls: ComposerControlsModel?
     private static let transcriptLog = OSLog(
         subsystem: Bundle.main.bundleIdentifier ?? "TenXApp",
@@ -278,6 +288,7 @@ final class SessionController: ComposerSessionControlling {
     func sendPrompt() async {
         guard let handle,
               isComposerAvailable,
+              !isSendInFlight,
               !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
 
@@ -291,16 +302,26 @@ final class SessionController: ComposerSessionControlling {
 
         let message = draft
         let context = currentPipelineContext()
+        isSendInFlight = true
+        defer { isSendInFlight = false }
+
+        // The composer answers the keystroke, not the round trip: the draft
+        // clears and the run reads as started before omp has replied. The
+        // processor is moved first so a snapshot already in flight cannot
+        // publish the old idle state back over this one.
+        draft = ""
+        runtimeState = .streaming
+        reportActivity()
+        await context.processor?.setRuntimeState(.streaming)
+        guard isCurrent(context) else { return }
+
         do {
             _ = try await handle.client.send(.prompt(
                 message: message,
                 streamingBehavior: behavior))
-            guard isCurrent(context) else { return }
-            draft = ""
-            runtimeState = .streaming
-            reportActivity()
-            await context.processor?.setRuntimeState(.streaming)
         } catch {
+            // Nothing reached omp, so the text is still the user's to send.
+            if isCurrent(context), draft.isEmpty { draft = message }
             fail(error, function: "sendPrompt", context: context)
         }
     }
