@@ -21,9 +21,11 @@ struct AppMenuState {
         let routeSessionPath: String? = if case .session(let path) = route { path } else { nil }
         currentSessionPath = activeSessionPath ?? routeSessionPath
 
-        let currentIndex = currentSessionPath.flatMap { currentPath in
-            sessions.firstIndex { $0.path == currentPath }
-        }
+        let currentIndex = isWorkspaceAvailable
+            ? currentSessionPath.flatMap { currentPath in
+                sessions.firstIndex { $0.path == currentPath }
+            }
+            : nil
         previousSession = currentIndex.flatMap { index in
             index > sessions.startIndex ? sessions[index - 1] : nil
         }

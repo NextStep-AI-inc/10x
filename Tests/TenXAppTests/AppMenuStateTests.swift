@@ -3,26 +3,32 @@ import Testing
 @testable import TenXApp
 
 @Test func menuStateDisablesWorkspaceCommandsDuringOnboardingOrMutation() {
+    let newerSession = menuMetadata("/sessions/newer.jsonl")
     let session = menuMetadata("/sessions/current.jsonl")
+    let sessions = [newerSession, session]
 
     let onboarding = AppMenuState(
         route: .onboarding(.installOmp),
-        sessions: [session],
+        sessions: sessions,
         activeSessionPath: session.path,
         runtimeState: .streaming,
         isSessionMutationInFlight: false)
     let mutating = AppMenuState(
         route: .session(session.path),
-        sessions: [session],
+        sessions: sessions,
         activeSessionPath: session.path,
         runtimeState: .streaming,
         isSessionMutationInFlight: true)
 
     #expect(!onboarding.isWorkspaceAvailable)
+    #expect(onboarding.previousSession == nil)
+    #expect(onboarding.nextSession == nil)
     #expect(!onboarding.canStopResponse)
     #expect(!onboarding.canChooseMessageBehavior)
     #expect(!onboarding.canArchiveSession)
     #expect(!mutating.isWorkspaceAvailable)
+    #expect(mutating.previousSession == nil)
+    #expect(mutating.nextSession == nil)
     #expect(!mutating.canStopResponse)
     #expect(!mutating.canChooseMessageBehavior)
     #expect(!mutating.canArchiveSession)
