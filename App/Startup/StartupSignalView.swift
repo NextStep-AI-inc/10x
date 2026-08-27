@@ -79,7 +79,7 @@ struct StartupSignalView: View {
                 Group {
                     if let progress {
                         determinateFill(amplitude: amplitude, progress: progress)
-                    } else {
+                    } else if isAnimating {
                         travelingSegment(amplitude: amplitude, progress: travel)
                     }
                 }
