@@ -350,13 +350,17 @@ final class AppModel {
         }
     }
 
-    func startNewSession(prompt: String) {
+    func startNewSession(prompt: String, attachments: [ComposerAttachment] = []) {
         guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
         let controller = makeSessionController(processManager: processManager)
         controller.draft = prompt
+        controller.attachments = attachments
         composerControls?.detachActiveSession()
-        route = .session("new:\(UUID().uuidString)")
+        // omp does not name the session until the child is up, so the route
+        // carries a placeholder until `openNew` reports the real path.
+        let placeholderRoute = AppRoute.session("new:\(UUID().uuidString)")
+        route = placeholderRoute
         let selection = composerControls?.spawnSelection
         activeSession = controller
         Task { [weak self, controller, selectedProjectURL, selection] in
@@ -371,11 +375,17 @@ final class AppModel {
                 }
                 return
             }
-            guard controller.sessionPath != nil else {
+            guard let sessionPath = controller.sessionPath else {
                 self.removeManagedSession(controller)
                 return
             }
             self.indexManagedSessionPath(for: controller)
+            // Without this the rail can never mark the session the user is
+            // looking at, and reopening it from the rail would spawn a second
+            // child for a session that is already running here.
+            if self.activeSession === controller, self.route == placeholderRoute {
+                self.route = .session(sessionPath)
+            }
             if self.activeSession === controller {
                 if fastOutcome == .unsupported || fastOutcome == .failed {
                     await self.composerControls?.setFastMode(false, mode: .newSession)
@@ -745,11 +755,17 @@ final class AppModel {
     }
 
     private func managedController(for sessionPath: String) -> SessionController? {
-        guard let controllerID = managedSessionPaths[sessionPath] else { return nil }
-        guard let controller = managedSessions[controllerID] else {
+        if let controllerID = managedSessionPaths[sessionPath] {
+            if let controller = managedSessions[controllerID] { return controller }
             managedSessionPaths.removeValue(forKey: sessionPath)
-            return nil
         }
+        // A controller learns its path partway through its own open, so the index still
+        // lags it. Reuse it from that moment rather than opening a second controller
+        // over the same child.
+        guard let controller = managedSessions.values
+            .first(where: { $0.sessionPath == sessionPath })
+        else { return nil }
+        managedSessionPaths[sessionPath] = controller.id
         return controller
     }
 

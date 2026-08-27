@@ -9,6 +9,13 @@ struct ContentDocument: Equatable, Sendable {
     var plainText: String {
         blocks.map(\.plainText).joined(separator: "\n")
     }
+
+    var images: [ContentImage] {
+        blocks.compactMap { block in
+            guard case .image(let image) = block else { return nil }
+            return image
+        }
+    }
 }
 
 indirect enum ContentBlock: Equatable, Sendable {
@@ -20,6 +27,7 @@ indirect enum ContentBlock: Equatable, Sendable {
         case table
         case divider
         case source
+        case image
         case unsupported
     }
 
@@ -30,6 +38,7 @@ indirect enum ContentBlock: Equatable, Sendable {
     case table(ContentTable)
     case divider
     case source(SourcePresentation)
+    case image(ContentImage)
     case unsupported(label: String)
 
     var kind: Kind {
@@ -41,6 +50,7 @@ indirect enum ContentBlock: Equatable, Sendable {
         case .table: .table
         case .divider: .divider
         case .source: .source
+        case .image: .image
         case .unsupported: .unsupported
         }
     }
@@ -61,10 +71,22 @@ indirect enum ContentBlock: Equatable, Sendable {
             ""
         case .source(let source):
             source.text
+        case .image(let image):
+            image.label
         case .unsupported(let label):
             label
         }
     }
+}
+
+/// An image carried inside a message, decoded from the session file's base64.
+struct ContentImage: Equatable, Sendable {
+    let data: Data
+    let mimeType: String
+
+    /// Read aloud and used as the plain-text stand-in when the image cannot be
+    /// shown, so a transcript copied to the clipboard still records it.
+    var label: String { "Image attachment" }
 }
 
 struct InlineContent: Equatable, Sendable {

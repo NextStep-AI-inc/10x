@@ -346,6 +346,49 @@ import OmpKit
 }
 
 @MainActor
+@Test func openingASessionWhileItsNewSessionOpenIsInFlightReusesItsController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-new-session-race-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let release = container.appendingPathComponent("release")
+    let executable = try makeNavigationExecutable(
+        in: container,
+        mode: "block-subagent-subscription",
+        arguments: [release.path])
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+
+    // The child parks on the last command of the open, so the controller knows its
+    // path while `openNew` — and the indexing that follows it — is still in flight.
+    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let original = try #require(model.activeSession)
+    #expect(original.sessionPath == "/tmp/fake.jsonl")
+
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+
+    #expect(model.activeSession === original)
+
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    for _ in 0..<500 where !original.draft.isEmpty {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(original.draft.isEmpty)
+    #expect(model.activeSession === original)
+    let manager = try #require(model.processManager)
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") != nil)
+    await manager.closeAll()
+}
+
+@MainActor
 @Test func failedOpenExistingWithoutSessionPathIsNotReusedOnRetry() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-failed-open-retry-\(UUID().uuidString)")
@@ -554,7 +597,11 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     try Data(content.utf8).write(to: url)
 }
 
-func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws -> URL {
+func makeNavigationExecutable(
+    in directory: URL,
+    mode: String = "basic",
+    arguments: [String] = []
+) throws -> URL {
     let repository = URL(filePath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -562,9 +609,10 @@ func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws 
     let fixture = repository
         .appendingPathComponent("OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py")
     let executable = directory.appendingPathComponent("fake-omp")
+    let extraArguments = arguments.map { " \"\($0)\"" }.joined()
     let wrapper = """
     #!/bin/sh
-    exec /usr/bin/python3 "\(fixture.path)" "\(mode)"
+    exec /usr/bin/python3 "\(fixture.path)" "\(mode)"\(extraArguments)
     """
     try Data(wrapper.utf8).write(to: executable)
     try FileManager.default.setAttributes(
