@@ -2,9 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the two bare setup gates with one onboarding flow that installs OMP, connects a provider, and takes a project folder from a scan of the user's Git repositories.
+> **Update, 2026-08-27:** Task 3 (the Git repository scanner) and the parts of
+> Task 5 and Task 6 that wired it into the project step were removed after
+> live testing. Crawling the user's home directory to suggest projects was
+> judged wrong. The project step now suggests only folders 10x already knows
+> about, the working directories of existing OMP sessions, via
+> `ProjectSessionGrouper.choosableProjectURLs(from:including:)` — the same
+> derivation the composer's project flyout already used. `GitRepositoryScanner`,
+> `GitRepositorySuggestion`, and `GitRepositoryScannerTests.swift` no longer
+> exist. This note is the record of that change; the task bodies below are
+> left as originally written, as the record of what was planned and built
+> before the removal.
 
-**Architecture:** `AppRoute.setup` and `.providerSetup` collapse into `.onboarding(OnboardingStep)`. A pure `OnboardingStep.firstUnmet(...)` decides which step is due, `AppModel.gateRoute()` applies it at all nine routing sites, and `OnboardingView` renders whichever step is current. Three new leaf types carry the new behavior: a repository scanner, an install runner, and the step enum.
+**Goal:** Replace the two bare setup gates with one onboarding flow that installs OMP, connects a provider, and takes a project folder from a scan of the user's Git repositories. (As of 2026-08-27, the project folder step no longer scans; see the update note above.)
+
+**Architecture:** `AppRoute.setup` and `.providerSetup` collapse into `.onboarding(OnboardingStep)`. A pure `OnboardingStep.firstUnmet(...)` decides which step is due, `AppModel.gateRoute()` applies it at all nine routing sites, and `OnboardingView` renders whichever step is current. Three new leaf types carry the new behavior: a repository scanner (removed 2026-08-27, see update note above), an install runner, and the step enum.
 
 **Tech Stack:** Swift 6.1, SwiftUI, macOS 15+, Swift Testing (`@Test` free functions), `xcodebuild`, `xcodeproj` gem 1.27.0.
 
@@ -370,7 +382,13 @@ git commit -m "feat(onboarding): add the step enum and its requirement resolver"
 
 ---
 
-### Task 3: Git repository scanner
+### Task 3: Git repository scanner (removed 2026-08-27, historical)
+
+> This task's output — `GitRepositoryScanner.swift` and
+> `GitRepositoryScannerTests.swift` — was deleted after live testing showed
+> crawling the home directory was the wrong approach. See the update note at
+> the top of this document. The task body below is left as originally
+> written and no longer describes what the project step does.
 
 **Files:**
 - Create: `App/Onboarding/GitRepositoryScanner.swift`
@@ -1397,6 +1415,13 @@ struct OnboardingInstallStepView: View {
 
 - [ ] **Step 9: Write the project step**
 
+> **Removed 2026-08-27:** the `scanner`/`GitRepositoryScanner` wiring and the
+> `isScanning` skeleton state shown below no longer exist. The project step
+> now reads `AppModel.sessions` through
+> `ProjectSessionGrouper.choosableProjectURLs(from:)` directly, with no
+> injectable dependency and no loading state. See the update note at the top
+> of this document. The code below is left as originally written.
+
 Create `App/Onboarding/OnboardingProjectStepView.swift`:
 
 ```swift
@@ -1572,7 +1597,9 @@ Replace the two `SetupView` tests:
 }
 ```
 
-The populated and skeleton states need the scan pointed at a fixture. `OnboardingProjectStepView` already takes an injectable `scanner`; pass one rooted at a temporary tree, following the fixture in `GitRepositoryScannerTests`. Name the references `onboarding-project-populated` and `onboarding-project-scanning`.
+~~The populated and skeleton states need the scan pointed at a fixture. `OnboardingProjectStepView` already takes an injectable `scanner`; pass one rooted at a temporary tree, following the fixture in `GitRepositoryScannerTests`. Name the references `onboarding-project-populated` and `onboarding-project-scanning`.~~
+
+**Removed 2026-08-27:** there is no scanner and no skeleton state to snapshot. `onboarding-project-scanning` was deleted outright. The populated case now builds `AppModel.sessions` with a few `SessionMetadata` values whose `cwd` are distinct project directories, and both `onboarding-project-empty` and `onboarding-project-populated` settle synchronously — no fixture tree, no async settle loop. See the update note at the top of this document and `assertSnapshotAfterSettling`'s removal in `Tests/TenXAppTests/SnapshotHarness.swift`.
 
 - [ ] **Step 3: Re-target the provider snapshots**
 

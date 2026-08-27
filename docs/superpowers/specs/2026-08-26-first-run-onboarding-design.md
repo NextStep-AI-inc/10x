@@ -7,6 +7,19 @@
 **Builds on:** `2026-08-25-provider-setup-usage-design.md` and
 `2026-08-25-startup-splash-preload-design.md`
 
+> **Update, 2026-08-27:** The home-directory Git scan described below (Scan,
+> the depth-measurement table, the Spotlight note, the consent-prompt
+> rationale, and the related approved-decision and copy-table rows) was
+> removed after live testing. Crawling the user's home directory to suggest
+> projects was judged wrong on its own terms, independent of the consent-list
+> mitigations this design built for it. The project step now suggests only
+> folders 10x already knows about, the working directories of existing OMP
+> sessions, via `ProjectSessionGrouper.choosableProjectURLs(from:including:)`
+> (the same derivation the composer's project flyout already used). No disk
+> crawl of any kind remains. The sections below are kept for the record of
+> what was tried and why it did not ship; they no longer describe current
+> behavior.
+
 ## Goal
 
 Turn the two bare full-screen gates a new user hits today into one onboarding
@@ -15,10 +28,11 @@ project folder chosen.
 
 Two of those gates exist. The third does not: nothing today asks for a project
 folder, so a user with no prior sessions reaches the workspace with
-`selectedProjectURL` still `nil`. This design adds that step, gives it
-suggestions drawn from a scan for Git repositories, lets the app install OMP
-rather than only locate it, and replaces eight scattered routing decisions with
-one resolver.
+`selectedProjectURL` still `nil`. This design adds that step, originally with
+suggestions drawn from a scan for Git repositories (removed 2026-08-27, see
+the update note above; suggestions now come from known session project
+directories), lets the app install OMP rather than only locate it, and
+replaces eight scattered routing decisions with one resolver.
 
 ## Approved product decisions
 
@@ -34,11 +48,14 @@ one resolver.
 - 10x runs the documented OMP install script itself. The command is shown
   verbatim before it runs, its output is streamed on screen, and choosing the
   executable manually remains available.
-- The project step scans for Git repositories and offers them as suggestions.
+- ~~The project step scans for Git repositories and offers them as
+  suggestions.~~ **Superseded 2026-08-27:** no scan. Suggestions come from
+  known session project directories instead; see the update note above.
   Choosing a folder manually remains available and is the only control shown
-  when the scan finds nothing.
-- The scan never touches `~/Desktop`, `~/Documents`, or `~/Downloads`, so
-  onboarding raises no macOS consent prompt the user did not ask for.
+  when there is nothing to suggest.
+- ~~The scan never touches `~/Desktop`, `~/Documents`, or `~/Downloads`, so
+  onboarding raises no macOS consent prompt the user did not ask for.~~
+  **Superseded 2026-08-27:** moot, since nothing scans the disk anymore.
 - Onboarding requires one project folder. Adding more during the step is
   allowed, subject to the existing two-entry retention in `RecentProjectStore`.
 
@@ -248,7 +265,16 @@ requires that one account is connected, which is the same condition
 
 ## Project step
 
-### Scan
+### Suggestions (current, 2026-08-27)
+
+No disk crawl. Suggestions are the working directories of existing OMP
+sessions: `ProjectSessionGrouper.choosableProjectURLs(from: model.sessions)`,
+the same call the composer's project flyout already made. A genuine
+first-run user has no sessions, so the list is empty and `Choose folder…` is
+the only control. The `### Scan` section immediately below describes the
+home-directory crawl this replaced; it is historical, kept for the record.
+
+### Scan (removed 2026-08-27, historical)
 
 A directory scan of the user's home folder, off the main actor:
 
@@ -373,23 +399,27 @@ fixed-height `ScrollView` so a long install cannot push `Locate OMP` off screen.
 | Provider body | `Choose at least one provider to start sessions.` (existing) |
 | Project title | `Choose a project` |
 | Project body | `Sessions run in a project folder.` |
-| Suggestions label | `Found in your home folder` |
-| Project empty | `No Git repositories found in your home folder.` |
+| Suggestions label | ~~`Found in your home folder`~~ **`Recent projects`** (2026-08-27) |
+| Project empty | ~~`No Git repositories found in your home folder.`~~ **(removed 2026-08-27: no list, no error, just the controls)** |
 | Project secondary | `Choose folder…` |
 | Project primary | `Continue` |
 | Step counter | `Step 1 of 3` |
 | Back | `Back` |
 
 No count of found repositories is displayed, which avoids a singular and plural
-form in a dynamic string.
+form in a dynamic string. (This no longer applies to a count of scan results,
+since there is no scan; it is kept as it still describes the row list generally.)
 
 ### States
 
 Each step owns its own states rather than deferring to a screen-level spinner.
-The scan renders skeleton rows while it runs, in the shape the provider list
-already uses, then the list or the empty line. The install step is idle,
-running with visible output, or failed with that output retained. Provider
-errors continue to use the existing `providerMessage` and `loginMessage` paths.
+~~The scan renders skeleton rows while it runs, in the shape the provider list
+already uses, then the list or the empty line.~~ **Superseded 2026-08-27:**
+the project step has no asynchronous work and therefore no loading state; it
+renders the list (when there are known project directories) or nothing (when
+there are none) synchronously. The install step is idle, running with visible
+output, or failed with that output retained. Provider errors continue to use
+the existing `providerMessage` and `loginMessage` paths.
 
 Nothing reports success it has not confirmed: the install step advances only
 after discovery actually finds a runnable executable, not after the script
@@ -407,8 +437,17 @@ yields the project step, and re-gating after recent projects are prepared
 yields the workspace. Regression cases assert that removing OMP mid-run returns
 to the install step and that a revoked provider returns to the connect step.
 
-**Scanner.** A temporary tree exercising every rule, asserting the found set,
-the ranking order, the twelve-result cap, and that cancellation stops the walk:
+**~~Scanner.~~ Removed 2026-08-27.** The scanner and its test table (below,
+kept for the record) no longer exist. `GitRepositoryScanner` and
+`GitRepositoryScannerTests.swift` were deleted along with the disk crawl.
+Project-step coverage now lives in `ProjectSessionGrouperTests.swift`
+(`choosableProjectURLs` already had its own tests before this design existed)
+and in `ViewSnapshotTests.swift`'s `onboarding-project-empty` /
+`onboarding-project-populated` snapshots, which build `AppModel.sessions`
+directly rather than a fixture tree on disk.
+
+A temporary tree exercised every rule, asserting the found set, the ranking
+order, the twelve-result cap, and that cancellation stopped the walk:
 
 | Fixture | Expected |
 | --- | --- |
@@ -432,14 +471,17 @@ from the same source.
 
 Visual verification is against a real build, per `verifying-work`: each of the
 three steps, the two-step and one-step entries, the failed install with output
-retained, the empty scan result, and the skeleton state.
+retained, and the project step with and without suggestions. (There is no
+longer a skeleton state for the project step; see the update note at the top
+of this document.)
 
 ## Out of scope
 
 - Raising the two-project retention cap in `RecentProjectStore`.
 - Creating directories or running `git init` for a user starting from nothing.
-- Scanning `~/Desktop`, `~/Documents`, or `~/Downloads`, with or without an
-  opt-in control.
+- ~~Scanning `~/Desktop`, `~/Documents`, or `~/Downloads`, with or without an
+  opt-in control.~~ Moot as of 2026-08-27: the project step scans nothing at
+  all, see the update note at the top of this document.
 - Multi-account provider connection, which
   `2026-08-26-multi-account-provider-routing-design.md` owns.
 - Re-showing onboarding on demand from Settings.

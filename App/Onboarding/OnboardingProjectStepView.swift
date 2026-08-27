@@ -3,39 +3,36 @@ import SwiftUI
 
 struct OnboardingProjectStepView: View {
     let model: AppModel
-    /// Injectable so a snapshot test can point the scan at a fixture tree.
-    var scanner = GitRepositoryScanner()
 
-    @State private var suggestions: [GitRepositorySuggestion] = []
     @State private var chosen: Set<String> = []
-    @State private var isScanning = true
+
+    /// Project directories 10x already knows about, from existing sessions.
+    /// No disk crawling: this reuses the same derivation as the composer's
+    /// project flyout.
+    private var suggestions: [URL] {
+        ProjectSessionGrouper.choosableProjectURLs(from: model.sessions)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if isScanning {
-                OnboardingSkeletonRows()
-            } else if suggestions.isEmpty {
-                Text("No Git repositories found in your home folder.")
-                    .font(TenXTypography.body(size: 13))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-            } else {
-                Text("Found in your home folder")
+            if !suggestions.isEmpty {
+                Text("Recent projects")
                     .font(TenXTypography.body(size: 12, weight: .semibold))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(suggestions) { suggestion in
+                        ForEach(suggestions, id: \.path) { url in
                             OnboardingRowView(
-                                title: suggestion.url.lastPathComponent,
-                                detail: suggestion.url.path
+                                title: url.lastPathComponent,
+                                detail: url.path
                             ) {
-                                if chosen.contains(suggestion.id) {
+                                if chosen.contains(url.standardizedFileURL.path) {
                                     Text("Added")
                                         .font(TenXTypography.body(size: 12))
                                         .foregroundStyle(
                                             TenXPalette.color(TenXPalette.mutedTextHex))
                                 } else {
-                                    Button("Add") { choose(suggestion.url) }
+                                    Button("Add") { choose(url) }
                                         .buttonStyle(GhostActionStyle())
                                 }
                             }
@@ -56,16 +53,11 @@ struct OnboardingProjectStepView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task {
-            // Cancelled automatically when the step goes away.
-            suggestions = (try? await scanner.scan()) ?? []
-            isScanning = false
-        }
     }
 
     private func choose(_ url: URL) {
         model.recordOnboardingProject(url)
-        chosen.insert(GitRepositorySuggestion(url: url, modified: .distantPast).id)
+        chosen.insert(url.standardizedFileURL.path)
     }
 
     private func chooseFolder() {

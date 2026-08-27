@@ -55,73 +55,47 @@ import Testing
 }
 
 @MainActor
-@Test func onboardingProjectStepEmptySnapshot() async throws {
-    // No repositories created: the scan settles with zero suggestions,
-    // which is what "empty" names — as opposed to the pre-scan skeleton,
-    // which is what a plain, synchronous capture can only ever show (see
-    // `onboardingProjectStepScanningSnapshot`, which captures exactly that
-    // skeleton and needs no fixture contents to do it).
-    let fixture = try ProjectScanFixture(name: "empty")
-    defer { fixture.cleanup() }
-
+@Test func onboardingProjectStepEmptySnapshot() throws {
+    // A genuine first-run user: no sessions, so no suggestions. No disk
+    // scan runs, so this settles synchronously.
     let model = AppModel()
     model.installation = OmpInstallation(
         executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
         version: "18.0.4")
-    try await assertSnapshotAfterSettling(
-        OnboardingView(
-            model: model,
-            step: .chooseProject,
-            projectScanner: GitRepositoryScanner(homeDirectory: fixture.root)),
+    try assertSnapshot(
+        OnboardingView(model: model, step: .chooseProject),
         name: "onboarding-project-empty",
         size: CGSize(width: 760, height: 560))
 }
 
 @MainActor
-@Test func onboardingProjectStepScanningSnapshot() throws {
-    let fixture = try ProjectScanFixture(name: "scanning")
-    defer { fixture.cleanup() }
-    try fixture.repository("10x", modified: Date(timeIntervalSince1970: 3))
-    try fixture.repository("omp-cli", modified: Date(timeIntervalSince1970: 2))
-
+@Test func onboardingProjectStepPopulatedSnapshot() throws {
     let model = AppModel()
     model.installation = OmpInstallation(
         executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
         version: "18.0.4")
-    // The plain, synchronous `assertSnapshot` captures before the step's
-    // scan (which genuinely suspends) can resume, so this reliably shows
-    // the pre-scan skeleton regardless of what the fixture contains.
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/onboarding-populated-1.jsonl",
+            cwd: "/tmp/10x",
+            title: "Session",
+            modified: 3),
+        snapshotSession(
+            path: "/sessions/onboarding-populated-2.jsonl",
+            cwd: "/tmp/omp-cli",
+            title: "Session",
+            modified: 2),
+        // Deliberately long and nested, so the third (still-visible, above
+        // the scroll fold) row exercises OnboardingRowView's
+        // `.lineLimit(1)`/`.truncationMode(.head)` on the detail line.
+        snapshotSession(
+            path: "/sessions/onboarding-populated-3.jsonl",
+            cwd: "/tmp/workspace/a-genuinely-long-directory-name-used-to-exercise-the-truncated-detail-line",
+            title: "Session",
+            modified: 1),
+    ]
     try assertSnapshot(
-        OnboardingView(
-            model: model,
-            step: .chooseProject,
-            projectScanner: GitRepositoryScanner(homeDirectory: fixture.root)),
-        name: "onboarding-project-scanning",
-        size: CGSize(width: 760, height: 560))
-}
-
-@MainActor
-@Test func onboardingProjectStepPopulatedSnapshot() async throws {
-    let fixture = try ProjectScanFixture(name: "populated")
-    defer { fixture.cleanup() }
-    try fixture.repository("10x", modified: Date(timeIntervalSince1970: 3))
-    try fixture.repository("omp-cli", modified: Date(timeIntervalSince1970: 2))
-    // Deliberately long and nested, so the third (still-visible, above the
-    // scroll fold) row exercises OnboardingRowView's `.lineLimit(1)`/
-    // `.truncationMode(.head)` on the detail line.
-    try fixture.repository(
-        "workspace/a-genuinely-long-directory-name-used-to-exercise-the-truncated-detail-line",
-        modified: Date(timeIntervalSince1970: 1))
-
-    let model = AppModel()
-    model.installation = OmpInstallation(
-        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
-        version: "18.0.4")
-    try await assertSnapshotAfterSettling(
-        OnboardingView(
-            model: model,
-            step: .chooseProject,
-            projectScanner: GitRepositoryScanner(homeDirectory: fixture.root)),
+        OnboardingView(model: model, step: .chooseProject),
         name: "onboarding-project-populated",
         size: CGSize(width: 760, height: 560))
 }
@@ -846,44 +820,6 @@ private func onboardingProviderAppModel(
         makeComposerControls: stubComposerControlsFactory))
     await model.bootstrap()
     return model
-}
-
-/// A small tree of fake Git repositories for the onboarding project step's
-/// scanning/populated snapshots. Mirrors `ScannerFixture` in
-/// `GitRepositoryScannerTests.swift`, but with two differences that matter
-/// here: `name` is a fixed, caller-chosen suffix rather than a UUID, and the
-/// root lives under the literal `/tmp` this file's other fixtures already
-/// use (e.g. `onboardingProviderAppModel`'s `path:`), not
-/// `FileManager.default.temporaryDirectory` — which is stable within a
-/// session but is itself a per-user, per-machine path. The populated
-/// snapshot renders `suggestion.url.path` as on-screen text, so either a
-/// UUID or a roaming temp root would make the reference image different on
-/// every re-recording. Callers must use distinct names so two fixtures never
-/// share a root (Swift Testing may run their tests concurrently).
-private struct ProjectScanFixture {
-    let root: URL
-
-    init(name: String) throws {
-        root = URL(filePath: "/tmp/tenx-onboarding-project-fixture-\(name)", directoryHint: .isDirectory)
-        try? FileManager.default.removeItem(at: root)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    }
-
-    func cleanup() {
-        try? FileManager.default.removeItem(at: root)
-    }
-
-    @discardableResult
-    func repository(_ path: String, modified: Date) throws -> URL {
-        let url = root.appending(path: path, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(
-            at: url.appending(path: ".git", directoryHint: .isDirectory),
-            withIntermediateDirectories: true)
-        try FileManager.default.setAttributes(
-            [.modificationDate: modified],
-            ofItemAtPath: url.path)
-        return url
-    }
 }
 
 private struct SnapshotOmpLocator: OmpLocating {

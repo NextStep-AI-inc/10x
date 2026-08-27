@@ -3,9 +3,6 @@ import SwiftUI
 struct OnboardingView: View {
     let model: AppModel
     let step: OnboardingStep
-    /// Forwarded to `OnboardingProjectStepView` so a snapshot test can point
-    /// the scan at a fixture tree without changing production call sites.
-    var projectScanner = GitRepositoryScanner()
 
     /// The unmet steps as of when onboarding was entered. Held so the counter
     /// does not shrink underneath the user as requirements are satisfied.
@@ -59,7 +56,7 @@ struct OnboardingView: View {
                     onContinue: model.completeProviderSetup)
             }
         case .chooseProject:
-            OnboardingProjectStepView(model: model, scanner: projectScanner)
+            OnboardingProjectStepView(model: model)
         }
     }
 

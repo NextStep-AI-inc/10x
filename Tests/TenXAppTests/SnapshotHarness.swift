@@ -17,55 +17,6 @@ func assertSnapshot<Content: View>(
     try captureAndCompare(host: host, name: name, size: size, sourceFile: sourceFile)
 }
 
-/// Like `assertSnapshot`, but for views whose state depends on a `.task`
-/// that genuinely suspends (hops off the main actor and back), such as
-/// `OnboardingProjectStepView`'s repository scan. The plain, synchronous
-/// `assertSnapshot` captures before such a task can resume: it never awaits
-/// anything, so the resumption — queued on the main actor — has no chance to
-/// run before the bitmap is read. Mounting into a real (offscreen) window and
-/// then yielding gives that queued work a chance to actually execute before
-/// the same capture path runs.
-@MainActor
-func assertSnapshotAfterSettling<Content: View>(
-    _ content: Content,
-    name: String,
-    size: CGSize = CGSize(width: 900, height: 600),
-    sourceFile: String = #filePath
-) async throws {
-    let host = makeSnapshotHost(content, size: size)
-    let window = NSWindow(
-        contentRect: CGRect(origin: .zero, size: size),
-        styleMask: [.borderless],
-        backing: .buffered,
-        defer: false)
-    window.isReleasedWhenClosed = false
-    window.contentView = host
-    // Off-screen: a real window is what makes SwiftUI treat the view as
-    // appeared, but the test has no need to show it.
-    window.setFrameOrigin(NSPoint(x: -20_000, y: -20_000))
-    window.orderFront(nil)
-    defer { window.orderOut(nil) }
-
-    host.layoutSubtreeIfNeeded()
-    host.displayIfNeeded()
-
-    // Bounded settle loop: each iteration both yields to the main actor's
-    // queue (so a resumed `.task` continuation can run) and re-runs layout
-    // (so SwiftUI's next diff is reflected before the following iteration).
-    // 100 * 20ms = 2s, comfortably above a small fixture scan even on a
-    // heavily loaded machine (this is a bound, not a fixed cost: the loop
-    // keeps running the full budget regardless of when the state actually
-    // settles, since there is no external signal to poll instead).
-    for _ in 0..<100 {
-        await Task.yield()
-        try? await Task.sleep(nanoseconds: 20_000_000)
-        host.layoutSubtreeIfNeeded()
-        host.displayIfNeeded()
-    }
-
-    try captureAndCompare(host: host, name: name, size: size, sourceFile: sourceFile)
-}
-
 @MainActor
 private func makeSnapshotHost<Content: View>(
     _ content: Content,
