@@ -8,30 +8,33 @@ struct ActiveSessionView: View {
 
     var body: some View {
         ZStack {
-            if flyout != nil {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture { flyout = nil }
-            }
+            // Catches the margins beside and below the composer.
+            dismissScrim
 
             VStack(spacing: 0) {
-                SessionHeaderView(controller: controller)
+                VStack(spacing: 0) {
+                    SessionHeaderView(controller: controller)
 
-                TranscriptView(controller: controller)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    TranscriptView(controller: controller)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if controller.isRecoveryPresented,
-                   case .stopped(let code, _) = controller.runtimeState {
-                    RuntimeRecoveryView(
-                        exitCode: code,
-                        onRestart: { Task { await controller.restart() } },
-                        onOpenLog: controller.openLog,
-                        onDismiss: controller.dismissRecovery)
-                    .frame(maxWidth: 780)
-                    .padding(.horizontal, 42)
-                    .padding(.bottom, 16)
+                    if controller.isRecoveryPresented,
+                       case .stopped(let code, _) = controller.runtimeState {
+                        RuntimeRecoveryView(
+                            exitCode: code,
+                            onRestart: { Task { await controller.restart() } },
+                            onOpenLog: controller.openLog,
+                            onDismiss: controller.dismissRecovery)
+                        .frame(maxWidth: 780)
+                        .padding(.horizontal, 42)
+                        .padding(.bottom, 16)
+                    }
                 }
+                // The transcript is a ScrollView and hit-tests across its whole
+                // area, so the ZStack scrim below never sees those clicks. This
+                // overlay intercepts them first, and stays off the composer
+                // subtree, which draws later and keeps its own clicks.
+                .overlay { dismissScrim }
 
                 ComposerView(
                     draft: Bindable(controller).draft,
@@ -75,6 +78,16 @@ struct ActiveSessionView: View {
             .frame(minWidth: 620, minHeight: 360)
         }
         .onExitCommand { flyout = nil }
+    }
+
+    @ViewBuilder
+    private var dismissScrim: some View {
+        if flyout != nil {
+            Color.clear
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { flyout = nil }
+        }
     }
 
     private var extensionSheetBinding: Binding<ExtensionUIState?> {

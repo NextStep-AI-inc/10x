@@ -27,7 +27,8 @@ struct ComposerSessionControlsView: View {
         .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
         .opacity(isPresented ? 0 : 1)
         .accessibilityHidden(isPresented)
-        .disabled(model.isLoading && model.models.isEmpty)
+        // Never disabled: the panel owns the loading and empty copy, and gating
+        // the trigger on the same predicate makes that copy unreachable.
         .accessibilityLabel("Model")
         .accessibilityValue(ComposerControlsPresentation.triggerTitle(for: model.selectedModel))
         .accessibilityHint("Shows model menu")
