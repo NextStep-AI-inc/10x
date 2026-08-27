@@ -21,6 +21,7 @@ import Testing
         "Loading sessions",
         "Loading settings",
         "Preparing recent projects",
+        "Checking for updates",
     ])
     #expect(StartupState.buildLabel(version: "0.1.0") == "BUILD 0.1.0")
     #expect(!StartupState.buildLabel(version: "0.1.0").contains("10x"))
@@ -139,4 +140,66 @@ import Testing
     #expect(!presentation.isSignalAnimating)
     #expect(presentation.actions.map(\.title) == ["Retry", "Continue to workspace"])
     #expect(presentation.actions.map(\.kind) == [.primary, .secondary])
+}
+
+@MainActor
+@Test func theLedgerEndsWithTheAdvisoryUpdateRow() {
+    let state = StartupState()
+
+    #expect(state.rows.map(\.title) == [
+        "Preparing runtime",
+        "Loading sessions",
+        "Loading settings",
+        "Preparing recent projects",
+        "Checking for updates",
+    ])
+    #expect(StartupStageID.updates.detail == "Looking for a newer version")
+}
+
+@MainActor
+@Test func onlyTheFourWorkStagesGateTheLaunch() {
+    #expect(StartupStageID.gatingCases == [
+        .runtime, .sessions, .settings, .recentProjects,
+    ])
+    #expect(!StartupStageID.gatingCases.contains(.updates))
+}
+
+@MainActor
+@Test func recoveryNeverStopsTheAdvisoryUpdateRow() {
+    let state = StartupState()
+    let attempt = UUID()
+    state.beginAttempt(id: attempt)
+    state.markLoading(.updates, attemptID: attempt)
+    state.markLoading(.sessions, attemptID: attempt)
+
+    state.enterRecovery(attemptID: attempt)
+
+    #expect(state.status(of: .sessions) == .stopped)
+    #expect(state.status(of: .updates) != .stopped)
+}
+
+@MainActor
+@Test func theAdvisoryRowCannotBeStoppedDirectly() {
+    let state = StartupState()
+    let attempt = UUID()
+    state.beginAttempt(id: attempt)
+    state.markLoading(.updates, attemptID: attempt)
+
+    state.markStopped(.updates, attemptID: attempt)
+
+    #expect(state.status(of: .updates) == .loading)
+}
+
+@MainActor
+@Test func retryNeverReRunsTheAdvisoryRow() {
+    let state = StartupState()
+    let attempt = UUID()
+    state.beginAttempt(id: attempt)
+    state.markReady(.runtime, attemptID: attempt)
+    state.enterRecovery(attemptID: attempt)
+
+    let retried = state.beginRetry(id: UUID())
+
+    #expect(!retried.contains(.updates))
+    #expect(retried == [.sessions, .settings, .recentProjects])
 }

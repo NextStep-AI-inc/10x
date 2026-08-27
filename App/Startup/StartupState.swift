@@ -6,6 +6,7 @@ enum StartupStageID: String, CaseIterable, Identifiable, Hashable, Sendable {
     case sessions
     case settings
     case recentProjects
+    case updates
 
     var id: Self { self }
 
@@ -15,6 +16,7 @@ enum StartupStageID: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .sessions: "Loading sessions"
         case .settings: "Loading settings"
         case .recentProjects: "Preparing recent projects"
+        case .updates: "Checking for updates"
         }
     }
 
@@ -24,8 +26,15 @@ enum StartupStageID: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .sessions: "Indexing active and archived sessions"
         case .settings: "Preparing your configuration"
         case .recentProjects: "Starting recent workspaces"
+        case .updates: "Looking for a newer version"
         }
     }
+
+    /// The stages that gate handoff and may enter recovery. `updates` is advisory and
+    /// is deliberately absent: a check that fails must never stop a launch.
+    static let gatingCases: [StartupStageID] = [
+        .runtime, .sessions, .settings, .recentProjects,
+    ]
 }
 
 enum StartupStageStatus: String, Equatable, Sendable {
@@ -97,7 +106,7 @@ final class StartupState {
     }
 
     func beginRetry(id: UUID) -> Set<StartupStageID> {
-        let stages = Set(StartupStageID.allCases.filter { status(of: $0) != .ready })
+        let stages = Set(StartupStageID.gatingCases.filter { status(of: $0) != .ready })
         attemptID = id
         phase = .preparing
         for stage in stages { statuses[stage] = .queued }
@@ -115,13 +124,14 @@ final class StartupState {
     }
 
     func markStopped(_ stage: StartupStageID, attemptID: UUID) {
+        guard stage != .updates else { return }
         guard self.attemptID == attemptID, phase == .preparing else { return }
         statuses[stage] = .stopped
     }
 
     func enterRecovery(attemptID: UUID) {
         guard self.attemptID == attemptID, phase != .handoff else { return }
-        for stage in StartupStageID.allCases where status(of: stage) != .ready {
+        for stage in StartupStageID.gatingCases where status(of: stage) != .ready {
             statuses[stage] = .stopped
         }
         phase = .recovery
