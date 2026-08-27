@@ -920,11 +920,30 @@ private func makeProviderRoutingExecutable(
         command_type = command.get("type")
         if command_type == "extension_ui_response":
             sent = json.loads(command.get("value", "{}"))
-            account_ref = sent.get("params", {}).get("accountRef", "")
-            with open(command_log, "a", encoding="utf-8") as log:
-                log.write("pin_account:" + account_ref + "\n")
-            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":account_ref,"reason":"manual","sequence":1})
-            reply = json.dumps({"id": sent.get("id"), "ok": True, "data": {"applied": True}})
+            inner_command = sent.get("command")
+            if inner_command == "hello":
+                # Task 10b fix round 1 added an unsolicited hello probe sent
+                # over this same channel before any real command. The real
+                # extension's hello handler is a pure query with no side
+                # effect (OmpExtension/index.ts: case "hello": return
+                # {contractVersion: 1} -- no log, no event, no sequence).
+                # This fixture used to answer every extension_ui_response as
+                # if it were pin_account regardless of which command was
+                # actually sent, extracting accountRef blindly -- an empty
+                # default for hello's empty params -- which logged a bogus
+                # "pin_account:" line and emitted a provider_account_changed
+                # event with an empty accountRef at sequence 1. Since events
+                # below are also hardcoded to sequence 1, that bogus event
+                # permanently blocked SessionController's monotonic-sequence
+                # guard from ever accepting the real pin_account event that
+                # followed (fix round 2 -- see task-10b-report.md).
+                reply = json.dumps({"id": sent.get("id"), "ok": True, "data": {"contractVersion": 1}})
+            else:
+                account_ref = sent.get("params", {}).get("accountRef", "")
+                with open(command_log, "a", encoding="utf-8") as log:
+                    log.write("pin_account:" + account_ref + "\n")
+                emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":account_ref,"reason":"manual","sequence":1})
+                reply = json.dumps({"id": sent.get("id"), "ok": True, "data": {"applied": True}})
             channel_requests += 1
             emit({"type":"extension_ui_request","id":"acct-chan-" + str(channel_requests),"method":"input","title":MARKER,"placeholder":reply})
             continue
