@@ -16,9 +16,18 @@ struct OmpInstallRunner: Sendable {
     static let command = "curl -fsSL https://omp.sh/install | sh"
 
     private let command: String
+    private let isProcessGroupSignallingEnabled: Bool
 
-    init(command: String = OmpInstallRunner.command) {
+    /// - Parameter isProcessGroupSignallingEnabled: Test seam. Foundation makes
+    ///   every spawned child a process-group leader, so the descendant-walk
+    ///   fallback in `ChildSignaller` is unreachable in production on macOS and
+    ///   would otherwise ship with no coverage. Tests set this false to force it.
+    init(
+        command: String = OmpInstallRunner.command,
+        isProcessGroupSignallingEnabled: Bool = true
+    ) {
         self.command = command
+        self.isProcessGroupSignallingEnabled = isProcessGroupSignallingEnabled
     }
 
     func run() -> AsyncThrowingStream<String, Error> {
@@ -33,7 +42,8 @@ struct OmpInstallRunner: Sendable {
             process.standardError = output
 
             let lines = LineAccumulator()
-            let child = ChildSignaller()
+            let child = ChildSignaller(
+                isProcessGroupSignallingEnabled: isProcessGroupSignallingEnabled)
 
             output.fileHandleForReading.readabilityHandler = { handle in
                 for line in lines.take(handle.availableData) {
@@ -86,11 +96,16 @@ struct OmpInstallRunner: Sendable {
 /// terminating the shell alone leaves the download running. Same shape as
 /// `OmpCommandRunner`'s `killpg` and `LineTransport`'s `setpgid` guard.
 private final class ChildSignaller: @unchecked Sendable {
+    private let isProcessGroupSignallingEnabled: Bool
     private let lock = NSLock()
     private var processID: pid_t?
     private var processGroupID: pid_t?
     private var hasExited = false
     private var isTerminationRequested = false
+
+    init(isProcessGroupSignallingEnabled: Bool = true) {
+        self.isProcessGroupSignallingEnabled = isProcessGroupSignallingEnabled
+    }
 
     /// Records the launched child and moves it into its own process group.
     ///
@@ -100,7 +115,8 @@ private final class ChildSignaller: @unchecked Sendable {
     func adopt(_ pid: pid_t) {
         lock.lock()
         processID = pid
-        if setpgid(pid, pid) == 0 || getpgid(pid) == pid {
+        if isProcessGroupSignallingEnabled,
+           setpgid(pid, pid) == 0 || getpgid(pid) == pid {
             processGroupID = pid
         }
         // A consumer can abandon the stream between `onTermination` being set
@@ -126,10 +142,39 @@ private final class ChildSignaller: @unchecked Sendable {
 
         guard let target else { return }
         if let group {
+            // Descendants inherit the leader's group, so the pipeline dies whole.
             killpg(group, SIGTERM)
-        } else {
-            kill(target, SIGTERM)
+            return
         }
+
+        // No group we can prove is the child's own, so signalling one would
+        // risk signalling the app itself. Walk the tree instead, deepest first,
+        // so `curl | sh` still dies whole. Snapshotted here rather than at
+        // launch: a shell has not yet forked its pipeline when `run()` returns,
+        // so an adopt-time snapshot is always empty.
+        for descendant in Self.descendantPIDs(of: target).reversed() {
+            kill(descendant, SIGTERM)
+        }
+        kill(target, SIGTERM)
+    }
+
+    /// The leader's children, depth first. Same `pgrep` walk as
+    /// `LineTransport.descendantPIDs`.
+    private static func descendantPIDs(of parent: pid_t) -> [pid_t] {
+        let query = Process()
+        let output = Pipe()
+        query.executableURL = URL(filePath: "/usr/bin/pgrep")
+        query.arguments = ["-P", String(parent)]
+        query.standardOutput = output
+        query.standardError = FileHandle.nullDevice
+        guard (try? query.run()) != nil else { return [] }
+        query.waitUntilExit()
+        let text = String(
+            decoding: (try? output.fileHandleForReading.readToEnd()) ?? Data(),
+            as: UTF8.self)
+        let direct = text.split(whereSeparator: \Character.isWhitespace)
+            .compactMap { pid_t($0) }
+        return direct + direct.flatMap { descendantPIDs(of: $0) }
     }
 }
 
