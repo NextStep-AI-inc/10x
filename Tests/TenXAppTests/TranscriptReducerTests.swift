@@ -598,3 +598,37 @@ private func message(_ json: String) throws -> JSONValue {
     #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": shown]))) != .none)
     #expect(reducer.items.count == 1)
 }
+
+@Test func aChangeReplayedFromTheSessionFileIsNotShownTwice() {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(
+        type: "thinking_level_changed",
+        payload: .object(["resolved": .string("high")])))
+    #expect(reducer.items.count == 1)
+
+    let persisted = TranscriptItem.annotation(TranscriptAnnotation(
+        id: "entry-42",
+        kind: .thinking,
+        title: "Thinking set to High",
+        detail: nil,
+        timestamp: nil,
+        tone: .neutral))
+    _ = reducer.reconcile(history: TranscriptHistory(items: [persisted]))
+
+    #expect(reducer.items.count == 1)
+    #expect(reducer.items[0].id == "entry-42")
+}
+
+@Test func aLiveOnlyAnnotationSurvivesReconciliation() {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(
+        type: "auto_retry_start",
+        payload: .object(["attempt": .int(2)])))
+    #expect(reducer.items.count == 1)
+
+    _ = reducer.reconcile(history: TranscriptHistory(items: []))
+
+    // The session file has no entry for a retry, so dropping it would lose the
+    // only record that the response was retried.
+    #expect(reducer.items.count == 1)
+}

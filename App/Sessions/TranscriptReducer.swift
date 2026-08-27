@@ -265,11 +265,19 @@ struct TranscriptReducer {
         for id in resolvedIDs {
             pendingMessageFingerprints.removeValue(forKey: id)
         }
+        let persistedAnnotations = Set(history.items.compactMap(Self.annotationSignature))
         let transient = items.filter { item in
             guard !persistedIDs.contains(item.id) else { return false }
             if pendingPersistenceIDs.contains(item.id) { return true }
             switch item {
-            case .notice, .annotation, .subagent, .extensionUI:
+            case .annotation:
+                // A model, thinking, mode, or compaction change is replayed from
+                // the session file under its own id. Keeping the live copy as
+                // well would leave the transcript holding two of the same note,
+                // the second one stranded at the bottom.
+                guard let signature = Self.annotationSignature(item) else { return true }
+                return !persistedAnnotations.contains(signature)
+            case .notice, .subagent, .extensionUI:
                 return true
             case .tool(let presentation):
                 return presentation.phase == .running
@@ -287,6 +295,13 @@ struct TranscriptReducer {
             inflightMessageID = nil
         }
         return previous == items ? .none : .immediate
+    }
+
+    /// Identity for the same change arriving twice: once as a live event and
+    /// once from the session file, under two different ids.
+    private static func annotationSignature(_ item: TranscriptItem) -> String? {
+        guard case .annotation(let annotation) = item else { return nil }
+        return "\(annotation.kind)|\(annotation.title)"
     }
 
     private static func toolCallPresentations(
