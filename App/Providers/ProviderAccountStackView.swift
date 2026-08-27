@@ -58,6 +58,23 @@ struct ProviderAccountStackGeometry: Equatable {
     /// background disc.) This constant governs rank spacing only — it is
     /// unrelated to the hover-grow sizing below.
     static let fanStepScale: CGFloat = 0.75
+    /// Fraction of `wheelDiameter` for the canvas-colored separation ring's
+    /// width, drawn fully OUTSIDE each disc's own edge (see
+    /// `ProviderAccountStackView`'s separation-ring overlay and badge ring).
+    /// A SwiftUI `.stroke` centers on its path, so a ring merely framed at
+    /// the disc's own diameter only puts half its width outside the disc —
+    /// the other half eats into the disc's own drawn area, leaving an
+    /// effective gap of about a point that reads as a scratch, not a
+    /// separation, once magnified. Chosen by rendering: 0.035 (~1.9pt at
+    /// the regular wheel size) was legible but still thin against two light
+    /// grey discs; 0.045 (~2.4pt) is the smallest that reads as an
+    /// unmistakable, deliberate band at native size. `fanStepScale` above
+    /// still clears it with roughly 5pt to spare (checked by extending the
+    /// same clearance math this round, then confirmed by rendering) because
+    /// the foreground's own ring, now extending outward instead of inward,
+    /// covers slightly more of whatever sits behind it than the disc alone
+    /// did.
+    static let separationRingScale: CGFloat = 0.045
 
     let items: [ProviderAccountStackItemGeometry]
     /// Width of the widest hit target — with the cascade now vertical this is
@@ -73,6 +90,7 @@ struct ProviderAccountStackGeometry: Equatable {
     let expandedHeight: CGFloat
     let wheelDiameter: CGFloat
     let backgroundDiameter: CGFloat
+    let separationRingWidth: CGFloat
     let foregroundAccountID: String?
     let accessibilityOrderedAccountIDs: [String]
 
@@ -88,6 +106,7 @@ struct ProviderAccountStackGeometry: Equatable {
         let maximumBaseZIndex = Double(accountIDs.count + 1)
         let backgroundDiameter = wheelDiameter * Self.backgroundScale
         let fanStep = wheelDiameter * Self.fanStepScale
+        let separationRingWidth = wheelDiameter * Self.separationRingScale
 
         items = accountIDs.map { accountID in
             let isForeground = accountID == foregroundID
@@ -107,16 +126,30 @@ struct ProviderAccountStackGeometry: Equatable {
                 accessibilityPriority: baseZIndex,
                 isForeground: isForeground)
         }
-        width = items.map(\.hitTargetDiameter).max() ?? wheelDiameter
+        // The separation ring renders fully outside each disc's edge (see
+        // ProviderAccountStackView), so the widest and tallest a raised
+        // item's disc-plus-ring can reach is `ringWidth` beyond its own
+        // diameter in every radial direction — but only providers with more
+        // than one account ever show a ring at all (matching
+        // `showsSeparationRing`'s own condition below). Reserving space for
+        // it unconditionally would grow every single-account provider's
+        // column by the same amount for a ring that geometry can never draw
+        // there, which is exactly what silently shifted three unrelated
+        // full-shell references (single-account dock providers, narrow
+        // windows) the first time this was tried unconditionally.
+        let ringReserve = accountIDs.count > 1 ? separationRingWidth : 0
+        width = (items.map(\.hitTargetDiameter).max() ?? wheelDiameter)
+            + 2 * ringReserve
         // Whichever item has the highest resting center is the one that, if
         // raised, needs the most headroom above it — always the
         // topmost-ranked background item when one exists.
         let topRestingCenter = items
             .map { $0.verticalOffset + $0.visualDiameter / 2 }
             .max() ?? wheelDiameter / 2
-        expandedHeight = topRestingCenter + wheelDiameter / 2
+        expandedHeight = topRestingCenter + wheelDiameter / 2 + ringReserve
         self.wheelDiameter = wheelDiameter
         self.backgroundDiameter = backgroundDiameter
+        self.separationRingWidth = separationRingWidth
         self.foregroundAccountID = foregroundID
         accessibilityOrderedAccountIDs = (foregroundID.map { [$0] } ?? [])
             + backgroundIDs
@@ -322,13 +355,24 @@ struct ProviderAccountStackView: View {
                 .contentShape(Circle())
                 .overlay {
                     if showsSeparationRing {
+                        // Framed at diameter-plus-ring-width, not at the
+                        // disc's own diameter: `.stroke` centers on its
+                        // path, so framing it at the disc's exact size
+                        // would spend half the stroke eating into the
+                        // disc's own drawn area, leaving only the other
+                        // half as visible separation from whatever
+                        // overlaps it. This puts the ring's inner edge
+                        // exactly at the disc's boundary and its full
+                        // width outside it.
                         Circle()
                             .stroke(
                                 TenXPalette.color(TenXPalette.canvasHex),
-                                lineWidth: 2)
+                                lineWidth: geometry.separationRingWidth)
                             .frame(
-                                width: visualState.currentDiameter,
-                                height: visualState.currentDiameter)
+                                width: visualState.currentDiameter
+                                    + geometry.separationRingWidth,
+                                height: visualState.currentDiameter
+                                    + geometry.separationRingWidth)
                     }
                 }
                 .overlay {
@@ -441,8 +485,17 @@ struct ProviderAccountStackView: View {
             // than a bite taken out of the wheel. A neutral badge's fill
             // (separatorHex) is close in value to the wheel's own track
             // grey, so this ring is the only thing establishing the edge.
+            // Negative padding (not a same-size overlay) for the same
+            // reason as the wheel's own ring: `.stroke` centers on its
+            // path, so a same-size overlay would spend half the stroke
+            // eating into the badge's own fill instead of separating it
+            // from whatever is behind it.
             .overlay(
-                Capsule().stroke(TenXPalette.color(TenXPalette.canvasHex), lineWidth: 2))
+                Capsule()
+                    .stroke(
+                        TenXPalette.color(TenXPalette.canvasHex),
+                        lineWidth: geometry.separationRingWidth)
+                    .padding(-geometry.separationRingWidth / 2))
             // Every account behind this badge is already individually
             // focusable in the accessibility order; the badge would only
             // repeat that count, not add information.

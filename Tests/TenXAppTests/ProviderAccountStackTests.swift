@@ -19,10 +19,41 @@ import Testing
     #expect(firstSibling.verticalOffset > foreground.verticalOffset)
     #expect(secondSibling.verticalOffset > firstSibling.verticalOffset)
     // The fan spends height, not width: the group is exactly one wheel wide
-    // regardless of account count, which is what makes `stackWidths(providers:)`
-    // dead code (see ProviderUsageDockLayoutTests).
-    #expect(geometry.width == 54)
+    // regardless of account count, which is what makes
+    // `stackWidths(providers:)` dead code (see ProviderUsageDockLayoutTests).
+    // The separation ring adds a fixed reserve once there is more than one
+    // account to ever draw a ring between — but that reserve does not grow
+    // further from two accounts to three, which is the claim that matters
+    // (a provider with a *single* account never draws a ring at all, so it
+    // pays no reserve for one; see `singleAccountProviderReservesNoSeparationRingWidth`).
+    let twoAccountGeometry = ProviderAccountStackGeometry(
+        accountIDs: ["account-a", "account-b"],
+        foregroundAccountID: "account-b",
+        wheelDiameter: 54)
+    #expect(geometry.width == twoAccountGeometry.width)
+    #expect(geometry.width == 54 + 2 * geometry.separationRingWidth)
     #expect(geometry.expandedHeight > 54)
+}
+
+// Regression test: an earlier version of the separation-ring fix reserved
+// its width unconditionally, growing every provider's column — including
+// single-account ones that structurally never draw a ring at all
+// (`showsSeparationRing` requires more than one account). That silently
+// widened three full-shell references that have nothing to do with the
+// account stack, in narrow-window layouts sensitive to a few extra points.
+@Test func singleAccountProviderReservesNoSeparationRingWidth() {
+    let solo = ProviderAccountStackGeometry(
+        accountIDs: ["account-a"],
+        foregroundAccountID: "account-a",
+        wheelDiameter: 54)
+    let pair = ProviderAccountStackGeometry(
+        accountIDs: ["account-a", "account-b"],
+        foregroundAccountID: "account-a",
+        wheelDiameter: 54)
+
+    #expect(solo.width == 54)
+    #expect(solo.width < pair.width)
+    #expect(solo.expandedHeight == 54)
 }
 
 @Test func everyAccountHasASeparateFortyFourPointSemanticTarget() {
