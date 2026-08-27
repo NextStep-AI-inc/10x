@@ -994,7 +994,7 @@ In `Tests/TenXAppTests/StartupStateTests.swift`, replace the row identity assert
     #expect(state.rows.map(\.id) == StartupStageID.allCases.map(\.rawValue))
 ```
 
-Leave the title assertion exactly as it is.
+The title assertion in that same test hardcodes the four existing titles and will fail once the fifth stage exists. Append the fifth title to it in Task 10, when the stage is added; it is correct as written until then.
 
 - [ ] **Step 8: Update the existing snapshot tests**
 
