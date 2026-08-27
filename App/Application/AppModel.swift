@@ -90,6 +90,7 @@ final class AppModel {
             await self?.shutdown()
         }
     @ObservationIgnored private var menuUpdateCheckTask: Task<Void, Never>?
+    @ObservationIgnored private var shutdownOperation: Task<Void, Never>?
 
     var updateState: UpdateState { updateChecker.state }
 
@@ -548,9 +549,29 @@ final class AppModel {
         startupState.enterRecovery(attemptID: attemptID)
     }
 
+    /// Runs once and is re-entrant: a second caller awaits the *completion* of the
+    /// shutdown already in flight rather than returning immediately. Both Sparkle's
+    /// install path (`prepareForInstall`) and `AppTerminationDelegate` call this, and a
+    /// second caller returning early let the app quit while OMP children were still
+    /// being reaped — the delegate would set `isShutdownComplete` and reply
+    /// `.terminateNow` off a shutdown that had barely started.
     func shutdown() async {
-        guard !isShuttingDown else { return }
+        if let shutdownOperation {
+            await shutdownOperation.value
+            return
+        }
+        // Set before the task is created, not inside it, so every guard that reads
+        // `isShuttingDown` sees it the moment this function is entered.
         isShuttingDown = true
+        let operation = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performShutdown()
+        }
+        shutdownOperation = operation
+        await operation.value
+    }
+
+    private func performShutdown() async {
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
         lifecycleGeneration &+= 1
@@ -870,6 +891,13 @@ final class AppModel {
             switch preparation {
             case .ready, .missingOmp:
                 await updateChecker.state.waitWhilePresenting()
+                // The gate also opens on cancellation, which is how an accepted update
+                // gets out of here: `shutdown()` cancels this task and then awaits it
+                // from inside Sparkle's install callback. Handing off from a cancelled
+                // attempt would flash a workspace window open over an install that is
+                // about to replace the app. Re-check both, because `isShuttingDown` is
+                // set before this task is cancelled and either one can arrive first.
+                guard !isShuttingDown, !Task.isCancelled else { return }
                 startupState.requestHandoff(attemptID: id)
             }
         } catch {

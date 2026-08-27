@@ -24,6 +24,101 @@ private let updateTestTiming = StartupTiming(
         try await ContinuousClock().sleep(for: .seconds(60))
     })
 
+/// Bounded poll. Every wait in the launch-install composition test goes through this
+/// rather than `await someTask.value`, so a regression reports a deadlock instead of
+/// becoming one and wedging the whole suite. Ten seconds is deliberately generous: the
+/// fixture spawns real child processes, and the point of the bound is hang resistance,
+/// not tight timing.
+@MainActor
+private func waitUntil(
+    _ description: String,
+    isSilent: Bool = false,
+    _ predicate: @MainActor () -> Bool
+) async -> Bool {
+    for _ in 0..<1_000 {
+        if predicate() { return true }
+        try? await ContinuousClock().sleep(for: .milliseconds(10))
+    }
+    if !isSilent { Issue.record("Timed out waiting for \(description)") }
+    return false
+}
+
+/// Carries the launch-install composition's cross-task observations: the
+/// `prepareForInstall` closure `AppModel` handed its checker, and whether each of the
+/// two things awaiting that closure ever returned.
+@MainActor
+private final class LaunchInstallProbe {
+    var prepareForInstall: (@MainActor () async -> Void)?
+    var didFinishShutdown = false
+    var didFinishBootstrap = false
+}
+
+/// The composition every other update test dodges: a bootstrap parked on the handoff
+/// gate, an offer accepted at launch, and the *real* `AppModel.shutdown()` that the real
+/// driver awaits from `showReadyToInstallAndRelaunch()`.
+/// `acceptingAnUpdateNeverOpensTheWorkspace` releases the gate by hand with
+/// `updateState.reset()`, which is exactly the step a real install never performs:
+/// Sparkle only reaches `dismissUpdateInstallation()` (the one production caller of
+/// `reset()` on this path) after the install reply lands, and that reply is what
+/// `shutdown()` is blocking.
+///
+/// Second assertion is the other half of the same fix: the startup task is cancelled by
+/// `shutdown()`, so when the gate does release it must leave without calling
+/// `requestHandoff` — otherwise a cancelled launch flashes a workspace window open
+/// mid-install.
+@MainActor
+@Test func acceptingAnUpdateAtLaunchLetsTheShutdownItTriggersFinish() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let checker = StubUpdateChecker()
+    checker.onCheck = { $0.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0") }
+    let probe = LaunchInstallProbe()
+    let model = fixture.model(
+        timing: updateTestTiming,
+        updateChecker: checker,
+        onMakeUpdateChecker: { [probe] prepare in probe.prepareForInstall = prepare })
+
+    let bootstrap = Task { @MainActor [probe] in
+        await model.bootstrap()
+        probe.didFinishBootstrap = true
+    }
+    _ = await waitUntil("the launch check to offer an update") {
+        model.updateState.isAwaitingDecision
+    }
+
+    // Everything below mirrors the real driver, in order: the offer is accepted, the
+    // download begins (a presenting phase, so the handoff gate stays parked), and
+    // Sparkle then asks the driver to get ready, which awaits `prepareForInstall`.
+    model.acceptUpdate()
+    model.updateState.beginDownload()
+    let readyToInstall = Task { @MainActor [probe] in
+        await probe.prepareForInstall?()
+        probe.didFinishShutdown = true
+    }
+    _ = await waitUntil("AppModel.shutdown() to return") { probe.didFinishShutdown }
+
+    #expect(
+        probe.didFinishShutdown,
+        """
+        AppModel.shutdown() never returned. It cancels the startup task and then awaits \
+        it, but the startup task is parked in UpdateState.waitWhilePresenting(), which \
+        only a phase change off a presenting phase can release. In production that \
+        change comes from Sparkle, which is waiting on this shutdown.
+        """)
+    #expect(model.startupState.phase != .handoff)
+    #expect(!model.startupState.consumeWorkspaceOpenRequest())
+
+    // Teardown only. Releasing the gate by hand is the step a real install never
+    // performs, so it belongs strictly after the assertions.
+    model.updateState.reset()
+    _ = await waitUntil("teardown", isSilent: true) {
+        probe.didFinishBootstrap && probe.didFinishShutdown
+    }
+    bootstrap.cancel()
+    readyToInstall.cancel()
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
 @MainActor
 @Test func aLaunchWithNoUpdateHandsOffNormally() async throws {
     let fixture = try StartupFixture()

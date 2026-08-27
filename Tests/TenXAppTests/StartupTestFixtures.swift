@@ -309,7 +309,14 @@ final class StartupFixture {
         settingsRunner: any OmpConfigRunning = StartupConfigRunner(),
         providerModel: ProviderManagementViewModel? = nil,
         providerFactory: StartupProviderModelFactory? = nil,
-        updateChecker: (any UpdateChecking)? = nil
+        updateChecker: (any UpdateChecking)? = nil,
+        // Hands the test the very `prepareForInstall` closure `AppModel` wires into its
+        // checker. `SplashUpdateDriver.showReadyToInstallAndRelaunch` awaits that closure
+        // (it is `await self?.shutdown()`), so a test that wants to compose a real
+        // shutdown with an accepted update has no other way to reach it — every other
+        // seam substitutes the checker and drops the closure on the floor.
+        onMakeUpdateChecker: (
+            @MainActor @Sendable (@escaping @MainActor () async -> Void) -> Void)? = nil
     ) -> AppModel {
         let manager = processManager ?? self.processManager()
         let provider = providerModel ?? providerTestModel(providers: [
@@ -334,7 +341,10 @@ final class StartupFixture {
             settingsRunner: settingsRunner,
             makeProviderModel: makeProvider,
             makeProcessManager: { _ in manager },
-            makeUpdateChecker: { _ in checker })
+            makeUpdateChecker: { prepareForInstall in
+                onMakeUpdateChecker?(prepareForInstall)
+                return checker
+            })
         return AppModel(dependencies: dependencies, preferenceDefaults: defaults)
     }
 

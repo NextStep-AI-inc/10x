@@ -50,7 +50,7 @@ enum UpdateStepID: String, CaseIterable, Sendable {
 final class UpdateState {
     private(set) var phase: UpdatePhase = .idle
     @ObservationIgnored private var lastActiveIndex: Int?
-    @ObservationIgnored private var phaseWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var phaseWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     var isPresentingUpdate: Bool {
         switch phase {
@@ -189,8 +189,9 @@ final class UpdateState {
 
     /// Resolves as soon as an in-flight check produces any outcome. Returns immediately
     /// when no check is running, so the launch gate can await it unconditionally.
+    /// Cancelling the waiting task also resolves it; see `nextPhaseChange`.
     func waitForCheckOutcome() async {
-        while case .checking = phase { await nextPhaseChange() }
+        while case .checking = phase, !Task.isCancelled { await nextPhaseChange() }
     }
 
     /// Resolves once the splash has no update content left to show. Returns immediately
@@ -201,19 +202,49 @@ final class UpdateState {
     /// downloading, failed, then dismissed. Handoff must wait for the end of that
     /// sequence, not the end of the first step, or a failed update strands the splash
     /// with no workspace and no recovery.
+    ///
+    /// Cancellation resolves it too, and that is load bearing rather than tidiness.
+    /// Accepting an update at launch runs `AppModel.shutdown()` from inside Sparkle's
+    /// install callback: shutdown cancels the startup task and then awaits it, while the
+    /// startup task is parked right here. Nothing moves the phase off a presenting one
+    /// during an install (the one production caller of `reset()` on that path is
+    /// `dismissUpdateInstallation`, which Sparkle only reaches after the reply shutdown
+    /// is blocking), so a wait that ignored cancellation deadlocked the install
+    /// permanently. Callers must treat a cancelled return as "the gate never opened" and
+    /// not proceed; see `AppModel.runStartupAttempt`.
     func waitWhilePresenting() async {
-        while isPresentingUpdate { await nextPhaseChange() }
+        while isPresentingUpdate, !Task.isCancelled { await nextPhaseChange() }
     }
 
     private func setPhase(_ newPhase: UpdatePhase) {
         phase = newPhase
         let waiters = phaseWaiters
         phaseWaiters.removeAll()
-        for waiter in waiters { waiter.resume() }
+        for waiter in waiters.values { waiter.resume() }
     }
 
+    /// Suspends until the next phase change, or until the calling task is cancelled.
+    /// Waiters are keyed so a cancellation can release exactly one of them without
+    /// disturbing the others.
     private func nextPhaseChange() async {
-        await withCheckedContinuation { phaseWaiters.append($0) }
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // Cancellation that lands before registration would otherwise never be
+                // seen: `onCancel` has already run by then and found nothing to release.
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                phaseWaiters[id] = continuation
+            }
+        } onCancel: {
+            Task { @MainActor in self.releaseWaiter(id) }
+        }
+    }
+
+    private func releaseWaiter(_ id: UUID) {
+        phaseWaiters.removeValue(forKey: id)?.resume()
     }
 
     private var activeIndex: Int? {
