@@ -292,8 +292,14 @@ than an absent control.
 - Removal is unavailable in t1. The Connections row shows Remove disabled with
   the reason, and points at the OMP command that can do it.
 - The scope confirmation names the session restart in t1.
-- A failed extension load surfaces in Connections as reduced capability, with
-  what is unavailable and why.
+- A failed extension load is NOT announced as such. Dropped during Task 11:
+  10x cannot distinguish "the extension failed to load" from "no extension is
+  present" from "the version is unrecognized" — all three yield the same absent
+  or incompatible hello, so any string naming a cause would be a guess presented
+  as fact. The tier's real limits are already surfaced at the point of action
+  instead, which is better than a banner: removal is disabled on the row where
+  the user would click Remove, and the restart is named in the dialog where they
+  confirm a switch. Degradation stays visible without inventing a diagnosis.
 - No tier ever presents a control it cannot honor.
 
 ## Testing
