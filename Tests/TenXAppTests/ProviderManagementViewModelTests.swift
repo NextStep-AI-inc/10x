@@ -507,7 +507,23 @@ import Testing
     #expect(model.loginMessage == "Couldn’t send the response.")
     #expect(model.loginMessageIsError == true)
 
-    await model.cancelLogin()
+    // A failed response is terminal: OMP is still blocked waiting for it, so
+    // the login is torn down rather than left spinning. Without this the row
+    // resolves to .cancel on `activeLoginProviderID` and renders "Connecting…"
+    // over the error, which is never shown.
+    #expect(model.activeLoginProviderID == nil)
+    #expect(model.sheetRequest == nil)
+    #expect(model.loginMessageProviderID == "cursor")
+    #expect(await service.cancelCount == 1)
+    let row = ProviderConnectionRowPresentation.make(
+        provider: provider,
+        hasCredentialIssue: false,
+        activeLoginProviderID: model.activeLoginProviderID,
+        loginMessage: model.loginMessage,
+        loginMessageIsError: model.loginMessageIsError)
+    #expect(row.action == .retry)
+    #expect(row.status == "Couldn’t send the response.")
+
     await loginGate.release()
     await login.value
 }
