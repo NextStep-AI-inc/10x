@@ -28,7 +28,7 @@ import OmpKit
 @MainActor
 @Test func leaveSettingsFallsBackToNewSessionFromSetup() {
     let model = AppModel()
-    model.route = .setup
+    model.route = .onboarding(.installOmp)
 
     model.openSettings()
     model.leaveSettings()
@@ -644,7 +644,7 @@ private struct FixedOmpLocator: OmpLocating {
 
     await model.bootstrap()
 
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
 }
 
 @MainActor
@@ -654,6 +654,9 @@ private struct FixedOmpLocator: OmpLocating {
             id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
     ])
     let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
+    // A project is already selected, so this scenario is meant to reach the
+    // workspace rather than the new project step onboarding also gates on.
+    model.selectedProjectURL = URL(filePath: "/tmp/existing-project", directoryHint: .isDirectory)
 
     await model.bootstrap()
 
@@ -776,7 +779,7 @@ private struct FixedOmpLocator: OmpLocating {
 
     await model.bootstrap()
 
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
 }
 
 @MainActor
@@ -798,7 +801,7 @@ private struct FixedOmpLocator: OmpLocating {
     await usageGate.waitForStart()
     for _ in 0..<20 { await Task.yield() }
 
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
     await usageGate.release()
     await bootstrap.value
 }
@@ -860,7 +863,7 @@ private struct FixedOmpLocator: OmpLocating {
     await shutdownGate.release()
     await failedInstall.value
     #expect(model.providerModel == nil)
-    #expect(model.route == .setup)
+    #expect(model.route == .onboarding(.installOmp))
 }
 
 @MainActor
@@ -892,7 +895,6 @@ private struct FixedOmpLocator: OmpLocating {
     #expect(model.settingsModel === settingsModel)
     #expect(model.providerModel === providerModel)
     #expect(model.route == route)
-    #expect(model.setupError == nil)
 
     await processManager.closeAll()
 }

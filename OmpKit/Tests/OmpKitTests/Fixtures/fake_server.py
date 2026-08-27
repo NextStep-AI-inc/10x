@@ -151,6 +151,10 @@ while True:
 
 STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
          "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
+if mode == "unique-session-file":
+    session_id = f"fake-{os.getpid()}"
+    STATE["sessionId"] = session_id
+    STATE["sessionFile"] = f"/tmp/{session_id}.jsonl"
 if mode in ("activity-lifecycle", "pending-streaming"):
     STATE = {"model": {"id": "initial-model", "provider": "initial-provider"},
              "isStreaming": True, "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}

@@ -420,3 +420,43 @@ Task 17: IN PROGRESS. Secrets landed (5 Apple at ORG level + SPARKLE_ED_PRIVATE_
     - sparkle:edSignature present
     - sparkle:version = 280, NOT 1, so fetch-depth: 0 worked as intended
   Assets: 10x-0.1.0.zip (5,695,516 bytes) + appcast.xml.
+
+MERGED main (ed80033) after the installed 0.1.0 opened straight onto the setup screen.
+  Root cause was NOT this branch: main carried two fixes this branch predated.
+  55fe31d - omp is a #!/usr/bin/env bun script; a Finder launch inherits LaunchServices'
+    PATH, which has neither Homebrew nor ~/.bun/bin, so env could not exec and the
+    locator reported OMP missing. A terminal launch masked it via the shell's PATH.
+  c86c871 - distinguishes OMP absent from OMP that will not run.
+  Merge conflicts were only .gitignore and the two GENERATED project files
+  (regenerated, not hand-merged). AppModel/TenXApp/tests all auto-merged.
+  One real integration fix: main's new stable-UUID work keyed every package reference
+  off relative_path, which only LOCAL packages have. Sparkle is the branch's first
+  REMOTE package and has repositoryURL, so generation raised NoMethodError.
+  stable_uuid_keys now handles both. 629 tests passing serial.
+
+v0.1.1 and v0.1.2 published. Two more CI-only failures found and fixed on the way:
+  - main's generator now asserts xcodeproj 1.27.0; the runner's system gem is 1.28.1.
+  - going through bundler failed too: the runner's bundler is 1.17.2, which cannot run
+    on Ruby 3.2+ at all (String#untaint was removed), and Gemfile.lock names that same
+    version. Replaced with `gem install` + Kernel#gem activation, verified locally to
+    produce a byte-identical project file.
+v0.1.2 (build 334) verified: Gatekeeper accepted / Notarized Developer ID, and the
+  shipped binary carries the known-path OMP references. Feed advertises 0.1.2/334.
+
+*** TASK 17 COMPLETE - UNATTENDED UPDATE VERIFIED END TO END ***
+  0.1.6 -> 0.1.7 ran with no manual quit: splash held, offer shown, four ledger rows
+  resolved, app quit itself, relaunched on the new build. Confirmed by Tanner.
+  Two real bugs found only by running it, both mine, neither catchable by the tests
+  that existed:
+  1. The driver never quit the app. Sparkle cannot swap a running bundle, and with a
+     custom user driver the driver owns termination. Fixed in 0.1.4.
+  2. That fix deadlocked: terminate() called inline from Sparkle's callback left the
+     main thread inside -[NSApplication _shouldTerminate], while AppTerminationDelegate
+     answered .terminateLater and deferred its reply to a @MainActor task needing that
+     same thread. Diagnosed by sampling the wedged process - every main-thread sample
+     was inside _shouldTerminate. Fixed in 0.1.6 by deferring the quit to a clean
+     run-loop turn, which is why manual Cmd-Q had always worked.
+  The 0.1.4 test asserted only that terminate eventually happened, which the
+  deadlocking version also satisfied. The 0.1.6 test asserts BOTH that nothing quits
+  during the callback AND that the quit lands later, so it can tell them apart.
+  Releases published: v0.1.0 through v0.1.7. Feed live and verified at each step.

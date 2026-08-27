@@ -59,6 +59,7 @@ final class ProviderManagementViewModel {
     private(set) var usageMessage: String?
     private(set) var activeLoginProviderID: String?
     private(set) var loginMessage: String?
+    private(set) var loginMessageIsError = false
     private(set) var loginMessageProviderID: String?
     private(set) var sheetRequest: ExtensionUIState?
     private(set) var lastUsageRefresh: Date?
@@ -153,6 +154,7 @@ final class ProviderManagementViewModel {
         let generation = loginGeneration
         activeLoginProviderID = provider.id
         loginMessage = nil
+        loginMessageIsError = false
         loginMessageProviderID = nil
         sheetRequest = nil
 
@@ -167,6 +169,7 @@ final class ProviderManagementViewModel {
             sheetRequest = nil
             activeLoginProviderID = nil
             loginMessage = "Couldn’t connect to \(provider.name)."
+            loginMessageIsError = true
             loginMessageProviderID = provider.id
         }
     }
@@ -200,8 +203,19 @@ final class ProviderManagementViewModel {
             extensionRouter.removeRequest(id: request.id)
             sheetRequest = extensionRouter.sheetRequest
         } catch {
+            // OMP never received this response, so the login it is blocking on
+            // can only end at its own timeout — the connection is already
+            // dead. Tear the login down the way Cancel does so the row stops
+            // promising "Connecting…" and offers Retry instead. State first,
+            // service last: the await below suspends the main actor, and a
+            // login started during it must not be stomped by a stale failure.
+            let providerID = activeLoginProviderID
+            loginGeneration += 1
+            clearLoginState()
             loginMessage = "Couldn’t send the response."
-            loginMessageProviderID = activeLoginProviderID
+            loginMessageIsError = true
+            loginMessageProviderID = providerID
+            await providerService.cancelLogin()
         }
     }
 
@@ -330,10 +344,12 @@ final class ProviderManagementViewModel {
                   let provider = providers.first(where: { $0.id == activeLoginProviderID })
             else {
                 loginMessage = "Connection needs attention."
+                loginMessageIsError = false
                 loginMessageProviderID = nil
                 return
             }
             loginMessage = "Connecting to \(provider.name)."
+            loginMessageIsError = false
             loginMessageProviderID = provider.id
         case .cancel:
             extensionRouter.consume(request)
@@ -346,6 +362,7 @@ final class ProviderManagementViewModel {
     private func clearLoginState() {
         activeLoginProviderID = nil
         loginMessage = nil
+        loginMessageIsError = false
         loginMessageProviderID = nil
         extensionRouter = ExtensionUIRouter()
         sheetRequest = nil

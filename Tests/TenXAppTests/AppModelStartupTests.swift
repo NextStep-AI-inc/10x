@@ -218,7 +218,7 @@ final class AppTerminationDelegateTests: XCTestCase {
 
     await model.bootstrap()
 
-    #expect(model.route == .setup)
+    #expect(model.route == .onboarding(.installOmp))
     #expect(model.startupState.handoffGeneration == 1)
     #expect(model.startupState.phase == .handoff)
     await model.shutdown()
@@ -560,7 +560,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     await replacement.value
 
     #expect(model.providerModel === replacementProvider)
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
     #expect(providerFactory.count == 2)
     #expect(await fallbackService.shutdownCount == 1)
     await model.shutdown()
@@ -627,7 +627,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     }
 
     #expect(model.providerModel === replacementProvider)
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
     #expect(model.providerUsages.map(\.id) == ["cursor"])
     #expect(providerFactory.count == 2)
     #expect(await currentService.shutdownCount == 1)
