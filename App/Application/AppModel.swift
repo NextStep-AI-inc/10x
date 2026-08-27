@@ -35,10 +35,9 @@ final class AppModel {
         case missingOmp
     }
 
-    var route: AppRoute = .setup
+    var route: AppRoute = .onboarding(.installOmp)
     var installation: OmpInstallation?
     var selectedProjectURL: URL?
-    var setupError: String?
     /// Set when OMP is installed but would not run, so setup can say that
     /// instead of reporting it as missing.
     var unrunnableOmpURL: URL?
@@ -140,7 +139,7 @@ final class AppModel {
         if startupOperation?.id == id { startupOperation = nil }
     }
 
-    func useOmp(at url: URL) async {
+    func useOmp(at url: URL? = nil) async {
         let location: OmpLocation
         do {
             location = try await dependencies.ompLocator.locate(preferredURL: url)
@@ -180,6 +179,55 @@ final class AppModel {
         route = .newSession
     }
 
+    /// Every project 10x remembers for listing (the rail, the composer's
+    /// project flyout, onboarding) — wider than the two `rankedProjects`
+    /// warms a client for at startup. Always includes `selectedProjectURL`,
+    /// even before a selection lands in the store (e.g. the moment
+    /// `chooseProject` sets it, before `recordSelection` has been read
+    /// back).
+    var knownProjectURLs: [URL] {
+        var urls = dependencies.recentProjectStore.knownProjects()
+        if let selectedProjectURL {
+            let standardized = selectedProjectURL.standardizedFileURL
+            if !urls.contains(where: { $0.path == standardized.path }) {
+                urls.insert(standardized, at: 0)
+            }
+        }
+        return urls
+    }
+
+    /// Every requirement the workspace does not yet satisfy, in order.
+    func unmetRequirements() -> [OnboardingStep] {
+        OnboardingStep.unmet(
+            installation: installation,
+            hasAuthenticatedProvider: providerModel?.hasAuthenticatedProvider == true,
+            selectedProjectURL: selectedProjectURL)
+    }
+
+    /// The requirement to ask for now.
+    func firstUnmetRequirement() -> OnboardingStep? {
+        unmetRequirements().first
+    }
+
+    /// Routes to the first unmet requirement, or to the workspace. Replaces
+    /// eight scattered decisions and preserves their force-to-`newSession`
+    /// semantics: every caller runs before the splash hands off, or inside a
+    /// runtime replacement that already discarded managed sessions.
+    func gateRoute() {
+        route = firstUnmetRequirement().map(AppRoute.onboarding) ?? .newSession
+    }
+
+    /// Records a project chosen during onboarding.
+    ///
+    /// Deliberately not `chooseProject`: that ends with `route = .newSession`,
+    /// so the first selection would leave onboarding and no second folder
+    /// could be added. There is no active session to tear down here.
+    func recordOnboardingProject(_ url: URL) {
+        let project = url.standardizedFileURL
+        selectedProjectURL = project
+        dependencies.recentProjectStore.recordSelection(project)
+    }
+
     func chooseNewProject() {
         guard !isSessionMutationInFlight else { return }
         let panel = NSOpenPanel()
@@ -208,7 +256,7 @@ final class AppModel {
         let destination = routeBeforeSettings ?? .newSession
         routeBeforeSettings = nil
         switch destination {
-        case .setup, .providerSetup, .settings:
+        case .onboarding, .settings:
             route = .newSession
         default:
             route = destination
@@ -243,8 +291,7 @@ final class AppModel {
     }
 
     func completeProviderSetup() {
-        guard providerModel?.hasAuthenticatedProvider == true else { return }
-        route = .newSession
+        gateRoute()
         Task { await refreshComposerControls() }
     }
 
@@ -863,7 +910,7 @@ final class AppModel {
             providerModel = nil
             composerControls = nil
             providerUsages = []
-            route = .setup
+            gateRoute()
             return false
         }
 
@@ -906,8 +953,7 @@ final class AppModel {
         settingsModel = settings
         providerModel = provider
         composerControls = controls
-        setupError = nil
-        route = .providerSetup
+        gateRoute()
         await restartProcessWatchers(for: manager)
         try checkStartupAttempt(attemptID)
         await stopProviderUsage()
@@ -921,7 +967,7 @@ final class AppModel {
         await refreshComposerControls()
         try checkStartupAttempt(attemptID)
         guard composerControls === controls else { throw CancellationError() }
-        route = provider.hasAuthenticatedProvider ? .newSession : .providerSetup
+        gateRoute()
         startupState.markReady(.runtime, attemptID: attemptID)
         return true
     }
@@ -973,6 +1019,10 @@ final class AppModel {
         }
         try checkStartupAttempt(attemptID)
         startupState.markReady(.recentProjects, attemptID: attemptID)
+        // Startup assigns `selectedProjectURL` in this stage, after the runtime
+        // stage already routed. Without re-gating, every returning user would
+        // be shown the project step.
+        gateRoute()
     }
 
     private func cancelUnfinishedStartupWork(
@@ -1029,7 +1079,7 @@ final class AppModel {
             providerModel = nil
             composerControls = nil
             providerUsages = []
-            route = .setup
+            gateRoute()
             return true
         }
 
@@ -1049,8 +1099,7 @@ final class AppModel {
         providerModel = provider
         composerControls = controls
         providerUsages = []
-        setupError = nil
-        route = .providerSetup
+        gateRoute()
         await restartProcessWatchers(for: manager)
         guard isCurrentLifecycle(generation),
               processManager === manager,
@@ -1068,7 +1117,7 @@ final class AppModel {
         guard isCurrentLifecycle(generation),
               composerControls === controls
         else { return false }
-        route = provider.hasAuthenticatedProvider ? .newSession : .providerSetup
+        gateRoute()
         return true
     }
 
@@ -1266,7 +1315,7 @@ final class AppModel {
             lifecycleGeneration: lifecycleGeneration),
               composerControls === controls
         else { return }
-        route = provider.hasAuthenticatedProvider ? .newSession : .providerSetup
+        gateRoute()
     }
 
     private func startSessionChangeWatching() {

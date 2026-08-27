@@ -11,6 +11,17 @@ func assertSnapshot<Content: View>(
     size: CGSize = CGSize(width: 900, height: 600),
     sourceFile: String = #filePath
 ) throws {
+    let host = makeSnapshotHost(content, size: size)
+    host.layoutSubtreeIfNeeded()
+    host.displayIfNeeded()
+    try captureAndCompare(host: host, name: name, size: size, sourceFile: sourceFile)
+}
+
+@MainActor
+private func makeSnapshotHost<Content: View>(
+    _ content: Content,
+    size: CGSize
+) -> NSHostingView<some View> {
     let root = content
         .frame(width: size.width, height: size.height)
         .background(Color.white)
@@ -18,8 +29,16 @@ func assertSnapshot<Content: View>(
     let host = NSHostingView(rootView: root)
     host.appearance = NSAppearance(named: .aqua)
     host.frame = CGRect(origin: .zero, size: size)
-    host.layoutSubtreeIfNeeded()
-    host.displayIfNeeded()
+    return host
+}
+
+@MainActor
+private func captureAndCompare(
+    host: NSView,
+    name: String,
+    size: CGSize,
+    sourceFile: String
+) throws {
     guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
         Issue.record("Unable to allocate snapshot bitmap")
         return

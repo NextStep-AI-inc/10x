@@ -1,6 +1,5 @@
 enum AppRoute: Equatable {
-    case setup
-    case providerSetup
+    case onboarding(OnboardingStep)
     case newSession
     case session(String)
     case archivedSessions

@@ -10,6 +10,7 @@ actor FakeProviderService: ProviderManaging {
     private var storedProviders: [ProviderLoginProvider]
     private var providerError: (any Error & Sendable)?
     private var loginError: FakeProviderError?
+    private var respondError: FakeProviderError?
     private var loginGates: [LoginGate]
     private let shutdownGate: LoadGate?
     private var providerGates: [LoadGate] = []
@@ -23,12 +24,14 @@ actor FakeProviderService: ProviderManaging {
         providers: [ProviderLoginProvider],
         providerError: (any Error & Sendable)? = nil,
         loginError: FakeProviderError? = nil,
+        respondError: FakeProviderError? = nil,
         loginGate: LoginGate? = nil,
         shutdownGate: LoadGate? = nil
     ) {
         storedProviders = providers
         self.providerError = providerError
         self.loginError = loginError
+        self.respondError = respondError
         self.loginGates = loginGate.map { [$0] } ?? []
         self.shutdownGate = shutdownGate
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .unbounded)
@@ -62,6 +65,7 @@ actor FakeProviderService: ProviderManaging {
     }
 
     func respond(requestID: String, body: [String: JSONValue]) async throws {
+        if let respondError { throw respondError }
         responses.append((requestID, body))
     }
 
@@ -182,6 +186,7 @@ actor LoadGate {
 enum FakeProviderError: Error, Sendable {
     case discoveryFailed
     case loginFailed
+    case respondFailed
 }
 
 actor FakeUsageService: OmpUsageLoading {

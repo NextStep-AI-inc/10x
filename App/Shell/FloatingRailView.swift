@@ -13,7 +13,7 @@ struct FloatingRailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var groups: [ProjectSessionGroup] {
-        ProjectSessionGrouper.groups(model.sessions)
+        ProjectSessionGrouper.groups(model.sessions, knownProjectURLs: model.knownProjectURLs)
     }
 
     private var items: [RailPresentationItem] {
@@ -167,13 +167,14 @@ struct FloatingRailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RailProjectRowStyle())
             .focusEffectDisabled()
             .focused($focusedItem, equals: .project(group.id))
             .padding(.leading, 18)
             .frame(height: 32)
-            .help(group.projectURL.path)
+            .help("Start a new session in \(group.displayName)")
             .accessibilityLabel(group.displayName)
+            .accessibilityHint(RailAccessibility.projectHint(group.displayName))
             .contextMenu {
                 Button("Archive Project Sessions", systemImage: "archivebox") {
                     Task { await model.archiveProject(group) }
@@ -323,6 +324,28 @@ private enum RailFocus: Hashable {
     case project(String)
     case session(String)
     case disclosure(String)
+}
+
+/// Subtle hover cue for the project row so it reads as clickable, mirroring
+/// `BrandMenuRowStyle`'s hover/pressed background treatment.
+private struct RailProjectRowStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        RailProjectRowBody(configuration: configuration)
+    }
+}
+
+private struct RailProjectRowBody: View {
+    let configuration: ButtonStyle.Configuration
+    @State private var isHovering = false
+
+    var body: some View {
+        configuration.label
+            .background(
+                isHovering || configuration.isPressed
+                    ? TenXPalette.color(TenXPalette.hoverNeutralHex)
+                    : .clear)
+            .onHover { isHovering = $0 }
+    }
 }
 
 private struct RailTreeMarker: View {
