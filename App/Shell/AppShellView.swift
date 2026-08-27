@@ -31,7 +31,6 @@ struct AppShellView: View {
                             model: model,
                             expansion: railExpansion,
                             isBrandMenuPresented: $isBrandMenuPresented)
-                        BrandActionsKeyboardShortcuts(model: model)
                     }
                     .animation(railAnimation, value: railExpansion.isExpanded)
                     .overlay {
