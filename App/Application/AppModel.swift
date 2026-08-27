@@ -94,6 +94,14 @@ final class AppModel {
     @ObservationIgnored private var hasStartedWarmRetention = false
     @ObservationIgnored private var managedSessions: [UUID: SessionController] = [:]
     @ObservationIgnored private var managedSessionPaths: [String: UUID] = [:]
+    @ObservationIgnored private lazy var updateChecker: any UpdateChecking =
+        dependencies.makeUpdateChecker { [weak self] in
+            await self?.shutdown()
+        }
+    @ObservationIgnored private var menuUpdateCheckTask: Task<Void, Never>?
+    @ObservationIgnored private var shutdownOperation: Task<Void, Never>?
+
+    var updateState: UpdateState { updateChecker.state }
 
     init(
         dependencies: AppDependencies = .live,
@@ -146,6 +154,45 @@ final class AppModel {
         startupOperation = StartupOperation(id: id, task: task)
         await task.value
         if startupOperation?.id == id { startupOperation = nil }
+    }
+
+    func checkForUpdatesFromMenu() {
+        // `isPresentingUpdate` is false while a check is still running, so it alone does
+        // not stop a second check from starting on top of an in-flight one. The menu item
+        // is disabled until handoff, which keeps a launch check safe, but a user can click
+        // twice in the workspace. One check at a time.
+        guard !isShuttingDown,
+              !updateState.isPresentingUpdate,
+              updateState.phase != .checking
+        else { return }
+        beginMenuUpdateCheck()
+    }
+
+    func acceptUpdate() { updateChecker.accept() }
+
+    func dismissUpdate() { updateChecker.dismiss() }
+
+    func retryUpdate() {
+        updateChecker.dismiss()
+        beginMenuUpdateCheck()
+    }
+
+    /// Starts a user-initiated check and tracks its deadline watchdog, cancelling
+    /// whatever watchdog is already running first. The cancel-first step matters: without
+    /// it, a stale watchdog from an earlier check could still be asleep when a later
+    /// check (a re-click, or `retryUpdate` from a visible failure) begins, wake at its
+    /// own deadline, see `state.phase` still `.checking` (now for the *newer* check), and
+    /// incorrectly fail it. Only one watchdog may be armed at a time, and it must always
+    /// be the one watching the most recent check. Both `checkForUpdatesFromMenu` and
+    /// `retryUpdate` route through this rather than calling `UpdateChecking.check(...)`
+    /// directly, so a retry from a stalled-and-failed state gets its own deadline too —
+    /// otherwise retrying against a still-broken updater would stall silently again.
+    private func beginMenuUpdateCheck() {
+        menuUpdateCheckTask?.cancel()
+        let timing = dependencies.startupTiming
+        menuUpdateCheckTask = updateChecker.checkFromMenu(
+            deadline: timing.menuUpdateCheckDeadline,
+            sleep: timing.sleep)
     }
 
     func useOmp(at url: URL? = nil) async {
@@ -521,9 +568,29 @@ final class AppModel {
         startupState.enterRecovery(attemptID: attemptID)
     }
 
+    /// Runs once and is re-entrant: a second caller awaits the *completion* of the
+    /// shutdown already in flight rather than returning immediately. Both Sparkle's
+    /// install path (`prepareForInstall`) and `AppTerminationDelegate` call this, and a
+    /// second caller returning early let the app quit while OMP children were still
+    /// being reaped — the delegate would set `isShutdownComplete` and reply
+    /// `.terminateNow` off a shutdown that had barely started.
     func shutdown() async {
-        guard !isShuttingDown else { return }
+        if let shutdownOperation {
+            await shutdownOperation.value
+            return
+        }
+        // Set before the task is created, not inside it, so every guard that reads
+        // `isShuttingDown` sees it the moment this function is entered.
         isShuttingDown = true
+        let operation = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performShutdown()
+        }
+        shutdownOperation = operation
+        await operation.value
+    }
+
+    private func performShutdown() async {
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
         lifecycleGeneration &+= 1
@@ -551,6 +618,9 @@ final class AppModel {
         let usage = providerUsageOperation
         providerUsageOperation = nil
         usage?.task.cancel()
+        let menuUpdateCheck = menuUpdateCheckTask
+        menuUpdateCheckTask = nil
+        menuUpdateCheck?.cancel()
 
         let provider = providerModel
         let controls = composerControls
@@ -572,6 +642,7 @@ final class AppModel {
         await warmExits?.value
         await activeExits?.value
         await usage?.task.value
+        await menuUpdateCheck?.value
     }
 
     func requestDeleteSession(_ metadata: SessionMetadata) {
@@ -852,6 +923,14 @@ final class AppModel {
             try checkStartupAttempt(id)
             switch preparation {
             case .ready, .missingOmp:
+                await updateChecker.state.waitWhilePresenting()
+                // The gate also opens on cancellation, which is how an accepted update
+                // gets out of here: `shutdown()` cancels this task and then awaits it
+                // from inside Sparkle's install callback. Handing off from a cancelled
+                // attempt would flash a workspace window open over an install that is
+                // about to replace the app. Re-check both, because `isShuttingDown` is
+                // set before this task is cancelled and either one can arrive first.
+                guard !isShuttingDown, !Task.isCancelled else { return }
                 startupState.requestHandoff(attemptID: id)
             }
         } catch {
@@ -896,7 +975,10 @@ final class AppModel {
     ) async throws -> StartupPreparation {
         if stages.contains(.runtime) {
             let hasRuntime = try await prepareRuntime(attemptID: attemptID)
-            if !hasRuntime { return .missingOmp }
+            if !hasRuntime {
+                startupState.markReady(.updates, attemptID: attemptID)
+                return .missingOmp
+            }
         }
 
         try checkStartupAttempt(attemptID)
@@ -913,10 +995,24 @@ final class AppModel {
                         stages: stages)
                 }
             }
+            if stages.contains(.updates) {
+                group.addTask { await self.prepareUpdates(attemptID: attemptID) }
+            }
             try await group.waitForAll()
         }
         try checkStartupAttempt(attemptID)
         return .ready
+    }
+
+    /// Advisory. Deliberately non-throwing and deliberately incapable of marking the row
+    /// stopped, so a network failure or a slow feed can never put the splash into
+    /// recovery or extend the launch beyond the deadline.
+    private func prepareUpdates(attemptID: UUID) async {
+        startupState.markLoading(.updates, attemptID: attemptID)
+        await updateChecker.checkAtLaunch(
+            deadline: dependencies.startupTiming.updateCheckDeadline,
+            sleep: dependencies.startupTiming.sleep)
+        startupState.resolveAdvisoryCheck(attemptID: attemptID)
     }
 
     private func prepareRuntime(attemptID: UUID) async throws -> Bool {

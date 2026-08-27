@@ -13,10 +13,9 @@ import Testing
 
     try assertSnapshot(
         SplashView(
-            state: state,
-            buildVersion: "0.1.0",
-            onRetry: {},
-            onContinue: {})
+            presentation: SplashPresentation.startup(
+                state: state, onRetry: {}, onContinue: {}),
+            buildVersion: "0.1.0")
             .environment(\.startupSignalReduceMotionOverride, true),
         name: "startup-splash-loading",
         size: CGSize(width: 640, height: 400))
@@ -34,10 +33,9 @@ import Testing
 
     try assertSnapshot(
         SplashView(
-            state: state,
-            buildVersion: "0.1.0",
-            onRetry: {},
-            onContinue: {})
+            presentation: SplashPresentation.startup(
+                state: state, onRetry: {}, onContinue: {}),
+            buildVersion: "0.1.0")
             .environment(\.startupSignalReduceMotionOverride, true),
         name: "startup-splash-recovery",
         size: CGSize(width: 640, height: 400))

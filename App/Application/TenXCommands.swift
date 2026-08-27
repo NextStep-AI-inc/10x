@@ -15,6 +15,16 @@ struct TenXCommands: Commands {
                 .disabled(!model.menuState.isWorkspaceAvailable)
         }
 
+        // Directly under About 10x, the conventional macOS position. Gated like every
+        // other command here: while only the splash is up there is nothing to check
+        // from, because the advisory launch check already owns `updateState` for that
+        // whole stretch and a menu click would race it. Disabled rather than hidden, so
+        // it does not appear and disappear.
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…", action: model.checkForUpdatesFromMenu)
+                .disabled(!model.menuState.isWorkspaceAvailable)
+        }
+
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") {
                 model.openSettings()

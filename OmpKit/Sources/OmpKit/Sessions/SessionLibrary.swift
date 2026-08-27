@@ -427,7 +427,14 @@ public actor SessionLibrary {
             fileDescriptor: descriptor, eventMask: [.write, .rename, .delete],
             queue: DispatchQueue.global())
         source.setEventHandler { [weak self] in
-            Task { await self?.handleWatchEvent() }
+            // Resolve the weak reference before creating the Task rather than
+            // optional-chaining inside it. `self?` in the Task body keeps the weak
+            // binding inside the region the isolation checker is tracking, which
+            // Swift 6.2 rejects as a sending violation; a resolved actor reference is
+            // plainly Sendable. Also means a live event cannot spawn a Task that finds
+            // the library already gone.
+            guard let self else { return }
+            Task { await self.handleWatchEvent() }
         }
         source.setCancelHandler { close(descriptor) }
         source.resume()

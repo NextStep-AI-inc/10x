@@ -88,6 +88,7 @@ extension StartupTiming {
         return StartupTiming(
             minimumVisibility: .zero,
             timeout: .seconds(10),
+            updateCheckDeadline: .milliseconds(50),
             sleep: { duration in
                 guard duration == .seconds(10) else { return }
                 try await sleeper.sleep()
@@ -160,6 +161,8 @@ func makeStartupDependencies(
     settingsRunner: any OmpConfigRunning,
     makeProviderModel: @escaping @MainActor @Sendable (URL) -> ProviderManagementViewModel,
     makeProcessManager: @escaping @Sendable (String) -> SessionProcessManager,
+    makeUpdateChecker: @escaping @MainActor @Sendable (
+        @escaping @MainActor () async -> Void) -> any UpdateChecking,
     makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel = stubAppComposerControlsFactory
 ) -> AppDependencies {
     AppDependencies(
@@ -172,7 +175,8 @@ func makeStartupDependencies(
             SettingsViewModel(service: OmpConfigService(runner: settingsRunner))
         },
         makeProviderModel: makeProviderModel,
-        makeComposerControls: makeComposerControls)
+        makeComposerControls: makeComposerControls,
+        makeUpdateChecker: makeUpdateChecker)
 }
 
 @MainActor
@@ -330,7 +334,15 @@ final class StartupFixture {
         timing: StartupTiming = .live,
         settingsRunner: any OmpConfigRunning = StartupConfigRunner(),
         providerModel: ProviderManagementViewModel? = nil,
-        providerFactory: StartupProviderModelFactory? = nil
+        providerFactory: StartupProviderModelFactory? = nil,
+        updateChecker: (any UpdateChecking)? = nil,
+        // Hands the test the very `prepareForInstall` closure `AppModel` wires into its
+        // checker. `SplashUpdateDriver.showReadyToInstallAndRelaunch` awaits that closure
+        // (it is `await self?.shutdown()`), so a test that wants to compose a real
+        // shutdown with an accepted update has no other way to reach it — every other
+        // seam substitutes the checker and drops the closure on the floor.
+        onMakeUpdateChecker: (
+            @MainActor @Sendable (@escaping @MainActor () async -> Void) -> Void)? = nil
     ) -> AppModel {
         let manager = processManager ?? self.processManager()
         let provider = providerModel ?? providerTestModel(providers: [
@@ -346,6 +358,7 @@ final class StartupFixture {
         } else {
             makeProvider = { _ in provider }
         }
+        let checker = updateChecker ?? stubUpdateCheckerReportingNoUpdate()
         let dependencies = makeStartupDependencies(
             locator: locator ?? CountingOmpLocator(installation: installation),
             library: library,
@@ -353,7 +366,11 @@ final class StartupFixture {
             timing: timing,
             settingsRunner: settingsRunner,
             makeProviderModel: makeProvider,
-            makeProcessManager: { _ in manager })
+            makeProcessManager: { _ in manager },
+            makeUpdateChecker: { prepareForInstall in
+                onMakeUpdateChecker?(prepareForInstall)
+                return checker
+            })
         return AppModel(dependencies: dependencies, preferenceDefaults: defaults)
     }
 

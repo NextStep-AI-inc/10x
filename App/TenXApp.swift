@@ -56,6 +56,7 @@ private struct WorkspaceSceneView: View {
     let onAppear: @MainActor () -> Void
 
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         AppShellView(model: model)
@@ -71,6 +72,10 @@ private struct WorkspaceSceneView: View {
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 Task { await model.refreshProvidersIfNeeded() }
+            }
+            .onChange(of: model.updateState.isPresentingUpdate) { _, isPresenting in
+                guard isPresenting else { return }
+                openWindow(id: AppWindowID.startup)
             }
     }
 }

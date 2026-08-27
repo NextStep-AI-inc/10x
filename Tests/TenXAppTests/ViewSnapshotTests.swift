@@ -743,7 +743,8 @@ import Testing
         sessionSearch: SessionSearchService(),
         recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
     // Set before bootstrap so the project-step gate that closes over startup
     // sees a project already selected and lands on the workspace, not
     // onboarding: this fixture is exercising the full shell, not the flow.
@@ -788,7 +789,8 @@ import Testing
         sessionSearch: SessionSearchService(),
         recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
     // Set before bootstrap so the project-step gate that closes over startup
     // sees a project already selected and lands on the workspace, not
     // onboarding: this fixture is exercising the full shell, not the flow.
@@ -817,7 +819,8 @@ import Testing
         sessionSearch: SessionSearchService(),
         recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
     // Set before bootstrap so the project-step gate that closes over startup
     // sees a project already selected and lands on the workspace, not
     // onboarding: this fixture is exercising the full shell, not the flow.

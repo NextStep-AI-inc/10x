@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TenXApp
 
@@ -110,5 +111,121 @@ import Testing
         .contains("2 active sessions"))
     #expect(ProviderUsageAccessibility.wheelValue(provider: provider, activeCount: 2)
         .contains("5 hour, 20 percent remaining"))
+}
+
+@MainActor
+@Test func updateRowsAnnounceTheirTitleAndStatus() {
+    let state = UpdateState()
+    state.beginDownload()
+
+    #expect(state.rows.map(\.accessibilityLabel) == [
+        "Downloading update, Loading",
+        "Verifying download, Queued",
+        "Installing update, Queued",
+        "Relaunching 10x, Queued",
+    ])
+}
+
+@MainActor
+@Test func updateModeRelabelsTheWindowForVoiceOver() {
+    let state = UpdateState()
+    state.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+
+    let presentation = SplashPresentation.update(
+        state: state, onInstall: {}, onDismiss: {}, onRetry: {})
+
+    #expect(presentation.accessibilityLabel == "Update available")
+}
+
+@MainActor
+@Test func theInstallActionIsFirstInFocusOrder() {
+    let state = UpdateState()
+    state.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+
+    let presentation = SplashPresentation.update(
+        state: state, onInstall: {}, onDismiss: {}, onRetry: {})
+
+    #expect(presentation.actions.first?.kind == .primary)
+    #expect(presentation.actions.first?.title == "Install and relaunch")
+}
+
+@MainActor
+private func startupPresentation(_ state: StartupState) -> SplashPresentation {
+    SplashPresentation.startup(state: state, onRetry: {}, onContinue: {})
+}
+
+@MainActor
+private func updatePresentation(_ state: UpdateState) -> SplashPresentation {
+    SplashPresentation.update(state: state, onInstall: {}, onDismiss: {}, onRetry: {})
+}
+
+/// `SplashView` focuses the primary action and speaks a summary when this changes.
+/// It previously did so only on appearance and on the footer turning red, so an update
+/// offered during startup, which is neither, never took focus at all.
+@MainActor
+@Test func anUpdateOfferedDuringStartupIsANewScreen() {
+    let startup = StartupState()
+    startup.beginAttempt(id: UUID())
+    let offered = UpdateState()
+    offered.beginCheck(isUserInitiated: false)
+    offered.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+
+    #expect(
+        startupPresentation(startup).screenSignature
+            != updatePresentation(offered).screenSignature)
+}
+
+/// Progress within one run is not a new screen. Re-announcing and re-grabbing focus on
+/// every download tick would talk over the user.
+@MainActor
+@Test func downloadProgressIsNotANewScreen() {
+    let state = UpdateState()
+    state.beginDownload()
+    state.setExpectedBytes(1_000)
+    let atStart = updatePresentation(state).screenSignature
+    state.addReceivedBytes(400)
+
+    #expect(updatePresentation(state).screenSignature == atStart)
+}
+
+/// A failure inside a run is a new screen even though the umbrella heading does not
+/// change, because the actions and the tone do.
+@MainActor
+@Test func aFailureInsideARunIsANewScreen() {
+    let state = UpdateState()
+    state.beginDownload()
+    let downloading = updatePresentation(state).screenSignature
+    state.fail(.download)
+
+    #expect(updatePresentation(state).screenSignature != downloading)
+}
+
+/// The row announcer diffs by id against the previous composition. Startup rows and
+/// update rows share no ids, so a diff across that boundary reports every update step as
+/// newly `Queued`. `SplashView` suppresses the diff when the id set changes; this pins
+/// that the two ledgers really are disjoint, which is what makes the check work.
+@MainActor
+@Test func theStartupAndUpdateLedgersShareNoRowIDs() {
+    let startup = StartupState()
+    let update = UpdateState()
+    update.beginDownload()
+
+    let startupIDs = Set(startup.rows.map(\.id))
+    let updateIDs = Set(update.rows.map(\.id))
+
+    #expect(!updateIDs.isEmpty)
+    #expect(startupIDs.isDisjoint(with: updateIDs))
+}
+
+/// The two presentations share `StartupLedgerView`, whose container label was hardcoded
+/// to "Startup preparation" and so described the update steps as startup steps.
+@MainActor
+@Test func eachLedgerNamesWhatItIsAListOf() {
+    let startup = StartupState()
+    let update = UpdateState()
+    update.beginDownload()
+
+    #expect(startupPresentation(startup).ledgerAccessibilityLabel == "Startup preparation")
+    #expect(updatePresentation(update).ledgerAccessibilityLabel == "Update steps")
 }
 }
