@@ -427,8 +427,9 @@ prints its own success line.
 
 ## Testing
 
-Three units carry the logic, following the pattern in
-`OmpKit/Tests/OmpKitTests/ExecutableResolutionTests.swift`.
+The units below carry the logic, following the pattern in
+`OmpKit/Tests/OmpKitTests/ExecutableResolutionTests.swift`. The scanner unit
+was removed on 2026-08-27 with the home-directory scan.
 
 **Resolver.** A table over installation, provider authentication, and selected
 project, asserting the route for every combination, including all nine call
