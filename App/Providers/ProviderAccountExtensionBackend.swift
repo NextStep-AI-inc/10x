@@ -103,6 +103,59 @@ struct ProviderAccountExtensionBackend: ProviderAccountRouting {
         }
     }
 
+    /// Bound on waiting for the extension's `hello` reply — deliberately
+    /// separate from `ProviderAccountExtensionChannel`'s own 30s
+    /// `openRequestTimeout`, which bounds waiting for the *first open
+    /// request slot* to exist at all, not any one command's round trip.
+    /// `hello()` is called from `ProviderManagementViewModel
+    /// .resolveExtensionHello` on a provider refresh (until a real answer
+    /// is cached — see that method's doc comment), so inheriting a 30s
+    /// stall there would make an ordinary refresh visibly hang. 2 seconds:
+    /// Task 1 found the extension opens its first request "normally well
+    /// under a second" after `session_start`, and `hello` itself is
+    /// answered synchronously on the TypeScript side with no I/O
+    /// (`OmpExtension/index.ts`'s `case "hello": return { contractVersion:
+    /// 1 }`) — so a healthy channel answers in low tens of milliseconds. 2s
+    /// is generous slack above that for a loaded machine while staying
+    /// short enough that a wedged channel never makes a refresh feel stuck.
+    static let helloTimeout: Duration = .seconds(2)
+
+    /// Sends the extension's `hello` command and decodes its
+    /// `{contractVersion}` reply for `ProviderAccountTier.detect`. Returns
+    /// `nil` rather than throwing on any failure — a dropped/absent channel
+    /// (`.unavailable`), a malformed reply, or exceeding `timeout` — because
+    /// every caller treats "no hello" identically regardless of *why* there
+    /// isn't one: `detect` already fails closed to `.stockOMP` on a nil
+    /// hello, so a redundant do/catch at each call site would add nothing.
+    ///
+    /// The timeout races `channel.send` against a sleep and takes whichever
+    /// finishes first; it does not cancel a losing send. Actors don't
+    /// interrupt an in-flight `withCheckedThrowingContinuation` on task
+    /// cancellation (see `ProviderAccountExtensionChannel.send`), so an
+    /// abandoned send keeps running against the channel's single-flight
+    /// queue until the channel itself resolves it — a real reply, or its
+    /// own `handleStreamEnded`/`openRequestTimeout`. That's a pre-existing
+    /// property of every command on this channel, not something new to
+    /// `hello`: a wedged channel already risks queuing behind whatever was
+    /// sent to it before this method existed.
+    func hello(timeout: Duration = Self.helloTimeout) async -> ProviderExtensionHello? {
+        await withTaskGroup(of: ProviderExtensionHello?.self) { group in
+            group.addTask {
+                guard let reply = try? await self.send(command: "hello", params: [:]),
+                      let version = reply["contractVersion"]?.intValue
+                else { return nil }
+                return ProviderExtensionHello(contractVersion: version)
+            }
+            group.addTask {
+                try? await Task.sleep(for: timeout)
+                return nil
+            }
+            let first = (await group.next()) ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
     private func send(
         command: String,
         params: [String: JSONValue]

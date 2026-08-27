@@ -132,13 +132,103 @@ import Testing
 
     await model.load()
 
-    // Production always passes a nil extension hello: nothing in this
-    // codebase yet sends the extension's "hello" command and threads its
-    // `contractVersion` into `ProviderAccountTier.detect`, so a snapshot with
-    // per-account identity detects as `.stockOMP`, never `.extensionBacked`,
-    // until that wiring exists. (Not Task 7 — that task shipped the
-    // failover/availability event plumbing, not the hello handshake.)
+    // No `installTierHelloProvider` call here: `resolveExtensionHello()`
+    // then reports no hello available, the same as a live app before any
+    // session has attached an extension channel
+    // (`AppModel.configureProviderModel`'s doc comment walks through why).
+    // A snapshot with per-account identity but no hello detects as
+    // `.stockOMP`, never `.extensionBacked` — see
+    // `compatibleExtensionHelloUnlocksTheExtensionBackedTier` immediately
+    // below for the case where a hello provider *is* installed.
     #expect(model.accountTier == .stockOMP)
+}
+
+/// Task 10b fix round 1, Finding 1: proves `.extensionBacked` is actually
+/// reachable through the real wiring (`installTierHelloProvider` →
+/// `resolveExtensionHello` → `ProviderAccountTier.detect`), not just that
+/// `detect` itself accepts a compatible hello in isolation
+/// (`ProviderAccountTierTests.compatibleHelloSelectsTheExtensionTier`
+/// already proves that). Without a test at this level, `AppModel` silently
+/// forgetting to call `installTierHelloProvider` — or `refreshAccountUsage`
+/// silently forgetting to call `resolveExtensionHello` — would regress this
+/// straight back to nil-forever with nothing to notice.
+@Test func compatibleExtensionHelloUnlocksTheExtensionBackedTier() async throws {
+    let providerID = "cursor"
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "Cursor",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    model.installTierHelloProvider {
+        ProviderExtensionHello(contractVersion: ProviderAccountTier.contractVersion)
+    }
+
+    await model.load()
+
+    #expect(model.accountTier == .extensionBacked)
+}
+
+/// The fail-closed counterpart to the test above, at the same wiring level:
+/// an installed hello provider that answers with a version this build
+/// doesn't understand must still degrade to `.stockOMP`, not hang and not
+/// silently accept it.
+@Test func incompatibleExtensionHelloDegradesToStockOMP() async throws {
+    let providerID = "cursor"
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "Cursor",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    model.installTierHelloProvider {
+        ProviderExtensionHello(contractVersion: ProviderAccountTier.contractVersion + 1)
+    }
+
+    await model.load()
+
+    #expect(model.accountTier == .stockOMP)
+}
+
+/// `resolveExtensionHello()`'s whole reason to exist: `refreshAccountUsage`
+/// runs on every `refresh()` — every login, every removal, the 5-minute
+/// stale timer — so a fresh probe on every call would mean an ordinary
+/// refresh potentially paying `ProviderAccountExtensionBackend.helloTimeout`
+/// each time a channel is attached but slow. Proves the provider is invoked
+/// once, not once per refresh, by counting calls directly rather than
+/// inferring it from timing.
+@Test func extensionHelloIsFetchedOnceAndCachedAcrossRefreshes() async throws {
+    let providerID = "cursor"
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "Cursor",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    var helloCallCount = 0
+    model.installTierHelloProvider {
+        helloCallCount += 1
+        return ProviderExtensionHello(contractVersion: ProviderAccountTier.contractVersion)
+    }
+
+    await model.load()
+    await model.refresh()
+    await model.refresh()
+
+    #expect(helloCallCount == 1)
+    #expect(model.accountTier == .extensionBacked)
 }
 
 @Test func successfulLoginAppendsAnAccountAndRefreshesAccountMetadataAndUsage() async throws {
@@ -241,14 +331,17 @@ import Testing
         model.connectionAccounts(providerID: providerID).first { $0.accountRef == removedRef })
 
     await model.removeAccount(removed, coordinator: coordinator)
-    // `removeAccount`'s own `refresh(forceFresh:)` races its two concurrent
-    // halves the same way `login()`'s does (see the comment in
-    // `successfulLoginAppendsAnAccountAndRefreshesAccountMetadataAndUsage`),
+    // No settling refresh needed here (task-10b fix round 1, "Finding 2"
+    // fixed this): `removeAccount`'s own `refresh(forceFresh:)` still races
+    // its two concurrent halves the same way `login()`'s does (see the
+    // comment in `successfulLoginAppendsAnAccountAndRefreshesAccountMetadataAndUsage`),
     // so the snapshot swap above may or may not have landed in
-    // `accountSummaries` by the time it returns. `lastUsageSnapshot` itself
-    // is deterministically updated either way; one more refresh settles it.
-    await model.refresh()
-
+    // `lastUsageSnapshot` by the time it returns — but this test hits
+    // `removeAccount`'s success branch (a decoded `{removed, accounts}`
+    // reply, `removed: false` or not), so `removedAccountRefsAwaitingSnapshotCatchUp`
+    // now filters `removedRef` out of a stale re-derivation regardless of
+    // which way that race lands. Proven by asserting immediately, with no
+    // second `refresh()` to paper over either outcome.
     #expect(removalRequests == [
         AccountRemovalRequest(providerID: providerID, accountRef: removedRef),
     ])
@@ -256,6 +349,71 @@ import Testing
     #expect(model.removalMessage == "Account is no longer available.")
     #expect(model.pendingRemovalAccounts.isEmpty)
     #expect(coordinator.primaryAccountRef(providerID: providerID) == remainingRef)
+}
+
+/// Task 10b fix round 1, Finding 2: the rigorous version of the proof
+/// above, forcing the exact worst-case ordering rather than trusting
+/// whatever the scheduler happens to produce. `FakeUsageService`'s snapshot
+/// is deliberately left un-swapped (still the pre-removal, two-account
+/// snapshot) and its next `loadUsage()` is gated open, so
+/// `refreshAccountUsage`'s re-derivation inside `removeAccount`'s own
+/// `refresh(forceFresh: true)` is guaranteed to run against the
+/// still-stale `lastUsageSnapshot` — the exact interleaving that used to
+/// resurrect the removed account (see `removedAccountRefsAwaitingSnapshotCatchUp`'s
+/// doc comment for the full mechanism). Asserting mid-flight, before the
+/// gate is ever released, proves the fix holds on the very first pass, not
+/// "eventually, once the settling refresh catches up."
+@Test func removalDoesNotResurrectTheRemovedAccountEvenWhenTheUsagePollLagsBehindIt() async throws {
+    let providerID = "openai-codex"
+    let removedEntry = AccountSnapshotEntry(accountID: "a1", email: "personal@example.com")
+    let remainingEntry = AccountSnapshotEntry(accountID: "a2", email: "work@example.com")
+    let removedRef = removedEntry.accountRef(providerID: providerID)
+    let remainingRef = remainingEntry.accountRef(providerID: providerID)
+    let usage = FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+        providerID: providerID, accounts: [removedEntry, remainingEntry]))
+    let model = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: [ProviderLoginProvider(
+            id: providerID, name: "ChatGPT", isAvailable: true, isAuthenticated: true)]),
+        usageService: usage,
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let (coordinator, defaults, suiteName) = try makeManagementCoordinator()
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    model.attachAccountCoordinator(coordinator)
+    await coordinator.useAccount(
+        removedRef,
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
+    model.installAccountRemovalTransport { _, _ in
+        ProviderAccountRemovalResult(
+            removed: true,
+            accounts: [providerAccountFixture(
+                providerID: providerID, ref: remainingRef, label: "work@example.com", order: 0)])
+    }
+
+    let gate = LoadGate()
+    await usage.enqueueLoadGate(gate)
+    let removed = try #require(
+        model.connectionAccounts(providerID: providerID).first { $0.accountRef == removedRef })
+    let removal = Task { await model.removeAccount(removed, coordinator: coordinator) }
+    await gate.waitForStart()
+    // The gate now holds the CLI-side usage poll open, so `lastUsageSnapshot`
+    // cannot yet have advanced past the stale, two-account snapshot.
+    // Waiting for `!isLoadingProviders` guarantees `refreshAccountUsage`'s
+    // entire re-derivation already ran — and therefore already read
+    // whichever snapshot `lastUsageSnapshot` holds right now — before this
+    // assertion, the same synchronization
+    // `refreshAccountUsageDoesNotBlockOnASlowSubsequentUsagePoll` uses.
+    await waitForModelState { !model.isLoadingProviders }
+
+    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == [remainingRef])
+
+    await gate.release()
+    await removal.value
+
+    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == [remainingRef])
 }
 
 @Test func failedRemovalRefreshesMetadataAndUsageThenRepairsFromAuthoritativeAccounts() async throws {
@@ -295,8 +453,17 @@ import Testing
     let removed = try #require(
         model.connectionAccounts(providerID: providerID).first { $0.accountRef == removedRef })
     await model.removeAccount(removed, coordinator: coordinator)
-    // Settles the same race described in
-    // `staleExternalRemovalRefreshesRowsAndReportsAccountUnavailable`.
+    // Still settles a real race, unlike the now-unnecessary one removed
+    // from `staleExternalRemovalRefreshesRowsAndReportsAccountUnavailable`
+    // (task-10b fix round 1, "Finding 2"): that fix protects re-derivation
+    // only when `removeAccount` reaches its success branch and has an
+    // authoritative `result.accounts` to guard with
+    // (`removedAccountRefsAwaitingSnapshotCatchUp`). A thrown error, like
+    // this test's, never reaches that branch — the view model has no
+    // confirmation of what actually happened on the extension side, only
+    // the generic catch-all below — so it has nothing to guard with either,
+    // and must rely entirely on this settling refresh to discover the true
+    // state via ordinary re-derivation.
     await model.refresh()
 
     #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == [remainingRef])

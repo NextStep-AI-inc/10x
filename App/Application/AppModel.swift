@@ -1391,19 +1391,19 @@ final class AppModel {
 
     /// Runs once for every freshly (re)created `providerModel`, in place of
     /// calling `startProviderUsage` directly: installs how account removal
-    /// reaches the extension, then starts the usage load. Installation
-    /// closes over `accountChannelRegistry`, which — like
-    /// `sessionActivityRegistry`'s routing backend (see `init`'s
-    /// `sessionActivityRegistry.install` call and its doc comment) — exists
-    /// only here, never in `AppDependencies.makeProviderModel`'s
-    /// zero-argument factory, so composing it can't happen at construction
-    /// time. Unlike the coordinator, `providerModel` is not a single
-    /// construction-time singleton — `replaceWorkspaceRuntime` and
-    /// `loadProviderFallback` both rebuild or reuse it across the app's
-    /// lifetime — so this runs at every site that assigns a new one, not
-    /// once from `init`.
+    /// reaches the extension and how tier detection learns whether one is
+    /// even listening, then starts the usage load. Both installs close over
+    /// `accountChannelRegistry`, which — like `sessionActivityRegistry`'s
+    /// routing backend (see `init`'s `sessionActivityRegistry.install` call
+    /// and its doc comment) — exists only here, never in
+    /// `AppDependencies.makeProviderModel`'s zero-argument factory, so
+    /// composing either can't happen at construction time. Unlike the
+    /// coordinator, `providerModel` is not a single construction-time
+    /// singleton — `replaceWorkspaceRuntime` and `loadProviderFallback` both
+    /// rebuild or reuse it across the app's lifetime — so this runs at
+    /// every site that assigns a new one, not once from `init`.
     ///
-    /// The transport tries any currently attached session channel
+    /// The removal transport tries any currently attached session channel
     /// (`ProviderAccountChannelRegistry.anyChannel()`): removal reaches
     /// `ctx.modelRegistry.authStorage`, which every session's extension
     /// instance shares, so which session's channel carries the command does
@@ -1411,7 +1411,34 @@ final class AppModel {
     /// no live session, or the stock tier, which has no removal path at all
     /// (`ProviderAccountTier.supportsRemoval`) — throws `.unavailable`
     /// rather than inventing one.
+    ///
+    /// **Reconciling two different lifetimes (task-10b fix round 1,
+    /// "Finding 1").** `accountChannelRegistry`'s entries are session-scoped
+    /// — attached when a session's frames start flowing, detached when its
+    /// pipeline stops (`SessionController.attachAccountChannel`/
+    /// `stopEventPipeline`) — while tier detection runs from
+    /// `ProviderManagementViewModel.refreshAccountUsage`, a provider
+    /// refresh with no session in the picture at all. This install reuses
+    /// the exact same reconciliation the removal transport above already
+    /// made: `anyChannel()` again, because `hello`'s answer — like
+    /// `removeAccount`'s effect — is not session data, it's a fact about
+    /// the app's one bundled extension build, so any live channel gives the
+    /// same answer any other would. Before any session exists,
+    /// `anyChannel()` returns `nil`, the closure returns `nil`, and
+    /// `resolveExtensionHello()` reports no hello available — which
+    /// `ProviderAccountTier.detect` already treats exactly like a
+    /// channel that answered with the wrong contract version: fail closed
+    /// to `.stockOMP` (or `.providerOnly`, if the snapshot has no
+    /// per-account identity at all yet either). So "the tier before any
+    /// session exists" is never `.extensionBacked` — it's whatever the
+    /// usage snapshot alone supports, same as stock OMP with the extension
+    /// absent entirely, until a session attaches a channel and a later
+    /// refresh's probe succeeds.
     private func configureProviderModel(_ provider: ProviderManagementViewModel) {
+        provider.installTierHelloProvider { [weak self] in
+            guard let self, let channel = self.accountChannelRegistry.anyChannel() else { return nil }
+            return await ProviderAccountExtensionBackend(channel: channel).hello()
+        }
         provider.installAccountRemovalTransport { [weak self] providerID, accountRef in
             guard let self, let channel = self.accountChannelRegistry.anyChannel() else {
                 throw ProviderAccountChannelError.unavailable

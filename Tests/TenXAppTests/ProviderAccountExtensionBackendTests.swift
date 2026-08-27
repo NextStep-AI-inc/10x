@@ -19,6 +19,24 @@ private actor StubChannel: ProviderAccountChannel {
     }
 }
 
+/// A channel whose extension accepted the command but never answers —
+/// `StubChannel` above always resolves immediately (success, failure, or
+/// `.unavailable`), so it cannot exercise `hello`'s own timeout race; this
+/// simulates the one case that can. `Task.sleep` is cancellation-aware, so
+/// `hello`'s `group.cancelAll()` after the timeout wins does stop this
+/// particular hang — unlike the real `ProviderAccountExtensionChannel`,
+/// whose in-flight `withCheckedThrowingContinuation` is not
+/// cancellation-aware (see `hello`'s own doc comment) — but that
+/// distinction is the real channel's problem, not this test's: the goal
+/// here is proving `hello`'s bound is real, not reproducing every property
+/// of the concrete channel.
+private actor HangingChannel: ProviderAccountChannel {
+    func send(_ command: ProviderAccountChannelCommand) async throws -> JSONValue {
+        try await Task.sleep(for: .seconds(3600))
+        return .null
+    }
+}
+
 @Suite struct ProviderAccountExtensionBackendTests {
 
 @Test func routingAnIdleSessionAppliesImmediately() async throws {
@@ -100,6 +118,66 @@ private actor StubChannel: ProviderAccountChannel {
     await #expect(throws: ProviderAccountChannelError.unavailable) {
         _ = try await backend.removeAccount(providerID: "anthropic", accountRef: "ref-a")
     }
+}
+
+/// Task 10b fix round 1, Finding 1: `hello` had no Swift caller at all —
+/// this is that wiring's own coverage, mirroring `removingAnAccountDecodesTheRemovalResult`.
+/// `OmpExtension/index.ts`'s `case "hello": return { contractVersion: 1 }`
+/// is the real reply shape this decodes.
+@Test func helloDecodesACompatibleContractVersion() async throws {
+    let channel = StubChannel(replies: ["hello": .success(.object(["contractVersion": .int(1)]))])
+    let backend = ProviderAccountExtensionBackend(channel: channel)
+
+    let hello = await backend.hello()
+
+    #expect(hello == ProviderExtensionHello(contractVersion: 1))
+    let sent = await channel.sent
+    #expect(sent.map(\.command) == ["hello"])
+}
+
+/// `detect`'s own fail-closed comparison is already covered exhaustively by
+/// `ProviderAccountTierTests` — this only proves `hello()` itself decodes an
+/// unrecognized version rather than choking on it, since `detect` needs the
+/// raw value (not a pre-filtered one) to tell "incompatible" apart from
+/// "absent" the same way it already does for a `nil` hello.
+@Test func helloDecodesAnUnrecognizedContractVersionRatherThanDiscardingIt() async throws {
+    let channel = StubChannel(replies: ["hello": .success(.object(["contractVersion": .int(99)]))])
+    let backend = ProviderAccountExtensionBackend(channel: channel)
+
+    let hello = await backend.hello()
+
+    #expect(hello == ProviderExtensionHello(contractVersion: 99))
+}
+
+@Test func helloOnADroppedChannelReturnsNilRatherThanThrowing() async throws {
+    let backend = ProviderAccountExtensionBackend(channel: StubChannel(replies: [:]))
+
+    let hello = await backend.hello()
+
+    #expect(hello == nil)
+}
+
+/// Mirrors `aChannelThatNeverOpensDegradesWithinTheTimeoutInsteadOfHanging`'s
+/// evidentiary bar: measures wall-clock elapsed time, not just "eventually
+/// returned," to prove `hello`'s own bound (independent of
+/// `ProviderAccountExtensionChannel`'s 30s `openRequestTimeout`) is real.
+/// `HangingChannel` never resolves `send` at all, simulating a channel whose
+/// extension accepted the command but never answers — the case
+/// `helloTimeout` exists to bound.
+@Test func helloThatNeverAnswersDegradesWithinTheTimeoutInsteadOfHanging() async throws {
+    let backend = ProviderAccountExtensionBackend(channel: HangingChannel())
+
+    let clock = ContinuousClock()
+    let start = clock.now
+    let hello = await backend.hello(timeout: .milliseconds(50))
+    let elapsed = clock.now - start
+
+    #expect(hello == nil)
+    // Generous relative to the 50ms timeout, same reasoning as the channel
+    // test this mirrors: asserts "degraded promptly," not "at exactly
+    // 50ms," so it stays robust to scheduler jitter under load while still
+    // failing hard on an accidental return to an unbounded wait.
+    #expect(elapsed < .seconds(2))
 }
 
 @MainActor

@@ -80,6 +80,17 @@ final class ProviderManagementViewModel {
     @ObservationIgnored private var accountCapabilities: [String: ProviderAccountCapability] = [:]
     @ObservationIgnored private var accountSummaries: [String: [ProviderAccountSummary]] = [:]
     @ObservationIgnored private var accountUsage: [String: [ProviderAccountUsage]] = [:]
+    /// Account refs `removeAccount` has confirmed removed — via the
+    /// extension's authoritative `{removed, accounts}` reply — that the
+    /// CLI-polled usage snapshot (`lastUsageSnapshot`) may still list,
+    /// because that snapshot's own refresh cadence is decoupled from the
+    /// extension-side removal that just happened. See
+    /// `refreshAccountUsage`'s use of this set for the full mechanism this
+    /// guards against (task-10b fix round 1, "Finding 2"). Cleared per ref
+    /// once a snapshot-derived pass no longer contains it — the snapshot
+    /// has caught up — and per provider by `retainAccountState` when that
+    /// provider stops being authenticated.
+    @ObservationIgnored private var removedAccountRefsAwaitingSnapshotCatchUp: [String: Set<String>] = [:]
     @ObservationIgnored private var loadedAccountUsageProviderIDs: Set<String> = []
     @ObservationIgnored private var unavailableAccountUsageProviderIDs: Set<String> = []
     @ObservationIgnored private var failedAccountCapabilityProviderIDs: Set<String> = []
@@ -103,6 +114,17 @@ final class ProviderManagementViewModel {
     // removal (see `ProviderAccountTier.supportsRemoval`).
     @ObservationIgnored private var removeAccountTransport:
         (@MainActor (String, String) async throws -> ProviderAccountRemovalResult)?
+    // Same `var`-not-`let`, installed-after-construction reasoning as
+    // `removeAccountTransport` immediately above — this closure also closes
+    // over `AppModel.accountChannelRegistry`. `nil` (the default, and also
+    // what a live app has before any session's channel attaches) means
+    // `resolveExtensionHello()` reports no hello available, which
+    // `ProviderAccountTier.detect` already treats the same as a channel
+    // that answered with an incompatible version: fail closed to
+    // `.stockOMP`. See `resolveExtensionHello()` for why this is fetched at
+    // most once rather than on every refresh.
+    @ObservationIgnored private var tierHelloProvider: (@MainActor () async -> ProviderExtensionHello?)?
+    @ObservationIgnored private var cachedExtensionHello: ProviderExtensionHello?
 
     init<ProviderService: ProviderManaging, UsageService: OmpUsageLoading>(
         providerService: ProviderService,
@@ -171,6 +193,16 @@ final class ProviderManagementViewModel {
         _ transport: (@MainActor (String, String) async throws -> ProviderAccountRemovalResult)?
     ) {
         removeAccountTransport = transport
+    }
+
+    /// How `refreshAccountUsage` below learns whether a live extension is
+    /// answering, for `ProviderAccountTier.detect`'s `extensionHello`
+    /// parameter. The live app installs this from `AppModel`, alongside
+    /// `installAccountRemovalTransport` — see that call site's doc comment
+    /// for the full reasoning shared by both installs.
+    func installTierHelloProvider(_ provider: (@MainActor () async -> ProviderExtensionHello?)?) {
+        tierHelloProvider = provider
+        cachedExtensionHello = nil
     }
 
     func load() async {
@@ -268,6 +300,22 @@ final class ProviderManagementViewModel {
                 return try await removeAccountTransport(providerID, accountRef)
             }
             accountSummaries[account.providerID] = result.accounts
+            // Finding 2 (task-10b fix round 1): `result.accounts` is
+            // authoritative — straight from the extension's removal reply —
+            // but the very next line's `refresh(forceFresh:)` can still
+            // re-derive `accountSummaries[account.providerID]` from
+            // `lastUsageSnapshot`, a CLI-polled snapshot on its own refresh
+            // cadence that may not yet reflect this removal. Recording the
+            // ref here (only when the authoritative reply actually omits
+            // it — `result.removed` can be `false` while still reporting a
+            // list that no longer contains it, e.g. the "already gone"
+            // case below) tells that re-derivation to filter it out until
+            // the snapshot itself agrees. See
+            // `removedAccountRefsAwaitingSnapshotCatchUp`'s doc comment.
+            if !result.accounts.contains(where: { $0.accountRef == account.accountRef }) {
+                removedAccountRefsAwaitingSnapshotCatchUp[account.providerID, default: []]
+                    .insert(account.accountRef)
+            }
             coordinator.reconcilePrimaryAccount(
                 providerID: account.providerID,
                 accounts: result.accounts)
@@ -416,7 +464,8 @@ final class ProviderManagementViewModel {
             return
         }
 
-        let tier = ProviderAccountTier.detect(snapshot: snapshot, extensionHello: nil)
+        let extensionHello = await resolveExtensionHello()
+        let tier = ProviderAccountTier.detect(snapshot: snapshot, extensionHello: extensionHello)
         accountTier = tier
         let capability: ProviderAccountCapability
         switch tier {
@@ -448,12 +497,30 @@ final class ProviderManagementViewModel {
             // always has a matching entry from `usage(from:providerID:)` —
             // there is no longer a window where metadata is known but usage
             // isn't, or vice versa.
-            let accounts = ProviderAccountUsageBackend.accounts(from: snapshot, providerID: provider.id)
+            var accounts = ProviderAccountUsageBackend.accounts(from: snapshot, providerID: provider.id)
+            var usageEntries = ProviderAccountUsageBackend.usage(from: snapshot, providerID: provider.id)
+            // Finding 2 (task-10b fix round 1): this snapshot may predate a
+            // removal `removeAccount` already confirmed authoritatively —
+            // see `removedAccountRefsAwaitingSnapshotCatchUp`'s doc comment.
+            // Filtering here, not comparing snapshot recency, because nothing
+            // about `OmpUsageSnapshot` identifies which refresh produced it;
+            // the removed ref's continued presence in THIS derivation is
+            // itself the staleness signal, and its absence is exactly the
+            // "caught up" signal that clears the guard.
+            if let pendingRemovals = removedAccountRefsAwaitingSnapshotCatchUp[provider.id] {
+                let stillStale = pendingRemovals.intersection(accounts.map(\.accountRef))
+                if stillStale.isEmpty {
+                    removedAccountRefsAwaitingSnapshotCatchUp.removeValue(forKey: provider.id)
+                } else {
+                    accounts = accounts.filter { !stillStale.contains($0.accountRef) }
+                    usageEntries = usageEntries.filter { !stillStale.contains($0.accountRef) }
+                }
+            }
             accountSummaries[provider.id] = accounts
             accountCoordinator?.reconcilePrimaryAccount(
                 providerID: provider.id,
                 accounts: accounts)
-            accountUsage[provider.id] = ProviderAccountUsageBackend.usage(from: snapshot, providerID: provider.id)
+            accountUsage[provider.id] = usageEntries
             loadedAccountUsageProviderIDs.insert(provider.id)
             unavailableAccountUsageProviderIDs.remove(provider.id)
             // `isUsageSnapshotCurrentlyFailing` is live state (set by
@@ -469,10 +536,44 @@ final class ProviderManagementViewModel {
         }
     }
 
+    /// Resolves the extension's `hello` handshake for `ProviderAccountTier
+    /// .detect`, fetching it at most once per `ProviderManagementViewModel`
+    /// instance (task-10b fix round 1, "Finding 1"). `tierHelloProvider` is
+    /// installed post-construction by `AppModel`
+    /// (`installTierHelloProvider`) because it closes over session-level
+    /// state (`AppModel.accountChannelRegistry`) that doesn't exist at this
+    /// view model's construction time — same reasoning as
+    /// `removeAccountTransport`.
+    ///
+    /// Caching, not a fresh probe on every refresh: `refreshAccountUsage`
+    /// runs on every `refresh()` — every login, every removal, the
+    /// 5-minute stale timer — and the extension's answer is a fact about
+    /// the running app's *bundled* build, not something that changes
+    /// session to session. Once a well-formed reply arrives — compatible or
+    /// not; an incompatible version is just as stable a fact as a
+    /// compatible one — remembering it turns every later refresh's tier
+    /// detection back into the free, synchronous comparison
+    /// `ProviderAccountTier.detect` already was before this method existed.
+    /// A `nil` result (no provider installed yet, no channel attached, or
+    /// `ProviderAccountExtensionBackend.hello`'s bounded wait expired) is
+    /// deliberately NOT cached, so the next refresh tries again once a
+    /// channel exists — the only state in which repeated probing is
+    /// possible, and each probe is short (`ProviderAccountExtensionBackend
+    /// .helloTimeout`), so the cost stays bounded even then.
+    private func resolveExtensionHello() async -> ProviderExtensionHello? {
+        if let cachedExtensionHello { return cachedExtensionHello }
+        guard let tierHelloProvider else { return nil }
+        guard let hello = await tierHelloProvider() else { return nil }
+        cachedExtensionHello = hello
+        return hello
+    }
+
     private func retainAccountState(for providerIDs: Set<String>) {
         accountCapabilities = accountCapabilities.filter { providerIDs.contains($0.key) }
         accountSummaries = accountSummaries.filter { providerIDs.contains($0.key) }
         accountUsage = accountUsage.filter { providerIDs.contains($0.key) }
+        removedAccountRefsAwaitingSnapshotCatchUp = removedAccountRefsAwaitingSnapshotCatchUp
+            .filter { providerIDs.contains($0.key) }
         loadedAccountUsageProviderIDs.formIntersection(providerIDs)
         unavailableAccountUsageProviderIDs.formIntersection(providerIDs)
         failedAccountCapabilityProviderIDs.formIntersection(providerIDs)
