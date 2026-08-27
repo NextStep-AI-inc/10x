@@ -69,6 +69,23 @@ import Testing
 }
 
 @MainActor
+@Test func onboardingProjectStepPickedFolderNoSessionsSnapshot() throws {
+    // The owner's reported bug: a folder picked with "Choose folder…" (never
+    // driven through `NSOpenPanel` here) must be visible even though there
+    // are no session-derived suggestions to show alongside it.
+    let model = AppModel()
+    let url = URL(filePath: "/tmp/picked-with-no-sessions", directoryHint: .isDirectory)
+    model.selectedProjectURL = url
+    var selection = OnboardingProjectSelection()
+    selection.pick(url)
+    try assertSnapshot(
+        OnboardingProjectStepView(model: model, initialSelection: selection)
+            .padding(56),
+        name: "onboarding-project-picked-no-sessions",
+        size: CGSize(width: 760, height: 320))
+}
+
+@MainActor
 @Test func onboardingProjectStepPopulatedSnapshot() throws {
     let model = AppModel()
     model.installation = OmpInstallation(

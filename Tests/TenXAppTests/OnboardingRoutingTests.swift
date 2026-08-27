@@ -48,3 +48,79 @@ import Testing
     model.leaveSettings()
     #expect(model.route == .newSession)
 }
+
+// MARK: - OnboardingProjectSelection
+
+// `OnboardingProjectSelection` backs `OnboardingProjectStepView`'s picked
+// folder list. It is exercised directly here (rather than by driving
+// `NSOpenPanel`, which cannot run in tests) because it is the seam extracted
+// from that view specifically to make folder-picking behavior testable.
+
+@Test func pickingAFolderWithNoSessionsAppearsInTheListAndIsMarkedAdded() {
+    var selection = OnboardingProjectSelection()
+    let url = URL(filePath: "/tmp/picked-project", directoryHint: .isDirectory)
+
+    selection.pick(url)
+
+    let projects = selection.projects(suggestions: [])
+    #expect(projects.map(\.path) == [url.standardizedFileURL.path])
+    #expect(selection.isAdded(url))
+}
+
+@Test func aPickedFolderThatIsAlsoASessionProjectAppearsOnce() {
+    var selection = OnboardingProjectSelection()
+    let url = URL(filePath: "/tmp/shared-project", directoryHint: .isDirectory)
+
+    selection.pick(url)
+
+    let projects = selection.projects(suggestions: [url])
+    #expect(projects.count == 1)
+    #expect(projects.first?.path == url.standardizedFileURL.path)
+}
+
+@Test func theMostRecentlyPickedFolderLeadsTheList() {
+    var selection = OnboardingProjectSelection()
+    selection.pick(URL(filePath: "/tmp/first-picked", directoryHint: .isDirectory))
+    selection.pick(URL(filePath: "/tmp/second-picked", directoryHint: .isDirectory))
+
+    let projects = selection.projects(suggestions: [])
+    #expect(projects.map(\.lastPathComponent) == ["second-picked", "first-picked"])
+}
+
+@Test func repickingAnAlreadyPickedFolderMovesItToTheFrontWithoutDuplicating() {
+    var selection = OnboardingProjectSelection()
+    let first = URL(filePath: "/tmp/first-picked", directoryHint: .isDirectory)
+    let second = URL(filePath: "/tmp/second-picked", directoryHint: .isDirectory)
+    selection.pick(first)
+    selection.pick(second)
+    selection.pick(first)
+
+    let projects = selection.projects(suggestions: [])
+    #expect(projects.map(\.lastPathComponent) == ["first-picked", "second-picked"])
+}
+
+@Test func markingASuggestionAddedDoesNotReorderPickedFolders() {
+    var selection = OnboardingProjectSelection()
+    let picked = URL(filePath: "/tmp/picked-project", directoryHint: .isDirectory)
+    let suggestion = URL(filePath: "/tmp/suggested-project", directoryHint: .isDirectory)
+    selection.pick(picked)
+
+    selection.markAdded(suggestion)
+
+    #expect(selection.isAdded(suggestion))
+    let projects = selection.projects(suggestions: [suggestion])
+    #expect(projects.map(\.lastPathComponent) == ["picked-project", "suggested-project"])
+}
+
+@Test func seedingFromNilLeavesTheSelectionEmpty() {
+    let selection = OnboardingProjectSelection(seeding: nil)
+    #expect(selection.projects(suggestions: []).isEmpty)
+}
+
+@Test func seedingFromAnAlreadySelectedProjectMakesItAppearAndMarksItAdded() {
+    let url = URL(filePath: "/tmp/already-selected", directoryHint: .isDirectory)
+    let selection = OnboardingProjectSelection(seeding: url)
+
+    #expect(selection.projects(suggestions: []).map(\.path) == [url.standardizedFileURL.path])
+    #expect(selection.isAdded(url))
+}
