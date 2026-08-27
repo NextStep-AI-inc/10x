@@ -1142,7 +1142,7 @@ struct OnboardingSkeletonRows: View {
 }
 ```
 
-Then in `App/Providers/ProviderSetupView.swift`: delete `private struct ProviderSetupLoadingRows`, use `OnboardingSkeletonRows()` in its place, and rewrite `ProviderSetupRowView`'s body to wrap `OnboardingRowView(title: provider.name, detail: description) { ... }` with its existing trailing controls unchanged. Delete the view's own `BrandWordmark`, its title and subtitle `VStack`, its `.frame(width: 470, alignment: .leading)`, and its `.padding(56)` — the container supplies all of those now. Keep the `GeometryReader`, the provider list, the `Continue` button, and the `.sheet` for `ExtensionInputSheet`.
+Then in `App/Providers/ProviderSetupView.swift`: delete `private struct ProviderSetupLoadingRows`, use `OnboardingSkeletonRows()` in its place, and rewrite `ProviderSetupRowView`'s body to wrap `OnboardingRowView(title: provider.name, detail: description) { ... }` with its existing trailing controls unchanged. Delete the view's own `BrandWordmark`, its title and subtitle `VStack`, its `.frame(width: 470, alignment: .leading)`, and its `.padding(56)`. The container supplies all of those now. Keep the `GeometryReader`, the provider list, the `Continue` button, and the `.sheet` for `ExtensionInputSheet`.
 
 - [ ] **Step 7: Write the container**
 
