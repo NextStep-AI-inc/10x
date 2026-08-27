@@ -203,9 +203,19 @@ final class ProviderManagementViewModel {
             extensionRouter.removeRequest(id: request.id)
             sheetRequest = extensionRouter.sheetRequest
         } catch {
+            // OMP never received this response, so the login it is blocking on
+            // can only end at its own timeout — the connection is already
+            // dead. Tear the login down the way Cancel does so the row stops
+            // promising "Connecting…" and offers Retry instead. State first,
+            // service last: the await below suspends the main actor, and a
+            // login started during it must not be stomped by a stale failure.
+            let providerID = activeLoginProviderID
+            loginGeneration += 1
+            clearLoginState()
             loginMessage = "Couldn’t send the response."
             loginMessageIsError = true
-            loginMessageProviderID = activeLoginProviderID
+            loginMessageProviderID = providerID
+            await providerService.cancelLogin()
         }
     }
 
