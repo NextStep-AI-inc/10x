@@ -480,6 +480,10 @@ struct ProviderUsageDockView: View {
             generatingCounts: effectiveGeneratingCounts,
             isGrayscale: isGrayscale,
             diameter: diameter,
+            // The compact dock (isSource: true) collapses at rest and fans
+            // on hover; the panel's inline selector (isSource: false) always
+            // has room, so it always shows every account.
+            alwaysExpanded: !isSource,
             focusedAccountID: focus,
             visualFocusAccountID: visualFocusAccountID,
             onSelect: onSelect)

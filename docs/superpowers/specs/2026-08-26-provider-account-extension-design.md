@@ -5,9 +5,10 @@
 **Date:** 2026-08-26
 **Platform:** macOS 15+, Swift 6.1, SwiftUI; TypeScript on Bun for the extension
 **Supersedes:** the transport half of `2026-08-26-multi-account-provider-routing-design.md`
-**Unchanged by this document:** every product decision in that design — the
-rightward account stack, exact per-account counts, compact grayscale rules,
-bounded panel, three switch scopes, safe removal ordering.
+**Unchanged by this document:** every product decision in that design except
+the account stack presentation, revised 2026-08-27 below — exact
+per-account counts, compact grayscale rules, bounded panel, three switch
+scopes, safe removal ordering.
 
 ## Goal
 
@@ -308,6 +309,61 @@ than an absent control.
   separate degradation banner: the tier's real limits already surface at
   Remove and at the switch dialog, without inventing a diagnosis.
 - No tier ever presents a control it cannot honor.
+
+## Account stack presentation (revised 2026-08-27)
+
+The predecessor design's rightward cascade — and its explicit "no
+account-count badge" decision — are superseded. Both were wrong for the same
+reason: the cascade spent horizontal space, the scarce axis next to the
+composer, and it did so without a ring between overlapping wheels, so two or
+three accounts visually blended into one shape (`Tests/TenXAppTests/ReferenceImages/provider-account-stack-states.png`,
+before this revision, showed exactly that). At three accounts the cascade's
+width also forced `ProviderUsageDockLayout` to move the whole dock above the
+composer at 1180px even though nothing about the composer itself had
+changed.
+
+`ProviderAccountStackView` now collapses to the active account's wheel at
+rest — pixel-identical to a single-account provider — and fans the rest
+upward on hover or keyboard focus, overlapping the wheel below by design
+(the same avatar-stack pattern the old cascade attempted) but with a
+canvas-colored ring around every wheel once expanded, so overlapping discs
+stay legible instead of dissolving into each other. The group is always
+exactly one wheel wide, at rest and expanded, which is what makes the
+1180px forced-above-composer case go away: `ProviderUsageDockLayout` no
+longer derives per-provider width from account count because there is
+nothing left to derive — every account-routing provider now measures like a
+single wheel.
+
+Collapsing at rest reopens the question the predecessor design closed:
+without the cascade, the per-account activity centers the design already
+relies on ("each account center counts sessions generating through that
+exact account") are invisible until the group is expanded. Rather than
+either losing that at-a-glance signal or keeping the cascade to preserve it,
+the collapsed wheel carries a small count badge (`+N`, the number of other
+connected accounts) that takes the accent color whenever any of those
+collapsed accounts has a nonzero generating count — reversing "there is no
+account-count badge" from the predecessor design. The badge ignores the
+compact grayscale rule on purpose, the same way each wheel's own activity
+core already does: decorative usage rings desaturate while the open chat
+generates, but activity signals do not, because they exist specifically to
+stay visible at a glance. A single-account provider gets no badge and is
+unaffected by any of this.
+
+Hover or focus landing on any account — including the foreground, which is
+the only thing visible to hover or focus at rest — now raises, colorizes,
+and promotes that account to the top of the z-stack. This fixes a latent
+bug in the geometry the cascade shared: `visualState` gated raising on
+`!item.isForeground`, so the foreground account could never be promoted.
+The rightward layout never surfaced this, because the foreground already
+held the highest resting z-index; the upward layout would have, since
+hovering the only visible wheel at rest is how the collapsed siblings get
+discovered in the first place.
+
+The inline account selector inside the expanded corner panel
+(`ProviderUsageDockView.expandedAccountSelector`) reuses the same component
+with `alwaysExpanded: true` rather than collapsing — the panel already has
+room and the user opened it specifically to compare accounts, so hiding
+them behind another hover would cost a step for no space saved.
 
 ## Testing
 

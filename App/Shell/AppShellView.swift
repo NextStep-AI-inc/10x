@@ -54,8 +54,7 @@ struct AppShellView: View {
                                 let compactLayout = ProviderUsageDockLayout.compact(
                                     shellWidth: geometry.size.width,
                                     contentLeadingInset: railExpansion.contentLeadingInset,
-                                    stackWidths: ProviderUsageDockLayout.stackWidths(
-                                        providers: dockProviders),
+                                    providerCount: dockProviders.count,
                                     hasComposer: hasComposer)
 
                                 ProviderUsageDockView(

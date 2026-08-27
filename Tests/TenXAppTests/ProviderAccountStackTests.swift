@@ -3,7 +3,7 @@ import Testing
 @testable import TenXApp
 
 @Suite struct ProviderAccountStackTests {
-@Test func foregroundAccountKeepsTheRegularWheelWhileSiblingsCascadeRightAtSmallerSize() throws {
+@Test func foregroundAccountKeepsTheRegularWheelWhileSiblingsFanUpwardAtSmallerSize() throws {
     let geometry = ProviderAccountStackGeometry(
         accountIDs: ["account-a", "account-b", "account-c"],
         foregroundAccountID: "account-b",
@@ -14,11 +14,15 @@ import Testing
     let secondSibling = try #require(geometry.items.first(where: { $0.accountID == "account-c" }))
 
     #expect(foreground.visualDiameter == 54)
-    #expect(foreground.xOffset == 0)
+    #expect(foreground.verticalOffset == 0)
     #expect(firstSibling.visualDiameter < foreground.visualDiameter)
-    #expect(firstSibling.xOffset > foreground.xOffset)
-    #expect(secondSibling.xOffset > firstSibling.xOffset)
-    #expect(geometry.width > 54)
+    #expect(firstSibling.verticalOffset > foreground.verticalOffset)
+    #expect(secondSibling.verticalOffset > firstSibling.verticalOffset)
+    // The fan spends height, not width: the group is exactly one wheel wide
+    // regardless of account count, which is what makes `stackWidths(providers:)`
+    // dead code (see ProviderUsageDockLayoutTests).
+    #expect(geometry.width == 54)
+    #expect(geometry.expandedHeight > 54)
 }
 
 @Test func everyAccountHasASeparateFortyFourPointSemanticTarget() {
@@ -86,6 +90,40 @@ import Testing
     #expect(focused.showsFocusOutline)
 }
 
+// Regression test for the z-order guard bug: `isRaised` used to be gated by
+// `!item.isForeground`, so the foreground account could never be promoted or
+// colorized by hover/focus. Today the foreground already holds the highest
+// base z-index, which is what masked the bug — but whichever account the
+// pointer or focus ring is actually on must come to the top of the z-stack,
+// foreground included.
+@Test func hoveringOrFocusingTheForegroundAccountAlsoRaisesAndPromotesItToTheTopOfTheZStack() throws {
+    let geometry = ProviderAccountStackGeometry(
+        accountIDs: ["account-a", "account-b"],
+        foregroundAccountID: "account-a",
+        wheelDiameter: 54)
+    let foreground = try #require(geometry.items.first(where: { $0.accountID == "account-a" }))
+
+    let idle = geometry.visualState(
+        for: foreground,
+        isHovered: false,
+        isFocused: false,
+        isGrayscale: true,
+        reduceMotion: false)
+    let hovered = geometry.visualState(
+        for: foreground,
+        isHovered: true,
+        isFocused: false,
+        isGrayscale: true,
+        reduceMotion: false)
+
+    #expect(!idle.isRaised)
+    #expect(idle.elevation == 0)
+    #expect(hovered.isRaised)
+    #expect(hovered.elevation > 0)
+    #expect(!hovered.isGrayscale)
+    #expect(hovered.zIndex == Double(geometry.items.count + 2))
+}
+
 @Test func reduceMotionRaisesAndColorizesImmediatelyWithoutAnimation() throws {
     let geometry = ProviderAccountStackGeometry(
         accountIDs: ["account-a", "account-b"],
@@ -106,7 +144,10 @@ import Testing
     #expect(state.animationDuration == nil)
 }
 
-@Test func focusedForegroundAccountKeepsItsPositionAndShowsACustomOutline() throws {
+// Focusing the foreground is how a keyboard user discovers the collapsed
+// siblings in the first place — it must expand the group exactly like
+// hovering it would, not just show an outline in place.
+@Test func focusedForegroundAccountRaisesAndShowsACustomOutline() throws {
     let geometry = ProviderAccountStackGeometry(
         accountIDs: ["account-a", "account-b"],
         foregroundAccountID: "account-a",
@@ -122,8 +163,8 @@ import Testing
         isGrayscale: true,
         reduceMotion: false)
 
-    #expect(!state.isRaised)
-    #expect(state.elevation == 0)
+    #expect(state.isRaised)
+    #expect(state.elevation > 0)
     #expect(state.showsFocusOutline)
 }
 
@@ -135,23 +176,77 @@ import Testing
 @MainActor
 @Test func focusedForegroundAccountShowsInteractiveCyanOutlineSnapshot() throws {
     try assertSnapshot(
-        ProviderAccountStackSnapshotHarness(),
+        ProviderAccountStackSnapshotHarness(visualFocusAccountID: "anthropic:personal"),
         name: "provider-account-stack-states",
-        size: CGSize(width: 180, height: 100))
+        size: CGSize(width: 160, height: 170))
+}
+
+// Rest state: only the active account's wheel plus a badge naming how many
+// other accounts are collapsed behind it. Single-account providers get no
+// badge at all (covered by the account-count check in `showsBadge`).
+@MainActor
+@Test func restStateShowsACountBadgeForOtherAccountsSnapshot() throws {
+    // The canvas matches the expanded snapshots' height even though only one
+    // wheel is visible: the container always reserves the fully fanned-out
+    // height so the hover region never resizes (see `isGroupExpanded` and
+    // the comment on `ProviderAccountStackGeometry.expandedHeight`). A
+    // shorter canvas would clip the reserved-but-currently-empty space above
+    // the wheel and misrepresent what a real rest state looks like.
+    try assertSnapshot(
+        ProviderAccountStackSnapshotHarness(),
+        name: "provider-account-stack-rest-badge",
+        size: CGSize(width: 100, height: 170))
+}
+
+// Hovering one account (not focusing it) must raise, colorize, and front it
+// without showing the keyboard focus outline — a distinct visual state from
+// the focus-driven snapshot above.
+@MainActor
+@Test func hoveringOneAccountRaisesItWithoutAFocusOutlineSnapshot() throws {
+    try assertSnapshot(
+        ProviderAccountStackSnapshotHarness(visualHoverAccountID: "anthropic:work"),
+        name: "provider-account-stack-hovered-account",
+        size: CGSize(width: 160, height: 170))
+}
+
+// A hidden (non-foreground) account with a nonzero generating count keeps
+// the rest-state badge in the accent color, so the activity signal the
+// per-account centers exist for survives collapsing the stack.
+@MainActor
+@Test func restBadgeGoesLiveWhenAHiddenAccountIsGeneratingSnapshot() throws {
+    try assertSnapshot(
+        ProviderAccountStackSnapshotHarness(
+            generatingCounts: [
+                ProviderAccountKey(providerID: "anthropic", accountRef: "work"): 2,
+            ]),
+        name: "provider-account-stack-badge-live",
+        size: CGSize(width: 100, height: 170))
 }
 }
 
 private struct ProviderAccountStackSnapshotHarness: View {
+    var visualFocusAccountID: String?
+    var visualHoverAccountID: String?
+    var generatingCounts: [ProviderAccountKey: Int] = [:]
+
     @FocusState private var focusedAccountID: String?
 
     var body: some View {
         ProviderAccountStackView(
             provider: Self.provider,
-            generatingCounts: [:],
+            generatingCounts: generatingCounts,
             isGrayscale: false,
             focusedAccountID: $focusedAccountID,
-            visualFocusAccountID: "anthropic:personal",
+            visualFocusAccountID: visualFocusAccountID,
+            visualHoverAccountID: visualHoverAccountID,
             onSelect: { _ in })
+            // A nonzero generating count keeps a wheel's activity pulse
+            // animating even while that wheel sits collapsed behind the
+            // foreground; without this the snapshot byte-for-byte compares
+            // against a rendering frozen at a different animation phase
+            // than whichever one was captured for the reference image.
+            // macOS exposes the public Reduce Motion key as read-only.
+            .environment(\._accessibilityReduceMotion, true)
     }
 
     private static let provider = ProviderUsageProvider(
