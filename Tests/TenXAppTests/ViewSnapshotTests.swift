@@ -634,6 +634,42 @@ import Testing
 }
 
 @MainActor
+@Test func providerConnectionsBenignStatusSnapshot() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(
+        providers: providerWorkspaceProviders,
+        loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try providerWorkspaceSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+
+    // A provider absent from `model.providers`, so the notification handler
+    // falls back to the catalog-level "Connection needs attention." status —
+    // the one benign message this view renders above the rows.
+    let ghost = ProviderLoginProvider(
+        id: "ghost", name: "Ghost", isAvailable: true, isAuthenticated: false)
+    let login = Task { await model.login(ghost) }
+    await loginGate.waitForStart()
+    await service.emit(ExtensionUIRequest(
+        id: "notice",
+        method: "notify",
+        payload: .object(["message": .string("Waiting for approval.")])))
+    await waitForModelState { model.loginMessage != nil }
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-connections-benign-status",
+        size: CGSize(width: 1180, height: 760))
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
+}
+
+@MainActor
 @Test func providerUsageDetailSnapshot() async throws {
     let model = try providerWorkspaceModel()
     await model.load()
