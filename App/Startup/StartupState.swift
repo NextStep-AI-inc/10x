@@ -54,12 +54,34 @@ struct StartupTiming: Sendable {
     let minimumVisibility: Duration
     let timeout: Duration
     let updateCheckDeadline: Duration
+    /// How long a user-initiated (menu) update check waits for an answer before giving
+    /// up. Deliberately its own value rather than reusing `updateCheckDeadline`: that
+    /// deadline is sized to protect launch speed for an advisory check nobody asked for,
+    /// while a menu check is something the user explicitly requested and is willing to
+    /// wait longer on — reusing the 3-second launch deadline would surface spurious
+    /// "Update failed" results for a menu check that was simply slow, not stuck.
+    let menuUpdateCheckDeadline: Duration
     let sleep: @Sendable (Duration) async throws -> Void
+
+    init(
+        minimumVisibility: Duration,
+        timeout: Duration,
+        updateCheckDeadline: Duration,
+        menuUpdateCheckDeadline: Duration = .seconds(15),
+        sleep: @escaping @Sendable (Duration) async throws -> Void
+    ) {
+        self.minimumVisibility = minimumVisibility
+        self.timeout = timeout
+        self.updateCheckDeadline = updateCheckDeadline
+        self.menuUpdateCheckDeadline = menuUpdateCheckDeadline
+        self.sleep = sleep
+    }
 
     static let live = StartupTiming(
         minimumVisibility: .milliseconds(1_200),
         timeout: .seconds(10),
         updateCheckDeadline: .seconds(3),
+        menuUpdateCheckDeadline: .seconds(15),
         sleep: { duration in try await ContinuousClock().sleep(for: duration) })
 }
 

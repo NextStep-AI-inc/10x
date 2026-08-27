@@ -49,6 +49,42 @@ extension UpdateChecking {
         await state.waitForCheckOutcome()
         deadlineTask.cancel()
     }
+
+    /// Begins a user-initiated check from the menu and returns the deadline task
+    /// watching it, so the caller can track and cancel it (see `AppModel.checkForUpdatesFromMenu`).
+    ///
+    /// `check(isUserInitiated: true)` runs inline, synchronously, rather than inside the
+    /// returned task — the same invariant `checkAtLaunch` relies on (I5:
+    /// `state.phase` must become `.checking` before this function returns, because
+    /// `SPUUpdater.checkForUpdates()` does not call back into the driver synchronously).
+    /// `AppModel.checkForUpdatesFromMenu()`'s own `!isPresentingUpdate` guard depends on
+    /// that ordering too. Unlike `checkAtLaunch`, this function does not await the
+    /// outcome itself — a menu click has no caller waiting on it — so it hands the
+    /// watchdog back instead of resolving when the check does.
+    ///
+    /// Closes a real gap: unlike the advisory launch check, a menu-triggered check had
+    /// no deadline of its own. Against an updater whose `start()` never succeeded (a
+    /// build defect — see `UpdateController.start()`), Sparkle never calls back into the
+    /// driver, so nothing would ever move `state.phase` off `.checking`. A stall found
+    /// at the deadline resolves into a *visible* `.failed` state with a `Try again`
+    /// action rather than a silent reset: the user explicitly asked, so per the rule
+    /// `SplashUpdateDriver.showUpdaterError` already applies to a live Sparkle error on
+    /// a user-initiated check, an unanswered menu check must not look like nothing
+    /// happened.
+    @discardableResult
+    func checkFromMenu(
+        deadline: Duration,
+        sleep: @escaping @Sendable (Duration) async throws -> Void
+    ) -> Task<Void, Never>? {
+        check(isUserInitiated: true)
+        guard case .checking = state.phase else { return nil }
+        return Task { @MainActor in
+            try? await sleep(deadline)
+            guard !Task.isCancelled, case .checking = state.phase else { return }
+            cancelCheck()
+            state.fail(.unknown)
+        }
+    }
 }
 
 @MainActor

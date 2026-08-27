@@ -92,6 +92,7 @@ final class AppModel {
         dependencies.makeUpdateChecker { [weak self] in
             await self?.shutdown()
         }
+    @ObservationIgnored private var menuUpdateCheckTask: Task<Void, Never>?
 
     var updateState: UpdateState { updateChecker.state }
 
@@ -150,7 +151,7 @@ final class AppModel {
 
     func checkForUpdatesFromMenu() {
         guard !isShuttingDown, !updateState.isPresentingUpdate else { return }
-        updateChecker.check(isUserInitiated: true)
+        beginMenuUpdateCheck()
     }
 
     func acceptUpdate() { updateChecker.accept() }
@@ -159,7 +160,25 @@ final class AppModel {
 
     func retryUpdate() {
         updateChecker.dismiss()
-        updateChecker.check(isUserInitiated: true)
+        beginMenuUpdateCheck()
+    }
+
+    /// Starts a user-initiated check and tracks its deadline watchdog, cancelling
+    /// whatever watchdog is already running first. The cancel-first step matters: without
+    /// it, a stale watchdog from an earlier check could still be asleep when a later
+    /// check (a re-click, or `retryUpdate` from a visible failure) begins, wake at its
+    /// own deadline, see `state.phase` still `.checking` (now for the *newer* check), and
+    /// incorrectly fail it. Only one watchdog may be armed at a time, and it must always
+    /// be the one watching the most recent check. Both `checkForUpdatesFromMenu` and
+    /// `retryUpdate` route through this rather than calling `UpdateChecking.check(...)`
+    /// directly, so a retry from a stalled-and-failed state gets its own deadline too —
+    /// otherwise retrying against a still-broken updater would stall silently again.
+    private func beginMenuUpdateCheck() {
+        menuUpdateCheckTask?.cancel()
+        let timing = dependencies.startupTiming
+        menuUpdateCheckTask = updateChecker.checkFromMenu(
+            deadline: timing.menuUpdateCheckDeadline,
+            sleep: timing.sleep)
     }
 
     func useOmp(at url: URL) async {
@@ -486,6 +505,9 @@ final class AppModel {
         let usage = providerUsageOperation
         providerUsageOperation = nil
         usage?.task.cancel()
+        let menuUpdateCheck = menuUpdateCheckTask
+        menuUpdateCheckTask = nil
+        menuUpdateCheck?.cancel()
 
         let provider = providerModel
         let controls = composerControls
@@ -507,6 +529,7 @@ final class AppModel {
         await warmExits?.value
         await activeExits?.value
         await usage?.task.value
+        await menuUpdateCheck?.value
     }
 
     func requestDeleteSession(_ metadata: SessionMetadata) {

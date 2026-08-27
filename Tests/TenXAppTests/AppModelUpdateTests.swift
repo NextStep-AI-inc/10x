@@ -139,3 +139,50 @@ private let updateTestTiming = StartupTiming(
     #expect(checker.checkCount == 1)
     if let manager = model.processManager { await manager.closeAll() }
 }
+
+/// Closes review finding (A) end to end through `AppModel`: only `checkAtLaunch` had a
+/// deadline before this change, so a menu check against a checker that never answers
+/// (the same shape as an updater whose `start()` failed) left `updateState.phase` stuck
+/// at `.checking` forever, with `isPresentingUpdate` false the whole time — the splash
+/// would never even reopen, and the menu item would silently do nothing on every click.
+@MainActor
+@Test func aStalledMenuCheckFailsVisiblyInsteadOfHangingForever() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let checker = StubUpdateChecker()
+    let model = fixture.model(timing: updateTestTiming, updateChecker: checker)
+
+    model.checkForUpdatesFromMenu()
+    #expect(model.updateState.phase == .checking)
+
+    while model.updateState.phase == .checking { await Task.yield() }
+
+    #expect(checker.cancelCount == 1)
+    #expect(model.updateState.phase == .failed(.unknown))
+    #expect(model.updateState.isPresentingUpdate)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+/// `retryUpdate()` ("Try again" on the visible failure above) must get its own deadline
+/// too. Before this fix, retrying against a checker that is still permanently broken
+/// would re-enter `.checking` with nothing watching it — one click deeper into the same
+/// stall the finding describes, this time with the splash's dismissal branch able to
+/// close the window on the next handoff-phase change and leave no trace it ever hung.
+@MainActor
+@Test func retryingAStalledMenuCheckGetsItsOwnDeadlineInsteadOfStallingSilently() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let checker = StubUpdateChecker()
+    let model = fixture.model(timing: updateTestTiming, updateChecker: checker)
+
+    model.checkForUpdatesFromMenu()
+    while model.updateState.phase == .checking { await Task.yield() }
+    #expect(model.updateState.phase == .failed(.unknown))
+
+    model.retryUpdate()
+    while model.updateState.phase == .checking { await Task.yield() }
+
+    #expect(checker.cancelCount == 2)
+    #expect(model.updateState.phase == .failed(.unknown))
+    if let manager = model.processManager { await manager.closeAll() }
+}

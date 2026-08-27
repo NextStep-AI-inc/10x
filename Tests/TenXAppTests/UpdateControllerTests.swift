@@ -128,3 +128,66 @@ func stubUpdateCheckerReportingNoUpdate() -> StubUpdateChecker {
     #expect(checker.cancelCount == 0)
     #expect(checker.state.phase == .available(newVersion: "0.2.0", currentVersion: "0.1.0"))
 }
+
+/// Closes review finding (A): a menu-triggered check has no caller awaiting its
+/// outcome the way `runStartupAttempt` awaits `checkAtLaunch`, so nothing previously
+/// noticed an updater whose `start()` never succeeded — meaning `updater.checkForUpdates()`
+/// produces no Sparkle callback of any kind. `UpdateController(prepareForInstall:)` here
+/// is never `.start()`-ed, which is exactly that condition: `checkForUpdatesFromMenu()`
+/// against it would have stuck `state.phase` at `.checking` forever, with no deadline
+/// watching it and no way for the user to discover anything went wrong.
+/// `checkFromMenu` closes the gap by resolving the stall into a *visible* `.failed`
+/// state (with a `Try again` action, unlike the launch path's silent reset) once its
+/// own deadline elapses.
+@MainActor
+@Test func theMenuCheckFailsVisiblyAtItsDeadlineInsteadOfHangingForever() async {
+    let controller = UpdateController(prepareForInstall: {})
+
+    let watchdog = controller.checkFromMenu(deadline: .milliseconds(1), sleep: { _ in })
+    await watchdog?.value
+
+    #expect(controller.state.phase == .failed(.unknown))
+    #expect(controller.state.isPresentingUpdate)
+}
+
+/// Mirrors `aDeadlineThatElapsesAfterTheAnswerLeavesTheOfferUntouched` for the menu
+/// path: a deadline that fires after the real answer already landed must not clobber it.
+@MainActor
+@Test func aMenuDeadlineThatElapsesAfterTheAnswerLeavesItUntouched() async {
+    let checker = StubUpdateChecker()
+
+    let watchdog = checker.checkFromMenu(deadline: .seconds(1), sleep: { @MainActor _ in
+        checker.state.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+    })
+    await watchdog?.value
+
+    #expect(checker.cancelCount == 0)
+    #expect(checker.state.phase == .available(newVersion: "0.2.0", currentVersion: "0.1.0"))
+}
+
+/// `checkFromMenu` begins synchronously, like `checkAtLaunch` (invariant I5): the
+/// deadline task must never be spawned before `state.phase` has already become
+/// `.checking`, or a caller's post-call guard (`AppModel.checkForUpdatesFromMenu`'s
+/// `!isPresentingUpdate`) could observe stale state.
+@MainActor
+@Test func theMenuCheckBeginsSynchronouslyBeforeSparkleIsAskedToCheck() {
+    let controller = UpdateController(prepareForInstall: {})
+
+    _ = controller.checkFromMenu(deadline: .seconds(15), sleep: { _ in })
+
+    #expect(controller.state.phase == .checking)
+}
+
+/// When the check answers synchronously (as a test double may), `checkFromMenu` must
+/// not spawn a watchdog at all — mirrors `theLaunchCheckReturnsAsSoonAsSparkleAnswers`.
+@MainActor
+@Test func theMenuCheckReturnsNoWatchdogWhenSparkleAnswersSynchronously() {
+    let checker = StubUpdateChecker()
+    checker.onCheck = { $0.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0") }
+
+    let watchdog = checker.checkFromMenu(deadline: .seconds(15), sleep: { _ in
+        Issue.record("The deadline must not be awaited once the check has answered")
+    })
+
+    #expect(watchdog == nil)
+}
