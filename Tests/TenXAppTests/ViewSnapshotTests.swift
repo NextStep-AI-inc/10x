@@ -55,6 +55,67 @@ import Testing
 }
 
 @MainActor
+@Test func onboardingProjectStepEmptySnapshot() throws {
+    let model = AppModel()
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    try assertSnapshot(
+        OnboardingView(model: model, step: .chooseProject),
+        name: "onboarding-project-empty",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func onboardingProjectStepScanningSnapshot() throws {
+    let fixture = try ProjectScanFixture(name: "scanning")
+    defer { fixture.cleanup() }
+    try fixture.repository("10x", modified: Date(timeIntervalSince1970: 3))
+    try fixture.repository("omp-cli", modified: Date(timeIntervalSince1970: 2))
+
+    let model = AppModel()
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    // The plain, synchronous `assertSnapshot` captures before the step's
+    // scan (which genuinely suspends) can resume, so this reliably shows
+    // the pre-scan skeleton regardless of what the fixture contains.
+    try assertSnapshot(
+        OnboardingView(
+            model: model,
+            step: .chooseProject,
+            projectScanner: GitRepositoryScanner(homeDirectory: fixture.root)),
+        name: "onboarding-project-scanning",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func onboardingProjectStepPopulatedSnapshot() async throws {
+    let fixture = try ProjectScanFixture(name: "populated")
+    defer { fixture.cleanup() }
+    try fixture.repository("10x", modified: Date(timeIntervalSince1970: 3))
+    try fixture.repository("omp-cli", modified: Date(timeIntervalSince1970: 2))
+    // Deliberately long and nested, so the third (still-visible, above the
+    // scroll fold) row exercises OnboardingRowView's `.lineLimit(1)`/
+    // `.truncationMode(.head)` on the detail line.
+    try fixture.repository(
+        "workspace/a-genuinely-long-directory-name-used-to-exercise-the-truncated-detail-line",
+        modified: Date(timeIntervalSince1970: 1))
+
+    let model = AppModel()
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    try await assertSnapshotAfterSettling(
+        OnboardingView(
+            model: model,
+            step: .chooseProject,
+            projectScanner: GitRepositoryScanner(homeDirectory: fixture.root)),
+        name: "onboarding-project-populated",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
 @Test func providerSetupRequiredSnapshot() async throws {
     let model = providerTestModel(providers: [
         ProviderLoginProvider(
@@ -66,10 +127,11 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-required")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-required",
         size: CGSize(width: 760, height: 560))
 }
@@ -96,19 +158,25 @@ import Testing
 
 @MainActor
 @Test func providerSetupLoadingSnapshot() async throws {
-    let loadingGate = LoadGate()
     let service = FakeProviderService(providers: [])
-    await service.enqueueProviderGate(loadingGate)
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    // Bootstrap first, before the gate is armed: bootstrap's own initial
+    // `loadProviders()` call must complete (there is nothing queued for it
+    // to catch yet), or the gated call it triggers would deadlock waiting
+    // on a release that only comes after this test takes its snapshot.
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-loading")
+
+    let loadingGate = LoadGate()
+    await service.enqueueProviderGate(loadingGate)
     let loading = Task { await model.load() }
     await loadingGate.waitForStart()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-loading",
         size: CGSize(width: 760, height: 560))
 
@@ -124,10 +192,11 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-connected")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-connected",
         size: CGSize(width: 760, height: 560))
 }
@@ -152,11 +221,12 @@ import Testing
         ProviderLoginProvider(
             id: "zed", name: "Zed", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-browse-all")
     await model.load()
     model.showAllProviders()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-browse-all-minimum-size",
         size: CGSize(width: 760, height: 560))
 }
@@ -181,11 +251,13 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(
+        model, path: "/tmp/10x-onboarding-provider-browse-all-mixed-rows")
     await model.load()
     model.showAllProviders()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-browse-all-mixed-rows-minimum-size",
         size: CGSize(width: 760, height: 560))
 }
@@ -202,12 +274,13 @@ import Testing
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) },
         formatTime: { _ in "4:00 PM" })
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-login-failure")
     await model.load()
     let provider = try #require(model.providers.first)
     await model.login(provider)
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-login-failure",
         size: CGSize(width: 760, height: 560))
 }
@@ -224,19 +297,20 @@ import Testing
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-active-login")
     await model.load()
     let provider = try #require(model.providers.first)
     let login = Task { await model.login(provider) }
     await loginGate.waitForStart()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-active-login",
         size: CGSize(width: 760, height: 560))
 
     await model.cancelLogin()
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-login-cancelled",
         size: CGSize(width: 760, height: 560))
 
@@ -732,12 +806,88 @@ private func assertProviderSetupStarterSnapshot(
     let model = providerTestModel(providers: [
         ProviderLoginProvider(id: id, name: name, isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-starter-\(id)")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: snapshotName,
         size: CGSize(width: 760, height: 560))
+}
+
+/// Wraps a pre-built `ProviderManagementViewModel` in an `AppModel` whose
+/// `.connectProvider` step renders it, mirroring `fullShellExpandedRailOverflowSnapshot`
+/// below. `providerModel` is `private(set)` on `AppModel` — see the doc
+/// comment on `OnboardingStep.unmet` — so `dependencies.makeProviderModel`
+/// plus `bootstrap()` is the only way in. Callers that also need to arm a
+/// `LoadGate`/`LoginGate` on the underlying fake service must do so *after*
+/// this returns: bootstrap performs its own, ungated `loadProviders()` call
+/// as part of standing up the runtime, and an already-armed gate would block
+/// that call forever.
+@MainActor
+private func onboardingProviderAppModel(
+    _ providerModel: ProviderManagementViewModel,
+    path: String
+) async -> AppModel {
+    // An isolated `RecentProjectStore`, not the `.standard`-backed default:
+    // `prepareSessionsAndRecentProjects` auto-fills `selectedProjectURL` from
+    // whatever it ranks highest when nothing has been chosen yet, and the
+    // default reads the real UserDefaults domain — this machine's actual
+    // recent-projects history, not a fixture. Without this, the step
+    // counter this test snapshots would depend on whoever's Mac (and
+    // whatever they were last using) recorded the reference.
+    let suiteName = "TenXAppTests.OnboardingProviderAppModel.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("[Tests:ViewSnapshot] Unable to create defaults suite")
+    }
+    defaults.removePersistentDomain(forName: suiteName)
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(filePath: path, directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        recentProjectStore: RecentProjectStore(defaults: defaults),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
+    await model.bootstrap()
+    return model
+}
+
+/// A small tree of fake Git repositories for the onboarding project step's
+/// scanning/populated snapshots. Mirrors `ScannerFixture` in
+/// `GitRepositoryScannerTests.swift`, but with two differences that matter
+/// here: `name` is a fixed, caller-chosen suffix rather than a UUID, and the
+/// root lives under the literal `/tmp` this file's other fixtures already
+/// use (e.g. `onboardingProviderAppModel`'s `path:`), not
+/// `FileManager.default.temporaryDirectory` — which is stable within a
+/// session but is itself a per-user, per-machine path. The populated
+/// snapshot renders `suggestion.url.path` as on-screen text, so either a
+/// UUID or a roaming temp root would make the reference image different on
+/// every re-recording. Callers must use distinct names so two fixtures never
+/// share a root (Swift Testing may run their tests concurrently).
+private struct ProjectScanFixture {
+    let root: URL
+
+    init(name: String) throws {
+        root = URL(filePath: "/tmp/tenx-onboarding-project-fixture-\(name)", directoryHint: .isDirectory)
+        try? FileManager.default.removeItem(at: root)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    }
+
+    func cleanup() {
+        try? FileManager.default.removeItem(at: root)
+    }
+
+    @discardableResult
+    func repository(_ path: String, modified: Date) throws -> URL {
+        let url = root.appending(path: path, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: url.appending(path: ".git", directoryHint: .isDirectory),
+            withIntermediateDirectories: true)
+        try FileManager.default.setAttributes(
+            [.modificationDate: modified],
+            ofItemAtPath: url.path)
+        return url
+    }
 }
 
 private struct SnapshotOmpLocator: OmpLocating {
