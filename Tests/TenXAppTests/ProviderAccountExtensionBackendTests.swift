@@ -318,4 +318,106 @@ private actor HangingChannel: ProviderAccountChannel {
     #expect(elapsed < .seconds(2))
 }
 
+/// Task-10b final fix, Finding 1 (Critical): before `inFlightTimeoutTask`
+/// existed, a channel that accepted a command — `respond` succeeds, so
+/// `claimOpenRequestID` is not in play at all here — but whose extension
+/// loop then never opens another request (killed by an unhandled
+/// rejection, or the client simply stops answering) left `send()`'s
+/// `withCheckedThrowingContinuation` waiting forever: nothing else
+/// resolves `inFlight` except a matching reply, a thrown `respond`, or the
+/// stream ending, and none of those three ever happens here. That hang is
+/// what wedged the whole app upstream: a hung `remove_account` never
+/// returns from `ProviderAccountCoordinator.removeAccount`'s
+/// `performRemoval()`, so `pendingRemovalAccounts` never clears, so
+/// `canCreateManagedSession` is false forever — no new session can be
+/// created anywhere in the app. This test proves the bounded replacement,
+/// following `aChannelThatNeverOpensDegradesWithinTheTimeoutInsteadOfHanging`'s
+/// own evidentiary bar: wall-clock elapsed time, not just "eventually
+/// threw." Confirmed to hang before the fix by running this test alone
+/// under an external `timeout` wrapper (see the final-fix report).
+@Test func aCommandTheExtensionAcceptsButNeverAnswersDegradesWithinTheReplyTimeoutInsteadOfHanging() async throws {
+    let (stream, continuation) = AsyncStream<RpcFrame>.makeStream()
+    // The extension already has its first request open, so `send` gets
+    // straight past `claimOpenRequestID` — this test is only about the
+    // wait that comes after, for the reply.
+    continuation.yield(.extensionUIRequest(ExtensionUIRequest(
+        id: "req-1",
+        method: "input",
+        payload: .object([
+            "type": .string("extension_ui_request"),
+            "id": .string("req-1"),
+            "method": .string("input"),
+            "title": .string(ExtensionUIRouter.providerAccountChannelTitle),
+        ]))))
+
+    let channel = ProviderAccountExtensionChannel(
+        events: stream,
+        replyTimeout: .milliseconds(50),
+        respond: { _, _ in
+            // Accepts the command without throwing — matching a client
+            // that took the request but whose extension loop then went
+            // silent — so no placeholder frame carrying this command's
+            // reply ever arrives.
+        })
+
+    let clock = ContinuousClock()
+    let start = clock.now
+    await #expect(throws: ProviderAccountChannelError.unavailable) {
+        _ = try await channel.send(ProviderAccountChannelCommand(
+            id: "cmd-1", command: "pin_account", params: [:]))
+    }
+    let elapsed = clock.now - start
+
+    // Generous relative to the 50ms timeout, same reasoning as the sibling
+    // open-request test: proves "degraded promptly," not "at exactly
+    // 50ms."
+    #expect(elapsed < .seconds(2))
+}
+
+/// Task-10b final fix, Finding 2 direction A: nothing previously re-ran
+/// tier detection when a channel became available, so the UI's cached tier
+/// could sit at `.stockOMP` for up to `staleRefreshInterval` (5 minutes)
+/// after a session actually attached a working extension channel. Proves
+/// `attach` fires the notification `ProviderManagementViewModel` uses to
+/// redetect (`AppModel.configureProviderModel` wires this to
+/// `redetectAccountTier()` — see `ProviderManagementViewModelTests` for
+/// that side).
+@MainActor
+@Test func attachingAChannelNotifiesAvailabilityChanged() async throws {
+    let registry = ProviderAccountChannelRegistry()
+    var notifications = 0
+    registry.onAvailabilityChange = { notifications += 1 }
+
+    registry.attach(sessionID: UUID(), channel: StubChannel(replies: [:]), sessionFile: nil)
+
+    #expect(notifications == 1)
+}
+
+/// Task-10b final fix, Finding 2 direction B: `ProviderManagementViewModel`
+/// caches a successful `hello` forever (see `resolveExtensionHello`'s doc
+/// comment), so the only way its tier label ever learns a channel died is
+/// if something tells it — and the moment routing itself discovers that,
+/// empirically, is exactly here, in the `.unavailable` catch `route`
+/// already had before this fix. Proves the notification fires from that
+/// catch WITHOUT changing what `route` actually does: it still tries the
+/// extension backend first, still falls back to `ProviderAccountPinBackend`
+/// on `.unavailable` — this entry's `sessionFile` is `nil`, so the
+/// fallback itself throws `sessionFileUnavailable`, proving the fallback
+/// attempt ran to completion rather than being skipped or altered.
+@MainActor
+@Test func routingThatFindsTheChannelUnavailableNotifiesTheRegistryButStillFallsBackToStock() async throws {
+    let registry = ProviderAccountChannelRegistry()
+    let sessionID = UUID()
+    registry.attach(sessionID: sessionID, channel: StubChannel(replies: [:]), sessionFile: nil)
+    var notifications = 0
+    registry.onAvailabilityChange = { notifications += 1 }
+    let backend = ProviderAccountTieredRoutingBackend(registry: registry)
+
+    await #expect(throws: ProviderAccountPinBackendError.sessionFileUnavailable) {
+        _ = try await backend.route(providerID: "anthropic", accountRef: "ref-a", sessionID: sessionID)
+    }
+
+    #expect(notifications == 1)
+}
+
 }

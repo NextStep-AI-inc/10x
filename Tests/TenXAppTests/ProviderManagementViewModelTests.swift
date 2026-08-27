@@ -231,6 +231,79 @@ import Testing
     #expect(model.accountTier == .extensionBacked)
 }
 
+/// Task-10b final fix, Finding 2 direction A: nothing previously re-ran
+/// tier detection when a channel became available after the fact — the
+/// label could sit at `.stockOMP` until the next periodic refresh
+/// (`staleRefreshInterval`, 5 minutes) or explicit user action. `AppModel`
+/// wires `ProviderAccountChannelRegistry.onAvailabilityChange` to
+/// `redetectAccountTier()` for exactly this — this test proves the view
+/// model's half of that wiring: installing a hello provider *after* the
+/// first load, then calling `redetectAccountTier()` directly (standing in
+/// for the registry's callback), picks it up without a full `refresh()`.
+@Test func redetectAccountTierPicksUpAHelloProviderThatBecameAvailableAfterLoad() async throws {
+    let providerID = "cursor"
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "Cursor",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+
+    await model.load()
+    #expect(model.accountTier == .stockOMP)
+
+    model.installTierHelloProvider {
+        ProviderExtensionHello(contractVersion: ProviderAccountTier.contractVersion)
+    }
+    await model.redetectAccountTier().value
+
+    #expect(model.accountTier == .extensionBacked)
+}
+
+/// Task-10b final fix, Finding 2 direction B: a *successful* hello is
+/// cached forever by `resolveExtensionHello` (see
+/// `extensionHelloIsFetchedOnceAndCachedAcrossRefreshes` immediately
+/// above), so once a channel goes away nothing previously re-asked —
+/// routing would silently fall back to pin-and-restart while the label
+/// kept claiming `.extensionBacked`. `redetectAccountTier()` is what
+/// `ProviderAccountTieredRoutingBackend.route`'s own `.unavailable` catch
+/// now calls (through the registry) the moment it discovers that; this
+/// proves invalidating the cache and re-probing actually flips the label
+/// back, not just that a fresh provider would have given the right answer
+/// on a first probe.
+@Test func redetectAccountTierInvalidatesAPreviouslyCachedSuccessfulHello() async throws {
+    let providerID = "cursor"
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "Cursor",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    var channelIsAlive = true
+    model.installTierHelloProvider {
+        channelIsAlive ? ProviderExtensionHello(contractVersion: ProviderAccountTier.contractVersion) : nil
+    }
+
+    await model.load()
+    #expect(model.accountTier == .extensionBacked)
+
+    // The channel died — matches what `ProviderAccountChannelRegistry
+    // .anyChannel()` returns once the dead entry's session detaches, or a
+    // still-attached channel that is now internally dropped.
+    channelIsAlive = false
+    await model.redetectAccountTier().value
+
+    #expect(model.accountTier == .stockOMP)
+}
+
 @Test func successfulLoginAppendsAnAccountAndRefreshesAccountMetadataAndUsage() async throws {
     let providerID = "openai-codex"
     let personal = AccountSnapshotEntry(accountID: "a1", email: "same@example.com", orgName: "Personal")

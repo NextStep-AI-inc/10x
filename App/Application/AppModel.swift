@@ -1446,6 +1446,17 @@ final class AppModel {
             return try await ProviderAccountExtensionBackend(channel: channel).removeAccount(
                 providerID: providerID, accountRef: accountRef)
         }
+        // Task-10b final fix, Finding 2: keeps `provider.accountTier` from
+        // going stale in either direction against this same registry — see
+        // `ProviderAccountChannelRegistry.onAvailabilityChange`'s doc
+        // comment for the two directions, and `ProviderManagementViewModel
+        // .redetectAccountTier`'s for why recomputing the tier alone is
+        // enough. `[weak provider]` because this closure is retained by
+        // `accountChannelRegistry`, which outlives any one `providerModel`
+        // across `replaceWorkspaceRuntime`/`loadProviderFallback` rebuilds.
+        accountChannelRegistry.onAvailabilityChange = { [weak provider] in
+            provider?.redetectAccountTier()
+        }
         startProviderUsage(for: provider)
     }
 

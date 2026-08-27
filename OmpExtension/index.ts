@@ -68,7 +68,15 @@ export default function (pi: ExtensionAPI) {
 	// context lives on the second parameter, not on the session_start event
 	// (which is just `{ type: "session_start" }`).
 	pi.on("session_start", async (_event, ctx) => {
-		void openCommandChannel(
+		// Not `void openCommandChannel(...)`: that discarded the returned
+		// promise outright, so a rejection from inside the loop — e.g.
+		// `ctx.ui.input()` itself throwing because the client disconnected —
+		// surfaced as an unhandled promise rejection instead of a caught,
+		// logged failure. `openCommandChannel` never retries on its own
+		// (Task 10b final fix, Finding 1's fold-in item), so this session's
+		// command channel is done either way; the `.catch` only replaces a
+		// silent, uncaught death with one that leaves a trace.
+		openCommandChannel(
 			ctx.ui,
 			async command => {
 				switch (command.command) {
@@ -110,7 +118,9 @@ export default function (pi: ExtensionAPI) {
 			},
 			() => true,
 			() => eventQueue.drain(),
-		);
+		).catch(error => {
+			console.error("[tenx-provider-accounts] command channel ended:", error);
+		});
 	});
 
 	// Registered once per process, not inside session_start: if session_start

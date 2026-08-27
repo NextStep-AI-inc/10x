@@ -104,13 +104,16 @@ struct ProviderAccountExtensionBackend: ProviderAccountRouting {
     }
 
     /// Bound on waiting for the extension's `hello` reply — deliberately
-    /// separate from `ProviderAccountExtensionChannel`'s own 30s
-    /// `openRequestTimeout`, which bounds waiting for the *first open
-    /// request slot* to exist at all, not any one command's round trip.
-    /// `hello()` is called from `ProviderManagementViewModel
-    /// .resolveExtensionHello` on a provider refresh (until a real answer
-    /// is cached — see that method's doc comment), so inheriting a 30s
-    /// stall there would make an ordinary refresh visibly hang. 2 seconds:
+    /// separate from `ProviderAccountExtensionChannel`'s own
+    /// `openRequestTimeout` (5s as of task-10b's final fix) and
+    /// `replyTimeout` (2s), which bound the channel's two internal waits
+    /// generically for every command, not this one caller's tolerance for
+    /// a stalled refresh specifically. `hello()` is called from
+    /// `ProviderManagementViewModel.resolveExtensionHello` on a provider
+    /// refresh (until a real answer is cached — see that method's doc
+    /// comment), so inheriting even the channel's own 5s
+    /// `openRequestTimeout` there would make an ordinary refresh visibly
+    /// pause. 2 seconds:
     /// Task 1 found the extension opens its first request "normally well
     /// under a second" after `session_start`, and `hello` itself is
     /// answered synchronously on the TypeScript side with no I/O
@@ -138,11 +141,13 @@ struct ProviderAccountExtensionBackend: ProviderAccountRouting {
     /// a cancelled-but-still-running send still had to finish before
     /// `withTaskGroup` (and therefore this method) could return. Against
     /// the real channel that means inheriting whatever the send was
-    /// actually blocked on — `claimOpenRequestID`'s full 30s
-    /// `openRequestTimeout` if the extension never opens a request, or an
-    /// unbounded hang if it opened one but never replies (that wait has no
-    /// timeout of its own at all). A unit test built on `Task.sleep` (which
-    /// *is* cancellation-aware) didn't catch this, because cancelling a
+    /// actually blocked on — `claimOpenRequestID`'s full `openRequestTimeout`
+    /// if the extension never opens a request, or (at the time this method
+    /// was written) an unbounded hang if it opened one but never replies,
+    /// since `inFlight`'s continuation had no timeout of its own until
+    /// task-10b's final fix added one (see `timeoutInFlight`). A unit test
+    /// built on `Task.sleep` (which *is* cancellation-aware) didn't catch
+    /// this, because cancelling a
     /// sleeping task genuinely stops it — the bug only shows up against a
     /// channel whose wait doesn't respond to cancellation, which is every
     /// real one.
@@ -253,35 +258,70 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
     /// comment for why a timeout is needed here at all.
     private var readyWaiterTimeoutTask: Task<Void, Never>?
     private var inFlight: (commandID: String, continuation: CheckedContinuation<JSONValue, any Error>)?
+    /// Cancelled by whichever of `resolveIfMatching` / `failInFlight` /
+    /// `handleStreamEnded` / `timeoutInFlight` resolves `inFlight` first, so
+    /// at most one of the four ever calls `resume` on it — mirrors
+    /// `readyWaiterTimeoutTask` above exactly. See `timeoutInFlight`'s doc
+    /// comment for why `inFlight` needed a bound at all (task-10b final
+    /// fix, Finding 1: the wait this guards used to be the one thing on
+    /// this channel with no timeout of its own).
+    private var inFlightTimeoutTask: Task<Void, Never>?
     private var isBusy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var isDropped = false
 
     private let openRequestTimeout: Duration
+    private let replyTimeout: Duration
 
     /// Default bound on `claimOpenRequestID`'s wait for the extension's
-    /// first open request. Matches `RpcClientConfiguration.startupTimeout` /
-    /// `.requestTimeout` (`OmpKit/Sources/OmpKit/RpcClient.swift:34-35`,
-    /// both 30s) rather than inventing a new number: this wait is the same
-    /// category of "how long is it reasonable to block on the other side of
-    /// the process before concluding something is wrong," and reusing the
-    /// codebase's own already-vetted bound keeps this channel's failure
-    /// timing consistent with every other RPC wait in the app. 30s is
-    /// generous relative to a healthy handshake — Task 1 confirmed the
+    /// first open request. Previously matched `RpcClientConfiguration
+    /// .startupTimeout` / `.requestTimeout` (both 30s) on the theory that
+    /// this wait was "the same category" as any other RPC wait in the app —
+    /// but task-10b's final review caught that reasoning producing a real
+    /// UX bug: a session whose `omp` has no bundled extension at all (the
+    /// common `.stockOMP`/`.providerOnly` case) pays this full wait on
+    /// every first `route()` call, because nothing ever opens a request for
+    /// `claimOpenRequestID` to find, and `prepareForFirstPrompt`
+    /// (`ProviderAccountCoordinator.swift`) awaits that route before a new
+    /// session's composer attaches — so 30s became a visible stall on
+    /// ordinary session startup, not just a rare failure path. 5 seconds
+    /// instead, using the evidence actually available (Task 1 confirmed the
     /// extension opens its first `ctx.ui.input()` from `session_start`,
     /// i.e. within the time `omp` itself takes to spawn and load the
-    /// bundled extension module, normally well under a second — so this
-    /// fires only when the extension is genuinely absent or wedged, never
-    /// during ordinary startup, even under a loaded CI machine.
-    private static let defaultOpenRequestTimeout: Duration = .seconds(30)
+    /// bundled extension module, normally well under a second) rather than
+    /// a generic RPC bound: generous enough that a genuinely slow-but-alive
+    /// extension still gets a fair chance — this timeout's false-positive
+    /// permanently marks the channel `isDropped` for the rest of the
+    /// session (see `timeoutReadyWaiter`), so it stays well clear of the
+    /// "normally well under a second" ceiling — while turning a 30-second
+    /// stall on every no-extension session into a 5-second one.
+    private static let defaultOpenRequestTimeout: Duration = .seconds(5)
+
+    /// Default bound on `send()`'s wait for a command's reply once the
+    /// extension has already accepted it (task-10b final fix, Finding 1).
+    /// Shorter than `defaultOpenRequestTimeout` because a false-positive
+    /// here is cheap, not permanent: `timeoutInFlight` does not set
+    /// `isDropped` (see its doc comment), so the very next command on this
+    /// channel tries again at full health, where a false-positive open-
+    /// request timeout instead condemns the channel for the rest of the
+    /// session. 2 seconds matches `ProviderAccountExtensionBackend
+    /// .helloTimeout`'s reasoning exactly: the command handlers that
+    /// produce a reply (`pinAccount`/`removeAccount`/`listAccounts` in
+    /// `OmpExtension/index.ts`) are local `AuthStorage` reads and writes,
+    /// no network round trip to the provider, so a healthy reply lands in
+    /// the same "low tens of milliseconds" range Task 1 measured for
+    /// `hello`.
+    private static let defaultReplyTimeout: Duration = .seconds(2)
 
     init(
         events: AsyncStream<RpcFrame>,
         openRequestTimeout: Duration = ProviderAccountExtensionChannel.defaultOpenRequestTimeout,
+        replyTimeout: Duration = ProviderAccountExtensionChannel.defaultReplyTimeout,
         respond: @escaping @Sendable (String, [String: JSONValue]) async throws -> Void
     ) {
         self.events = events
         self.openRequestTimeout = openRequestTimeout
+        self.replyTimeout = replyTimeout
         self.respond = respond
     }
 
@@ -320,6 +360,18 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         let body: [String: JSONValue] = ["value": .string(Self.encode(command))]
         return try await withCheckedThrowingContinuation { continuation in
             inFlight = (command.id, continuation)
+            // Scheduled in the same synchronous, non-suspending stretch as
+            // `inFlight` is stored — same reasoning as `claimOpenRequestID`'s
+            // identical comment on `readyWaiterTimeoutTask`: nothing else on
+            // this actor can run between the two statements, so there is no
+            // window where this task could fire before `inFlight` holds the
+            // continuation it is meant to guard.
+            let commandID = command.id
+            inFlightTimeoutTask = Task { [weak self, replyTimeout] in
+                try? await Task.sleep(for: replyTimeout)
+                guard !Task.isCancelled else { return }
+                await self?.timeoutInFlight(commandID: commandID)
+            }
             Task { [respond] in
                 do {
                     try await respond(requestID, body)
@@ -405,8 +457,9 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         readyWaiterTimeoutTask = nil
         // Also marks the channel dropped, not just this one wait resolved:
         // Task 1 established the extension opens its first request from
-        // `session_start`, so 30s of silence means it is never coming, not
-        // merely running late. Without this, every later `send()` on the
+        // `session_start`, so `openRequestTimeout` of silence (5s by
+        // default) means it is never coming, not merely running late.
+        // Without this, every later `send()` on the
         // same channel would re-arm and re-wait the full timeout again —
         // `claimOpenRequestID`'s `isDropped` fast path exists precisely to
         // avoid that. A future `finishOpening` builds a fresh channel
@@ -450,6 +503,8 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         else { return }
 
         self.inFlight = nil
+        inFlightTimeoutTask?.cancel()
+        inFlightTimeoutTask = nil
         if reply["ok"]?.boolValue == true {
             inFlight.continuation.resume(returning: reply["data"] ?? .null)
         } else {
@@ -463,6 +518,8 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         openRequestID = nil
         if let inFlight {
             self.inFlight = nil
+            inFlightTimeoutTask?.cancel()
+            inFlightTimeoutTask = nil
             inFlight.continuation.resume(throwing: ProviderAccountChannelError.unavailable)
         }
         if let readyWaiter {
@@ -479,6 +536,53 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
     private func failInFlight(commandID: String) {
         guard let inFlight, inFlight.commandID == commandID else { return }
         self.inFlight = nil
+        inFlightTimeoutTask?.cancel()
+        inFlightTimeoutTask = nil
+        inFlight.continuation.resume(throwing: ProviderAccountChannelError.unavailable)
+    }
+
+    /// The timeout-side counterpart to `resolveIfMatching` / `failInFlight`
+    /// / `handleStreamEnded` — task-10b final fix, Finding 1. Before this
+    /// existed, `inFlight`'s continuation had no bound of its own at all: a
+    /// live channel whose extension loop died *after* accepting a command
+    /// (see `OmpExtension/index.ts`'s `void openCommandChannel(...)` —
+    /// a rejected `ui.input()` kills that session's loop for good) resolved
+    /// none of the other three paths, so `send()` — and therefore
+    /// `route()`/`removeAccount()` above it — hung forever. That hang was
+    /// the mechanism behind the wedge: `ProviderAccountCoordinator
+    /// .removeAccount`'s `performRemoval()` never returning left
+    /// `pendingRemovalAccounts` populated forever, which makes
+    /// `canCreateManagedSession` false forever.
+    ///
+    /// Deliberately does NOT set `isDropped`, unlike `timeoutReadyWaiter`:
+    /// a command the extension accepted but hasn't answered yet is not
+    /// proof the channel is gone, only that this one reply is late, and a
+    /// late reply is still self-healing here. `handle(_:)` calls
+    /// `provideOpenRequestID` unconditionally, whether or not
+    /// `resolveIfMatching` found a match — so even a reply that arrives
+    /// after this timeout already gave up on it still hands its request id
+    /// forward as the next command's open slot, exactly as if nothing had
+    /// timed out. Marking the channel dropped here would discard a channel
+    /// that is merely slow on one command, for the rest of the session.
+    ///
+    /// Guarded the same way `timeoutReadyWaiter` is: matching `commandID`
+    /// against the still-current `inFlight` (mirroring `failInFlight`) is
+    /// the actual protection against a double `resume` if a real reply and
+    /// this timeout are both ready around the same instant — whichever of
+    /// `resolveIfMatching` or this method the actor's serial executor runs
+    /// first clears `inFlight` and resumes; the other then finds `inFlight`
+    /// `nil` (or, in principle, already reassigned to a newer command — the
+    /// single-flight queue rules that out in practice, since `send()` can't
+    /// return to let a new command start until one of these four sites has
+    /// already resolved this one, but the guard costs nothing and matches
+    /// `failInFlight`'s existing shape) and no-ops. Cancellation is belt
+    /// and suspenders, not the real guarantee: a task already past its
+    /// `Task.sleep` when cancelled runs to completion regardless, same as
+    /// `timeoutReadyWaiter`'s.
+    private func timeoutInFlight(commandID: String) {
+        guard let inFlight, inFlight.commandID == commandID else { return }
+        self.inFlight = nil
+        inFlightTimeoutTask = nil
         inFlight.continuation.resume(throwing: ProviderAccountChannelError.unavailable)
     }
 
@@ -532,8 +636,31 @@ final class ProviderAccountChannelRegistry: Sendable {
 
     private var entries: [UUID: Entry] = [:]
 
+    /// Notified after `attach` registers a channel, and after
+    /// `noteChannelUnavailable` reports that `ProviderAccountTieredRoutingBackend
+    /// .route` found a session's channel unavailable — task-10b final fix,
+    /// Finding 2. `ProviderManagementViewModel`'s displayed tier
+    /// (`accountTier`) and the tier `route` empirically selects a backend
+    /// for can disagree in both directions otherwise: nothing previously
+    /// re-ran tier detection when a channel first became available (the
+    /// label could sit at `.stockOMP` for up to `staleRefreshInterval`
+    /// after a session actually attached a working extension channel), and
+    /// a cached successful `hello` was never invalidated when that channel
+    /// later died (the label kept claiming `.extensionBacked` after
+    /// routing had already silently fallen back to pin-and-restart). Both
+    /// directions are corrected by the same fix — `AppModel
+    /// .configureProviderModel` wires this one closure to
+    /// `ProviderManagementViewModel.redetectAccountTier()` — rather than
+    /// two bespoke ones the view model would have to keep in sync itself.
+    /// `nil` in every test and preview that builds a registry directly
+    /// without going through `AppModel`: a no-op callback is exactly the
+    /// previous behavior (nothing re-detected), so leaving it unset here
+    /// never regresses anything that did not already rely on it.
+    var onAvailabilityChange: (@MainActor () -> Void)?
+
     func attach(sessionID: UUID, channel: any ProviderAccountChannel, sessionFile: URL?) {
         entries[sessionID] = Entry(channel: channel, sessionFile: sessionFile)
+        onAvailabilityChange?()
     }
 
     func detach(sessionID: UUID) {
@@ -558,6 +685,20 @@ final class ProviderAccountChannelRegistry: Sendable {
     /// `ProviderAccountChannelError.unavailable` the same way `route` does.
     func anyChannel() -> (any ProviderAccountChannel)? {
         entries.values.first?.channel
+    }
+
+    /// Called by `ProviderAccountTieredRoutingBackend.route` when trying a
+    /// session's channel throws `.unavailable` — the moment routing itself,
+    /// not a timer and not the UI, empirically learns a channel that may
+    /// have previously answered `hello` successfully no longer works. See
+    /// `onAvailabilityChange`. Does not touch `entries` itself: the
+    /// possibly-dead channel stays registered (a future `send` on it will
+    /// find `isDropped` and fail fast, per `ProviderAccountExtensionChannel
+    /// .claimOpenRequestID`), and `route`'s own selection between the
+    /// extension backend and the stock fallback is unchanged by this call
+    /// — it is a side-effecting notification, not a second vote.
+    func noteChannelUnavailable() {
+        onAvailabilityChange?()
     }
 }
 
@@ -603,7 +744,14 @@ struct ProviderAccountTieredRoutingBackend: ProviderAccountRouting {
                     providerID: providerID, accountRef: accountRef, sessionID: sessionID)
             } catch ProviderAccountChannelError.unavailable {
                 // No live extension on the other end right now — degrade to
-                // the stock tier below rather than failing the route.
+                // the stock tier below rather than failing the route. Also
+                // tells the registry, so `ProviderManagementViewModel`'s
+                // displayed tier can catch up to the same discovery instead
+                // of continuing to claim extension support this session
+                // just proved it doesn't have (task-10b final fix,
+                // Finding 2) — a notification about what was just learned,
+                // not a second say in what `route` does next.
+                await registry.noteChannelUnavailable()
             }
         }
         let sessionFile = entry?.sessionFile

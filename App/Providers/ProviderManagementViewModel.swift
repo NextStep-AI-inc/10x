@@ -568,6 +568,48 @@ final class ProviderManagementViewModel {
         return hello
     }
 
+    /// Re-runs tier detection alone — no provider/usage RPC, no touching
+    /// `accountSummaries`/`accountUsage`/`accountCapabilities` — invalidating
+    /// any cached `hello` answer first. Task-10b final fix, Finding 2: wired
+    /// by `AppModel.configureProviderModel` to `ProviderAccountChannelRegistry
+    /// .onAvailabilityChange`, which fires in two situations the periodic
+    /// refresh cycle (`staleRefreshInterval`, 5 minutes) was previously the
+    /// only thing to eventually catch:
+    ///
+    /// - **Direction A.** A channel attaches after `loadProviders()` already
+    ///   ran with none available (`hello` resolves nil before any session
+    ///   exists, so the tier fails closed to `.stockOMP`/`.providerOnly` —
+    ///   see `AppModel.configureProviderModel`'s own doc comment). A nil
+    ///   hello is never cached (`resolveExtensionHello` only remembers a
+    ///   success), so the fix here is purely "ask again promptly," not
+    ///   "stop trusting a wrong cached answer."
+    /// - **Direction B.** `ProviderAccountTieredRoutingBackend.route`
+    ///   empirically discovers a channel that previously answered `hello`
+    ///   successfully has gone unavailable. Here the cache genuinely is
+    ///   the problem — a success is remembered forever — so this method
+    ///   clears it before re-probing.
+    ///
+    /// Recomputing only `accountTier` is sufficient for both: `.providerOnly`
+    /// cannot be reached or left by a hello/channel change on its own — it
+    /// depends solely on whether the usage snapshot has per-account
+    /// identity at all (`ProviderAccountTier.detect`) — and `.stockOMP`/
+    /// `.extensionBacked` both already map to the same `.accountRouting`
+    /// capability in `refreshAccountUsage`, so accounts, usage, and
+    /// capability all stay correct without redoing that derivation here.
+    ///
+    /// Returns the `Task` so a caller that needs to observe completion —
+    /// today, only tests — can await it; the registry's own callback is a
+    /// synchronous, fire-and-forget closure and does not.
+    @discardableResult
+    func redetectAccountTier() -> Task<Void, Never> {
+        Task { [weak self] in
+            guard let self, let snapshot = self.lastUsageSnapshot else { return }
+            self.cachedExtensionHello = nil
+            let extensionHello = await self.resolveExtensionHello()
+            self.accountTier = ProviderAccountTier.detect(snapshot: snapshot, extensionHello: extensionHello)
+        }
+    }
+
     private func retainAccountState(for providerIDs: Set<String>) {
         accountCapabilities = accountCapabilities.filter { providerIDs.contains($0.key) }
         accountSummaries = accountSummaries.filter { providerIDs.contains($0.key) }
