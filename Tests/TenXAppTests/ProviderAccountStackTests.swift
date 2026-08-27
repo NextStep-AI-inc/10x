@@ -233,6 +233,75 @@ import Testing
         for: background, currentDiameter: geometry.wheelDiameter, isExpanded: false) == 0)
 }
 
+// Raising a wheel makes it bigger, and a bigger wheel has to come from
+// somewhere. Growing from its own lower edge, with the wheels above stepping
+// up by the whole growth, is what keeps both of its seams the width they are
+// at rest instead of collapsing them into slivers of half-hidden disc.
+@Test func raisingAWheelKeepsBothOfItsSeams() throws {
+    let geometry = ProviderAccountStackGeometry(
+        accountIDs: ["account-a", "account-b", "account-c"],
+        foregroundAccountID: "account-a",
+        wheelDiameter: 54)
+    let foreground = try #require(geometry.items.first { $0.accountID == "account-a" })
+    let middle = try #require(geometry.items.first { $0.accountID == "account-b" })
+    let top = try #require(geometry.items.first { $0.accountID == "account-c" })
+    let growth = geometry.wheelDiameter - geometry.backgroundDiameter
+
+    #expect(geometry.raiseClearance(for: middle, raisedAccountID: "account-b") == growth / 2)
+    #expect(geometry.raiseClearance(for: top, raisedAccountID: "account-b") == growth)
+    #expect(geometry.raiseClearance(for: foreground, raisedAccountID: "account-b") == 0)
+
+    func edges(
+        _ item: ProviderAccountStackItemGeometry,
+        _ diameter: CGFloat,
+        raised: String?
+    ) -> (bottom: CGFloat, top: CGFloat) {
+        let bottom = geometry.renderedOffset(
+            for: item, currentDiameter: diameter, isExpanded: true, raisedAccountID: raised)
+        return (bottom, bottom + diameter)
+    }
+    let background = geometry.backgroundDiameter
+    let full = geometry.wheelDiameter
+
+    // At rest, then with the middle wheel raised: both of its seams — to the
+    // foreground below and to the background wheel above — are unchanged.
+    let restingLower = edges(middle, background, raised: nil).bottom
+        - edges(foreground, full, raised: nil).top
+    let restingUpper = edges(top, background, raised: nil).bottom
+        - edges(middle, background, raised: nil).top
+    let raisedLower = edges(middle, full, raised: "account-b").bottom
+        - edges(foreground, background, raised: "account-b").top
+    let raisedUpper = edges(top, background, raised: "account-b").bottom
+        - edges(middle, full, raised: "account-b").top
+    // Above, the seam is held exactly: both wheels step up together.
+    #expect(abs(raisedUpper - restingUpper) < 0.0001)
+    // Below, these two overlap at rest by design, and the wheel in front dims
+    // to `backgroundDiameter` as this one is raised. Holding the raised
+    // wheel's lower edge still must open that overlap, never tighten it —
+    // tightening is what makes a colorized wheel and its neighbour read as one
+    // smudged shape.
+    #expect(restingLower < 0)
+    #expect(raisedLower > restingLower)
+
+    // The lower edge is the anchor, so the pointer that triggered the raise
+    // never falls outside the wheel it is pointing at.
+    #expect(abs(edges(middle, full, raised: "account-b").bottom
+        - edges(middle, background, raised: nil).bottom) < 0.0001)
+
+    // Raising the foreground moves nothing: it already renders at full size.
+    for item in geometry.items {
+        #expect(geometry.raiseClearance(for: item, raisedAccountID: "account-a") == 0)
+    }
+
+    // Clearance never reorders the stack, and never pushes it past the height
+    // the group reserves when expanded.
+    let raisedTops = geometry.items.map { item in
+        edges(item, item.accountID == "account-b" ? full : background, raised: "account-b")
+    }
+    #expect(raisedTops.map(\.bottom) == raisedTops.map(\.bottom).sorted())
+    #expect(raisedTops.map(\.top).max()! <= geometry.expandedHeight + 0.0001)
+}
+
 @Test func reduceMotionRaisesAndColorizesImmediatelyWithoutAnimation() throws {
     let geometry = ProviderAccountStackGeometry(
         accountIDs: ["account-a", "account-b"],

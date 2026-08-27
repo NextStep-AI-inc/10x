@@ -146,7 +146,19 @@ struct ProviderAccountStackGeometry: Equatable {
         let topRestingCenter = items
             .map { $0.verticalOffset + $0.visualDiameter / 2 }
             .max() ?? wheelDiameter / 2
-        expandedHeight = topRestingCenter + wheelDiameter / 2 + ringReserve
+        // `raiseClearance` lifts the topmost wheel by a further half growth
+        // beyond what raising it in place would have needed — whether it is
+        // itself the raised wheel (up by half the growth, at `wheelDiameter`)
+        // or sits above one (up by all of it, at `backgroundDiameter`). Both
+        // land on the same top edge, so one half-growth of headroom covers
+        // every case. Gated on having something to raise for the same reason
+        // `ringReserve` is: a single-account provider can never raise a wheel,
+        // and reserving the headroom anyway would grow its column for a state
+        // it cannot reach.
+        let raiseHeadroom = accountIDs.count > 1
+            ? (wheelDiameter - backgroundDiameter) / 2
+            : 0
+        expandedHeight = topRestingCenter + wheelDiameter / 2 + raiseHeadroom + ringReserve
         self.wheelDiameter = wheelDiameter
         self.backgroundDiameter = backgroundDiameter
         self.separationRingWidth = separationRingWidth
@@ -186,23 +198,60 @@ struct ProviderAccountStackGeometry: Equatable {
                 reduceMotion: reduceMotion))
     }
 
+    /// How far `item` steps up so a raised wheel keeps both of its seams.
+    ///
+    /// Growing a wheel around its own center spends half the growth upward and
+    /// half downward, so a raised wheel eats into the neighbour on each side.
+    /// That collapses seams `fanStepScale` sized to about a quarter diameter
+    /// down to a few points, and the sliver left of each neighbour reads as
+    /// some hidden disc rather than as two wheels meeting. Instead the raised
+    /// wheel grows from its own lower edge: it moves up by half the growth so
+    /// that edge stays put, and the wheels ranked above it move up by all of
+    /// it. The seam above is preserved because both of its wheels moved
+    /// together. Below, the wheel in front dims to `backgroundDiameter` at the
+    /// same moment, so holding the raised wheel's lower edge still opens that
+    /// seam rather than closing it — which is the point, since at rest those
+    /// two overlap by design and it is the overlap, not a gap, that turns
+    /// muddy once one of them is colorized.
+    ///
+    /// Anchoring at the lower edge also keeps hover stable — the raised wheel
+    /// only ever expands into space above the pointer, so the area under the
+    /// pointer strictly grows and can never slide out from under it.
+    func raiseClearance(
+        for item: ProviderAccountStackItemGeometry,
+        raisedAccountID: String?
+    ) -> CGFloat {
+        guard let raisedAccountID,
+            let raised = items.first(where: { $0.accountID == raisedAccountID })
+        else { return 0 }
+        // Zero when the raised wheel is already the foreground: it renders at
+        // `wheelDiameter` at rest, so raising it grows nothing.
+        let growth = wheelDiameter - raised.visualDiameter
+        if item.accountID == raisedAccountID { return growth / 2 }
+        return item.verticalOffset > raised.verticalOffset ? growth : 0
+    }
+
     /// Vertical offset from the group's bottom edge to render `item` at,
     /// given whatever diameter it currently is (resting, raised, or
     /// dimmed). This is the whole "grow in place" contract in one formula:
     /// `item`'s own resting diameter and rank fix a `restingCenter` that
     /// never changes, and the returned offset is solved so that
-    /// `offset + currentDiameter / 2 == restingCenter` always — proven by
-    /// `ProviderAccountStackTests`. Growing or shrinking only ever changes
-    /// how far the item's edges sit from that fixed center, never the
-    /// center itself, so a raised or dimmed wheel cannot move or reorder.
+    /// `offset + currentDiameter / 2 == restingCenter + clearance` always —
+    /// proven by `ProviderAccountStackTests`. Growing or shrinking only ever
+    /// changes how far the item's edges sit from that center, never the
+    /// center itself, so a raised or dimmed wheel cannot reorder. The only
+    /// thing that moves a center is `raiseClearance`, which steps the wheels
+    /// above a raised one out of its way and is zero for every other wheel.
     func renderedOffset(
         for item: ProviderAccountStackItemGeometry,
         currentDiameter: CGFloat,
-        isExpanded: Bool
+        isExpanded: Bool,
+        raisedAccountID: String? = nil
     ) -> CGFloat {
         guard isExpanded else { return 0 }
         let restingCenter = item.verticalOffset + item.visualDiameter / 2
-        return restingCenter - currentDiameter / 2
+        let clearance = raiseClearance(for: item, raisedAccountID: raisedAccountID)
+        return restingCenter + clearance - currentDiameter / 2
     }
 }
 
@@ -329,7 +378,8 @@ struct ProviderAccountStackView: View {
         let totalOffset = geometry.renderedOffset(
             for: item,
             currentDiameter: visualState.currentDiameter,
-            isExpanded: isGroupExpanded)
+            isExpanded: isGroupExpanded,
+            raisedAccountID: raisedAccountID)
         let currentHitTarget = max(
             ProviderAccountStackGeometry.minimumHitTarget,
             visualState.currentDiameter)
