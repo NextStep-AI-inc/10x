@@ -29,6 +29,10 @@ struct SplashPresentation {
     let heading: String
     let accessibilityLabel: String
     let rows: [SplashLedgerRow]
+    /// Names what the ledger is a list of. The two presentations share
+    /// `StartupLedgerView`, which had "Startup preparation" hardcoded, so VoiceOver
+    /// announced the update steps as startup steps.
+    let ledgerAccessibilityLabel: String
     let isSignalAnimating: Bool
     let isSignalFailed: Bool
     let signalProgress: Double?
@@ -36,6 +40,18 @@ struct SplashPresentation {
     let footerTone: SplashFooterTone
     let footerDetail: String
     let actions: [SplashAction]
+}
+
+extension SplashPresentation {
+    /// What makes this a different screen rather than the same one making progress: the
+    /// umbrella heading, whether it is a failure, and which actions are offered.
+    /// `SplashView` drives focus and the spoken summary off changes to this, because the
+    /// failure tone alone missed the update offered during startup, which is neither an
+    /// appearance nor a failure.
+    var screenSignature: String {
+        let actionIDs = actions.map(\.id).joined(separator: ",")
+        return "\(heading)|\(footerTone == .failed)|\(actionIDs)"
+    }
 }
 
 extension SplashPresentation {
@@ -50,6 +66,7 @@ extension SplashPresentation {
             heading: "Preparing your workspace",
             accessibilityLabel: "Preparing your workspace",
             rows: state.rows,
+            ledgerAccessibilityLabel: "Startup preparation",
             isSignalAnimating: state.isSignalAnimating,
             isSignalFailed: isRecovery,
             signalProgress: nil,

@@ -14,7 +14,7 @@ final class StubUpdateChecker: UpdateChecking {
     func check(isUserInitiated: Bool) {
         checkCount += 1
         lastCheckWasUserInitiated = isUserInitiated
-        state.beginCheck()
+        state.beginCheck(isUserInitiated: isUserInitiated)
         onCheck?(state)
     }
 

@@ -23,7 +23,9 @@ struct SplashView: View {
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                StartupLedgerView(rows: presentation.rows)
+                StartupLedgerView(
+                    rows: presentation.rows,
+                    accessibilityLabel: presentation.ledgerAccessibilityLabel)
             }
             .padding(.horizontal, 28)
             .padding(.top, 26)
@@ -55,22 +57,29 @@ struct SplashView: View {
             announcedRows = presentation.rows
             if !presentation.actions.isEmpty { focusPrimaryAction() }
         }
-        .onChange(of: presentation.footerTone) { _, tone in
-            guard tone == .failed else { return }
-            focusPrimaryAction()
-            announcer.announce("\(presentation.footerTitle). \(presentation.footerDetail)")
+        .onChange(of: presentation.screenSignature) { _, _ in
+            // Focus and the spoken summary follow the screen changing, not the failure
+            // tone. Tone alone missed the launch offer entirely: an update offered during
+            // startup is neither an appearance nor a failure, so the primary button never
+            // took focus and the user had to hunt for it with the keyboard.
+            announcedRows = presentation.rows
+            announcer.announce(
+                "\(presentation.heading). \(presentation.footerTitle). \(presentation.footerDetail)")
+            if !presentation.actions.isEmpty { focusPrimaryAction() }
         }
         .onChange(of: presentation.rows) { _, rows in
-            guard presentation.footerTone != .failed else {
-                announcedRows = rows
-                return
-            }
+            defer { announcedRows = rows }
+            guard presentation.footerTone != .failed else { return }
+            // A wholly different ledger is a new screen, not progress within a run. The
+            // startup steps being replaced by the update steps made every row id new, so
+            // a status diff announced "Downloading update, Queued" at the exact moment
+            // the app was asking whether to install.
+            guard Set(rows.map(\.id)) == Set(announcedRows.map(\.id)) else { return }
             if let changed = rows.first(where: { row in
                 announcedRows.first(where: { $0.id == row.id })?.status != row.status
             }) {
                 announcer.announce(changed.accessibilityLabel)
             }
-            announcedRows = rows
         }
     }
 

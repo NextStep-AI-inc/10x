@@ -49,12 +49,19 @@ enum UpdateStepID: String, CaseIterable, Sendable {
 @Observable
 final class UpdateState {
     private(set) var phase: UpdatePhase = .idle
+    @ObservationIgnored private(set) var isUserInitiatedCheck = false
     @ObservationIgnored private var lastActiveIndex: Int?
     @ObservationIgnored private var phaseWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
+    /// A launch check must stay invisible: nobody asked for it, and painting the splash
+    /// over a cold launch for a network round trip is exactly what the advisory rules
+    /// forbid. A check the user asked for is the opposite case. Without this, `Try again`
+    /// made the window vanish for up to fifteen seconds, and `Check for Updates...` gave
+    /// no feedback at all for the same stretch.
     var isPresentingUpdate: Bool {
         switch phase {
-        case .idle, .checking: false
+        case .idle: false
+        case .checking: isUserInitiatedCheck
         default: true
         }
     }
@@ -64,11 +71,17 @@ final class UpdateState {
         return false
     }
 
+    /// One umbrella per screen. `.failed` previously fell through to a default of
+    /// "Installing update", so the largest text on the failure screen named a step that
+    /// had usually never run, and during the download it repeated the ledger's own third
+    /// row. "Updating 10x" covers the whole run, including the run that failed, and
+    /// duplicates no row title.
     var heading: String {
         switch phase {
+        case .idle, .checking: "Checking for updates"
         case .available: "Update available"
         case .upToDate: "No updates available"
-        default: "Installing update"
+        case .downloading, .verifying, .installing, .relaunching, .failed: "Updating 10x"
         }
     }
 
@@ -111,22 +124,43 @@ final class UpdateState {
         }
     }
 
+    /// The install steps, but only when there is an install run to describe. A menu
+    /// check that found nothing, and one that timed out before anything started, were
+    /// both rendering four `Queued` steps that could never run.
     var rows: [SplashLedgerRow] {
-        UpdateStepID.allCases.enumerated().map { index, step in
+        guard hasInstallRun else { return [] }
+        return UpdateStepID.allCases.enumerated().map { index, step in
             SplashLedgerRow(id: step.rawValue, title: step.title, status: status(at: index))
         }
     }
 
+    /// True while an install exists or can still be started from what is on screen. A
+    /// failure only counts when a step had actually begun: `lastActiveIndex` is nil for a
+    /// check that failed before reaching the download.
+    private var hasInstallRun: Bool {
+        switch phase {
+        case .idle, .checking, .upToDate: false
+        case .available, .downloading, .verifying, .installing, .relaunching: true
+        case .failed: lastActiveIndex != nil
+        }
+    }
+
     static func byteProgress(received: UInt64, expected: UInt64) -> String {
+        // Sparkle reports the expected length after the download has already started, so
+        // the first frame is 0 of 0. `allowsNonnumericFormatting` would render that as
+        // "Zero KB", which reads as a broken download rather than a starting one.
+        guard received > 0 || expected > 0 else { return "Starting the download" }
         let formatter = ByteCountFormatter()
         formatter.countStyle = .file
+        formatter.allowsNonnumericFormatting = false
         let receivedText = formatter.string(fromByteCount: Int64(clamping: received))
         guard expected > 0 else { return receivedText }
         return "\(receivedText) of \(formatter.string(fromByteCount: Int64(clamping: expected)))"
     }
 
-    func beginCheck() {
+    func beginCheck(isUserInitiated: Bool = false) {
         lastActiveIndex = nil
+        isUserInitiatedCheck = isUserInitiated
         setPhase(.checking)
     }
 
@@ -184,6 +218,7 @@ final class UpdateState {
 
     func reset() {
         lastActiveIndex = nil
+        isUserInitiatedCheck = false
         setPhase(.idle)
     }
 

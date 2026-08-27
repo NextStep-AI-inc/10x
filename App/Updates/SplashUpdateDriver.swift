@@ -76,7 +76,7 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
 
     func showUserInitiatedUpdateCheck(cancellation: @escaping () -> Void) {
         checkCancellation = cancellation
-        state.beginCheck()
+        state.beginCheck(isUserInitiated: isUserInitiated)
     }
 
     /// Called when the launch gate gives up at its deadline.

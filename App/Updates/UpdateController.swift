@@ -151,7 +151,7 @@ final class UpdateController: UpdateChecking {
     /// of escaping.
     func check(isUserInitiated: Bool) {
         driver.beginCheck(isUserInitiated: isUserInitiated)
-        state.beginCheck()
+        state.beginCheck(isUserInitiated: isUserInitiated)
         // A never-started updater produces no Sparkle callback of any kind, so asking it
         // to check would stall at `.checking` until a deadline gave up on it. Answer
         // directly instead: visibly for a check the user asked for, silently for the

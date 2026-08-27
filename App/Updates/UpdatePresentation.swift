@@ -17,17 +17,19 @@ extension SplashPresentation {
             actions = [
                 SplashAction(
                     id: "install",
-                    title: "Install and Relaunch",
+                    title: "Install and relaunch",
                     kind: .primary,
                     perform: onInstall),
                 SplashAction(
                     id: "dismiss", title: "Not now", kind: .secondary, perform: onDismiss),
             ]
         case .failed:
+            // "Close", not "Not now": there is no offer left to defer here, only a
+            // broken attempt to walk away from.
             actions = [
                 SplashAction(id: "retry", title: "Try again", kind: .primary, perform: onRetry),
                 SplashAction(
-                    id: "dismiss", title: "Not now", kind: .secondary, perform: onDismiss),
+                    id: "dismiss", title: "Close", kind: .secondary, perform: onDismiss),
             ]
         case .upToDate:
             actions = [
@@ -41,6 +43,7 @@ extension SplashPresentation {
             heading: state.heading,
             accessibilityLabel: state.heading,
             rows: state.rows,
+            ledgerAccessibilityLabel: "Update steps",
             isSignalAnimating: false,
             isSignalFailed: isFailed,
             signalProgress: state.signalProgress,

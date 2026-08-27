@@ -334,3 +334,40 @@ private final class LaunchInstallProbe {
     await bootstrap.value
     if let manager = model.processManager { await manager.closeAll() }
 }
+
+/// `Check for Updates...` reported nothing at all until the check answered, which
+/// against a slow feed is the full fifteen second watchdog. `.checking` was not a
+/// presenting phase, so the window the menu command is supposed to open never opened.
+@MainActor
+@Test func aMenuCheckPutsTheWindowOnScreenWhileItRuns() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let checker = StubUpdateChecker()
+    let model = fixture.model(timing: updateTestTiming, updateChecker: checker)
+
+    model.checkForUpdatesFromMenu()
+
+    #expect(model.updateState.phase == .checking)
+    #expect(model.updateState.isPresentingUpdate)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+/// Same cause, worse symptom: `Try again` on a visible failure dropped straight back to
+/// `.checking`, so `StartupSceneView` dismissed the window the user had just clicked in.
+@MainActor
+@Test func retryingAFailureKeepsTheWindowOnScreen() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let checker = StubUpdateChecker()
+    let model = fixture.model(timing: updateTestTiming, updateChecker: checker)
+
+    model.checkForUpdatesFromMenu()
+    while model.updateState.phase == .checking { await Task.yield() }
+    #expect(model.updateState.phase == .failed(.unknown))
+
+    model.retryUpdate()
+
+    #expect(model.updateState.phase == .checking)
+    #expect(model.updateState.isPresentingUpdate)
+    if let manager = model.processManager { await manager.closeAll() }
+}
