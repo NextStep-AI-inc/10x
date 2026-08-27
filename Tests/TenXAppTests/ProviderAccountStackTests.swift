@@ -60,20 +60,23 @@ import Testing
 
     let idle = geometry.visualState(
         for: background,
-        isHovered: false,
-        isFocused: false,
+        isRaised: false,
+        isAnyItemRaised: false,
+        showsFocusOutline: false,
         isGrayscale: true,
         reduceMotion: false)
     let hovered = geometry.visualState(
         for: background,
-        isHovered: true,
-        isFocused: false,
+        isRaised: true,
+        isAnyItemRaised: true,
+        showsFocusOutline: false,
         isGrayscale: true,
         reduceMotion: false)
     let focused = geometry.visualState(
         for: background,
-        isHovered: false,
-        isFocused: true,
+        isRaised: true,
+        isAnyItemRaised: true,
+        showsFocusOutline: true,
         isGrayscale: true,
         reduceMotion: false)
 
@@ -105,23 +108,98 @@ import Testing
 
     let idle = geometry.visualState(
         for: foreground,
-        isHovered: false,
-        isFocused: false,
+        isRaised: false,
+        isAnyItemRaised: false,
+        showsFocusOutline: false,
         isGrayscale: true,
         reduceMotion: false)
     let hovered = geometry.visualState(
         for: foreground,
-        isHovered: true,
-        isFocused: false,
+        isRaised: true,
+        isAnyItemRaised: true,
+        showsFocusOutline: false,
         isGrayscale: true,
         reduceMotion: false)
 
     #expect(!idle.isRaised)
-    #expect(idle.elevation == 0)
+    #expect(idle.currentDiameter == geometry.wheelDiameter)
     #expect(hovered.isRaised)
-    #expect(hovered.elevation > 0)
+    #expect(hovered.currentDiameter == geometry.wheelDiameter)
     #expect(!hovered.isGrayscale)
     #expect(hovered.zIndex == Double(geometry.items.count + 2))
+}
+
+// The user's own correction to the raise design: the raised account should
+// become the full-size foreground, not just a slightly-emphasized version
+// of its own resting size — and everything else, foreground included,
+// should visibly step back to make room for it.
+@Test func hoveredBackgroundAccountGrowsToFullDiameterWhileForegroundShrinksAndDims() throws {
+    let geometry = ProviderAccountStackGeometry(
+        accountIDs: ["account-a", "account-b"],
+        foregroundAccountID: "account-a",
+        wheelDiameter: 54)
+    let foregroundItem = try #require(geometry.items.first(where: { $0.accountID == "account-a" }))
+    let backgroundItem = try #require(geometry.items.first(where: { $0.accountID == "account-b" }))
+
+    let raisedBackground = geometry.visualState(
+        for: backgroundItem,
+        isRaised: true,
+        isAnyItemRaised: true,
+        showsFocusOutline: false,
+        isGrayscale: false,
+        reduceMotion: false)
+    let demotedForeground = geometry.visualState(
+        for: foregroundItem,
+        isRaised: false,
+        isAnyItemRaised: true,
+        showsFocusOutline: false,
+        isGrayscale: false,
+        reduceMotion: false)
+    let restingForeground = geometry.visualState(
+        for: foregroundItem,
+        isRaised: false,
+        isAnyItemRaised: false,
+        showsFocusOutline: false,
+        isGrayscale: false,
+        reduceMotion: false)
+
+    #expect(raisedBackground.currentDiameter == geometry.wheelDiameter)
+    #expect(demotedForeground.currentDiameter == geometry.backgroundDiameter)
+    #expect(demotedForeground.currentDiameter < raisedBackground.currentDiameter)
+    // Dimming while a sibling is raised holds even with the global
+    // grayscale flag off — "every other account... dimmed treatment while
+    // the hover lasts" names no exception for whether the open chat is
+    // generating.
+    #expect(demotedForeground.isGrayscale)
+    #expect(!restingForeground.isGrayscale)
+    #expect(restingForeground.currentDiameter == geometry.wheelDiameter)
+}
+
+// The explicit constraint on how the grow-in-place must work: only size,
+// color, and z-index may change. `renderedOffset` is the whole position
+// contract in one formula — proves it holds for the resting diameter, the
+// full raised diameter, and an arbitrary third diameter, not just the two
+// values that happen to occur in practice.
+@Test func growingOrShrinkingNeverMovesAWheelsCenter() throws {
+    let geometry = ProviderAccountStackGeometry(
+        accountIDs: ["account-a", "account-b", "account-c"],
+        foregroundAccountID: "account-a",
+        wheelDiameter: 54)
+    let background = try #require(geometry.items.first(where: { $0.accountID == "account-b" }))
+    let restingCenter = background.verticalOffset + background.visualDiameter / 2
+
+    for candidateDiameter: CGFloat in [background.visualDiameter, geometry.wheelDiameter, 30] {
+        let offset = geometry.renderedOffset(
+            for: background,
+            currentDiameter: candidateDiameter,
+            isExpanded: true)
+        #expect(offset + candidateDiameter / 2 == restingCenter)
+    }
+
+    // Collapsed (not expanded), every item sits at zero regardless of
+    // diameter — the group-collapse behavior grow-in-place must not disturb.
+    #expect(geometry.renderedOffset(
+        for: background, currentDiameter: geometry.wheelDiameter, isExpanded: false) == 0)
 }
 
 @Test func reduceMotionRaisesAndColorizesImmediatelyWithoutAnimation() throws {
@@ -133,14 +211,15 @@ import Testing
 
     let state = geometry.visualState(
         for: background,
-        isHovered: false,
-        isFocused: true,
+        isRaised: true,
+        isAnyItemRaised: true,
+        showsFocusOutline: true,
         isGrayscale: true,
         reduceMotion: true)
 
     #expect(state.isRaised)
     #expect(!state.isGrayscale)
-    #expect(state.elevation > 0)
+    #expect(state.currentDiameter == geometry.wheelDiameter)
     #expect(state.animationDuration == nil)
 }
 
@@ -158,13 +237,14 @@ import Testing
 
     let state = geometry.visualState(
         for: foreground,
-        isHovered: false,
-        isFocused: true,
+        isRaised: true,
+        isAnyItemRaised: true,
+        showsFocusOutline: true,
         isGrayscale: true,
         reduceMotion: false)
 
     #expect(state.isRaised)
-    #expect(state.elevation > 0)
+    #expect(state.currentDiameter == geometry.wheelDiameter)
     #expect(state.showsFocusOutline)
 }
 

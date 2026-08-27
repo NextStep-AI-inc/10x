@@ -13,9 +13,9 @@ struct ProviderAccountStackItemGeometry: Equatable {
 
 struct ProviderAccountStackVisualState: Equatable {
     let isRaised: Bool
+    let currentDiameter: CGFloat
     let isGrayscale: Bool
     let showsFocusOutline: Bool
-    let elevation: CGFloat
     let zIndex: Double
     let animationDuration: TimeInterval?
 }
@@ -32,6 +32,13 @@ enum ProviderAccountStackMotion {
 /// unit — `ProviderAccountStackView` adds a canvas-colored ring per wheel so
 /// overlapping discs stay legible instead of blending, the classic
 /// overlapping-avatar treatment.
+///
+/// Hover or focus is a preview of "what if this were the active account":
+/// whichever account is raised takes the full foreground diameter, and every
+/// other account — including the one that is normally foreground — drops to
+/// background diameter and dims for as long as the raise lasts. Every wheel
+/// grows or shrinks around its own fixed resting center; position and rank
+/// never change, only size, color, and z-index do.
 struct ProviderAccountStackGeometry: Equatable {
     static let minimumHitTarget: CGFloat = 44
     static let backgroundScale: CGFloat = 0.78
@@ -48,19 +55,24 @@ struct ProviderAccountStackGeometry: Equatable {
     /// regular wheel size and leaves about 18% of each disc overlapped —
     /// enough to read as one group without hiding any wheel's own count.
     /// (0.34, the old rightward step, hid about two thirds of every
-    /// background disc.)
+    /// background disc.) This constant governs rank spacing only — it is
+    /// unrelated to the hover-grow sizing below.
     static let fanStepScale: CGFloat = 0.75
-    static let raisedElevation: CGFloat = 6
 
     let items: [ProviderAccountStackItemGeometry]
     /// Width of the widest hit target — with the cascade now vertical this is
-    /// always one wheel wide, regardless of account count.
+    /// always one wheel wide, regardless of account count. Also always wide
+    /// enough for any single item to grow to `wheelDiameter` on raise, since
+    /// the foreground's own hit target already established that width.
     let width: CGFloat
-    /// Height needed to show every account fully fanned out, including the
-    /// raise elevation. The container reserves this height even at rest so
-    /// hovering never resizes the hit-testable region — see
-    /// `ProviderAccountStackView`'s single hover region.
+    /// Height needed for whichever single account is raised to grow to full
+    /// `wheelDiameter` around its own fixed resting center, at every rank.
+    /// The container reserves this height even at rest so hovering never
+    /// resizes the hit-testable region — see `ProviderAccountStackView`'s
+    /// single hover region.
     let expandedHeight: CGFloat
+    let wheelDiameter: CGFloat
+    let backgroundDiameter: CGFloat
     let foregroundAccountID: String?
     let accessibilityOrderedAccountIDs: [String]
 
@@ -96,33 +108,68 @@ struct ProviderAccountStackGeometry: Equatable {
                 isForeground: isForeground)
         }
         width = items.map(\.hitTargetDiameter).max() ?? wheelDiameter
-        let maxVerticalOffset = items.map(\.verticalOffset).max() ?? 0
-        expandedHeight = max(wheelDiameter, backgroundDiameter + maxVerticalOffset)
-            + Self.raisedElevation
+        // Whichever item has the highest resting center is the one that, if
+        // raised, needs the most headroom above it — always the
+        // topmost-ranked background item when one exists.
+        let topRestingCenter = items
+            .map { $0.verticalOffset + $0.visualDiameter / 2 }
+            .max() ?? wheelDiameter / 2
+        expandedHeight = topRestingCenter + wheelDiameter / 2
+        self.wheelDiameter = wheelDiameter
+        self.backgroundDiameter = backgroundDiameter
         self.foregroundAccountID = foregroundID
         accessibilityOrderedAccountIDs = (foregroundID.map { [$0] } ?? [])
             + backgroundIDs
     }
 
-    /// Hover or focus raises and colorizes whichever account the pointer or
-    /// focus ring is actually on, foreground included — the foreground has no
-    /// special exemption here. It only wins the *base* z-order below.
+    /// `isRaised` and `isAnyItemRaised` are resolved by the caller (which
+    /// sees every item's hover/focus state at once and picks at most one
+    /// winner) rather than computed here from this item's own hover/focus
+    /// booleans alone — this item's size depends on whether a *different*
+    /// item is raised, which this function has no way to know on its own.
     func visualState(
         for item: ProviderAccountStackItemGeometry,
-        isHovered: Bool,
-        isFocused: Bool,
+        isRaised: Bool,
+        isAnyItemRaised: Bool,
+        showsFocusOutline: Bool,
         isGrayscale: Bool,
         reduceMotion: Bool
     ) -> ProviderAccountStackVisualState {
-        let isRaised = isHovered || isFocused
+        let currentDiameter: CGFloat
+        if isRaised {
+            currentDiameter = wheelDiameter
+        } else if isAnyItemRaised {
+            currentDiameter = backgroundDiameter
+        } else {
+            currentDiameter = item.visualDiameter
+        }
         return ProviderAccountStackVisualState(
             isRaised: isRaised,
-            isGrayscale: isGrayscale && !isRaised,
-            showsFocusOutline: isFocused,
-            elevation: isRaised ? Self.raisedElevation : 0,
+            currentDiameter: currentDiameter,
+            isGrayscale: isRaised ? false : (isGrayscale || isAnyItemRaised),
+            showsFocusOutline: showsFocusOutline,
             zIndex: isRaised ? Double(items.count + 2) : item.zIndex,
             animationDuration: ProviderAccountStackMotion.animationDuration(
                 reduceMotion: reduceMotion))
+    }
+
+    /// Vertical offset from the group's bottom edge to render `item` at,
+    /// given whatever diameter it currently is (resting, raised, or
+    /// dimmed). This is the whole "grow in place" contract in one formula:
+    /// `item`'s own resting diameter and rank fix a `restingCenter` that
+    /// never changes, and the returned offset is solved so that
+    /// `offset + currentDiameter / 2 == restingCenter` always — proven by
+    /// `ProviderAccountStackTests`. Growing or shrinking only ever changes
+    /// how far the item's edges sit from that fixed center, never the
+    /// center itself, so a raised or dimmed wheel cannot move or reorder.
+    func renderedOffset(
+        for item: ProviderAccountStackItemGeometry,
+        currentDiameter: CGFloat,
+        isExpanded: Bool
+    ) -> CGFloat {
+        guard isExpanded else { return 0 }
+        let restingCenter = item.verticalOffset + item.visualDiameter / 2
+        return restingCenter - currentDiameter / 2
     }
 }
 
@@ -142,6 +189,7 @@ struct ProviderAccountStackView: View {
 
     @State private var hoveredAccountID: String?
     @State private var isGroupRegionHovered = false
+    @State private var isBadgeRegionHovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
@@ -206,12 +254,21 @@ struct ProviderAccountStackView: View {
         }
     }
 
+    private var effectiveHoverID: String? { visualHoverAccountID ?? hoveredAccountID }
+    private var effectiveFocusID: String? { visualFocusAccountID ?? focusedAccountID }
+
+    /// At most one account is ever "raised" at a time. Hover wins over focus
+    /// when they point at two different accounts simultaneously (e.g. Tab
+    /// landed on one account while the pointer sits over another) — the
+    /// pointer is the more immediate signal for "what if this were active,"
+    /// while focus keeps its own outline regardless of which one wins here.
+    private var raisedAccountID: String? { effectiveHoverID ?? effectiveFocusID }
+
     private var isGroupExpanded: Bool {
         if alwaysExpanded { return true }
         if isGroupRegionHovered { return true }
-        if let hoveredAccountID, belongsToGroup(hoveredAccountID) { return true }
-        if let visualHoverAccountID, belongsToGroup(visualHoverAccountID) { return true }
-        let effectiveFocusID = visualFocusAccountID ?? focusedAccountID
+        if isBadgeRegionHovered { return true }
+        if let effectiveHoverID, belongsToGroup(effectiveHoverID) { return true }
         if let effectiveFocusID, belongsToGroup(effectiveFocusID) { return true }
         return false
     }
@@ -226,16 +283,23 @@ struct ProviderAccountStackView: View {
     ) -> some View {
         let accountProvider = providerPresentingOnly(account)
         let activeCount = generatingCount(for: account)
-        let isHovered = (visualHoverAccountID ?? hoveredAccountID) == account.id
-        let isFocused = (visualFocusAccountID ?? focusedAccountID) == account.id
+        let isRaised = account.id == raisedAccountID
+        let isAnyItemRaised = raisedAccountID != nil
+        let showsFocusOutline = account.id == effectiveFocusID
         let visualState = geometry.visualState(
             for: item,
-            isHovered: isHovered,
-            isFocused: isFocused,
+            isRaised: isRaised,
+            isAnyItemRaised: isAnyItemRaised,
+            showsFocusOutline: showsFocusOutline,
             isGrayscale: isGrayscale,
             reduceMotion: reduceMotion)
-        let fanOffset = isGroupExpanded ? item.verticalOffset : 0
-        let totalOffset = fanOffset + visualState.elevation
+        let totalOffset = geometry.renderedOffset(
+            for: item,
+            currentDiameter: visualState.currentDiameter,
+            isExpanded: isGroupExpanded)
+        let currentHitTarget = max(
+            ProviderAccountStackGeometry.minimumHitTarget,
+            visualState.currentDiameter)
         let showsSeparationRing = isGroupExpanded && geometry.items.count > 1
 
         return Button {
@@ -245,20 +309,26 @@ struct ProviderAccountStackView: View {
                 provider: accountProvider,
                 activeCount: activeCount,
                 isGrayscale: visualState.isGrayscale,
-                diameter: item.visualDiameter,
+                diameter: visualState.currentDiameter,
                 showsProviderLabel: false,
                 presentationMode: .account(account.usageState))
                 .frame(
-                    width: item.hitTargetDiameter,
-                    height: item.hitTargetDiameter)
-                .contentShape(Rectangle())
+                    width: currentHitTarget,
+                    height: currentHitTarget)
+                // A circle, not the full square, so the badge's corner
+                // (outside the inscribed circle by construction) never
+                // falls inside this button's own hit-test — see
+                // `badgeHoverRegion` below for what handles that corner.
+                .contentShape(Circle())
                 .overlay {
                     if showsSeparationRing {
                         Circle()
                             .stroke(
                                 TenXPalette.color(TenXPalette.canvasHex),
                                 lineWidth: 2)
-                            .frame(width: item.visualDiameter, height: item.visualDiameter)
+                            .frame(
+                                width: visualState.currentDiameter,
+                                height: visualState.currentDiameter)
                     }
                 }
                 .overlay {
@@ -268,13 +338,13 @@ struct ProviderAccountStackView: View {
                                 TenXPalette.color(TenXPalette.interactiveCyanHex),
                                 lineWidth: 2)
                             .frame(
-                                width: item.hitTargetDiameter - 2,
-                                height: item.hitTargetDiameter - 2)
+                                width: currentHitTarget - 2,
+                                height: currentHitTarget - 2)
                     }
                 }
                 .overlay(alignment: .topTrailing) {
-                    if item.isForeground, showsBadge {
-                        countBadge
+                    if item.isForeground, otherAccountsCount > 0 {
+                        badgeHoverRegion
                             .offset(x: -2, y: 2)
                     }
                 }
@@ -294,7 +364,7 @@ struct ProviderAccountStackView: View {
         .zIndex(visualState.zIndex)
         .animation(
             visualState.animationDuration.map { .easeInOut(duration: $0) },
-            value: visualState.isRaised)
+            value: visualState)
         .accessibilityLabel("\(provider.name), \(account.label)")
         .accessibilityValue(ProviderUsageAccessibility.wheelValue(
             provider: accountProvider,
@@ -319,6 +389,35 @@ struct ProviderAccountStackView: View {
     private var isBadgeLive: Bool {
         provider.accounts.contains { account in
             account.id != geometry.foregroundAccountID && generatingCount(for: account) > 0
+        }
+    }
+
+    /// Pointing at the badge means "show me the other accounts," exactly
+    /// like pointing at the wheel — it expands the group. It must NOT also
+    /// promote the foreground wheel as though that one account were
+    /// individually hovered, so it drives `isBadgeRegionHovered` only, never
+    /// `hoveredAccountID`.
+    ///
+    /// This wrapper stays in the tree whenever the provider has other
+    /// accounts, regardless of whether the badge is currently drawn —
+    /// `showsBadge` flips to false in the very same state change that
+    /// `isBadgeRegionHovered` triggers (hovering the badge expands the
+    /// group, which hides the badge), so a view that only existed while
+    /// `showsBadge` was true would be removed before it could ever report
+    /// its own hover exiting, leaving `isBadgeRegionHovered` stuck true and
+    /// the group permanently unable to collapse again.
+    @ViewBuilder
+    private var badgeHoverRegion: some View {
+        Group {
+            if showsBadge {
+                countBadge
+            } else {
+                Color.clear.frame(minWidth: 15, minHeight: 15)
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { isHovered in
+            isBadgeRegionHovered = isHovered
         }
     }
 
