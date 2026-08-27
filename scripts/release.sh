@@ -63,7 +63,7 @@ fi
 # The count is not monotonic across branches. Releasing a lower CFBundleVersion than the
 # one already advertised strands every install: Sparkle sees no upgrade and says nothing.
 PUBLISHED_BUILD="$(curl -fsSL "https://github.com/$REPO/releases/latest/download/appcast.xml" 2>/dev/null \
-  | sed -n 's/.*<sparkle:version>\([0-9][0-9]*\)<.*/\1/p' | head -1)"
+  | sed -n 's/.*<sparkle:version>\([0-9][0-9]*\)<.*/\1/p' | head -1 || true)"
 if [ -n "$PUBLISHED_BUILD" ] && [ "$BUILD_NUMBER" -le "$PUBLISHED_BUILD" ]; then
   echo "error: this build is $BUILD_NUMBER but the live feed already advertises $PUBLISHED_BUILD." >&2
   echo "Sparkle compares CFBundleVersion, so publishing this would strand every install" >&2
@@ -176,8 +176,16 @@ grep -q 'sparkle:edSignature' "$APPCAST" || {
 # A signature made with the wrong key parses and publishes, then is silently rejected by
 # every install. Assert the key that signed it is the one the shipped app trusts.
 PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" App/Info.plist)"
-SIGNING_KEY="$("$BUILD/sparkle/bin/generate_keys" -p 2>/dev/null | tr -d '[:space:]')"
-if [ -n "$SIGNING_KEY" ] && [ "$SIGNING_KEY" != "$PUBLIC_KEY" ]; then
+# `|| true` is load-bearing. generate_keys -p reads the LOGIN KEYCHAIN, which exists on
+# a developer machine and not in CI, where the key arrives as a file. Without it the
+# failing substitution trips `set -e` and kills the release after notarization has
+# already succeeded, with no message at all. So this check runs locally and is skipped
+# in CI, and the skip is stated rather than silent.
+SIGNING_KEY="$("$BUILD/sparkle/bin/generate_keys" -p 2>/dev/null | tr -d '[:space:]' || true)"
+if [ -z "$SIGNING_KEY" ]; then
+  echo "    note: no keychain signing key here, so the key/plist match is unchecked."
+  echo "    The appcast signature itself is asserted below."
+elif [ "$SIGNING_KEY" != "$PUBLIC_KEY" ]; then
   echo "error: signing key does not match SUPublicEDKey in App/Info.plist." >&2
   echo "The appcast would publish cleanly and be rejected by every installed copy." >&2
   exit 1
