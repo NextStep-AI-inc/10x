@@ -14,8 +14,8 @@
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 ```
 
-Counts by task: 483 at branch point → 490 (Task 1, +7) → 496 (Task 2, +6) → 499
-(Task 3, +3) → 505 (Task 4, +6) → 512 (Task 5, +7) → 514 (Task 6, +2) → 517
+Counts by task: 476 at branch point → 483 (Task 1, +7) → 489 (Task 2, +6) → 492
+(Task 3, +3) → 498 (Task 4, +6) → 505 (Task 5, +7) → 507 (Task 6, +2) → 510
 (Task 7, +3 snapshots). Four tests in this repo flake under full parallel load
 and pass in isolation: `continuousSettingsSnapshot`,
 `cancellationReapsADescendantSpawnedByTheTerminationHandler`,
@@ -77,7 +77,7 @@ the keyboard:
 
 ## Known gaps carried
 
-Recorded in `.superpowers/sdd/2026-08-26-composer-model-picker/progress.md`:
+This section is the durable record of them:
 
 - `flatIndex`, `handleKey`, and the `.task` highlight-seeding in
   `ModelPickerFlyout.swift` have no unit tests. Snapshots render static frames
