@@ -142,6 +142,7 @@
 		96358199806DE027E9B3431978197DCE /* OmpUsageRunning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 232D48B6C9FE88E2A942ED5CD80FAC55 /* OmpUsageRunning.swift */; };
 		966ADF1BA155709CAB7442F91C39B498 /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 974783DE436CE196147C1685500F4D4E /* TranscriptView.swift */; };
 		98267A87836F5D958C782955A673A3C7 /* OnboardingStepTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984CBA3F4504C89EBB8D2BBF6710E709 /* OnboardingStepTests.swift */; };
+		9A259655895AFF86AECBCBEBDF2B6719 /* OmpInstallRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 389574CB72DFAC381539C82CD3C76C48 /* OmpInstallRunnerTests.swift */; };
 		9C57D8C432DA29B6A761BD2D030BA60D /* OmpExecutableLocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E09C7BF6655604D49E6295A7CC1E5D00 /* OmpExecutableLocator.swift */; };
 		9CA3690A25C24E73BE98E4D87DDEEC9B /* MessageBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 191525CE30166ED42663A3F444EDC923 /* MessageBlockView.swift */; };
 		9D13855A49EC85E300FF8E98D301118C /* AppModelNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 849385C1F391C8C380E2DD9DD8C72A0E /* AppModelNavigationTests.swift */; };
@@ -166,6 +167,7 @@
 		AF64DA877E0ED6CCB1A2421545F54B54 /* TranscriptAnnotation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C9B4D1AB75AD0C4D379DDFD23483F60 /* TranscriptAnnotation.swift */; };
 		B0F9A5A25A841E0605E3797D5B598691 /* SearchModalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 403DAA3DBD43C027C921C4F4AE576749 /* SearchModalView.swift */; };
 		B0FE7A20DD7685BC813978A8C221200D /* ProjectSessionGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A793432F7E5A0A0557EB66401E5D380F /* ProjectSessionGroup.swift */; };
+		B10D96A5A4B1DC8F58D7E1F1733FD1DB /* OmpInstallRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A5EFE24321255DEC8BA5A09321DED2A /* OmpInstallRunner.swift */; };
 		B24374A9E4F25605FD62C639DD68F6CE /* PreferredIDESettingRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07ECBFB6BDAE4C811DB1D7ABEBF18F7 /* PreferredIDESettingRowView.swift */; };
 		B3BFFBF049B65A549CA6BD0E9325070E /* GitRepositoryScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 305AFC97DD4C660CBC270C0D483D5CD9 /* GitRepositoryScanner.swift */; };
 		BA3C702B9C529BB7BE46D44A11C94776 /* ToolCardScaffold.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C133747F6397FABD958011509EE75A7 /* ToolCardScaffold.swift */; };
@@ -281,6 +283,7 @@
 		366335EAE0309E543F652198FEA33EDF /* SessionSearchDatabaseTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionSearchDatabaseTests.swift; path = Tests/TenXAppTests/SessionSearchDatabaseTests.swift; sourceTree = "<group>"; };
 		37B752C3C613E3C5F84426783D5EDDA1 /* ProviderConnectionsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderConnectionsView.swift; path = App/Providers/ProviderConnectionsView.swift; sourceTree = "<group>"; };
 		38928DDF4AA8B23D2FFC53F184C549CA /* SubagentEventReducer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubagentEventReducer.swift; path = App/Sessions/SubagentEventReducer.swift; sourceTree = "<group>"; };
+		389574CB72DFAC381539C82CD3C76C48 /* OmpInstallRunnerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpInstallRunnerTests.swift; path = Tests/TenXAppTests/OmpInstallRunnerTests.swift; sourceTree = "<group>"; };
 		3A1BBA21544E0A06834057AC140ED330 /* FlowLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FlowLayout.swift; path = App/Design/FlowLayout.swift; sourceTree = "<group>"; };
 		3A369C82D303CBB255F0027D059D9346 /* DesignSystemTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DesignSystemTests.swift; path = Tests/TenXAppTests/DesignSystemTests.swift; sourceTree = "<group>"; };
 		3B5535C8E9BA0BF585156039450368CC /* SessionHeaderMetadata.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionHeaderMetadata.swift; path = App/Sessions/SessionHeaderMetadata.swift; sourceTree = "<group>"; };
@@ -326,6 +329,7 @@
 		6926F08F9655728CE398C085E2B7F08C /* ApprovalAccessibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ApprovalAccessibility.swift; path = App/ExtensionUI/ApprovalAccessibility.swift; sourceTree = "<group>"; };
 		69EC4224D86689BF1A5D2D37996F7381 /* FileReferenceLabel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileReferenceLabel.swift; path = App/FileReferences/FileReferenceLabel.swift; sourceTree = "<group>"; };
 		6A450C5E9B45463B80F3518BBCF328CF /* FileReferenceEnvironment.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileReferenceEnvironment.swift; path = App/FileReferences/FileReferenceEnvironment.swift; sourceTree = "<group>"; };
+		6A5EFE24321255DEC8BA5A09321DED2A /* OmpInstallRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpInstallRunner.swift; path = App/Onboarding/OmpInstallRunner.swift; sourceTree = "<group>"; };
 		6A6D61E7BBBF6C63AD9B56AF5526F74D /* TranscriptMessage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptMessage.swift; path = App/Sessions/TranscriptMessage.swift; sourceTree = "<group>"; };
 		6B9D28101EEB3E94C7B933DB50FDDF71 /* FileTypeIconTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileTypeIconTests.swift; path = Tests/TenXAppTests/FileTypeIconTests.swift; sourceTree = "<group>"; };
 		6C62FABF4DCE1A61B0AF5B1A62E89D4A /* ProviderManaging.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderManaging.swift; path = App/Providers/ProviderManaging.swift; sourceTree = "<group>"; };
@@ -506,6 +510,7 @@
 				70480B74480456F9EB012E088B3F9F93 /* IDERegistry.swift */,
 				057AE3CA7D4C2D4EFA57DC366AF00A4C /* ResolvedFileReference.swift */,
 				305AFC97DD4C660CBC270C0D483D5CD9 /* GitRepositoryScanner.swift */,
+				6A5EFE24321255DEC8BA5A09321DED2A /* OmpInstallRunner.swift */,
 				F66C14B04CE41A7F32D080AA7556C49A /* OnboardingStep.swift */,
 				232D48B6C9FE88E2A942ED5CD80FAC55 /* OmpUsageRunning.swift */,
 				954B1806AAC25D04ACCB2563F2D17FC6 /* OmpUsageService.swift */,
@@ -656,6 +661,7 @@
 				9B3C83997921E809B669E49EC2941D65 /* OmpCommandRunnerTests.swift */,
 				877A2FC56C324B52234C33EA8FA709FE /* OmpConfigServiceTests.swift */,
 				0A2A1BA39530EBB6E282C5207FC5CF52 /* OmpExecutableLocatorTests.swift */,
+				389574CB72DFAC381539C82CD3C76C48 /* OmpInstallRunnerTests.swift */,
 				2485E25AC3EE175E5F09E20F4EE77B5F /* OmpModelCatalogServiceTests.swift */,
 				AAFBBED38B16D04D458AE4051169E7E7 /* OmpProcessEnvironmentTests.swift */,
 				FFDF2B4BFB3C0920EC62965FF97FD1E2 /* OmpUsageServiceTests.swift */,
@@ -865,6 +871,7 @@
 				39AF91ADA09EAC0132F6EC7C1F794C9B /* IDERegistry.swift in Sources */,
 				E79A8E9DA355A3C39496EED749EC2D66 /* ResolvedFileReference.swift in Sources */,
 				B3BFFBF049B65A549CA6BD0E9325070E /* GitRepositoryScanner.swift in Sources */,
+				B10D96A5A4B1DC8F58D7E1F1733FD1DB /* OmpInstallRunner.swift in Sources */,
 				5CF726CD7425CAD0E09AA9880C4A6BEC /* OnboardingStep.swift in Sources */,
 				96358199806DE027E9B3431978197DCE /* OmpUsageRunning.swift in Sources */,
 				445966DFA9E505C63F10BC0633A76DA0 /* OmpUsageService.swift in Sources */,
@@ -1002,6 +1009,7 @@
 				C805AACC9752F54990AFA8CF22F9D347 /* OmpCommandRunnerTests.swift in Sources */,
 				2FA2CED35BD69E6850395FDC3730D25B /* OmpConfigServiceTests.swift in Sources */,
 				DA3524B10DDF81F245041CD22C0077E7 /* OmpExecutableLocatorTests.swift in Sources */,
+				9A259655895AFF86AECBCBEBDF2B6719 /* OmpInstallRunnerTests.swift in Sources */,
 				0DDD566B7FA12725EB637611B85D8DA5 /* OmpModelCatalogServiceTests.swift in Sources */,
 				7BECCB08079C63A9C43A2F2B87F53AC9 /* OmpProcessEnvironmentTests.swift in Sources */,
 				AE83F5D331201C1E5D98FF0455A78609 /* OmpUsageServiceTests.swift in Sources */,
