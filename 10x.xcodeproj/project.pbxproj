@@ -76,6 +76,7 @@
 		488860D2FBFEFEF9B7CAAE3F85C00219 /* RecentProjectStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36CB95BC646298C16585D2058D8AD89 /* RecentProjectStoreTests.swift */; };
 		4945885CCA5AA51E5A5A722CFAA29D28 /* ProviderUsageDockFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D34678F2BAF33A703AA6950F45CF117 /* ProviderUsageDockFocusTests.swift */; };
 		4A0AFD9E671813F38CFA3A1472066F2D /* SessionSearchDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ED0B06D0ACA3A31602C718C4FDF22F6 /* SessionSearchDocument.swift */; };
+		4A7A88741764A2428D2C415267A69556 /* OutsideInteractionDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A331113A1950AEA534E20052C95F1087 /* OutsideInteractionDismissal.swift */; };
 		4ED931FCA5B0F7F51869FC1D55C8C904 /* SessionDeletionConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FAEB9B26382BB231DDC6996D7BFAA7F /* SessionDeletionConfirmationView.swift */; };
 		51C0D52B312905D58FC68023AC30FD89 /* BrandWordmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC82A22B2AB1B4AF8D75C32BD1574437 /* BrandWordmark.swift */; };
 		52A780991B123C29F5E7B88B165F0D88 /* FileReferenceLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69EC4224D86689BF1A5D2D37996F7381 /* FileReferenceLabel.swift */; };
@@ -367,6 +368,7 @@
 		9EAF6E622E959FF3194039CD938F765F /* RailPresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailPresentationTests.swift; path = Tests/TenXAppTests/RailPresentationTests.swift; sourceTree = "<group>"; };
 		9FD8DA63189AEF1F213279CBC6377E70 /* TranscriptHistoryMapperTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptHistoryMapperTests.swift; path = Tests/TenXAppTests/TranscriptHistoryMapperTests.swift; sourceTree = "<group>"; };
 		A110462B6B1BCD6D92975EF7F652FF55 /* ProviderUsageRingGeometryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageRingGeometryTests.swift; path = Tests/TenXAppTests/ProviderUsageRingGeometryTests.swift; sourceTree = "<group>"; };
+		A331113A1950AEA534E20052C95F1087 /* OutsideInteractionDismissal.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OutsideInteractionDismissal.swift; path = App/Design/OutsideInteractionDismissal.swift; sourceTree = "<group>"; };
 		A36CB95BC646298C16585D2058D8AD89 /* RecentProjectStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecentProjectStoreTests.swift; path = Tests/TenXAppTests/RecentProjectStoreTests.swift; sourceTree = "<group>"; };
 		A48D1A0B6CD1705C516A105AE2829607 /* ArchivedSessionsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ArchivedSessionsView.swift; path = App/Sessions/ArchivedSessionsView.swift; sourceTree = "<group>"; };
 		A4DE8504E174D28155FD0A39B1A9AE6C /* RailExpansionModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailExpansionModel.swift; path = App/Shell/RailExpansionModel.swift; sourceTree = "<group>"; };
@@ -479,6 +481,7 @@
 				88D6DC39FEEF22CEAB21C2A6A6FEFFF1 /* CornerCard.swift */,
 				3A1BBA21544E0A06834057AC140ED330 /* FlowLayout.swift */,
 				074C42EBFD890E0D870D78D4F45AE0D2 /* GhostActionStyle.swift */,
+				A331113A1950AEA534E20052C95F1087 /* OutsideInteractionDismissal.swift */,
 				1358E8B1E1F95D30DD0AE9DB03D31DE2 /* SourceSurface.swift */,
 				E95317FE231AEB99B29458EDDBC99FFD /* TenXPalette.swift */,
 				2E403B13EEC1C85CBA3FA9C86C96BB9E /* TenXTypography.swift */,
@@ -834,6 +837,7 @@
 				087F375E2A88E65D30A90635360986BE /* CornerCard.swift in Sources */,
 				71237325D6BA8F9396E7DCE36F55ADB8 /* FlowLayout.swift in Sources */,
 				7A3A1600D9CD4251C9609F38AECB1602 /* GhostActionStyle.swift in Sources */,
+				4A7A88741764A2428D2C415267A69556 /* OutsideInteractionDismissal.swift in Sources */,
 				6A1671902307CC6EF5797F52A945C02A /* SourceSurface.swift in Sources */,
 				9FD5CADCA1E5A1A6DF50C3CC3670B190 /* TenXPalette.swift in Sources */,
 				3D1F563CB908156E5D93E1E7E93206C7 /* TenXTypography.swift in Sources */,

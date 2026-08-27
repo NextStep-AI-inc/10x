@@ -7,51 +7,41 @@ struct ActiveSessionView: View {
     @State private var flyout: ComposerFlyout?
 
     var body: some View {
-        ZStack {
-            // Catches the margins beside and below the composer.
-            dismissScrim
+        VStack(spacing: 0) {
+            SessionHeaderView(controller: controller)
 
-            VStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    SessionHeaderView(controller: controller)
+            TranscriptView(controller: controller)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                    TranscriptView(controller: controller)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                    if controller.isRecoveryPresented,
-                       case .stopped(let code, _) = controller.runtimeState {
-                        RuntimeRecoveryView(
-                            exitCode: code,
-                            onRestart: { Task { await controller.restart() } },
-                            onOpenLog: controller.openLog,
-                            onDismiss: controller.dismissRecovery)
-                        .frame(maxWidth: 780)
-                        .padding(.horizontal, 42)
-                        .padding(.bottom, 16)
-                    }
-                }
-                // The transcript is a ScrollView and hit-tests across its whole
-                // area, so the ZStack scrim below never sees those clicks. This
-                // overlay intercepts them first, and stays off the composer
-                // subtree, which draws later and keeps its own clicks.
-                .overlay { dismissScrim }
-
-                ComposerView(
-                    draft: Bindable(controller).draft,
-                    flyout: $flyout,
-                    presentation: .active(controller: controller),
-                    controls: controls,
-                    controlsMode: .activeSession,
-                    onSend: {
-                        Task { await controller.sendPrompt() }
-                    })
+            if controller.isRecoveryPresented,
+               case .stopped(let code, _) = controller.runtimeState {
+                RuntimeRecoveryView(
+                    exitCode: code,
+                    onRestart: { Task { await controller.restart() } },
+                    onOpenLog: controller.openLog,
+                    onDismiss: controller.dismissRecovery)
                 .frame(maxWidth: 780)
                 .padding(.horizontal, 42)
-                .padding(.bottom, 28)
+                .padding(.bottom, 16)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .zIndex(1)
+
+            ComposerView(
+                draft: Bindable(controller).draft,
+                flyout: $flyout,
+                presentation: .active(controller: controller),
+                controls: controls,
+                controlsMode: .activeSession,
+                onSend: {
+                    Task { await controller.sendPrompt() }
+                })
+            .frame(maxWidth: 780)
+            .padding(.horizontal, 42)
+            .padding(.bottom, 28)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // This view keeps its identity across session switches, so the shelf
+        // would otherwise stay open over a transcript it no longer belongs to.
+        .onChange(of: controller.id) { _, _ in flyout = nil }
         .environment(\.fileReferenceBaseURL, controller.projectURL)
         .sheet(item: extensionSheetBinding) { request in
             ExtensionInputSheet(
@@ -78,16 +68,6 @@ struct ActiveSessionView: View {
             .frame(minWidth: 620, minHeight: 360)
         }
         .onExitCommand { flyout = nil }
-    }
-
-    @ViewBuilder
-    private var dismissScrim: some View {
-        if flyout != nil {
-            Color.clear
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture { flyout = nil }
-        }
     }
 
     private var extensionSheetBinding: Binding<ExtensionUIState?> {

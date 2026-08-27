@@ -159,6 +159,7 @@ struct ModelPickerFlyout: View {
         .overlay {
             silhouette.stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
         }
+        .dismissesOnOutsideInteraction(silhouette: silhouette, onDismiss: onToggle)
         .task {
             await Task.yield()
             isSearchFocused = true

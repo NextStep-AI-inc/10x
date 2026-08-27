@@ -96,6 +96,14 @@ struct ChooseProjectShelf: View {
         ChooseProjectFlyoutMetrics.topHeight(projectCount: projectURLs.count)
     }
 
+    private var silhouette: TwoRectShelfShape {
+        TwoRectShelfShape(
+            topWidth: widths.top,
+            topHeight: topHeight,
+            bottomWidth: widths.bottom,
+            bottomHeight: ChooseProjectFlyoutMetrics.triggerHeight)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             listPiece
@@ -117,22 +125,11 @@ struct ChooseProjectShelf: View {
             width: widths.top,
             height: topHeight + ChooseProjectFlyoutMetrics.triggerHeight,
             alignment: .topLeading)
-        .background {
-            TwoRectShelfShape(
-                topWidth: widths.top,
-                topHeight: topHeight,
-                bottomWidth: widths.bottom,
-                bottomHeight: ChooseProjectFlyoutMetrics.triggerHeight)
-            .fill(Color.white)
-        }
+        .background { silhouette.fill(Color.white) }
         .overlay {
-            TwoRectShelfShape(
-                topWidth: widths.top,
-                topHeight: topHeight,
-                bottomWidth: widths.bottom,
-                bottomHeight: ChooseProjectFlyoutMetrics.triggerHeight)
-            .stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
+            silhouette.stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
         }
+        .dismissesOnOutsideInteraction(silhouette: silhouette, onDismiss: onToggle)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Choose project")
     }
