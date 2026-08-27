@@ -187,7 +187,8 @@ import Testing
 
 @MainActor
 private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
-    for _ in 0..<100 {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+    while ContinuousClock.now < deadline {
         if predicate() { return true }
         try? await Task.sleep(for: .milliseconds(20))
     }
@@ -588,7 +589,43 @@ private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
         .appending(path: "tenx-controller-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    TemporaryDirectoryRegistry.shared.register(url)
     return url
+}
+
+/// Removes the directories `temporaryDirectory()` hands out when the test host
+/// exits.
+///
+/// The process owns this rather than each test, because most callers pass the
+/// directory straight into `openNew(projectURL:)` with no local to hang a
+/// `defer` on, and Swift Testing has no teardown hook for free `@Test`
+/// functions. Left unmanaged these never got deleted: thousands of
+/// `tenx-controller-*` directories pile up in the temp folder, and once that
+/// folder is large enough `mktemp` starts failing — which surfaces as
+/// resource-shaped failures in unrelated suites much later in a run.
+private final class TemporaryDirectoryRegistry: @unchecked Sendable {
+    static let shared = TemporaryDirectoryRegistry()
+
+    private let lock = NSLock()
+    private var urls: [URL] = []
+
+    private init() {
+        atexit { TemporaryDirectoryRegistry.shared.removeAll() }
+    }
+
+    func register(_ url: URL) {
+        lock.lock()
+        defer { lock.unlock() }
+        urls.append(url)
+    }
+
+    private func removeAll() {
+        lock.lock()
+        let pending = urls
+        urls.removeAll()
+        lock.unlock()
+        for url in pending { try? FileManager.default.removeItem(at: url) }
+    }
 }
 
 private func metadata(

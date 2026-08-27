@@ -182,9 +182,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let model = fixture.model(locator: locator, timing: timing)
     let bootstrap = Task { await model.bootstrap() }
     await locatorGate.waitForStart()
-    for _ in 0..<100 where !(await floorProbe.hasStarted) {
-        await Task.yield()
-    }
+    await waitUntil("the startup floor to start") { await floorProbe.hasStarted }
 
     #expect(await floorProbe.hasStarted)
     #expect(model.startupState.handoffGeneration == 0)
