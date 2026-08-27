@@ -242,14 +242,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    // Wait for the model to register the session for reuse, not merely for the
-    // controller to learn its path: SessionController sets sessionPath partway
-    // through openNew and keeps awaiting (state, history, messages), while
-    // AppModel indexes that path for reuse only once openNew returns. Waiting on
-    // the path alone lets a test act inside that window.
-    await waitUntil("the new session to be registered for reuse") {
-        model.managedController(for: "/tmp/fake.jsonl") != nil
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let manager = try #require(model.processManager)
     #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
     #expect(await manager.handle(for: "/tmp/fake.jsonl") != nil)
@@ -311,14 +304,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    // Wait for the model to register the session for reuse, not merely for the
-    // controller to learn its path: SessionController sets sessionPath partway
-    // through openNew and keeps awaiting (state, history, messages), while
-    // AppModel indexes that path for reuse only once openNew returns. Waiting on
-    // the path alone lets a test act inside that window.
-    await waitUntil("the new session to be registered for reuse") {
-        model.managedController(for: "/tmp/fake.jsonl") != nil
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
     let original = try #require(model.activeSession)
 
@@ -444,14 +430,7 @@ import OmpKit
         sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
     await model.bootstrap()
     model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
-    // Wait for the model to register the session for reuse, not merely for the
-    // controller to learn its path: SessionController sets sessionPath partway
-    // through openNew and keeps awaiting (state, history, messages), while
-    // AppModel indexes that path for reuse only once openNew returns. Waiting on
-    // the path alone lets a test act inside that window.
-    await waitUntil("the new session to be registered for reuse") {
-        model.managedController(for: "/tmp/fake.jsonl") != nil
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let original = try #require(model.activeSession)
     let manager = try #require(model.processManager)
     await waitUntil("the session to start streaming") {
@@ -517,14 +496,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    // Wait for the model to register the session for reuse, not merely for the
-    // controller to learn its path: SessionController sets sessionPath partway
-    // through openNew and keeps awaiting (state, history, messages), while
-    // AppModel indexes that path for reuse only once openNew returns. Waiting on
-    // the path alone lets a test act inside that window.
-    await waitUntil("the new session to be registered for reuse") {
-        model.managedController(for: "/tmp/fake.jsonl") != nil
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let manager = try #require(model.processManager)
     let metadata = navigationMetadata("/tmp/fake.jsonl")
 
@@ -555,6 +527,20 @@ import OmpKit
     model.openSettings()
     #expect(model.route == .settings)
     await manager.closeAll()
+}
+
+/// Waits until the model would hand back the *same* controller for `path`.
+///
+/// Deliberately not `activeSession?.sessionPath`: SessionController sets that
+/// partway through `openNew` and then keeps awaiting (state, history, messages,
+/// subscription), while AppModel indexes the path for reuse only once `openNew`
+/// returns. A test that waits on the path alone can act inside that window and
+/// get a second controller — and a second child — for one session.
+@MainActor
+private func waitForManagedSession(_ path: String, in model: AppModel) async {
+    await waitUntil("session \(path) to be registered for reuse") {
+        model.managedController(for: path) != nil
+    }
 }
 
 @MainActor
