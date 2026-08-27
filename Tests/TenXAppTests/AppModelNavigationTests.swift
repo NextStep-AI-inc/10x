@@ -1469,7 +1469,21 @@ private actor StubAppComposerDefaults: ComposerDefaultPersisting {
 }
 
 @Suite @MainActor struct AppModelAccountDockTests {
-private func accountProviderModel() -> ProviderManagementViewModel {
+/// Fix round 2 (task-9b): `capabilities:` below is a pre-Task-5 relic —
+/// `ProviderManagementViewModel.refreshAccountUsage` no longer calls
+/// `providerService.accountCapability(providerID:)` at all, so it can no
+/// longer make a provider route. Capability now comes solely from
+/// `ProviderAccountTier.detect(snapshot:extensionHello:)`
+/// (`App/Providers/ProviderAccountTier.swift`), which needs a usage
+/// snapshot carrying per-account identity — `.empty` always detects
+/// `.providerOnly` (`snapshot.reports` is `[]`, so `hasPerAccountIdentity`
+/// is always `false`), which silently disables every scope-satisfaction and
+/// `useProviderAccount` assertion that depends on `.accountRouting`. Uses
+/// `accountRoutingUsageSnapshotFixture`, the same fixture
+/// `ProviderManagementViewModelTests` already uses for exactly this reason
+/// (see its doc comment) — this suite just never got migrated when that one
+/// did.
+private func accountProviderModel() throws -> ProviderManagementViewModel {
     ProviderManagementViewModel(
         providerService: FakeProviderService(
             providers: [
@@ -1479,7 +1493,6 @@ private func accountProviderModel() -> ProviderManagementViewModel {
                     isAvailable: true,
                     isAuthenticated: true),
             ],
-            capabilities: ["openai-codex": .accountRouting],
             accounts: [
                 "openai-codex": [
                     providerAccountFixture(
@@ -1494,7 +1507,8 @@ private func accountProviderModel() -> ProviderManagementViewModel {
                         order: 1),
                 ],
             ]),
-        usageService: FakeUsageService(snapshot: .empty),
+        usageService: FakeUsageService(
+            snapshot: try accountRoutingUsageSnapshotFixture(providerID: "openai-codex")),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
 }
@@ -1523,7 +1537,7 @@ private func accountProviderModel() -> ProviderManagementViewModel {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let coordinator = ProviderAccountCoordinator(
         primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
-    let providerModel = accountProviderModel()
+    let providerModel = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
         sessionLibrary: SessionLibrary(root: URL(
@@ -1556,7 +1570,7 @@ private func accountProviderModel() -> ProviderManagementViewModel {
 }
 
 @Test func manageAccountsOpensConnectionsFocusedOnTheProvider() async throws {
-    let providerModel = accountProviderModel()
+    let providerModel = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
         sessionLibrary: SessionLibrary(root: URL(
@@ -1573,35 +1587,66 @@ private func accountProviderModel() -> ProviderManagementViewModel {
     if let manager = model.processManager { await manager.closeAll() }
 }
 
+/// Fix round 2 (task-9b): rewritten to route a *real* `SessionController`
+/// rather than the bare `DockAccountSession` fake used elsewhere in this
+/// suite. Since fix round 1, `AppModel.init` always installs a live
+/// `ProviderAccountTieredRoutingBackend` on whatever coordinator it's
+/// handed (`ProviderAccountCoordinator.install`'s doc comment: idempotent,
+/// and the only writer for a coordinator's routing backend) — so
+/// `applyDirectly`, the direct-RPC path `DockAccountSession.setProviderAccount`
+/// exists to model, is no longer reachable through any `AppModel`. Routing
+/// now always resolves a session's channel-registry entry
+/// (`ProviderAccountChannelRegistry`, populated only by
+/// `SessionController.attachAccountChannel`) or its session file for the
+/// pin-and-restart fallback (`ProviderAccountPinBackend`) — both of which a
+/// bare in-memory fake structurally cannot have, and
+/// `ProviderAccountPinBackendError.sessionFileUnavailable`'s doc comment is
+/// explicit that hitting that gap is "a caller bug, not an expected
+/// outcome" for any session the coordinator actually manages. So the old
+/// assertion could never pass again after fix round 1 without either
+/// faking out `restartSession` (impossible now that `install` is the sole,
+/// AppModel-owned entry point — any coordinator handed to `AppModel` has
+/// its restart closure overwritten regardless of what the test supplies)
+/// or routing a session real enough to survive an actual pin+restart, which
+/// is what this does, reusing the same marker-channel fixture
+/// (`makeProviderRoutingExecutable`) the sibling `AppModelNavigationTests`
+/// suite's tests already use for the identical reason.
 @Test func useProviderAccountRoutesThroughTheCoordinator() async throws {
-    let suiteName = "tenx-dock-use-account-\(UUID().uuidString)"
-    let defaults = try #require(UserDefaults(suiteName: suiteName))
-    defer { defaults.removePersistentDomain(forName: suiteName) }
-    let coordinator = ProviderAccountCoordinator(
-        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
-    let providerModel = accountProviderModel()
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-dock-use-account-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let commandLog = container.appendingPathComponent("commands.log")
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: commandLog,
+        activeAccountRef: "acct_A")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let coordinator = ProviderAccountCoordinator()
+    let providerModel = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
-        ompLocator: StubbedOmpLocator(),
-        sessionLibrary: SessionLibrary(root: URL(
-            filePath: NSTemporaryDirectory(),
-            directoryHint: .isDirectory)),
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
         makeProviderAccountCoordinator: { coordinator },
         makeProviderModel: { _ in providerModel }))
     await model.bootstrap()
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+    #expect(await navigationLog(commandLog, eventuallyContains: "set_subagent_subscription"))
+    let controller = try #require(model.activeSession)
+    #expect(controller.currentProviderAccountRef == "acct_A")
     await providerModel.load()
-    let session = DockAccountSession(providerID: "openai-codex", accountRef: "acct_A")
-    coordinator.register(session)
-    coordinator.update(sessionID: session.id, providerID: "openai-codex", isGenerating: false)
 
-    await model.useProviderAccount("acct_B", scope: .thisSession, openSessionID: session.id)
+    await model.useProviderAccount("acct_B", scope: .thisSession, openSessionID: controller.id)
 
-    #expect(session.currentProviderAccountRef == "acct_B")
+    #expect(await navigationLog(commandLog, eventuallyContains: "pin_account:acct_B"))
+    #expect(controller.currentProviderAccountRef == "acct_B")
     if let manager = model.processManager { await manager.closeAll() }
 }
 
 @Test func useProviderAccountIgnoresUnknownRefs() async throws {
     let coordinator = ProviderAccountCoordinator()
-    let providerModel = accountProviderModel()
+    let providerModel = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
         sessionLibrary: SessionLibrary(root: URL(
