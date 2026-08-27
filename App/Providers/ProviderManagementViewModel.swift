@@ -161,6 +161,20 @@ final class ProviderManagementViewModel {
         await refresh()
     }
 
+    /// Invariant: the caller must already have a usage refresh started or in
+    /// flight (e.g. `loadUsage()`/`refresh()`, or a fire-and-forget task that
+    /// calls one) before or immediately alongside this call. Tier detection
+    /// inside `refreshAccountUsage` needs a usage snapshot; on cold start it
+    /// waits for `usageRefreshOperation` only if that property is already
+    /// set, it does not start one itself. Every current production call site
+    /// (`AppModel.swift`) calls the fire-and-forget `startProviderUsage(for:)`
+    /// immediately before `loadProviders()`, and because both are MainActor
+    /// jobs enqueued in that order, MainActor's serial FIFO executor
+    /// guarantees `usageRefreshOperation` is set before this call's
+    /// `refreshAccountUsage` reaches its wait-check — no explicit
+    /// synchronization needed. A caller that invokes `loadProviders()` alone,
+    /// with no usage refresh started or in flight, will see tier detection
+    /// fail closed to `.providerOnly` on cold start with no error surfaced.
     func loadProviders() async {
         await refreshProviders(forceFresh: false)
     }
