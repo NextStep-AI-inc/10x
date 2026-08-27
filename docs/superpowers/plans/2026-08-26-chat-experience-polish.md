@@ -27,44 +27,52 @@ modifier shared by both shelves rather than more per-view scrims.
 ## Workstreams
 
 ### A. Flyout dismissal
-- [ ] `DismissOnOutsideInteraction` modifier: local `NSEvent` monitor for
+- [x] `DismissOnOutsideInteraction` modifier: local `NSEvent` monitor for
       `.leftMouseDown` / `.rightMouseDown`, hit-tested against an
       `NSViewRepresentable` anchor inside the flyout, plus
       `NSWindow.didResignKeyNotification`. Monitor is torn down with the view.
-- [ ] Apply to `ComposerSessionControlsView` (model) and the project shelf.
-- [ ] `ActiveSessionView` keeps `@State flyout` across session switches because the
+- [x] Apply to `ComposerSessionControlsView` (model) and the project shelf.
+- [x] `ActiveSessionView` keeps `@State flyout` across session switches because the
       view identity is stable: reset on `controller.id` change.
-- [ ] Retire the ad-hoc scrims the modifier replaces.
+- [x] Retire the ad-hoc scrims the modifier replaces.
 
 ### B. Turn feedback and control
-- [ ] Wire `SessionController.abort()`: the send button becomes Stop while streaming.
-- [ ] Re-entrancy guard on `sendPrompt()`; clear the draft optimistically and restore
+- [x] Wire `SessionController.abort()`: the send button becomes Stop while streaming.
+- [x] Re-entrancy guard on `sendPrompt()`; clear the draft optimistically and restore
       it if the RPC throws.
-- [ ] Working indicator in the transcript for the gap between `prompt` and the first
+- [x] Working indicator in the transcript for the gap between `prompt` and the first
       assistant token, and for the new-session spawn.
-- [ ] Elapsed time on the indicator so a long turn reads as progress, not a hang.
+- [x] Elapsed time on the indicator so a long turn reads as progress, not a hang.
 
 ### C. Attachments
-- [ ] `RpcCommand.prompt(message:images:streamingBehavior:)` carrying
+- [x] `RpcCommand.prompt(message:images:streamingBehavior:)` carrying
       `{type:"image", data, mimeType}`; `CommandEncodingTests` covers the envelope.
-- [ ] `ComposerAttachment` + downscale/re-encode so one prompt line stays small.
-- [ ] Composer: attach button, drag and drop, paste. Thumbnail strip with removal.
-- [ ] Render image blocks in transcript messages as thumbnails instead of the
+- [x] `ComposerAttachment` + downscale/re-encode so one prompt line stays small.
+- [x] Composer: attach button, drag and drop, paste. Thumbnail strip with removal.
+- [x] Render image blocks in transcript messages as thumbnails instead of the
       "Image attachment" placeholder text.
-- [ ] Non-image drops degrade to a path reference in the message text.
+- [x] Non-image drops degrade to a path reference in the message text.
 
 ### D. New-session routing
-- [ ] Rewrite the `new:<uuid>` placeholder route to the real session path once
+- [x] Rewrite the `new:<uuid>` placeholder route to the real session path once
       `openNew` lands, guarded on the controller still being active.
-- [ ] Reproduce the "opens another session" report against a headless `omp --mode rpc`
-      before adding any second fix.
+- [x] Reproduce the "opens another session" report against a headless `omp --mode rpc`
+      before adding any second fix. Root cause found by inspection instead: the rail
+      sorted by modification date while omp rewrites the open session file on every
+      token, so rows resorted under the pointer.
 
 ### E. Polish sweep
-- [ ] Composer grows with its content up to a cap; placeholder copy.
-- [ ] Focus the composer when a session becomes ready and after a send.
-- [ ] Scroll-to-bottom affordance when the transcript is scrolled away from the end.
-- [ ] Model picker closes on model commit, stays open for effort / fast toggles.
-- [ ] Remove the inert `Local` control (it advertises a mode that does not exist).
+- [x] Composer grows with its content up to a cap; placeholder copy.
+- [x] Focus the composer when a session becomes ready and after a send.
+- [x] Scroll-to-bottom affordance when the transcript is scrolled away from the end.
+- [x] Model picker closes on model commit, stays open for effort / fast toggles.
+- [x] Remove the inert `Local` control (it advertises a mode that does not exist).
+
+### F. Found while verifying
+- [x] omp's internal steering messages (`role: custom`, `display: false`) were being
+      rendered as chat. Gated the way omp's own client gates them.
+- [x] A model, thinking, mode, or compaction change appeared twice after
+      reconciliation, once in place and once stranded at the bottom.
 
 ## Verification
 
