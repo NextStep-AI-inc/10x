@@ -810,6 +810,26 @@ private final class SnapshotProviderAccountSession: ProviderAccountSession {
 }
 
 @MainActor
+@Test func providerAccountSwitchConfirmationRestartHiddenForAllNewSessionsSnapshot() throws {
+    // "All new sessions" only sets the provider's primary account for
+    // sessions started later ("Existing sessions stay unchanged" is its own
+    // option text) and restarts nothing, so the restart notice must not
+    // show for this scope even in `.stockOMP` — unlike "This session" and
+    // "All current sessions", covered above.
+    try assertSnapshot(
+        ProviderAccountSwitchConfirmationView(
+            accountLabel: "work@example.com",
+            satisfaction: .none,
+            isSwitchAvailable: true,
+            requiresRestartToSwitch: true,
+            selectedScope: .constant(.allNewSessions),
+            onCancel: {},
+            onConfirm: {}),
+        name: "provider-account-switch-confirmation-restart-hidden-for-new-sessions",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
 @Test func providerUsageDockLegacyExpandedSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(

@@ -112,6 +112,15 @@ struct ProviderAccountSwitchConfirmationView: View {
         ProviderAccountSwitchConfirmationPresentation(accountLabel: accountLabel)
     }
 
+    /// "All new sessions" only sets the provider's primary account for
+    /// sessions started later; it restarts nothing (see its own option
+    /// message: "Existing sessions stay unchanged"). The notice would be
+    /// false for that scope, so it only shows for the two scopes that
+    /// actually restart something today.
+    private var showsRestartNotice: Bool {
+        requiresRestartToSwitch && selectedScope != .allNewSessions
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
@@ -143,7 +152,7 @@ struct ProviderAccountSwitchConfirmationView: View {
             .labelsHidden()
             .accessibilityLabel(presentation.message)
 
-            if requiresRestartToSwitch {
+            if showsRestartNotice {
                 Text(presentation.restartNoticeText)
                     .font(TenXTypography.body(size: 11))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
