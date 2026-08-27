@@ -6,6 +6,29 @@ public enum StreamingBehavior: String, Sendable {
     case followUp
 }
 
+/// One image carried alongside a prompt.
+///
+/// Mirrors `ImageContent` from `@oh-my-pi/pi-ai`: base64 payload plus its MIME
+/// type. The optional `detail` and `providerFile` fields are not sent — omp
+/// falls back to the provider default when they are absent.
+public struct PromptImage: Sendable, Equatable {
+    public let base64Data: String
+    public let mimeType: String
+
+    public init(base64Data: String, mimeType: String) {
+        self.base64Data = base64Data
+        self.mimeType = mimeType
+    }
+
+    var payload: JSONValue {
+        .object([
+            "type": .string("image"),
+            "data": .string(base64Data),
+            "mimeType": .string(mimeType),
+        ])
+    }
+}
+
 /// How much subagent traffic omp should forward. Defaults to `off` server-side.
 public enum SubagentSubscriptionLevel: String, Sendable {
     case off
@@ -63,8 +86,17 @@ public struct RpcCommand: Sendable, Equatable {
 
     // MARK: - Prompting
 
-    public static func prompt(message: String, streamingBehavior: StreamingBehavior?) -> RpcCommand {
+    public static func prompt(
+        message: String,
+        images: [PromptImage] = [],
+        streamingBehavior: StreamingBehavior?
+    ) -> RpcCommand {
         var fields: [String: JSONValue] = ["message": .string(message)]
+        // Omitted rather than sent empty: omp treats a missing `images` as no
+        // images, and an empty array is one more shape to keep working.
+        if !images.isEmpty {
+            fields["images"] = .array(images.map(\.payload))
+        }
         if let streamingBehavior {
             fields["streamingBehavior"] = .string(streamingBehavior.rawValue)
         }

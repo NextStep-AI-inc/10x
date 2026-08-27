@@ -27,15 +27,22 @@ struct MessageBubbleView: View {
     @ViewBuilder
     private var content: some View {
         if message.role == .user {
-            Text(message.visibleText)
-                .font(TenXTypography.body(size: 14))
-                .foregroundStyle(.white)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(TenXPalette.color(TenXPalette.nearBlackHex))
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+            VStack(alignment: .trailing, spacing: 8) {
+                ForEach(Array(message.document.images.enumerated()), id: \.offset) { _, image in
+                    MessageImageView(image: image)
+                }
+                if !message.visibleText.isEmpty {
+                    Text(message.visibleText)
+                        .font(TenXTypography.body(size: 14))
+                        .foregroundStyle(.white)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(TenXPalette.color(TenXPalette.nearBlackHex))
+                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                }
+            }
         } else if message.role == .assistant {
             VStack(alignment: .leading, spacing: Self.assistantContentSpacing) {
                 ResponseMetadataView(message: message)

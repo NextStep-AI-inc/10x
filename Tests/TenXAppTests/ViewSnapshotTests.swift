@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import OmpKit
 import SwiftUI
@@ -2504,4 +2505,90 @@ private func awaitingOutputController() -> SessionController {
             .padding(24),
         name: "composer-placeholder-and-growth",
         size: CGSize(width: 700, height: 420))
+}
+
+@MainActor
+@Test func composerWithStagedAttachmentsSnapshot() throws {
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant("Why does this row wrap?"),
+            attachments: .constant([
+                snapshotAttachment(name: "sidebar-overflow.png", width: 1_200, height: 800),
+                snapshotAttachment(name: "footer-clipping.png", width: 640, height: 640),
+            ]),
+            presentation: .newSession(
+                projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                projectURLs: [],
+                onChooseProject: { _ in },
+                onAddExistingFolder: {}),
+            controlsMode: .newSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-with-attachments",
+        size: CGSize(width: 700, height: 260))
+}
+
+@MainActor
+@Test func transcriptUserMessageWithAnImageSnapshot() throws {
+    let message = TranscriptMessage(
+        id: "image-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string("The sidebar clips at this width."),
+                ]),
+                .object([
+                    "type": .string("image"),
+                    "data": .string(snapshotImageData(width: 320, height: 200)
+                        .base64EncodedString()),
+                    "mimeType": .string("image/png"),
+                ]),
+            ]),
+        ]),
+        isFinal: true)
+
+    try assertSnapshot(
+        MessageBubbleView(message: message)
+            .padding(24),
+        name: "user-message-with-image",
+        size: CGSize(width: 700, height: 300))
+}
+
+@MainActor
+private func snapshotAttachment(name: String, width: Int, height: Int) -> ComposerAttachment {
+    let fitted = ComposerAttachmentEncoder.fittedSize(width: width, height: height)
+    return ComposerAttachment(
+        id: UUID(uuidString: "00000000-0000-0000-0000-0000000000\(name.count)")
+            ?? UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+        name: name,
+        data: snapshotImageData(width: 64, height: 64),
+        mimeType: "image/png",
+        pixelWidth: fitted.width,
+        pixelHeight: fitted.height)
+}
+
+/// A fixed two-tone bitmap, so the recorded reference does not move between runs.
+private func snapshotImageData(width: Int, height: Int) -> Data {
+    let representation = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: representation)
+    NSColor(red: 0, green: 0.65, blue: 0.77, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: width, height: height).fill()
+    NSColor(white: 0.05, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: width / 2, height: height / 2).fill()
+    NSGraphicsContext.restoreGraphicsState()
+    return representation.representation(using: .png, properties: [:])!
 }

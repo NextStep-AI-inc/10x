@@ -27,6 +27,7 @@ struct ActiveSessionView: View {
 
             ComposerView(
                 draft: Bindable(controller).draft,
+                attachments: Bindable(controller).attachments,
                 flyout: $flyout,
                 presentation: .active(controller: controller),
                 controls: controls,

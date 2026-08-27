@@ -5,6 +5,7 @@ struct NewSessionView: View {
     let model: AppModel
 
     @State private var draft = ""
+    @State private var attachments: [ComposerAttachment] = []
     @State private var flyout: ComposerFlyout?
 
     var body: some View {
@@ -13,6 +14,7 @@ struct NewSessionView: View {
 
             ComposerView(
                 draft: $draft,
+                attachments: $attachments,
                 flyout: $flyout,
                 presentation: .newSession(
                     projectURL: model.selectedProjectURL,
@@ -25,7 +27,7 @@ struct NewSessionView: View {
                 controlsMode: .newSession,
                 onSend: {
                     flyout = nil
-                    model.startNewSession(prompt: draft)
+                    model.startNewSession(prompt: draft, attachments: attachments)
                 })
             .frame(maxWidth: 780)
         }

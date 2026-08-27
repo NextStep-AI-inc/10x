@@ -303,11 +303,12 @@ final class AppModel {
         }
     }
 
-    func startNewSession(prompt: String) {
+    func startNewSession(prompt: String, attachments: [ComposerAttachment] = []) {
         guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
         let controller = makeSessionController(processManager: processManager)
         controller.draft = prompt
+        controller.attachments = attachments
         composerControls?.detachActiveSession()
         // omp does not name the session until the child is up, so the route
         // carries a placeholder until `openNew` reports the real path.

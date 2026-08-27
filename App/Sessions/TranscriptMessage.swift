@@ -74,7 +74,9 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             default: ""
             }
         }
-        document = normalizedDocument.source.isEmpty
+        // Keyed on blocks, not source: an image-only message has parsed content
+        // and no text, and re-parsing would throw the image away.
+        document = normalizedDocument.blocks.isEmpty
             ? MessageContentParser.parse(displayText)
             : normalizedDocument
     }
@@ -105,6 +107,11 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
                 let document = MessageContentParser.parse(source)
                 blocks.append(contentsOf: document.blocks)
                 sourceParts.append(source)
+            } else if type == "image", let image = imageContent(contentBlock) {
+                // Deliberately not added to `sourceParts`: the label is a
+                // stand-in for a picture, not text the user wrote, and it would
+                // otherwise show up as a line inside their message bubble.
+                blocks.append(.image(image))
             } else if let type, isPrivateOrToolContent(type) {
                 continue
             } else {
@@ -116,6 +123,16 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         return ContentDocument(
             source: sourceParts.joined(separator: "\n"),
             blocks: blocks)
+    }
+
+    private static func imageContent(_ block: JSONValue) -> ContentImage? {
+        guard let encoded = block["data"]?.stringValue,
+              let data = Data(base64Encoded: encoded, options: .ignoreUnknownCharacters),
+              !data.isEmpty
+        else { return nil }
+        return ContentImage(
+            data: data,
+            mimeType: block["mimeType"]?.stringValue ?? "image/png")
     }
 
     private static func isPrivateOrToolContent(_ type: String) -> Bool {

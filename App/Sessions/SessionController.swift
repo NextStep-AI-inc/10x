@@ -42,6 +42,7 @@ final class SessionController: ComposerSessionControlling {
     let id: UUID
     private(set) var providerID: String?
     var draft = ""
+    var attachments: [ComposerAttachment] = []
     var streamingBehavior: StreamingBehavior? = .steer
 
     private let processManager: SessionProcessManager
@@ -286,11 +287,9 @@ final class SessionController: ComposerSessionControlling {
     }
 
     func sendPrompt() async {
-        guard let handle,
-              isComposerAvailable,
-              !isSendInFlight,
-              !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachments.isEmpty
+        guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return }
 
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {
@@ -301,6 +300,7 @@ final class SessionController: ComposerSessionControlling {
         }
 
         let message = draft
+        let staged = attachments
         let context = currentPipelineContext()
         isSendInFlight = true
         defer { isSendInFlight = false }
@@ -310,6 +310,7 @@ final class SessionController: ComposerSessionControlling {
         // processor is moved first so a snapshot already in flight cannot
         // publish the old idle state back over this one.
         draft = ""
+        attachments = []
         runtimeState = .streaming
         reportActivity()
         await context.processor?.setRuntimeState(.streaming)
@@ -318,10 +319,14 @@ final class SessionController: ComposerSessionControlling {
         do {
             _ = try await handle.client.send(.prompt(
                 message: message,
+                images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
         } catch {
             // Nothing reached omp, so the text is still the user's to send.
-            if isCurrent(context), draft.isEmpty { draft = message }
+            if isCurrent(context), draft.isEmpty {
+                draft = message
+                attachments = staged
+            }
             fail(error, function: "sendPrompt", context: context)
         }
     }
