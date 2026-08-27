@@ -698,11 +698,17 @@ final class AppModel {
     }
 
     private func managedController(for sessionPath: String) -> SessionController? {
-        guard let controllerID = managedSessionPaths[sessionPath] else { return nil }
-        guard let controller = managedSessions[controllerID] else {
+        if let controllerID = managedSessionPaths[sessionPath] {
+            if let controller = managedSessions[controllerID] { return controller }
             managedSessionPaths.removeValue(forKey: sessionPath)
-            return nil
         }
+        // A controller learns its path partway through its own open, so the index still
+        // lags it. Reuse it from that moment rather than opening a second controller
+        // over the same child.
+        guard let controller = managedSessions.values
+            .first(where: { $0.sessionPath == sessionPath })
+        else { return nil }
+        managedSessionPaths[sessionPath] = controller.id
         return controller
     }
 
