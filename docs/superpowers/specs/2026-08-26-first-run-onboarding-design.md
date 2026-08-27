@@ -17,7 +17,7 @@ Two of those gates exist. The third does not: nothing today asks for a project
 folder, so a user with no prior sessions reaches the workspace with
 `selectedProjectURL` still `nil`. This design adds that step, gives it
 suggestions drawn from a scan for Git repositories, lets the app install OMP
-rather than only locate it, and replaces five scattered routing decisions with
+rather than only locate it, and replaces seven scattered routing decisions with
 one resolver.
 
 ## Approved product decisions
@@ -73,18 +73,26 @@ func gateRoute() {
 }
 ```
 
-`gateRoute()` replaces five existing decisions and adds one new call:
+`gateRoute()` replaces seven existing decisions and adds one new call:
 
 | Site | Today | After |
 | --- | --- | --- |
 | `AppModel` runtime prep, OMP missing | `route = .setup` | `gateRoute()` |
 | `AppModel` runtime replacement, OMP missing | `route = .setup` | `gateRoute()` |
+| `AppModel` runtime prep, services constructed | `route = .providerSetup` | `gateRoute()` |
+| `AppModel` runtime replacement, services constructed | `route = .providerSetup` | `gateRoute()` |
 | `AppModel` runtime prep, provider loaded | `hasAuthenticatedProvider ? .newSession : .providerSetup` | `gateRoute()` |
 | `AppModel` runtime replacement, provider loaded | same ternary | `gateRoute()` |
 | `AppModel` provider fallback load | same ternary | `gateRoute()` |
 | End of recent-projects preparation | (none) | `gateRoute()` |
 
-### Why the sixth call site is required
+The third and fourth rows are interim assignments made after the OMP-backed
+services are constructed but before `loadProviders()` returns. `gateRoute()`
+yields `.onboarding(.connectProvider)` at those points, which is the same screen
+they produce today, because `installation` is set and no provider is
+authenticated yet.
+
+### Why the eighth call site is required
 
 Startup stages run in order: runtime, settings, sessions, recent projects.
 `selectedProjectURL` is assigned during the last of those. The runtime stage
@@ -252,10 +260,15 @@ excluded from the scan are still reachable through `Choose folder…`, because
 
 ### Selection
 
-Selecting a suggestion or choosing a folder calls the existing
-`AppModel.chooseProject`, which records into `RecentProjectStore` and sets
-`selectedProjectURL`. Once one folder is chosen the requirement is met and
-`gateRoute()` advances to the workspace.
+Selecting a suggestion or choosing a folder records into `RecentProjectStore`
+and sets `selectedProjectURL`. An explicit `Continue`, enabled once at least one
+folder is chosen, advances through `gateRoute()`.
+
+The step does **not** call `AppModel.chooseProject`. That method ends with
+`route = .newSession`, so the first selection would leave onboarding
+immediately and no second folder could ever be added. The step performs the
+same two assignments without the routing and without the active-session
+teardown, which has nothing to tear down during onboarding.
 
 `RecentProjectStore` retains two entries and `rankedProjects` returns two,
 because startup warms one OMP client per ranked project and the splash design
@@ -330,6 +343,7 @@ fixed-height `ScrollView` so a long install cannot push `Locate OMP` off screen.
 | Suggestions label | `Found in your home folder` |
 | Project empty | `No Git repositories found in your home folder.` |
 | Project secondary | `Choose folder…` |
+| Project primary | `Continue` |
 | Step counter | `Step 1 of 3` |
 | Back | `Back` |
 
@@ -354,7 +368,7 @@ Three units carry the logic, following the pattern in
 `OmpKit/Tests/OmpKitTests/ExecutableResolutionTests.swift`.
 
 **Resolver.** A table over installation, provider authentication, and selected
-project, asserting the route for every combination, including all six call
+project, asserting the route for every combination, including all eight call
 sites. The returning-user case is explicit: routing during the runtime stage
 yields the project step, and re-gating after recent projects are prepared
 yields the workspace. Regression cases assert that removing OMP mid-run returns
