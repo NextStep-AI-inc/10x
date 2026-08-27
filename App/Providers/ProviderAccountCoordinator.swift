@@ -95,9 +95,33 @@ final class ProviderAccountCoordinator {
     @ObservationIgnored private var appliedRoutes: [UUID: DesiredRoute] = [:]
     @ObservationIgnored private var failureRecord: FailureRecord?
     @ObservationIgnored private var nextOperationID: UInt64 = 0
+    @ObservationIgnored private let routingBackend: ProviderAccountRouting?
+    @ObservationIgnored private let restartSession: (@MainActor (UUID) async -> Bool)?
 
-    init(primaryStore: ProviderPrimaryPreferenceStore = ProviderPrimaryPreferenceStore()) {
+    /// - Parameters:
+    ///   - routingBackend: How to change a session's account. `nil` (the
+    ///     default) preserves the original behavior — every caller asks the
+    ///     session itself via `ProviderAccountSession.setProviderAccount`.
+    ///     When set, `apply` routes through the backend instead, which
+    ///     covers both `ProviderAccountExtensionBackend` (t2, applies in
+    ///     place) and `ProviderAccountPinBackend` (t1, always answers
+    ///     `.restartRequired` — see `restartSession` below). Selecting which
+    ///     backend a given session gets is done by whoever constructs this
+    ///     coordinator, keyed off `ProviderAccountTier`; this type only
+    ///     needs to know how to drive whichever one it's handed.
+    ///   - restartSession: Closes and respawns a session's `omp` process
+    ///     with `-r <sessionFile>` so a pin already written to disk takes
+    ///     effect, returning whether the restart succeeded. `nil` when no
+    ///     backend can ever produce `.restartRequired` (the default, and
+    ///     always true for `ProviderAccountExtensionBackend`).
+    init(
+        primaryStore: ProviderPrimaryPreferenceStore = ProviderPrimaryPreferenceStore(),
+        routingBackend: ProviderAccountRouting? = nil,
+        restartSession: (@MainActor (UUID) async -> Bool)? = nil
+    ) {
         self.primaryStore = primaryStore
+        self.routingBackend = routingBackend
+        self.restartSession = restartSession
     }
 
     var canCreateManagedSession: Bool {
@@ -621,6 +645,22 @@ final class ProviderAccountCoordinator {
             return .failed
         }
 
+        guard let routingBackend else {
+            return await applyDirectly(route, sessionID: sessionID, session: session)
+        }
+        return await applyThroughBackend(routingBackend, route: route, sessionID: sessionID, session: session)
+    }
+
+    /// The original apply path: ask the session itself to change its
+    /// account over its own RPC connection. Used whenever no
+    /// `ProviderAccountRouting` backend is configured, so every existing
+    /// caller — and every test double that implements only
+    /// `ProviderAccountSession` — keeps working unchanged.
+    private func applyDirectly(
+        _ route: DesiredRoute,
+        sessionID: UUID,
+        session: any ProviderAccountSession
+    ) async -> RoutingOutcome {
         let result: SetSessionProviderAccountResult
         do {
             result = try await session.setProviderAccount(
@@ -642,6 +682,109 @@ final class ProviderAccountCoordinator {
                 reason: .manual,
                 sequence: result.sequence))
         return .applied
+    }
+
+    /// Routes through a `ProviderAccountRouting` backend instead of the
+    /// direct RPC call above. `.queued` mirrors the streaming guard already
+    /// passed in `apply` — a backend can discover a session went live
+    /// mid-route even though that guard already cleared it (currently only
+    /// reachable via `ProviderAccountExtensionBackend`, never
+    /// `ProviderAccountPinBackend`, which never returns it).
+    /// `.restartRequired` is `ProviderAccountPinBackend`'s only successful
+    /// outcome: the pin is already on disk, and only a
+    /// close-and-respawn-with-`-r` makes it take effect.
+    private func applyThroughBackend(
+        _ backend: ProviderAccountRouting,
+        route: DesiredRoute,
+        sessionID: UUID,
+        session: any ProviderAccountSession
+    ) async -> RoutingOutcome {
+        let previousAccountRef = session.currentProviderAccountRef
+        let outcome: ProviderAccountRouteOutcome
+        do {
+            outcome = try await backend.route(
+                providerID: route.providerID,
+                accountRef: route.accountRef,
+                sessionID: sessionID)
+        } catch {
+            guard desiredRoutes[sessionID] == route else { return .superseded }
+            clear(route, sessionID: sessionID)
+            return .failed
+        }
+        guard desiredRoutes[sessionID] == route else { return .superseded }
+
+        switch outcome {
+        case .applied:
+            appliedRoutes[sessionID] = route
+            clear(route, sessionID: sessionID)
+            // The backend applied the change over its own transport (the
+            // extension channel), not through `session.setProviderAccount`,
+            // so there is no `SetSessionProviderAccountResult` to fabricate
+            // an event from — resync from the session's own state instead.
+            synchronizeState(from: session)
+            publishSessionState()
+            return .applied
+        case .queued:
+            pendingRoutes[sessionID] = route
+            return .queued
+        case .restartRequired:
+            return await performRestart(
+                route,
+                sessionID: sessionID,
+                backend: backend,
+                previousAccountRef: previousAccountRef)
+        }
+    }
+
+    /// Honors `.restartRequired` by closing and respawning the session's
+    /// `omp` process with `-r <sessionFile>` via the caller-supplied
+    /// `restartSession` closure. A failed restart must not strand the
+    /// on-disk pin pointing at an account the running process never
+    /// adopted — the file already carries the new pin by the time this
+    /// runs, so on failure this re-pins the previous account before
+    /// reporting failure, keeping the session usable on the account it was
+    /// already on both in memory and on disk.
+    private func performRestart(
+        _ route: DesiredRoute,
+        sessionID: UUID,
+        backend: ProviderAccountRouting,
+        previousAccountRef: String?
+    ) async -> RoutingOutcome {
+        guard let restartSession else {
+            await compensate(route, backend: backend, previousAccountRef: previousAccountRef, sessionID: sessionID)
+            clear(route, sessionID: sessionID)
+            return .failed
+        }
+        let didRestart = await restartSession(sessionID)
+        guard desiredRoutes[sessionID] == route else { return .superseded }
+        guard didRestart, let session = managedSessions[sessionID] else {
+            await compensate(route, backend: backend, previousAccountRef: previousAccountRef, sessionID: sessionID)
+            clear(route, sessionID: sessionID)
+            return .failed
+        }
+        appliedRoutes[sessionID] = route
+        clear(route, sessionID: sessionID)
+        synchronizeState(from: session)
+        publishSessionState()
+        return .applied
+    }
+
+    /// Best-effort: re-pin the previous account so a future resume does not
+    /// silently move accounts underneath the user. Errors are swallowed —
+    /// this call is already inside a failure path, and the coordinator has
+    /// no better recovery to offer than the failure it is about to report
+    /// either way.
+    private func compensate(
+        _ route: DesiredRoute,
+        backend: ProviderAccountRouting,
+        previousAccountRef: String?,
+        sessionID: UUID
+    ) async {
+        guard let previousAccountRef else { return }
+        _ = try? await backend.route(
+            providerID: route.providerID,
+            accountRef: previousAccountRef,
+            sessionID: sessionID)
     }
 
     private func clear(_ route: DesiredRoute, sessionID: UUID) {
