@@ -50,7 +50,7 @@ private func makeDriver(
 }
 
 @MainActor
-@Test func installingTerminatesTheAppSoSparkleCanSwapTheBundle() {
+@Test func installingTerminatesTheAppSoSparkleCanSwapTheBundle() async {
     // Sparkle cannot replace a running bundle. When it reports the app has not
     // terminated, the driver must quit it; nothing else in the app knows an install
     // is in flight. Without this the installer waits forever and the splash sits on
@@ -64,12 +64,19 @@ private func makeDriver(
     driver.showInstallingUpdate(
         withApplicationTerminated: false, retryTerminatingApplication: {})
 
-    #expect(terminated.count == 1)
+    // The quit is deliberately deferred to a later run-loop turn; calling it inline
+    // deadlocks against AppTerminationDelegate. So it is NOT expected to have happened
+    // by the time this callback returns.
+    #expect(terminated.count == 0)
     #expect(state.phase == .relaunching)
+
+    for _ in 0..<200 where terminated.count == 0 { await Task.yield() }
+
+    #expect(terminated.count == 1)
 }
 
 @MainActor
-@Test func installingDoesNotTerminateAgainWhenAlreadyTerminated() {
+@Test func installingDoesNotTerminateAgainWhenAlreadyTerminated() async {
     let state = UpdateState()
     let terminated = Counter()
     let driver = SplashUpdateDriver(
@@ -78,6 +85,8 @@ private func makeDriver(
 
     driver.showInstallingUpdate(
         withApplicationTerminated: true, retryTerminatingApplication: {})
+
+    for _ in 0..<200 { await Task.yield() }
 
     #expect(terminated.count == 0)
     #expect(state.phase == .relaunching)

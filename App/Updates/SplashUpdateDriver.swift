@@ -138,7 +138,18 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
     ) {
         state.beginRelaunching()
         guard !applicationTerminated else { return }
-        terminate()
+        // Hand the quit to a later run-loop turn instead of calling it inline.
+        //
+        // Calling terminate() synchronously from inside this callback deadlocks: the
+        // main thread enters -[NSApplication _shouldTerminate] and stays there, while
+        // AppTerminationDelegate answers .terminateLater and defers its actual reply to
+        // a @MainActor task. That task needs the main thread the delegate is blocking,
+        // so the reply never lands, Sparkle keeps waiting, and the splash sits on
+        // Relaunching 10x until the user quits by hand. Quitting by hand worked for
+        // exactly this reason: it starts from a clean run-loop turn.
+        DispatchQueue.main.async { [terminate] in
+            MainActor.assumeIsolated { terminate() }
+        }
     }
 
     func showUpdateInstalledAndRelaunched(_ relaunched: Bool) async {
