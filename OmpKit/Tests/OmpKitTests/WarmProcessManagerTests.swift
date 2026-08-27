@@ -468,7 +468,7 @@ final class WarmManagerFixture {
     await manager.closeAll()
 }
 
-@Test func warmStartsOneNoSessionClientPerCanonicalProject() async throws {
+@Test func warmStartsOneFreshPersistentClientPerCanonicalProject() async throws {
     let capture = ConfigurationCapture()
     let manager = capturingManager(capture)
     let firstProject = URL(filePath: "/tmp/project-a").resolvingSymlinksInPath().path
@@ -478,11 +478,16 @@ final class WarmManagerFixture {
     async let second = manager.warm(projectDirectory: secondProject)
     let handles = try await [first, second]
     let configurations = capture.snapshot()
-    let allNoSession = configurations.allSatisfy(\.noSession)
 
     #expect(handles.count == 2)
     #expect(configurations.count == 2)
-    #expect(allNoSession)
+    #expect(configurations.allSatisfy { configuration in
+        guard let cwd = configuration.cwd?.path else { return false }
+        return configuration.noSession == false
+            && configuration.extraArguments == [
+                "--session-dir", expectedFreshSessionDirectory(for: cwd),
+            ]
+    })
     #expect(Set(configurations.compactMap { $0.cwd?.path }) == [
         firstProject, secondProject,
     ])
