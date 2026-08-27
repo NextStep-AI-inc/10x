@@ -203,3 +203,18 @@ import Testing
     #expect(!retried.contains(.updates))
     #expect(retried == [.sessions, .settings, .recentProjects])
 }
+
+@MainActor
+@Test func aHandoffOpensTheWorkspaceExactlyOnce() {
+    let state = StartupState()
+    let attempt = UUID()
+    state.beginAttempt(id: attempt)
+
+    #expect(!state.consumeWorkspaceOpenRequest())
+
+    state.requestHandoff(attemptID: attempt)
+
+    #expect(state.consumeWorkspaceOpenRequest())
+    #expect(!state.consumeWorkspaceOpenRequest())
+    #expect(!state.consumeWorkspaceOpenRequest())
+}

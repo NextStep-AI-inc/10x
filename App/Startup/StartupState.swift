@@ -69,6 +69,7 @@ final class StartupState {
     private(set) var attemptID: UUID?
     private var statuses: [StartupStageID: StartupStageStatus] = Dictionary(
         uniqueKeysWithValues: StartupStageID.allCases.map { ($0, .queued) })
+    private var openedWorkspaceGeneration = 0
 
     var rows: [SplashLedgerRow] {
         StartupStageID.allCases.map {
@@ -141,6 +142,15 @@ final class StartupState {
         guard self.attemptID == attemptID, phase != .handoff else { return }
         phase = .handoff
         handoffGeneration += 1
+    }
+
+    /// Returns `true` at most once per handoff. The latch lives here rather than in the
+    /// scene view because the startup window is recreated when it is reopened in update
+    /// mode, which resets any view-local counter and would open a duplicate workspace.
+    func consumeWorkspaceOpenRequest() -> Bool {
+        guard handoffGeneration > openedWorkspaceGeneration else { return false }
+        openedWorkspaceGeneration = handoffGeneration
+        return true
     }
 
     private var currentStage: StartupStageID {

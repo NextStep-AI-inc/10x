@@ -10,7 +10,6 @@ struct StartupSceneView: View {
     let model: AppModel
 
     @Environment(\.openWindow) private var openWindow
-    @State private var handledHandoffGeneration = 0
 
     var body: some View {
         SplashView(
@@ -21,10 +20,8 @@ struct StartupSceneView: View {
             buildVersion: Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
         .task { await model.bootstrap() }
-        .onChange(of: model.startupState.handoffGeneration, initial: true) {
-            _, generation in
-            guard generation > handledHandoffGeneration else { return }
-            handledHandoffGeneration = generation
+        .onChange(of: model.startupState.handoffGeneration, initial: true) { _, _ in
+            guard model.startupState.consumeWorkspaceOpenRequest() else { return }
             Task { @MainActor in
                 openWindow(id: AppWindowID.workspace)
             }
