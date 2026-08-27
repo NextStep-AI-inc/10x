@@ -81,6 +81,25 @@ Details in `redaction-check.txt`.
   healthy, and the tier is still `.providerOnly`, because `detect`'s
   `hasPerAccountIdentity` check runs on the snapshot BEFORE hello is consulted.
 
+## Test gate
+
+Two consecutive full runs at `55fd541` passed 639 tests in 19 suites.
+
+Getting there took a real fix, recorded here because the failure mode was
+misleading. Before `719f158` the suite failed intermittently with a *drifting*
+membership — five failures one run, one entirely different failure the next, and
+every one of them passing when run alone. That pattern reads as an untrustworthy
+bench, and it was misdiagnosed as one. It was not. Three waits this branch added
+spun a fixed 100 iterations at 20ms and gave up after two seconds; each waits on
+a spawned fixture process reaching a state, so two seconds covers the round trip
+but not the process starting under a fully parallel run. They now share one
+deadline-based helper at the five seconds `SessionControllerTests` already used.
+
+One thing worth watching: an earlier run reported `577 tests in 16 suites` and
+still exited 0, against 639/19 for a complete run. A partial run that exits clean
+is indistinguishable from a green one unless the reported total is checked, so
+check it.
+
 ## Not verified
 
 **The GUI acceptance sweep did not run.** Every synthetic click was refused by the
