@@ -214,11 +214,12 @@ private let updateTestTiming = StartupTiming(
 
 /// Defense in depth for the same race, at the layer below the UI gate. The `.disabled`
 /// modifier is what keeps a real user from clicking `Check for Updates…` while the
-/// launch check is in flight, but `checkForUpdatesFromMenu()`'s own
-/// `!isPresentingUpdate` guard is what actually makes a call during `.checking` safe —
-/// pinning it here means a future change to (or bypass of) the UI gate cannot silently
-/// reopen the hole: a second, concurrent Sparkle check racing the launch's own 3-second
-/// deadline against the menu's 15-second one.
+/// launch check is in flight; the guard that makes a call during `.checking` safe is
+/// `updateState.phase != .checking` in `checkForUpdatesFromMenu()`. Note it is that
+/// clause doing the work, NOT `!isPresentingUpdate`, which is false during `.checking`
+/// and so never blocked an in-flight check. Pinning it here means a future change to
+/// (or bypass of) the UI gate cannot silently reopen the hole: a second, concurrent
+/// Sparkle check racing the launch's 3-second deadline against the menu's 15-second one.
 @MainActor
 @Test func checkForUpdatesFromMenuIsANoOpWhileACheckIsAlreadyInFlight() async throws {
     let fixture = try StartupFixture()

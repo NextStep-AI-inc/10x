@@ -3273,10 +3273,13 @@ watchdogs over shared state. This closes the race by removing the only way to op
 `prepareStartup`'s task group always finishes `prepareUpdates` (and therefore
 `checkAtLaunch`) before `runStartupAttempt` calls `requestHandoff`, so by the moment
 the menu item becomes enabled, `updateState.phase` can never still be `.checking` from
-the launch path. `checkForUpdatesFromMenu()`'s existing `!isPresentingUpdate` guard is
-kept as defense in depth (pinned by
+the launch path. `checkForUpdatesFromMenu()` also gained
+`updateState.phase != .checking` as defense in depth (pinned by
 `checkForUpdatesFromMenuIsANoOpWhileACheckIsAlreadyInFlight` in
-`Tests/TenXAppTests/AppModelUpdateTests.swift`), but nothing in the shipped code makes
+`Tests/TenXAppTests/AppModelUpdateTests.swift`). That clause is the operative one, not
+the pre-existing `!isPresentingUpdate`: `isPresentingUpdate` is false during `.checking`,
+so it never blocked a second check starting on top of an in-flight one. Nothing in the
+shipped code makes
 `SplashUpdateDriver.cancelCheck()` conditional or adds a promotion path — it stays
 exactly as it was before this review.
 
