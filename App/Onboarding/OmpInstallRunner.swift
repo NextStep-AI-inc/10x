@@ -44,26 +44,16 @@ struct OmpInstallRunner: Sendable {
             let lines = LineAccumulator()
             let child = ChildSignaller(
                 isProcessGroupSignallingEnabled: isProcessGroupSignallingEnabled)
+            let drainer = OutputDrainer(
+                handle: output.fileHandleForReading, lines: lines, continuation: continuation)
 
-            output.fileHandleForReading.readabilityHandler = { handle in
-                for line in lines.take(handle.availableData) {
-                    continuation.yield(line)
-                }
+            output.fileHandleForReading.readabilityHandler = { _ in
+                drainer.consumeAvailableData()
             }
 
-            process.terminationHandler = { finished in
+            process.terminationHandler = { finishedProcess in
                 child.markExited()
-                output.fileHandleForReading.readabilityHandler = nil
-                let remainder = (try? output.fileHandleForReading.readToEnd()) ?? Data()
-                for line in lines.drain(remainder) {
-                    continuation.yield(line)
-                }
-                if finished.terminationStatus == 0 {
-                    continuation.finish()
-                } else {
-                    continuation.finish(
-                        throwing: OmpInstallError.failed(status: finished.terminationStatus))
-                }
+                drainer.finish(status: finishedProcess.terminationStatus)
             }
 
             // Only `.cancelled` — a consumer that stopped iterating — kills the
@@ -82,7 +72,10 @@ struct OmpInstallRunner: Sendable {
                 try process.run()
                 child.adopt(process.processIdentifier)
             } catch {
-                output.fileHandleForReading.readabilityHandler = nil
+                // The process never started, so no callback can be in flight;
+                // route through the drainer anyway so `finished` has one
+                // meaning and a stray later call is still a safe no-op.
+                drainer.markFinishedWithoutDraining()
                 continuation.finish(throwing: error)
             }
         }
@@ -175,6 +168,79 @@ private final class ChildSignaller: @unchecked Sendable {
         let direct = text.split(whereSeparator: \Character.isWhitespace)
             .compactMap { pid_t($0) }
         return direct + direct.flatMap { descendantPIDs(of: $0) }
+    }
+}
+
+/// Serializes the readability-handler callback with the termination handler's
+/// final drain, so an in-flight callback always finishes yielding before the
+/// exit is delivered. Same shape as `LineTransport.StderrDrainer`: assigning
+/// `readabilityHandler = nil` stops *future* callback invocations but does not
+/// wait for one already running on Foundation's callback queue, and that
+/// in-flight block can otherwise call `continuation.yield` after
+/// `continuation.finish` has already run — a yield after finish is silently
+/// dropped, so output vanishes.
+///
+/// Unlike `StdoutDrainer` in `LineTransport`, an empty read here does *not*
+/// mark the drainer finished: only `finish(status:)` knows the exit status,
+/// so a callback-observed EOF must leave `finished` false and let the
+/// termination handler's own drain-and-finish be the one true completion.
+private final class OutputDrainer: @unchecked Sendable {
+    private let handle: FileHandle
+    private let lines: LineAccumulator
+    private let continuation: AsyncThrowingStream<String, Error>.Continuation
+    private let lock = NSLock()
+    private var finished = false
+
+    init(
+        handle: FileHandle,
+        lines: LineAccumulator,
+        continuation: AsyncThrowingStream<String, Error>.Continuation
+    ) {
+        self.handle = handle
+        self.lines = lines
+        self.continuation = continuation
+    }
+
+    /// Called from the pipe's readability handler, on Foundation's callback
+    /// queue — never from `run()`'s own task.
+    func consumeAvailableData() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return }
+        for line in lines.take(handle.availableData) {
+            continuation.yield(line)
+        }
+    }
+
+    /// Called once, from `process.terminationHandler`. Shares `lock` with
+    /// `consumeAvailableData`, so a callback read already in progress runs to
+    /// completion — yielding everything it has — before this drains the rest
+    /// of the pipe and finishes the stream. That ordering is what
+    /// `readabilityHandler = nil` alone cannot guarantee.
+    func finish(status: Int32) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return }
+        finished = true
+        handle.readabilityHandler = nil
+        let remainder = (try? handle.readToEnd()) ?? Data()
+        for line in lines.drain(remainder) {
+            continuation.yield(line)
+        }
+        if status == 0 {
+            continuation.finish()
+        } else {
+            continuation.finish(throwing: OmpInstallError.failed(status: status))
+        }
+    }
+
+    /// The process never launched, so no callback can be in flight; marks the
+    /// drainer done without touching the pipe or emitting anything.
+    func markFinishedWithoutDraining() {
+        lock.lock()
+        defer { lock.unlock() }
+        finished = true
+        handle.readabilityHandler = nil
     }
 }
 

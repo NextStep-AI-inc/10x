@@ -44,6 +44,44 @@ private func collect(
     #expect(lines == ["no trailing newline"])
 }
 
+/// Reproduces the race between the pipe's readability-handler callback and
+/// `process.terminationHandler`: the callback can still be mid-flight,
+/// between reading `availableData` and yielding it, when the process exit
+/// fires on a different thread and finishes the stream first. Any yields
+/// still in flight at that point are silently dropped.
+///
+/// Two things widen the race window past luck rather than adding blind
+/// trials: a multi-line fixture (30 lines makes losing the yield loop
+/// partway through detectable as a truncated array, not just an empty one)
+/// and genuine concurrency — many install runs racing at once, the same
+/// contention that surfaced the bug under a full parallel suite run.
+private let manyLinesThenFailure =
+    "for n in $(seq 1 30); do printf 'line %d\\n' \"$n\"; done; exit 3"
+
+@Test func installRunnerDeliversAllOutputBeforeAConcurrentNonzeroExit() async throws {
+    let expectedLines = (1...30).map { "line \($0)" }
+
+    try await withThrowingTaskGroup(of: (lines: [String], thrown: Error?).self) { group in
+        for _ in 0..<24 {
+            group.addTask {
+                let runner = OmpInstallRunner(command: manyLinesThenFailure)
+                var lines: [String] = []
+                var thrown: Error?
+                do {
+                    for try await line in runner.run() { lines.append(line) }
+                } catch {
+                    thrown = error
+                }
+                return (lines, thrown)
+            }
+        }
+        for try await result in group {
+            #expect(result.lines == expectedLines)
+            #expect(result.thrown as? OmpInstallError == .failed(status: 3))
+        }
+    }
+}
+
 /// A fixture that reports its own pid and a backgrounded descendant's pid, both
 /// to `pidFile` and to stdout. The runner streams stdout, so a fixture that only
 /// writes the file yields nothing and a consumer waiting for its first line hangs
