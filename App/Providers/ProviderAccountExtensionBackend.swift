@@ -104,18 +104,24 @@ struct ProviderAccountExtensionBackend: ProviderAccountRouting {
 /// `ProviderAccountExtensionBackendTests` exercises the backend only
 /// through `ProviderAccountChannel`, never this concrete type. Two things
 /// still open for whoever wires this to a real session: (1) `events` and
-/// `respond` must come from that session's own RPC client — `AsyncStream`
-/// has exactly one consumer, so this cannot share a stream with
-/// `SessionController`'s own frame handling, which already consumes every
-/// `extension_ui_request` on that stream unconditionally (see
-/// `App/Sessions/SessionController.swift` `consumeExtensionUI` /
-/// `App/ExtensionUI/ExtensionUIRouter.swift`) and would otherwise surface
-/// this channel's silent `method: "input"` frames as a user-facing sheet.
-/// (2) a reply's optional `events` key (Task 7's piggybacked
-/// availability/failover frames) is intentionally ignored here; nothing
-/// in this task consumes it.
+/// `respond` must come from that session's own RPC client, and
+/// `AsyncStream` has exactly one consumer — `SessionController` already
+/// consumes every frame on that stream (see
+/// `App/Sessions/SessionController.swift` `consumeExtensionUI`), so this
+/// channel cannot simply attach a second `for await` loop to the same
+/// stream; some fan-out is required. This channel's frames are no longer a
+/// *UI* hazard either way — `ExtensionUIRouter.parse` now excludes
+/// `ExtensionUIRouter.providerAccountChannelTitle` unconditionally, so
+/// `SessionController` seeing them without this channel also attached is
+/// silently harmless, just non-functional. (2) a reply's optional `events`
+/// key (Task 7's piggybacked availability/failover frames) is
+/// intentionally ignored here; nothing in this task consumes it.
 actor ProviderAccountExtensionChannel: ProviderAccountChannel {
-    private static let title = "tenx.provider-accounts.v1"
+    /// Single source of truth for the marker string, shared with the guard
+    /// in `ExtensionUIRouter.parse` that keeps these frames off any
+    /// user-facing surface — see that constant's doc comment for why this
+    /// type does not declare its own copy of the literal.
+    private static let title = ExtensionUIRouter.providerAccountChannelTitle
 
     private let events: AsyncStream<RpcFrame>
     private let respond: @Sendable (String, [String: JSONValue]) async throws -> Void
