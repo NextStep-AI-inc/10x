@@ -702,10 +702,6 @@ final class ProviderManagementViewModel {
             snapshot: lastUsageSnapshot ?? .empty,
             providerNames: providerNames,
             now: date)
-        let routedProviderIDs = Set(accountCapabilities.compactMap { key, value in
-            value == .accountRouting ? key : nil
-        })
-        let providerOnlyExcludedIDs = routedProviderIDs.union(failedAccountCapabilityProviderIDs)
         let accountPresentation = ProviderUsagePresentation.makeAccountRouting(
             providerNames: providerNames,
             accounts: providers.flatMap { accountSummaries[$0.id] ?? [] },
@@ -722,19 +718,39 @@ final class ProviderManagementViewModel {
         where !orderedProviderIDs.contains(providerID) {
             orderedProviderIDs.append(providerID)
         }
-        let presentedProviders = orderedProviderIDs.compactMap { providerID in
-            if routedProviderIDs.contains(providerID) {
-                return accountProviders[providerID]
+        // `accountCapabilities` is one tier-wide value applied to every
+        // authenticated provider (`ProviderAccountTier` is detected once
+        // for the whole snapshot, not per provider — see
+        // `refreshAccountUsage`), so a provider can be classed
+        // account-routing and still have zero accounts of its own: its own
+        // `omp usage --json` report carries no per-account identity, e.g.
+        // it appears only in `accountsWithoutUsage` (GitHub Copilot in the
+        // fixture this was found against, next to a Cursor account that
+        // does have identity). The correct per-provider signal for "does
+        // this provider actually have a routed presentation to show" is
+        // whether `accountProviders` — built just above from the real,
+        // materialized account list — contains an entry for it, not
+        // whether the tier-wide flag says routing is possible in general.
+        // A provider with a real entry there is shown through it;
+        // everything else (never routed, or routed but empty) falls back
+        // to its own provider-only rendering instead of disappearing,
+        // unless capability computation failed for it outright.
+        let presentedProviders = orderedProviderIDs.compactMap { providerID -> ProviderUsageProvider? in
+            if let routedProvider = accountProviders[providerID] {
+                return routedProvider
             }
-            if providerOnlyExcludedIDs.contains(providerID) { return nil }
+            if failedAccountCapabilityProviderIDs.contains(providerID) { return nil }
             return providerOnlyProviders[providerID]
         }
         let fallbackAccounts = providerOnly.accountsWithoutUsage.filter { account in
-            let providerID = account.id.split(separator: ":", maxSplits: 1).first.map(String.init)
-            return providerID.map { !providerOnlyExcludedIDs.contains($0) } ?? true
+            guard let providerID = account.id.split(separator: ":", maxSplits: 1).first.map(String.init)
+            else { return true }
+            return accountProviders[providerID] == nil
+                && !failedAccountCapabilityProviderIDs.contains(providerID)
         }
-        let fallbackIssues = providerOnly.credentialIssues.filter {
-            !providerOnlyExcludedIDs.contains($0.providerID)
+        let fallbackIssues = providerOnly.credentialIssues.filter { issue in
+            accountProviders[issue.providerID] == nil
+                && !failedAccountCapabilityProviderIDs.contains(issue.providerID)
         }
         return ProviderUsagePresentation(
             providers: presentedProviders,

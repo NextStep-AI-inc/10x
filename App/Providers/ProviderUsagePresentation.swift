@@ -184,13 +184,22 @@ struct ProviderUsagePresentation: Equatable, Sendable {
                 windowDurationRank: windowDurationRank(for: window.duration),
                 sourceIndex: window.sourceIndex)
         } ?? []
+        // `usage.amounts`/`.notes` (OmpKit's `ProviderAccountUsageAmount`,
+        // a report-level plain count, and free-text notes) carry the same
+        // data the provider-only conversion below already reads straight
+        // off `OmpUsageLimit` — mapped 1:1 into the app-layer presentation
+        // type rather than dropped, which is what silently emptied both
+        // arrays here before.
+        let amounts = (usage?.amounts ?? []).map { amount in
+            ProviderUsageAmount(id: amount.id, label: amount.label, value: amount.value, unit: amount.unit)
+        }
         return ProviderUsageAccount(
             id: summary.id,
             label: summary.displayLabel,
             identity: ProviderUsageAccountIdentity.empty,
             limits: limits,
-            amounts: [],
-            notes: [],
+            amounts: amounts,
+            notes: usage?.notes ?? [],
             isUsageAvailable: state == .available,
             accountRef: summary.accountRef,
             detailLabel: summary.detailLabel,

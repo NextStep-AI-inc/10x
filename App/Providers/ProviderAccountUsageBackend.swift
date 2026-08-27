@@ -55,11 +55,28 @@ enum ProviderAccountUsageBackend {
                     resetsAt: limit.window?.resetsAt.map(date(fromMilliseconds:)),
                     status: limit.status)
             }
+            // A limit with no percentage but a plain used count (e.g. "4
+            // requests used") carries no window and no fraction; it is a
+            // report-level amount instead. Extracted the same way as the
+            // provider-only conversion (`ProviderUsagePresentation.account
+            // (from: report:...)`) so the same OMP data reads identically
+            // whether or not this session is on a tier that routes
+            // accounts.
+            let amounts = report.limits.compactMap { limit -> ProviderAccountUsageAmount? in
+                guard ProviderUsagePresentation.remainingFraction(limit.amount) == nil,
+                      let used = limit.amount.used
+                else { return nil }
+                return ProviderAccountUsageAmount(
+                    id: limit.id, label: limit.label, value: used, unit: limit.amount.unit)
+            }
+            let notes = report.limits.flatMap { $0.notes ?? [] }
             return ProviderAccountUsage(
                 providerID: providerID,
                 accountRef: ref,
                 refreshedAt: date(fromMilliseconds: report.fetchedAt),
-                usageWindows: windows)
+                usageWindows: windows,
+                amounts: amounts,
+                notes: notes)
         }
     }
 

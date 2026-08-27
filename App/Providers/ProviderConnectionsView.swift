@@ -214,7 +214,7 @@ struct ProviderConnectionsView: View {
     /// re-deriving which tiers allow removal.
     private var removalUnavailableReason: String? {
         guard !accountTier.supportsRemoval else { return nil }
-        return "Removing accounts is not available with this version of omp."
+        return "Removing accounts is not available with this version of OMP."
     }
 
     private func recovery(message: String) -> some View {

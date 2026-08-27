@@ -134,22 +134,45 @@ public struct ProviderAccountUsageWindow: Sendable, Equatable, Decodable {
     }
 }
 
+/// A plain amount with no window and no percentage — e.g. "4 requests
+/// used" — carried alongside `ProviderAccountUsageWindow` because not every
+/// limit an OMP report exposes has a resettable fraction to show as a ring.
+public struct ProviderAccountUsageAmount: Sendable, Equatable, Decodable {
+    public let id: String
+    public let label: String
+    public let value: Double
+    public let unit: String
+
+    public init(id: String, label: String, value: Double, unit: String) {
+        self.id = id
+        self.label = label
+        self.value = value
+        self.unit = unit
+    }
+}
+
 public struct ProviderAccountUsage: Sendable, Equatable, Decodable {
     public let providerID: String
     public let accountRef: String
     public let refreshedAt: Date
     public let usageWindows: [ProviderAccountUsageWindow]
+    public let amounts: [ProviderAccountUsageAmount]
+    public let notes: [String]
 
     public init(
         providerID: String,
         accountRef: String,
         refreshedAt: Date,
-        usageWindows: [ProviderAccountUsageWindow]
+        usageWindows: [ProviderAccountUsageWindow],
+        amounts: [ProviderAccountUsageAmount] = [],
+        notes: [String] = []
     ) {
         self.providerID = providerID
         self.accountRef = accountRef
         self.refreshedAt = refreshedAt
         self.usageWindows = usageWindows
+        self.amounts = amounts
+        self.notes = notes
     }
 
     public init(from decoder: any Decoder) throws {
@@ -158,7 +181,10 @@ public struct ProviderAccountUsage: Sendable, Equatable, Decodable {
             providerID: try container.decode(String.self, forKey: .providerID),
             accountRef: try container.decode(String.self, forKey: .accountRef),
             refreshedAt: try container.decodeISO8601Date(forKey: .refreshedAt),
-            usageWindows: try container.decode([ProviderAccountUsageWindow].self, forKey: .usageWindows)
+            usageWindows: try container.decode([ProviderAccountUsageWindow].self, forKey: .usageWindows),
+            amounts: try container.decodeIfPresent(
+                [ProviderAccountUsageAmount].self, forKey: .amounts) ?? [],
+            notes: try container.decodeIfPresent([String].self, forKey: .notes) ?? []
         )
     }
 
@@ -167,6 +193,8 @@ public struct ProviderAccountUsage: Sendable, Equatable, Decodable {
         case accountRef
         case refreshedAt
         case usageWindows
+        case amounts
+        case notes
     }
 }
 
