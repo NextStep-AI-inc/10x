@@ -571,3 +571,30 @@ private func eventFrame(_ json: String) throws -> RpcFrame {
 private func message(_ json: String) throws -> JSONValue {
     try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
 }
+
+@Test func steeringMessagesOmpHidesNeverReachTheTranscript() {
+    var reducer = TranscriptReducer()
+    let hidden = JSONValue.object([
+        "role": .string("custom"),
+        "customType": .string("prewalk-plan"),
+        "display": .bool(false),
+        "content": .string("STOP: In NEXT reply, before further exploration, write a plan."),
+    ])
+
+    #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": hidden]))) == .none)
+    #expect(reducer.consume(.event(type: "message_end", payload: .object(["message": hidden]))) == .none)
+    #expect(reducer.items.isEmpty)
+}
+
+@Test func aCustomMessageThatAsksToBeShownIsShown() {
+    var reducer = TranscriptReducer()
+    let shown = JSONValue.object([
+        "role": .string("custom"),
+        "customType": .string("advisor"),
+        "display": .bool(true),
+        "content": .string("Reviewer notes are ready."),
+    ])
+
+    #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": shown]))) != .none)
+    #expect(reducer.items.count == 1)
+}

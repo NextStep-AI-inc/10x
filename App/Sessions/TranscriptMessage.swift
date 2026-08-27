@@ -81,6 +81,20 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             : normalizedDocument
     }
 
+    /// omp injects steering text into the run as `custom` / `hookMessage`
+    /// entries. Its own client renders one only when the message asks to be
+    /// shown, and the rest are context for the model, not conversation. Without
+    /// this gate they land in the transcript as walls of instruction the user
+    /// never wrote.
+    nonisolated static func isDisplayable(_ raw: JSONValue) -> Bool {
+        switch raw["role"]?.stringValue {
+        case "custom", "hookMessage":
+            return raw["display"]?.boolValue == true
+        default:
+            return true
+        }
+    }
+
     static func visibleText(from message: JSONValue) -> String {
         contentDocument(from: message).source
     }
