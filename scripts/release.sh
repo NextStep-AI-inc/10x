@@ -84,8 +84,11 @@ KEY_ARGS=()
 if [ -n "${SPARKLE_ED_PRIVATE_KEY_FILE:-}" ]; then
   KEY_ARGS=(--ed-key-file "$SPARKLE_ED_PRIVATE_KEY_FILE")
 fi
+# The +expansion guard is required: macOS ships bash 3.2, where expanding an empty
+# array under `set -u` is an unbound-variable error. Without it the local-developer
+# path (no SPARKLE_ED_PRIVATE_KEY_FILE, key read from the login keychain) crashes here.
 "$GENERATE_APPCAST" \
-  "${KEY_ARGS[@]}" \
+  ${KEY_ARGS[@]+"${KEY_ARGS[@]}"} \
   --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
   "$DIST"
 
