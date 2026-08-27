@@ -16,7 +16,6 @@ import Testing
             name: "ChatGPT",
             isAvailable: true,
             isAuthenticated: true)],
-        capabilities: [providerID: .accountRouting],
         accounts: [providerID: [
             providerAccountFixture(providerID: providerID, ref: "acct_B", label: "Work", order: 2),
             providerAccountFixture(providerID: providerID, ref: "acct_A", label: "Personal", order: 1),
@@ -50,7 +49,6 @@ import Testing
             name: "Cursor",
             isAvailable: true,
             isAuthenticated: true)],
-        capabilities: [providerID: .accountRouting],
         accounts: [providerID: [
             providerAccountFixture(
                 providerID: providerID,
@@ -480,7 +478,6 @@ import Testing
             name: "Cursor",
             isAvailable: true,
             isAuthenticated: true)],
-        capabilities: [providerID: .accountRouting],
         accounts: [providerID: [account]],
         accountUsage: [providerID: [providerAccountUsageFixture(
             providerID: providerID,
@@ -531,7 +528,6 @@ import Testing
         isAuthenticated: true)
     let service = FakeProviderService(
         providers: [authenticated],
-        capabilities: [providerID: .accountRouting],
         accounts: [providerID: [providerAccountFixture(
             providerID: providerID,
             ref: "acct_A",
@@ -1071,10 +1067,6 @@ private actor AccountManagementProviderService: ProviderManaging {
     }
 
     func providers() async throws -> [ProviderLoginProvider] { [provider] }
-
-    func accountCapability(providerID: String) async throws -> ProviderAccountCapability {
-        .accountRouting
-    }
 
     func accounts(providerID: String) async throws -> [ProviderAccountSummary] {
         accountLoadCount += 1

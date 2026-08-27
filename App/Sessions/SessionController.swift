@@ -284,23 +284,31 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         publishLiveComposerSelection()
     }
 
+    /// `ProviderAccountSession` conformance, reached only by
+    /// `ProviderAccountCoordinator.applyDirectly` — the fallback `apply()`
+    /// uses when no `ProviderAccountRouting` backend is installed. The
+    /// live app always installs one in `AppModel.init`
+    /// (`ProviderAccountTieredRoutingBackend`, see
+    /// `ProviderAccountCoordinator.install(routingBackend:restartSession:)`),
+    /// so this method never runs in production; real routing goes through
+    /// that backend, which applies over the extension channel or a stock-OMP
+    /// session-file pin and reports the change back via the
+    /// `provider_account_changed` event frame, not this call. It stays only
+    /// to satisfy the protocol for callers — chiefly tests — that construct a
+    /// coordinator with no backend installed.
+    ///
+    /// It used to send `set_session_provider_account`, an RPC command that
+    /// existed only in the abandoned fork's `omp` and was never implemented
+    /// by any `omp` a user actually runs. That command no longer exists in
+    /// `RpcCommand`, so there is nothing left to send here.
     func setProviderAccount(
         providerID: String,
         accountRef: String
     ) async throws -> SetSessionProviderAccountResult {
-        guard let handle else { throw RpcClientError.notStarted }
-        let context = currentPipelineContext()
-        let response = try await handle.client.send(.setSessionProviderAccount(
-            providerID: providerID,
-            accountRef: accountRef))
-        guard isCurrent(context) else { throw RpcClientError.notStarted }
-        let result = try response.setSessionProviderAccountResult()
-        handleProviderAccountChange(ProviderAccountChangedEvent(
-            providerID: result.account.providerID,
-            accountRef: result.account.accountRef,
-            reason: .manual,
-            sequence: result.sequence))
-        return result
+        throw RpcClientError.commandFailed(
+            command: "set_session_provider_account",
+            error: "[Sessions:SessionController.setProviderAccount] No RPC transport for direct account pinning — {providerID: \(providerID), accountRef: \(accountRef)}",
+            code: "unsupported_command")
     }
 
     /// Returns `false` only when Fast mode is unsupported (`active == false`).

@@ -21,7 +21,6 @@ protocol ProviderManaging: ProviderAccountManaging {
     var events: AsyncStream<ProviderLoginEvent> { get }
 
     func providers() async throws -> [ProviderLoginProvider]
-    func accountCapability(providerID: String) async throws -> ProviderAccountCapability
     func login(providerID: String, generation: Int) async throws
     func respond(requestID: String, body: [String: JSONValue]) async throws
     func cancelLogin() async
@@ -29,10 +28,6 @@ protocol ProviderManaging: ProviderAccountManaging {
 }
 
 extension ProviderManaging {
-    func accountCapability(providerID: String) async throws -> ProviderAccountCapability {
-        .providerOnly
-    }
-
     func accounts(providerID: String) async throws -> [ProviderAccountSummary] {
         []
     }

@@ -574,7 +574,6 @@ import Testing
             name: "ChatGPT",
             isAvailable: true,
             isAuthenticated: true)],
-        capabilities: [providerID: .accountRouting],
         accounts: [providerID: [
             providerAccountFixture(
                 providerID: providerID,
@@ -853,11 +852,6 @@ private func fullShellAccountProviderModel() -> ProviderManagementViewModel {
     ProviderManagementViewModel(
         providerService: FakeProviderService(
             providers: fullShellProviders,
-            capabilities: [
-                "anthropic": .accountRouting,
-                "openai-codex": .accountRouting,
-                "cursor": .providerOnly,
-            ],
             accounts: [
                 "anthropic": [
                     providerAccountFixture(

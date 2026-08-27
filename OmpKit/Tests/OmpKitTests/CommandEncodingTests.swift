@@ -123,31 +123,3 @@ private func json(_ data: Data) throws -> [String: Any] {
     #expect(login["type"] as? String == "login")
     #expect(login["providerId"] as? String == "openai-codex")
 }
-
-@Test func providerAccountCommandsMatchTheOMPContract() throws {
-    let list = try json(try RpcCommand.listProviderAccounts(providerID: "openai-codex")
-        .encodedLine(id: "list"))
-    #expect(list["type"] as? String == "list_provider_accounts")
-    #expect(list["providerId"] as? String == "openai-codex")
-
-    let usage = try json(try RpcCommand.providerAccountUsage(providerID: "openai-codex")
-        .encodedLine(id: "usage"))
-    #expect(usage["type"] as? String == "get_provider_account_usage")
-    #expect(usage["providerId"] as? String == "openai-codex")
-
-    let pin = try json(try RpcCommand.setSessionProviderAccount(
-        providerID: "openai-codex",
-        accountRef: "acct_B"
-    ).encodedLine(id: "pin"))
-    #expect(pin["type"] as? String == "set_session_provider_account")
-    #expect(pin["providerId"] as? String == "openai-codex")
-    #expect(pin["accountRef"] as? String == "acct_B")
-
-    let remove = try json(try RpcCommand.removeProviderAccount(
-        providerID: "openai-codex",
-        accountRef: "acct_B"
-    ).encodedLine(id: "remove"))
-    #expect(remove["type"] as? String == "remove_provider_account")
-    #expect(remove["providerId"] as? String == "openai-codex")
-    #expect(remove["accountRef"] as? String == "acct_B")
-}

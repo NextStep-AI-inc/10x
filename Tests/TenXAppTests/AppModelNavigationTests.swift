@@ -870,9 +870,9 @@ func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws 
 /// `set_session_provider_account` RPC command — the pre-Task-9 shape only
 /// the abandoned fork's `omp` ever understood (see
 /// `ProviderAccountExtensionBackend.swift`'s `ProviderAccountTieredRoutingBackend`
-/// doc comment). `set_session_provider_account` handling is left in place
-/// below only because nothing currently sends it; a stray direct call would
-/// still get a plausible reply rather than silently hanging.
+/// doc comment). Task 10 deleted that RPC command from `RpcCommand` entirely,
+/// so this fixture no longer has a handler for it either — there is nothing
+/// left that could send it.
 ///
 /// The marker channel opens the same way `makeProviderAccountChannelExecutable`
 /// (`SessionControllerTests.swift`) proved out: an `extension_ui_request`
@@ -929,8 +929,6 @@ private func makeProviderRoutingExecutable(
             emit({"type":"extension_ui_request","id":"acct-chan-" + str(channel_requests),"method":"input","title":MARKER,"placeholder":reply})
             continue
         logged = command_type
-        if command_type == "set_session_provider_account":
-            logged += ":" + command.get("accountRef", "")
         with open(command_log, "a", encoding="utf-8") as log:
             log.write(logged + "\n")
         if command_type == "negotiate_protocol":
@@ -941,9 +939,6 @@ private func makeProviderRoutingExecutable(
                 data["activeProviderAccounts"] = {"openai-codex":initial_account}
         elif command_type == "get_messages_page":
             data = {"messages":[],"nextCursor":None}
-        elif command_type == "set_session_provider_account":
-            account_ref = command.get("accountRef")
-            data = {"account":{"providerId":"openai-codex","accountRef":account_ref,"displayLabel":"Account","connectionOrder":0,"availability":"available","isActiveForSession":True},"sequence":1}
         else:
             data = {}
         emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})

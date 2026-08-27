@@ -13,14 +13,11 @@ actor FakeProviderService: ProviderManaging {
     private var loginGates: [LoginGate]
     private let shutdownGate: LoadGate?
     private var providerGates: [LoadGate] = []
-    private var capabilities: [String: ProviderAccountCapability]
-    private var accountCapabilityError: FakeProviderError?
     private var storedAccounts: [String: [ProviderAccountSummary]]
     private var storedAccountUsage: [String: [ProviderAccountUsage]]
     private var accountUsageError: FakeProviderError?
     private var accountUsageGates: [LoadGate] = []
     private(set) var providerLoadCount = 0
-    private(set) var accountCapabilityIDs: [String] = []
     private(set) var accountLoadIDs: [String] = []
     private(set) var accountUsageLoadIDs: [String] = []
     private(set) var loginIDs: [String] = []
@@ -34,8 +31,6 @@ actor FakeProviderService: ProviderManaging {
         loginError: FakeProviderError? = nil,
         loginGate: LoginGate? = nil,
         shutdownGate: LoadGate? = nil,
-        capabilities: [String: ProviderAccountCapability] = [:],
-        accountCapabilityError: FakeProviderError? = nil,
         accounts: [String: [ProviderAccountSummary]] = [:],
         accountUsage: [String: [ProviderAccountUsage]] = [:],
         accountUsageError: FakeProviderError? = nil
@@ -45,8 +40,6 @@ actor FakeProviderService: ProviderManaging {
         self.loginError = loginError
         self.loginGates = loginGate.map { [$0] } ?? []
         self.shutdownGate = shutdownGate
-        self.capabilities = capabilities
-        self.accountCapabilityError = accountCapabilityError
         storedAccounts = accounts
         storedAccountUsage = accountUsage
         self.accountUsageError = accountUsageError
@@ -61,12 +54,6 @@ actor FakeProviderService: ProviderManaging {
         await gate?.waitForRelease()
         if let providerError { throw providerError }
         return result
-    }
-
-    func accountCapability(providerID: String) async throws -> ProviderAccountCapability {
-        accountCapabilityIDs.append(providerID)
-        if let accountCapabilityError { throw accountCapabilityError }
-        return capabilities[providerID] ?? .providerOnly
     }
 
     func accounts(providerID: String) async throws -> [ProviderAccountSummary] {
@@ -230,7 +217,6 @@ enum FakeProviderError: Error, Sendable {
     case discoveryFailed
     case loginFailed
     case accountUsageFailed
-    case accountCapabilityFailed
 }
 
 actor FakeUsageService: OmpUsageLoading {

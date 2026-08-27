@@ -166,31 +166,6 @@ import Testing
     await processManager.closeAll()
 }
 
-@MainActor @Test func accountEventsAndPinResponsesShareTheControllerEventConsumer() async throws {
-    let directory = try temporaryDirectory()
-    defer { try? FileManager.default.removeItem(at: directory) }
-    let executable = try makeProviderAccountExecutable(in: directory)
-    let manager = SessionProcessManager(executable: executable.path)
-    let coordinator = ProviderAccountCoordinator()
-    let controller = SessionController(processManager: manager, activityRegistry: coordinator)
-
-    await controller.openExisting(metadata(path: "/tmp/account-session.jsonl", cwd: "/tmp"))
-
-    #expect(await eventually {
-        controller.currentProviderAccountRef == "acct_B" && controller.runtimeState == .idle
-    })
-
-    let result = try await controller.setProviderAccount(
-        providerID: "openai-codex",
-        accountRef: "acct_C")
-
-    #expect(result.sequence == 3)
-    #expect(controller.currentProviderAccountRef == "acct_C")
-    #expect(controller.providerAccountSequence == 3)
-    #expect(coordinator.activeAccountRefs[controller.id] == "acct_C")
-    await manager.closeAll()
-}
-
 @MainActor @Test func markerFramesReachTheAccountChannelWhileOrdinaryInputStillReachesTheSheet() async throws {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -788,9 +763,6 @@ private func makeProviderAccountExecutable(in directory: URL) throws -> URL {
             emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_B","reason":"automaticFailover","sequence":2})
             emit({"type":"agent_end","messages":[],"isTerminal":True})
             continue
-        elif command_type == "set_session_provider_account":
-            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_C","reason":"manual","sequence":3})
-            data = {"account":{"providerId":"openai-codex","accountRef":"acct_C","displayLabel":"Account C","connectionOrder":2,"availability":"available","isActiveForSession":True},"sequence":3}
         else:
             data = {}
         emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})

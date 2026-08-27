@@ -61,30 +61,6 @@ public struct RpcCommand: Sendable, Equatable {
         RpcCommand(type: "login", fields: ["providerId": .string(providerID)])
     }
 
-    // MARK: - Provider accounts
-
-    public static func listProviderAccounts(providerID: String) -> RpcCommand {
-        RpcCommand(type: "list_provider_accounts", fields: ["providerId": .string(providerID)])
-    }
-
-    public static func providerAccountUsage(providerID: String) -> RpcCommand {
-        RpcCommand(type: "get_provider_account_usage", fields: ["providerId": .string(providerID)])
-    }
-
-    public static func setSessionProviderAccount(providerID: String, accountRef: String) -> RpcCommand {
-        RpcCommand(type: "set_session_provider_account", fields: [
-            "providerId": .string(providerID),
-            "accountRef": .string(accountRef),
-        ])
-    }
-
-    public static func removeProviderAccount(providerID: String, accountRef: String) -> RpcCommand {
-        RpcCommand(type: "remove_provider_account", fields: [
-            "providerId": .string(providerID),
-            "accountRef": .string(accountRef),
-        ])
-    }
-
     // MARK: - Prompting
 
     public static func prompt(message: String, streamingBehavior: StreamingBehavior?) -> RpcCommand {

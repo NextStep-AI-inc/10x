@@ -240,22 +240,6 @@ public struct ProviderAccountChangedEvent: Sendable, Equatable, Decodable {
     }
 }
 
-public struct ProviderAccountListResult: Sendable, Equatable, Decodable {
-    public let accounts: [ProviderAccountSummary]
-
-    public init(accounts: [ProviderAccountSummary]) {
-        self.accounts = accounts
-    }
-}
-
-public struct ProviderAccountUsageResult: Sendable, Equatable, Decodable {
-    public let accounts: [ProviderAccountUsage]
-
-    public init(accounts: [ProviderAccountUsage]) {
-        self.accounts = accounts
-    }
-}
-
 public struct SetSessionProviderAccountResult: Sendable, Equatable, Decodable {
     public let account: ProviderAccountSummary
     public let sequence: Int
@@ -273,43 +257,6 @@ public struct RemoveProviderAccountResult: Sendable, Equatable, Decodable {
     public init(removed: Bool, accounts: [ProviderAccountSummary]) {
         self.removed = removed
         self.accounts = accounts
-    }
-}
-
-public enum ProviderAccountResponseDecodingError: Error, Sendable, Equatable {
-    case unsuccessful(command: String, error: String?, code: String?)
-    case missingData(command: String)
-}
-
-public extension RpcResponse {
-    func providerAccountListResult() throws -> ProviderAccountListResult {
-        try decodeProviderAccountResult(ProviderAccountListResult.self)
-    }
-
-    func providerAccountUsageResult() throws -> ProviderAccountUsageResult {
-        try decodeProviderAccountResult(ProviderAccountUsageResult.self)
-    }
-
-    func setSessionProviderAccountResult() throws -> SetSessionProviderAccountResult {
-        try decodeProviderAccountResult(SetSessionProviderAccountResult.self)
-    }
-
-    func removeProviderAccountResult() throws -> RemoveProviderAccountResult {
-        try decodeProviderAccountResult(RemoveProviderAccountResult.self)
-    }
-
-    private func decodeProviderAccountResult<T: Decodable>(_ type: T.Type) throws -> T {
-        guard success else {
-            throw ProviderAccountResponseDecodingError.unsuccessful(
-                command: command,
-                error: error,
-                code: code
-            )
-        }
-        guard let data else {
-            throw ProviderAccountResponseDecodingError.missingData(command: command)
-        }
-        return try JSONDecoder().decode(type, from: JSONEncoder().encode(data))
     }
 }
 
