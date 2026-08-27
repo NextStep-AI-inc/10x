@@ -19,8 +19,6 @@ jobs:
           fetch-depth: 0
 
       - name: Select the Xcode toolchain
-        env:
-          XCODE_PREFERRED: Xcode_26.2
         run: |
           set -euo pipefail
           # The project is developed and tested against Xcode 26.x (Swift 6.3). The
@@ -43,11 +41,14 @@ jobs:
             done
           fi
           if [ -z "$NEWEST" ]; then
-            echo "::error::No Xcode 26 or newer on this runner image. The project needs"
-            echo "::error::Swift 6.3; the newest available is listed above. Switch runs-on"
-            echo "::error::to a macos-26 image, or pin the toolchain another way."
+            echo "::error::No Xcode 26 or newer on this runner image."
             exit 1
           fi
+          # KNOWN LIMITATION as of 2026-08-27: App/Resources/AppIcon.icon is an Icon
+          # Composer asset authored in Xcode 26.6. Runner images top out at 26.3, and
+          # actool on 26.2 and 26.3 both crash compiling it (CompileAssetCatalogVariant,
+          # nonzero exit). Until runner images ship 26.6, releases must be cut locally
+          # with scripts/release.sh, which runs the identical chain.
           echo "Selecting $NEWEST"
           sudo xcode-select -s "$NEWEST/Contents/Developer"
           xcodebuild -version
