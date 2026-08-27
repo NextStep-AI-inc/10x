@@ -129,10 +129,15 @@ struct ComposerView: View {
                     .padding(.bottom, 10)
             }
         }
-        .background(.white)
-        .overlay {
+        // Fill and border live in one background layer: an overlay border would
+        // paint over card content, and the model flyout is card content.
+        .background {
             Rectangle()
-                .stroke(borderColor, lineWidth: 1)
+                .fill(.white)
+                .overlay {
+                    Rectangle()
+                        .stroke(borderColor, lineWidth: 1)
+                }
         }
         .overlay(alignment: .bottomLeading) {
             projectShelfOverlay

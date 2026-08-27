@@ -1816,6 +1816,35 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         size: CGSize(width: 780, height: 140))
 }
 
+/// Guards the composer border against the open panel: the card's stroke must
+/// stay behind card content, so no hairline crosses the flyout.
+@MainActor
+@Test func composerWithModelFlyoutSnapshot() async throws {
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("Pick a model without the border cutting the panel."),
+                flyout: .constant(.model),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [URL(filePath: "/tmp/10x", directoryHint: .isDirectory)],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controls: controls,
+                controlsMode: .newSession,
+                onSend: {})
+        },
+        name: "composer-with-model-flyout",
+        size: CGSize(width: 780, height: 400))
+}
+
 private let modelPickerAnthropicOpus = ComposerModelInfo(
     modelID: "claude-opus-4-8",
     name: "Claude Opus 4.8",
