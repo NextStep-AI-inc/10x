@@ -65,11 +65,6 @@ final class AppModel {
         sessionActivityRegistry.activeCounts
     }
 
-    var isForegroundSessionGenerating: Bool {
-        guard case .session = route else { return false }
-        return activeSession?.runtimeState == .streaming
-    }
-
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
     @ObservationIgnored private var archivedReloadGeneration = 0
