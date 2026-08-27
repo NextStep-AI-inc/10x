@@ -200,11 +200,19 @@ import Testing
 
 // Hovering one account (not focusing it) must raise, colorize, and front it
 // without showing the keyboard focus outline — a distinct visual state from
-// the focus-driven snapshot above.
+// the focus-driven snapshot above. This needs a fixture where "work" can
+// actually show color (.available, with a real limit) and a globally
+// grayscaled scope (isGrayscale: true) so there is a grey state for hover
+// to visibly override — the shared harness fixture fails both: "work" is
+// .loading (always a neutral placeholder track, colored or not) and the
+// harness's default isGrayscale is false (nothing is grey to begin with).
 @MainActor
 @Test func hoveringOneAccountRaisesItWithoutAFocusOutlineSnapshot() throws {
     try assertSnapshot(
-        ProviderAccountStackSnapshotHarness(visualHoverAccountID: "anthropic:work"),
+        ProviderAccountStackSnapshotHarness(
+            visualHoverAccountID: "anthropic:work",
+            isGrayscale: true,
+            provider: ProviderAccountStackSnapshotHarness.colorableProvider),
         name: "provider-account-stack-hovered-account",
         size: CGSize(width: 160, height: 170))
 }
@@ -228,14 +236,16 @@ private struct ProviderAccountStackSnapshotHarness: View {
     var visualFocusAccountID: String?
     var visualHoverAccountID: String?
     var generatingCounts: [ProviderAccountKey: Int] = [:]
+    var isGrayscale = false
+    var provider = ProviderAccountStackSnapshotHarness.defaultProvider
 
     @FocusState private var focusedAccountID: String?
 
     var body: some View {
         ProviderAccountStackView(
-            provider: Self.provider,
+            provider: provider,
             generatingCounts: generatingCounts,
-            isGrayscale: false,
+            isGrayscale: isGrayscale,
             focusedAccountID: $focusedAccountID,
             visualFocusAccountID: visualFocusAccountID,
             visualHoverAccountID: visualHoverAccountID,
@@ -249,7 +259,7 @@ private struct ProviderAccountStackSnapshotHarness: View {
             .environment(\._accessibilityReduceMotion, true)
     }
 
-    private static let provider = ProviderUsageProvider(
+    private static let defaultProvider = ProviderUsageProvider(
         id: "anthropic",
         name: "Anthropic",
         accounts: [
@@ -265,6 +275,36 @@ private struct ProviderAccountStackSnapshotHarness: View {
                 accountRef: "work",
                 usageState: .loading,
                 limits: []),
+            account(
+                id: "anthropic:backup",
+                label: "Backup",
+                accountRef: "backup",
+                usageState: .unavailable,
+                limits: [limit(id: "stale", percentage: 8)]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "personal")
+
+    // "work" has real, colorable usage (.available, 55% — standard/cyan
+    // tone) unlike the default fixture's .loading placeholder, which never
+    // shows color regardless of hover. Used only by the hover-colorization
+    // snapshot so the other three snapshots keep their original fixture.
+    static let colorableProvider = ProviderUsageProvider(
+        id: "anthropic",
+        name: "Anthropic",
+        accounts: [
+            account(
+                id: "anthropic:personal",
+                label: "Personal",
+                accountRef: "personal",
+                usageState: .available,
+                limits: [limit(id: "five-hour", percentage: 72)]),
+            account(
+                id: "anthropic:work",
+                label: "Work",
+                accountRef: "work",
+                usageState: .available,
+                limits: [limit(id: "monthly", percentage: 55)]),
             account(
                 id: "anthropic:backup",
                 label: "Backup",

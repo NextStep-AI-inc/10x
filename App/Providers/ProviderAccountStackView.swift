@@ -335,8 +335,15 @@ struct ProviderAccountStackView: View {
                 Capsule().fill(isBadgeLive
                     ? TenXPalette.color(TenXPalette.cyanHex)
                     : TenXPalette.color(TenXPalette.separatorHex)))
+            // Same canvas-colored ring treatment as the wheels get from each
+            // other, and the same width — the badge overlaps the active
+            // wheel exactly like an overlapping background wheel would, so
+            // it needs the same separation to read as its own object rather
+            // than a bite taken out of the wheel. A neutral badge's fill
+            // (separatorHex) is close in value to the wheel's own track
+            // grey, so this ring is the only thing establishing the edge.
             .overlay(
-                Capsule().stroke(TenXPalette.color(TenXPalette.canvasHex), lineWidth: 1.5))
+                Capsule().stroke(TenXPalette.color(TenXPalette.canvasHex), lineWidth: 2))
             // Every account behind this badge is already individually
             // focusable in the accessibility order; the badge would only
             // repeat that count, not add information.
