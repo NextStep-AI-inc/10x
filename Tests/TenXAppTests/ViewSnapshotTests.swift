@@ -55,6 +55,20 @@ import Testing
 }
 
 @MainActor
+@Test func onboardingInstallStepVerifyingSnapshot() throws {
+    // The owner's reported bug: after a successful script, nothing showed
+    // that discovery was still running and would advance the flow itself.
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: ["Downloading omp…", "Installed to ~/.local/bin/omp"],
+            initialPhase: .verifying)
+            .padding(56),
+        name: "onboarding-install-verifying",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
 @Test func onboardingProjectStepEmptySnapshot() throws {
     // A genuine first-run user: no sessions, so no suggestions. No disk
     // scan runs, so this settles synchronously.

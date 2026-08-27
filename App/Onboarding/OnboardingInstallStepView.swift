@@ -1,13 +1,46 @@
 import AppKit
 import SwiftUI
 
+/// Where `OnboardingInstallStepView` is in its install flow. Distinct from a
+/// single `isInstalling` flag so the UI can tell "the script is running"
+/// apart from "the script succeeded and OMP discovery is now confirming it
+/// runs" — before this, that second phase had no visible indication that
+/// anything further would happen.
+enum OnboardingInstallPhase: Equatable, Sendable {
+    case idle
+    case installing
+    case verifying
+
+    /// Phase to enter once the install script's output stream finishes.
+    static func afterScript(succeeded: Bool) -> OnboardingInstallPhase {
+        succeeded ? .verifying : .idle
+    }
+
+    /// Phase to enter once discovery (`AppModel.useOmp()`) resolves. Only
+    /// `.verifying` transitions here, so this is safe to call unconditionally
+    /// after discovery finishes.
+    func afterDiscovery() -> OnboardingInstallPhase {
+        self == .verifying ? .idle : self
+    }
+}
+
 struct OnboardingInstallStepView: View {
     let model: AppModel
 
-    @State private var log: [String] = []
-    @State private var isInstalling = false
+    @State private var log: [String]
+    @State private var phase: OnboardingInstallPhase
     @State private var didFail = false
     @State private var installTask: Task<Void, Never>?
+
+    init(
+        model: AppModel,
+        initialLog: [String] = [],
+        initialPhase: OnboardingInstallPhase = .idle
+    ) {
+        self.model = model
+        _log = State(initialValue: initialLog)
+        _phase = State(initialValue: initialPhase)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -16,7 +49,11 @@ struct OnboardingInstallStepView: View {
             } else {
                 commandCard
                 if !log.isEmpty { logView }
-                if didFail {
+                if phase == .verifying {
+                    Text("Installed. Checking that OMP runs, then continuing.")
+                        .font(TenXTypography.body(size: 13))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                } else if didFail {
                     Text("Install failed. The output above shows why.")
                         .font(TenXTypography.body(size: 13))
                         .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
@@ -28,9 +65,9 @@ struct OnboardingInstallStepView: View {
                     Button("Continue") { model.gateRoute() }
                         .buttonStyle(GhostActionStyle())
                 } else {
-                    Button(isInstalling ? "Installing…" : "Install OMP") { install() }
+                    Button(phase == .installing ? "Installing…" : "Install OMP") { install() }
                         .buttonStyle(GhostActionStyle())
-                        .disabled(isInstalling)
+                        .disabled(phase != .idle)
                 }
                 Button("Locate OMP") { locate() }
                     .buttonStyle(GhostActionStyle(
@@ -117,17 +154,20 @@ struct OnboardingInstallStepView: View {
     private func install() {
         log = []
         didFail = false
-        isInstalling = true
+        phase = .installing
         installTask = Task {
+            var succeeded = true
             do {
                 for try await line in OmpInstallRunner().run() { log.append(line) }
             } catch {
                 didFail = true
+                succeeded = false
             }
-            isInstalling = false
+            phase = OnboardingInstallPhase.afterScript(succeeded: succeeded)
             // Advance only once discovery finds a runnable executable, never on
             // the script's own success line.
             await model.useOmp()
+            phase = phase.afterDiscovery()
         }
     }
 
