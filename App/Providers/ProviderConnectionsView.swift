@@ -212,9 +212,18 @@ struct ProviderConnectionsView: View {
     /// across every account regardless of that account's own eligible
     /// replacements. Reuses `ProviderAccountTier.supportsRemoval` rather than
     /// re-deriving which tiers allow removal.
+    ///
+    /// States the fact 10x can actually verify, not a cause it cannot: an
+    /// absent, incompatible, and failed-to-load extension all fail
+    /// `ProviderAccountTier.detect` the same way — a nil or wrong-version
+    /// hello — so 10x has no way to tell those apart, and naming "this
+    /// version of OMP" as the reason (the previous copy) would be a guess
+    /// presented as fact. Same no-diagnosis reasoning that already dropped
+    /// this feature's degradation banner (task-10b, "the unprovable
+    /// degradation notice").
     private var removalUnavailableReason: String? {
         guard !accountTier.supportsRemoval else { return nil }
-        return "Removing accounts is not available with this version of OMP."
+        return "Removing accounts isn't available without a connected extension."
     }
 
     private func recovery(message: String) -> some View {

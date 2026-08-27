@@ -89,10 +89,31 @@ struct ProviderAccountSwitchConfirmationPresentation: Equatable, Sendable {
     let cancelActionLabel = "Cancel"
     let confirmActionLabel = "Switch account"
     let usesRadioGroupSemantics = true
-    let restartNoticeText = "Switching now restarts this session. Your conversation is kept."
 
     init(accountLabel: String) {
         title = "Use \(accountLabel)?"
+    }
+
+    /// What actually restarts, spelled out per scope rather than one
+    /// constant string reused for both (task-10b final fix, Finding 3):
+    /// `.allCurrentSessions` restarts every 10x-managed session on this
+    /// provider, not just the one this dialog was opened from
+    /// (`ProviderAccountCoordinator.useAccount`'s `.allCurrentSessions`
+    /// case enumerates every managed session for the provider), so a
+    /// single "this session" notice understated what that scope actually
+    /// does. `.allNewSessions` has no case here because the view never
+    /// shows this notice for that scope in the first place — it restarts
+    /// nothing (see that option's own message, "Existing sessions stay
+    /// unchanged").
+    static func restartNoticeText(for scope: ProviderAccountScopeOption) -> String? {
+        switch scope {
+        case .thisSession:
+            "Switching now restarts this session. Your conversation is kept."
+        case .allCurrentSessions:
+            "Switching now restarts every 10x-managed session using this provider. Conversations are kept."
+        case .allNewSessions:
+            nil
+        }
     }
 }
 
@@ -112,13 +133,16 @@ struct ProviderAccountSwitchConfirmationView: View {
         ProviderAccountSwitchConfirmationPresentation(accountLabel: accountLabel)
     }
 
-    /// "All new sessions" only sets the provider's primary account for
-    /// sessions started later; it restarts nothing (see its own option
-    /// message: "Existing sessions stay unchanged"). The notice would be
-    /// false for that scope, so it only shows for the two scopes that
-    /// actually restart something today.
-    private var showsRestartNotice: Bool {
-        requiresRestartToSwitch && selectedScope != .allNewSessions
+    /// `nil` whenever there is nothing to warn about: `requiresRestartToSwitch`
+    /// is false (the extension-backed tier switches in place), or the
+    /// selected scope is `.allNewSessions`, which restarts nothing (see its
+    /// own option message: "Existing sessions stay unchanged"). Otherwise
+    /// delegates to `ProviderAccountSwitchConfirmationPresentation
+    /// .restartNoticeText(for:)` for copy that actually matches the
+    /// selected scope.
+    private var restartNoticeText: String? {
+        guard requiresRestartToSwitch else { return nil }
+        return ProviderAccountSwitchConfirmationPresentation.restartNoticeText(for: selectedScope)
     }
 
     var body: some View {
@@ -152,8 +176,8 @@ struct ProviderAccountSwitchConfirmationView: View {
             .labelsHidden()
             .accessibilityLabel(presentation.message)
 
-            if showsRestartNotice {
-                Text(presentation.restartNoticeText)
+            if let restartNoticeText {
+                Text(restartNoticeText)
                     .font(TenXTypography.body(size: 11))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     .fixedSize(horizontal: false, vertical: true)
