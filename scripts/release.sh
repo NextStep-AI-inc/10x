@@ -10,18 +10,64 @@
 set -euo pipefail
 
 VERSION="${1:?usage: release.sh <version> [--no-publish]}"
+
+# SUFeedURL points at releases/latest/download/appcast.xml, and GitHub picks Latest by
+# date and semver. A prerelease tag published without --prerelease therefore becomes
+# Latest and every installed 10x is offered it on its next check, correctly signed and
+# notarized, with nothing looking wrong at any step. Refuse the shape outright: shipping
+# a channel is a deliberate feature, not something a tag suffix should do by accident.
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "error: '$VERSION' is not a plain X.Y.Z version." >&2
+  echo "Prerelease and build-metadata tags are refused because the update feed reads" >&2
+  echo "releases/latest, so publishing one would offer it to every stable install." >&2
+  echo "Adding a prerelease channel means giving it its own feed, not relaxing this." >&2
+  exit 1
+fi
 PUBLISH="${2:-publish}"
-SPARKLE_VERSION="2.9.6"   # must match Package.resolved; the tools and the framework are a pair
+# Read from Package.resolved rather than duplicated here: signing an archive with tools
+# from a different Sparkle release than the framework the app embeds is a silent way to
+# produce an appcast the shipped app refuses. A literal here drifts the moment the
+# package is bumped.
+SPARKLE_VERSION="$(sed -n 's/.*"version" : "\([0-9][^"]*\)".*/\1/p' \
+  10x.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved | head -1)"
+[ -n "$SPARKLE_VERSION" ] || { echo "error: could not read the Sparkle version from Package.resolved" >&2; exit 1; }
+# Digest of the pinned release asset. Update alongside Package.resolved; recompute with
+#   curl -fsSL <asset-url> | shasum -a 256
+# A case, not an associative array: macOS ships bash 3.2, where `declare -A` does not
+# exist. This script has already been bitten once by assuming bash 4 semantics.
+case "$SPARKLE_VERSION" in
+  2.9.6) SPARKLE_TARBALL_SHA256="52bf9e88cdd972fc0c81501377a880e90d47031bd8ca5462488f843e2609e192" ;;
+  *)     SPARKLE_TARBALL_SHA256="" ;;
+esac
+if [ -z "$SPARKLE_TARBALL_SHA256" ]; then
+  echo "error: no pinned digest for Sparkle $SPARKLE_VERSION." >&2
+  echo "Package.resolved moved without the tools pin following it. Add the digest to" >&2
+  echo "SPARKLE_TARBALL_SHA256_BY_VERSION in this script." >&2
+  exit 1
+fi
 REPO="NextStep-AI-inc/10x"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 BUILD_NUMBER="$(git rev-list --count HEAD)"
-if [ "$BUILD_NUMBER" -le 1 ]; then
-  echo "error: git rev-list --count HEAD returned $BUILD_NUMBER." >&2
-  echo "The checkout is shallow. Sparkle compares CFBundleVersion, so every" >&2
-  echo "release would claim to be build 1. Fetch full history and retry." >&2
+
+# A shallow clone makes the count meaningless. Ask git directly rather than inferring
+# it from a low number: fetch-depth 2 sails past a `-le 1` check.
+if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+  echo "error: the checkout is shallow, so git rev-list --count HEAD is meaningless." >&2
+  echo "Sparkle compares CFBundleVersion. Fetch full history (fetch-depth: 0)." >&2
+  exit 1
+fi
+
+# The count is not monotonic across branches. Releasing a lower CFBundleVersion than the
+# one already advertised strands every install: Sparkle sees no upgrade and says nothing.
+PUBLISHED_BUILD="$(curl -fsSL "https://github.com/$REPO/releases/latest/download/appcast.xml" 2>/dev/null \
+  | sed -n 's/.*<sparkle:version>\([0-9][0-9]*\)<.*/\1/p' | head -1)"
+if [ -n "$PUBLISHED_BUILD" ] && [ "$BUILD_NUMBER" -le "$PUBLISHED_BUILD" ]; then
+  echo "error: this build is $BUILD_NUMBER but the live feed already advertises $PUBLISHED_BUILD." >&2
+  echo "Sparkle compares CFBundleVersion, so publishing this would strand every install" >&2
+  echo "on the newer build with no upgrade offered and no error shown." >&2
   exit 1
 fi
 
@@ -41,8 +87,9 @@ echo "==> Generating the project"
 XCODEPROJ_VERSION=1.27.0
 if ! ruby -e "gem 'xcodeproj', '$XCODEPROJ_VERSION'" >/dev/null 2>&1; then
   echo "    installing xcodeproj $XCODEPROJ_VERSION"
-  gem install xcodeproj -v "$XCODEPROJ_VERSION" --no-document \
-    || sudo gem install xcodeproj -v "$XCODEPROJ_VERSION" --no-document
+  # Deliberately no sudo fallback: this machine holds the Developer ID key on the local
+  # path, and a compromised or typosquatted gem should not be able to ask for root.
+  gem install xcodeproj -v "$XCODEPROJ_VERSION" --no-document --user-install
 fi
 ruby -e "gem 'xcodeproj', '$XCODEPROJ_VERSION'; load 'scripts/generate_xcodeproj.rb'"
 
@@ -88,6 +135,17 @@ echo "==> Fetching Sparkle $SPARKLE_VERSION tools"
 # to produce an appcast the shipped app refuses.
 curl -fsSL -o "$BUILD/sparkle.tar.xz" \
   "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
+
+# Verify before extracting: the binary inside is handed --ed-key-file, i.e. the release
+# signing key. Release assets are immutable, so a pinned digest is a fair guard.
+ACTUAL_SHA="$(shasum -a 256 "$BUILD/sparkle.tar.xz" | awk '{print $1}')"
+if [ "$ACTUAL_SHA" != "$SPARKLE_TARBALL_SHA256" ]; then
+  echo "error: Sparkle $SPARKLE_VERSION tarball digest mismatch." >&2
+  echo "  expected $SPARKLE_TARBALL_SHA256" >&2
+  echo "  actual   $ACTUAL_SHA" >&2
+  echo "Refusing to run an unverified binary that is about to be given the signing key." >&2
+  exit 1
+fi
 mkdir -p "$BUILD/sparkle"
 tar -xJf "$BUILD/sparkle.tar.xz" -C "$BUILD/sparkle"
 
@@ -105,8 +163,43 @@ fi
   --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
   "$DIST"
 
-grep -q 'sparkle:edSignature' "$DIST/appcast.xml" || {
-  echo "error: the appcast carries no EdDSA signature. Sparkle will reject it." >&2
+# The two traps this pipeline has actually hit were both "the appcast parses and points
+# somewhere wrong", so check what it says rather than only that it exists. Each of these
+# would otherwise publish an artifact that installs fine and can never be updated from.
+APPCAST="$DIST/appcast.xml"
+
+grep -q 'sparkle:edSignature' "$APPCAST" || {
+  echo "error: the appcast carries no EdDSA signature. Every client would reject it." >&2
+  exit 1
+}
+
+# A signature made with the wrong key parses and publishes, then is silently rejected by
+# every install. Assert the key that signed it is the one the shipped app trusts.
+PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" App/Info.plist)"
+SIGNING_KEY="$("$BUILD/sparkle/bin/generate_keys" -p 2>/dev/null | tr -d '[:space:]')"
+if [ -n "$SIGNING_KEY" ] && [ "$SIGNING_KEY" != "$PUBLIC_KEY" ]; then
+  echo "error: signing key does not match SUPublicEDKey in App/Info.plist." >&2
+  echo "The appcast would publish cleanly and be rejected by every installed copy." >&2
+  exit 1
+fi
+
+grep -q "releases/download/v$VERSION/" "$APPCAST" || {
+  echo "error: enclosure does not point at releases/download/v$VERSION/." >&2
+  echo "The feed is served from latest/download, so a wrong prefix downloads the" >&2
+  echo "wrong artifact or nothing at all." >&2
+  exit 1
+}
+
+grep -q "<sparkle:shortVersionString>$VERSION<" "$APPCAST" || {
+  echo "error: appcast advertises a different version than $VERSION." >&2
+  exit 1
+}
+
+# Closes the loop on the shallow-clone class: proves the CFBundleVersion override
+# actually reached the built app rather than silently defaulting.
+grep -q "<sparkle:version>$BUILD_NUMBER<" "$APPCAST" || {
+  echo "error: appcast advertises a different build than $BUILD_NUMBER." >&2
+  echo "The CURRENT_PROJECT_VERSION override did not reach the built app." >&2
   exit 1
 }
 
@@ -116,8 +209,11 @@ if [ "$PUBLISH" = "--no-publish" ]; then
 fi
 
 echo "==> Publishing v$VERSION"
+# --verify-tag: without it gh creates a missing tag at the DEFAULT BRANCH head, not the
+# commit that was built, so the release would ship code from somewhere else.
 gh release create "v$VERSION" \
-  "$ZIP" "$DIST/appcast.xml" \
+  "$ZIP" "$APPCAST" \
+  --verify-tag \
   --repo "$REPO" \
   --title "10x $VERSION" \
   --generate-notes

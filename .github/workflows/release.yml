@@ -12,13 +12,21 @@ jobs:
   release:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to a SHA, not a moving tag: this job imports the Developer ID key into a
+      # keychain and writes the Sparkle signing key to disk.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          # The job's only auth need is GH_TOKEN, supplied to the release step directly.
+          persist-credentials: false
           # Sparkle compares CFBundleVersion, which release.sh derives from the
           # commit count. A shallow checkout makes every release claim build 1.
           fetch-depth: 0
 
       - name: Select the Xcode toolchain
+        env:
+          # Escape hatch for pinning an exact build while diagnosing toolchain skew.
+          # Set as a repository variable; empty means take the newest 26.x.
+          XCODE_PREFERRED: ${{ vars.XCODE_PREFERRED }}
         run: |
           set -euo pipefail
           # The project is developed and tested against Xcode 26.x (Swift 6.3). The
@@ -33,22 +41,28 @@ jobs:
           if [ -n "${XCODE_PREFERRED:-}" ] && [ -d "/Applications/${XCODE_PREFERRED}.app" ]; then
             NEWEST="/Applications/${XCODE_PREFERRED}.app"
           else
+            # Compare with sort -V, not glob order. Globbing is lexicographic, so the
+            # previous "keep the last match" loop would pick 26.3 over 26.10.
+            BEST_VERSION=""
             for app in /Applications/Xcode*.app; do
               [ -d "$app" ] || continue
               v=$(/usr/bin/defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo 0)
               major=${v%%.*}
-              if [ "$major" -ge 26 ] 2>/dev/null; then NEWEST="$app"; fi
+              [ "$major" -ge 26 ] 2>/dev/null || continue
+              if [ -z "$BEST_VERSION" ] || \
+                 [ "$(printf '%s\n%s\n' "$BEST_VERSION" "$v" | sort -V | tail -1)" = "$v" ]; then
+                BEST_VERSION="$v"; NEWEST="$app"
+              fi
             done
           fi
           if [ -z "$NEWEST" ]; then
             echo "::error::No Xcode 26 or newer on this runner image."
             exit 1
           fi
-          # KNOWN LIMITATION as of 2026-08-27: App/Resources/AppIcon.icon is an Icon
-          # Composer asset authored in Xcode 26.6. Runner images top out at 26.3, and
-          # actool on 26.2 and 26.3 both crash compiling it (CompileAssetCatalogVariant,
-          # nonzero exit). Until runner images ship 26.6, releases must be cut locally
-          # with scripts/release.sh, which runs the identical chain.
+          # The app icon ships as a prebuilt App/Resources/AppIcon.icns rather than an
+          # Icon Composer .icon, because actool on every runner Xcode crashes compiling
+          # a .icon authored in 26.6. The .icon stays in the repo as the authoring
+          # source but is not a build resource. See scripts/generate_xcodeproj.rb.
           echo "Selecting $NEWEST"
           sudo xcode-select -s "$NEWEST/Contents/Developer"
           xcodebuild -version
@@ -94,6 +108,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: scripts/release.sh "${GITHUB_REF_NAME#v}"
 
-      - name: Remove the signing key
+      - name: Remove the signing key and keychain
         if: always()
-        run: rm -Pf "$RUNNER_TEMP/sparkle_key"
+        run: |
+          rm -Pf "$RUNNER_TEMP/sparkle_key"
+          security list-keychain -d user -s login.keychain || true
+          security delete-keychain "$RUNNER_TEMP/build.keychain" || true
