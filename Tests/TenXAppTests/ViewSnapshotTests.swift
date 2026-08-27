@@ -2500,11 +2500,20 @@ private func awaitingOutputController() -> SessionController {
                     onAddExistingFolder: {}),
                 controlsMode: .newSession,
                 onSend: {})
+            ComposerView(
+                draft: .constant(String(repeating: "This prompt is far too long to show in full. ", count: 12)),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controlsMode: .newSession,
+                onSend: {})
         }
             .frame(width: 620)
             .padding(24),
         name: "composer-placeholder-and-growth",
-        size: CGSize(width: 700, height: 420))
+        size: CGSize(width: 700, height: 760))
 }
 
 @MainActor
