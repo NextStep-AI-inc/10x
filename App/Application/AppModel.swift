@@ -64,6 +64,15 @@ final class AppModel {
         sessionActivityRegistry.activeCounts
     }
 
+    var menuState: AppMenuState {
+        AppMenuState(
+            route: route,
+            sessions: sessions,
+            activeSessionPath: activeSession?.sessionPath,
+            runtimeState: activeSession?.runtimeState,
+            isSessionMutationInFlight: isSessionMutationInFlight)
+    }
+
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private var exitTask: Task<Void, Never>?
     @ObservationIgnored private var archivedReloadGeneration = 0
@@ -310,6 +319,16 @@ final class AppModel {
         guard let metadata = sessions.first(where: { $0.path == result.sessionPath }) else { return }
         closeSearch()
         openSession(metadata)
+    }
+
+    func openPreviousSession() {
+        guard let session = menuState.previousSession else { return }
+        openSession(session)
+    }
+
+    func openNextSession() {
+        guard let session = menuState.nextSession else { return }
+        openSession(session)
     }
 
     func openSession(_ metadata: SessionMetadata) {
@@ -572,13 +591,25 @@ final class AppModel {
     }
 
     func archiveSession(_ metadata: SessionMetadata) async {
+        await archiveSession(path: metadata.path, subject: sessionDisplayName(metadata))
+    }
+
+    func archiveCurrentSession() async {
+        guard let path = menuState.currentSessionPath else { return }
+        let subject = sessions.first(where: { $0.path == path }).map(sessionDisplayName)
+            ?? activeSession?.title
+            ?? "Untitled session"
+        await archiveSession(path: path, subject: subject)
+    }
+
+    private func archiveSession(path: String, subject: String) async {
         guard beginSessionMutation() else { return }
         defer { endSessionMutation() }
         await mutateActive(
-            paths: [metadata.path],
+            paths: [path],
             action: "archive",
-            subject: sessionDisplayName(metadata)) {
-                await dependencies.sessionLibrary.archive(paths: [metadata.path])
+            subject: subject) {
+                await dependencies.sessionLibrary.archive(paths: [path])
             }
     }
 

@@ -44,6 +44,9 @@ struct TenXApp: App {
         .defaultSize(width: 1180, height: 760)
         .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            TenXCommands(model: model)
+        }
     }
 }
 

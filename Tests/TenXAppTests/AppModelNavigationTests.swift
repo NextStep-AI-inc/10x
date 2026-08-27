@@ -175,7 +175,7 @@ import OmpKit
     let session = try #require(model.sessions.first)
     model.route = .session(session.path)
 
-    await model.archiveSession(session)
+    await model.archiveCurrentSession()
 
     #expect(model.route == .newSession)
     #expect(model.activeSession == nil)
