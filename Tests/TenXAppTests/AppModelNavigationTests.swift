@@ -427,8 +427,8 @@ import OmpKit
 
     model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
 
-    for _ in 0..<100 where model.activeSession?.isRecoveryPresented != true {
-        try await Task.sleep(for: .milliseconds(20))
+    _ = await settles {
+        model.activeSession?.isRecoveryPresented == true && coordinator.managedSessions.isEmpty
     }
     #expect(model.activeSession?.isRecoveryPresented == true)
     #expect(coordinator.managedSessions.isEmpty)
@@ -496,8 +496,8 @@ import OmpKit
 
     model.startNewSession(prompt: "Start")
 
-    for _ in 0..<100 where model.activeSession?.isRecoveryPresented != true {
-        try await Task.sleep(for: .milliseconds(20))
+    _ = await settles {
+        model.activeSession?.isRecoveryPresented == true && coordinator.managedSessions.isEmpty
     }
     #expect(model.activeSession?.isRecoveryPresented == true)
     #expect(coordinator.managedSessions.isEmpty)
@@ -520,9 +520,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.providerActivityCounts["test"] != 1 {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    _ = await settles { model.providerActivityCounts["test"] == 1 }
 
     #expect(model.providerActivityCounts["test"] == 1)
     model.openNewSession()
@@ -983,12 +981,21 @@ private func navigationCommands(in url: URL) throws -> [String] {
         .map(String.init)
 }
 
-private func navigationLog(_ url: URL, eventuallyContains expected: String) async -> Bool {
-    for _ in 0..<100 {
-        if (try? navigationCommands(in: url).contains(expected)) == true { return true }
+// Every wait in this file is on a spawned fixture process reaching some state, so
+// the budget has to cover that process starting under a fully parallel run, not
+// just the round trip. Matches the five seconds SessionControllerTests waits.
+@MainActor
+private func settles(_ predicate: @MainActor () -> Bool) async -> Bool {
+    let deadline = Date().addingTimeInterval(5)
+    while Date() < deadline {
+        if predicate() { return true }
         try? await Task.sleep(for: .milliseconds(20))
     }
-    return (try? navigationCommands(in: url).contains(expected)) == true
+    return predicate()
+}
+
+private func navigationLog(_ url: URL, eventuallyContains expected: String) async -> Bool {
+    await settles { (try? navigationCommands(in: url).contains(expected)) == true }
 }
 
 private struct StubbedOmpLocator: OmpLocating {
