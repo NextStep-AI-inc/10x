@@ -284,23 +284,25 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         publishLiveComposerSelection()
     }
 
-    /// `ProviderAccountSession` conformance, reached only by
-    /// `ProviderAccountCoordinator.applyDirectly` — the fallback `apply()`
-    /// uses when no `ProviderAccountRouting` backend is installed. The
-    /// live app always installs one in `AppModel.init`
-    /// (`ProviderAccountTieredRoutingBackend`, see
-    /// `ProviderAccountCoordinator.install(routingBackend:restartSession:)`),
-    /// so this method never runs in production; real routing goes through
-    /// that backend, which applies over the extension channel or a stock-OMP
-    /// session-file pin and reports the change back via the
-    /// `provider_account_changed` event frame, not this call. It stays only
-    /// to satisfy the protocol for callers — chiefly tests — that construct a
-    /// coordinator with no backend installed.
+    /// `ProviderAccountSession` conformance. Called from two places in
+    /// `ProviderAccountCoordinator`: `applyDirectly`, the fallback `apply()`
+    /// uses when no `ProviderAccountRouting` backend is installed (the live
+    /// app always installs one in `AppModel.init`, so that call site is
+    /// test-only in practice); and `restoreRemovalMutation`, unconditionally,
+    /// to re-pin a session back to an account being removed after a partial
+    /// reassignment failure — reachable in production via
+    /// `ProvidersView` → `ProviderManagementViewModel.removeAccount` →
+    /// `ProviderAccountCoordinator.removeAccount`'s reassignment-failure
+    /// branch, regardless of tier or backend.
     ///
     /// It used to send `set_session_provider_account`, an RPC command that
     /// existed only in the abandoned fork's `omp` and was never implemented
-    /// by any `omp` a user actually runs. That command no longer exists in
-    /// `RpcCommand`, so there is nothing left to send here.
+    /// by any `omp` a user actually runs — so this call already failed the
+    /// same way before Task 10 (a wire round-trip that always errored) as it
+    /// does now (an immediate throw). Both callers already catch and degrade
+    /// on failure (`applyDirectly` reports `.failed`;
+    /// `restoreRemovalMutation` falls back to `synchronizeState`), so this
+    /// throwing is not a behavior change, just a faster, honest one.
     func setProviderAccount(
         providerID: String,
         accountRef: String
