@@ -626,6 +626,32 @@ import Testing
     #expect(unavailableReplacement.isActionDisabled)
 }
 
+@Test func accountConnectionMetadataSurvivesTierRemovalRestriction() {
+    // A stock-tier row must keep exactly the same per-account metadata an
+    // extension-tier row shows — Primary, session count — never swap it out
+    // for the tier-wide capability sentence. That sentence is stated once
+    // under the provider header (`ProviderConnectionsView.removalUnavailableReason`)
+    // instead; the row only ever needs to know whether the tier disables its
+    // Remove button.
+    let account = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "private-ref",
+        label: "same@example.com",
+        order: 0,
+        detailLabel: "Personal")
+
+    let tierDisabled = ProviderAccountConnectionRowPresentation.make(
+        account: account,
+        isPrimary: true,
+        sessionCount: 2,
+        isPendingRemoval: false,
+        isRemovalDisabledByTier: true)
+
+    #expect(tierDisabled.status == "Primary · In use by 2 sessions")
+    #expect(tierDisabled.actionLabel == "Remove")
+    #expect(tierDisabled.isActionDisabled)
+}
+
 @Test func removalConfirmationCopyNamesOnlyManagedSessionsAndUsesExactLastAccountWarning() {
     let normal = ProviderAccountRemovalConfirmationPresentation(
         providerName: "ChatGPT",

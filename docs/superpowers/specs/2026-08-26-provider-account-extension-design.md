@@ -289,17 +289,24 @@ guards an extension call rather than an RPC command.
 The tiers must be legible, because a control that silently does nothing is worse
 than an absent control.
 
-- Removal is unavailable in t1. The Connections row shows Remove disabled with
-  the reason, and points at the OMP command that can do it.
-- The scope confirmation names the session restart in t1.
-- A failed extension load is NOT announced as such. Dropped during Task 11:
-  10x cannot distinguish "the extension failed to load" from "no extension is
-  present" from "the version is unrecognized" — all three yield the same absent
-  or incompatible hello, so any string naming a cause would be a guess presented
-  as fact. The tier's real limits are already surfaced at the point of action
-  instead, which is better than a banner: removal is disabled on the row where
-  the user would click Remove, and the restart is named in the dialog where they
-  confirm a switch. Degradation stays visible without inventing a diagnosis.
+- Removal is unavailable in t1. Remove is disabled on every row; the reason
+  is named once, under the affected provider's header, rather than repeated
+  on every row where it would crowd out each account's own Primary/session
+  metadata. (Revised after Task 11 shipped this per-row, identically on every
+  account — a visual regression against the established Connections design,
+  fixed by moving the one true section-wide fact to the section header.)
+- The scope confirmation names the session restart in t1, as part of the
+  selected scope's own description inside the radio group — an attribute of
+  the choice the user is looking at, not a separate notice floating below
+  the list.
+- A failed extension load is NOT diagnosed. 10x cannot distinguish "the
+  extension failed to load" from "no extension is present" from "the version
+  is unrecognized" — all three yield the same absent or incompatible hello,
+  so any string naming a cause would be a guess presented as fact. Both the
+  removal reason and the restart notice state only what 10x can verify, never
+  why the extension is absent. This is also why Connections carries no
+  separate degradation banner: the tier's real limits already surface at
+  Remove and at the switch dialog, without inventing a diagnosis.
 - No tier ever presents a control it cannot honor.
 
 ## Testing

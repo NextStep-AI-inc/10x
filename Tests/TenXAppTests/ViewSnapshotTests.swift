@@ -637,12 +637,23 @@ import Testing
     // `.stockOMP`: per-account identity is present (the fixture below carries
     // it) but no extension hello is installed, matching a live app before any
     // session channel attaches, or a genuinely stock `omp`. Remove must be
-    // disabled on every row with the reason, never silently offered as if
-    // the extension were backing it.
+    // disabled on every row, with the tier-wide reason stated once under the
+    // provider header rather than repeated per row.
+    //
+    // Mirrors `providerAccountConnectionsRowsSnapshot`'s fixture and
+    // coordinator setup exactly (same accounts, same primary, same session
+    // counts) so the two reference images differ only in what the tier
+    // actually changes — the disabled Remove buttons and the one section
+    // note — not in incidental fixture drift. Restoring Primary/session
+    // metadata to this tier is the point of this reference; a fixture that
+    // never populated that data would restore nothing to look at.
     let personal = AccountSnapshotEntry(
         accountID: "a1", email: "same@example.com", orgName: "Personal", remainingFraction: nil)
     let work = AccountSnapshotEntry(
-        accountID: "a2", email: "same@example.com", orgName: "Work", remainingFraction: nil)
+        accountID: "a2", email: "same@example.com", orgName: "Work",
+        isDisabled: true, remainingFraction: nil)
+    let personalRef = personal.accountRef(providerID: providerID)
+    let workRef = work.accountRef(providerID: providerID)
     let service = FakeProviderService(providers: [ProviderLoginProvider(
         id: providerID,
         name: "ChatGPT",
@@ -661,6 +672,20 @@ import Testing
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let coordinator = ProviderAccountCoordinator(
         primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        personalRef,
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: workRef))
 
     try assertSnapshot(
         ProvidersView(model: model, accountCoordinator: coordinator),

@@ -166,6 +166,19 @@ struct ProviderAccountSwitchConfirmationView: View {
                             .font(TenXTypography.body(size: 11))
                             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                             .fixedSize(horizontal: false, vertical: true)
+                        // Consequence of the selected choice, told the same
+                        // way the choice itself is: an indented continuation
+                        // of this option's own description, not a page-level
+                        // statement. Gated on the selected scope, not shown
+                        // for every option — showing every scope's
+                        // consequence at once would change what information
+                        // is on screen, not just where it sits.
+                        if option.scope == selectedScope, let restartNoticeText {
+                            Text(restartNoticeText)
+                                .font(TenXTypography.body(size: 11))
+                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     .tag(option.scope)
                     .disabled(satisfaction.isSatisfied(option.scope))
@@ -175,13 +188,6 @@ struct ProviderAccountSwitchConfirmationView: View {
             .pickerStyle(.radioGroup)
             .labelsHidden()
             .accessibilityLabel(presentation.message)
-
-            if let restartNoticeText {
-                Text(restartNoticeText)
-                    .font(TenXTypography.body(size: 11))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
 
             HStack(spacing: 10) {
                 Spacer()

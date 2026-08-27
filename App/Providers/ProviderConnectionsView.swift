@@ -134,11 +134,24 @@ struct ProviderConnectionsView: View {
 
     private func accountGroup(_ provider: ProviderLoginProvider) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(provider.companyName)
-                .font(TenXTypography.body(size: 14, weight: .semibold))
-                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                .padding(.top, 16)
-                .padding(.bottom, 5)
+            // Title + muted subtitle, scoped to this provider's header the
+            // same way both account confirmation dialogs scope standing
+            // context to their title (`ProviderAccountSwitchConfirmationView`,
+            // `ProviderAccountRemovalConfirmationView`) — stays flush with
+            // the header while the rows below indent, so it reads as
+            // section-level rather than another row's metadata.
+            VStack(alignment: .leading, spacing: 3) {
+                Text(provider.companyName)
+                    .font(TenXTypography.body(size: 14, weight: .semibold))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                if let removalUnavailableReason {
+                    Text(removalUnavailableReason)
+                        .font(TenXTypography.body(size: 12))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                }
+            }
+            .padding(.top, 16)
+            .padding(.bottom, 5)
 
             ForEach(accountsByProviderID[provider.id] ?? []) { account in
                 ProviderAccountConnectionRowView(
@@ -151,7 +164,7 @@ struct ProviderConnectionsView: View {
                         providerID: provider.id,
                         accountRef: account.accountRef)),
                     canRemove: canRemove(account, from: provider),
-                    removalUnavailableReason: removalUnavailableReason,
+                    isRemovalDisabledByTier: removalUnavailableReason != nil,
                     removeButtonFocus: $focusedRemoveAccountID,
                     onRemove: { onRemove(provider, account) })
                     .padding(.leading, 16)
@@ -208,22 +221,23 @@ struct ProviderConnectionsView: View {
     }
 
     /// `nil` when the active tier can remove accounts at all; otherwise the
-    /// reason shown on every row, since the restriction applies uniformly
-    /// across every account regardless of that account's own eligible
-    /// replacements. Reuses `ProviderAccountTier.supportsRemoval` rather than
-    /// re-deriving which tiers allow removal.
+    /// tier-wide reason, stated once under this provider's header rather
+    /// than repeated on every row — the restriction applies uniformly across
+    /// every account here, so per-row repetition added nothing but noise.
+    /// Reuses `ProviderAccountTier.supportsRemoval` rather than re-deriving
+    /// which tiers allow removal.
     ///
     /// States the fact 10x can actually verify, not a cause it cannot: an
     /// absent, incompatible, and failed-to-load extension all fail
     /// `ProviderAccountTier.detect` the same way — a nil or wrong-version
     /// hello — so 10x has no way to tell those apart, and naming "this
-    /// version of OMP" as the reason (the previous copy) would be a guess
-    /// presented as fact. Same no-diagnosis reasoning that already dropped
-    /// this feature's degradation banner (task-10b, "the unprovable
-    /// degradation notice").
+    /// version of OMP" as the reason (an earlier draft of this copy) would
+    /// be a guess presented as fact. Same no-diagnosis reasoning that
+    /// already dropped this feature's degradation banner (task-10b, "the
+    /// unprovable degradation notice").
     private var removalUnavailableReason: String? {
         guard !accountTier.supportsRemoval else { return nil }
-        return "Removing accounts isn't available without a connected extension."
+        return "Account removal requires a connected extension."
     }
 
     private func recovery(message: String) -> some View {
