@@ -48,6 +48,7 @@ final class SessionController: ComposerSessionControlling {
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
     private let activityRegistry: SessionActivityRegistry?
+    private let titleGenerator: OmpSessionTitleGenerator?
     private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
@@ -58,11 +59,13 @@ final class SessionController: ComposerSessionControlling {
     private var snapshotTask: Task<Void, Never>?
     private var controlTask: Task<Void, Never>?
     private var reconciliationTask: Task<Void, Never>?
+    private var titleGenerationTask: Task<Void, Never>?
     private var openingTask: Task<SessionProcessManager.Handle, any Error>?
     private var openingTaskToken: UInt64?
     private var openingCloseTask: Task<Void, Never>?
     private var reconciliationGeneration: UInt64 = 0
     private var pipelineGeneration: UInt64 = 0
+    private var titleGenerationGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var isSendInFlight = false
@@ -81,11 +84,13 @@ final class SessionController: ComposerSessionControlling {
         processManager: SessionProcessManager,
         id: UUID = UUID(),
         activityRegistry: SessionActivityRegistry? = nil,
+        titleGenerator: OmpSessionTitleGenerator? = nil,
         historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
     ) {
         self.processManager = processManager
         self.id = id
         self.activityRegistry = activityRegistry
+        self.titleGenerator = titleGenerator
         self.historyLoader = historyLoader
     }
 
@@ -103,6 +108,7 @@ final class SessionController: ComposerSessionControlling {
         id: UUID = UUID(),
         providerID: String? = nil,
         activityRegistry: SessionActivityRegistry? = nil,
+        titleGenerator: OmpSessionTitleGenerator? = nil,
         historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
     ) {
         self.processManager = processManager
@@ -116,6 +122,7 @@ final class SessionController: ComposerSessionControlling {
         self.id = id
         self.providerID = providerID
         self.activityRegistry = activityRegistry
+        self.titleGenerator = titleGenerator
     }
 
     var isComposerAvailable: Bool {
@@ -321,6 +328,12 @@ final class SessionController: ComposerSessionControlling {
                 message: message,
                 images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
+            guard isCurrent(context) else { return }
+            startTitleGenerationIfNeeded(
+                prompt: message,
+                behavior: behavior,
+                handle: handle,
+                context: context)
         } catch {
             // Nothing reached omp, so the text is still the user's to send.
             if isCurrent(context), draft.isEmpty {
@@ -328,6 +341,47 @@ final class SessionController: ComposerSessionControlling {
                 attachments = staged
             }
             fail(error, function: "sendPrompt", context: context)
+        }
+    }
+
+    private func startTitleGenerationIfNeeded(
+        prompt: String,
+        behavior: StreamingBehavior?,
+        handle: SessionProcessManager.Handle,
+        context: PipelineContext
+    ) {
+        guard behavior == nil,
+              title == "New session" || title == "Untitled session",
+              titleGenerationTask == nil,
+              let titleGenerator,
+              let provider = liveComposerSelection.provider,
+              let modelID = liveComposerSelection.modelID
+        else { return }
+
+        titleGenerationGeneration &+= 1
+        let generation = titleGenerationGeneration
+        titleGenerationTask = Task { [weak self, titleGenerator] in
+            let generatedTitle = await titleGenerator.generate(
+                prompt: prompt,
+                provider: provider,
+                modelID: modelID)
+            guard let self else { return }
+            defer {
+                if self.titleGenerationGeneration == generation {
+                    self.titleGenerationTask = nil
+                }
+            }
+            guard let generatedTitle,
+                  self.isCurrent(context),
+                  self.title == "New session" || self.title == "Untitled session"
+            else { return }
+            do {
+                _ = try await handle.client.send(.setSessionName(generatedTitle))
+                guard self.isCurrent(context) else { return }
+                self.title = generatedTitle
+            } catch {
+                return
+            }
         }
     }
 
@@ -555,12 +609,15 @@ final class SessionController: ComposerSessionControlling {
         snapshotTask?.cancel()
         controlTask?.cancel()
         reconciliationTask?.cancel()
+        titleGenerationTask?.cancel()
+        titleGenerationGeneration &+= 1
         openingTask = nil
         openingTaskToken = nil
         eventTask = nil
         snapshotTask = nil
         controlTask = nil
         reconciliationTask = nil
+        titleGenerationTask = nil
         if previousOpeningCloseTask != nil || openingTaskToClose != nil {
             openingCloseTask = Task { [processManager] in
                 await previousOpeningCloseTask?.value

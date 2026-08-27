@@ -198,6 +198,7 @@
 		D9A3A45C8608807D61347280DF5782DD /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 172EECE87F09A0B1731B9CFB378E4A3C /* MessageBubbleView.swift */; };
 		DA307B67B07D101513FB9D1DB67A4BAC /* ProviderConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37B752C3C613E3C5F84426783D5EDDA1 /* ProviderConnectionsView.swift */; };
 		DA3524B10DDF81F245041CD22C0077E7 /* OmpExecutableLocatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2A1BA39530EBB6E282C5207FC5CF52 /* OmpExecutableLocatorTests.swift */; };
+		DA6AFB23E8A8178C6B59A8956FED951E /* OmpSessionTitleGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98664CB7EF67FE5D6112EEABA9364EA8 /* OmpSessionTitleGenerator.swift */; };
 		DAACD24360C0942AEBED526DCBA27101 /* ArchivedSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A48D1A0B6CD1705C516A105AE2829607 /* ArchivedSessionsView.swift */; };
 		DAE06B532ACC2581DADB33E9F5197108 /* SessionSearchServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70AB4A88F6FE5E535416E3D4BDEDC01 /* SessionSearchServiceTests.swift */; };
 		DAFC10D81A6D0C4D1983EFF4610A4829 /* ProviderUsageDockLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 750C935A8BED92CD49108D54039E91B3 /* ProviderUsageDockLayoutTests.swift */; };
@@ -363,6 +364,7 @@
 		96ABF3DD1037317D6B61BA9DFFD6BEA0 /* ToolContentExtractorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolContentExtractorTests.swift; path = Tests/TenXAppTests/ToolContentExtractorTests.swift; sourceTree = "<group>"; };
 		96D5F1D5CE8D07D7C5BCF906B5FB09F1 /* BrandActionsMenuView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BrandActionsMenuView.swift; path = App/Shell/BrandActionsMenuView.swift; sourceTree = "<group>"; };
 		974783DE436CE196147C1685500F4D4E /* TranscriptView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptView.swift; path = App/Sessions/TranscriptView.swift; sourceTree = "<group>"; };
+		98664CB7EF67FE5D6112EEABA9364EA8 /* OmpSessionTitleGenerator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpSessionTitleGenerator.swift; path = App/Sessions/OmpSessionTitleGenerator.swift; sourceTree = "<group>"; };
 		98775BD093FA022D339581EA26BE6D53 /* 10x.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = 10x.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		99AF55E14B238A681359594E9F4F8DE1 /* ProviderUsageDockLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageDockLayout.swift; path = App/Providers/ProviderUsageDockLayout.swift; sourceTree = "<group>"; };
 		99B38E50D7808478EE8222F8C7A8A976 /* FileReferenceActivation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileReferenceActivation.swift; path = App/FileReferences/FileReferenceActivation.swift; sourceTree = "<group>"; };
@@ -554,6 +556,7 @@
 				D51EFD581EEFD45A453F1875E53AC1AF /* ModelPickerFlyout.swift */,
 				10501AD41B3A5052F923723AA964D9BA /* NewSessionView.swift */,
 				43C5C495F1DEB1D0188A175AA9D44304 /* OmpModelCatalogService.swift */,
+				98664CB7EF67FE5D6112EEABA9364EA8 /* OmpSessionTitleGenerator.swift */,
 				B6DD98A8B79DC599CD01C6860A3D07AE /* RecentModelStore.swift */,
 				CCD51B51845667C84FE0956EBE30D561 /* ResponseMetadataView.swift */,
 				5BB8763379A60FF807A6B74B58B7F1B1 /* RuntimeRecoveryView.swift */,
@@ -915,6 +918,7 @@
 				F850BFA95403E93F71BFB3DC48DCD8A5 /* ModelPickerFlyout.swift in Sources */,
 				566CFAF9B3FC51F49F17828D614F1CD5 /* NewSessionView.swift in Sources */,
 				11B903949A97DDB84F83CE59D799E889 /* OmpModelCatalogService.swift in Sources */,
+				DA6AFB23E8A8178C6B59A8956FED951E /* OmpSessionTitleGenerator.swift in Sources */,
 				F60B3EE489531A3A35F1D4D621F38246 /* RecentModelStore.swift in Sources */,
 				780071B92477834E6C63A284475684C7 /* ResponseMetadataView.swift in Sources */,
 				EB407C0645C444431FB8DF304E718205 /* RuntimeRecoveryView.swift in Sources */,

@@ -6,6 +6,11 @@ import Foundation
 /// it holds a single session and disposes of it when stdin closes. Each child
 /// is spawned with the session's project directory as its cwd, since that is
 /// the workspace its tools read and write.
+public enum SessionProcessManagerError: Error, Sendable, Equatable {
+    case duplicateSessionPath(String)
+    case missingSessionPath(String)
+}
+
 public actor SessionProcessManager {
     public struct Handle: Sendable {
         public let sessionPath: String
@@ -49,9 +54,42 @@ public actor SessionProcessManager {
         let handle: WarmHandle
     }
 
+    private final class OpenCompletion: @unchecked Sendable {
+        private let lock = NSLock()
+        private var result: Result<Handle, any Error>?
+        private var waiters: [CheckedContinuation<Handle, any Error>] = []
+
+        func wait() async throws -> Handle {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.lock()
+                if let result {
+                    lock.unlock()
+                    continuation.resume(with: result)
+                } else {
+                    waiters.append(continuation)
+                    lock.unlock()
+                }
+            }
+        }
+
+        func resolve(_ result: Result<Handle, any Error>) {
+            lock.lock()
+            guard self.result == nil else {
+                lock.unlock()
+                return
+            }
+            self.result = result
+            let waiters = self.waiters
+            self.waiters.removeAll()
+            lock.unlock()
+            for waiter in waiters { waiter.resume(with: result) }
+        }
+    }
+
     private struct Opening {
         let id: UUID
         let task: Task<ManagedHandle, any Error>
+        let completion: OpenCompletion
     }
 
     private struct WarmOpening {
@@ -148,7 +186,7 @@ public actor SessionProcessManager {
         if let existing = handles[sessionPath] { return existing.handle }
         // Join an open already under way rather than spawning a second child.
         if let inFlight = opening[sessionPath] {
-            return try await inFlight.task.value.handle
+            return try await inFlight.completion.wait()
         }
         if let warm = takeWarmClient(projectDirectory: cwd) {
             let openingID = UUID()
@@ -159,7 +197,8 @@ public actor SessionProcessManager {
             let task = Task { () throws -> ManagedHandle in
                 try await self.checkOut(sessionPath: sessionPath, warm: warm)
             }
-            opening[sessionPath] = Opening(id: openingID, task: task)
+            let completion = OpenCompletion()
+            opening[sessionPath] = Opening(id: openingID, task: task, completion: completion)
 
             do {
                 let opened = try await task.value
@@ -168,17 +207,19 @@ public actor SessionProcessManager {
                     throw CancellationError()
                 }
                 await beforeWarmActivation?()
-                guard let handle = activateTransition(
+                guard let handle = try activateTransition(
                     managed: opened.managed,
                     openingID: openingID,
                     sessionPath: sessionPath
                 ) else {
                     throw await transitionExitError(for: opened.managed)
                 }
+                completion.resolve(.success(handle))
                 opening.removeValue(forKey: sessionPath)
                 return handle
             } catch {
                 if opening[sessionPath]?.id == openingID {
+                    completion.resolve(.failure(error))
                     opening.removeValue(forKey: sessionPath)
                 }
                 await discardTransition(managed: warm.managed)
@@ -201,7 +242,8 @@ public actor SessionProcessManager {
                 managed: managed,
                 handle: Handle(sessionPath: sessionPath, client: client))
         }
-        opening[sessionPath] = Opening(id: openingID, task: task)
+        let completion = OpenCompletion()
+        opening[sessionPath] = Opening(id: openingID, task: task, completion: completion)
 
         do {
             let opened = try await task.value
@@ -209,12 +251,14 @@ public actor SessionProcessManager {
                 await opened.managed.client.shutdown()
                 throw CancellationError()
             }
-            opening.removeValue(forKey: sessionPath)
             handles[sessionPath] = opened
             watchForExit(opened.managed)
+            completion.resolve(.success(opened.handle))
+            opening.removeValue(forKey: sessionPath)
             return opened.handle
         } catch {
             if opening[sessionPath]?.id == openingID {
+                completion.resolve(.failure(error))
                 opening.removeValue(forKey: sessionPath)
             }
             throw error
@@ -229,7 +273,9 @@ public actor SessionProcessManager {
         thinking: String? = nil
     ) async throws -> Handle {
         let openingID = UUID()
-        let fallbackPath = "new:\(canonicalProjectDirectory(projectDirectory)):\(UUID().uuidString)"
+        let project = canonicalProjectDirectory(projectDirectory)
+        let fallbackPath = "new:\(project):\(UUID().uuidString)"
+        let sessionDirectory = freshSessionDirectory(for: project)
         let managed: ManagedClient
         let isWarmCheckout: Bool
         let task: Task<ManagedHandle, any Error>
@@ -249,7 +295,9 @@ public actor SessionProcessManager {
                     _ = try await managed.client.send(.setThinkingLevel(thinking))
                 }
                 let state = try await managed.client.send(.getState())
-                let path = state.data?["sessionFile"]?.stringValue ?? fallbackPath
+                guard let path = state.data?["sessionFile"]?.stringValue else {
+                    throw SessionProcessManagerError.missingSessionPath(project)
+                }
                 return ManagedHandle(
                     managed: managed,
                     handle: Handle(sessionPath: path, client: managed.client))
@@ -261,14 +309,17 @@ public actor SessionProcessManager {
             configuration.provider = provider
             configuration.model = model
             configuration.thinking = thinking
+            configuration.extraArguments = ["--session-dir", sessionDirectory]
             let client = clientFactory(configuration)
             managed = ManagedClient(id: UUID(), client: client)
             isWarmCheckout = false
             beginTransition(managed: managed, openingID: openingID, sessionPath: fallbackPath)
             task = Task { () throws -> ManagedHandle in
                 try await client.start()
-                let state = try? await client.send(.getState())
-                let path = state?.data?["sessionFile"]?.stringValue ?? fallbackPath
+                let state = try await client.send(.getState())
+                guard let path = state.data?["sessionFile"]?.stringValue else {
+                    throw SessionProcessManagerError.missingSessionPath(project)
+                }
                 return ManagedHandle(
                     managed: managed,
                     handle: Handle(sessionPath: path, client: client))
@@ -283,7 +334,7 @@ public actor SessionProcessManager {
                 throw CancellationError()
             }
             if isWarmCheckout { await beforeWarmActivation?() }
-            guard let handle = activateTransition(
+            guard let handle = try activateTransition(
                 managed: opened.managed,
                 openingID: openingID,
                 sessionPath: opened.handle.sessionPath
@@ -302,7 +353,7 @@ public actor SessionProcessManager {
         }
     }
 
-    /// Starts a no-session client for a project, reusing a ready or in-flight child.
+    /// Starts a fresh persistent client for a project, reusing a ready or in-flight child.
     @discardableResult
     public func warm(projectDirectory: String) async throws -> WarmHandle {
         let project = canonicalProjectDirectory(projectDirectory)
@@ -314,11 +365,12 @@ public actor SessionProcessManager {
         let openingID = UUID()
         let factory = clientFactory
         let executable = executable
+        let sessionDirectory = freshSessionDirectory(for: project)
         let task = Task { () throws -> ManagedWarmHandle in
             var configuration = RpcClientConfiguration()
             configuration.executable = executable
             configuration.cwd = URL(filePath: project, directoryHint: .isDirectory)
-            configuration.noSession = true
+            configuration.extraArguments = ["--session-dir", sessionDirectory]
             let client = factory(configuration)
             try await client.start()
             let managed = ManagedClient(id: UUID(), client: client)
@@ -370,6 +422,7 @@ public actor SessionProcessManager {
     public func close(sessionPath: String) async {
         let inFlight = opening.removeValue(forKey: sessionPath)
         inFlight?.task.cancel()
+        inFlight?.completion.resolve(.failure(CancellationError()))
         if let inFlight { await closeTransitions(openingID: inFlight.id) }
         let handle = handles.removeValue(forKey: sessionPath)
         if let handle {
@@ -460,8 +513,11 @@ public actor SessionProcessManager {
         managed: ManagedClient,
         openingID: UUID,
         sessionPath: String
-    ) -> Handle? {
+    ) throws -> Handle? {
         guard transitions[managed.id]?.openingID == openingID else { return nil }
+        guard handles[sessionPath] == nil else {
+            throw SessionProcessManagerError.duplicateSessionPath(sessionPath)
+        }
         transitions.removeValue(forKey: managed.id)
         let handle = Handle(sessionPath: sessionPath, client: managed.client)
         handles[sessionPath] = ManagedHandle(managed: managed, handle: handle)
@@ -564,6 +620,13 @@ public actor SessionProcessManager {
         URL(filePath: projectDirectory)
             .resolvingSymlinksInPath()
             .standardizedFileURL
+            .path
+    }
+
+    private func freshSessionDirectory(for projectDirectory: String) -> String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".omp/agent/sessions")
+            .appendingPathComponent(SessionPathEncoding.bucketName(forCwd: projectDirectory))
             .path
     }
 }
