@@ -58,6 +58,40 @@ struct ModelPickerFlyout: View {
         sections.flatMap(\.models)
     }
 
+    /// Scroll targets in the same flat order as `flatModels`. Row ids collide by
+    /// design — the selected model shows under RECENT and under its provider —
+    /// so every target is section-qualified.
+    private var flatRowIDs: [String] {
+        sections.flatMap { section in
+            section.models.map { Self.rowID(section: section.id, model: $0.id) }
+        }
+    }
+
+    /// Spec: the highlight starts on the current selection, or on the first row
+    /// while a query is active.
+    private var selectedFlatIndex: Int {
+        flatModels.firstIndex { $0.id == selectedModel?.id } ?? 0
+    }
+
+    nonisolated static func rowID(section: String, model: String) -> String {
+        "\(section)/\(model)"
+    }
+
+    /// Flat keyboard index of a row, counting only rows in the sections above it.
+    nonisolated static func flatIndex(
+        sections: [ModelPickerSection],
+        section: Int,
+        row: Int
+    ) -> Int {
+        sections.prefix(section).reduce(row) { $0 + $1.models.count }
+    }
+
+    /// Clamped highlight movement: `delta` is -1 for Up and +1 for Down.
+    nonisolated static func highlightIndex(from current: Int, delta: Int, rowCount: Int) -> Int {
+        guard rowCount > 0 else { return 0 }
+        return min(max(current + delta, 0), rowCount - 1)
+    }
+
     private var listHeight: CGFloat {
         ModelPickerMetrics.listHeight(
             rowCount: flatModels.count,
@@ -66,8 +100,11 @@ struct ModelPickerFlyout: View {
 
     private var settingsHeight: CGFloat {
         var height: CGFloat = 0
+        if !thinkingOptions.isEmpty || isFastModeVisible {
+            height += ModelPickerMetrics.separatorHeight
+        }
         if !thinkingOptions.isEmpty {
-            height += ModelPickerMetrics.settingsRowHeight + ModelPickerMetrics.separatorHeight
+            height += ModelPickerMetrics.settingsRowHeight
         }
         if isFastModeVisible {
             height += ModelPickerMetrics.settingsRowHeight
@@ -125,9 +162,14 @@ struct ModelPickerFlyout: View {
         .task {
             await Task.yield()
             isSearchFocused = true
-            highlightedIndex = flatModels.firstIndex { $0.id == selectedModel?.id } ?? 0
+            highlightedIndex = selectedFlatIndex
         }
-        .onChange(of: query) { _, _ in highlightedIndex = 0 }
+        .onChange(of: query) { _, newQuery in
+            let isSearching = !newQuery
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+            highlightedIndex = isSearching ? 0 : selectedFlatIndex
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Model")
         .accessibilityValue(triggerTitle)
@@ -161,12 +203,16 @@ struct ModelPickerFlyout: View {
         guard !flatModels.isEmpty else { return .ignored }
         switch press.key {
         case .upArrow:
-            highlightedIndex = max(highlightedIndex - 1, 0)
+            highlightedIndex = Self.highlightIndex(
+                from: highlightedIndex, delta: -1, rowCount: flatModels.count)
             return .handled
         case .downArrow:
-            highlightedIndex = min(highlightedIndex + 1, flatModels.count - 1)
+            highlightedIndex = Self.highlightIndex(
+                from: highlightedIndex, delta: 1, rowCount: flatModels.count)
             return .handled
         case .return:
+            // Keyboard and pointer agree: no commit races an in-flight setModel.
+            guard !isMutating else { return .handled }
             guard flatModels.indices.contains(highlightedIndex) else { return .ignored }
             onSelectModel(flatModels[highlightedIndex])
             return .handled
@@ -184,29 +230,36 @@ struct ModelPickerFlyout: View {
         } else if sections.isEmpty {
             message("No models match that search.")
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(sections.enumerated()), id: \.element.id) { offset, section in
-                        sectionHeader(section.title)
-                        ForEach(Array(section.models.enumerated()), id: \.element.id) { index, model in
-                            ModelPickerRow(
-                                model: model,
-                                showsProviderTag: section.showsProviderTag,
-                                isSelected: model.id == selectedModel?.id,
-                                isHighlighted: flatIndex(section: offset, row: index)
-                                    == highlightedIndex,
-                                action: { onSelectModel(model) })
-                            .disabled(isMutating)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(sections.enumerated()), id: \.element.id) { offset, section in
+                            sectionHeader(section.title)
+                            ForEach(Array(section.models.enumerated()), id: \.element.id) { index, model in
+                                ModelPickerRow(
+                                    model: model,
+                                    showsProviderTag: section.showsProviderTag,
+                                    isSelected: model.id == selectedModel?.id,
+                                    isHighlighted: Self.flatIndex(
+                                        sections: sections,
+                                        section: offset,
+                                        row: index) == highlightedIndex,
+                                    action: { onSelectModel(model) })
+                                .disabled(isMutating)
+                                .id(Self.rowID(section: section.id, model: model.id))
+                            }
                         }
                     }
                 }
+                .frame(width: ModelPickerMetrics.panelWidth)
+                // The list caps at ten visible rows, so the highlight has to be
+                // carried into view or Return commits a model nobody can see.
+                .onChange(of: highlightedIndex) { _, index in
+                    guard flatRowIDs.indices.contains(index) else { return }
+                    proxy.scrollTo(flatRowIDs[index], anchor: .center)
+                }
             }
-            .frame(width: ModelPickerMetrics.panelWidth)
         }
-    }
-
-    private func flatIndex(section: Int, row: Int) -> Int {
-        sections.prefix(section).reduce(row) { $0 + $1.models.count }
     }
 
     private func message(_ text: String) -> some View {
@@ -233,8 +286,13 @@ struct ModelPickerFlyout: View {
 
     @ViewBuilder
     private var settingsRegion: some View {
-        if !thinkingOptions.isEmpty {
+        // One rule above the whole settings region: a Fast-mode-only model would
+        // otherwise abut the list with nothing dividing them.
+        if !thinkingOptions.isEmpty || isFastModeVisible {
             separator
+        }
+
+        if !thinkingOptions.isEmpty {
             HStack(spacing: 2) {
                 Text("EFFORT")
                     .font(TenXTypography.mono(size: 9, weight: .semibold))
@@ -251,7 +309,9 @@ struct ModelPickerFlyout: View {
                 height: ModelPickerMetrics.settingsRowHeight)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Effort")
-            .accessibilityValue(thinkingLevel)
+            // The chip reads lowercase per the spec diagram; only VoiceOver
+            // capitalizes, matching the footer chip this row replaced.
+            .accessibilityValue(thinkingLevel.capitalized)
         }
 
         if isFastModeVisible {

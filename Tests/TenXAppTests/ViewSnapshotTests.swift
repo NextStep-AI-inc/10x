@@ -1916,6 +1916,43 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
         size: CGSize(width: 340, height: 420))
 }
 
+/// A model with Fast mode and no thinking efforts still needs the rule above the
+/// settings region, or the Fast row abuts the list with nothing dividing them.
+@MainActor
+@Test func modelPickerFastModeOnlySnapshot() throws {
+    let sonnet = ComposerModelInfo(
+        modelID: "claude-sonnet-4-5",
+        name: "Claude Sonnet 4.5",
+        provider: "anthropic",
+        api: "anthropic-messages",
+        thinkingEfforts: [],
+        requiresEffort: false)
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [sonnet],
+        recents: [],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: sonnet,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: true,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: sonnet),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-fast-only",
+        size: CGSize(width: 340, height: 260))
+}
+
 @MainActor
 private func compactTranscriptController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)

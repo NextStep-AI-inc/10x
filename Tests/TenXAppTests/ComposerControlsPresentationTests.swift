@@ -214,3 +214,43 @@ private let noEffortModel = ComposerModelInfo(
     #expect(ModelPickerMetrics.bottomWidth(triggerWidth: 900)
         == ModelPickerMetrics.panelWidth)
 }
+
+@Test func flatIndexCountsOnlyTheRowsAboveASection() {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: pickerCatalog,
+        recents: [pickerCatalog[3]],
+        query: "")
+    // RECENT(1) + ANTHROPIC(2) + OPENAI-CODEX(1) + CURSOR(1)
+    #expect(sections.map(\.models.count) == [1, 2, 1, 1])
+    #expect(ModelPickerFlyout.flatIndex(sections: sections, section: 0, row: 0) == 0)
+    #expect(ModelPickerFlyout.flatIndex(sections: sections, section: 1, row: 0) == 1)
+    #expect(ModelPickerFlyout.flatIndex(sections: sections, section: 1, row: 1) == 2)
+    #expect(ModelPickerFlyout.flatIndex(sections: sections, section: 2, row: 0) == 3)
+    #expect(ModelPickerFlyout.flatIndex(sections: sections, section: 3, row: 0) == 4)
+    #expect(sections.flatMap(\.models).count == 5)
+}
+
+@Test func highlightMovementClampsToTheVisibleRows() {
+    #expect(ModelPickerFlyout.highlightIndex(from: 0, delta: 1, rowCount: 5) == 1)
+    #expect(ModelPickerFlyout.highlightIndex(from: 3, delta: -1, rowCount: 5) == 2)
+    #expect(ModelPickerFlyout.highlightIndex(from: 0, delta: -1, rowCount: 5) == 0)
+    #expect(ModelPickerFlyout.highlightIndex(from: 4, delta: 1, rowCount: 5) == 4)
+    #expect(ModelPickerFlyout.highlightIndex(from: 9, delta: 1, rowCount: 5) == 4)
+    #expect(ModelPickerFlyout.highlightIndex(from: 3, delta: 1, rowCount: 0) == 0)
+}
+
+@Test func scrollTargetsAreSectionQualifiedSoDuplicateRowsDoNotCollide() {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: pickerCatalog,
+        recents: [pickerCatalog[0]],
+        query: "")
+    let targets = sections.flatMap { section in
+        section.models.map {
+            ModelPickerFlyout.rowID(section: section.id, model: $0.id)
+        }
+    }
+    // The selected model renders twice with one model id; the targets differ.
+    #expect(targets.first == "recent/anthropic/claude-opus-4-5")
+    #expect(targets.contains("anthropic/anthropic/claude-opus-4-5"))
+    #expect(Set(targets).count == targets.count)
+}
