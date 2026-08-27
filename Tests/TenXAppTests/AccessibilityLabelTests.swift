@@ -111,4 +111,40 @@ import Testing
     #expect(ProviderUsageAccessibility.wheelValue(provider: provider, activeCount: 2)
         .contains("5 hour, 20 percent remaining"))
 }
+
+@MainActor
+@Test func updateRowsAnnounceTheirTitleAndStatus() {
+    let state = UpdateState()
+    state.beginDownload()
+
+    #expect(state.rows.map(\.accessibilityLabel) == [
+        "Downloading update, Loading",
+        "Verifying download, Queued",
+        "Installing update, Queued",
+        "Relaunching 10x, Queued",
+    ])
+}
+
+@MainActor
+@Test func updateModeRelabelsTheWindowForVoiceOver() {
+    let state = UpdateState()
+    state.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+
+    let presentation = SplashPresentation.update(
+        state: state, onInstall: {}, onDismiss: {}, onRetry: {})
+
+    #expect(presentation.accessibilityLabel == "Update available")
+}
+
+@MainActor
+@Test func theInstallActionIsFirstInFocusOrder() {
+    let state = UpdateState()
+    state.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+
+    let presentation = SplashPresentation.update(
+        state: state, onInstall: {}, onDismiss: {}, onRetry: {})
+
+    #expect(presentation.actions.first?.kind == .primary)
+    #expect(presentation.actions.first?.title == "Install and Relaunch")
+}
 }
