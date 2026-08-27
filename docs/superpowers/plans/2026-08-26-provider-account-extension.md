@@ -845,6 +845,7 @@ git commit -m "feat(ext): list, pin, and remove provider accounts"
 **Interfaces:**
 - Consumes: `toSafeAccount` from Task 6.
 - Produces: `accountChangedFrame(providerId, accountRef, reason, sequence)` where `reason` is `"manual"` or `"failover"`.
+- Extends Task 6's `pin_account` result from `{ account }` to `{ account, sequence }`, so the Swift side can build a `SetSessionProviderAccountResult` (see `App/Providers/ProviderAccountCoordinator.swift:38`) without a second round trip.
 - Produces: a monotonic per-process `sequence`, starting at 1.
 
 - [ ] **Step 1: Write the failing test**
