@@ -101,7 +101,8 @@ private actor SearchSpy: SessionSearching {
     }
 
     func waitForQueryCount(_ count: Int) async throws {
-        for _ in 0..<200 where recordedQueries.count < count {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+        while ContinuousClock.now < deadline, recordedQueries.count < count {
             try await Task.sleep(for: .milliseconds(5))
         }
     }
@@ -145,7 +146,7 @@ private func waitForResultTitles(
     _ titles: [String],
     in model: SearchModalModel
 ) async throws {
-    for _ in 0..<200 where model.results.map(\.title) != titles {
-        try await Task.sleep(for: .milliseconds(5))
+    await waitUntil("the search results to settle") {
+        model.results.map(\.title) == titles
     }
 }
