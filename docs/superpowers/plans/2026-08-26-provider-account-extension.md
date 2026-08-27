@@ -1164,6 +1164,67 @@ git commit -m "feat(providers): route accounts on stock omp"
 
 ---
 
+### Task 9b: Wire the Extension Channel Into Live Sessions
+
+Found during Task 8: nothing in the original plan connected `ProviderAccountExtensionBackend` to a
+real session. Task 8 built the backend and its transport behind a stub channel; Task 9 wires only
+the stock-OMP pin path. Without this task the t2 tier is unreachable code and Task 12 cannot verify
+it.
+
+**Files:**
+- Modify: `App/Sessions/SessionController.swift`
+- Modify: `App/Providers/ProviderAccountExtensionBackend.swift`
+- Modify: `App/Application/AppModel.swift`
+- Test: `Tests/TenXAppTests/SessionControllerTests.swift`
+
+**Interfaces:**
+- Consumes: `ProviderAccountChannel` and `ProviderAccountExtensionBackend` from Task 8; the tier from Task 5.
+- Produces: a live channel per managed session, and `ProviderAccountExtensionBackend` selected as the coordinator's routing backend when the tier is `.extensionBacked`.
+
+- [ ] **Step 1: Decide and document the fan-out**
+
+`RpcClient.events` is an `AsyncStream`, which is single-consumer. The transcript pipeline already
+consumes it. The account channel needs the same frames. Do not add a second consumer to one
+`AsyncStream` — that silently steals frames from the transcript.
+
+Route account-channel frames from the EXISTING consumer instead: `SessionController` already
+receives every frame and already routes `extension_ui_request` through `consumeExtensionUI`. Hand
+frames whose title is the channel marker to the account channel there, at the same seam Task 8's
+Critical fix uses to keep them off the user's screen. One consumer, two destinations.
+
+- [ ] **Step 2: Write the failing test**
+
+Assert that an `extension_ui_request` carrying the channel marker reaches the account channel and
+produces a reply frame on the session's client, and that a non-marker `input` request still reaches
+the user-facing sheet path unchanged.
+
+- [ ] **Step 3: Verify RED**
+
+Run `-only-testing:TenXAppTests/SessionControllerTests` with a derived-data path unique to you.
+Expect failure because no account channel is attached.
+
+- [ ] **Step 4: Attach a channel per managed session**
+
+Give each `SessionController` a `ProviderAccountChannel` fed by the marker-filtered frames, whose
+`send` answers via the same `respond(requestID:body:)` the login flow uses. Remember `body` is a
+Swift parameter name that FLATTENS into the frame; it does not add a `body` key.
+
+- [ ] **Step 5: Select the backend by tier**
+
+Where the coordinator's routing backend is chosen, use `ProviderAccountExtensionBackend` when the
+detected tier is `.extensionBacked` and the stock pin backend otherwise. A session whose channel
+drops degrades to the stock path rather than failing the route.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add App/Sessions/SessionController.swift App/Providers/ProviderAccountExtensionBackend.swift \
+  App/Application/AppModel.swift Tests/TenXAppTests/SessionControllerTests.swift 10x.xcodeproj
+git commit -m "feat(providers): route sessions through the account extension"
+```
+
+---
+
 ### Task 10: Remove the Dead RPC Transport
 
 **Files:**
