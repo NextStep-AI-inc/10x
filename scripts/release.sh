@@ -32,15 +32,19 @@ mkdir -p "$DIST" "$BUILD"
 
 echo "==> Generating the project"
 # The generator asserts an exact xcodeproj version, because each release ships
-# different default build settings that feed every object UUID. Gemfile pins it, so
-# go through bundler when one is present; a runner's system gem is a different
-# version and the generator refuses to run against it.
-if [ -f Gemfile ]; then
-  bundle install --quiet
-  bundle exec ruby scripts/generate_xcodeproj.rb
-else
-  ruby scripts/generate_xcodeproj.rb
+# different default build settings that feed every object UUID.
+#
+# Deliberately not bundler: the runner's system bundler is 1.17.2, which cannot run
+# on Ruby 3.2+ at all (it calls String#untaint, removed in 3.2), and the lockfile
+# names that same version. Installing the pinned gem and activating it with
+# Kernel#gem before the script's own `require` is smaller and has no such trap.
+XCODEPROJ_VERSION=1.27.0
+if ! ruby -e "gem 'xcodeproj', '$XCODEPROJ_VERSION'" >/dev/null 2>&1; then
+  echo "    installing xcodeproj $XCODEPROJ_VERSION"
+  gem install xcodeproj -v "$XCODEPROJ_VERSION" --no-document \
+    || sudo gem install xcodeproj -v "$XCODEPROJ_VERSION" --no-document
 fi
+ruby -e "gem 'xcodeproj', '$XCODEPROJ_VERSION'; load 'scripts/generate_xcodeproj.rb'"
 
 echo "==> Archiving $VERSION (build $BUILD_NUMBER)"
 xcodebuild archive \
