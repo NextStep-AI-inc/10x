@@ -57,14 +57,6 @@ enum ComposerControlsPresentation {
         "\(provider)/\(modelID)"
     }
 
-    static func parseRoleDefault(_ value: String) -> (provider: String, modelID: String)? {
-        guard let slash = value.firstIndex(of: "/") else { return nil }
-        let provider = String(value[..<slash])
-        let modelID = String(value[value.index(after: slash)...])
-        guard !provider.isEmpty, !modelID.isEmpty else { return nil }
-        return (provider, modelID)
-    }
-
     // ponytail: mirrors @oh-my-pi/pi-ai serviceTierFamily; OpenAI relay ids use prefix heuristics only
     private static func serviceTierFamily(for model: ComposerModelInfo) -> String? {
         let provider = model.provider

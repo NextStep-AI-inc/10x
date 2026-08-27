@@ -14,7 +14,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "5DC8E70E214E569D91EB91E877DB29C4"
+               BlueprintIdentifier = "8AC7F322D1171C417A7295F1B755612C"
                BuildableName = "10x.app"
                BlueprintName = "10x"
                ReferencedContainer = "container:10x.xcodeproj">
@@ -32,20 +32,13 @@
             skipped = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "DA35054B28B85629CCF54350A1B00A34"
+               BlueprintIdentifier = "4DFAD18AB9A6BA5FD8B6FDC4AB6B8D6D"
                BuildableName = "TenXAppTests.xctest"
                BlueprintName = "TenXAppTests"
                ReferencedContainer = "container:10x.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
-      <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "RECORD_SNAPSHOTS"
-            value = "$(RECORD_SNAPSHOTS)"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
