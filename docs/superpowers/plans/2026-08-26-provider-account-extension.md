@@ -1275,6 +1275,70 @@ git commit -m "refactor(providers): drop the unshippable account rpc"
 
 ---
 
+### Task 10b: Wire the Read and Removal Paths
+
+Found during Task 10. Deleting the dead RPC transport exposed that two things built earlier were
+never connected to anything:
+
+- `ProviderManagementViewModel.refreshAccountUsage` still calls `providerService.accounts` and
+  `providerService.accountUsage`. With the RPC implementations gone, those hit the protocol's
+  default and return `[]`, so **no account ever renders** — Task 4's `ProviderAccountUsageBackend`
+  has no production caller.
+- Account removal has no Swift transport at all. Task 6's extension `remove_account` command has
+  zero Swift callers, and `ProviderAccountCoordinator.removeAccount` takes a `performRemoval`
+  closure nothing supplies.
+
+Symptom already visible: `providerAccountConnectionsRowsSnapshot` fails as a byte mismatch, because
+Connections now renders with zero accounts.
+
+**Files:**
+- Modify: `App/Providers/ProviderManagementViewModel.swift`
+- Modify: `App/Providers/ProviderAccountExtensionBackend.swift`
+- Modify: `App/Application/AppModel.swift`
+- Test: `Tests/TenXAppTests/ProviderManagementViewModelTests.swift`
+- Test: `Tests/TenXAppTests/ViewSnapshotTests.swift`
+
+**Interfaces:**
+- Consumes: `ProviderAccountUsageBackend` (Task 4), `ProviderAccountChannel` (Task 8), the tier (Task 5).
+- Produces: a populated account list on the routed tiers, and a removal path reaching the extension.
+
+- [ ] **Step 1: Write the failing read-path test**
+
+Assert that a view model on a routed tier, given a usage snapshot with per-account metadata,
+exposes those accounts. It must fail today, returning empty.
+
+- [ ] **Step 2: Verify RED**
+
+Run `-only-testing:TenXAppTests/ProviderManagementViewModelTests` with a derived-data path unique to
+you. Expect the empty-account failure.
+
+- [ ] **Step 3: Route reads through the usage backend**
+
+Replace the `providerService.accounts` / `accountUsage` calls with
+`ProviderAccountUsageBackend.accounts(from:providerID:)` and `.usage(from:providerID:)` over the
+snapshot the view model already holds. On `.providerOnly`, keep today's behavior.
+
+- [ ] **Step 4: Give removal a transport**
+
+Supply `ProviderAccountCoordinator.removeAccount`'s `performRemoval` closure with one that issues
+the extension's `remove_account` command through the channel. On the stock tier, removal stays
+unavailable — that is the designed tier limit, and Task 11 renders it honestly.
+
+- [ ] **Step 5: Re-record the Connections snapshot and LOOK at it**
+
+The reference is stale because it was recorded against a broken read path. Re-record with
+`TEST_RUNNER_RECORD_SNAPSHOTS=1` and open the PNG. Confirm the rows show real accounts. A reference
+recorded but never viewed is not evidence.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add App/Providers App/Application Tests/TenXAppTests 10x.xcodeproj
+git commit -m "feat(providers): wire account reads and removal"
+```
+
+---
+
 ### Task 11: Honest Tier States
 
 Load `writing-ui` before writing any string in this task, and `visual-ui` before changing any layout.
