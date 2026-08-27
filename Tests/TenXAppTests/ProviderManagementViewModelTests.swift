@@ -24,7 +24,7 @@ import Testing
     await service.enqueueAccountUsageGate(usageGate)
     let model = ProviderManagementViewModel(
         providerService: service,
-        usageService: FakeUsageService(snapshot: .empty),
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
 
@@ -97,7 +97,25 @@ import Testing
 
 @Test func providerOnlyCapabilityUsesCLIUsageAndHidesAccountControls() async throws {
     let providerID = "cursor"
-    let snapshot = try usageSnapshotFixture()
+    // No per-account metadata: tier detection must see this as `.providerOnly`
+    // even though usage (the ring limit below) is present, same as when a
+    // stock CLI's usage output carries no stable per-account identity.
+    let snapshot = try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data(#"""
+    {
+      "generatedAt":1,
+      "reports":[{
+        "provider":"cursor",
+        "fetchedAt":1,
+        "limits":[
+          {"id":"cursor:models","label":"Cursor Models","scope":{"provider":"cursor","windowId":"monthly"},"window":{"id":"monthly","label":"Monthly","resetsAt":1788061624000},"amount":{"usedFraction":0.499,"unit":"percent"},"status":"ok"},
+          {"id":"cursor:requests","label":"Requests","scope":{"provider":"cursor"},"amount":{"used":4,"unit":"requests"}}
+        ],
+        "metadata":{}
+      }],
+      "accountsWithoutUsage":[],
+      "disabledCredentials":[]
+    }
+    """#.utf8))
     let service = FakeProviderService(providers: [ProviderLoginProvider(
         id: providerID,
         name: "Cursor",
@@ -129,11 +147,15 @@ import Testing
             id: providerID,
             name: "Cursor",
             isAvailable: true,
-            isAuthenticated: true)],
-        accountCapabilityError: .accountCapabilityFailed)
+            isAuthenticated: true)])
+    // Tier detection reads the usage snapshot instead of probing an RPC, so a
+    // failure now has to come from the usage load itself: no snapshot has
+    // ever loaded successfully, so detection can't run at all.
+    let usage = FakeUsageService(snapshot: .empty)
+    await usage.setFailing(true)
     let model = ProviderManagementViewModel(
         providerService: service,
-        usageService: FakeUsageService(snapshot: try usageSnapshotFixture()),
+        usageService: usage,
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
 
@@ -141,6 +163,27 @@ import Testing
 
     #expect(model.dockProviders.isEmpty)
     #expect(model.providerMessage == "Provider accounts couldn’t be loaded.")
+}
+
+@Test func accountTierReflectsDetectionFromTheUsageSnapshot() async throws {
+    let providerID = "cursor"
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "Cursor",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+
+    await model.load()
+
+    // Production always passes a nil extension hello for now (Task 7 wires
+    // the real one), so a snapshot with per-account identity detects as
+    // `.stockOMP`, not `.extensionBacked`.
+    #expect(model.accountTier == .stockOMP)
 }
 
 @Test func successfulLoginAppendsAnAccountAndRefreshesAccountMetadataAndUsage() async throws {
@@ -165,7 +208,9 @@ import Testing
             isAuthenticated: true),
         accounts: [first],
         accountAddedOnLogin: second)
-    let usage = FakeUsageService(snapshot: .empty)
+    // Per-account metadata for the provider: tier detection needs to see
+    // identity in the snapshot to select `.accountRouting`.
+    let usage = FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID))
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: usage,
@@ -217,7 +262,7 @@ import Testing
         removalReportsStale: true)
     let model = ProviderManagementViewModel(
         providerService: service,
-        usageService: FakeUsageService(snapshot: .empty),
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
     await model.load()
@@ -263,7 +308,7 @@ import Testing
         removalFailureAfterMutation: true)
     let model = ProviderManagementViewModel(
         providerService: service,
-        usageService: FakeUsageService(snapshot: .empty),
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
     let (coordinator, defaults, suiteName) = try makeManagementCoordinator()
@@ -307,7 +352,7 @@ import Testing
         accounts: [target, unavailable])
     let model = ProviderManagementViewModel(
         providerService: service,
-        usageService: FakeUsageService(snapshot: .empty),
+        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
     let (coordinator, defaults, suiteName) = try makeManagementCoordinator()

@@ -335,6 +335,22 @@ func providerTestModel(
         formatTime: { _ in "4:00 PM" })
 }
 
+/// A usage snapshot carrying per-account identity (an email) for `providerID`,
+/// which is what `ProviderAccountTier.detect` needs to see to select anything
+/// beyond `.providerOnly`. Tests that exercise `.accountRouting` behavior via
+/// the account-management fakes below need this instead of `.empty` now that
+/// tier detection (not a per-test `capabilities:` override) decides it.
+func accountRoutingUsageSnapshotFixture(
+    providerID: String,
+    email: String = "tanner@example.com"
+) throws -> OmpUsageSnapshot {
+    try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data("""
+    {"generatedAt":1,"reports":[
+      {"provider":"\(providerID)","fetchedAt":1,"limits":[],"metadata":{"email":"\(email)"}}
+    ],"accountsWithoutUsage":[],"disabledCredentials":[]}
+    """.utf8))
+}
+
 func providerAccountFixture(
     providerID: String,
     ref: String,

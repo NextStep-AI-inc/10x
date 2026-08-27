@@ -11,7 +11,6 @@ enum ProviderWorkspaceSection: Equatable, Sendable {
 private struct ProviderServiceBox: Sendable {
     let events: AsyncStream<ProviderLoginEvent>
     let providers: @Sendable () async throws -> [ProviderLoginProvider]
-    let accountCapability: @Sendable (String) async throws -> ProviderAccountCapability
     let accounts: @Sendable (String) async throws -> [ProviderAccountSummary]
     let accountUsage: @Sendable (String) async throws -> [ProviderAccountUsage]
     let removeAccount: @Sendable (String, String) async throws -> ProviderAccountRemovalResult
@@ -23,7 +22,6 @@ private struct ProviderServiceBox: Sendable {
     init<Service: ProviderManaging>(_ service: Service) {
         events = service.events
         providers = { try await service.providers() }
-        accountCapability = { try await service.accountCapability(providerID: $0) }
         accounts = { try await service.accounts(providerID: $0) }
         accountUsage = { try await service.accountUsage(providerID: $0) }
         removeAccount = { providerID, accountRef in
@@ -64,6 +62,7 @@ final class ProviderManagementViewModel {
     private(set) var focusedConnectionsProviderID: String?
     private(set) var providers: [ProviderLoginProvider] = []
     private(set) var usage = ProviderUsagePresentation.empty
+    private(set) var accountTier: ProviderAccountTier = .providerOnly
     private(set) var isLoadingProviders = false
     private(set) var isRefreshingUsage = false
     private(set) var providerMessage: String?
@@ -94,6 +93,7 @@ final class ProviderManagementViewModel {
     @ObservationIgnored private var failedAccountCapabilityProviderIDs: Set<String> = []
     @ObservationIgnored private var usagePresentationRevision: UInt64 = 0
     @ObservationIgnored private var usageFailureGeneration = 0
+    @ObservationIgnored private var isUsageSnapshotCurrentlyFailing = false
     @ObservationIgnored private var nextRefreshOperationID = 0
     @ObservationIgnored private var providerRefreshOperation: RefreshOperation?
     @ObservationIgnored private var usageRefreshOperation: RefreshOperation?
@@ -353,20 +353,56 @@ final class ProviderManagementViewModel {
     }
 
     private func refreshAccountUsage(for authenticatedProviders: [ProviderLoginProvider]) async {
-        for provider in authenticatedProviders {
-            do {
-                let capability = try await providerService.accountCapability(provider.id)
-                accountCapabilities[provider.id] = capability
-                failedAccountCapabilityProviderIDs.remove(provider.id)
-                guard capability == .accountRouting else {
-                    accountSummaries.removeValue(forKey: provider.id)
-                    accountUsage.removeValue(forKey: provider.id)
-                    loadedAccountUsageProviderIDs.remove(provider.id)
-                    unavailableAccountUsageProviderIDs.remove(provider.id)
-                    rebuildUsage(at: lastUsageRefresh ?? now())
-                    continue
-                }
+        guard !authenticatedProviders.isEmpty else { return }
+        // Tier detection reads the usage snapshot populated by the sibling
+        // usage refresh kicked off alongside this one (see `refresh(forceFresh:)`).
+        // On the very first refresh there may be no snapshot yet, so wait for
+        // that one-time bootstrap. Once a snapshot exists, do NOT block on the
+        // sibling for subsequent refreshes: a slow or failing CLI-wide usage
+        // fetch must not stall per-provider account/usage loading, which is
+        // an independent RPC path. (A blocking, unconditional wait here
+        // deadlocks against exactly that scenario — see
+        // `lateCLIFailureDoesNotOverwriteNewerAccountRPCUsage`, which gates
+        // the CLI usage load and expects account RPC usage to update while
+        // it's still stalled.)
+        if lastUsageSnapshot == nil {
+            await usageRefreshOperation?.task.value
+        }
 
+        guard let snapshot = lastUsageSnapshot else {
+            // No snapshot has ever loaded successfully: detection can't run.
+            // Fail closed the same way an RPC failure used to.
+            for provider in authenticatedProviders {
+                failedAccountCapabilityProviderIDs.insert(provider.id)
+            }
+            providerMessage = "Provider accounts couldn’t be loaded."
+            rebuildUsage(at: lastUsageRefresh ?? now())
+            return
+        }
+
+        let tier = ProviderAccountTier.detect(snapshot: snapshot, extensionHello: nil)
+        accountTier = tier
+        let capability: ProviderAccountCapability
+        switch tier {
+        case .extensionBacked, .stockOMP:
+            capability = .accountRouting
+        case .providerOnly:
+            capability = .providerOnly
+        }
+
+        for provider in authenticatedProviders {
+            accountCapabilities[provider.id] = capability
+            failedAccountCapabilityProviderIDs.remove(provider.id)
+            guard capability == .accountRouting else {
+                accountSummaries.removeValue(forKey: provider.id)
+                accountUsage.removeValue(forKey: provider.id)
+                loadedAccountUsageProviderIDs.remove(provider.id)
+                unavailableAccountUsageProviderIDs.remove(provider.id)
+                rebuildUsage(at: lastUsageRefresh ?? now())
+                continue
+            }
+
+            do {
                 let accounts = try await providerService.accounts(provider.id)
                 accountSummaries[provider.id] = accounts
                 accountCoordinator?.reconcilePrimaryAccount(
@@ -377,7 +413,13 @@ final class ProviderManagementViewModel {
                     accountUsage[provider.id] = try await providerService.accountUsage(provider.id)
                     loadedAccountUsageProviderIDs.insert(provider.id)
                     unavailableAccountUsageProviderIDs.remove(provider.id)
-                    if unavailableAccountUsageProviderIDs.isEmpty {
+                    // A per-account usage success must not silently clear a
+                    // CLI-wide snapshot failure — different failure domain,
+                    // and `isUsageSnapshotCurrentlyFailing` is live state (set
+                    // by `performUsageRefresh`), not a since-entry diff, so it
+                    // reads correctly even when that failure completed before
+                    // this function was entered.
+                    if unavailableAccountUsageProviderIDs.isEmpty && !isUsageSnapshotCurrentlyFailing {
                         usageMessage = nil
                     }
                 } catch {
@@ -444,11 +486,13 @@ final class ProviderManagementViewModel {
             usage = usagePresentation(from: snapshot, at: refreshDate)
             usagePresentationRevision &+= 1
             lastUsageRefresh = refreshDate
+            isUsageSnapshotCurrentlyFailing = false
             if unavailableAccountUsageProviderIDs.isEmpty {
                 usageMessage = nil
             }
         } catch {
             usageFailureGeneration += 1
+            isUsageSnapshotCurrentlyFailing = true
             if usagePresentationRevision == startingPresentationRevision {
                 usage = previousUsage
             }
