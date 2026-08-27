@@ -7,6 +7,11 @@ struct ComposerAttachmentsView: View {
     let onRemove: (ComposerAttachment.ID) -> Void
 
     static let thumbnailSize: CGFloat = 44
+    static let bottomInset: CGFloat = 10
+
+    /// Pinned, because a ScrollView takes whatever height it is offered and the
+    /// composer sits in a layout with vertical slack above it.
+    static var stripHeight: CGFloat { thumbnailSize + bottomInset }
 
     var body: some View {
         ScrollView(.horizontal) {
@@ -16,8 +21,9 @@ struct ComposerAttachmentsView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 10)
+            .padding(.bottom, Self.bottomInset)
         }
+        .frame(height: Self.stripHeight)
         .scrollIndicators(.hidden)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Attached images")

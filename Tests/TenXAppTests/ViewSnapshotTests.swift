@@ -2456,6 +2456,25 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
 }
 
 @MainActor
+@Test func composerStillSendsAStagedImageMidRunSnapshot() throws {
+    // Stop must not take the button while there is something to send, or an
+    // image attached mid-run could only be discarded.
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant(""),
+            attachments: .constant([
+                snapshotAttachment(name: "regression.png", width: 800, height: 500),
+            ]),
+            presentation: .active(controller: awaitingOutputController()),
+            controlsMode: .activeSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-sends-attachment-mid-run",
+        size: CGSize(width: 700, height: 240))
+}
+
+@MainActor
 private func awaitingOutputController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
     let user = TranscriptMessage(

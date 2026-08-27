@@ -362,6 +362,9 @@ struct ComposerView: View {
             if let controller = stoppableController {
                 Task { await controller.abort() }
             } else {
+                // The warning describes an attach that is over once the prompt
+                // goes out, so it must not outlive the message it was about.
+                attachmentMessage = nil
                 onSend()
             }
             isEditorFocused = true
@@ -391,11 +394,13 @@ struct ComposerView: View {
         .accessibilityLabel(isStop ? "Stop response" : sendLabel)
     }
 
-    /// Stop takes over only when there is no draft to send: with text in the
-    /// box the button still has to send it, or Steer and Follow up are dead.
+    /// Stop takes over only when there is nothing staged to send: with text or
+    /// an image in the composer the button still has to send it, or Steer and
+    /// Follow up are dead.
     private var stoppableController: SessionController? {
         guard case .active(let controller) = presentation,
               controller.runtimeState == .streaming,
+              attachments.isEmpty,
               draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return nil }
         return controller
