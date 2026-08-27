@@ -57,6 +57,18 @@ final class AppModel {
     private(set) var composerControls: ComposerControlsModel?
     private(set) var startupState = StartupState()
     let sessionActivityRegistry: SessionActivityRegistry
+    /// Every managed session's live `ProviderAccountChannel`, keyed by
+    /// session id — see `SessionController.attachAccountChannel` (the sole
+    /// writer) and `ProviderAccountTieredRoutingBackend`
+    /// (`App/Providers/ProviderAccountExtensionBackend.swift`), the reader
+    /// this exists for. Owned here (rather than by `AppDependencies`,
+    /// unlike `sessionActivityRegistry`) because it needs no factory or
+    /// test-double seam of its own: it is a plain, empty-at-construction
+    /// registry with no external dependencies, so every `AppModel` gets its
+    /// own real one. Not yet installed as `sessionActivityRegistry`'s
+    /// `routingBackend` — see task-9b-report.md for why that step is
+    /// flagged rather than done in this task.
+    let accountChannelRegistry = ProviderAccountChannelRegistry()
 
     var providerActivityCounts: [String: Int] {
         sessionActivityRegistry.activeCounts
@@ -745,7 +757,8 @@ final class AppModel {
     ) -> SessionController {
         let controller = SessionController(
             processManager: processManager,
-            activityRegistry: sessionActivityRegistry)
+            activityRegistry: sessionActivityRegistry,
+            accountChannelRegistry: accountChannelRegistry)
         managedSessions[controller.id] = controller
         if let intendedSessionPath {
             managedSessionPaths[intendedSessionPath] = controller.id

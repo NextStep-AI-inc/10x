@@ -40,6 +40,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
     private weak var accountCoordinator: ProviderAccountCoordinator?
+    private let accountChannelRegistry: ProviderAccountChannelRegistry?
     private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
@@ -57,6 +58,16 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private var pipelineGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
+    /// This controller's one write handle onto the marker-filtered frame
+    /// source feeding the current pipeline's `ProviderAccountExtensionChannel`
+    /// (built in `attachAccountChannel`). Recreated every `finishOpening` (a
+    /// fresh channel per live process) and finished in `stopEventPipeline`
+    /// — ending it is this controller's drop signal to the channel:
+    /// `ProviderAccountExtensionChannel` treats stream-end as
+    /// `handleStreamEnded()`, failing anything in flight with
+    /// `.unavailable` rather than hanging. See
+    /// `forwardToAccountChannelIfMarked`, the sole producer.
+    private var accountChannelContinuation: AsyncStream<RpcFrame>.Continuation?
     @ObservationIgnored private weak var attachedComposerControls: ComposerControlsModel?
     private static let transcriptLog = OSLog(
         subsystem: Bundle.main.bundleIdentifier ?? "TenXApp",
@@ -72,11 +83,13 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         processManager: SessionProcessManager,
         id: UUID = UUID(),
         activityRegistry: SessionActivityRegistry? = nil,
+        accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
         historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
     ) {
         self.processManager = processManager
         self.id = id
         self.accountCoordinator = activityRegistry
+        self.accountChannelRegistry = accountChannelRegistry
         self.historyLoader = historyLoader
         activityRegistry?.register(self)
     }
@@ -108,6 +121,11 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         self.id = id
         self.providerID = providerID
         self.accountCoordinator = activityRegistry
+        // Preview controllers never run a live pipeline (no `finishOpening`
+        // ever executes), so there is never a channel to attach — this
+        // initializer has no parameter for one, unlike the live initializer
+        // above.
+        self.accountChannelRegistry = nil
         activityRegistry?.register(self)
     }
 
@@ -535,6 +553,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
 
     private func startEventPipeline(processor: TranscriptEventProcessor, client: RpcClient) {
         guard let context = currentPipelineContext(for: processor) else { return }
+        attachAccountChannel(client: client)
         eventTask = Task { [weak self, processor, events = client.events] in
             for await frame in events {
                 guard !Task.isCancelled else { break }
@@ -554,6 +573,51 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
                 await self?.handleControl(frame, processor: processor)
             }
         }
+    }
+
+    /// Builds this pipeline's `ProviderAccountExtensionChannel` and
+    /// publishes it to `accountChannelRegistry`, keyed by `id`, for the
+    /// coordinator's tiered routing backend to find later
+    /// (`ProviderAccountTieredRoutingBackend`, `ProviderAccountExtensionBackend.swift`).
+    /// No-ops when no registry was injected (previews, and the many
+    /// existing tests that construct a controller without one).
+    ///
+    /// `client` is captured by value in `respond` — never `self?.handle` —
+    /// so a reply this channel already has in flight always lands on the
+    /// process it was actually issued to, even if `self.handle` has since
+    /// moved on to a newer one (a fast restart racing a slow extension
+    /// reply). The channel itself is torn down and re-created every
+    /// `finishOpening`, so this is a belt-and-suspenders guarantee, not the
+    /// only one.
+    private func attachAccountChannel(client: RpcClient) {
+        guard let accountChannelRegistry else { return }
+        let (events, continuation) = AsyncStream<RpcFrame>.makeStream()
+        accountChannelContinuation = continuation
+        let channel = ProviderAccountExtensionChannel(
+            events: events,
+            respond: { [client] requestID, body in
+                try await client.sendRaw(.extensionUIResponse(id: requestID, body: body))
+            })
+        accountChannelRegistry.attach(
+            sessionID: id,
+            channel: channel,
+            sessionFile: sessionPath.map { URL(filePath: $0) })
+    }
+
+    /// The account channel's sole frame source. `ExtensionUIRouter.parse`
+    /// already returns `nil` for the `tenx.provider-accounts.v1` marker (see
+    /// its doc comment) — this is what runs in the gap that leaves, right
+    /// where `consumeExtensionUI` would otherwise silently drop the frame.
+    /// Not a second consumer of `client.events`: `handleControl` (this
+    /// method's only caller) is fed by `processor.controlEvents`, itself
+    /// fed by the pipeline's one `client.events` reader in
+    /// `startEventPipeline` — every frame still passes through that single
+    /// point exactly once, and this only redirects the ones the sheet path
+    /// was already discarding.
+    private func forwardToAccountChannelIfMarked(_ request: ExtensionUIRequest) {
+        guard request.payload["title"]?.stringValue == ExtensionUIRouter.providerAccountChannelTitle
+        else { return }
+        accountChannelContinuation?.yield(.extensionUIRequest(request))
     }
 
     private func consume(
@@ -603,6 +667,14 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         extensionTimeoutTasks.removeAll()
         extensionRouter = ExtensionUIRouter()
         extensionSheetRequest = nil
+        // Ends the account channel's frame source — its listener loop sees
+        // the stream finish and calls `handleStreamEnded()`, failing
+        // anything in flight with `.unavailable` (the coordinator's signal
+        // to degrade to the stock tier) instead of hanging forever on a
+        // pipeline that no longer exists.
+        accountChannelContinuation?.finish()
+        accountChannelContinuation = nil
+        accountChannelRegistry?.detach(sessionID: id)
         handle = nil
         processor = nil
         installedSnapshotRevision = 0
@@ -864,7 +936,10 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         context: PipelineContext
     ) async {
         guard isCurrent(context) else { return }
-        guard let state = ExtensionUIRouter.parse(request) else { return }
+        guard let state = ExtensionUIRouter.parse(request) else {
+            forwardToAccountChannelIfMarked(request)
+            return
+        }
         extensionRouter.consume(request)
 
         switch state {

@@ -191,6 +191,33 @@ import Testing
     await manager.closeAll()
 }
 
+@MainActor @Test func markerFramesReachTheAccountChannelWhileOrdinaryInputStillReachesTheSheet() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = try makeProviderAccountChannelExecutable(in: directory)
+    let manager = SessionProcessManager(executable: executable.path)
+    let registry = ProviderAccountChannelRegistry()
+    let controller = SessionController(
+        processManager: manager,
+        accountChannelRegistry: registry)
+
+    await controller.openExisting(metadata(path: "/tmp/account-channel-session.jsonl", cwd: "/tmp"))
+
+    #expect(await eventually { registry.entry(for: controller.id) != nil })
+    let channel = try #require(registry.entry(for: controller.id)?.channel)
+
+    let reply = try await channel.send(ProviderAccountChannelCommand(
+        id: "cmd-1", command: "pin_account", params: [:]))
+
+    #expect(reply == .object(["applied": .bool(true)]))
+    #expect(await eventually {
+        controller.extensionSheetRequest == .input(
+            id: "sheet-1", title: "Pick a color", placeholder: nil, timeout: nil)
+    })
+    #expect(controller.runtimeState == .idle)
+    await manager.closeAll()
+}
+
 @MainActor @Test func sameProcessStateRefreshPreservesAccountEventSequence() async throws {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -679,6 +706,59 @@ private func writeHistoryMessage(_ text: String, to url: URL) throws {
     {"type":"session","version":3,"id":"s","timestamp":"2026-08-24T20:00:00.000Z","cwd":"/tmp"}
     {"type":"message","id":"hist-message","parentId":null,"timestamp":"2026-08-24T20:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"\(text)"}],"timestamp":1787601601000}}
     """.utf8).write(to: url)
+}
+
+/// Emits the marker `extension_ui_request` (`tenx.provider-accounts.v1`)
+/// alongside an ordinary, non-marker `input` request right after
+/// `set_subagent_subscription`, mirroring where `makeProviderAccountExecutable`
+/// above bundles its own extra frames. On receiving the client's
+/// `extension_ui_response` for the marker request, decodes the wire-encoded
+/// command from its `value` field and echoes a reply as the `placeholder`
+/// of the *next* marker request — exactly the wire contract
+/// `ProviderAccountExtensionChannel` implements (reply arrives on the next
+/// request, never as the response's own payload).
+private func makeProviderAccountChannelExecutable(in directory: URL) throws -> URL {
+    let executable = directory.appending(path: "provider-account-channel-server.py")
+    let source = #"""
+    #!/usr/bin/env python3
+    import json
+    import sys
+
+    def emit(value):
+        print(json.dumps(value, separators=(",", ":")), flush=True)
+
+    MARKER = "tenx.provider-accounts.v1"
+
+    emit({"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864})
+    for line in sys.stdin:
+        command = json.loads(line)
+        request_id = command.get("id")
+        command_type = command.get("type")
+        if command_type == "negotiate_protocol":
+            data = {"protocolVersion":2}
+        elif command_type == "get_state":
+            data = {"model":{"id":"gpt-test","provider":"openai-codex"},"isStreaming":False,"sessionFile":"/tmp/account-channel-session.jsonl"}
+        elif command_type == "get_messages_page":
+            data = {"messages":[],"nextCursor":None}
+        elif command_type == "set_subagent_subscription":
+            emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":{}})
+            emit({"type":"extension_ui_request","id":"acct-chan-1","method":"input","title":MARKER})
+            emit({"type":"extension_ui_request","id":"sheet-1","method":"input","title":"Pick a color"})
+            continue
+        elif command_type == "extension_ui_response" and request_id == "acct-chan-1":
+            sent = json.loads(command.get("value", "{}"))
+            reply = json.dumps({"id": sent.get("id"), "ok": True, "data": {"applied": True}})
+            emit({"type":"extension_ui_request","id":"acct-chan-2","method":"input","title":MARKER,"placeholder":reply})
+            continue
+        else:
+            data = {}
+        emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+    """#
+    try Data(source.utf8).write(to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    return executable
 }
 
 private func makeProviderAccountExecutable(in directory: URL) throws -> URL {

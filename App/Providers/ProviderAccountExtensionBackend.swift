@@ -313,3 +313,97 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         try JSONDecoder().decode(JSONValue.self, from: Data(raw.utf8))
     }
 }
+
+/// Bridges the coordinator's one, construction-time-fixed
+/// `ProviderAccountRouting` backend (`ProviderAccountCoordinator.init`'s
+/// `routingBackend` — see its doc comment: chosen once, for the
+/// coordinator's whole lifetime) across every *managed session's* own,
+/// separately-scoped channel. `ProviderAccountExtensionBackend` above talks
+/// to exactly one channel handed to it at construction; this registry is
+/// what lets `ProviderAccountTieredRoutingBackend` (below) find the right
+/// one per `route(sessionID:)` call instead.
+///
+/// `SessionController` attaches its channel here as its pipeline starts
+/// (`attachAccountChannel`) and detaches as it stops
+/// (`stopEventPipeline`) — see `App/Sessions/SessionController.swift`.
+/// `sessionFile` travels alongside the channel so the tiered backend below
+/// never needs a second, separately-injected lookup for the stock-tier
+/// fallback: both pieces of a session's routing identity become known at
+/// the same moment (`finishOpening`) and go stale at the same moment
+/// (`stopEventPipeline`), so keeping them in one entry avoids the two ever
+/// disagreeing about which session they describe.
+///
+/// A plain `@MainActor`-isolated class with an explicit `Sendable`
+/// conformance, not an actor: every caller already either runs on the main
+/// actor (`SessionController`) or is already an `async` function crossing
+/// into it (`ProviderAccountTieredRoutingBackend.route`), so an actor here
+/// would only add a second hop on top of the channel's own.
+@MainActor
+final class ProviderAccountChannelRegistry: Sendable {
+    struct Entry {
+        let channel: any ProviderAccountChannel
+        let sessionFile: URL?
+    }
+
+    private var entries: [UUID: Entry] = [:]
+
+    func attach(sessionID: UUID, channel: any ProviderAccountChannel, sessionFile: URL?) {
+        entries[sessionID] = Entry(channel: channel, sessionFile: sessionFile)
+    }
+
+    func detach(sessionID: UUID) {
+        entries.removeValue(forKey: sessionID)
+    }
+
+    func entry(for sessionID: UUID) -> Entry? {
+        entries[sessionID]
+    }
+}
+
+/// The coordinator's single routing backend for every tier below
+/// `.providerOnly` (see `App/Providers/ProviderAccountTier.swift`) — the one
+/// installed when `.extensionBacked` is even possible for the running app.
+/// Tier discrimination is *empirical* rather than a `ProviderAccountTier`
+/// value threaded in from construction: the coordinator's backend is fixed
+/// once, at construction, while tier detection is async, per-workspace, and
+/// can change over the app's lifetime, so nothing synchronous is available
+/// to consult at the one point a backend can be chosen. A session with no
+/// channel attached yet, or whose channel has dropped
+/// (`ProviderAccountChannelError.unavailable`), degrades per-call to
+/// `ProviderAccountPinBackend` — see the task brief's "degradation is a
+/// requirement, not an optimisation." `ProviderAccountChannelError.rejected`
+/// is a real command-level failure, not a transport problem, and is left to
+/// propagate rather than degrading.
+///
+/// task-9b-report.md documents the composition-root gap this leaves: this
+/// type is never actually installed as `ProviderAccountCoordinator`'s
+/// `routingBackend` in the live app, because doing so requires threading it
+/// through `AppDependencies.swift`'s `makeProviderAccountCoordinator`
+/// factory, outside this task's file fence.
+struct ProviderAccountTieredRoutingBackend: ProviderAccountRouting {
+    private let registry: ProviderAccountChannelRegistry
+
+    init(registry: ProviderAccountChannelRegistry) {
+        self.registry = registry
+    }
+
+    func route(
+        providerID: String,
+        accountRef: String,
+        sessionID: UUID
+    ) async throws -> ProviderAccountRouteOutcome {
+        let entry = await registry.entry(for: sessionID)
+        if let channel = entry?.channel {
+            do {
+                return try await ProviderAccountExtensionBackend(channel: channel).route(
+                    providerID: providerID, accountRef: accountRef, sessionID: sessionID)
+            } catch ProviderAccountChannelError.unavailable {
+                // No live extension on the other end right now — degrade to
+                // the stock tier below rather than failing the route.
+            }
+        }
+        let sessionFile = entry?.sessionFile
+        return try await ProviderAccountPinBackend(sessionFileForID: { _ in sessionFile }).route(
+            providerID: providerID, accountRef: accountRef, sessionID: sessionID)
+    }
+}
