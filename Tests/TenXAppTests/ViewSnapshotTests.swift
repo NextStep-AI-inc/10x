@@ -39,15 +39,19 @@ import Testing
 }
 
 @MainActor
-@Test func setupSnapshot() throws {
-    try assertSnapshot(SetupView(model: AppModel()), name: "omp-missing")
+@Test func onboardingInstallStepSnapshot() throws {
+    try assertSnapshot(
+        OnboardingView(model: AppModel(), step: .installOmp),
+        name: "onboarding-install")
 }
 
 @MainActor
-@Test func setupUnrunnableSnapshot() throws {
+@Test func onboardingInstallStepUnrunnableSnapshot() throws {
     let model = AppModel()
     model.unrunnableOmpURL = URL(filePath: "/Users/example/.bun/bin/omp")
-    try assertSnapshot(SetupView(model: model), name: "omp-unrunnable")
+    try assertSnapshot(
+        OnboardingView(model: model, step: .installOmp),
+        name: "onboarding-install-unrunnable")
 }
 
 @MainActor
@@ -626,8 +630,11 @@ import Testing
         sessionSearch: SessionSearchService(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
     let railExpansion = RailExpansionModel()
     railExpansion.pointerEntered()
@@ -667,8 +674,11 @@ import Testing
         sessionSearch: SessionSearchService(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
 
     try assertSnapshot(
@@ -692,8 +702,11 @@ import Testing
         sessionSearch: SessionSearchService(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
 
     try assertSnapshot(
