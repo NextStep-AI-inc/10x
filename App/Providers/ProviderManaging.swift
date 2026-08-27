@@ -17,7 +17,7 @@ protocol ProviderRPCClient: Sendable {
 
 extension RpcClient: ProviderRPCClient {}
 
-protocol ProviderManaging: ProviderAccountManaging {
+protocol ProviderManaging: Sendable {
     var events: AsyncStream<ProviderLoginEvent> { get }
 
     func providers() async throws -> [ProviderLoginProvider]
@@ -25,21 +25,4 @@ protocol ProviderManaging: ProviderAccountManaging {
     func respond(requestID: String, body: [String: JSONValue]) async throws
     func cancelLogin() async
     func shutdown() async
-}
-
-extension ProviderManaging {
-    func accounts(providerID: String) async throws -> [ProviderAccountSummary] {
-        []
-    }
-
-    func accountUsage(providerID: String) async throws -> [ProviderAccountUsage] {
-        []
-    }
-
-    func removeAccount(
-        providerID: String,
-        accountRef: String
-    ) async throws -> ProviderAccountRemovalResult {
-        ProviderAccountRemovalResult(removed: false, accounts: [])
-    }
 }

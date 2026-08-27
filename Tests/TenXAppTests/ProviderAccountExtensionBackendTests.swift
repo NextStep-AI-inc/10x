@@ -49,6 +49,75 @@ private actor StubChannel: ProviderAccountChannel {
     }
 }
 
+/// Task 10b: `remove_account` has no Swift caller yet — this is that wiring's
+/// own coverage, exercised only through `ProviderAccountChannel` (a real
+/// extension loop is never spun up in this suite; see the class doc comment
+/// on `ProviderAccountExtensionChannel`). Also covers the Task 10 minor item
+/// deferred "to return with Task 10b's decode wiring": an unrecognized
+/// `availability` string on a returned account decodes to `.unavailable`
+/// (`ProviderAccountAvailability.init(from:)`'s fail-closed fallback) rather
+/// than throwing.
+@Test func removingAnAccountDecodesTheRemovalResult() async throws {
+    let channel = StubChannel(replies: ["remove_account": .success(.object([
+        "removed": .bool(true),
+        "accounts": .array([.object([
+            "providerId": .string("anthropic"),
+            "accountRef": .string("ref-b"),
+            "displayLabel": .string("work@example.com"),
+            "connectionOrder": .int(0),
+            "availability": .string("some-future-value"),
+        ])]),
+    ]))])
+    let backend = ProviderAccountExtensionBackend(channel: channel)
+
+    let result = try await backend.removeAccount(providerID: "anthropic", accountRef: "ref-a")
+
+    #expect(result.removed)
+    #expect(result.accounts == [ProviderAccountSummary(
+        providerID: "anthropic",
+        accountRef: "ref-b",
+        displayLabel: "work@example.com",
+        connectionOrder: 0,
+        availability: .unavailable)])
+    let sent = await channel.sent
+    #expect(sent.map(\.command) == ["remove_account"])
+    #expect(sent.first?.params["providerId"] == .string("anthropic"))
+    #expect(sent.first?.params["accountRef"] == .string("ref-a"))
+}
+
+@Test func removingAnAccountSurfacesACommandLevelErrorAsRejected() async throws {
+    let channel = StubChannel(replies: ["remove_account": .success(.object(["error": .string("no such account")]))])
+    let backend = ProviderAccountExtensionBackend(channel: channel)
+
+    await #expect(throws: ProviderAccountChannelError.rejected("no such account")) {
+        _ = try await backend.removeAccount(providerID: "anthropic", accountRef: "ref-a")
+    }
+}
+
+@Test func removingAnAccountOnADroppedChannelSurfacesAsUnavailable() async throws {
+    let backend = ProviderAccountExtensionBackend(channel: StubChannel(replies: [:]))
+
+    await #expect(throws: ProviderAccountChannelError.unavailable) {
+        _ = try await backend.removeAccount(providerID: "anthropic", accountRef: "ref-a")
+    }
+}
+
+@MainActor
+@Test func channelRegistryAnyChannelReturnsAnAttachedChannel() async throws {
+    let registry = ProviderAccountChannelRegistry()
+    #expect(registry.anyChannel() == nil)
+    let channel = StubChannel(replies: [:])
+    let sessionID = UUID()
+
+    registry.attach(sessionID: sessionID, channel: channel, sessionFile: nil)
+
+    #expect(registry.anyChannel() != nil)
+
+    registry.detach(sessionID: sessionID)
+
+    #expect(registry.anyChannel() == nil)
+}
+
 @Test func firstSendSucceedsEvenWhenTheOpeningFrameWasAlreadyBuffered() async throws {
     let (stream, continuation) = AsyncStream<RpcFrame>.makeStream()
 

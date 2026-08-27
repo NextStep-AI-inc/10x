@@ -1008,7 +1008,7 @@ final class AppModel {
         try checkStartupAttempt(attemptID)
         await stopProviderUsage()
         try checkStartupAttempt(attemptID)
-        startProviderUsage(for: provider)
+        configureProviderModel(provider)
         await provider.loadProviders()
         try checkStartupAttempt(attemptID)
         guard providerModel === provider,
@@ -1153,7 +1153,7 @@ final class AppModel {
               providerModel === provider,
               composerControls === controls
         else { return false }
-        startProviderUsage(for: provider)
+        configureProviderModel(provider)
         await provider.loadProviders()
         guard isCurrentLifecycle(generation),
               processManager === manager,
@@ -1332,7 +1332,7 @@ final class AppModel {
                 return
             }
             providerModel = provider
-            startProviderUsage(for: provider)
+            configureProviderModel(provider)
         }
         if composerControls == nil {
             guard isCurrentFallback(
@@ -1387,6 +1387,39 @@ final class AppModel {
                 self.archivedSessions = loaded.1
             }
         }
+    }
+
+    /// Runs once for every freshly (re)created `providerModel`, in place of
+    /// calling `startProviderUsage` directly: installs how account removal
+    /// reaches the extension, then starts the usage load. Installation
+    /// closes over `accountChannelRegistry`, which — like
+    /// `sessionActivityRegistry`'s routing backend (see `init`'s
+    /// `sessionActivityRegistry.install` call and its doc comment) — exists
+    /// only here, never in `AppDependencies.makeProviderModel`'s
+    /// zero-argument factory, so composing it can't happen at construction
+    /// time. Unlike the coordinator, `providerModel` is not a single
+    /// construction-time singleton — `replaceWorkspaceRuntime` and
+    /// `loadProviderFallback` both rebuild or reuse it across the app's
+    /// lifetime — so this runs at every site that assigns a new one, not
+    /// once from `init`.
+    ///
+    /// The transport tries any currently attached session channel
+    /// (`ProviderAccountChannelRegistry.anyChannel()`): removal reaches
+    /// `ctx.modelRegistry.authStorage`, which every session's extension
+    /// instance shares, so which session's channel carries the command does
+    /// not matter (see `anyChannel()`'s doc comment). No channel attached —
+    /// no live session, or the stock tier, which has no removal path at all
+    /// (`ProviderAccountTier.supportsRemoval`) — throws `.unavailable`
+    /// rather than inventing one.
+    private func configureProviderModel(_ provider: ProviderManagementViewModel) {
+        provider.installAccountRemovalTransport { [weak self] providerID, accountRef in
+            guard let self, let channel = self.accountChannelRegistry.anyChannel() else {
+                throw ProviderAccountChannelError.unavailable
+            }
+            return try await ProviderAccountExtensionBackend(channel: channel).removeAccount(
+                providerID: providerID, accountRef: accountRef)
+        }
+        startProviderUsage(for: provider)
     }
 
     private func startProviderUsage(for provider: ProviderManagementViewModel) {

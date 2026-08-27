@@ -1474,38 +1474,42 @@ private actor StubAppComposerDefaults: ComposerDefaultPersisting {
 /// `.providerOnly` (`snapshot.reports` is `[]`, so `hasPerAccountIdentity`
 /// is always `false`), which silently disables every scope-satisfaction and
 /// `useProviderAccount` assertion that depends on `.accountRouting`. Uses
-/// `accountRoutingUsageSnapshotFixture`, the same fixture
-/// `ProviderManagementViewModelTests` already uses for exactly this reason
-/// (see its doc comment) — this suite just never got migrated when that one
-/// did.
-private func accountProviderModel() throws -> ProviderManagementViewModel {
-    ProviderManagementViewModel(
-        providerService: FakeProviderService(
-            providers: [
-                ProviderLoginProvider(
-                    id: "openai-codex",
-                    name: "ChatGPT",
-                    isAvailable: true,
-                    isAuthenticated: true),
-            ],
-            accounts: [
-                "openai-codex": [
-                    providerAccountFixture(
-                        providerID: "openai-codex",
-                        ref: "acct_A",
-                        label: "personal@example.com",
-                        order: 0),
-                    providerAccountFixture(
-                        providerID: "openai-codex",
-                        ref: "acct_B",
-                        label: "work@example.com",
-                        order: 1),
-                ],
-            ]),
-        usageService: FakeUsageService(
-            snapshot: try accountRoutingUsageSnapshotFixture(providerID: "openai-codex")),
+/// `multiAccountUsageSnapshotFixture`, the same style of fixture
+/// `ProviderManagementViewModelTests` uses for exactly this reason — this
+/// suite just never got migrated when that one did.
+///
+/// Task 10b: accounts now derive from the snapshot
+/// (`ProviderAccountUsageBackend`), not a per-account RPC a fake can hand
+/// back arbitrary refs for, so `"acct_A"`/`"acct_B"` are no longer literal
+/// strings a test can choose — they're `ProviderAccountRef.make`'s SHA256
+/// output. Returns them alongside the model so call sites that cross-check
+/// against `providerModel.dockProviders` (`accountScopeSatisfaction`,
+/// `useProviderAccount`) compare against what the real read path actually
+/// produces.
+private func accountProviderModel() throws -> (
+    model: ProviderManagementViewModel,
+    accountARef: String,
+    accountBRef: String
+) {
+    let accountA = AccountSnapshotEntry(accountID: "a1", email: "personal@example.com")
+    let accountB = AccountSnapshotEntry(accountID: "a2", email: "work@example.com")
+    let model = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: [
+            ProviderLoginProvider(
+                id: "openai-codex",
+                name: "ChatGPT",
+                isAvailable: true,
+                isAuthenticated: true),
+        ]),
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: "openai-codex",
+            accounts: [accountA, accountB])),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    return (
+        model,
+        accountA.accountRef(providerID: "openai-codex"),
+        accountB.accountRef(providerID: "openai-codex"))
 }
 
 @Test func dockAccountStateMirrorsTheCoordinator() async throws {
@@ -1532,7 +1536,7 @@ private func accountProviderModel() throws -> ProviderManagementViewModel {
     defer { defaults.removePersistentDomain(forName: suiteName) }
     let coordinator = ProviderAccountCoordinator(
         primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
-    let providerModel = try accountProviderModel()
+    let (providerModel, accountARef, accountBRef) = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
         sessionLibrary: SessionLibrary(root: URL(
@@ -1542,11 +1546,11 @@ private func accountProviderModel() throws -> ProviderManagementViewModel {
         makeProviderModel: { _ in providerModel }))
     await model.bootstrap()
     await providerModel.load()
-    let session = DockAccountSession(providerID: "openai-codex", accountRef: "acct_A")
+    let session = DockAccountSession(providerID: "openai-codex", accountRef: accountARef)
     coordinator.register(session)
     coordinator.update(sessionID: session.id, providerID: "openai-codex", isGenerating: false)
     await coordinator.useAccount(
-        "acct_A",
+        accountARef,
         providerID: "openai-codex",
         scope: .allNewSessions,
         openSessionID: nil)
@@ -1554,10 +1558,10 @@ private func accountProviderModel() throws -> ProviderManagementViewModel {
     let satisfaction = model.accountScopeSatisfaction(openSessionID: session.id)
     let onAccountA = try #require(satisfaction[ProviderAccountKey(
         providerID: "openai-codex",
-        accountRef: "acct_A")])
+        accountRef: accountARef)])
     let onAccountB = try #require(satisfaction[ProviderAccountKey(
         providerID: "openai-codex",
-        accountRef: "acct_B")])
+        accountRef: accountBRef)])
 
     #expect(onAccountA.areAllScopesSatisfied)
     #expect(onAccountB == .none)
@@ -1565,7 +1569,7 @@ private func accountProviderModel() throws -> ProviderManagementViewModel {
 }
 
 @Test func manageAccountsOpensConnectionsFocusedOnTheProvider() async throws {
-    let providerModel = try accountProviderModel()
+    let (providerModel, _, _) = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
         sessionLibrary: SessionLibrary(root: URL(
@@ -1619,7 +1623,7 @@ private func accountProviderModel() throws -> ProviderManagementViewModel {
     let project = container.appendingPathComponent("project")
     try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
     let coordinator = ProviderAccountCoordinator()
-    let providerModel = try accountProviderModel()
+    let (providerModel, _, accountBRef) = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: FixedOmpLocator(executableURL: executable),
         sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
@@ -1632,16 +1636,16 @@ private func accountProviderModel() throws -> ProviderManagementViewModel {
     #expect(controller.currentProviderAccountRef == "acct_A")
     await providerModel.load()
 
-    await model.useProviderAccount("acct_B", scope: .thisSession, openSessionID: controller.id)
+    await model.useProviderAccount(accountBRef, scope: .thisSession, openSessionID: controller.id)
 
-    #expect(await navigationLog(commandLog, eventuallyContains: "pin_account:acct_B"))
-    #expect(controller.currentProviderAccountRef == "acct_B")
+    #expect(await navigationLog(commandLog, eventuallyContains: "pin_account:\(accountBRef)"))
+    #expect(controller.currentProviderAccountRef == accountBRef)
     if let manager = model.processManager { await manager.closeAll() }
 }
 
 @Test func useProviderAccountIgnoresUnknownRefs() async throws {
     let coordinator = ProviderAccountCoordinator()
-    let providerModel = try accountProviderModel()
+    let (providerModel, accountARef, _) = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
         sessionLibrary: SessionLibrary(root: URL(
@@ -1651,12 +1655,12 @@ private func accountProviderModel() throws -> ProviderManagementViewModel {
         makeProviderModel: { _ in providerModel }))
     await model.bootstrap()
     await providerModel.load()
-    let session = DockAccountSession(providerID: "openai-codex", accountRef: "acct_A")
+    let session = DockAccountSession(providerID: "openai-codex", accountRef: accountARef)
     coordinator.register(session)
 
     await model.useProviderAccount("acct_missing", scope: .thisSession, openSessionID: session.id)
 
-    #expect(session.currentProviderAccountRef == "acct_A")
+    #expect(session.currentProviderAccountRef == accountARef)
     if let manager = model.processManager { await manager.closeAll() }
 }
 

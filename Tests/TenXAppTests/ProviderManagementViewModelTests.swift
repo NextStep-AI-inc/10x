@@ -7,90 +7,45 @@ import Testing
 
 @Suite @MainActor struct ProviderManagementViewModelTests {
 
-@Test func accountMetadataAppearsBeforeAccountUsageCompletes() async throws {
+/// Task 10b's read-path fix: `refreshAccountUsage` must derive accounts from
+/// `ProviderAccountUsageBackend.accounts(from:providerID:)` over the usage
+/// snapshot the view model already holds, not from `providerService.accounts`
+/// — Task 10 deleted the RPC that backed it, so that call now hits the
+/// `ProviderAccountManaging` protocol default and silently returns `[]`.
+/// `FakeProviderService` deliberately has no way to hand back accounts of its
+/// own any more (see `ProviderTestFixtures.swift`), so this fails today for
+/// the right reason: real accounts, zero returned.
+@Test func routedTierAccountsDeriveFromTheUsageSnapshotNotADeadRPC() async throws {
     let providerID = "openai-codex"
-    let usageGate = LoadGate()
-    let service = FakeProviderService(
-        providers: [ProviderLoginProvider(
-            id: providerID,
-            name: "ChatGPT",
-            isAvailable: true,
-            isAuthenticated: true)],
-        accounts: [providerID: [
-            providerAccountFixture(providerID: providerID, ref: "acct_B", label: "Work", order: 2),
-            providerAccountFixture(providerID: providerID, ref: "acct_A", label: "Personal", order: 1),
-        ]])
-    await service.enqueueAccountUsageGate(usageGate)
+    let personal = AccountSnapshotEntry(accountID: "a1", email: "personal@example.com", orgName: "Personal")
+    let work = AccountSnapshotEntry(accountID: "a2", email: "work@example.com", orgName: "Work")
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "ChatGPT",
+        isAvailable: true,
+        isAuthenticated: true)])
     let model = ProviderManagementViewModel(
         providerService: service,
-        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
-        openURL: { _ in },
-        now: { Date(timeIntervalSince1970: 100) })
-
-    let load = Task { await model.load() }
-    await usageGate.waitForStart()
-
-    let provider = try #require(model.dockProviders.first)
-    #expect(provider.accounts.map(\.accountRef) == ["acct_A", "acct_B"])
-    #expect(provider.accounts.allSatisfy { $0.usageState == .loading })
-    #expect(provider.showsAccountSelectors)
-    #expect(provider.showsAccountSwitch)
-    #expect(provider.showsAccountRemoval)
-
-    await usageGate.release()
-    await load.value
-}
-
-@Test func accountUsageFailurePreservesAccountsWithoutGuessingCLIIdentity() async throws {
-    let providerID = "cursor"
-    let service = FakeProviderService(
-        providers: [ProviderLoginProvider(
-            id: providerID,
-            name: "Cursor",
-            isAvailable: true,
-            isAuthenticated: true)],
-        accounts: [providerID: [
-            providerAccountFixture(
-                providerID: providerID,
-                ref: "opaque-real-ref",
-                label: "same@example.com",
-                order: 0),
-        ]],
-        accountUsageError: .accountUsageFailed)
-    let cliSnapshot = try JSONDecoder().decode(OmpUsageSnapshot.self, from: Data(#"""
-    {
-      "generatedAt":1,
-      "reports":[{
-        "provider":"cursor",
-        "fetchedAt":1,
-        "limits":[{
-          "id":"cli-only",
-          "label":"CLI identity must not join",
-          "scope":{"provider":"cursor"},
-          "amount":{"remainingFraction":0.99,"unit":"percent"}
-        }],
-        "metadata":{"email":"same@example.com"}
-      }],
-      "accountsWithoutUsage":[],
-      "disabledCredentials":[]
-    }
-    """#.utf8))
-    let model = ProviderManagementViewModel(
-        providerService: service,
-        usageService: FakeUsageService(snapshot: cliSnapshot),
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: providerID,
+            accounts: [personal, work])),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
 
     await model.load()
 
+    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == [
+        personal.accountRef(providerID: providerID),
+        work.accountRef(providerID: providerID),
+    ])
+    #expect(model.connectionAccounts(providerID: providerID).map(\.displayLabel) == [
+        "personal@example.com", "work@example.com",
+    ])
+    #expect(model.connectionAccounts(providerID: providerID).map(\.detailLabel) == ["Personal", "Work"])
     let provider = try #require(model.dockProviders.first)
-    let account = try #require(provider.accounts.first)
-    #expect(account.accountRef == "opaque-real-ref")
-    #expect(account.limits.isEmpty)
-    #expect(account.usageState == .unavailable)
-    #expect(account.usageStatusText == "Usage unavailable")
-    #expect(provider.capability == .accountRouting)
-    #expect(model.usageMessage == "Usage couldn’t be loaded.")
+    #expect(provider.showsAccountSelectors)
+    #expect(provider.showsAccountSwitch)
+    #expect(provider.showsAccountRemoval)
 }
 
 @Test func providerOnlyCapabilityUsesCLIUsageAndHidesAccountControls() async throws {
@@ -134,8 +89,7 @@ import Testing
     #expect(!provider.showsAccountSelectors)
     #expect(!provider.showsAccountSwitch)
     #expect(!provider.showsAccountRemoval)
-    #expect(await service.accountLoadIDs.isEmpty)
-    #expect(await service.accountUsageLoadIDs.isEmpty)
+    #expect(model.connectionAccounts(providerID: providerID).isEmpty)
 }
 
 @Test func accountCapabilityFailureDoesNotEnterProviderOnlyCompatibilityMode() async throws {
@@ -178,37 +132,31 @@ import Testing
 
     await model.load()
 
-    // Production always passes a nil extension hello for now (Task 7 wires
-    // the real one), so a snapshot with per-account identity detects as
-    // `.stockOMP`, not `.extensionBacked`.
+    // Production always passes a nil extension hello: nothing in this
+    // codebase yet sends the extension's "hello" command and threads its
+    // `contractVersion` into `ProviderAccountTier.detect`, so a snapshot with
+    // per-account identity detects as `.stockOMP`, never `.extensionBacked`,
+    // until that wiring exists. (Not Task 7 — that task shipped the
+    // failover/availability event plumbing, not the hello handshake.)
     #expect(model.accountTier == .stockOMP)
 }
 
 @Test func successfulLoginAppendsAnAccountAndRefreshesAccountMetadataAndUsage() async throws {
     let providerID = "openai-codex"
-    let first = providerAccountFixture(
-        providerID: providerID,
-        ref: "acct_A",
-        label: "same@example.com",
-        order: 0,
-        detailLabel: "Personal")
-    let second = providerAccountFixture(
-        providerID: providerID,
-        ref: "acct_B",
-        label: "same@example.com",
-        order: 1,
-        detailLabel: "Work")
-    let service = AccountManagementProviderService(
-        provider: ProviderLoginProvider(
-            id: providerID,
-            name: "ChatGPT",
-            isAvailable: true,
-            isAuthenticated: true),
-        accounts: [first],
-        accountAddedOnLogin: second)
-    // Per-account metadata for the provider: tier detection needs to see
-    // identity in the snapshot to select `.accountRouting`.
-    let usage = FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID))
+    let personal = AccountSnapshotEntry(accountID: "a1", email: "same@example.com", orgName: "Personal")
+    let work = AccountSnapshotEntry(accountID: "a2", email: "same@example.com", orgName: "Work")
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "ChatGPT",
+        isAvailable: true,
+        isAuthenticated: true)])
+    // Account reads derive from the usage snapshot, not a per-account login
+    // response — so "login adds an account" now means the NEXT usage load
+    // (triggered by `login()`'s own `refresh(forceFresh: true)`) sees a
+    // grown snapshot. `setSnapshot` swaps what `loadUsage()` returns from
+    // here on, modeling that later load.
+    let usage = FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+        providerID: providerID, accounts: [personal]))
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: usage,
@@ -224,43 +172,44 @@ import Testing
         providerID: providerID,
         scope: .allNewSessions,
         openSessionID: nil)
+    await usage.setSnapshot(multiAccountUsageSnapshotFixture(
+        providerID: providerID, accounts: [personal, work]))
 
     await model.login(provider)
+    // `login()`'s own `refresh(forceFresh: true)` races its two concurrent
+    // halves (`refreshProviders`/`refreshUsage` via `async let`) —
+    // `refreshAccountUsage` deliberately does not wait on the sibling usage
+    // refresh once bootstrapped (see its doc comment and
+    // `refreshAccountUsageDoesNotBlockOnASlowSubsequentUsagePoll`), so
+    // whether that first pass derives accounts from the old or the
+    // just-swapped snapshot is a coin flip. By the time `login()` returns,
+    // `lastUsageSnapshot` is deterministically the new one either way
+    // (`refresh` awaits both halves) — one more refresh settles the race.
+    await model.refresh()
 
-    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == ["acct_A", "acct_B"])
+    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == [
+        personal.accountRef(providerID: providerID),
+        work.accountRef(providerID: providerID),
+    ])
     #expect(model.connectionAccounts(providerID: providerID).map(\.displayLabel) == [
         "same@example.com", "same@example.com",
     ])
     #expect(await service.loginIDs == [providerID])
-    #expect(await service.accountLoadCount == 2)
-    #expect(await service.accountUsageLoadCount == 2)
-    #expect(await usage.loadCount == 2)
-    #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_A")
+    #expect(coordinator.primaryAccountRef(providerID: providerID) == personal.accountRef(providerID: providerID))
 }
 
 @Test func staleExternalRemovalRefreshesRowsAndReportsAccountUnavailable() async throws {
     let providerID = "openai-codex"
-    let removed = providerAccountFixture(
-        providerID: providerID,
-        ref: "acct_A",
-        label: "Personal",
-        order: 0)
-    let remaining = providerAccountFixture(
-        providerID: providerID,
-        ref: "acct_B",
-        label: "Work",
-        order: 1)
-    let service = AccountManagementProviderService(
-        provider: ProviderLoginProvider(
-            id: providerID,
-            name: "ChatGPT",
-            isAvailable: true,
-            isAuthenticated: true),
-        accounts: [removed, remaining],
-        removalReportsStale: true)
+    let removedEntry = AccountSnapshotEntry(accountID: "a1", email: "personal@example.com")
+    let remainingEntry = AccountSnapshotEntry(accountID: "a2", email: "work@example.com")
+    let removedRef = removedEntry.accountRef(providerID: providerID)
+    let remainingRef = remainingEntry.accountRef(providerID: providerID)
+    let usage = FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+        providerID: providerID, accounts: [removedEntry, remainingEntry]))
     let model = ProviderManagementViewModel(
-        providerService: service,
-        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
+        providerService: FakeProviderService(providers: [ProviderLoginProvider(
+            id: providerID, name: "ChatGPT", isAvailable: true, isAuthenticated: true)]),
+        usageService: usage,
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
     await model.load()
@@ -268,45 +217,59 @@ import Testing
     defer { defaults.removePersistentDomain(forName: suiteName) }
     model.attachAccountCoordinator(coordinator)
     await coordinator.useAccount(
-        "acct_A",
+        removedRef,
         providerID: providerID,
         scope: .allNewSessions,
         openSessionID: nil)
+    var removalRequests: [AccountRemovalRequest] = []
+    // The extension reports the account already gone (removed by some other
+    // path) — `removed: false` alongside the now-authoritative remaining
+    // list. Mutating the snapshot models that same reality reaching the next
+    // `omp usage --json` poll the view model's own `refresh(forceFresh:)`
+    // triggers right after.
+    model.installAccountRemovalTransport { requestedProviderID, requestedAccountRef in
+        removalRequests.append(AccountRemovalRequest(
+            providerID: requestedProviderID, accountRef: requestedAccountRef))
+        await usage.setSnapshot(multiAccountUsageSnapshotFixture(
+            providerID: providerID, accounts: [remainingEntry]))
+        return ProviderAccountRemovalResult(
+            removed: false,
+            accounts: [providerAccountFixture(
+                providerID: providerID, ref: remainingRef, label: "work@example.com", order: 0)])
+    }
+    let removed = try #require(
+        model.connectionAccounts(providerID: providerID).first { $0.accountRef == removedRef })
 
     await model.removeAccount(removed, coordinator: coordinator)
+    // `removeAccount`'s own `refresh(forceFresh:)` races its two concurrent
+    // halves the same way `login()`'s does (see the comment in
+    // `successfulLoginAppendsAnAccountAndRefreshesAccountMetadataAndUsage`),
+    // so the snapshot swap above may or may not have landed in
+    // `accountSummaries` by the time it returns. `lastUsageSnapshot` itself
+    // is deterministically updated either way; one more refresh settles it.
+    await model.refresh()
 
-    #expect(await service.removalRequests == [
-        AccountRemovalRequest(providerID: providerID, accountRef: "acct_A"),
+    #expect(removalRequests == [
+        AccountRemovalRequest(providerID: providerID, accountRef: removedRef),
     ])
-    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == ["acct_B"])
+    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == [remainingRef])
     #expect(model.removalMessage == "Account is no longer available.")
     #expect(model.pendingRemovalAccounts.isEmpty)
-    #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_B")
+    #expect(coordinator.primaryAccountRef(providerID: providerID) == remainingRef)
 }
 
 @Test func failedRemovalRefreshesMetadataAndUsageThenRepairsFromAuthoritativeAccounts() async throws {
     let providerID = "openai-codex"
-    let removed = providerAccountFixture(
-        providerID: providerID,
-        ref: "acct_A",
-        label: "Personal",
-        order: 0)
-    let remaining = providerAccountFixture(
-        providerID: providerID,
-        ref: "acct_B",
-        label: "Work",
-        order: 1)
-    let service = AccountManagementProviderService(
-        provider: ProviderLoginProvider(
-            id: providerID,
-            name: "ChatGPT",
-            isAvailable: true,
-            isAuthenticated: true),
-        accounts: [removed, remaining],
-        removalFailureAfterMutation: true)
+    let removedEntry = AccountSnapshotEntry(accountID: "a1", email: "personal@example.com")
+    let remainingEntry = AccountSnapshotEntry(accountID: "a2", email: "work@example.com")
+    let removedRef = removedEntry.accountRef(providerID: providerID)
+    let remainingRef = remainingEntry.accountRef(providerID: providerID)
+    let usage = FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+        providerID: providerID, accounts: [removedEntry, remainingEntry]))
     let model = ProviderManagementViewModel(
-        providerService: service,
-        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
+        providerService: FakeProviderService(providers: [ProviderLoginProvider(
+            id: providerID, name: "ChatGPT", isAvailable: true, isAuthenticated: true)]),
+        usageService: usage,
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
     let (coordinator, defaults, suiteName) = try makeManagementCoordinator()
@@ -314,57 +277,62 @@ import Testing
     model.attachAccountCoordinator(coordinator)
     await model.load()
     await coordinator.useAccount(
-        "acct_A",
+        removedRef,
         providerID: providerID,
         scope: .allNewSessions,
         openSessionID: nil)
+    // The transport's own effect (the extension actually removed the
+    // credential) lands on the snapshot before it reports failure — modeling
+    // "the removal happened, but telling us about it failed" — so the
+    // `refresh(forceFresh:)` inside the view model's catch-all still repairs
+    // from the authoritative, now-one-account state.
+    model.installAccountRemovalTransport { _, _ in
+        await usage.setSnapshot(multiAccountUsageSnapshotFixture(
+            providerID: providerID, accounts: [remainingEntry]))
+        throw ProviderAccountChannelError.rejected("boom")
+    }
 
+    let removed = try #require(
+        model.connectionAccounts(providerID: providerID).first { $0.accountRef == removedRef })
     await model.removeAccount(removed, coordinator: coordinator)
+    // Settles the same race described in
+    // `staleExternalRemovalRefreshesRowsAndReportsAccountUnavailable`.
+    await model.refresh()
 
-    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == ["acct_B"])
+    #expect(model.connectionAccounts(providerID: providerID).map(\.accountRef) == [remainingRef])
     #expect(model.removalMessage == "Account couldn’t be removed.")
-    #expect(await service.accountLoadCount == 2)
-    #expect(await service.accountUsageLoadCount == 2)
-    #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_B")
+    #expect(coordinator.primaryAccountRef(providerID: providerID) == remainingRef)
 }
 
 @Test func removalWithoutAnEligibleReplacementRefreshesAndShowsATruthfulError() async throws {
     let providerID = "openai-codex"
-    let target = providerAccountFixture(
-        providerID: providerID,
-        ref: "acct_A",
-        label: "Personal",
-        order: 0)
-    let unavailable = providerAccountFixture(
-        providerID: providerID,
-        ref: "acct_B",
-        label: "Unavailable",
-        order: 1,
-        availability: .unavailable)
-    let service = AccountManagementProviderService(
-        provider: ProviderLoginProvider(
-            id: providerID,
-            name: "ChatGPT",
-            isAvailable: true,
-            isAuthenticated: true),
-        accounts: [target, unavailable])
+    let target = AccountSnapshotEntry(accountID: "a1", email: "personal@example.com")
+    let unavailable = AccountSnapshotEntry(accountID: "a2", email: "unavailable@example.com", isDisabled: true)
+    let targetRef = target.accountRef(providerID: providerID)
     let model = ProviderManagementViewModel(
-        providerService: service,
-        usageService: FakeUsageService(snapshot: try accountRoutingUsageSnapshotFixture(providerID: providerID)),
+        providerService: FakeProviderService(providers: [ProviderLoginProvider(
+            id: providerID, name: "ChatGPT", isAvailable: true, isAuthenticated: true)]),
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: providerID, accounts: [target, unavailable])),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
     let (coordinator, defaults, suiteName) = try makeManagementCoordinator()
     defer { defaults.removePersistentDomain(forName: suiteName) }
     model.attachAccountCoordinator(coordinator)
     await model.load()
+    // No removal transport installed: the coordinator must refuse before
+    // ever reaching it (the only remaining account, `unavailable`, is not an
+    // eligible replacement) — reaching `performRemoval` at all would produce
+    // a different message than the one asserted below, via the installed-
+    // by-default "no transport" failure, so this also proves it was never
+    // called without a separate call-count fake.
 
-    await model.removeAccount(target, coordinator: coordinator)
+    let removed = try #require(
+        model.connectionAccounts(providerID: providerID).first { $0.accountRef == targetRef })
+    await model.removeAccount(removed, coordinator: coordinator)
 
-    #expect(await service.removalRequests.isEmpty)
-    #expect(await service.accountLoadCount == 2)
-    #expect(await service.accountUsageLoadCount == 2)
     #expect(model.removalMessage == "Account couldn’t be removed because no replacement account is available.")
-    #expect(coordinator.primaryAccountRef(providerID: providerID) == "acct_A")
+    #expect(coordinator.primaryAccountRef(providerID: providerID) == targetRef)
 }
 
 @Test func connectionFocusSelectsConnectionsAndRetainsTheProviderTarget() {
@@ -465,58 +433,49 @@ import Testing
     #expect(!hidden.isUnderlyingContentAccessibilityHidden)
 }
 
-@Test func lateCLIFailureDoesNotOverwriteNewerAccountRPCUsage() async throws {
+/// Task 10b replacement for the retired `lateCLIFailureDoesNotOverwriteNewerAccountRPCUsage`:
+/// that test proved a slow/failing CLI-wide `omp usage --json` poll could
+/// not block or corrupt a SEPARATE, independent per-account RPC. There is no
+/// longer a separate per-account RPC to race against — both derive from the
+/// same snapshot — so the invariant worth keeping is the mechanism that
+/// used to protect it: `refreshAccountUsage` waits for the sibling usage
+/// refresh only on a cold-start (`lastUsageSnapshot == nil`), never on a
+/// later refresh, so a slow subsequent CLI poll cannot stall provider/account
+/// loading behind it.
+@Test func refreshAccountUsageDoesNotBlockOnASlowSubsequentUsagePoll() async throws {
     let providerID = "cursor"
-    let account = providerAccountFixture(
-        providerID: providerID,
-        ref: "acct_A",
-        label: "Account",
-        order: 0)
-    let service = FakeProviderService(
-        providers: [ProviderLoginProvider(
-            id: providerID,
-            name: "Cursor",
-            isAvailable: true,
-            isAuthenticated: true)],
-        accounts: [providerID: [account]],
-        accountUsage: [providerID: [providerAccountUsageFixture(
-            providerID: providerID,
-            ref: "acct_A",
-            windows: [providerAccountUsageWindowFixture(
-                id: "monthly",
-                label: "Monthly",
-                remainingFraction: 0.25)])]])
-    let cliUsage = FakeUsageService(snapshot: try usageSnapshotFixture())
+    let account = AccountSnapshotEntry(accountID: "a1", email: "account@example.com", remainingFraction: 0.25)
+    let usage = FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+        providerID: providerID, accounts: [account]))
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID, name: "Cursor", isAvailable: true, isAuthenticated: true)])
     let model = ProviderManagementViewModel(
         providerService: service,
-        usageService: cliUsage,
+        usageService: usage,
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
     await model.load()
     #expect(model.dockProviders.first?.accounts.first?.limits.first?.percentage == 25)
+
     let lateCLIGate = LoadGate()
-    await cliUsage.enqueueLoadGate(lateCLIGate)
-    await cliUsage.setFailing(true)
-    await service.setAccountUsage([providerID: [providerAccountUsageFixture(
-        providerID: providerID,
-        ref: "acct_A",
-        windows: [providerAccountUsageWindowFixture(
-            id: "monthly",
-            label: "Monthly",
-            remainingFraction: 0.8)])]])
+    await usage.enqueueLoadGate(lateCLIGate)
 
     let refresh = Task { await model.refresh() }
     await lateCLIGate.waitForStart()
+    // The account-deriving side of the refresh must already be done — still
+    // showing the OLD snapshot's values — while the CLI poll sits gated.
     await waitForModelState {
-        model.dockProviders.first?.accounts.first?.limits.first?.percentage == 80
+        model.isRefreshingUsage && !model.isLoadingProviders
     }
+    #expect(model.dockProviders.first?.accounts.first?.limits.first?.percentage == 25)
+
     await lateCLIGate.release()
     await refresh.value
 
     let provider = try #require(model.dockProviders.first)
     #expect(provider.capability == .accountRouting)
-    #expect(provider.accounts.first?.accountRef == "acct_A")
-    #expect(provider.accounts.first?.limits.first?.percentage == 80)
+    #expect(provider.accounts.first?.accountRef == account.accountRef(providerID: providerID))
+    #expect(provider.accounts.first?.limits.first?.percentage == 25)
 }
 
 @Test func disconnectedAndMissingProvidersDiscardAccountPresentationCaches() async throws {
@@ -526,17 +485,7 @@ import Testing
         name: "Cursor",
         isAvailable: true,
         isAuthenticated: true)
-    let service = FakeProviderService(
-        providers: [authenticated],
-        accounts: [providerID: [providerAccountFixture(
-            providerID: providerID,
-            ref: "acct_A",
-            label: "Account",
-            order: 0)]],
-        accountUsage: [providerID: [providerAccountUsageFixture(
-            providerID: providerID,
-            ref: "acct_A",
-            windows: [providerAccountUsageWindowFixture(id: "monthly", label: "Monthly")])]])
+    let service = FakeProviderService(providers: [authenticated])
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: FakeUsageService(snapshot: try usageSnapshotFixture()),
@@ -1035,88 +984,6 @@ final class MutableClock: Sendable {
 private struct AccountRemovalRequest: Equatable, Sendable {
     let providerID: String
     let accountRef: String
-}
-
-private actor AccountManagementProviderService: ProviderManaging {
-    nonisolated let events: AsyncStream<ProviderLoginEvent>
-
-    private let eventContinuation: AsyncStream<ProviderLoginEvent>.Continuation
-    private var provider: ProviderLoginProvider
-    private var accounts: [ProviderAccountSummary]
-    private let accountAddedOnLogin: ProviderAccountSummary?
-    private let removalReportsStale: Bool
-    private let removalFailureAfterMutation: Bool
-    private(set) var loginIDs: [String] = []
-    private(set) var removalRequests: [AccountRemovalRequest] = []
-    private(set) var accountLoadCount = 0
-    private(set) var accountUsageLoadCount = 0
-
-    init(
-        provider: ProviderLoginProvider,
-        accounts: [ProviderAccountSummary],
-        accountAddedOnLogin: ProviderAccountSummary? = nil,
-        removalReportsStale: Bool = false,
-        removalFailureAfterMutation: Bool = false
-    ) {
-        self.provider = provider
-        self.accounts = accounts
-        self.accountAddedOnLogin = accountAddedOnLogin
-        self.removalReportsStale = removalReportsStale
-        self.removalFailureAfterMutation = removalFailureAfterMutation
-        (events, eventContinuation) = AsyncStream.makeStream(bufferingPolicy: .unbounded)
-    }
-
-    func providers() async throws -> [ProviderLoginProvider] { [provider] }
-
-    func accounts(providerID: String) async throws -> [ProviderAccountSummary] {
-        accountLoadCount += 1
-        return accounts
-    }
-
-    func accountUsage(providerID: String) async throws -> [ProviderAccountUsage] {
-        accountUsageLoadCount += 1
-        return []
-    }
-
-    func removeAccount(
-        providerID: String,
-        accountRef: String
-    ) async throws -> ProviderAccountRemovalResult {
-        removalRequests.append(AccountRemovalRequest(providerID: providerID, accountRef: accountRef))
-        accounts.removeAll { $0.providerID == providerID && $0.accountRef == accountRef }
-        if accounts.isEmpty {
-            provider = ProviderLoginProvider(
-                id: provider.id,
-                name: provider.name,
-                isAvailable: provider.isAvailable,
-                isAuthenticated: false)
-        }
-        if removalFailureAfterMutation {
-            throw AccountManagementProviderError.removalFailed
-        }
-        return ProviderAccountRemovalResult(
-            removed: !removalReportsStale,
-            accounts: accounts)
-    }
-
-    func login(providerID: String, generation: Int) async throws {
-        loginIDs.append(providerID)
-        if let accountAddedOnLogin, !accounts.contains(where: { $0.accountRef == accountAddedOnLogin.accountRef }) {
-            accounts.append(accountAddedOnLogin)
-        }
-    }
-
-    func respond(requestID: String, body: [String: JSONValue]) async throws {}
-
-    func cancelLogin() async {}
-
-    func shutdown() async {
-        eventContinuation.finish()
-    }
-}
-
-private enum AccountManagementProviderError: Error {
-    case removalFailed
 }
 
 @MainActor

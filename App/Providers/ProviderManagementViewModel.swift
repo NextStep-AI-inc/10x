@@ -11,9 +11,6 @@ enum ProviderWorkspaceSection: Equatable, Sendable {
 private struct ProviderServiceBox: Sendable {
     let events: AsyncStream<ProviderLoginEvent>
     let providers: @Sendable () async throws -> [ProviderLoginProvider]
-    let accounts: @Sendable (String) async throws -> [ProviderAccountSummary]
-    let accountUsage: @Sendable (String) async throws -> [ProviderAccountUsage]
-    let removeAccount: @Sendable (String, String) async throws -> ProviderAccountRemovalResult
     let login: @Sendable (String, Int) async throws -> Void
     let respond: @Sendable (String, [String: JSONValue]) async throws -> Void
     let cancelLogin: @Sendable () async -> Void
@@ -22,11 +19,6 @@ private struct ProviderServiceBox: Sendable {
     init<Service: ProviderManaging>(_ service: Service) {
         events = service.events
         providers = { try await service.providers() }
-        accounts = { try await service.accounts(providerID: $0) }
-        accountUsage = { try await service.accountUsage(providerID: $0) }
-        removeAccount = { providerID, accountRef in
-            try await service.removeAccount(providerID: providerID, accountRef: accountRef)
-        }
         login = { providerID, generation in
             try await service.login(providerID: providerID, generation: generation)
         }
@@ -98,6 +90,19 @@ final class ProviderManagementViewModel {
     @ObservationIgnored private var providerRefreshOperation: RefreshOperation?
     @ObservationIgnored private var usageRefreshOperation: RefreshOperation?
     @ObservationIgnored private weak var accountCoordinator: ProviderAccountCoordinator?
+    // `var`, not `let`: installed after construction, matching
+    // `ProviderAccountCoordinator.install(routingBackend:restartSession:)`'s
+    // reasoning — the transport closes over session-level state
+    // (`AppModel.accountChannelRegistry`) that does not exist yet at
+    // `ProviderManagementViewModel` construction time, and this view model
+    // itself gets rebuilt whenever the OMP executable changes, so
+    // installation happens at every construction site, not once. `nil`
+    // (the default) means no transport is available — no live session
+    // channel, or the app hasn't wired one yet — and `removeAccount` throws
+    // rather than pretending success; there is no stock-tier fallback for
+    // removal (see `ProviderAccountTier.supportsRemoval`).
+    @ObservationIgnored private var removeAccountTransport:
+        (@MainActor (String, String) async throws -> ProviderAccountRemovalResult)?
 
     init<ProviderService: ProviderManaging, UsageService: OmpUsageLoading>(
         providerService: ProviderService,
@@ -155,6 +160,17 @@ final class ProviderManagementViewModel {
         for (providerID, accounts) in accountSummaries {
             coordinator.reconcilePrimaryAccount(providerID: providerID, accounts: accounts)
         }
+    }
+
+    /// How `removeAccount` below reaches the extension's `remove_account`
+    /// command. The live app installs this from `AppModel`, which is the
+    /// only place session-scoped state (the account channel registry) exists
+    /// — see `AppModel`'s call site for the full reasoning, mirroring
+    /// `ProviderAccountCoordinator.install(routingBackend:restartSession:)`.
+    func installAccountRemovalTransport(
+        _ transport: (@MainActor (String, String) async throws -> ProviderAccountRemovalResult)?
+    ) {
+        removeAccountTransport = transport
     }
 
     func load() async {
@@ -245,8 +261,11 @@ final class ProviderManagementViewModel {
                 providerID: account.providerID,
                 accountRef: account.accountRef,
                 accounts: connectionAccounts(providerID: account.providerID)
-            ) { [providerService] in
-                try await providerService.removeAccount(account.providerID, account.accountRef)
+            ) { [removeAccountTransport, providerID = account.providerID, accountRef = account.accountRef] in
+                guard let removeAccountTransport else {
+                    throw ProviderAccountChannelError.unavailable
+                }
+                return try await removeAccountTransport(providerID, accountRef)
             }
             accountSummaries[account.providerID] = result.accounts
             coordinator.reconcilePrimaryAccount(
@@ -372,13 +391,16 @@ final class ProviderManagementViewModel {
         // usage refresh kicked off alongside this one (see `refresh(forceFresh:)`).
         // On the very first refresh there may be no snapshot yet, so wait for
         // that one-time bootstrap. Once a snapshot exists, do NOT block on the
-        // sibling for subsequent refreshes: a slow or failing CLI-wide usage
-        // fetch must not stall per-provider account/usage loading, which is
-        // an independent RPC path. (A blocking, unconditional wait here
-        // deadlocks against exactly that scenario — see
-        // `lateCLIFailureDoesNotOverwriteNewerAccountRPCUsage`, which gates
-        // the CLI usage load and expects account RPC usage to update while
-        // it's still stalled.)
+        // sibling for subsequent refreshes: accounts and their usage below
+        // are both derived synchronously from whatever snapshot is already
+        // on hand (`ProviderAccountUsageBackend`, Task 10b) — a slow or
+        // failing CLI-wide usage fetch must not stall that derivation behind
+        // it when a perfectly good previous snapshot is already available.
+        // (A blocking, unconditional wait here deadlocks against exactly
+        // that scenario — see
+        // `refreshAccountUsageDoesNotBlockOnASlowSubsequentUsagePoll`, which
+        // gates a second CLI usage load and confirms the provider refresh
+        // still completes, from the old snapshot, while it's stalled.)
         if lastUsageSnapshot == nil {
             await usageRefreshOperation?.task.value
         }
@@ -416,38 +438,34 @@ final class ProviderManagementViewModel {
                 continue
             }
 
-            do {
-                let accounts = try await providerService.accounts(provider.id)
-                accountSummaries[provider.id] = accounts
-                accountCoordinator?.reconcilePrimaryAccount(
-                    providerID: provider.id,
-                    accounts: accounts)
-                rebuildUsage(at: lastUsageRefresh ?? now())
-                do {
-                    accountUsage[provider.id] = try await providerService.accountUsage(provider.id)
-                    loadedAccountUsageProviderIDs.insert(provider.id)
-                    unavailableAccountUsageProviderIDs.remove(provider.id)
-                    // A per-account usage success must not silently clear a
-                    // CLI-wide snapshot failure — different failure domain,
-                    // and `isUsageSnapshotCurrentlyFailing` is live state (set
-                    // by `performUsageRefresh`), not a since-entry diff, so it
-                    // reads correctly even when that failure completed before
-                    // this function was entered.
-                    if unavailableAccountUsageProviderIDs.isEmpty && !isUsageSnapshotCurrentlyFailing {
-                        usageMessage = nil
-                    }
-                } catch {
-                    accountUsage.removeValue(forKey: provider.id)
-                    loadedAccountUsageProviderIDs.remove(provider.id)
-                    unavailableAccountUsageProviderIDs.insert(provider.id)
-                    usageMessage = "Usage couldn’t be loaded."
-                }
-                rebuildUsage(at: now())
-            } catch {
-                failedAccountCapabilityProviderIDs.insert(provider.id)
-                providerMessage = "Provider accounts couldn’t be loaded."
-                rebuildUsage(at: lastUsageRefresh ?? now())
+            // Pure derivations over the snapshot already on hand — no RPC,
+            // so no failure mode of their own (Task 10b: the RPC these used
+            // to call, `providerService.accounts`/`accountUsage`, is gone;
+            // Task 10 deleted its implementation and left only the
+            // `ProviderAccountManaging` protocol default returning `[]`).
+            // Both derive from the same `snapshot.reports` filtered by
+            // `provider.id`, so an account from `accounts(from:providerID:)`
+            // always has a matching entry from `usage(from:providerID:)` —
+            // there is no longer a window where metadata is known but usage
+            // isn't, or vice versa.
+            let accounts = ProviderAccountUsageBackend.accounts(from: snapshot, providerID: provider.id)
+            accountSummaries[provider.id] = accounts
+            accountCoordinator?.reconcilePrimaryAccount(
+                providerID: provider.id,
+                accounts: accounts)
+            accountUsage[provider.id] = ProviderAccountUsageBackend.usage(from: snapshot, providerID: provider.id)
+            loadedAccountUsageProviderIDs.insert(provider.id)
+            unavailableAccountUsageProviderIDs.remove(provider.id)
+            // `isUsageSnapshotCurrentlyFailing` is live state (set by
+            // `performUsageRefresh`), not a since-entry diff, so it reads
+            // correctly even when that failure completed before this
+            // function was entered — a per-account derivation succeeding
+            // must not silently clear a CLI-wide snapshot failure, a
+            // different failure domain.
+            if unavailableAccountUsageProviderIDs.isEmpty && !isUsageSnapshotCurrentlyFailing {
+                usageMessage = nil
             }
+            rebuildUsage(at: now())
         }
     }
 

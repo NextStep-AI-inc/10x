@@ -13,13 +13,7 @@ actor FakeProviderService: ProviderManaging {
     private var loginGates: [LoginGate]
     private let shutdownGate: LoadGate?
     private var providerGates: [LoadGate] = []
-    private var storedAccounts: [String: [ProviderAccountSummary]]
-    private var storedAccountUsage: [String: [ProviderAccountUsage]]
-    private var accountUsageError: FakeProviderError?
-    private var accountUsageGates: [LoadGate] = []
     private(set) var providerLoadCount = 0
-    private(set) var accountLoadIDs: [String] = []
-    private(set) var accountUsageLoadIDs: [String] = []
     private(set) var loginIDs: [String] = []
     private(set) var responses: [(String, [String: JSONValue])] = []
     private(set) var cancelCount = 0
@@ -30,19 +24,13 @@ actor FakeProviderService: ProviderManaging {
         providerError: (any Error & Sendable)? = nil,
         loginError: FakeProviderError? = nil,
         loginGate: LoginGate? = nil,
-        shutdownGate: LoadGate? = nil,
-        accounts: [String: [ProviderAccountSummary]] = [:],
-        accountUsage: [String: [ProviderAccountUsage]] = [:],
-        accountUsageError: FakeProviderError? = nil
+        shutdownGate: LoadGate? = nil
     ) {
         storedProviders = providers
         self.providerError = providerError
         self.loginError = loginError
         self.loginGates = loginGate.map { [$0] } ?? []
         self.shutdownGate = shutdownGate
-        storedAccounts = accounts
-        storedAccountUsage = accountUsage
-        self.accountUsageError = accountUsageError
         (events, continuation) = AsyncStream.makeStream(bufferingPolicy: .unbounded)
     }
 
@@ -54,20 +42,6 @@ actor FakeProviderService: ProviderManaging {
         await gate?.waitForRelease()
         if let providerError { throw providerError }
         return result
-    }
-
-    func accounts(providerID: String) async throws -> [ProviderAccountSummary] {
-        accountLoadIDs.append(providerID)
-        return storedAccounts[providerID] ?? []
-    }
-
-    func accountUsage(providerID: String) async throws -> [ProviderAccountUsage] {
-        accountUsageLoadIDs.append(providerID)
-        let gate = accountUsageGates.isEmpty ? nil : accountUsageGates.removeFirst()
-        await gate?.started()
-        await gate?.waitForRelease()
-        if let accountUsageError { throw accountUsageError }
-        return storedAccountUsage[providerID] ?? []
     }
 
     func login(providerID: String, generation: Int) async throws {
@@ -110,20 +84,12 @@ actor FakeProviderService: ProviderManaging {
         providerGates.append(gate)
     }
 
-    func enqueueAccountUsageGate(_ gate: LoadGate) {
-        accountUsageGates.append(gate)
-    }
-
     func enqueueLoginGate(_ gate: LoginGate) {
         loginGates.append(gate)
     }
 
     func setProviders(_ providers: [ProviderLoginProvider]) {
         storedProviders = providers
-    }
-
-    func setAccountUsage(_ usage: [String: [ProviderAccountUsage]]) {
-        storedAccountUsage = usage
     }
 }
 
@@ -216,16 +182,24 @@ actor LoadGate {
 enum FakeProviderError: Error, Sendable {
     case discoveryFailed
     case loginFailed
-    case accountUsageFailed
 }
 
 actor FakeUsageService: OmpUsageLoading {
-    private let snapshot: OmpUsageSnapshot
+    private var snapshot: OmpUsageSnapshot
     private(set) var loadCount = 0
     private var isFailing = false
     private var loadGates: [LoadGate] = []
 
     init(snapshot: OmpUsageSnapshot) {
+        self.snapshot = snapshot
+    }
+
+    /// Changes what the *next* `loadUsage()` call returns. Account reads now
+    /// derive from this snapshot (`ProviderAccountUsageBackend`) rather than
+    /// a separate per-account RPC, so a test that needs the account list to
+    /// grow or change after some action (e.g. login) must swap the snapshot
+    /// itself instead of pushing new account data through the provider fake.
+    func setSnapshot(_ snapshot: OmpUsageSnapshot) {
         self.snapshot = snapshot
     }
 
@@ -335,6 +309,110 @@ func accountRoutingUsageSnapshotFixture(
       {"provider":"\(providerID)","fetchedAt":1,"limits":[],"metadata":{"email":"\(email)"}}
     ],"accountsWithoutUsage":[],"disabledCredentials":[]}
     """.utf8))
+}
+
+/// One account's identity (plus an optional usage window and disabled-credential
+/// flag) inside a `multiAccountUsageSnapshotFixture`. Mirrors exactly the
+/// `OmpUsageReport.metadata` fields `ProviderAccountUsageBackend` reads
+/// (`accountId`, `email`, `orgName`), so tests can drive real,
+/// snapshot-derived accounts now that reads no longer go through a
+/// per-account RPC a fake can hand back arbitrary refs for.
+struct AccountSnapshotEntry {
+    let accountID: String
+    let email: String?
+    let orgName: String?
+    let isDisabled: Bool
+    let remainingFraction: Double?
+
+    init(
+        accountID: String,
+        email: String? = nil,
+        orgName: String? = nil,
+        isDisabled: Bool = false,
+        remainingFraction: Double? = 0.5
+    ) {
+        self.accountID = accountID
+        self.email = email
+        self.orgName = orgName
+        self.isDisabled = isDisabled
+        self.remainingFraction = remainingFraction
+    }
+
+    /// The `accountRef` `ProviderAccountUsageBackend.accountRef(for:)` derives
+    /// for this entry — computed via the same production hash
+    /// (`ProviderAccountRef.make`) rather than an arbitrary test string, so
+    /// assertions compare against what the real read path actually produces.
+    func accountRef(providerID: String) -> String {
+        ProviderAccountRef.make(
+            providerID: providerID,
+            accountID: accountID,
+            email: email,
+            orgID: nil,
+            projectID: nil)!
+    }
+}
+
+/// A usage snapshot carrying one `OmpUsageReport` per `accounts` entry, for
+/// tests that need multiple distinguishable per-account identities —
+/// `accountRoutingUsageSnapshotFixture` above only ever produces one.
+/// `connectionOrder` on the resulting `ProviderAccountSummary` follows array
+/// order, matching `ProviderAccountUsageBackend`'s enumerate-before-compactMap
+/// contract.
+func multiAccountUsageSnapshotFixture(
+    providerID: String,
+    accounts: [AccountSnapshotEntry]
+) -> OmpUsageSnapshot {
+    let reports = accounts.map { account -> OmpUsageReport in
+        var metadata: [String: JSONValue] = ["accountId": .string(account.accountID)]
+        if let email = account.email { metadata["email"] = .string(email) }
+        if let orgName = account.orgName { metadata["orgName"] = .string(orgName) }
+        let limits: [OmpUsageLimit] = account.remainingFraction.map { fraction in
+            [OmpUsageLimit(
+                id: "\(account.accountID):usage",
+                label: "Usage",
+                scope: OmpUsageScope(
+                    provider: providerID,
+                    accountId: account.accountID,
+                    projectId: nil,
+                    orgId: nil,
+                    modelId: nil,
+                    tier: nil,
+                    windowId: nil,
+                    shared: nil),
+                window: nil,
+                amount: OmpUsageAmount(
+                    used: nil,
+                    limit: nil,
+                    remaining: nil,
+                    usedFraction: nil,
+                    remainingFraction: fraction,
+                    unit: "percent"),
+                status: nil,
+                notes: nil)]
+        } ?? []
+        return OmpUsageReport(
+            provider: providerID,
+            fetchedAt: 1,
+            limits: limits,
+            metadata: metadata)
+    }
+    let disabledCredentials = accounts.filter(\.isDisabled).map { account in
+        OmpDisabledCredential(
+            id: 0,
+            provider: providerID,
+            type: "oauth",
+            cause: "disabled",
+            email: account.email,
+            accountId: account.accountID,
+            orgId: nil,
+            orgName: account.orgName,
+            disabledAtMs: 0)
+    }
+    return OmpUsageSnapshot(
+        generatedAt: 1,
+        reports: reports,
+        accountsWithoutUsage: [],
+        disabledCredentials: disabledCredentials)
 }
 
 func providerAccountFixture(

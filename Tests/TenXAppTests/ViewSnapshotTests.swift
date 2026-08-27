@@ -568,30 +568,29 @@ import Testing
 @MainActor
 @Test func providerAccountConnectionsRowsSnapshot() async throws {
     let providerID = "openai-codex"
-    let service = FakeProviderService(
-        providers: [ProviderLoginProvider(
-            id: providerID,
-            name: "ChatGPT",
-            isAvailable: true,
-            isAuthenticated: true)],
-        accounts: [providerID: [
-            providerAccountFixture(
-                providerID: providerID,
-                ref: "acct_A",
-                label: "same@example.com",
-                order: 0,
-                detailLabel: "Personal"),
-            providerAccountFixture(
-                providerID: providerID,
-                ref: "acct_B",
-                label: "same@example.com",
-                order: 1,
-                availability: .unavailable,
-                detailLabel: "Work"),
-        ]])
+    // Task 10b: accounts render from the usage snapshot now
+    // (`ProviderAccountUsageBackend`), not a per-account RPC fixture — and
+    // the snapshot must carry per-account identity or tier detection falls
+    // back to `.providerOnly`, which hides accounts entirely regardless of
+    // the read path. `remainingFraction: nil` keeps each account's usage
+    // windows empty, matching what the retired RPC fixture (no usage
+    // attached) rendered.
+    let personal = AccountSnapshotEntry(
+        accountID: "a1", email: "same@example.com", orgName: "Personal", remainingFraction: nil)
+    let work = AccountSnapshotEntry(
+        accountID: "a2", email: "same@example.com", orgName: "Work",
+        isDisabled: true, remainingFraction: nil)
+    let personalRef = personal.accountRef(providerID: providerID)
+    let workRef = work.accountRef(providerID: providerID)
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "ChatGPT",
+        isAvailable: true,
+        isAuthenticated: true)])
     let model = ProviderManagementViewModel(
         providerService: service,
-        usageService: FakeUsageService(snapshot: .empty),
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: providerID, accounts: [personal, work])),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 1_787_675_746) })
     await model.load()
@@ -601,19 +600,19 @@ import Testing
     let coordinator = ProviderAccountCoordinator(
         primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
     await coordinator.useAccount(
-        "acct_A",
+        personalRef,
         providerID: providerID,
         scope: .allNewSessions,
         openSessionID: nil)
     coordinator.register(SnapshotProviderAccountSession(
         providerID: providerID,
-        accountRef: "acct_A"))
+        accountRef: personalRef))
     coordinator.register(SnapshotProviderAccountSession(
         providerID: providerID,
-        accountRef: "acct_A"))
+        accountRef: personalRef))
     coordinator.register(SnapshotProviderAccountSession(
         providerID: providerID,
-        accountRef: "acct_B"))
+        accountRef: workRef))
 
     try assertSnapshot(
         ProvidersView(model: model, accountCoordinator: coordinator),
@@ -850,77 +849,68 @@ private final class SnapshotProviderAccountSession: ProviderAccountSession {
 @MainActor
 private func fullShellAccountProviderModel() -> ProviderManagementViewModel {
     ProviderManagementViewModel(
-        providerService: FakeProviderService(
-            providers: fullShellProviders,
-            accounts: [
-                "anthropic": [
-                    providerAccountFixture(
-                        providerID: "anthropic",
-                        ref: "acct_claude_personal",
-                        label: "tanner@example.com",
-                        order: 0),
-                    providerAccountFixture(
-                        providerID: "anthropic",
-                        ref: "acct_claude_work",
-                        label: "work@example.com",
-                        order: 1),
-                ],
-                "openai-codex": [
-                    providerAccountFixture(
-                        providerID: "openai-codex",
-                        ref: "acct_chatgpt_personal",
-                        label: "tanner@example.com",
-                        order: 0),
-                    providerAccountFixture(
-                        providerID: "openai-codex",
-                        ref: "acct_chatgpt_team",
-                        label: "team@example.com",
-                        order: 1),
-                    providerAccountFixture(
-                        providerID: "openai-codex",
-                        ref: "acct_chatgpt_school",
-                        label: "school@example.com",
-                        order: 2),
-                ],
-            ],
-            accountUsage: [
-                "anthropic": [
-                    fullShellAccountUsage(providerID: "anthropic", ref: "acct_claude_personal", remaining: 0.82),
-                    fullShellAccountUsage(providerID: "anthropic", ref: "acct_claude_work", remaining: 0.24),
-                ],
-                "openai-codex": [
-                    fullShellAccountUsage(providerID: "openai-codex", ref: "acct_chatgpt_personal", remaining: 0.61),
-                    fullShellAccountUsage(providerID: "openai-codex", ref: "acct_chatgpt_team", remaining: 0.45),
-                    fullShellAccountUsage(providerID: "openai-codex", ref: "acct_chatgpt_school", remaining: 0.9),
-                ],
-            ]),
-        usageService: FakeUsageService(snapshot: .empty),
+        providerService: FakeProviderService(providers: fullShellProviders),
+        usageService: FakeUsageService(snapshot: fullShellAccountUsageSnapshot()),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 1_787_675_746) },
         formatTime: { _ in "4:00 PM" })
 }
 
-private func fullShellAccountUsage(
-    providerID: String,
-    ref: String,
-    remaining: Double
-) -> ProviderAccountUsage {
-    providerAccountUsageFixture(
-        providerID: providerID,
-        ref: ref,
-        windows: [
-            providerAccountUsageWindowFixture(
-                id: "\(ref):five-hour",
-                label: "5 hour",
-                remainingFraction: remaining,
-                resetsAt: Date(timeIntervalSince1970: 1_787_700_000)),
-            providerAccountUsageWindowFixture(
-                id: "\(ref):weekly",
-                label: "Weekly",
-                sourceIndex: 1,
-                remainingFraction: max(0, remaining - 0.2),
-                resetsAt: Date(timeIntervalSince1970: 1_788_061_624)),
-        ])
+/// Task 10b: accounts and their usage windows now derive from the usage
+/// snapshot (`ProviderAccountUsageBackend`), not the retired per-account RPC
+/// fixture — a bespoke builder rather than `multiAccountUsageSnapshotFixture`
+/// because these accounts need TWO usage windows apiece (matching the
+/// original fixture's five-hour + weekly pair) where that shared helper only
+/// ever attaches one. `accountRef` values are opaque hashes now rather than
+/// the old fixture's literal `"acct_claude_personal"` strings, but nothing
+/// in the three snapshot tests below asserts against a ref directly, and
+/// `foregroundAccountRef` picks by `connectionOrder` — preserved here in the
+/// same order as before — not by ref value, so the rendered rows are
+/// unaffected.
+private func fullShellAccountUsageSnapshot() -> OmpUsageSnapshot {
+    func window(
+        providerID: String, accountID: String, kind: String, label: String,
+        remainingFraction: Double, resetsAtMs: Int64
+    ) -> OmpUsageLimit {
+        OmpUsageLimit(
+            id: "\(accountID):\(kind)",
+            label: label,
+            scope: OmpUsageScope(
+                provider: providerID, accountId: accountID, projectId: nil, orgId: nil,
+                modelId: nil, tier: nil, windowId: nil, shared: nil),
+            window: OmpUsageWindow(id: kind, label: label, resetsAt: resetsAtMs),
+            amount: OmpUsageAmount(
+                used: nil, limit: nil, remaining: nil, usedFraction: nil,
+                remainingFraction: remainingFraction, unit: "percent"),
+            status: nil,
+            notes: nil)
+    }
+    func report(providerID: String, accountID: String, email: String, remainingFiveHour: Double) -> OmpUsageReport {
+        let remainingWeekly = max(0, remainingFiveHour - 0.2)
+        return OmpUsageReport(
+            provider: providerID,
+            fetchedAt: 1,
+            limits: [
+                window(
+                    providerID: providerID, accountID: accountID, kind: "five-hour", label: "5 hour",
+                    remainingFraction: remainingFiveHour, resetsAtMs: 1_787_700_000_000),
+                window(
+                    providerID: providerID, accountID: accountID, kind: "weekly", label: "Weekly",
+                    remainingFraction: remainingWeekly, resetsAtMs: 1_788_061_624_000),
+            ],
+            metadata: ["accountId": .string(accountID), "email": .string(email)])
+    }
+    return OmpUsageSnapshot(
+        generatedAt: 1,
+        reports: [
+            report(providerID: "anthropic", accountID: "acct_claude_personal", email: "tanner@example.com", remainingFiveHour: 0.82),
+            report(providerID: "anthropic", accountID: "acct_claude_work", email: "work@example.com", remainingFiveHour: 0.24),
+            report(providerID: "openai-codex", accountID: "acct_chatgpt_personal", email: "tanner@example.com", remainingFiveHour: 0.61),
+            report(providerID: "openai-codex", accountID: "acct_chatgpt_team", email: "team@example.com", remainingFiveHour: 0.45),
+            report(providerID: "openai-codex", accountID: "acct_chatgpt_school", email: "school@example.com", remainingFiveHour: 0.9),
+        ],
+        accountsWithoutUsage: [],
+        disabledCredentials: [])
 }
 
 @MainActor

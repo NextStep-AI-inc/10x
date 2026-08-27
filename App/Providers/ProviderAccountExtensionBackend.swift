@@ -51,22 +51,10 @@ struct ProviderAccountExtensionBackend: ProviderAccountRouting {
         accountRef: String,
         sessionID: UUID
     ) async throws -> ProviderAccountRouteOutcome {
-        let command = ProviderAccountChannelCommand(
-            id: UUID().uuidString,
-            command: "pin_account",
-            params: [
-                "providerId": .string(providerID),
-                "accountRef": .string(accountRef),
-            ])
-
-        let reply: JSONValue
-        do {
-            reply = try await channel.send(command)
-        } catch let error as ProviderAccountChannelError {
-            throw error
-        } catch {
-            throw ProviderAccountChannelError.unavailable
-        }
+        let reply = try await send(command: "pin_account", params: [
+            "providerId": .string(providerID),
+            "accountRef": .string(accountRef),
+        ])
 
         guard let errorField = reply["error"] else {
             return .applied
@@ -79,6 +67,54 @@ struct ProviderAccountExtensionBackend: ProviderAccountRouting {
             return .queued
         }
         throw ProviderAccountChannelError.rejected(message)
+    }
+
+    /// Issues the extension's `remove_account` command — Task 6's TypeScript
+    /// side (`OmpExtension/src/accounts.ts` `removeAccount`), reachable from
+    /// Swift for the first time by Task 10b. Reply handling mirrors `route`
+    /// above: a dropped channel throws `.unavailable`, and a command-level
+    /// `{error}` throws `.rejected`. No "streaming" special case here —
+    /// unlike `pinAccount`, `removeAccount` on the extension side has no
+    /// idle guard, so every `{error}` is a real rejection. On success,
+    /// decodes the reply's `{removed, accounts}` into
+    /// `ProviderAccountRemovalResult` via the same JSONValue round trip the
+    /// retired per-account RPC used to (`RpcResponse.removeProviderAccountResult()`,
+    /// deleted in Task 10) — `ProviderAccountRemovalResult`/`ProviderAccountSummary`
+    /// already decode an unrecognized `availability` string to `.unavailable`
+    /// rather than throwing (`ProviderAccountAvailability.init(from:)`).
+    func removeAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> ProviderAccountRemovalResult {
+        let reply = try await send(command: "remove_account", params: [
+            "providerId": .string(providerID),
+            "accountRef": .string(accountRef),
+        ])
+
+        if let errorField = reply["error"] {
+            throw ProviderAccountChannelError.rejected(errorField.stringValue ?? "unknown error")
+        }
+        do {
+            return try JSONDecoder().decode(
+                ProviderAccountRemovalResult.self,
+                from: JSONEncoder().encode(reply))
+        } catch {
+            throw ProviderAccountChannelError.rejected("malformed remove_account reply")
+        }
+    }
+
+    private func send(
+        command: String,
+        params: [String: JSONValue]
+    ) async throws -> JSONValue {
+        let request = ProviderAccountChannelCommand(id: UUID().uuidString, command: command, params: params)
+        do {
+            return try await channel.send(request)
+        } catch let error as ProviderAccountChannelError {
+            throw error
+        } catch {
+            throw ProviderAccountChannelError.unavailable
+        }
     }
 }
 
@@ -424,6 +460,22 @@ final class ProviderAccountChannelRegistry: Sendable {
 
     func entry(for sessionID: UUID) -> Entry? {
         entries[sessionID]
+    }
+
+    /// Any one live channel, for provider-scoped commands that are not
+    /// bound to a particular session — today, just `remove_account`
+    /// (`ProviderAccountExtensionBackend.removeAccount`, driven by
+    /// `AppModel`'s installed removal transport). Which session's channel
+    /// gets picked does not matter: on the extension side, removal reaches
+    /// `ctx.modelRegistry.authStorage.removeCredential`, storage every
+    /// session's extension instance shares — confirmed against
+    /// `OmpExtension/src/accounts.ts` `removeAccount`, which does not use
+    /// `sessionId` for the removal call itself (only for listing the
+    /// post-removal account rows). `nil` when no session has an extension
+    /// channel attached, which the caller turns into
+    /// `ProviderAccountChannelError.unavailable` the same way `route` does.
+    func anyChannel() -> (any ProviderAccountChannel)? {
+        entries.values.first?.channel
     }
 }
 
