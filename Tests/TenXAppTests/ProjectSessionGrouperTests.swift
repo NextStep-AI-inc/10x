@@ -25,6 +25,43 @@ import Testing
     #expect(groups[0].sessions == [metadata])
 }
 
+@Test func groupsEmitsSessionlessGroupForAKnownProjectWithNoSessions() {
+    let alpha = session(path: "/sessions/alpha.jsonl", cwd: "/tmp/alpha", modified: 10)
+    let alphaAgain = URL(filePath: "/tmp/alpha", directoryHint: .isDirectory)
+    let empty = URL(filePath: "/tmp/empty-project", directoryHint: .isDirectory)
+
+    let groups = ProjectSessionGrouper.groups(
+        [alpha],
+        knownProjectURLs: [empty, alphaAgain])
+
+    #expect(groups.map(\.projectURL.path) == ["/tmp/alpha", "/tmp/empty-project"])
+    #expect(groups[0].sessions.map(\.path) == [alpha.path])
+    #expect(groups[1].sessions.isEmpty)
+}
+
+@Test func sessionlessGroupsFollowSessionGroupsMostRecentlyAddedFirst() {
+    let alpha = session(path: "/sessions/alpha.jsonl", cwd: "/tmp/alpha", modified: 10)
+    let recentlyAdded = URL(filePath: "/tmp/recently-added", directoryHint: .isDirectory)
+    let addedEarlier = URL(filePath: "/tmp/added-earlier", directoryHint: .isDirectory)
+
+    let groups = ProjectSessionGrouper.groups(
+        [alpha],
+        knownProjectURLs: [recentlyAdded, addedEarlier])
+
+    #expect(groups.map(\.projectURL.path) == [
+        "/tmp/alpha", "/tmp/recently-added", "/tmp/added-earlier",
+    ])
+    #expect(groups.map { $0.sessions.isEmpty } == [false, true, true])
+}
+
+@Test func groupsNeverEmitsUnknownProjectURLFromKnownProjects() {
+    let groups = ProjectSessionGrouper.groups(
+        [],
+        knownProjectURLs: [ProjectSessionGroup.unknownProjectURL])
+
+    #expect(groups.isEmpty)
+}
+
 @Test func choosableProjectURLsSkipsUnknownAndIncludesSelected() {
     let known = session(path: "/sessions/a.jsonl", cwd: "/tmp/alpha", modified: 10)
     let unknown = session(path: "/sessions/u.jsonl", cwd: "", modified: 20)
@@ -35,6 +72,17 @@ import Testing
         including: selected)
 
     #expect(urls.map(\.path) == ["/tmp/new-folder", "/tmp/alpha"])
+}
+
+@Test func choosableProjectURLsIncludesKnownProjectsWithNoSessions() {
+    let known = session(path: "/sessions/a.jsonl", cwd: "/tmp/alpha", modified: 10)
+    let sessionless = URL(filePath: "/tmp/beta", directoryHint: .isDirectory)
+
+    let urls = ProjectSessionGrouper.choosableProjectURLs(
+        from: [known],
+        knownProjectURLs: [sessionless])
+
+    #expect(urls.map(\.path) == ["/tmp/alpha", "/tmp/beta"])
 }
 
 @Test func choosableProjectURLsDoesNotDuplicateSelected() {

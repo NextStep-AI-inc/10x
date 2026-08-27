@@ -72,7 +72,7 @@ import Testing
 @Test func onboardingProjectStepEmptySnapshot() throws {
     // A genuine first-run user: no sessions, so no suggestions. No disk
     // scan runs, so this settles synchronously.
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-onboarding-project-empty")
     model.installation = OmpInstallation(
         executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
         version: "18.0.4")
@@ -87,7 +87,8 @@ import Testing
     // The owner's reported bug: a folder picked with "Choose folder…" (never
     // driven through `NSOpenPanel` here) must be visible even though there
     // are no session-derived suggestions to show alongside it.
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(
+        sessionLibraryPath: "/tmp/10x-onboarding-project-picked-no-sessions")
     let url = URL(filePath: "/tmp/picked-with-no-sessions", directoryHint: .isDirectory)
     model.selectedProjectURL = url
     var selection = OnboardingProjectSelection()
@@ -101,7 +102,7 @@ import Testing
 
 @MainActor
 @Test func onboardingProjectStepPopulatedSnapshot() throws {
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-onboarding-project-populated")
     model.installation = OmpInstallation(
         executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
         version: "18.0.4")
@@ -703,6 +704,7 @@ import Testing
             filePath: "/tmp/10x-full-shell-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
     // Set before bootstrap so the project-step gate that closes over startup
@@ -747,6 +749,7 @@ import Testing
             filePath: "/tmp/10x-full-shell-usage-dock-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
     // Set before bootstrap so the project-step gate that closes over startup
@@ -775,6 +778,7 @@ import Testing
             filePath: "/tmp/10x-full-shell-wide-usage-dock-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
     // Set before bootstrap so the project-step gate that closes over startup
@@ -857,6 +861,37 @@ private struct SnapshotOmpLocator: OmpLocating {
     func locate(preferredURL: URL?) async -> OmpLocation {
         .found(OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test"))
     }
+}
+
+/// A `RecentProjectStore` backed by a fresh, empty `UserDefaults` suite, not
+/// the `.standard`-backed default: `knownProjectURLs`/`ProjectSessionGrouper`
+/// now render a rail (or onboarding project-step) row for every known
+/// project, including ones with no sessions, so any snapshot reading the
+/// default store would depend on whoever's Mac (and its real recent-projects
+/// history) produced the reference image.
+@MainActor
+private func isolatedRecentProjectStore() -> RecentProjectStore {
+    let suiteName = "TenXAppTests.ViewSnapshot.RecentProjectStore.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("[Tests:ViewSnapshot] Unable to create defaults suite")
+    }
+    defaults.removePersistentDomain(forName: suiteName)
+    return RecentProjectStore(defaults: defaults)
+}
+
+/// An `AppModel` with an isolated `RecentProjectStore`, for tests that build
+/// state directly (never calling `bootstrap()`) and so never invoke
+/// `makeProviderModel`/`makeComposerControls` — cheap stubs stand in.
+@MainActor
+private func isolatedSnapshotAppModel(sessionLibraryPath: String) -> AppModel {
+    AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: sessionLibraryPath,
+            directoryHint: .isDirectory)),
+        recentProjectStore: isolatedRecentProjectStore(),
+        makeProviderModel: { _ in providerTestModel(providers: []) },
+        makeComposerControls: stubComposerControlsFactory))
 }
 
 private let providerUsageDockProviders = [
@@ -1836,6 +1871,29 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         size: CGSize(width: 220, height: 360))
 }
 
+/// The owner's reported bug: a project chosen with no sessions yet must
+/// still show up in the rail, above the fold, with no disclosure row.
+@MainActor
+@Test func expandedRailShowsProjectWithNoSessionsSnapshot() throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-rail-sessionless")
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/with-sessions.jsonl",
+            cwd: "/tmp/10x",
+            title: "Improve active session shell",
+            modified: 20),
+    ]
+    model.selectedProjectURL = URL(filePath: "/tmp/empty-project", directoryHint: .isDirectory)
+    model.route = .session("/sessions/with-sessions.jsonl")
+    let expansion = RailExpansionModel()
+    expansion.pointerEntered()
+
+    try assertSnapshot(
+        FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
+        name: "shell-rail-sessionless-project",
+        size: CGSize(width: 220, height: 320))
+}
+
 @MainActor
 @Test func archivedSessionsEmptySnapshot() throws {
     let model = AppModel()
@@ -2380,7 +2438,7 @@ private func wideTranscriptController() -> SessionController {
 
 @MainActor
 private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-rail")
     model.sessions = [
         snapshotSession(
             path: "/sessions/selected.jsonl",
@@ -2406,7 +2464,7 @@ private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
 
 @MainActor
 private func snapshotOverflowRail() -> (AppModel, RailExpansionModel) {
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-overflow-rail")
     model.sessions = (1...7).map { index in
         snapshotSession(
             path: "/sessions/overflow-\(index).jsonl",

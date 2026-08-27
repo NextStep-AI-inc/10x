@@ -179,6 +179,23 @@ final class AppModel {
         route = .newSession
     }
 
+    /// Every project 10x remembers for listing (the rail, the composer's
+    /// project flyout, onboarding) — wider than the two `rankedProjects`
+    /// warms a client for at startup. Always includes `selectedProjectURL`,
+    /// even before a selection lands in the store (e.g. the moment
+    /// `chooseProject` sets it, before `recordSelection` has been read
+    /// back).
+    var knownProjectURLs: [URL] {
+        var urls = dependencies.recentProjectStore.knownProjects()
+        if let selectedProjectURL {
+            let standardized = selectedProjectURL.standardizedFileURL
+            if !urls.contains(where: { $0.path == standardized.path }) {
+                urls.insert(standardized, at: 0)
+            }
+        }
+        return urls
+    }
+
     /// Every requirement the workspace does not yet satisfy, in order.
     func unmetRequirements() -> [OnboardingStep] {
         OnboardingStep.unmet(

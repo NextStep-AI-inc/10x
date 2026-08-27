@@ -69,11 +69,17 @@ struct OnboardingProjectStepView: View {
             initialValue: initialSelection ?? OnboardingProjectSelection(seeding: model.selectedProjectURL))
     }
 
-    /// Project directories 10x already knows about, from existing sessions.
-    /// No disk crawling: this reuses the same derivation as the composer's
-    /// project flyout.
+    /// Project directories 10x already knows about, from existing sessions
+    /// and from projects recorded without one (e.g. a folder picked in an
+    /// earlier onboarding attempt). No disk crawling: this reuses the same
+    /// derivation as the composer's project flyout. A folder just picked
+    /// via "Choose folder…" this session is recorded into the same store
+    /// this reads from, so it can appear here too — `projects(suggestions:)`
+    /// dedupes it against `pickedFolders` by standardized path.
     private var suggestions: [URL] {
-        ProjectSessionGrouper.choosableProjectURLs(from: model.sessions)
+        ProjectSessionGrouper.choosableProjectURLs(
+            from: model.sessions,
+            knownProjectURLs: model.knownProjectURLs)
     }
 
     /// Folders picked from disk this session, followed by session
