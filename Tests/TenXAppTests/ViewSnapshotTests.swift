@@ -40,15 +40,97 @@ import Testing
 }
 
 @MainActor
-@Test func setupSnapshot() throws {
-    try assertSnapshot(SetupView(model: AppModel()), name: "omp-missing")
+@Test func onboardingInstallStepSnapshot() throws {
+    try assertSnapshot(
+        OnboardingView(model: AppModel(), step: .installOmp),
+        name: "onboarding-install")
 }
 
 @MainActor
-@Test func setupUnrunnableSnapshot() throws {
+@Test func onboardingInstallStepUnrunnableSnapshot() throws {
     let model = AppModel()
     model.unrunnableOmpURL = URL(filePath: "/Users/example/.bun/bin/omp")
-    try assertSnapshot(SetupView(model: model), name: "omp-unrunnable")
+    try assertSnapshot(
+        OnboardingView(model: model, step: .installOmp),
+        name: "onboarding-install-unrunnable")
+}
+
+@MainActor
+@Test func onboardingInstallStepVerifyingSnapshot() throws {
+    // The owner's reported bug: after a successful script, nothing showed
+    // that discovery was still running and would advance the flow itself.
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: ["Downloading omp…", "Installed to ~/.local/bin/omp"],
+            initialPhase: .verifying)
+            .padding(56),
+        name: "onboarding-install-verifying",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
+@Test func onboardingProjectStepEmptySnapshot() throws {
+    // A genuine first-run user: no sessions, so no suggestions. No disk
+    // scan runs, so this settles synchronously.
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-onboarding-project-empty")
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    try assertSnapshot(
+        OnboardingView(model: model, step: .chooseProject),
+        name: "onboarding-project-empty",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func onboardingProjectStepPickedFolderNoSessionsSnapshot() throws {
+    // The owner's reported bug: a folder picked with "Choose folder…" (never
+    // driven through `NSOpenPanel` here) must be visible even though there
+    // are no session-derived suggestions to show alongside it.
+    let model = isolatedSnapshotAppModel(
+        sessionLibraryPath: "/tmp/10x-onboarding-project-picked-no-sessions")
+    let url = URL(filePath: "/tmp/picked-with-no-sessions", directoryHint: .isDirectory)
+    model.selectedProjectURL = url
+    var selection = OnboardingProjectSelection()
+    selection.pick(url)
+    try assertSnapshot(
+        OnboardingProjectStepView(model: model, initialSelection: selection)
+            .padding(56),
+        name: "onboarding-project-picked-no-sessions",
+        size: CGSize(width: 760, height: 320))
+}
+
+@MainActor
+@Test func onboardingProjectStepPopulatedSnapshot() throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-onboarding-project-populated")
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/onboarding-populated-1.jsonl",
+            cwd: "/tmp/10x",
+            title: "Session",
+            modified: 3),
+        snapshotSession(
+            path: "/sessions/onboarding-populated-2.jsonl",
+            cwd: "/tmp/omp-cli",
+            title: "Session",
+            modified: 2),
+        // Deliberately long and nested, so the third (still-visible, above
+        // the scroll fold) row exercises OnboardingRowView's
+        // `.lineLimit(1)`/`.truncationMode(.head)` on the detail line.
+        snapshotSession(
+            path: "/sessions/onboarding-populated-3.jsonl",
+            cwd: "/tmp/workspace/a-genuinely-long-directory-name-used-to-exercise-the-truncated-detail-line",
+            title: "Session",
+            modified: 1),
+    ]
+    try assertSnapshot(
+        OnboardingView(model: model, step: .chooseProject),
+        name: "onboarding-project-populated",
+        size: CGSize(width: 760, height: 560))
 }
 
 @MainActor
@@ -63,10 +145,11 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-required")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-required",
         size: CGSize(width: 760, height: 560))
 }
@@ -93,19 +176,25 @@ import Testing
 
 @MainActor
 @Test func providerSetupLoadingSnapshot() async throws {
-    let loadingGate = LoadGate()
     let service = FakeProviderService(providers: [])
-    await service.enqueueProviderGate(loadingGate)
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    // Bootstrap first, before the gate is armed: bootstrap's own initial
+    // `loadProviders()` call must complete (there is nothing queued for it
+    // to catch yet), or the gated call it triggers would deadlock waiting
+    // on a release that only comes after this test takes its snapshot.
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-loading")
+
+    let loadingGate = LoadGate()
+    await service.enqueueProviderGate(loadingGate)
     let loading = Task { await model.load() }
     await loadingGate.waitForStart()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-loading",
         size: CGSize(width: 760, height: 560))
 
@@ -121,10 +210,11 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-connected")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-connected",
         size: CGSize(width: 760, height: 560))
 }
@@ -149,11 +239,12 @@ import Testing
         ProviderLoginProvider(
             id: "zed", name: "Zed", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-browse-all")
     await model.load()
     model.showAllProviders()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-browse-all-minimum-size",
         size: CGSize(width: 760, height: 560))
 }
@@ -178,11 +269,13 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(
+        model, path: "/tmp/10x-onboarding-provider-browse-all-mixed-rows")
     await model.load()
     model.showAllProviders()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-browse-all-mixed-rows-minimum-size",
         size: CGSize(width: 760, height: 560))
 }
@@ -199,12 +292,13 @@ import Testing
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) },
         formatTime: { _ in "4:00 PM" })
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-login-failure")
     await model.load()
     let provider = try #require(model.providers.first)
     await model.login(provider)
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-login-failure",
         size: CGSize(width: 760, height: 560))
 }
@@ -221,19 +315,20 @@ import Testing
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-active-login")
     await model.load()
     let provider = try #require(model.providers.first)
     let login = Task { await model.login(provider) }
     await loginGate.waitForStart()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-active-login",
         size: CGSize(width: 760, height: 560))
 
     await model.cancelLogin()
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-login-cancelled",
         size: CGSize(width: 760, height: 560))
 
@@ -540,6 +635,42 @@ import Testing
 }
 
 @MainActor
+@Test func providerConnectionsBenignStatusSnapshot() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(
+        providers: providerWorkspaceProviders,
+        loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try providerWorkspaceSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+
+    // A provider absent from `model.providers`, so the notification handler
+    // falls back to the catalog-level "Connection needs attention." status —
+    // the one benign message this view renders above the rows.
+    let ghost = ProviderLoginProvider(
+        id: "ghost", name: "Ghost", isAvailable: true, isAuthenticated: false)
+    let login = Task { await model.login(ghost) }
+    await loginGate.waitForStart()
+    await service.emit(ExtensionUIRequest(
+        id: "notice",
+        method: "notify",
+        payload: .object(["message": .string("Waiting for approval.")])))
+    await waitForModelState { model.loginMessage != nil }
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-connections-benign-status",
+        size: CGSize(width: 1180, height: 760))
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
+}
+
+@MainActor
 @Test func providerUsageDetailSnapshot() async throws {
     let model = try providerWorkspaceModel()
     await model.load()
@@ -610,10 +741,14 @@ import Testing
             filePath: "/tmp/10x-full-shell-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
     let railExpansion = RailExpansionModel()
     railExpansion.pointerEntered()
@@ -651,10 +786,14 @@ import Testing
             filePath: "/tmp/10x-full-shell-usage-dock-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
 
     try assertSnapshot(
@@ -676,10 +815,14 @@ import Testing
             filePath: "/tmp/10x-full-shell-wide-usage-dock-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
 
     try assertSnapshot(
@@ -705,18 +848,87 @@ private func assertProviderSetupStarterSnapshot(
     let model = providerTestModel(providers: [
         ProviderLoginProvider(id: id, name: name, isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-starter-\(id)")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: snapshotName,
         size: CGSize(width: 760, height: 560))
+}
+
+/// Wraps a pre-built `ProviderManagementViewModel` in an `AppModel` whose
+/// `.connectProvider` step renders it, mirroring `fullShellExpandedRailOverflowSnapshot`
+/// below. `providerModel` is `private(set)` on `AppModel` — see the doc
+/// comment on `OnboardingStep.unmet` — so `dependencies.makeProviderModel`
+/// plus `bootstrap()` is the only way in. Callers that also need to arm a
+/// `LoadGate`/`LoginGate` on the underlying fake service must do so *after*
+/// this returns: bootstrap performs its own, ungated `loadProviders()` call
+/// as part of standing up the runtime, and an already-armed gate would block
+/// that call forever.
+@MainActor
+private func onboardingProviderAppModel(
+    _ providerModel: ProviderManagementViewModel,
+    path: String
+) async -> AppModel {
+    // An isolated `RecentProjectStore`, not the `.standard`-backed default:
+    // `prepareSessionsAndRecentProjects` auto-fills `selectedProjectURL` from
+    // whatever it ranks highest when nothing has been chosen yet, and the
+    // default reads the real UserDefaults domain — this machine's actual
+    // recent-projects history, not a fixture. Without this, the step
+    // counter this test snapshots would depend on whoever's Mac (and
+    // whatever they were last using) recorded the reference.
+    let suiteName = "TenXAppTests.OnboardingProviderAppModel.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("[Tests:ViewSnapshot] Unable to create defaults suite")
+    }
+    defaults.removePersistentDomain(forName: suiteName)
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(filePath: path, directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        recentProjectStore: RecentProjectStore(defaults: defaults),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
+    await model.bootstrap()
+    return model
 }
 
 private struct SnapshotOmpLocator: OmpLocating {
     func locate(preferredURL: URL?) async -> OmpLocation {
         .found(OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test"))
     }
+}
+
+/// A `RecentProjectStore` backed by a fresh, empty `UserDefaults` suite, not
+/// the `.standard`-backed default: `knownProjectURLs`/`ProjectSessionGrouper`
+/// now render a rail (or onboarding project-step) row for every known
+/// project, including ones with no sessions, so any snapshot reading the
+/// default store would depend on whoever's Mac (and its real recent-projects
+/// history) produced the reference image.
+@MainActor
+private func isolatedRecentProjectStore() -> RecentProjectStore {
+    let suiteName = "TenXAppTests.ViewSnapshot.RecentProjectStore.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("[Tests:ViewSnapshot] Unable to create defaults suite")
+    }
+    defaults.removePersistentDomain(forName: suiteName)
+    return RecentProjectStore(defaults: defaults)
+}
+
+/// An `AppModel` with an isolated `RecentProjectStore`, for tests that build
+/// state directly (never calling `bootstrap()`) and so never invoke
+/// `makeProviderModel`/`makeComposerControls` — cheap stubs stand in.
+@MainActor
+private func isolatedSnapshotAppModel(sessionLibraryPath: String) -> AppModel {
+    AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: sessionLibraryPath,
+            directoryHint: .isDirectory)),
+        recentProjectStore: isolatedRecentProjectStore(),
+        makeProviderModel: { _ in providerTestModel(providers: []) },
+        makeComposerControls: stubComposerControlsFactory))
 }
 
 private let providerUsageDockProviders = [
@@ -1696,6 +1908,29 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         size: CGSize(width: 220, height: 360))
 }
 
+/// The owner's reported bug: a project chosen with no sessions yet must
+/// still show up in the rail, above the fold, with no disclosure row.
+@MainActor
+@Test func expandedRailShowsProjectWithNoSessionsSnapshot() throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-rail-sessionless")
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/with-sessions.jsonl",
+            cwd: "/tmp/10x",
+            title: "Improve active session shell",
+            modified: 20),
+    ]
+    model.selectedProjectURL = URL(filePath: "/tmp/empty-project", directoryHint: .isDirectory)
+    model.route = .session("/sessions/with-sessions.jsonl")
+    let expansion = RailExpansionModel()
+    expansion.pointerEntered()
+
+    try assertSnapshot(
+        FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
+        name: "shell-rail-sessionless-project",
+        size: CGSize(width: 220, height: 320))
+}
+
 @MainActor
 @Test func archivedSessionsEmptySnapshot() throws {
     let model = AppModel()
@@ -2240,7 +2475,7 @@ private func wideTranscriptController() -> SessionController {
 
 @MainActor
 private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-rail")
     model.sessions = [
         snapshotSession(
             path: "/sessions/selected.jsonl",
@@ -2266,7 +2501,7 @@ private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
 
 @MainActor
 private func snapshotOverflowRail() -> (AppModel, RailExpansionModel) {
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-overflow-rail")
     model.sessions = (1...7).map { index in
         snapshotSession(
             path: "/sessions/overflow-\(index).jsonl",

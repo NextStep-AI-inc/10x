@@ -15,14 +15,8 @@ struct AppShellView: View {
     var body: some View {
         ZStack {
             Group {
-                if model.route == .setup {
-                    SetupView(model: model)
-                } else if model.route == .providerSetup {
-                    if let providerModel = model.providerModel {
-                        ProviderSetupView(
-                            model: providerModel,
-                            onContinue: model.completeProviderSetup)
-                    }
+                if case .onboarding(let step) = model.route {
+                    OnboardingView(model: model, step: step)
                 } else {
                     ZStack(alignment: .leading) {
                         routeCanvas
@@ -177,9 +171,7 @@ struct AppShellView: View {
     @ViewBuilder
     private var routeCanvas: some View {
         switch model.route {
-        case .setup:
-            EmptyView()
-        case .providerSetup:
+        case .onboarding:
             EmptyView()
         case .newSession:
             NewSessionView(model: model)

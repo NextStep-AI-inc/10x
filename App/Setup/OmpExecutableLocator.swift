@@ -20,11 +20,9 @@ protocol OmpLocating: Sendable {
 }
 
 struct OmpExecutableLocator: OmpLocating {
-    static let knownPaths = [
-        "~/.bun/bin/omp",
-        "/opt/homebrew/bin/omp",
-        "/usr/local/bin/omp",
-    ]
+    /// Display strings for the setup screen, derived from the same directories
+    /// `candidates(preferredURL:)` probes so the two cannot drift.
+    static let knownPaths = OmpProcessEnvironment.toolDirectories.map { "\($0)/omp" }
 
     private let homeDirectory: URL
     private let pathDirectories: [String]
@@ -56,11 +54,9 @@ struct OmpExecutableLocator: OmpLocating {
     }
 
     private func candidates(preferredURL: URL?) -> [URL] {
-        let known = [
-            homeDirectory.appending(path: ".bun/bin/omp"),
-            URL(filePath: "/opt/homebrew/bin/omp"),
-            URL(filePath: "/usr/local/bin/omp"),
-        ]
+        let known = OmpProcessEnvironment
+            .resolvedToolDirectories(homeDirectory: homeDirectory)
+            .map { $0.appending(path: "omp") }
         let fromPath = pathDirectories
             .filter { $0.hasPrefix("/") }
             .map { URL(filePath: $0).appending(path: "omp") }
