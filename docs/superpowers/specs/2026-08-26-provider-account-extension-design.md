@@ -64,6 +64,18 @@ noted, against the published `omp/18.0.4` installed on this machine.
   **`AgentSession.pinCurrentProviderOAuthAccount(credentialId)`** are public
   stock methods. `/session pin` is built on them and refuses while the session is
   streaming.
+- **`ExtensionContext` does NOT expose the `AgentSession`.** Verified against
+  stock `b4e8e856a`: the object an extension receives has `ui`, `mode`, `cwd`,
+  `sessionManager` (a `ReadonlySessionManager`), `modelRegistry`, `model`,
+  `isIdle()`, and others, but no `session` key. The extension therefore cannot
+  call the two `AgentSession` methods above directly. It reaches the same
+  behavior through the same underlying calls those methods wrap:
+  `ctx.modelRegistry.authStorage` for `listOAuthAccounts` /
+  `pinSessionOAuthAccount` / `removeCredential`,
+  `ctx.sessionManager.getSessionId()` for the session id, `ctx.model?.provider`
+  for the provider, and `!ctx.isIdle()` in place of `isStreaming`.
+  `pinCurrentProviderOAuthAccount` is literally a provider-and-streaming guard
+  around `authStorage.pinSessionOAuthAccount(provider, sessionId, credentialId)`.
 - **`AuthStorage.removeCredential(provider, credentialId)`** exists but is
   reachable only through OMP's interactive TUI selector. There is no RPC command
   and no CLI flag for it.

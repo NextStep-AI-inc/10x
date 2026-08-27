@@ -810,9 +810,9 @@ Expected: FAIL, `src/accounts.ts` does not exist.
 
 It also exports the three command handlers:
 
-- `listAccounts(ctx, providerId)` — `ctx.session.listCurrentProviderOAuthAccounts()` when `providerId` matches the session's provider, otherwise `authStorage.listOAuthAccounts(providerId, ctx.session.sessionId)`; map each row through `toSafeAccount`.
-- `pinAccount(ctx, providerId, accountRef)` — resolve `accountRef` to a row by recomputing the digest per row, then `ctx.session.pinCurrentProviderOAuthAccount(row.credentialId)`. Reject with `"streaming"` when `ctx.session.isStreaming`, mirroring stock OMP's own guard, so 10x queues the switch.
-- `removeAccount(ctx, providerId, accountRef)` — resolve the row the same way, then `authStorage.removeCredential(providerId, row.credentialId)`; return the remaining safe accounts. Port the ordering and partial-failure handling from `provider-account-rpc.ts` on `codex/provider-account-rpc`.
+- `listAccounts(ctx, providerId)` — `ctx.modelRegistry.authStorage.listOAuthAccounts(providerId, ctx.sessionManager.getSessionId())`; map each row through `toSafeAccount`. (`ExtensionContext` has no `session` member; see the spec's verified-foundation note.)
+- `pinAccount(ctx, providerId, accountRef)` — resolve `accountRef` to a row by recomputing the digest per row, then `ctx.modelRegistry.authStorage.pinSessionOAuthAccount(providerId, ctx.sessionManager.getSessionId(), row.credentialId)`. Reject with `"streaming"` when `!ctx.isIdle()`, mirroring stock OMP's own guard, so 10x queues the switch. Reject when `providerId` is not `ctx.model?.provider`: stock pins only the session's current provider, and inventing cross-provider pinning is out of scope.
+- `removeAccount(ctx, providerId, accountRef)` — resolve the row the same way, then `ctx.modelRegistry.authStorage.removeCredential(providerId, row.credentialId)`; return `{ removed: boolean, accounts: SafeAccount[] }` to match the existing Swift `RemoveProviderAccountResult`. Port the ordering and partial-failure handling from `provider-account-rpc.ts` on `codex/provider-account-rpc`.
 
 Wire all three plus `hello` (returning `{ contractVersion: 1 }`) into the `openCommandChannel` handler in `index.ts`.
 
