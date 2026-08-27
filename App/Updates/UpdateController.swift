@@ -16,13 +16,11 @@ extension UpdateChecking {
     /// problem to the user, because a launch must not depend on network health.
     ///
     /// The deadline runs as an independent, unstructured task rather than inside a
-    /// `TaskGroup`. A `TaskGroup` implicitly awaits every child before returning, and
-    /// `UpdateState`'s wait is not cancellation-aware — pairing the two would deadlock
-    /// whenever the deadline elapsed first, because nothing would be left to resume the
-    /// still-suspended waiter. An unstructured task has no such join: this function's
-    /// own progress depends only on `state.waitForCheckOutcome()`, and the deadline task
-    /// either resolves that wait itself (by cancelling the check) or is discarded once
-    /// the real answer already resolved it.
+    /// `TaskGroup`, which implicitly awaits every child before returning. An unstructured
+    /// task has no such join: this function's own progress depends only on
+    /// `state.waitForCheckOutcome()`, and the deadline task either resolves that wait
+    /// itself (by cancelling the check) or is discarded once the real answer already
+    /// resolved it.
     ///
     /// The deadline task re-checks `state.phase` before cancelling: if the real answer
     /// already landed by the time the deadline fires, cancelling would call
@@ -92,6 +90,7 @@ final class UpdateController: UpdateChecking {
     let state: UpdateState
     private let updater: SPUUpdater
     private let driver: SplashUpdateDriver
+    private var didFailToStart = false
 
     init(
         state: UpdateState = UpdateState(),
@@ -114,11 +113,24 @@ final class UpdateController: UpdateChecking {
 
     /// Must be called once before any check. A failure here means the bundle is missing
     /// its feed or key, which is a build defect rather than a user-facing condition.
+    ///
+    /// It records the failure rather than painting it. `AppModel.updateChecker` is
+    /// created lazily by `StartupSceneView`'s first `presentation` read, which runs
+    /// before `bootstrap()` does, so failing the state here put the update-failure splash
+    /// on the very first frame of a cold launch — the same thing the advisory rules
+    /// forbid a slow network from doing. The failure surfaces on the next check the user
+    /// actually asked for, where it is an answer rather than an ambush.
     func start() {
+        start { try updater.start() }
+    }
+
+    /// Visible for testing: the same recording step with the throwing call injected, so
+    /// a test can reproduce a misconfigured bundle without one.
+    func start(performing operation: () throws -> Void) {
         do {
-            try updater.start()
+            try operation()
         } catch {
-            state.fail(.unknown)
+            didFailToStart = true
         }
     }
 
@@ -138,8 +150,16 @@ final class UpdateController: UpdateChecking {
     /// loops on `while case .checking`, so a redundant transition re-suspends instead
     /// of escaping.
     func check(isUserInitiated: Bool) {
-        driver.isUserInitiated = isUserInitiated
+        driver.beginCheck(isUserInitiated: isUserInitiated)
         state.beginCheck()
+        // A never-started updater produces no Sparkle callback of any kind, so asking it
+        // to check would stall at `.checking` until a deadline gave up on it. Answer
+        // directly instead: visibly for a check the user asked for, silently for the
+        // advisory launch one.
+        guard !didFailToStart else {
+            if isUserInitiated { state.fail(.unknown) } else { state.reset() }
+            return
+        }
         updater.checkForUpdates()
     }
 

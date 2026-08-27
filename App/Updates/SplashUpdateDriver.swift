@@ -14,6 +14,12 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
     private var decision: CheckedContinuation<SPUUserUpdateChoice, Never>?
     private var checkCancellation: (() -> Void)?
 
+    /// Set by `cancelCheck()`, cleared by the next `beginCheck(isUserInitiated:)`.
+    /// Sparkle's own cancellation handler stops being able to abort a check the moment
+    /// the appcast finishes loading, so this is what actually refuses a late offer.
+    /// See `cancelCheck()`.
+    private var isAbandoned = false
+
     /// Guards `showDownloadDidReceiveExpectedContentLength` against Sparkle invoking it
     /// more than once for the same download (for example across a redirect). Only the
     /// first value is applied; see that method for why.
@@ -36,9 +42,29 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
 
     func acceptUpdate() { resume(.install) }
 
-    /// `Not now` dismisses this check. It deliberately does not use `.skip`, which
-    /// would make Sparkle refuse to offer this version ever again.
-    func dismissUpdate() { resume(.dismiss) }
+    /// `Not now` / `Close` dismisses this check. It deliberately does not use `.skip`,
+    /// which would make Sparkle refuse to offer this version ever again.
+    ///
+    /// When a Sparkle decision is pending, resuming it is the whole job: Sparkle then
+    /// tears the session down and calls `dismissUpdateInstallation`, which clears the
+    /// offer. When none is pending the splash owns the phase outright, and nothing else
+    /// will ever clear it — a `.failed` from the menu watchdog, or an `.upToDate` result
+    /// whose acknowledgement Sparkle already consumed. Without this the `Close` and
+    /// `Not now` buttons on those screens did nothing at all.
+    func dismissUpdate() {
+        guard resume(.dismiss) else {
+            state.reset()
+            return
+        }
+    }
+
+    /// Clears the per-check flags. Called by `UpdateController.check(isUserInitiated:)`
+    /// before Sparkle is asked to check, so a check that follows an abandoned one is not
+    /// itself treated as abandoned.
+    func beginCheck(isUserInitiated: Bool) {
+        self.isUserInitiated = isUserInitiated
+        isAbandoned = false
+    }
 
     // MARK: SPUUserDriver
 
@@ -53,10 +79,17 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
         state.beginCheck()
     }
 
-    /// Called when the launch gate gives up at its deadline. Cancelling through Sparkle's
-    /// own handler is what prevents a late `showUpdateFound` from stranding a decision
-    /// continuation with no window left to resolve it.
+    /// Called when the launch gate gives up at its deadline.
+    ///
+    /// Sparkle's own cancellation handler is asked first, but it cannot be relied on:
+    /// `SPUUserInitiatedUpdateDriver` guards that block with `_showingUserInitiatedProgress`,
+    /// and clears the flag in `basicDriverDidFinishLoadingAppcast` — before
+    /// `showUpdateFound` reaches this driver. Once the appcast has loaded, invoking it is
+    /// a no-op and the check runs to completion regardless. `isAbandoned` is what
+    /// actually refuses the late offer, so a check the launch gate has walked away from
+    /// cannot reappear over a workspace the user is already using.
     func cancelCheck() {
+        isAbandoned = true
         let cancellation = checkCancellation
         checkCancellation = nil
         cancellation?()
@@ -68,10 +101,18 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
         with appcastItem: SUAppcastItem,
         state updateState: SPUUserUpdateState
     ) async -> SPUUserUpdateChoice {
+        await offerUpdate(version: appcastItem.displayVersionString)
+    }
+
+    /// The body of `showUpdateFound`, split out only because `SPUUserUpdateState` has no
+    /// public initializer, so a test cannot call the callback itself. Nothing in the
+    /// offer depends on that parameter.
+    func offerUpdate(version: String) async -> SPUUserUpdateChoice {
         checkCancellation = nil
-        state.showAvailable(
-            newVersion: appcastItem.displayVersionString,
-            currentVersion: currentVersion)
+        // A check the launch gate already walked away from must not paint an offer over
+        // a workspace the user has moved on to. See `cancelCheck()`.
+        guard !isAbandoned else { return .dismiss }
+        state.showAvailable(newVersion: version, currentVersion: currentVersion)
         return await awaitDecision()
     }
 
@@ -170,9 +211,27 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
         }
     }
 
+    /// Sparkle calls this when it is finished with the session. It means "take down the
+    /// progress UI", not "take down everything": `SPUUIBasedUpdateDriver._abortUpdateWithError:`
+    /// hands the error to `showUpdaterError` / `showUpdateNotFoundWithError` first and
+    /// calls this one main-queue turn after the acknowledgement returns. Sparkle's own
+    /// standard driver honours that split — its `dismissUpdateInstallation` closes the
+    /// checking window, the status controller and the update alert, and leaves the error
+    /// alert it just put up standing.
+    ///
+    /// Resetting unconditionally erased `.failed` and `.upToDate` about a turn after they
+    /// appeared, which made `Try again`, `Not now` and `Close` unreachable, blinked a
+    /// menu check that found nothing open and shut, and dropped a failed update straight
+    /// into the workspace. Only the phases Sparkle is actually driving are cleared here;
+    /// the outcome phases belong to the splash until the user dismisses them.
     func dismissUpdateInstallation() {
         resume(.dismiss)
-        state.reset()
+        switch state.phase {
+        case .checking, .available, .downloading, .verifying, .installing:
+            state.reset()
+        case .idle, .upToDate, .relaunching, .failed:
+            break
+        }
     }
 
     // MARK: Failure mapping
@@ -214,9 +273,14 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
         }
     }
 
-    private func resume(_ choice: SPUUserUpdateChoice) {
-        guard let decision else { return }
+    /// Returns `true` when a Sparkle decision was actually waiting on this answer.
+    /// Callers use that to tell "Sparkle owns what happens next" from "nothing is
+    /// listening, so the splash must clean up after itself".
+    @discardableResult
+    private func resume(_ choice: SPUUserUpdateChoice) -> Bool {
+        guard let decision else { return false }
         self.decision = nil
         decision.resume(returning: choice)
+        return true
     }
 }

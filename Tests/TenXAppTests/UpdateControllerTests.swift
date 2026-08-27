@@ -191,3 +191,47 @@ func stubUpdateCheckerReportingNoUpdate() -> StubUpdateChecker {
 
     #expect(watchdog == nil)
 }
+
+/// `start()` used to call `state.fail(.unknown)` directly. `AppModel.updateChecker` is
+/// lazy and `StartupSceneView.presentation` touches it before `bootstrap()` runs, so a
+/// misconfigured bundle painted the update-failure splash onto the very first frame of a
+/// cold launch, before anything had been attempted. The failure is real, but it is not
+/// an answer to a question the user asked yet.
+@MainActor
+@Test func aStartFailureDoesNotPaintTheSplashOnLaunch() {
+    let controller = UpdateController(prepareForInstall: {})
+
+    controller.start { throw SplashUpdateDriverTestError.none }
+
+    #expect(controller.state.phase == .idle)
+    #expect(!controller.state.isPresentingUpdate)
+}
+
+/// It must still be visible the moment the user does ask. A never-started updater
+/// produces no Sparkle callback at all, so without this the menu check sat at `.checking`
+/// until its watchdog gave up 15 seconds later.
+@MainActor
+@Test func aStartFailureSurfacesOnTheNextCheckTheUserAsksFor() {
+    let controller = UpdateController(prepareForInstall: {})
+    controller.start { throw SplashUpdateDriverTestError.none }
+
+    controller.check(isUserInitiated: true)
+
+    #expect(controller.state.phase == .failed(.unknown))
+    #expect(controller.state.isPresentingUpdate)
+}
+
+/// And it must stay silent on the advisory launch check, which is forbidden from
+/// reporting anything.
+@MainActor
+@Test func aStartFailureStaysSilentOnTheAdvisoryLaunchCheck() async {
+    let controller = UpdateController(prepareForInstall: {})
+    controller.start { throw SplashUpdateDriverTestError.none }
+
+    await controller.checkAtLaunch(deadline: .seconds(3), sleep: { _ in
+        Issue.record("A start failure must answer without waiting on a deadline")
+    })
+
+    #expect(controller.state.phase == .idle)
+    #expect(!controller.state.isPresentingUpdate)
+}

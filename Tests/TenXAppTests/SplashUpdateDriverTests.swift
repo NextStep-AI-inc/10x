@@ -241,3 +241,135 @@ actor Preparation {
 enum SplashUpdateDriverTestError: Error {
     case none
 }
+
+// MARK: Who owns the phase once Sparkle is done
+
+/// `showUpdaterError` is an `NS_SWIFT_ASYNC(2)` bridge: returning from the async body is
+/// the acknowledgement, and `SPUUIBasedUpdateDriver._abortUpdateWithError:` calls
+/// `dismissUpdateInstallation` one main-queue turn later. Resetting there erased the
+/// failure a turn after it appeared, so `Try again` and `Close` were dead code and a
+/// failed update dropped straight into the workspace.
+///
+/// Deliberately exercises the real driver against a real `UpdateState`: the update
+/// tests' `StubUpdateChecker.dismiss()` resets state, which is not what
+/// `UpdateController.dismiss()` did, so a stub-based test would have measured the stub.
+@MainActor
+@Test func aFailureOutlivesSparklesDismissalOfTheInstallation() async {
+    let state = UpdateState()
+    let driver = makeDriver(state)
+    driver.isUserInitiated = true
+    driver.showDownloadInitiated(cancellation: {})
+
+    await driver.showUpdaterError(SplashUpdateDriverTestError.none)
+    driver.dismissUpdateInstallation()
+
+    #expect(state.phase == .failed(.unknown))
+    #expect(state.isPresentingUpdate)
+}
+
+/// Same bridge, same one-turn dismissal, for the menu check that finds nothing. Without
+/// this the window blinked open and shut and the `Close` button never had a screen to
+/// live on.
+@MainActor
+@Test func anUpToDateResultOutlivesSparklesDismissalOfTheInstallation() async {
+    let state = UpdateState()
+    let driver = makeDriver(state)
+    driver.isUserInitiated = true
+    state.beginCheck()
+
+    await driver.showUpdateNotFoundWithError(SplashUpdateDriverTestError.none)
+    driver.dismissUpdateInstallation()
+
+    #expect(state.phase == .upToDate(currentVersion: "0.1.0"))
+    #expect(state.isPresentingUpdate)
+}
+
+/// An offer is Sparkle's to clear: the decision is resumed, Sparkle ends the session and
+/// dismisses. This pins that `dismissUpdateInstallation` still clears the phases Sparkle
+/// itself is driving, so declining an offer does not strand the splash on it.
+@MainActor
+@Test func decliningAnOfferStillClearsTheSplashWhenSparkleDismisses() async {
+    let state = UpdateState()
+    let driver = makeDriver(state)
+    state.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+
+    async let choice = driver.awaitDecisionForTesting()
+    while !driver.hasPendingDecisionForTesting { await Task.yield() }
+    driver.dismissUpdate()
+
+    #expect(await choice == .dismiss)
+    #expect(state.phase == .available(newVersion: "0.2.0", currentVersion: "0.1.0"))
+
+    driver.dismissUpdateInstallation()
+
+    #expect(state.phase == .idle)
+}
+
+/// The other half: a `.failed` with no Sparkle decision behind it (the menu watchdog's
+/// own timeout, or a check against an updater that never started) has nobody left to
+/// clear it. `dismissUpdate()` resumed a continuation that did not exist and returned,
+/// so `Not now` was inert and the splash sat over the workspace with no way out.
+@MainActor
+@Test func dismissingAFailureWithNoPendingDecisionClearsItAnyway() {
+    let state = UpdateState()
+    let driver = makeDriver(state)
+    state.fail(.unknown)
+
+    driver.dismissUpdate()
+
+    #expect(state.phase == .idle)
+    #expect(!state.isPresentingUpdate)
+}
+
+@MainActor
+@Test func dismissingAnUpToDateResultClearsItAnyway() {
+    let state = UpdateState()
+    let driver = makeDriver(state)
+    state.showUpToDate(currentVersion: "0.1.0")
+
+    driver.dismissUpdate()
+
+    #expect(state.phase == .idle)
+}
+
+/// `cancelCheck()` cannot rely on Sparkle's cancellation block: `SPUUserInitiatedUpdateDriver`
+/// guards it with `_showingUserInitiatedProgress` and clears that flag in
+/// `basicDriverDidFinishLoadingAppcast`, which runs before `showUpdateFound` reaches this
+/// driver. So an offer can still arrive after the launch gate walked away, and without
+/// the abandonment flag it would paint itself over a workspace the user is already using
+/// and park a decision continuation nothing on screen can resolve.
+@MainActor
+@Test func anAbandonedCheckRefusesAnOfferThatArrivesAnyway() async {
+    let state = UpdateState()
+    let driver = makeDriver(state)
+    driver.beginCheck(isUserInitiated: false)
+    state.beginCheck()
+    driver.showUserInitiatedUpdateCheck(cancellation: {})
+    driver.cancelCheck()
+
+    let choice = await driver.offerUpdate(version: "0.2.0")
+
+    #expect(choice == .dismiss)
+    #expect(state.phase == .idle)
+    #expect(!state.isPresentingUpdate)
+}
+
+/// The flag is per-check, not sticky: the next check must be able to offer again.
+@MainActor
+@Test func aFreshCheckAfterAnAbandonedOneCanStillOffer() async {
+    let state = UpdateState()
+    let driver = makeDriver(state)
+    driver.beginCheck(isUserInitiated: false)
+    driver.showUserInitiatedUpdateCheck(cancellation: {})
+    driver.cancelCheck()
+
+    driver.beginCheck(isUserInitiated: true)
+    state.beginCheck()
+    async let choice = driver.offerUpdate(version: "0.2.0")
+    while !driver.hasPendingDecisionForTesting { await Task.yield() }
+
+    #expect(state.isAwaitingDecision)
+
+    driver.dismissUpdate()
+    #expect(await choice == .dismiss)
+}
