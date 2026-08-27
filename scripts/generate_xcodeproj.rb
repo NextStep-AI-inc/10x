@@ -1,7 +1,143 @@
 #!/usr/bin/env ruby
 
+require "digest"
 require "fileutils"
 require "xcodeproj"
+
+# Every xcodeproj release ships different default build settings, and those
+# settings feed the hash that seeds every object UUID. Generating with a
+# different version rewrites the whole project file, so pin it.
+REQUIRED_XCODEPROJ_VERSION = "1.27.0"
+unless Xcodeproj::VERSION == REQUIRED_XCODEPROJ_VERSION
+  abort <<~MESSAGE
+    [generate_xcodeproj] xcodeproj #{Xcodeproj::VERSION} is loaded, but this project
+    is generated with #{REQUIRED_XCODEPROJ_VERSION}. Other versions produce a
+    different-but-equivalent project file, which shows up as a full-file diff.
+
+      gem install xcodeproj -v #{REQUIRED_XCODEPROJ_VERSION}
+
+    then re-run, or use `bundle exec ruby scripts/generate_xcodeproj.rb`.
+  MESSAGE
+end
+
+# Xcodeproj's own `predictabilize_uuids` hashes a path built from each object's
+# `to_tree_hash`, which embeds the object's siblings *and* the gem's default
+# build settings. Both of those move: adding one Swift file rewrote ~1200 of
+# 1268 lines, and each gem release shifted every UUID. Keying off semantic
+# identity instead keeps a new file to its own two entries.
+def stable_uuid_keys(project)
+  keys = {}
+  root_object = project.root_object
+
+  keys[root_object] = "project"
+  configuration_lists = { root_object.build_configuration_list => "project" }
+
+  walk_group = lambda do |group, path|
+    keys[group] = "group#{path}"
+    group.children.each do |child|
+      if child.is_a?(Xcodeproj::Project::Object::PBXGroup)
+        walk_group.call(child, "#{path}/#{child.display_name}")
+      else
+        keys[child] = "file/#{child.source_tree}/#{child.path}"
+      end
+    end
+  end
+  walk_group.call(project.main_group, "")
+
+  project.targets.each do |target|
+    keys[target] = "target/#{target.name}"
+    configuration_lists[target.build_configuration_list] = "target/#{target.name}"
+
+    target.build_phases.each do |phase|
+      keys[phase] = "phase/#{target.name}/#{phase.isa}"
+      phase.files.each do |build_file|
+        keys[build_file] = "buildfile/#{target.name}/#{phase.isa}/#{build_file_identity(build_file)}"
+      end
+    end
+
+    target.dependencies.each do |dependency|
+      keys[dependency] = "dependency/#{target.name}/#{dependency.target.name}"
+      keys[dependency.target_proxy] = "proxy/#{target.name}/#{dependency.target.name}"
+    end
+
+    target.package_product_dependencies.each do |product|
+      keys[product] = "packageproduct/#{target.name}/#{product.product_name}"
+    end
+  end
+
+  # A local package is identified by its path on disk; a remote one has no path,
+  # only a repository URL. Keying both off relative_path raised NoMethodError as soon
+  # as the first remote package (Sparkle) was added.
+  root_object.package_references.each do |package|
+    identity =
+      if package.respond_to?(:relative_path) && package.relative_path
+        package.relative_path
+      else
+        package.repositoryURL
+      end
+    keys[package] = "package/#{identity}"
+  end
+
+  configuration_lists.each do |list, owner|
+    keys[list] = "configlist/#{owner}"
+    list.build_configurations.each do |configuration|
+      keys[configuration] = "config/#{owner}/#{configuration.name}"
+    end
+  end
+
+  keys
+end
+
+# A build file points at either a file reference or a Swift package product.
+def build_file_identity(build_file)
+  reference = build_file.file_ref
+  return "product/#{build_file.product_ref.product_name}" if reference.nil?
+
+  "#{reference.source_tree}/#{reference.path}"
+end
+
+def assign_stable_uuids!(project)
+  keys = stable_uuid_keys(project)
+
+  unmapped = project.objects - keys.keys
+  unless unmapped.empty?
+    raise "[generate_xcodeproj:assign_stable_uuids!] no stable key for objects — " \
+          "{isas: #{unmapped.map(&:isa).uniq.sort.join(", ")}}"
+  end
+
+  by_key = {}
+  keys.each do |object, key|
+    clash = by_key[key]
+    if clash
+      raise "[generate_xcodeproj:assign_stable_uuids!] duplicate key — " \
+            "{key: #{key.inspect}, objects: [#{clash.isa}, #{object.isa}]}"
+    end
+    by_key[key] = object
+  end
+
+  replacements = {}
+  keys.each do |object, key|
+    uuid = Digest::MD5.hexdigest(key).upcase
+    replacements[object.uuid] = uuid
+    object.instance_variable_set(:@uuid, uuid)
+  end
+
+  # `container_portal` and `remote_global_id_string` hold raw UUID strings
+  # captured when the dependency was wired, so they do not follow the objects.
+  project.objects.each do |object|
+    [:container_portal, :remote_global_id_string].each do |attribute|
+      next unless object.respond_to?(attribute)
+
+      replacement = replacements[object.send(attribute)]
+      object.send("#{attribute}=", replacement) if replacement
+    end
+  end
+
+  objects_by_uuid = keys.keys.each_with_object({}) { |object, hash| hash[object.uuid] = object }
+  project.instance_variable_set(:@objects_by_uuid, objects_by_uuid)
+  project.mark_dirty!
+end
+
 
 root = File.expand_path("..", __dir__)
 project_path = File.join(root, "10x.xcodeproj")
@@ -18,7 +154,6 @@ project.root_object.attributes["LastSwiftUpdateCheck"] = "2660"
 app = project.new_target(:application, "10x", :osx, "15.0")
 tests = project.new_target(:unit_test_bundle, "TenXAppTests", :osx, "15.0")
 tests.add_dependency(app)
-test_dependency = tests.dependencies.last
 
 app_group = project.main_group.new_group("App")
 test_group = project.main_group.new_group("Tests")
@@ -141,14 +276,7 @@ tests.build_configurations.each do |configuration|
   })
 end
 
-project.predictabilize_uuids
-
-# Xcodeproj leaves this circular dependency pair out of its predictable UUID
-# pass, so pin the final two generated identifiers as well.
-test_dependency_uuid = "D4AC311B1DE3EA82606B7F7685E3A230"
-test_proxy_uuid = "7405643B58C04A0D4C4F6864B6221DB8"
-test_dependency.instance_variable_set(:@uuid, test_dependency_uuid)
-test_dependency.target_proxy.instance_variable_set(:@uuid, test_proxy_uuid)
+assign_stable_uuids!(project)
 project.save
 
 if preserved_resolved
@@ -160,7 +288,9 @@ scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(app)
 scheme.add_test_target(tests)
 scheme.test_action.should_use_launch_scheme_args_env = false
-scheme.test_action.environment_variables = Xcodeproj::XCScheme::EnvironmentVariables.new([
-  { key: "RECORD_SNAPSHOTS", value: "$(RECORD_SNAPSHOTS)" },
-])
+# Deliberately no TestAction EnvironmentVariables: any entry here wins over the
+# values xcodebuild injects from TEST_RUNNER_-prefixed shell variables, so a
+# `RECORD_SNAPSHOTS = $(RECORD_SNAPSHOTS)` entry silently overwrote
+# TEST_RUNNER_RECORD_SNAPSHOTS=1 with "" and made CLI re-recording impossible.
+# See docs/testing.md.
 scheme.save_as(project_path, "10x", true)

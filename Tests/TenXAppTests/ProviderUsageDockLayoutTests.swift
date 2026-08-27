@@ -15,7 +15,7 @@ import Testing
         bottomOffset: 12))
 }
 
-@Test func usageDockUsesConstrainedWheelsAboveComposerWhenGutterDoesNotFitThreeProviders() {
+@Test func usageDockUsesSendButtonSizedWheelsInsideComposerWhenGutterDoesNotFitThreeProviders() {
     let layout = ProviderUsageDockLayout.compact(
         shellWidth: 760,
         contentLeadingInset: 64,
@@ -23,9 +23,9 @@ import Testing
         hasComposer: true)
 
     #expect(layout == ProviderUsageDockCompactLayout(
-        wheelDiameter: 44,
-        trailingOffset: 26,
-        bottomOffset: 116))
+        wheelDiameter: 28,
+        trailingOffset: 68,
+        bottomOffset: 22))
 }
 
 @Test func usageDockProviderCountControlsWidePlacementDecision() {
@@ -41,7 +41,7 @@ import Testing
         hasComposer: true)
 
     #expect(twoProviderLayout.wheelDiameter == 54)
-    #expect(threeProviderLayout.wheelDiameter == 44)
+    #expect(threeProviderLayout.wheelDiameter == 28)
 }
 
 @Test func usageDockStandaloneRoutesKeepRegularWheelsWithoutOffsets() {

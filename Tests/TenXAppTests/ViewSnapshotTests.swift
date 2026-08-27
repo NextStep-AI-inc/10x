@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import OmpKit
 import SwiftUI
@@ -41,6 +42,13 @@ import Testing
 @MainActor
 @Test func setupSnapshot() throws {
     try assertSnapshot(SetupView(model: AppModel()), name: "omp-missing")
+}
+
+@MainActor
+@Test func setupUnrunnableSnapshot() throws {
+    let model = AppModel()
+    model.unrunnableOmpURL = URL(filePath: "/Users/example/.bun/bin/omp")
+    try assertSnapshot(SetupView(model: model), name: "omp-unrunnable")
 }
 
 @MainActor
@@ -569,25 +577,11 @@ import Testing
     try assertSnapshot(
         ProviderUsageDockView(
             providers: providerUsageDockProviders,
-            activeCounts: ["anthropic": 2],
-            isForegroundGenerating: false)
+            activeCounts: ["anthropic": 2])
             // macOS exposes the public Reduce Motion key as read-only.
             .environment(\._accessibilityReduceMotion, true)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
         name: "provider-usage-dock-idle",
-        size: CGSize(width: 430, height: 460))
-}
-
-@MainActor
-@Test func providerUsageDockGeneratingSnapshot() throws {
-    try assertSnapshot(
-        ProviderUsageDockView(
-            providers: providerUsageDockProviders,
-            activeCounts: ["anthropic": 2],
-            isForegroundGenerating: true)
-            .environment(\._accessibilityReduceMotion, true)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
-        name: "provider-usage-dock-generating",
         size: CGSize(width: 430, height: 460))
 }
 
@@ -597,7 +591,6 @@ import Testing
         ProviderUsageDockView(
             providers: providerUsageDockProviders,
             activeCounts: ["anthropic": 2],
-            isForegroundGenerating: true,
             initiallySelectedProviderID: "anthropic")
             .environment(\._accessibilityReduceMotion, true),
         name: "provider-usage-dock-expanded",
@@ -724,8 +717,8 @@ private func assertProviderSetupStarterSnapshot(
 }
 
 private struct SnapshotOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test")
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test"))
     }
 }
 
@@ -1819,6 +1812,172 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         size: CGSize(width: 780, height: 140))
 }
 
+/// Guards the composer border against the open panel: the card's stroke must
+/// stay behind card content, so no hairline crosses the flyout.
+@MainActor
+@Test func composerWithModelFlyoutSnapshot() async throws {
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("Pick a model without the border cutting the panel."),
+                flyout: .constant(.model),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [URL(filePath: "/tmp/10x", directoryHint: .isDirectory)],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controls: controls,
+                controlsMode: .newSession,
+                onSend: {})
+        },
+        name: "composer-with-model-flyout",
+        size: CGSize(width: 780, height: 400))
+}
+
+private let modelPickerAnthropicOpus = ComposerModelInfo(
+    modelID: "claude-opus-4-8",
+    name: "Claude Opus 4.8",
+    provider: "anthropic",
+    api: "anthropic-messages",
+    thinkingEfforts: ["low", "high"],
+    requiresEffort: false)
+
+private let modelPickerOpenRouterOpus = ComposerModelInfo(
+    modelID: "anthropic/claude-opus-4-8",
+    name: "Claude Opus 4.8",
+    provider: "openrouter",
+    api: "openai-completions",
+    thinkingEfforts: [],
+    requiresEffort: false)
+
+@MainActor
+@Test func modelPickerDefaultSnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        recents: [modelPickerAnthropicOpus],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: modelPickerAnthropicOpus,
+            thinkingOptions: ["auto", "low", "high"],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: modelPickerAnthropicOpus),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-default",
+        size: CGSize(width: 340, height: 420))
+}
+
+@MainActor
+@Test func modelPickerSearchingSnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        recents: [modelPickerAnthropicOpus],
+        query: "opus")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: modelPickerAnthropicOpus,
+            thinkingOptions: ["auto", "low", "high"],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: modelPickerAnthropicOpus),
+            query: .constant("opus"),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-searching",
+        size: CGSize(width: 340, height: 420))
+}
+
+@MainActor
+@Test func modelPickerEmptySnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [],
+        recents: [],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: nil,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: false,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: false,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: nil),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-empty",
+        size: CGSize(width: 340, height: 420))
+}
+
+/// A model with Fast mode and no thinking efforts still needs the rule above the
+/// settings region, or the Fast row abuts the list with nothing dividing them.
+@MainActor
+@Test func modelPickerFastModeOnlySnapshot() throws {
+    let sonnet = ComposerModelInfo(
+        modelID: "claude-sonnet-4-5",
+        name: "Claude Sonnet 4.5",
+        provider: "anthropic",
+        api: "anthropic-messages",
+        thinkingEfforts: [],
+        requiresEffort: false)
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [sonnet],
+        recents: [],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: sonnet,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: true,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: sonnet),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-fast-only",
+        size: CGSize(width: 340, height: 260))
+}
+
 @MainActor
 private func compactTranscriptController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
@@ -2221,6 +2380,13 @@ private let snapshotEmptyIDEStore: IDEPreferenceStore = {
 }()
 
 @MainActor
+private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
+    let defaults = UserDefaults(suiteName: "tests.\(name)")!
+    defaults.removePersistentDomain(forName: "tests.\(name)")
+    return RecentModelStore(defaults: defaults, key: "recent-model-keys")
+}
+
+@MainActor
 private func snapshotComposerControls(
     models: [ComposerModelInfo],
     selected: ComposerModelInfo,
@@ -2235,7 +2401,8 @@ private func snapshotComposerControls(
         fastModeActive: false))
     let model = ComposerControlsModel(
         catalog: catalog,
-        defaults: SnapshotComposerDefaults())
+        defaults: SnapshotComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)))
     return model
 }
@@ -2266,4 +2433,193 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
             fastModeEnabled: false,
             fastModeActive: false)),
         defaults: SnapshotComposerDefaults())
+}
+
+@MainActor
+@Test func transcriptWorkingIndicatorSnapshot() throws {
+    try assertSnapshot(
+        TranscriptView(controller: awaitingOutputController())
+            .environment(snapshotEmptyIDEStore),
+        name: "transcript-working-indicator",
+        size: CGSize(width: 700, height: 260))
+}
+
+@MainActor
+@Test func composerStopsARunWithNothingToSendSnapshot() throws {
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant(""),
+            presentation: .active(controller: awaitingOutputController()),
+            controlsMode: .activeSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-stop-control",
+        size: CGSize(width: 700, height: 180))
+}
+
+@MainActor
+@Test func composerStillSendsAStagedImageMidRunSnapshot() throws {
+    // Stop must not take the button while there is something to send, or an
+    // image attached mid-run could only be discarded.
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant(""),
+            attachments: .constant([
+                snapshotAttachment(name: "regression.png", width: 800, height: 500),
+            ]),
+            presentation: .active(controller: awaitingOutputController()),
+            controlsMode: .activeSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-sends-attachment-mid-run",
+        size: CGSize(width: 700, height: 240))
+}
+
+@MainActor
+private func awaitingOutputController() -> SessionController {
+    let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
+    let user = TranscriptMessage(
+        id: "awaiting-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Summarize the failing tests."),
+        ]),
+        timestamp: timestamp,
+        isFinal: true)
+    return SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [.message(user)],
+        runtimeState: .streaming,
+        title: "Working session")
+}
+
+@MainActor
+@Test func composerGrowsWithALongDraftSnapshot() throws {
+    let draft = """
+        Rework the transcript so a long prompt stays visible while it is being \
+        written, instead of scrolling inside a two line window. Keep the send \
+        control in the same place and do not change the footer height.
+        """
+    try assertSnapshot(
+        VStack(spacing: 24) {
+            ComposerView(
+                draft: .constant(""),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controlsMode: .newSession,
+                onSend: {})
+            ComposerView(
+                draft: .constant(draft),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controlsMode: .newSession,
+                onSend: {})
+            ComposerView(
+                draft: .constant(String(repeating: "This prompt is far too long to show in full. ", count: 12)),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controlsMode: .newSession,
+                onSend: {})
+        }
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-placeholder-and-growth",
+        size: CGSize(width: 700, height: 760))
+}
+
+@MainActor
+@Test func composerWithStagedAttachmentsSnapshot() throws {
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant("Why does this row wrap?"),
+            attachments: .constant([
+                snapshotAttachment(name: "sidebar-overflow.png", width: 1_200, height: 800),
+                snapshotAttachment(name: "footer-clipping.png", width: 640, height: 640),
+            ]),
+            presentation: .newSession(
+                projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                projectURLs: [],
+                onChooseProject: { _ in },
+                onAddExistingFolder: {}),
+            controlsMode: .newSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-with-attachments",
+        size: CGSize(width: 700, height: 260))
+}
+
+@MainActor
+@Test func transcriptUserMessageWithAnImageSnapshot() throws {
+    let message = TranscriptMessage(
+        id: "image-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string("The sidebar clips at this width."),
+                ]),
+                .object([
+                    "type": .string("image"),
+                    "data": .string(snapshotImageData(width: 320, height: 200)
+                        .base64EncodedString()),
+                    "mimeType": .string("image/png"),
+                ]),
+            ]),
+        ]),
+        isFinal: true)
+
+    try assertSnapshot(
+        MessageBubbleView(message: message)
+            .padding(24),
+        name: "user-message-with-image",
+        size: CGSize(width: 700, height: 300))
+}
+
+@MainActor
+private func snapshotAttachment(name: String, width: Int, height: Int) -> ComposerAttachment {
+    let fitted = ComposerAttachmentEncoder.fittedSize(width: width, height: height)
+    return ComposerAttachment(
+        id: UUID(uuidString: "00000000-0000-0000-0000-0000000000\(name.count)")
+            ?? UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+        name: name,
+        data: snapshotImageData(width: 64, height: 64),
+        mimeType: "image/png",
+        pixelWidth: fitted.width,
+        pixelHeight: fitted.height)
+}
+
+/// A fixed two-tone bitmap, so the recorded reference does not move between runs.
+private func snapshotImageData(width: Int, height: Int) -> Data {
+    let representation = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: representation)
+    NSColor(red: 0, green: 0.65, blue: 0.77, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: width, height: height).fill()
+    NSColor(white: 0.05, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: width / 2, height: height / 2).fill()
+    NSGraphicsContext.restoreGraphicsState()
+    return representation.representation(using: .png, properties: [:])!
 }

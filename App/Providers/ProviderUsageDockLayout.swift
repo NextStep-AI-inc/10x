@@ -13,7 +13,8 @@ struct ProviderUsageDockCompactLayout: Equatable {
 
 enum ProviderUsageDockLayout {
     static let regular54: CGFloat = 54
-    static let constrained44: CGFloat = 44
+    /// Matches the composer's 28pt send button, which the inline row sits beside.
+    static let inComposer28: CGFloat = 28
     static let spacing8: CGFloat = 8
 
     static func compact(
@@ -39,10 +40,18 @@ enum ProviderUsageDockLayout {
                 bottomOffset: 28 - 16)
         }
 
+        // No room beside the composer, so the row moves inside it: bottom-aligned
+        // with the send button (28 card inset + 10 footer inset) and 4pt to its
+        // left (10 footer inset + 28 button + 4 gap). The overlay already carries
+        // 16pt of trailing/bottom padding, which these offsets sit on top of.
+        // ponytail: hardcoded against the composer's footer metrics, as the old
+        // above-the-composer offsets were. Real fix is making the row footer
+        // content; that also handles the error-message row shifting the footer up
+        // and a long project name underlapping the wheels at narrow widths.
         return ProviderUsageDockCompactLayout(
-            wheelDiameter: constrained44,
-            trailingOffset: max(0, trailingGutter - 16),
-            bottomOffset: 28 + 96 + 8 - 16)
+            wheelDiameter: inComposer28,
+            trailingOffset: trailingGutter + 42 - 16,
+            bottomOffset: 28 + 10 - 16)
     }
 
     private static func wheelGroupWidth(providerCount: Int) -> CGFloat {

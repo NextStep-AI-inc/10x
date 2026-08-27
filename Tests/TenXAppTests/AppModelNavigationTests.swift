@@ -281,7 +281,6 @@ import OmpKit
     #expect(model.activeSession == nil)
     #expect(model.route == .newSession)
     #expect(model.providerActivityCounts["test"] == 1)
-    #expect(!model.isForegroundSessionGenerating)
 
     for _ in 0..<150 where model.providerActivityCounts["test"] != nil {
         try await Task.sleep(for: .milliseconds(20))
@@ -344,6 +343,49 @@ import OmpKit
     if let manager = model.processManager {
         await manager.closeAll()
     }
+}
+
+@MainActor
+@Test func openingASessionWhileItsNewSessionOpenIsInFlightReusesItsController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-new-session-race-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let release = container.appendingPathComponent("release")
+    let executable = try makeNavigationExecutable(
+        in: container,
+        mode: "block-subagent-subscription",
+        arguments: [release.path])
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+
+    // The child parks on the last command of the open, so the controller knows its
+    // path while `openNew` — and the indexing that follows it — is still in flight.
+    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let original = try #require(model.activeSession)
+    #expect(original.sessionPath == "/tmp/fake.jsonl")
+
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+
+    #expect(model.activeSession === original)
+
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    for _ in 0..<500 where !original.draft.isEmpty {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(original.draft.isEmpty)
+    #expect(model.activeSession === original)
+    let manager = try #require(model.processManager)
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") != nil)
+    await manager.closeAll()
 }
 
 @MainActor
@@ -444,40 +486,6 @@ import OmpKit
     #expect(await manager.handle(for: metadata.path) == nil)
     #expect(model.providerActivityCounts.isEmpty)
     await manager.closeAll()
-}
-
-@MainActor
-@Test func nonSessionRoutesAreNotForegroundGeneratingWhileBackgroundActivityContinues() async throws {
-    let container = URL(filePath: NSTemporaryDirectory())
-        .appendingPathComponent("app-model-foreground-activity-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: container) }
-    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
-    let executable = try makeNavigationExecutable(in: container, mode: "slow-turn")
-    let project = container.appendingPathComponent("project")
-    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-    let model = AppModel(dependencies: navigationDependencies(
-        ompLocator: FixedOmpLocator(executableURL: executable),
-        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
-    await model.bootstrap()
-    model.chooseProject(project)
-    model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.providerActivityCounts["test"] != 1 {
-        try await Task.sleep(for: .milliseconds(20))
-    }
-
-    #expect(model.isForegroundSessionGenerating)
-    model.openSettings()
-    #expect(!model.isForegroundSessionGenerating)
-    model.openProviders(.usage)
-    #expect(!model.isForegroundSessionGenerating)
-    model.openNewSession()
-    #expect(!model.isForegroundSessionGenerating)
-    model.openArchivedSessions()
-    #expect(!model.isForegroundSessionGenerating)
-    #expect(model.providerActivityCounts["test"] == 1)
-    if let manager = model.processManager {
-        await manager.closeAll()
-    }
 }
 
 @MainActor
@@ -590,7 +598,11 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     try Data(content.utf8).write(to: url)
 }
 
-func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws -> URL {
+func makeNavigationExecutable(
+    in directory: URL,
+    mode: String = "basic",
+    arguments: [String] = []
+) throws -> URL {
     let repository = URL(filePath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -598,9 +610,10 @@ func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws 
     let fixture = repository
         .appendingPathComponent("OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py")
     let executable = directory.appendingPathComponent("fake-omp")
+    let extraArguments = arguments.map { " \"\($0)\"" }.joined()
     let wrapper = """
     #!/bin/sh
-    exec /usr/bin/python3 "\(fixture.path)" "\(mode)"
+    exec /usr/bin/python3 "\(fixture.path)" "\(mode)"\(extraArguments)
     """
     try Data(wrapper.utf8).write(to: executable)
     try FileManager.default.setAttributes(
@@ -610,14 +623,14 @@ func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws 
 }
 
 private struct MissingOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? { nil }
+    func locate(preferredURL: URL?) async -> OmpLocation { .notFound }
 }
 
 private struct FixedOmpLocator: OmpLocating {
     let executableURL: URL
 
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        OmpInstallation(executableURL: executableURL, version: "test")
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(OmpInstallation(executableURL: executableURL, version: "test"))
     }
 }
 
@@ -885,8 +898,8 @@ private struct FixedOmpLocator: OmpLocating {
 }
 
 private struct InstalledOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        testInstallation
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(testInstallation)
     }
 }
 
@@ -901,9 +914,9 @@ private actor SequentialOmpLocator: OmpLocating {
         self.installations = installations
     }
 
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        guard !installations.isEmpty else { return nil }
-        return installations.removeFirst()
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        guard !installations.isEmpty else { return .notFound }
+        return installations.removeFirst().map(OmpLocation.found) ?? .notFound
     }
 }
 
@@ -915,10 +928,10 @@ private actor InstalledThenCancelledOmpLocator: OmpLocating {
         self.gate = gate
     }
 
-    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
         if isInitialLookup {
             isInitialLookup = false
-            return testInstallation
+            return .found(testInstallation)
         }
         await gate.started()
         while !Task.isCancelled { await Task.yield() }

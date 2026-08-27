@@ -4,6 +4,8 @@ struct ActiveSessionView: View {
     let controller: SessionController
     var controls: ComposerControlsModel?
 
+    @State private var flyout: ComposerFlyout?
+
     var body: some View {
         VStack(spacing: 0) {
             SessionHeaderView(controller: controller)
@@ -25,6 +27,8 @@ struct ActiveSessionView: View {
 
             ComposerView(
                 draft: Bindable(controller).draft,
+                attachments: Bindable(controller).attachments,
+                flyout: $flyout,
                 presentation: .active(controller: controller),
                 controls: controls,
                 controlsMode: .activeSession,
@@ -36,6 +40,9 @@ struct ActiveSessionView: View {
             .padding(.bottom, 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // This view keeps its identity across session switches, so the shelf
+        // would otherwise stay open over a transcript it no longer belongs to.
+        .onChange(of: controller.id) { _, _ in flyout = nil }
         .environment(\.fileReferenceBaseURL, controller.projectURL)
         .sheet(item: extensionSheetBinding) { request in
             ExtensionInputSheet(
@@ -61,6 +68,7 @@ struct ActiveSessionView: View {
             }
             .frame(minWidth: 620, minHeight: 360)
         }
+        .onExitCommand { flyout = nil }
     }
 
     private var extensionSheetBinding: Binding<ExtensionUIState?> {

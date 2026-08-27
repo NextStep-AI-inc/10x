@@ -7,6 +7,10 @@ struct FileReferenceLabel: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             FileTypeIcon(path: reference.originalPath, isAvailable: reference.exists)
+                // A plain image's baseline is its bottom edge, which parks the
+                // 12pt icon on the text baseline riding above cap height.
+                // Report the baseline 2pt up so the icon optically centers.
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
             Text(label)
                 .font(showsFullPath
                     ? TenXTypography.mono(size: 11)

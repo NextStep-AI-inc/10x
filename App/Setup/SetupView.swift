@@ -9,22 +9,37 @@ struct SetupView: View {
             BrandWordmark(width: 48)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("OMP required")
+                Text(title)
                     .font(TenXTypography.title(size: 38))
                     .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                Text("10x needs the OMP executable to start and resume agent sessions.")
+                Text(explanation)
                     .font(TenXTypography.body(size: 14))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
 
             CornerCard(color: TenXPalette.color(TenXPalette.cyanHex)) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Checked automatically")
-                        .font(TenXTypography.body(weight: .semibold))
-                    ForEach(OmpExecutableLocator.knownPaths, id: \.self) { path in
-                        Text(path)
+                    if let unrunnable = model.unrunnableOmpURL {
+                        Text("Found at")
+                            .font(TenXTypography.body(weight: .semibold))
+                        Text(unrunnable.path)
                             .font(TenXTypography.mono())
                             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                            .textSelection(.enabled)
+                        Text("Run it in a terminal to see why it fails:")
+                            .font(TenXTypography.body(size: 12))
+                        Text("\(unrunnable.path) --version")
+                            .font(TenXTypography.mono())
+                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                            .textSelection(.enabled)
+                    } else {
+                        Text("Checked automatically")
+                            .font(TenXTypography.body(weight: .semibold))
+                        ForEach(OmpExecutableLocator.knownPaths, id: \.self) { path in
+                            Text(path)
+                                .font(TenXTypography.mono())
+                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -45,6 +60,16 @@ struct SetupView: View {
         }
         .frame(width: 470, alignment: .leading)
         .padding(56)
+    }
+
+    private var title: String {
+        model.unrunnableOmpURL == nil ? "OMP required" : "OMP won’t run"
+    }
+
+    private var explanation: String {
+        model.unrunnableOmpURL == nil
+            ? "10x needs the OMP executable to start and resume agent sessions."
+            : "10x found OMP but couldn’t run it. Its interpreter may be missing."
     }
 
     private func locateOmp() {

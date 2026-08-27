@@ -30,24 +30,33 @@ func assertSnapshot<Content: View>(
         return
     }
 
-    let sourceDirectory = URL(fileURLWithPath: sourceFile).deletingLastPathComponent()
-    let recordingURL = sourceDirectory
+    // Written into the source tree, not the built bundle, so a recorded or
+    // rejected snapshot lands next to the reference it replaces.
+    let referenceDirectory = URL(fileURLWithPath: sourceFile)
+        .deletingLastPathComponent()
         .appendingPathComponent("ReferenceImages")
-        .appendingPathComponent("\(name).png")
+    let recordingURL = referenceDirectory.appendingPathComponent("\(name).png")
+    let actualURL = referenceDirectory.appendingPathComponent("\(name).actual.png")
+    try FileManager.default.createDirectory(
+        at: referenceDirectory, withIntermediateDirectories: true)
+
     if ProcessInfo.processInfo.environment["RECORD_SNAPSHOTS"] == "1" {
-        try FileManager.default.createDirectory(
-            at: recordingURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true)
         try actual.write(to: recordingURL)
+        try? FileManager.default.removeItem(at: actualURL)
         return
     }
 
-    guard let referenceURL = Bundle(for: SnapshotToken.self)
+    let reference = Bundle(for: SnapshotToken.self)
         .url(forResource: name, withExtension: "png", subdirectory: "ReferenceImages")
-    else {
-        Issue.record("Missing reference image: \(name).png")
+        .flatMap { try? Data(contentsOf: $0) }
+    guard let reference, actual.elementsEqual(reference) else {
+        try actual.write(to: actualURL)
+        Issue.record("""
+            Snapshot \(name) \(reference == nil ? "has no reference image" : "differs from its reference").
+            Wrote \(actualURL.path)
+            Inspect it, then promote with: mv '\(actualURL.path)' '\(recordingURL.path)'
+            """)
         return
     }
-    let reference = try Data(contentsOf: referenceURL)
-    #expect(actual.elementsEqual(reference))
+    try? FileManager.default.removeItem(at: actualURL)
 }

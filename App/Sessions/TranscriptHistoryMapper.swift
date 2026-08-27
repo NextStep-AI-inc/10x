@@ -75,7 +75,10 @@ enum TranscriptHistoryMapper {
                 isFinal: true)
             let isTerminalFailure = transcriptMessage.role == .assistant
                 && ["error", "aborted"].contains(message["stopReason"]?.stringValue?.lowercased())
-            if transcriptMessage.role == .user
+            // Tool calls on the entry are still collected below: only the
+            // message body is withheld.
+            if TranscriptMessage.isDisplayable(message),
+               transcriptMessage.role == .user
                 || !transcriptMessage.visibleText.isEmpty
                 || isTerminalFailure {
                 items.append(.message(transcriptMessage))

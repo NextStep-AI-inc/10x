@@ -3,58 +3,78 @@ import SwiftUI
 struct ComposerSessionControlsView: View {
     let model: ComposerControlsModel
     let mode: ComposerControlsMode
+    @Binding var isPresented: Bool
 
-    private var menusDisabled: Bool {
-        model.isLoading || model.isMutating || model.models.isEmpty
-    }
+    @State private var query = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 4) {
-            Menu {
-                ForEach(model.models) { item in
-                    Button(item.name) {
-                        Task { await model.selectModel(item, mode: mode) }
-                    }
-                }
-            } label: {
-                Text(model.selectedModel?.name ?? "Model")
+        trigger
+            .overlay(alignment: .bottomLeading) { flyout }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: isPresented)
+            .onChange(of: isPresented) { _, isPresented in
+                if !isPresented { query = "" }
             }
-            .menuStyle(.borderlessButton)
-            .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
-            .disabled(menusDisabled)
-            .accessibilityLabel("Model")
-            .accessibilityValue(model.selectedModel?.name ?? "None")
+    }
 
-            if !model.thinkingOptions.isEmpty {
-                Menu {
-                    ForEach(model.thinkingOptions, id: \.self) { level in
-                        Button(level.capitalized) {
-                            Task { await model.selectThinking(level, mode: mode) }
-                        }
-                    }
-                } label: {
-                    Text(model.thinkingLevel.capitalized)
-                }
-                .menuStyle(.borderlessButton)
-                .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
-                .disabled(menusDisabled)
-                .accessibilityLabel("Thinking")
-                .accessibilityValue(model.thinkingLevel.capitalized)
-            }
-
-            if model.isFastModeVisible {
-                Button("Fast") {
-                    Task { await model.setFastMode(!model.isFastModeEnabled, mode: mode) }
-                }
-                .buttonStyle(GhostActionStyle(
-                    color: TenXPalette.color(
-                        model.isFastModeEnabled
-                            ? TenXPalette.cyanHex
-                            : TenXPalette.nearBlackHex)))
-                .disabled(model.isLoading || model.isMutating)
-                .accessibilityLabel("Fast mode")
-                .accessibilityValue(model.isFastModeEnabled ? "On" : "Off")
-            }
+    private var trigger: some View {
+        Button {
+            isPresented.toggle()
+        } label: {
+            Text(ComposerControlsPresentation.triggerTitle(for: model.selectedModel))
+                .lineLimit(1)
         }
+        .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
+        .opacity(isPresented ? 0 : 1)
+        .accessibilityHidden(isPresented)
+        // Never disabled: the panel owns the loading and empty copy, and gating
+        // the trigger on the same predicate makes that copy unreachable.
+        .accessibilityLabel("Model")
+        .accessibilityValue(ComposerControlsPresentation.triggerTitle(for: model.selectedModel))
+        .accessibilityHint("Shows model menu")
+    }
+
+    @ViewBuilder
+    private var flyout: some View {
+        if isPresented {
+            ModelPickerFlyout(
+                sections: ComposerControlsPresentation.pickerSections(
+                    models: model.models,
+                    recents: model.recentModels,
+                    query: query),
+                selectedModel: model.selectedModel,
+                thinkingOptions: model.thinkingOptions,
+                thinkingLevel: model.thinkingLevel,
+                isFastModeVisible: model.isFastModeVisible,
+                isFastModeEnabled: model.isFastModeEnabled,
+                isLoading: model.isLoading,
+                isMutating: model.isMutating,
+                hasCatalog: !model.models.isEmpty,
+                triggerTitle: ComposerControlsPresentation.triggerTitle(
+                    for: model.selectedModel),
+                query: $query,
+                onSelectModel: { selection in
+                    // Committing a model closes the menu, the way every menu on
+                    // this platform does. Effort and Fast stay open: those are
+                    // settings for the model just picked, not a second choice.
+                    isPresented = false
+                    Task { await model.selectModel(selection, mode: mode) }
+                },
+                onSelectThinking: { level in
+                    Task { await model.selectThinking(level, mode: mode) }
+                },
+                onToggleFastMode: { enabled in
+                    Task { await model.setFastMode(enabled, mode: mode) }
+                },
+                onToggle: { isPresented = false })
+            .transition(transition)
+        }
+    }
+
+    private var transition: AnyTransition {
+        if reduceMotion { return .identity }
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: 8)),
+            removal: .opacity.combined(with: .offset(y: 4)))
     }
 }

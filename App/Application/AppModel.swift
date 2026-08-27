@@ -39,6 +39,9 @@ final class AppModel {
     var installation: OmpInstallation?
     var selectedProjectURL: URL?
     var setupError: String?
+    /// Set when OMP is installed but would not run, so setup can say that
+    /// instead of reporting it as missing.
+    var unrunnableOmpURL: URL?
     var sessions: [SessionMetadata] = []
     var archivedSessions: [SessionMetadata] = []
     var pendingDeletion: SessionDeletionRequest?
@@ -60,11 +63,6 @@ final class AppModel {
 
     var providerActivityCounts: [String: Int] {
         sessionActivityRegistry.activeCounts
-    }
-
-    var isForegroundSessionGenerating: Bool {
-        guard case .session = route else { return false }
-        return activeSession?.runtimeState == .streaming
     }
 
     @ObservationIgnored private let dependencies: AppDependencies
@@ -189,22 +187,33 @@ final class AppModel {
     }
 
     func useOmp(at url: URL) async {
-        let locatedInstallation: OmpInstallation?
+        let location: OmpLocation
         do {
-            locatedInstallation = try await dependencies.ompLocator.locate(preferredURL: url)
+            location = try await dependencies.ompLocator.locate(preferredURL: url)
             try Task.checkCancellation()
         } catch is CancellationError {
             return
         } catch {
             return
         }
-        guard await replaceWorkspaceRuntime(with: locatedInstallation),
+        guard await replaceWorkspaceRuntime(with: location.installation),
               !Task.isCancelled,
               !isShuttingDown
         else { return }
-        setupError = locatedInstallation == nil
-            ? OmpExecutableLocator.inspectionErrorDescription(for: url)
-            : nil
+        applySetupDiagnosis(location)
+    }
+
+    /// Setup needs to tell "nothing installed" apart from "installed but it
+    /// would not run", so it can ask for the right thing.
+    private func applySetupDiagnosis(_ location: OmpLocation) {
+        switch location {
+        case .found:
+            unrunnableOmpURL = nil
+        case .unrunnable(let url):
+            unrunnableOmpURL = url
+        case .notFound:
+            unrunnableOmpURL = nil
+        }
     }
 
     func chooseProject(_ url: URL) {
@@ -340,13 +349,17 @@ final class AppModel {
         }
     }
 
-    func startNewSession(prompt: String) {
+    func startNewSession(prompt: String, attachments: [ComposerAttachment] = []) {
         guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
         let controller = makeSessionController(processManager: processManager)
         controller.draft = prompt
+        controller.attachments = attachments
         composerControls?.detachActiveSession()
-        route = .session("new:\(UUID().uuidString)")
+        // omp does not name the session until the child is up, so the route
+        // carries a placeholder until `openNew` reports the real path.
+        let placeholderRoute = AppRoute.session("new:\(UUID().uuidString)")
+        route = placeholderRoute
         let selection = composerControls?.spawnSelection
         activeSession = controller
         Task { [weak self, controller, selectedProjectURL, selection] in
@@ -361,11 +374,17 @@ final class AppModel {
                 }
                 return
             }
-            guard controller.sessionPath != nil else {
+            guard let sessionPath = controller.sessionPath else {
                 self.removeManagedSession(controller)
                 return
             }
             self.indexManagedSessionPath(for: controller)
+            // Without this the rail can never mark the session the user is
+            // looking at, and reopening it from the rail would spawn a second
+            // child for a session that is already running here.
+            if self.activeSession === controller, self.route == placeholderRoute {
+                self.route = .session(sessionPath)
+            }
             if self.activeSession === controller {
                 if fastOutcome == .unsupported || fastOutcome == .failed {
                     await self.composerControls?.setFastMode(false, mode: .newSession)
@@ -739,11 +758,17 @@ final class AppModel {
     }
 
     private func managedController(for sessionPath: String) -> SessionController? {
-        guard let controllerID = managedSessionPaths[sessionPath] else { return nil }
-        guard let controller = managedSessions[controllerID] else {
+        if let controllerID = managedSessionPaths[sessionPath] {
+            if let controller = managedSessions[controllerID] { return controller }
             managedSessionPaths.removeValue(forKey: sessionPath)
-            return nil
         }
+        // A controller learns its path partway through its own open, so the index still
+        // lags it. Reuse it from that moment rather than opening a second controller
+        // over the same child.
+        guard let controller = managedSessions.values
+            .first(where: { $0.sessionPath == sessionPath })
+        else { return nil }
+        managedSessionPaths[sessionPath] = controller.id
         return controller
     }
 
@@ -881,10 +906,11 @@ final class AppModel {
 
     private func prepareRuntime(attemptID: UUID) async throws -> Bool {
         startupState.markLoading(.runtime, attemptID: attemptID)
-        let located = try await dependencies.ompLocator.locate(preferredURL: nil)
+        let location = try await dependencies.ompLocator.locate(preferredURL: nil)
         try checkStartupAttempt(attemptID)
+        applySetupDiagnosis(location)
 
-        guard let located else {
+        guard let located = location.installation else {
             await stopProviderUsage()
             let oldProvider = providerModel
             let oldComposerControls = composerControls

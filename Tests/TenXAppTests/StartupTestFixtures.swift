@@ -12,10 +12,10 @@ actor CountingOmpLocator: OmpLocating {
         self.installation = installation
     }
 
-    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
         count += 1
         try Task.checkCancellation()
-        return installation
+        return installation.map(OmpLocation.found) ?? .notFound
     }
 }
 
@@ -28,11 +28,11 @@ actor GatedOmpLocator: OmpLocating {
         self.gate = gate
     }
 
-    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
         await gate.started()
         await gate.waitForRelease()
         try Task.checkCancellation()
-        return installation
+        return installation.map(OmpLocation.found) ?? .notFound
     }
 }
 

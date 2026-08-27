@@ -41,14 +41,21 @@ final class ComposerControlsModel {
     private(set) var isLoading: Bool = false
     private(set) var isMutating: Bool = false
     private(set) var errorMessage: String?
+    private(set) var recentModels: [ComposerModelInfo] = []
 
     @ObservationIgnored private let catalog: any ComposerCatalogLoading
     @ObservationIgnored private let defaults: any ComposerDefaultPersisting
+    @ObservationIgnored private let recents: RecentModelStore
     @ObservationIgnored private weak var activeSession: (any ComposerSessionControlling)?
 
-    init(catalog: any ComposerCatalogLoading, defaults: any ComposerDefaultPersisting) {
+    init(
+        catalog: any ComposerCatalogLoading,
+        defaults: any ComposerDefaultPersisting,
+        recents: RecentModelStore = RecentModelStore()
+    ) {
         self.catalog = catalog
         self.defaults = defaults
+        self.recents = recents
     }
 
     var thinkingOptions: [String] {
@@ -72,6 +79,7 @@ final class ComposerControlsModel {
             models = ComposerControlsPresentation.authenticatedModels(
                 catalog: snapshot.models,
                 authenticatedProviderIDs: authenticatedProviderIDs)
+            recentModels = recents.rankedModels(from: models)
             if let activeSession {
                 applyLiveSelection(activeSession.liveComposerSelection)
             } else {
@@ -114,6 +122,10 @@ final class ComposerControlsModel {
             do {
                 try await defaults.setDefaultModel(provider: model.provider, modelID: model.modelID)
                 selectedModel = model
+                recordRecent(model)
+                thinkingLevel = ComposerControlsPresentation.resolvedThinkingLevel(
+                    current: thinkingLevel,
+                    for: model)
                 applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
                 errorMessage = nil
             } catch {
@@ -124,19 +136,48 @@ final class ComposerControlsModel {
             isMutating = true
             defer { isMutating = false }
             let prior = selectedModel
+            let priorThinking = thinkingLevel
             let priorFastEnabled = isFastModeEnabled
             selectedModel = model
+            thinkingLevel = ComposerControlsPresentation.resolvedThinkingLevel(
+                current: thinkingLevel,
+                for: model)
             applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
+            // Two RPCs, two failure domains: each rolls back only what it
+            // actually invalidated.
             do {
                 try await activeSession.setModel(provider: model.provider, modelID: model.modelID)
-                errorMessage = nil
             } catch {
+                // Nothing reached the runtime, so the whole optimistic switch goes back.
                 selectedModel = prior
+                thinkingLevel = priorThinking
                 applyFastModeVisibility(preservingEnabled: priorFastEnabled)
                 errorMessage = Self.sanitizedMessage(
                     from: error,
                     fallback: "Couldn’t update the model.")
+                return
             }
+            recordRecent(model)
+
+            // OMP's model echo carries provider and id only, so a reconciled
+            // level would never reach the runtime. Send it, and only when it
+            // actually moved — a same-value RPC per switch is waste.
+            if thinkingLevel != priorThinking {
+                do {
+                    try await activeSession.setThinkingLevel(thinkingLevel)
+                } catch {
+                    // The switch already landed: the runtime IS on the new model,
+                    // so reverting the chip would misname what the user is talking
+                    // to. Only the level is untrue — revert that alone, and leave
+                    // Fast mode computed from the new model.
+                    thinkingLevel = priorThinking
+                    errorMessage = Self.sanitizedMessage(
+                        from: error,
+                        fallback: "Couldn’t update the thinking level.")
+                    return
+                }
+            }
+            errorMessage = nil
         }
     }
 
@@ -225,6 +266,11 @@ final class ComposerControlsModel {
     func shutdown() async {
         detachActiveSession()
         await catalog.shutdown()
+    }
+
+    private func recordRecent(_ model: ComposerModelInfo) {
+        recents.recordSelection(model)
+        recentModels = recents.rankedModels(from: models)
     }
 
     private func applyFastModeVisibility(preservingEnabled enabled: Bool) {

@@ -60,7 +60,6 @@ struct AppShellView: View {
                                 ProviderUsageDockView(
                                     providers: dockProviders,
                                     activeCounts: model.providerActivityCounts,
-                                    isForegroundGenerating: model.isForegroundSessionGenerating,
                                     compactLayout: compactLayout)
                                     .padding(.trailing, 16)
                                     .padding(.bottom, 16)
