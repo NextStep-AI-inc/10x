@@ -18,6 +18,33 @@ jobs:
           # commit count. A shallow checkout makes every release claim build 1.
           fetch-depth: 0
 
+      - name: Select the Xcode toolchain
+        run: |
+          set -euo pipefail
+          # The project is developed and tested against Xcode 26.x (Swift 6.3). The
+          # runner's default is older, and Swift 6.0 rejects `sending` closures in
+          # OmpKit that 6.3 accepts, so the archive fails on a toolchain mismatch
+          # rather than on anything wrong with the code. Pin it explicitly.
+          echo "Xcode versions available on this runner:"
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          NEWEST=""
+          for app in /Applications/Xcode*.app; do
+            [ -d "$app" ] || continue
+            v=$(/usr/bin/defaults read "$app/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo 0)
+            major=${v%%.*}
+            if [ "$major" -ge 26 ] 2>/dev/null; then NEWEST="$app"; fi
+          done
+          if [ -z "$NEWEST" ]; then
+            echo "::error::No Xcode 26 or newer on this runner image. The project needs"
+            echo "::error::Swift 6.3; the newest available is listed above. Switch runs-on"
+            echo "::error::to a macos-26 image, or pin the toolchain another way."
+            exit 1
+          fi
+          echo "Selecting $NEWEST"
+          sudo xcode-select -s "$NEWEST/Contents/Developer"
+          xcodebuild -version
+          swift --version
+
       - name: Import the Developer ID certificate
         env:
           APPLE_CSC_LINK: ${{ secrets.APPLE_CSC_LINK }}
