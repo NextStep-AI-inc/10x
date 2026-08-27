@@ -267,7 +267,9 @@ private final class OmpCommandProcessState: Sendable {
 
         let executablePath = executableURL.path
         var argumentPointers = ([executablePath] + arguments).map { strdup($0) }
-        var environmentPointers = ProcessInfo.processInfo.environment.map {
+        // Handed an explicit environment rather than inheriting: this spawn passes
+        // a snapshot dictionary, which would not reflect the launch-time setenv.
+        var environmentPointers = OmpProcessEnvironment.resolved().map {
             strdup("\($0.key)=\($0.value)")
         }
         defer {

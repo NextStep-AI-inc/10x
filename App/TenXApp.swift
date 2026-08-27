@@ -3,9 +3,16 @@ import SwiftUI
 
 @main
 struct TenXApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @NSApplicationDelegateAdaptor(AppTerminationDelegate.self) private var appDelegate
+
+    init() {
+        // Before anything can spawn: a Finder launch inherits LaunchServices'
+        // PATH, which cannot resolve OMP's `bun` interpreter.
+        OmpProcessEnvironment.install()
+        _model = State(initialValue: AppModel())
+    }
 
     var body: some Scene {
         Window("Preparing your workspace", id: AppWindowID.startup) {

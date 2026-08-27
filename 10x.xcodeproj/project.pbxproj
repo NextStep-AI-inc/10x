@@ -16,6 +16,7 @@
 		087F375E2A88E65D30A90635360986BE /* CornerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88D6DC39FEEF22CEAB21C2A6A6FEFFF1 /* CornerCard.swift */; };
 		0B110410F106BCEE20EADE3BE3E68620 /* ComposerControlsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8682EE2CABA7CA682ADFC2A8CA21B4F /* ComposerControlsModelTests.swift */; };
 		0C82D7820FF11DAAFD04E81077443F90 /* ToolPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D35CC722BF764BECABED8F77C2DC92A /* ToolPresentation.swift */; };
+		0CD8E4F53A7768C5CA3E802019B7A939 /* OmpProcessEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3CA0D4BF41671855A221DDA0BE965F /* OmpProcessEnvironment.swift */; };
 		0D344CE46865C9A36FC65D0C49B64849 /* AppRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48746C37C1E70B8DAEF2236EA7775B7F /* AppRouteTests.swift */; };
 		0DDD566B7FA12725EB637611B85D8DA5 /* OmpModelCatalogServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2485E25AC3EE175E5F09E20F4EE77B5F /* OmpModelCatalogServiceTests.swift */; };
 		0F3E6B1BC475B685B34327BEE5F8E2FE /* OmpInstallation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D977E9429CDAF38DBD2772F2C6C1EE32 /* OmpInstallation.swift */; };
@@ -113,6 +114,7 @@
 		780071B92477834E6C63A284475684C7 /* ResponseMetadataView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD51B51845667C84FE0956EBE30D561 /* ResponseMetadataView.swift */; };
 		79203047A53D19A3F4906F3E28075687 /* StartupSignalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78D08DB7AE17357C71EA7099C22D7A1C /* StartupSignalTests.swift */; };
 		7A3A1600D9CD4251C9609F38AECB1602 /* GhostActionStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 074C42EBFD890E0D870D78D4F45AE0D2 /* GhostActionStyle.swift */; };
+		7BECCB08079C63A9C43A2F2B87F53AC9 /* OmpProcessEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAFBBED38B16D04D458AE4051169E7E7 /* OmpProcessEnvironmentTests.swift */; };
 		7EFAFB32AE9CF3E15E56897279B2F21C /* ProviderTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C744F6991E9C44C1F97473B603B3F165 /* ProviderTestFixtures.swift */; };
 		800A0FACBE6DF399CE98F1075B0C9D0C /* ExtensionInputSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B70E61DC8C8229C1508926749F7DDED6 /* ExtensionInputSheet.swift */; };
 		81CA5EE2FFF8094F9F4393E7EE023986 /* FileReferenceEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A450C5E9B45463B80F3518BBCF328CF /* FileReferenceEnvironment.swift */; };
@@ -305,6 +307,7 @@
 		57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileReferenceResolverTests.swift; path = Tests/TenXAppTests/FileReferenceResolverTests.swift; sourceTree = "<group>"; };
 		58D4D422BE2A6A0F123C8C956FE2FEEC /* TranscriptHistoryMapper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptHistoryMapper.swift; path = App/Sessions/TranscriptHistoryMapper.swift; sourceTree = "<group>"; };
 		5ADC0A76BAA3F44789A7E156E1D95F14 /* ComposerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerView.swift; path = App/Sessions/ComposerView.swift; sourceTree = "<group>"; };
+		5B3CA0D4BF41671855A221DDA0BE965F /* OmpProcessEnvironment.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpProcessEnvironment.swift; path = App/Application/OmpProcessEnvironment.swift; sourceTree = "<group>"; };
 		5BB8763379A60FF807A6B74B58B7F1B1 /* RuntimeRecoveryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RuntimeRecoveryView.swift; path = App/Sessions/RuntimeRecoveryView.swift; sourceTree = "<group>"; };
 		5D35CC722BF764BECABED8F77C2DC92A /* ToolPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolPresentation.swift; path = App/Tools/ToolPresentation.swift; sourceTree = "<group>"; };
 		5DB5CFF097EC6F595636C69F1E48D0CC /* ProviderUsageSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageSnapshotTests.swift; path = Tests/TenXAppTests/ProviderUsageSnapshotTests.swift; sourceTree = "<group>"; };
@@ -371,6 +374,7 @@
 		A78207AC2A26009BADC702EE948558E8 /* ChooseProjectFlyout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ChooseProjectFlyout.swift; path = App/Sessions/ChooseProjectFlyout.swift; sourceTree = "<group>"; };
 		A793432F7E5A0A0557EB66401E5D380F /* ProjectSessionGroup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProjectSessionGroup.swift; path = App/Shell/ProjectSessionGroup.swift; sourceTree = "<group>"; };
 		AA33C0D751449FD35D1B2FF51803BB10 /* FileOpenService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileOpenService.swift; path = App/FileReferences/FileOpenService.swift; sourceTree = "<group>"; };
+		AAFBBED38B16D04D458AE4051169E7E7 /* OmpProcessEnvironmentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpProcessEnvironmentTests.swift; path = Tests/TenXAppTests/OmpProcessEnvironmentTests.swift; sourceTree = "<group>"; };
 		AF32B1A72E3334179FF48200801CC4CE /* ProviderUsagePresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsagePresentationTests.swift; path = Tests/TenXAppTests/ProviderUsagePresentationTests.swift; sourceTree = "<group>"; };
 		AF3E432F37F8D0D53810A7FB0AEFEC1B /* ToolEventReducerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolEventReducerTests.swift; path = Tests/TenXAppTests/ToolEventReducerTests.swift; sourceTree = "<group>"; };
 		AF5808862D9C60706C383E28558A306D /* StartupSplashSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StartupSplashSnapshotTests.swift; path = Tests/TenXAppTests/StartupSplashSnapshotTests.swift; sourceTree = "<group>"; };
@@ -470,6 +474,7 @@
 				962089969C661B3172D5ED6DC78219BE /* AppRoute.swift */,
 				D7651ABB34DCD41F0E1384304EA0C22A /* AppTerminationDelegate.swift */,
 				DD729CAB9885A8FF527B8F91A75CFD6C /* OmpCommandRunner.swift */,
+				5B3CA0D4BF41671855A221DDA0BE965F /* OmpProcessEnvironment.swift */,
 				BC82A22B2AB1B4AF8D75C32BD1574437 /* BrandWordmark.swift */,
 				88D6DC39FEEF22CEAB21C2A6A6FEFFF1 /* CornerCard.swift */,
 				3A1BBA21544E0A06834057AC140ED330 /* FlowLayout.swift */,
@@ -641,6 +646,7 @@
 				877A2FC56C324B52234C33EA8FA709FE /* OmpConfigServiceTests.swift */,
 				0A2A1BA39530EBB6E282C5207FC5CF52 /* OmpExecutableLocatorTests.swift */,
 				2485E25AC3EE175E5F09E20F4EE77B5F /* OmpModelCatalogServiceTests.swift */,
+				AAFBBED38B16D04D458AE4051169E7E7 /* OmpProcessEnvironmentTests.swift */,
 				FFDF2B4BFB3C0920EC62965FF97FD1E2 /* OmpUsageServiceTests.swift */,
 				EDFF67A9D90589ECD9B4DBF77A72E1D3 /* PreferredIDESettingRowTests.swift */,
 				07B3CCCE759F5025816240590B7D52BE /* ProjectSessionGrouperTests.swift */,
@@ -823,6 +829,7 @@
 				AC6D6ABD1B3EB3D12CAC184082A7205A /* AppRoute.swift in Sources */,
 				A0357CF3880C981B1B76A7784B883ACC /* AppTerminationDelegate.swift in Sources */,
 				8604BBCF5F3C1BC6257E56884B94A90B /* OmpCommandRunner.swift in Sources */,
+				0CD8E4F53A7768C5CA3E802019B7A939 /* OmpProcessEnvironment.swift in Sources */,
 				51C0D52B312905D58FC68023AC30FD89 /* BrandWordmark.swift in Sources */,
 				087F375E2A88E65D30A90635360986BE /* CornerCard.swift in Sources */,
 				71237325D6BA8F9396E7DCE36F55ADB8 /* FlowLayout.swift in Sources */,
@@ -981,6 +988,7 @@
 				2FA2CED35BD69E6850395FDC3730D25B /* OmpConfigServiceTests.swift in Sources */,
 				DA3524B10DDF81F245041CD22C0077E7 /* OmpExecutableLocatorTests.swift in Sources */,
 				0DDD566B7FA12725EB637611B85D8DA5 /* OmpModelCatalogServiceTests.swift in Sources */,
+				7BECCB08079C63A9C43A2F2B87F53AC9 /* OmpProcessEnvironmentTests.swift in Sources */,
 				AE83F5D331201C1E5D98FF0455A78609 /* OmpUsageServiceTests.swift in Sources */,
 				A5C7CC305635633BBA38B8B7F0C82938 /* PreferredIDESettingRowTests.swift in Sources */,
 				940057D6C04D447D473082F824C51CEE /* ProjectSessionGrouperTests.swift in Sources */,
