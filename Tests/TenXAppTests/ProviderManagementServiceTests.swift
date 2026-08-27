@@ -346,6 +346,42 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
     #expect(await second.startCount == 1)
 }
 
+@Test func providerServiceMasksAResponseByTheClientThatProducedItEvenAfterAConcurrentLoginClearsThePlaceholder() async throws {
+    // Regression for a race: parseProviders must not re-read actor-global
+    // "is the placeholder active" state at response time, because a
+    // concurrent login() can close the placeholder client and start a
+    // fresh one in between this client producing its response and this
+    // call actually observing it. The mask must travel bound to the
+    // client that produced the response, not to whatever the actor holds
+    // when the response is finally parsed.
+    let failing = FakeProviderRPCClient(responses: [], startFailure: .startFailed)
+    let providersGate = StartGate()
+    let placeholderClient = FakeProviderRPCClient(
+        responses: [loginResponse, mixedProviderListResponse],
+        providersGate: providersGate)
+    let pool = ProviderClientPool(clients: [failing, placeholderClient])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in await pool.next() })
+
+    // Starts against the placeholder client (first client fails, forcing
+    // the retry) and gates on the get_login_providers response.
+    let providersTask = Task { try await service.providers() }
+    await providersGate.waitForStart()
+
+    // While that response is still held open, a concurrent login()
+    // completes on the SAME (still-ready) client and closes it, clearing
+    // whatever the actor holds for "the current placeholder".
+    try await service.login(providerID: "cursor", generation: 1)
+
+    // Only now does the providers() response resolve.
+    await providersGate.release()
+    let providers = try await providersTask.value
+
+    let anthropic = try #require(providers.first { $0.id == "anthropic" })
+    #expect(anthropic.isAuthenticated == false)
+}
+
 @Test func providerServiceShutsDownACancelledSharedStartupOnlyOnce() async {
     let startGate = StartGate()
     let startupWaiters = StartupWaiterGate(expectedCount: 2)
@@ -469,6 +505,11 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
     private var responses: [RpcResponse]
     private let startGate: StartGate?
     private let loginGate: StartGate?
+    /// Gates the response to a `get_login_providers` command specifically,
+    /// mirroring `loginGate` for `login` commands — used to hold a
+    /// providers() response open while a concurrent request completes, to
+    /// exercise races against it.
+    private let providersGate: StartGate?
     private let startFailure: ProviderTestError?
 
     private(set) var startCount = 0
@@ -480,11 +521,13 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
         responses: [RpcResponse],
         startGate: StartGate? = nil,
         loginGate: StartGate? = nil,
+        providersGate: StartGate? = nil,
         startFailure: ProviderTestError? = nil
     ) {
         self.responses = responses
         self.startGate = startGate
         self.loginGate = loginGate
+        self.providersGate = providersGate
         self.startFailure = startFailure
         (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream()
     }
@@ -510,6 +553,10 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
         if command.type == "login" {
             await loginGate?.started()
             await loginGate?.waitForRelease()
+        }
+        if command.type == "get_login_providers" {
+            await providersGate?.started()
+            await providersGate?.waitForRelease()
         }
         return responses.removeFirst()
     }
