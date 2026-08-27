@@ -57,10 +57,32 @@ private func path(_ environment: [String: String]) -> [String] {
 
 @Test func aShellLaunchIsLeftAlone() {
     // Already-complete PATH: the same set comes back, order intact, nothing appended.
-    let shellPath = "/Users/example/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+    let shellPath =
+        "/Users/example/.bun/bin:/Users/example/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
     let resolved = OmpProcessEnvironment.resolved(
         base: ["PATH": shellPath],
         homeDirectory: home)
 
     #expect(resolved["PATH"] == shellPath)
+}
+
+@Test func resolvedPathIncludesTheInstallScriptsDefaultDirectory() {
+    let home = URL(filePath: "/Users/example", directoryHint: .isDirectory)
+    let resolved = OmpProcessEnvironment.resolved(
+        base: ["PATH": "/usr/bin"],
+        homeDirectory: home)
+
+    let entries = (resolved["PATH"] ?? "").split(separator: ":").map(String.init)
+    #expect(entries.contains("/Users/example/.local/bin"))
+}
+
+@Test func resolvedToolDirectoriesExpandTildesAgainstTheGivenHome() {
+    let home = URL(filePath: "/Users/example", directoryHint: .isDirectory)
+    let directories = OmpProcessEnvironment
+        .resolvedToolDirectories(homeDirectory: home)
+        .map(\.path)
+
+    #expect(directories.first == "/Users/example/.bun/bin")
+    #expect(directories.contains("/Users/example/.local/bin"))
+    #expect(directories.contains("/opt/homebrew/bin"))
 }
