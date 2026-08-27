@@ -89,6 +89,7 @@ struct ProviderAccountSwitchConfirmationPresentation: Equatable, Sendable {
     let cancelActionLabel = "Cancel"
     let confirmActionLabel = "Switch account"
     let usesRadioGroupSemantics = true
+    let restartNoticeText = "Switching now restarts this session. Your conversation is kept."
 
     init(accountLabel: String) {
         title = "Use \(accountLabel)?"
@@ -99,6 +100,7 @@ struct ProviderAccountSwitchConfirmationView: View {
     let accountLabel: String
     let satisfaction: ProviderAccountScopeSatisfaction
     let isSwitchAvailable: Bool
+    let requiresRestartToSwitch: Bool
     @Binding var selectedScope: ProviderAccountScopeOption
     let onCancel: () -> Void
     let onConfirm: () -> Void
@@ -140,6 +142,13 @@ struct ProviderAccountSwitchConfirmationView: View {
             .pickerStyle(.radioGroup)
             .labelsHidden()
             .accessibilityLabel(presentation.message)
+
+            if requiresRestartToSwitch {
+                Text(presentation.restartNoticeText)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             HStack(spacing: 10) {
                 Spacer()

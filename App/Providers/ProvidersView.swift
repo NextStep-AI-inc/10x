@@ -182,6 +182,7 @@ struct ProvidersView: View {
                 accountsByProviderID: connectionAccounts,
                 accountManagedProviderIDs: accountManagedProviderIDs,
                 primaryAccountRefs: primaryAccountRefs,
+                accountTier: model.accountTier,
                 sessionCounts: accountCoordinator?.sessionCounts ?? [:],
                 pendingRemovalAccounts: model.pendingRemovalAccounts.union(
                     accountCoordinator?.pendingRemovalAccounts ?? []),

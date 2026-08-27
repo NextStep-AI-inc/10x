@@ -67,6 +67,8 @@ struct AppShellView: View {
                                     accountScopeSatisfaction: model.accountScopeSatisfaction(
                                         openSessionID: model.activeSessionIdentityToken),
                                     pendingRemovalAccounts: model.pendingRemovalAccounts,
+                                    requiresRestartToSwitch: model.providerModel?.accountTier
+                                        .requiresRestartToSwitch ?? false,
                                     activeSessionIdentityToken: model.activeSessionIdentityToken,
                                     onUseAccount: { accountRef, scope in
                                         let openSessionID = model.activeSessionIdentityToken

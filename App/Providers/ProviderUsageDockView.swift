@@ -140,6 +140,7 @@ struct ProviderUsageDockView: View {
     let compactLayout: ProviderUsageDockCompactLayout
     let accountScopeSatisfaction: [ProviderAccountKey: ProviderAccountScopeSatisfaction]
     let pendingRemovalAccounts: Set<ProviderAccountKey>
+    let requiresRestartToSwitch: Bool
     let activeSessionIdentityToken: UUID?
     let visualFocusAccountID: String?
     let onManageAccounts: (String) -> Void
@@ -158,6 +159,7 @@ struct ProviderUsageDockView: View {
         compactLayout: ProviderUsageDockCompactLayout = .standalone,
         accountScopeSatisfaction: [ProviderAccountKey: ProviderAccountScopeSatisfaction] = [:],
         pendingRemovalAccounts: Set<ProviderAccountKey> = [],
+        requiresRestartToSwitch: Bool = false,
         activeSessionIdentityToken: UUID? = nil,
         visualFocusAccountID: String? = nil,
         initiallySelectedProviderID: String? = nil,
@@ -173,6 +175,7 @@ struct ProviderUsageDockView: View {
         self.compactLayout = compactLayout
         self.accountScopeSatisfaction = accountScopeSatisfaction
         self.pendingRemovalAccounts = pendingRemovalAccounts
+        self.requiresRestartToSwitch = requiresRestartToSwitch
         self.activeSessionIdentityToken = activeSessionIdentityToken
         self.visualFocusAccountID = visualFocusAccountID
         self.onManageAccounts = onManageAccounts
@@ -266,6 +269,7 @@ struct ProviderUsageDockView: View {
                         accountLabel: account.label,
                         satisfaction: satisfaction(provider: provider, account: account),
                         isSwitchAvailable: canSwitch(provider: provider, account: account),
+                        requiresRestartToSwitch: requiresRestartToSwitch,
                         selectedScope: selectedScopeBinding(provider: provider, account: account),
                         onCancel: interaction.cancelConfirmation,
                         onConfirm: { confirm(provider: provider, account: account) })

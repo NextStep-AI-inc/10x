@@ -593,7 +593,18 @@ import Testing
             providerID: providerID, accounts: [personal, work])),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    // This reference predates tier-gated Remove (task 11): pin `.extensionBacked`
+    // explicitly so it keeps meaning "Remove is enabled" rather than silently
+    // becoming another `.stockOMP` render once Remove is gated by tier. Without
+    // this, `ProviderAccountTier.detect` would land on `.stockOMP` here too (a
+    // snapshot with per-account identity and no installed hello), which is
+    // exactly what `providerAccountConnectionsStockTierSnapshot` below now
+    // covers on purpose.
+    model.installTierHelloProvider {
+        ProviderExtensionHello(contractVersion: ProviderAccountTier.contractVersion)
+    }
     await model.load()
+    #expect(model.accountTier == .extensionBacked)
     let suiteName = "TenXAppTests.ProviderConnectionsSnapshot.\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suiteName))
     defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -617,6 +628,43 @@ import Testing
     try assertSnapshot(
         ProvidersView(model: model, accountCoordinator: coordinator),
         name: "provider-account-connections",
+        size: CGSize(width: 880, height: 680))
+}
+
+@MainActor
+@Test func providerAccountConnectionsStockTierSnapshot() async throws {
+    let providerID = "openai-codex"
+    // `.stockOMP`: per-account identity is present (the fixture below carries
+    // it) but no extension hello is installed, matching a live app before any
+    // session channel attaches, or a genuinely stock `omp`. Remove must be
+    // disabled on every row with the reason, never silently offered as if
+    // the extension were backing it.
+    let personal = AccountSnapshotEntry(
+        accountID: "a1", email: "same@example.com", orgName: "Personal", remainingFraction: nil)
+    let work = AccountSnapshotEntry(
+        accountID: "a2", email: "same@example.com", orgName: "Work", remainingFraction: nil)
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "ChatGPT",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: providerID, accounts: [personal, work])),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+    #expect(model.accountTier == .stockOMP)
+    let suiteName = "TenXAppTests.ProviderConnectionsStockTierSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+
+    try assertSnapshot(
+        ProvidersView(model: model, accountCoordinator: coordinator),
+        name: "provider-account-connections-stock-tier",
         size: CGSize(width: 880, height: 680))
 }
 
@@ -738,6 +786,26 @@ private final class SnapshotProviderAccountSession: ProviderAccountSession {
             initiallyShowsConfirmation: true)
             .environment(\._accessibilityReduceMotion, true),
         name: "provider-account-switch-confirmation",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerAccountSwitchConfirmationRestartSnapshot() throws {
+    // `.stockOMP`: switching still works, but only by restarting the
+    // session's `omp` process. The scope confirmation must say so plainly
+    // rather than let the same "Switch account" control silently do
+    // something the user wasn't told about.
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            requiresRestartToSwitch: true,
+            initiallyInspectedAccountID: "anthropic:work",
+            initiallyShowsConfirmation: true)
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-account-switch-confirmation-restart",
         size: CGSize(width: 430, height: 460))
 }
 

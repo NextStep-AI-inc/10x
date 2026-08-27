@@ -17,6 +17,7 @@ struct ProviderConnectionsView: View {
     let accountsByProviderID: [String: [ProviderAccountSummary]]
     let accountManagedProviderIDs: Set<String>
     let primaryAccountRefs: [String: String]
+    let accountTier: ProviderAccountTier
     let sessionCounts: [ProviderAccountKey: Int]
     let pendingRemovalAccounts: Set<ProviderAccountKey>
     let focusedProviderID: String?
@@ -150,6 +151,7 @@ struct ProviderConnectionsView: View {
                         providerID: provider.id,
                         accountRef: account.accountRef)),
                     canRemove: canRemove(account, from: provider),
+                    removalUnavailableReason: removalUnavailableReason,
                     removeButtonFocus: $focusedRemoveAccountID,
                     onRemove: { onRemove(provider, account) })
                     .padding(.leading, 16)
@@ -203,6 +205,16 @@ struct ProviderConnectionsView: View {
     ) -> Bool {
         let remaining = (accountsByProviderID[provider.id] ?? []).filter { $0.id != account.id }
         return remaining.isEmpty || remaining.contains(where: \.isEligiblePrimary)
+    }
+
+    /// `nil` when the active tier can remove accounts at all; otherwise the
+    /// reason shown on every row, since the restriction applies uniformly
+    /// across every account regardless of that account's own eligible
+    /// replacements. Reuses `ProviderAccountTier.supportsRemoval` rather than
+    /// re-deriving which tiers allow removal.
+    private var removalUnavailableReason: String? {
+        guard !accountTier.supportsRemoval else { return nil }
+        return "Removing accounts is not available with this version of omp."
     }
 
     private func recovery(message: String) -> some View {

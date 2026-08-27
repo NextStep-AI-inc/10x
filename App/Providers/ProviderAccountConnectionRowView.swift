@@ -14,7 +14,8 @@ struct ProviderAccountConnectionRowPresentation: Equatable, Sendable {
         isPrimary: Bool,
         sessionCount: Int,
         isPendingRemoval: Bool,
-        canRemove: Bool = true
+        canRemove: Bool = true,
+        removalUnavailableReason: String? = nil
     ) -> ProviderAccountConnectionRowPresentation {
         let displayLabel = normalized(account.displayLabel) ?? "Connected account"
         let detail = normalized(account.detailLabel).flatMap { value in
@@ -27,7 +28,15 @@ struct ProviderAccountConnectionRowPresentation: Equatable, Sendable {
         } else if sessionCount > 1 {
             statuses.append("In use by \(sessionCount) sessions")
         }
-        if !canRemove { statuses.append("No available replacement") }
+        // A tier-wide restriction is always the true reason when present:
+        // showing "No available replacement" instead, while the button is
+        // disabled because the active tier cannot remove accounts at all,
+        // would name the wrong cause.
+        if let removalUnavailableReason {
+            statuses.append(removalUnavailableReason)
+        } else if !canRemove {
+            statuses.append("No available replacement")
+        }
         let status = statuses.isEmpty ? nil : statuses.joined(separator: " · ")
         let accessibilityLabel = [displayLabel, detail, status]
             .compactMap { $0 }
@@ -38,7 +47,7 @@ struct ProviderAccountConnectionRowPresentation: Equatable, Sendable {
             status: status,
             actionLabel: isPendingRemoval ? "Removing…" : "Remove",
             accessibilityLabel: accessibilityLabel,
-            isActionDisabled: isPendingRemoval || !canRemove)
+            isActionDisabled: isPendingRemoval || !canRemove || removalUnavailableReason != nil)
     }
 
     private static func normalized(_ value: String?) -> String? {
@@ -54,6 +63,7 @@ struct ProviderAccountConnectionRowView: View {
     let sessionCount: Int
     let isPendingRemoval: Bool
     let canRemove: Bool
+    let removalUnavailableReason: String?
     let removeButtonFocus: FocusState<String?>.Binding
     let onRemove: () -> Void
 
@@ -92,6 +102,7 @@ struct ProviderAccountConnectionRowView: View {
             isPrimary: isPrimary,
             sessionCount: sessionCount,
             isPendingRemoval: isPendingRemoval,
-            canRemove: canRemove)
+            canRemove: canRemove,
+            removalUnavailableReason: removalUnavailableReason)
     }
 }
