@@ -28,8 +28,9 @@ export default function (pi: ExtensionAPI) {
 				case "list_accounts":
 					return { accounts: await listAccounts(ctx, requireString(command.params, "providerId")) };
 				case "pin_account":
-					await pinAccount(ctx, requireString(command.params, "providerId"), requireString(command.params, "accountRef"));
-					return { pinned: true };
+					return {
+						account: await pinAccount(ctx, requireString(command.params, "providerId"), requireString(command.params, "accountRef")),
+					};
 				case "remove_account":
 					return removeAccount(ctx, requireString(command.params, "providerId"), requireString(command.params, "accountRef"));
 				default:

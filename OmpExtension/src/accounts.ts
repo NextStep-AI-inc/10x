@@ -85,7 +85,24 @@ function displayLabel(row: CredentialPinIdentity & { orgName?: string }, index: 
 	return trimmed(row.email) ?? trimmed(row.accountId) ?? trimmed(row.projectId) ?? trimmed(row.orgName) ?? trimmed(row.orgId) ?? `Account ${index + 1}`;
 }
 
-/** Ported from the fork's `safeLabels`, same URL removal as `displayLabel`. */
+/**
+ * The `detailLabel` candidate chain, in order: `email → projectId → orgName
+ * → orgId`. Deliberately wider than any written spec called for — recorded
+ * here so a future reader sees why rather than suspecting drift.
+ *
+ * `detailLabel` (below) walks this list and returns the first candidate that
+ * is NOT the value that already won `displayLabel` — so the two labels are
+ * guaranteed to differ whenever a second identifying field exists. That is
+ * what makes two accounts sharing the same email address distinguishable in
+ * the UI, an explicit product requirement, not an accident of iteration
+ * order.
+ *
+ * Every field in this chain is safe to render: no URLs. `enterpriseUrl` (and
+ * any other endpoint-shaped field) is deliberately excluded, here and in
+ * `displayLabel` — ported from the fork's `safeLabels`, minus its
+ * `enterpriseHost(...)` fallback, so redaction holds unconditionally rather
+ * than only when a non-URL field happens to be available.
+ */
 function safeLabels(row: CredentialPinIdentity & { orgName?: string }): string[] {
 	const labels: string[] = [];
 	const add = (value: string | undefined): void => {
@@ -214,8 +231,24 @@ function resolveAccountRow(rows: readonly OAuthAccountSummary[], providerId: str
  * (not a bare `false`) so 10x can distinguish "queue and retry" from every
  * other failure. Provider mismatch is checked first: unlike streaming, it is
  * not a transient condition retrying would ever resolve.
+ *
+ * Resolves to the pinned account's `SafeAccount` (not a bare boolean): the
+ * surviving Swift contract, `ProviderAccountSession.setProviderAccount(
+ * providerID:accountRef:) async throws -> SetSessionProviderAccountResult`
+ * (`App/Providers/ProviderAccountCoordinator.swift:34`), consumes
+ * `result.account.providerID`/`.accountRef` to emit a
+ * `ProviderAccountChangedEvent` (`ProviderAccountCoordinator.swift:624-643`)
+ * — a bare boolean would force the caller to re-list just to find the
+ * account it already pinned. `index` for the returned `toSafeAccount` call
+ * is `row.position`: harmless even though `displayLabel`'s index-based
+ * fallback (`Account ${index+1}`) can never actually fire here, since a row
+ * that resolved at all is guaranteed to have `accountId` or `email` (that's
+ * the same condition `credentialPinHash` requires to produce the `accountRef`
+ * this function was called with). `sequence` is deliberately not part of
+ * this result — Task 7 owns the sequencer and will extend the shape to
+ * `{ account, sequence }` when it lands.
  */
-export async function pinAccount(ctx: AccountCommandContext, providerId: string, accountRef: string): Promise<void> {
+export async function pinAccount(ctx: AccountCommandContext, providerId: string, accountRef: string): Promise<SafeAccount> {
 	if (providerId !== ctx.model?.provider) {
 		throw new Error(`Cannot pin account: "${providerId}" is not the session's current provider`);
 	}
@@ -225,6 +258,8 @@ export async function pinAccount(ctx: AccountCommandContext, providerId: string,
 	const row = resolveAccountRow(authStorage.listOAuthAccounts(providerId, sessionId), providerId, accountRef);
 	const pinned = authStorage.pinSessionOAuthAccount(providerId, sessionId, row.credentialId);
 	if (!pinned) throw new Error(`Unable to pin account for provider "${providerId}"`);
+	const availability = credentialAvailability(authStorage, providerId, [row.credentialId]);
+	return toSafeAccount(providerId, row, row.position, availability.get(row.credentialId) ?? "available");
 }
 
 export interface RemoveAccountResult {

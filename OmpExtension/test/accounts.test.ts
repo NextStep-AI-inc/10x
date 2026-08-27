@@ -20,6 +20,10 @@ test("a safe account carries no credential material", () => {
 	expect(serialized).not.toContain("credentialId");
 	expect(safe.displayLabel).toBe("a@example.com");
 	expect(safe.connectionOrder).toBe(0);
+	// Allowlist, not a blocklist: a future field added to SafeAccount without
+	// updating this test should fail here, not slip through because it isn't
+	// one of the four named leaks above.
+	expect(Object.keys(safe).sort()).toEqual(["accountRef", "providerId", "displayLabel", "detailLabel", "connectionOrder", "availability"].sort());
 });
 
 test("the account ref matches omp's credential pin hash", async () => {
@@ -129,13 +133,18 @@ test("listAccounts omits rows that have no addressable accountRef", async () => 
 	expect(accounts).toHaveLength(0);
 });
 
-test("pinAccount pins the resolved credential for the session's current provider", async () => {
+test("pinAccount pins the resolved credential and resolves to its safe account", async () => {
 	const authStorage = makeAuthStorage([row({ credentialId: 9, email: "pin-me@example.com" })]);
 	const ctx = makeCtx(authStorage, { provider: "anthropic", idle: true, sessionId: "sess-42" });
 	const ref = toSafeAccount("anthropic", row({ credentialId: 9, email: "pin-me@example.com" }), 0).accountRef;
 	if (!ref) throw new Error("test setup: expected a ref");
 
-	await expect(pinAccount(ctx, "anthropic", ref)).resolves.toBeUndefined();
+	const account = await pinAccount(ctx, "anthropic", ref);
+
+	expect(account.accountRef).toBe(ref);
+	expect(account.providerId).toBe("anthropic");
+	expect(account.displayLabel).toBe("pin-me@example.com");
+	expect(JSON.stringify(account)).not.toContain("credentialId");
 });
 
 test("pinAccount rejects with the exact string streaming while the session is streaming", async () => {
