@@ -55,13 +55,24 @@ import Testing
 }
 
 @MainActor
-@Test func onboardingProjectStepEmptySnapshot() throws {
+@Test func onboardingProjectStepEmptySnapshot() async throws {
+    // No repositories created: the scan settles with zero suggestions,
+    // which is what "empty" names — as opposed to the pre-scan skeleton,
+    // which is what a plain, synchronous capture can only ever show (see
+    // `onboardingProjectStepScanningSnapshot`, which captures exactly that
+    // skeleton and needs no fixture contents to do it).
+    let fixture = try ProjectScanFixture(name: "empty")
+    defer { fixture.cleanup() }
+
     let model = AppModel()
     model.installation = OmpInstallation(
         executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
         version: "18.0.4")
-    try assertSnapshot(
-        OnboardingView(model: model, step: .chooseProject),
+    try await assertSnapshotAfterSettling(
+        OnboardingView(
+            model: model,
+            step: .chooseProject,
+            projectScanner: GitRepositoryScanner(homeDirectory: fixture.root)),
         name: "onboarding-project-empty",
         size: CGSize(width: 760, height: 560))
 }
