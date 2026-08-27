@@ -17,7 +17,7 @@ Two of those gates exist. The third does not: nothing today asks for a project
 folder, so a user with no prior sessions reaches the workspace with
 `selectedProjectURL` still `nil`. This design adds that step, gives it
 suggestions drawn from a scan for Git repositories, lets the app install OMP
-rather than only locate it, and replaces seven scattered routing decisions with
+rather than only locate it, and replaces eight scattered routing decisions with
 one resolver.
 
 ## Approved product decisions
@@ -56,14 +56,35 @@ enum OnboardingStep: Equatable, Sendable, CaseIterable {
 }
 ```
 
+The decision itself is a pure function, so it can be tested as a table without
+constructing an `AppModel`. `providerModel` is `private(set)`, which a table
+test cannot populate:
+
 ```swift
-/// The first requirement the workspace does not yet satisfy, or nil when the
-/// workspace is usable.
+extension OnboardingStep {
+    /// The first requirement not satisfied by these inputs, or nil when the
+    /// workspace is usable.
+    static func firstUnmet(
+        installation: OmpInstallation?,
+        hasAuthenticatedProvider: Bool,
+        selectedProjectURL: URL?
+    ) -> OnboardingStep? {
+        if installation == nil { return .installOmp }
+        if !hasAuthenticatedProvider { return .connectProvider }
+        if selectedProjectURL == nil { return .chooseProject }
+        return nil
+    }
+}
+```
+
+`AppModel` feeds it and routes on the result:
+
+```swift
 func firstUnmetRequirement() -> OnboardingStep? {
-    if installation == nil { return .installOmp }
-    if providerModel?.hasAuthenticatedProvider != true { return .connectProvider }
-    if selectedProjectURL == nil { return .chooseProject }
-    return nil
+    OnboardingStep.firstUnmet(
+        installation: installation,
+        hasAuthenticatedProvider: providerModel?.hasAuthenticatedProvider == true,
+        selectedProjectURL: selectedProjectURL)
 }
 
 /// Routes to the first unmet requirement, or to the workspace. Preserves the
@@ -73,7 +94,7 @@ func gateRoute() {
 }
 ```
 
-`gateRoute()` replaces seven existing decisions and adds one new call:
+`gateRoute()` replaces eight existing decisions and adds one new call:
 
 | Site | Today | After |
 | --- | --- | --- |
@@ -84,15 +105,27 @@ func gateRoute() {
 | `AppModel` runtime prep, provider loaded | `hasAuthenticatedProvider ? .newSession : .providerSetup` | `gateRoute()` |
 | `AppModel` runtime replacement, provider loaded | same ternary | `gateRoute()` |
 | `AppModel` provider fallback load | same ternary | `gateRoute()` |
+| `AppModel.completeProviderSetup()` | guard on provider, then `route = .newSession` | `gateRoute()` |
 | End of recent-projects preparation | (none) | `gateRoute()` |
 
-The third and fourth rows are interim assignments made after the OMP-backed
-services are constructed but before `loadProviders()` returns. `gateRoute()`
-yields `.onboarding(.connectProvider)` at those points, which is the same screen
-they produce today, because `installation` is set and no provider is
-authenticated yet.
+Rows three and four are interim assignments made after the OMP-backed services
+are constructed but before `loadProviders()` returns. `gateRoute()` yields
+`.onboarding(.connectProvider)` at those points, which is the same screen they
+produce today, because `installation` is set and no provider is authenticated
+yet.
 
-### Why the eighth call site is required
+`completeProviderSetup()` is the provider step's `Continue` handler and is the
+one site where leaving it alone would defeat the feature: it would send the user
+straight to the workspace with `selectedProjectURL` still `nil`, skipping the
+project step. Its `hasAuthenticatedProvider` guard becomes redundant, because
+`gateRoute()` keeps an unauthenticated user on the connect step.
+
+`leaveSettings()` switches over `.setup` and `.providerSetup` to decide where
+returning from Settings lands. Those cases become `.onboarding`, mapped to
+`.newSession` exactly as before. Removing the two enum cases makes this a
+compile error rather than a silent omission.
+
+### Why the ninth call site is required
 
 Startup stages run in order: runtime, settings, sessions, recent projects.
 `selectedProjectURL` is assigned during the last of those. The runtime stage
@@ -368,7 +401,7 @@ Three units carry the logic, following the pattern in
 `OmpKit/Tests/OmpKitTests/ExecutableResolutionTests.swift`.
 
 **Resolver.** A table over installation, provider authentication, and selected
-project, asserting the route for every combination, including all eight call
+project, asserting the route for every combination, including all nine call
 sites. The returning-user case is explicit: routing during the runtime stage
 yields the project step, and re-gating after recent projects are prepared
 yields the workspace. Regression cases assert that removing OMP mid-run returns
