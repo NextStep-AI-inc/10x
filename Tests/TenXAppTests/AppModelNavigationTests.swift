@@ -291,14 +291,14 @@ import OmpKit
     let lifecycle = try navigationCommands(in: commandLog).filter {
         $0 == "open"
             || $0 == "get_state"
-            || $0.hasPrefix("set_session_provider_account:")
+            || $0.hasPrefix("pin_account:")
             || $0 == "prompt"
     }
     #expect(lifecycle == [
         "open",
         "get_state",
         "get_state",
-        "set_session_provider_account:acct_A",
+        "pin_account:acct_A",
         "prompt",
     ])
     let controller = try #require(model.activeSession)
@@ -468,8 +468,8 @@ import OmpKit
 
     #expect(await navigationLog(commandLog, eventuallyContains: "prompt"))
     #expect(try navigationCommands(in: commandLog).filter {
-        $0.hasPrefix("set_session_provider_account:")
-    } == ["set_session_provider_account:acct_A"])
+        $0.hasPrefix("pin_account:")
+    } == ["pin_account:acct_A"])
     #expect(coordinator.primaryAccountRef(providerID: "openai-codex") == "acct_B")
     if let manager = model.processManager { await manager.closeAll() }
 }
@@ -863,6 +863,30 @@ func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws 
     return executable
 }
 
+/// Models a session under the now-installed `ProviderAccountTieredRoutingBackend`
+/// (`AppModel.init` → `ProviderAccountCoordinator.install`, wired in this
+/// fix round): account changes arrive as `pin_account` commands over the
+/// `tenx.provider-accounts.v1` extension channel, not as a direct
+/// `set_session_provider_account` RPC command — the pre-Task-9 shape only
+/// the abandoned fork's `omp` ever understood (see
+/// `ProviderAccountExtensionBackend.swift`'s `ProviderAccountTieredRoutingBackend`
+/// doc comment). `set_session_provider_account` handling is left in place
+/// below only because nothing currently sends it; a stray direct call would
+/// still get a plausible reply rather than silently hanging.
+///
+/// The marker channel opens the same way `makeProviderAccountChannelExecutable`
+/// (`SessionControllerTests.swift`) proved out: an `extension_ui_request`
+/// right after `set_subagent_subscription` is answered, and each
+/// `extension_ui_response` is answered by a *new* marker request whose
+/// `placeholder` carries the reply, matched by the inner command `id` —
+/// never the outer RPC frame `id`, which only identifies the open request
+/// slot. `provider_account_changed` is emitted before that reply, on the
+/// same frame-ordering guarantee the existing `makeProviderAccountExecutable`
+/// fixture already relies on: `SessionController.consume` applies frames in
+/// the order they arrive on the one `client.events` reader, so the session's
+/// own `currentProviderAccountRef` is already updated by the time the
+/// reply's continuation resumes `route()` and `applyThroughBackend` reads it
+/// back via `synchronizeState`.
 private func makeProviderRoutingExecutable(
     in directory: URL,
     commandLog: URL,
@@ -880,6 +904,9 @@ private func makeProviderRoutingExecutable(
     command_log = \#(logPath)
     initial_account = \#(initialAccount)
 
+    MARKER = "tenx.provider-accounts.v1"
+    channel_requests = 0
+
     def emit(value):
         print(json.dumps(value, separators=(",", ":")), flush=True)
 
@@ -891,6 +918,16 @@ private func makeProviderRoutingExecutable(
         command = json.loads(line)
         request_id = command.get("id")
         command_type = command.get("type")
+        if command_type == "extension_ui_response":
+            sent = json.loads(command.get("value", "{}"))
+            account_ref = sent.get("params", {}).get("accountRef", "")
+            with open(command_log, "a", encoding="utf-8") as log:
+                log.write("pin_account:" + account_ref + "\n")
+            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":account_ref,"reason":"manual","sequence":1})
+            reply = json.dumps({"id": sent.get("id"), "ok": True, "data": {"applied": True}})
+            channel_requests += 1
+            emit({"type":"extension_ui_request","id":"acct-chan-" + str(channel_requests),"method":"input","title":MARKER,"placeholder":reply})
+            continue
         logged = command_type
         if command_type == "set_session_provider_account":
             logged += ":" + command.get("accountRef", "")
@@ -910,8 +947,11 @@ private func makeProviderRoutingExecutable(
         else:
             data = {}
         emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
-        if command_type == "set_subagent_subscription" and \#(exitsAfterSubscription ? "True" : "False"):
-            raise SystemExit(7)
+        if command_type == "set_subagent_subscription":
+            channel_requests += 1
+            emit({"type":"extension_ui_request","id":"acct-chan-" + str(channel_requests),"method":"input","title":MARKER})
+            if \#(exitsAfterSubscription ? "True" : "False"):
+                raise SystemExit(7)
         if command_type == "prompt":
             emit({"type":"agent_start"})
             emit({"type":"agent_end","messages":[],"isTerminal":True})
@@ -1577,6 +1617,37 @@ private func accountProviderModel() -> ProviderManagementViewModel {
     await model.useProviderAccount("acct_missing", scope: .thisSession, openSessionID: session.id)
 
     #expect(session.currentProviderAccountRef == "acct_A")
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+/// Fix round 1 (task-9b): the tiered routing backend and the live
+/// `restartSession` closure were built but never actually installed on the
+/// coordinator the running app uses, so the coordinator kept taking the
+/// pre-existing direct-RPC path regardless of tier — exactly how the gap
+/// this test guards against got there unnoticed in the first place.
+/// `makeProviderAccountCoordinator: { coordinator }` hands `AppModel` this
+/// test's own coordinator instance, so `coordinator.hasLiveRoutingBackend`
+/// observes exactly what `AppModel.init` installed on it — the same
+/// instance every session in this test would route through.
+@Test func bootstrapInstallsALiveRoutingBackendOnTheCoordinator() async throws {
+    let coordinator = ProviderAccountCoordinator()
+    #expect(!coordinator.hasLiveRoutingBackend)
+
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: NSTemporaryDirectory(),
+            directoryHint: .isDirectory)),
+        makeProviderAccountCoordinator: { coordinator }))
+
+    // Installed synchronously in `AppModel.init`, not deferred to
+    // `bootstrap()` — true immediately, before bootstrap ever runs.
+    #expect(coordinator.hasLiveRoutingBackend)
+
+    await model.bootstrap()
+
+    // Survives bootstrap unchanged — nothing in that path resets it.
+    #expect(coordinator.hasLiveRoutingBackend)
     if let manager = model.processManager { await manager.closeAll() }
 }
 }

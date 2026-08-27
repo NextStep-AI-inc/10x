@@ -129,16 +129,41 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
     private var listenerTask: Task<Void, Never>?
     private var openRequestID: String?
     private var readyWaiter: CheckedContinuation<String?, Never>?
+    /// Cancelled by whichever of `provideOpenRequestID` / `handleStreamEnded`
+    /// / `timeoutReadyWaiter` resolves `readyWaiter` first, so at most one of
+    /// the three ever calls `resume` on it — see `openRequestTimeout`'s doc
+    /// comment for why a timeout is needed here at all.
+    private var readyWaiterTimeoutTask: Task<Void, Never>?
     private var inFlight: (commandID: String, continuation: CheckedContinuation<JSONValue, any Error>)?
     private var isBusy = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var isDropped = false
 
+    private let openRequestTimeout: Duration
+
+    /// Default bound on `claimOpenRequestID`'s wait for the extension's
+    /// first open request. Matches `RpcClientConfiguration.startupTimeout` /
+    /// `.requestTimeout` (`OmpKit/Sources/OmpKit/RpcClient.swift:34-35`,
+    /// both 30s) rather than inventing a new number: this wait is the same
+    /// category of "how long is it reasonable to block on the other side of
+    /// the process before concluding something is wrong," and reusing the
+    /// codebase's own already-vetted bound keeps this channel's failure
+    /// timing consistent with every other RPC wait in the app. 30s is
+    /// generous relative to a healthy handshake — Task 1 confirmed the
+    /// extension opens its first `ctx.ui.input()` from `session_start`,
+    /// i.e. within the time `omp` itself takes to spawn and load the
+    /// bundled extension module, normally well under a second — so this
+    /// fires only when the extension is genuinely absent or wedged, never
+    /// during ordinary startup, even under a loaded CI machine.
+    private static let defaultOpenRequestTimeout: Duration = .seconds(30)
+
     init(
         events: AsyncStream<RpcFrame>,
+        openRequestTimeout: Duration = ProviderAccountExtensionChannel.defaultOpenRequestTimeout,
         respond: @escaping @Sendable (String, [String: JSONValue]) async throws -> Void
     ) {
         self.events = events
+        self.openRequestTimeout = openRequestTimeout
         self.respond = respond
     }
 
@@ -231,7 +256,45 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         }
         return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             readyWaiter = continuation
+            // Scheduled after `readyWaiter` is stored, same actor hop —
+            // nothing else can observe `readyWaiter` between the two
+            // statements, so there is no window where this task could fire
+            // before there is anything to time out.
+            readyWaiterTimeoutTask = Task { [weak self, openRequestTimeout] in
+                try? await Task.sleep(for: openRequestTimeout)
+                guard !Task.isCancelled else { return }
+                await self?.timeoutReadyWaiter()
+            }
         }
+    }
+
+    /// The timeout-side counterpart to `provideOpenRequestID` and
+    /// `handleStreamEnded`: resolves `readyWaiter` with `nil` — the same
+    /// value `handleStreamEnded` already uses for "channel genuinely
+    /// absent," which `claimOpenRequestID`'s caller (`send`) already turns
+    /// into `ProviderAccountChannelError.unavailable` — rather than hanging
+    /// forever on an extension that never opens its first request. Guarded
+    /// by `readyWaiter` still being non-nil: if `provideOpenRequestID` or
+    /// `handleStreamEnded` already resolved it (and cancelled this task) by
+    /// the time this runs, cancellation should have prevented this from
+    /// running at all, but actor-isolated methods still execute to
+    /// completion once dispatched, so the guard is the actual, load-bearing
+    /// protection against a double `resume` — not the cancellation check
+    /// above, which only saves the sleep.
+    private func timeoutReadyWaiter() {
+        guard let readyWaiter else { return }
+        self.readyWaiter = nil
+        readyWaiterTimeoutTask = nil
+        // Also marks the channel dropped, not just this one wait resolved:
+        // Task 1 established the extension opens its first request from
+        // `session_start`, so 30s of silence means it is never coming, not
+        // merely running late. Without this, every later `send()` on the
+        // same channel would re-arm and re-wait the full timeout again —
+        // `claimOpenRequestID`'s `isDropped` fast path exists precisely to
+        // avoid that. A future `finishOpening` builds a fresh channel
+        // regardless, so this never needs to be un-set.
+        isDropped = true
+        readyWaiter.resume(returning: nil)
     }
 
     /// The `handle`-side counterpart to `claimOpenRequestID`: hands a newly
@@ -242,6 +305,8 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
     private func provideOpenRequestID(_ requestID: String) {
         if let readyWaiter {
             self.readyWaiter = nil
+            readyWaiterTimeoutTask?.cancel()
+            readyWaiterTimeoutTask = nil
             readyWaiter.resume(returning: requestID)
         } else {
             openRequestID = requestID
@@ -284,6 +349,8 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
         }
         if let readyWaiter {
             self.readyWaiter = nil
+            readyWaiterTimeoutTask?.cancel()
+            readyWaiterTimeoutTask = nil
             readyWaiter.resume(returning: nil)
         }
         let queued = waiters
@@ -375,11 +442,14 @@ final class ProviderAccountChannelRegistry: Sendable {
 /// is a real command-level failure, not a transport problem, and is left to
 /// propagate rather than degrading.
 ///
-/// task-9b-report.md documents the composition-root gap this leaves: this
-/// type is never actually installed as `ProviderAccountCoordinator`'s
-/// `routingBackend` in the live app, because doing so requires threading it
-/// through `AppDependencies.swift`'s `makeProviderAccountCoordinator`
-/// factory, outside this task's file fence.
+/// Installed as `ProviderAccountCoordinator`'s `routingBackend` from
+/// `AppModel.init`, once session infrastructure exists to build the
+/// registry and restart closure this type needs
+/// (`ProviderAccountCoordinator.install(routingBackend:restartSession:)`,
+/// task-9b fix round 1) — not from `AppDependencies.makeProviderAccountCoordinator`,
+/// whose zero-argument factory runs before any of that state exists. See
+/// `install`'s doc comment for why post-construction installation, not a
+/// wider factory signature, is the composition point.
 struct ProviderAccountTieredRoutingBackend: ProviderAccountRouting {
     private let registry: ProviderAccountChannelRegistry
 

@@ -60,14 +60,13 @@ final class AppModel {
     /// Every managed session's live `ProviderAccountChannel`, keyed by
     /// session id — see `SessionController.attachAccountChannel` (the sole
     /// writer) and `ProviderAccountTieredRoutingBackend`
-    /// (`App/Providers/ProviderAccountExtensionBackend.swift`), the reader
-    /// this exists for. Owned here (rather than by `AppDependencies`,
-    /// unlike `sessionActivityRegistry`) because it needs no factory or
+    /// (`App/Providers/ProviderAccountExtensionBackend.swift`), which reads
+    /// it as `sessionActivityRegistry`'s installed `routingBackend` (see
+    /// `init`). Owned here (rather than by `AppDependencies`, unlike
+    /// `sessionActivityRegistry`) because it needs no factory or
     /// test-double seam of its own: it is a plain, empty-at-construction
     /// registry with no external dependencies, so every `AppModel` gets its
-    /// own real one. Not yet installed as `sessionActivityRegistry`'s
-    /// `routingBackend` — see task-9b-report.md for why that step is
-    /// flagged rather than done in this task.
+    /// own real one.
     let accountChannelRegistry = ProviderAccountChannelRegistry()
 
     var providerActivityCounts: [String: Int] {
@@ -171,6 +170,31 @@ final class AppModel {
         idePreferenceStore = IDEPreferenceStore(defaults: preferenceDefaults, registry: ideRegistry)
         self.fileOpenService = fileOpenService
         startMemoryPressureMonitoring()
+        // Installed here, after every stored property has a value (`self`
+        // cannot be captured in a closure any earlier), rather than inside
+        // `AppDependencies`'s coordinator factory: both arguments close
+        // over session-level state (`accountChannelRegistry`,
+        // `managedSessions`) that exists only on `AppModel`, never on the
+        // dependency-injection composition root. See
+        // `ProviderAccountCoordinator.install`'s doc comment for the full
+        // reasoning.
+        sessionActivityRegistry.install(
+            routingBackend: ProviderAccountTieredRoutingBackend(registry: accountChannelRegistry),
+            restartSession: { [weak self] sessionID in
+                guard let self, let controller = self.managedSessions[sessionID] else { return false }
+                await controller.restart()
+                // `restart()`'s only failure signal is landing in
+                // `.failed` (its `fail(_:function:"restart",...)` path).
+                // Its early-return guard (missing `projectURL`/`sessionPath`)
+                // leaves `runtimeState` untouched instead, which would read
+                // as success here — unreachable in practice, because the
+                // coordinator only ever calls this after
+                // `ProviderAccountPinBackend.route` already resolved this
+                // same session's file via `sessionFileForID`, which
+                // requires `sessionPath` to already be non-nil.
+                if case .failed = controller.runtimeState { return false }
+                return true
+            })
     }
 
     var sessionSearch: any SessionSearching {

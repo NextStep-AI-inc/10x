@@ -95,8 +95,12 @@ final class ProviderAccountCoordinator {
     @ObservationIgnored private var appliedRoutes: [UUID: DesiredRoute] = [:]
     @ObservationIgnored private var failureRecord: FailureRecord?
     @ObservationIgnored private var nextOperationID: UInt64 = 0
-    @ObservationIgnored private let routingBackend: ProviderAccountRouting?
-    @ObservationIgnored private let restartSession: (@MainActor (UUID) async -> Bool)?
+    // `var`, not `let`: `install(routingBackend:restartSession:)` below is
+    // the only place either is ever written after `init`. Both stay
+    // `private` regardless — nothing outside this type may assign them
+    // directly, keeping `install` the single, greppable point of entry.
+    @ObservationIgnored private var routingBackend: ProviderAccountRouting?
+    @ObservationIgnored private var restartSession: (@MainActor (UUID) async -> Bool)?
 
     /// - Parameters:
     ///   - routingBackend: How to change a session's account. `nil` (the
@@ -108,7 +112,11 @@ final class ProviderAccountCoordinator {
     ///     `.restartRequired` — see `restartSession` below). Selecting which
     ///     backend a given session gets is done by whoever constructs this
     ///     coordinator, keyed off `ProviderAccountTier`; this type only
-    ///     needs to know how to drive whichever one it's handed.
+    ///     needs to know how to drive whichever one it's handed. Tests
+    ///     construct backends directly and pass them here; the live app
+    ///     instead constructs this coordinator with both `nil` and calls
+    ///     `install(routingBackend:restartSession:)` once its session
+    ///     infrastructure exists to build them from — see that method.
     ///   - restartSession: Closes and respawns a session's `omp` process
     ///     with `-r <sessionFile>` so a pin already written to disk takes
     ///     effect, returning whether the restart succeeded. `nil` when no
@@ -123,6 +131,33 @@ final class ProviderAccountCoordinator {
         self.routingBackend = routingBackend
         self.restartSession = restartSession
     }
+
+    /// Sets `routingBackend` and `restartSession` after construction — the
+    /// live app's only way to configure either, since `AppDependencies`'
+    /// coordinator factory is a zero-argument closure and the pieces these
+    /// two are built from (the account channel registry, `managedSessions`)
+    /// live on `AppModel`, not `AppDependencies`. See `AppModel.init`, the
+    /// sole call site.
+    ///
+    /// Idempotent by design, not one-shot: calling this again just replaces
+    /// both values (`@MainActor` isolation rules out a torn read), so a
+    /// second call — from a future reconfiguration path, or a test — is a
+    /// deliberate reconfiguration rather than a programmer error worth
+    /// crashing over. `AppModel` happens to call it exactly once, from
+    /// `init`, but nothing here depends on that.
+    func install(
+        routingBackend: ProviderAccountRouting?,
+        restartSession: (@MainActor (UUID) async -> Bool)?
+    ) {
+        self.routingBackend = routingBackend
+        self.restartSession = restartSession
+    }
+
+    /// Whether `install` has ever set a non-`nil` backend. Exposed so
+    /// callers — today, only a test — can confirm the live app actually
+    /// wired one, without exposing the backend value itself (`routingBackend`
+    /// stays `private`).
+    var hasLiveRoutingBackend: Bool { routingBackend != nil }
 
     var canCreateManagedSession: Bool {
         pendingRemovalAccounts.isEmpty

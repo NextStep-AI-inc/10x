@@ -95,4 +95,41 @@ private actor StubChannel: ProviderAccountChannel {
     #expect(result == .object(["applied": .bool(true)]))
 }
 
+/// Task 8's own comment on `claimOpenRequestID` warns this is exactly the
+/// method a naive fix could turn into a spurious-failure trap; this test
+/// instead targets the opposite failure mode a reviewer flagged in fix
+/// round 1: an extension that never opens even one request must not hang
+/// `send()` forever. `openRequestTimeout` is injected tiny so the test
+/// itself stays fast — proven empirically to actually matter (not just
+/// "eventually pass") by measuring wall-clock elapsed time, not merely
+/// awaiting the call.
+@Test func aChannelThatNeverOpensDegradesWithinTheTimeoutInsteadOfHanging() async throws {
+    let (stream, _) = AsyncStream<RpcFrame>.makeStream()
+    // The continuation is deliberately dropped unused rather than finished
+    // or yielded on — simulating an extension that spawned but never
+    // opened its first `ctx.ui.input()` request. Confirmed separately that
+    // an `AsyncStream` does NOT auto-terminate when its continuation goes
+    // out of scope (a standalone `for await` against exactly this pattern
+    // hangs indefinitely) — so this exercises the timeout path, not
+    // `handleStreamEnded`'s stream-end path.
+    let channel = ProviderAccountExtensionChannel(
+        events: stream,
+        openRequestTimeout: .milliseconds(50),
+        respond: { _, _ in })
+
+    let clock = ContinuousClock()
+    let start = clock.now
+    await #expect(throws: ProviderAccountChannelError.unavailable) {
+        _ = try await channel.send(ProviderAccountChannelCommand(
+            id: "cmd-1", command: "pin_account", params: [:]))
+    }
+    let elapsed = clock.now - start
+
+    // Generous relative to the 50ms timeout — this asserts "degraded
+    // promptly," not "degraded at exactly 50ms," so it stays robust to
+    // scheduler jitter under load while still failing hard on an
+    // accidental return to the old unbounded wait.
+    #expect(elapsed < .seconds(2))
+}
+
 }
