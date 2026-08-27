@@ -10,16 +10,29 @@ enum ProjectSessionGrouper {
             return URL(filePath: metadata.cwd, directoryHint: .isDirectory).standardizedFileURL
         }
 
+        // Newest created first, never newest modified: omp rewrites a session
+        // file on every streamed token, and the library reloads on that write.
+        // Ordering by modification date makes the rail resort itself under the
+        // pointer mid-turn, so a click lands on whichever session slid into the
+        // row. Creation order is fixed for the life of a session, so rows only
+        // move when one is genuinely added or removed.
         return grouped.map { projectURL, sessions in
             ProjectSessionGroup(
                 projectURL: projectURL,
-                sessions: sessions.sorted { $0.modified > $1.modified })
+                sessions: sessions.sorted(by: isNewer))
         }
         .sorted { left, right in
-            guard let leftDate = left.sessions.first?.modified else { return false }
-            guard let rightDate = right.sessions.first?.modified else { return true }
-            return leftDate > rightDate
+            guard let leftSession = left.sessions.first else { return false }
+            guard let rightSession = right.sessions.first else { return true }
+            return isNewer(leftSession, rightSession)
         }
+    }
+
+    /// Path breaks ties so two sessions created in the same millisecond keep a
+    /// fixed order rather than swapping between reloads.
+    private static func isNewer(_ left: SessionMetadata, _ right: SessionMetadata) -> Bool {
+        guard left.created == right.created else { return left.created > right.created }
+        return left.path < right.path
     }
 
     static func choosableProjectURLs(

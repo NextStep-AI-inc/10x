@@ -54,6 +54,10 @@ struct ComposerSessionControlsView: View {
                     for: model.selectedModel),
                 query: $query,
                 onSelectModel: { selection in
+                    // Committing a model closes the menu, the way every menu on
+                    // this platform does. Effort and Fast stay open: those are
+                    // settings for the model just picked, not a second choice.
+                    isPresented = false
                     Task { await model.selectModel(selection, mode: mode) }
                 },
                 onSelectThinking: { level in
