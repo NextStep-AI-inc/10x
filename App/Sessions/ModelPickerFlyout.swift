@@ -258,6 +258,7 @@ struct ModelPickerFlyout: View {
             HStack(spacing: 2) {
                 Text("Fast mode")
                     .font(TenXTypography.body(size: 12))
+                    .accessibilityHidden(true)
                 Spacer()
                 Toggle("Fast mode", isOn: Binding(
                     get: { isFastModeEnabled },
