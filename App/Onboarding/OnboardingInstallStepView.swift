@@ -7,6 +7,7 @@ struct OnboardingInstallStepView: View {
     @State private var log: [String] = []
     @State private var isInstalling = false
     @State private var didFail = false
+    @State private var installTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -20,13 +21,6 @@ struct OnboardingInstallStepView: View {
                         .font(TenXTypography.body(size: 13))
                         .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
                 }
-            }
-
-            if let setupError = model.setupError {
-                Text(setupError)
-                    .font(TenXTypography.mono())
-                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
-                    .textSelection(.enabled)
             }
 
             HStack(spacing: 12) {
@@ -45,6 +39,7 @@ struct OnboardingInstallStepView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .onDisappear { installTask?.cancel() }
     }
 
     private var installedCard: some View {
@@ -71,13 +66,20 @@ struct OnboardingInstallStepView: View {
                         .font(TenXTypography.mono())
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                         .textSelection(.enabled)
-                } else {
-                    Text("Runs this command:")
-                        .font(TenXTypography.body(weight: .semibold))
-                    Text(OmpInstallRunner.command)
+                    Text("Run it in a terminal to see why it fails:")
+                        .font(TenXTypography.body(size: 12))
+                    Text("\(unrunnable.path) --version")
                         .font(TenXTypography.mono())
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                         .textSelection(.enabled)
+                }
+                Text("Runs this command:")
+                    .font(TenXTypography.body(weight: .semibold))
+                Text(OmpInstallRunner.command)
+                    .font(TenXTypography.mono())
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .textSelection(.enabled)
+                if model.unrunnableOmpURL == nil {
                     Text("Checked automatically")
                         .font(TenXTypography.body(size: 12, weight: .semibold))
                     ForEach(OmpExecutableLocator.knownPaths, id: \.self) { path in
@@ -116,7 +118,7 @@ struct OnboardingInstallStepView: View {
         log = []
         didFail = false
         isInstalling = true
-        Task {
+        installTask = Task {
             do {
                 for try await line in OmpInstallRunner().run() { log.append(line) }
             } catch {

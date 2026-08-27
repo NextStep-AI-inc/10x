@@ -5,14 +5,12 @@ struct ProviderSetupView: View {
     let onContinue: () -> Void
 
     var body: some View {
-        GeometryReader { _ in
-            VStack(alignment: .leading, spacing: 26) {
-                providerList
+        VStack(alignment: .leading, spacing: 26) {
+            providerList
 
-                Button("Continue", action: onContinue)
-                    .buttonStyle(GhostActionStyle())
-                    .disabled(!model.hasAuthenticatedProvider)
-            }
+            Button("Continue", action: onContinue)
+                .buttonStyle(GhostActionStyle())
+                .disabled(!model.hasAuthenticatedProvider)
         }
         .sheet(item: extensionSheetBinding) { request in
             ExtensionInputSheet(

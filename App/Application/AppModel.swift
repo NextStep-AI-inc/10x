@@ -38,7 +38,6 @@ final class AppModel {
     var route: AppRoute = .onboarding(.installOmp)
     var installation: OmpInstallation?
     var selectedProjectURL: URL?
-    var setupError: String?
     /// Set when OMP is installed but would not run, so setup can say that
     /// instead of reporting it as missing.
     var unrunnableOmpURL: URL?
@@ -918,7 +917,6 @@ final class AppModel {
         settingsModel = settings
         providerModel = provider
         composerControls = controls
-        setupError = nil
         gateRoute()
         await restartProcessWatchers(for: manager)
         try checkStartupAttempt(attemptID)
@@ -1065,7 +1063,6 @@ final class AppModel {
         providerModel = provider
         composerControls = controls
         providerUsages = []
-        setupError = nil
         gateRoute()
         await restartProcessWatchers(for: manager)
         guard isCurrentLifecycle(generation),

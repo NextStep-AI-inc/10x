@@ -846,7 +846,6 @@ private struct FixedOmpLocator: OmpLocating {
     #expect(model.settingsModel === settingsModel)
     #expect(model.providerModel === providerModel)
     #expect(model.route == route)
-    #expect(model.setupError == nil)
 
     await processManager.closeAll()
 }
