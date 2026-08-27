@@ -618,7 +618,8 @@ import Testing
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
     await model.bootstrap()
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     model.sessions = fullShellSessions
@@ -659,7 +660,8 @@ import Testing
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
     await model.bootstrap()
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     model.sessions = fullShellSessions
@@ -684,7 +686,8 @@ import Testing
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
     await model.bootstrap()
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     model.sessions = fullShellSessions

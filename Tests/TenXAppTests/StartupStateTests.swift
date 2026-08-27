@@ -179,6 +179,38 @@ import Testing
 }
 
 @MainActor
+@Test func theAdvisoryRowResolvesEvenAfterRecoveryHasBegun() {
+    let state = StartupState()
+    let attempt = UUID()
+    state.beginAttempt(id: attempt)
+    state.markLoading(.updates, attemptID: attempt)
+
+    state.enterRecovery(attemptID: attempt)
+
+    // `markReady` is gated on `phase == .preparing`, which recovery just left. Without a
+    // phase-independent resolve path, this row would stay `Loading` for the rest of the
+    // recovery phase because nothing else is left that can move it.
+    #expect(state.status(of: .updates) == .loading)
+    state.resolveAdvisoryCheck(attemptID: attempt)
+
+    #expect(state.status(of: .updates) == .ready)
+}
+
+@MainActor
+@Test func resolveAdvisoryCheckIgnoresAStaleAttempt() {
+    let state = StartupState()
+    let first = UUID()
+    state.beginAttempt(id: first)
+    state.markLoading(.updates, attemptID: first)
+    let second = UUID()
+    state.beginAttempt(id: second)
+
+    state.resolveAdvisoryCheck(attemptID: first)
+
+    #expect(state.status(of: .updates) == .queued)
+}
+
+@MainActor
 @Test func theAdvisoryRowCannotBeStoppedDirectly() {
     let state = StartupState()
     let attempt = UUID()

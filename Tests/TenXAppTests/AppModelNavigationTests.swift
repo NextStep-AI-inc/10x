@@ -558,7 +558,8 @@ private func navigationDependencies<Locator: OmpLocating>(
                     isAuthenticated: true),
             ])
         },
-        makeComposerControls: stubAppComposerControlsFactory)
+        makeComposerControls: stubAppComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory)
 }
 
 private func navigationMetadata(_ path: String, cwd: String = "/tmp/Project") -> SessionMetadata {
@@ -972,12 +973,14 @@ private func testDependencies<Locator: OmpLocating>(
                 runner: AppModelTestConfigRunner()))
         },
         makeProviderModel: makeProviderModel,
-        makeComposerControls: makeComposerControls)
+        makeComposerControls: makeComposerControls,
+        makeUpdateChecker: stubUpdateCheckerFactory)
 }
 
 private let appModelTestTiming = StartupTiming(
     minimumVisibility: .zero,
     timeout: .seconds(10),
+    updateCheckDeadline: .milliseconds(50),
     sleep: { duration in
         guard duration == .seconds(10) else { return }
         try await ContinuousClock().sleep(for: .seconds(60))
@@ -1027,6 +1030,17 @@ let stubAppComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerContro
     ComposerControlsModel(
         catalog: StubAppComposerCatalog(),
         defaults: StubAppComposerDefaults())
+}
+
+/// These navigation and shell-snapshot fixtures build `AppDependencies` directly rather
+/// than through `StartupFixture`/`makeStartupDependencies`, so without this they would
+/// fall back to `AppDependencies`'s own default `makeUpdateChecker`, which stands up a
+/// real Sparkle-backed `UpdateController` against `Bundle.main` and asks it to check for
+/// updates on every `bootstrap()` call. A stub answering "nothing new" keeps these tests
+/// from touching Sparkle or the network at all.
+let stubUpdateCheckerFactory: @MainActor @Sendable (
+    @escaping @MainActor () async -> Void) -> any UpdateChecking = { _ in
+    stubUpdateCheckerReportingNoUpdate()
 }
 
 private actor StubAppComposerCatalog: ComposerCatalogLoading {

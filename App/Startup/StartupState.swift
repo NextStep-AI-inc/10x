@@ -53,11 +53,13 @@ enum StartupPhase: Equatable, Sendable {
 struct StartupTiming: Sendable {
     let minimumVisibility: Duration
     let timeout: Duration
+    let updateCheckDeadline: Duration
     let sleep: @Sendable (Duration) async throws -> Void
 
     static let live = StartupTiming(
         minimumVisibility: .milliseconds(1_200),
         timeout: .seconds(10),
+        updateCheckDeadline: .seconds(3),
         sleep: { duration in try await ContinuousClock().sleep(for: duration) })
 }
 
@@ -128,6 +130,20 @@ final class StartupState {
         guard stage != .updates else { return }
         guard self.attemptID == attemptID, phase == .preparing else { return }
         statuses[stage] = .stopped
+    }
+
+    /// Resolves the advisory `.updates` row once its launch check finishes, regardless
+    /// of `phase`. `markReady` is deliberately gated on `phase == .preparing` to protect
+    /// the four gating stages while they can still be invalidated into `.stopped`. The
+    /// advisory row has no such protection to give: it is excluded from `gatingCases`
+    /// and `enterRecovery` never touches it (see `recoveryNeverStopsTheAdvisoryUpdateRow`
+    /// in StartupStateTests), so if recovery begins while the check is still in flight,
+    /// `markReady` would silently no-op forever and strand the row at `Loading` for the
+    /// rest of the recovery phase. This is the only mutator the advisory check may call
+    /// after `enterRecovery` has already run.
+    func resolveAdvisoryCheck(attemptID: UUID) {
+        guard self.attemptID == attemptID else { return }
+        statuses[.updates] = .ready
     }
 
     func enterRecovery(attemptID: UUID) {

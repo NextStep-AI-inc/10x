@@ -27,6 +27,22 @@ final class StubUpdateChecker: UpdateChecking {
     func dismiss() { state.reset() }
 }
 
+/// A `StubUpdateChecker` pre-configured to answer "nothing new" the instant it is
+/// asked, matching what the real driver reports when the feed has nothing newer.
+/// Fixtures that don't care about update behavior use this as their default checker
+/// rather than a bare `StubUpdateChecker()`: a bare stub leaves `state.phase` at
+/// `.checking`, so `checkAtLaunch` spawns its deadline task and depends on whatever
+/// `sleep` closure the fixture's `StartupTiming` happens to use for unrelated
+/// purposes — some of which ignore the duration they're given and sleep for real
+/// seconds. Answering synchronously lets `checkAtLaunch` return through its
+/// `guard case .checking` before the deadline task is ever spawned.
+@MainActor
+func stubUpdateCheckerReportingNoUpdate() -> StubUpdateChecker {
+    let checker = StubUpdateChecker()
+    checker.onCheck = { $0.reset() }
+    return checker
+}
+
 @MainActor
 @Test func theLaunchCheckReturnsAsSoonAsSparkleAnswers() async {
     let checker = StubUpdateChecker()

@@ -135,6 +135,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .milliseconds(350),
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .milliseconds(350) {
                 await minimumGate.started()
@@ -172,6 +173,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .milliseconds(350),
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .milliseconds(350) {
                 await floorProbe.recordStart()
@@ -203,6 +205,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .zero,
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .seconds(10) {
                 await timeoutGate.started()
@@ -315,6 +318,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .milliseconds(350),
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .milliseconds(350) { await minimumGate.started() }
             try await ContinuousClock().sleep(for: .seconds(60))
@@ -348,6 +352,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .milliseconds(350),
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .milliseconds(350) {
                 await minimumGate.started()

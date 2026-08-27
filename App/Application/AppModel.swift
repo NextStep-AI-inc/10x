@@ -88,6 +88,12 @@ final class AppModel {
     @ObservationIgnored private var hasStartedWarmRetention = false
     @ObservationIgnored private var managedSessions: [UUID: SessionController] = [:]
     @ObservationIgnored private var managedSessionPaths: [String: UUID] = [:]
+    @ObservationIgnored private lazy var updateChecker: any UpdateChecking =
+        dependencies.makeUpdateChecker { [weak self] in
+            await self?.shutdown()
+        }
+
+    var updateState: UpdateState { updateChecker.state }
 
     init(
         dependencies: AppDependencies = .live,
@@ -140,6 +146,20 @@ final class AppModel {
         startupOperation = StartupOperation(id: id, task: task)
         await task.value
         if startupOperation?.id == id { startupOperation = nil }
+    }
+
+    func checkForUpdatesFromMenu() {
+        guard !isShuttingDown, !updateState.isPresentingUpdate else { return }
+        updateChecker.check(isUserInitiated: true)
+    }
+
+    func acceptUpdate() { updateChecker.accept() }
+
+    func dismissUpdate() { updateChecker.dismiss() }
+
+    func retryUpdate() {
+        updateChecker.dismiss()
+        updateChecker.check(isUserInitiated: true)
     }
 
     func useOmp(at url: URL) async {
@@ -744,6 +764,7 @@ final class AppModel {
             try checkStartupAttempt(id)
             switch preparation {
             case .ready, .missingOmp:
+                await updateChecker.state.waitWhilePresenting()
                 startupState.requestHandoff(attemptID: id)
             }
         } catch {
@@ -788,7 +809,10 @@ final class AppModel {
     ) async throws -> StartupPreparation {
         if stages.contains(.runtime) {
             let hasRuntime = try await prepareRuntime(attemptID: attemptID)
-            if !hasRuntime { return .missingOmp }
+            if !hasRuntime {
+                startupState.markReady(.updates, attemptID: attemptID)
+                return .missingOmp
+            }
         }
 
         try checkStartupAttempt(attemptID)
@@ -805,10 +829,24 @@ final class AppModel {
                         stages: stages)
                 }
             }
+            if stages.contains(.updates) {
+                group.addTask { await self.prepareUpdates(attemptID: attemptID) }
+            }
             try await group.waitForAll()
         }
         try checkStartupAttempt(attemptID)
         return .ready
+    }
+
+    /// Advisory. Deliberately non-throwing and deliberately incapable of marking the row
+    /// stopped, so a network failure or a slow feed can never put the splash into
+    /// recovery or extend the launch beyond the deadline.
+    private func prepareUpdates(attemptID: UUID) async {
+        startupState.markLoading(.updates, attemptID: attemptID)
+        await updateChecker.checkAtLaunch(
+            deadline: dependencies.startupTiming.updateCheckDeadline,
+            sleep: dependencies.startupTiming.sleep)
+        startupState.resolveAdvisoryCheck(attemptID: attemptID)
     }
 
     private func prepareRuntime(attemptID: UUID) async throws -> Bool {
