@@ -746,7 +746,10 @@ final class AppModel {
     ) -> SessionController {
         let controller = SessionController(
             processManager: processManager,
-            activityRegistry: sessionActivityRegistry)
+            activityRegistry: sessionActivityRegistry,
+            titleGenerator: installation.flatMap {
+                dependencies.makeSessionTitleGenerator($0.executableURL)
+            })
         managedSessions[controller.id] = controller
         if let intendedSessionPath {
             managedSessionPaths[intendedSessionPath] = controller.id
