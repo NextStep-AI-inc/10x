@@ -609,14 +609,14 @@ func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws 
 }
 
 private struct MissingOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? { nil }
+    func locate(preferredURL: URL?) async -> OmpLocation { .notFound }
 }
 
 private struct FixedOmpLocator: OmpLocating {
     let executableURL: URL
 
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        OmpInstallation(executableURL: executableURL, version: "test")
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(OmpInstallation(executableURL: executableURL, version: "test"))
     }
 }
 
@@ -884,8 +884,8 @@ private struct FixedOmpLocator: OmpLocating {
 }
 
 private struct InstalledOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        testInstallation
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(testInstallation)
     }
 }
 
@@ -900,9 +900,9 @@ private actor SequentialOmpLocator: OmpLocating {
         self.installations = installations
     }
 
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        guard !installations.isEmpty else { return nil }
-        return installations.removeFirst()
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        guard !installations.isEmpty else { return .notFound }
+        return installations.removeFirst().map(OmpLocation.found) ?? .notFound
     }
 }
 
@@ -914,10 +914,10 @@ private actor InstalledThenCancelledOmpLocator: OmpLocating {
         self.gate = gate
     }
 
-    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
         if isInitialLookup {
             isInitialLookup = false
-            return testInstallation
+            return .found(testInstallation)
         }
         await gate.started()
         while !Task.isCancelled { await Task.yield() }

@@ -39,6 +39,9 @@ final class AppModel {
     var installation: OmpInstallation?
     var selectedProjectURL: URL?
     var setupError: String?
+    /// Set when OMP is installed but would not run, so setup can say that
+    /// instead of reporting it as missing.
+    var unrunnableOmpURL: URL?
     var sessions: [SessionMetadata] = []
     var archivedSessions: [SessionMetadata] = []
     var pendingDeletion: SessionDeletionRequest?
@@ -143,22 +146,33 @@ final class AppModel {
     }
 
     func useOmp(at url: URL) async {
-        let locatedInstallation: OmpInstallation?
+        let location: OmpLocation
         do {
-            locatedInstallation = try await dependencies.ompLocator.locate(preferredURL: url)
+            location = try await dependencies.ompLocator.locate(preferredURL: url)
             try Task.checkCancellation()
         } catch is CancellationError {
             return
         } catch {
             return
         }
-        guard await replaceWorkspaceRuntime(with: locatedInstallation),
+        guard await replaceWorkspaceRuntime(with: location.installation),
               !Task.isCancelled,
               !isShuttingDown
         else { return }
-        setupError = locatedInstallation == nil
-            ? OmpExecutableLocator.inspectionErrorDescription(for: url)
-            : nil
+        applySetupDiagnosis(location)
+    }
+
+    /// Setup needs to tell "nothing installed" apart from "installed but it
+    /// would not run", so it can ask for the right thing.
+    private func applySetupDiagnosis(_ location: OmpLocation) {
+        switch location {
+        case .found:
+            unrunnableOmpURL = nil
+        case .unrunnable(let url):
+            unrunnableOmpURL = url
+        case .notFound:
+            unrunnableOmpURL = nil
+        }
     }
 
     func chooseProject(_ url: URL) {
@@ -813,10 +827,11 @@ final class AppModel {
 
     private func prepareRuntime(attemptID: UUID) async throws -> Bool {
         startupState.markLoading(.runtime, attemptID: attemptID)
-        let located = try await dependencies.ompLocator.locate(preferredURL: nil)
+        let location = try await dependencies.ompLocator.locate(preferredURL: nil)
         try checkStartupAttempt(attemptID)
+        applySetupDiagnosis(location)
 
-        guard let located else {
+        guard let located = location.installation else {
             await stopProviderUsage()
             let oldProvider = providerModel
             let oldComposerControls = composerControls

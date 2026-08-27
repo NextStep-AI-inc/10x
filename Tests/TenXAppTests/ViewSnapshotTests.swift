@@ -44,6 +44,13 @@ import Testing
 }
 
 @MainActor
+@Test func setupUnrunnableSnapshot() throws {
+    let model = AppModel()
+    model.unrunnableOmpURL = URL(filePath: "/Users/example/.bun/bin/omp")
+    try assertSnapshot(SetupView(model: model), name: "omp-unrunnable")
+}
+
+@MainActor
 @Test func providerSetupRequiredSnapshot() async throws {
     let model = providerTestModel(providers: [
         ProviderLoginProvider(
@@ -721,8 +728,8 @@ private func assertProviderSetupStarterSnapshot(
 }
 
 private struct SnapshotOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test")
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test"))
     }
 }
 

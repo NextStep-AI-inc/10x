@@ -1,7 +1,22 @@
 import Foundation
 
+/// Why setup did or did not get a runtime. `unrunnable` is kept distinct from
+/// `notFound` because they need different things from the user: one is a
+/// missing install, the other an install that cannot execute.
+enum OmpLocation: Equatable, Sendable {
+    case found(OmpInstallation)
+    /// An executable is at this path, but it could not report a version.
+    case unrunnable(URL)
+    case notFound
+
+    var installation: OmpInstallation? {
+        guard case .found(let installation) = self else { return nil }
+        return installation
+    }
+}
+
 protocol OmpLocating: Sendable {
-    func locate(preferredURL: URL?) async throws -> OmpInstallation?
+    func locate(preferredURL: URL?) async throws -> OmpLocation
 }
 
 struct OmpExecutableLocator: OmpLocating {
@@ -22,16 +37,22 @@ struct OmpExecutableLocator: OmpLocating {
         self.pathDirectories = path.split(separator: ":").map(String.init)
     }
 
-    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
+        var firstUnrunnable: URL?
         for candidate in candidates(preferredURL: preferredURL) {
             try Task.checkCancellation()
+            guard FileManager.default.isExecutableFile(atPath: candidate.path) else { continue }
             let installation = try await inspect(candidate)
             try Task.checkCancellation()
             if let installation {
-                return installation
+                return .found(installation)
             }
+            // Present and executable but silent: remember it so setup can say so
+            // rather than claiming nothing is installed.
+            if firstUnrunnable == nil { firstUnrunnable = candidate }
         }
-        return nil
+        if let firstUnrunnable { return .unrunnable(firstUnrunnable) }
+        return .notFound
     }
 
     private func candidates(preferredURL: URL?) -> [URL] {
@@ -52,8 +73,6 @@ struct OmpExecutableLocator: OmpLocating {
     }
 
     private func inspect(_ candidate: URL) async throws -> OmpInstallation? {
-        guard FileManager.default.isExecutableFile(atPath: candidate.path) else { return nil }
-
         let data: Data
         do {
             data = try await OmpCommandRunner().run(
@@ -74,7 +93,4 @@ struct OmpExecutableLocator: OmpLocating {
         return OmpInstallation(executableURL: candidate, version: version)
     }
 
-    static func inspectionErrorDescription(for url: URL) -> String {
-        "[Setup:OmpExecutableLocator] Unable to inspect OMP — \(url.path)"
-    }
 }
