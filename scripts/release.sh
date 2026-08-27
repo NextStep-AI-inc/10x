@@ -31,7 +31,16 @@ rm -rf "$DIST" "$BUILD"
 mkdir -p "$DIST" "$BUILD"
 
 echo "==> Generating the project"
-ruby scripts/generate_xcodeproj.rb
+# The generator asserts an exact xcodeproj version, because each release ships
+# different default build settings that feed every object UUID. Gemfile pins it, so
+# go through bundler when one is present; a runner's system gem is a different
+# version and the generator refuses to run against it.
+if [ -f Gemfile ]; then
+  bundle install --quiet
+  bundle exec ruby scripts/generate_xcodeproj.rb
+else
+  ruby scripts/generate_xcodeproj.rb
+fi
 
 echo "==> Archiving $VERSION (build $BUILD_NUMBER)"
 xcodebuild archive \
