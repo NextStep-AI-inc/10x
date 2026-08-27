@@ -81,8 +81,23 @@ noted, against the published `omp/18.0.4` installed on this machine.
   and no CLI flag for it.
 - **The extension system is first class.** `ExtensionAPI` injects the full
   `pi-coding-agent` SDK, which re-exports `./session/auth-storage`. Extensions
-  subscribe to `session_start`, `credential_disabled`, `retry_fallback_applied`,
-  `retry_fallback_succeeded`, and `before_provider_request`, among others.
+  subscribe to `session_start`, `credential_disabled`,
+  `before_provider_request`, and 30-odd others.
+- **There is NO extension event for account failover.** Corrected during Task 7.
+  This document previously assumed `retry_fallback_applied` /
+  `retry_fallback_succeeded` signalled a sibling-account rotation. They do not:
+  their payload is `{ from, to, role }` carrying MODEL names, and they belong to
+  OMP's configured model-fallback chain, a different feature. The mechanism that
+  actually rotates accounts within a provider, `AuthStorage.rotateSessionCredential`,
+  emits nothing an extension can see — confirmed against the full 35-member
+  `ExtensionEvent` union at `b4e8e856a`.
+
+  Consequence: t2 detects automatic failover by diffing the session-sticky
+  account (`OAuthAccountSummary.active`) across turn boundaries in
+  `before_provider_request`, rather than being notified. Detection is therefore
+  after the fact and requires a subsequent request on that session. It is still
+  far tighter than t1, which learns only at the next usage poll, but it is not
+  instantaneous and this document should not claim it is.
 - **`omp -e, --extension=<path>` loads an extension file and may be repeated.**
   Confirmed on the installed 18.0.4. `--no-extensions` disables discovery while
   explicit `-e` paths still load.
