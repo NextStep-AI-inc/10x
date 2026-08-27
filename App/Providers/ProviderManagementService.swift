@@ -48,10 +48,27 @@ private struct ProviderRPCClientBox: ProviderRPCClient {
 actor ProviderManagementService: ProviderManaging {
     private typealias ClientFactory = @Sendable (RpcClientConfiguration) async -> ProviderRPCClientBox
 
+    /// OMP refuses to start `--mode rpc` when the profile has no model source
+    /// configured, which is exactly the state of a brand-new user — so a
+    /// fresh profile can never even list login providers. As a one-shot
+    /// retry, we start with a placeholder `ANTHROPIC_API_KEY` so RPC mode has
+    /// a model source to boot with. The key is not real, so `parseProviders`
+    /// forces this provider's `isAuthenticated` back to `false` whenever the
+    /// placeholder is active — the user is not actually connected, and this
+    /// reports the truth instead of a fabricated login.
+    private static let placeholderEnvironmentKey = "ANTHROPIC_API_KEY"
+    private static let placeholderEnvironmentValue = "10x-onboarding-placeholder-not-a-real-key"
+    private static let placeholderProviderID = "anthropic"
+
+    private struct StartupResult: Sendable {
+        let client: ProviderRPCClientBox
+        let usedPlaceholder: Bool
+    }
+
     private struct Startup {
         let id: UUID
         let generation: Int
-        let task: Task<ProviderRPCClientBox, Error>
+        let task: Task<StartupResult, Error>
     }
 
     private struct Closing {
@@ -77,6 +94,11 @@ actor ProviderManagementService: ProviderManaging {
     private var clientGeneration = 0
     private var isLoginInProgress = false
     private var activeLoginGeneration: Int?
+    /// Non-nil exactly when the current ready client was started with the
+    /// placeholder model-source key, naming the provider id that must be
+    /// masked in `parseProviders`. Reset whenever the client closes so the
+    /// next one starts fresh.
+    private var placeholderProviderID: String?
 
     init<Client: ProviderRPCClient>(
         executableURL: URL,
@@ -125,6 +147,12 @@ actor ProviderManagementService: ProviderManaging {
 
         let client = try await clientForRequest()
         _ = try await client.send(.login(providerID: providerID), timeout: .seconds(600))
+
+        // The profile now has real credentials and will boot on its own.
+        // Close the client so the next request starts a fresh one with no
+        // placeholder: a real login must not stay masked, and a stale
+        // placeholder key must never shadow the credentials just saved.
+        await closeClient()
     }
 
     func respond(requestID: String, body: [String: JSONValue]) async throws {
@@ -169,10 +197,28 @@ actor ProviderManagementService: ProviderManaging {
             let client = await clientFactory(configuration)
             do {
                 _ = try await client.start()
-                return client
+                return StartupResult(client: client, usedPlaceholder: false)
             } catch {
                 await client.shutdown()
-                throw error
+                let originalError = error
+
+                // Any start failure earns exactly one retry, with the
+                // placeholder model source merged in — no inspecting the
+                // error text, since OMP's refusal is the only case this can
+                // plausibly fix and every other failure just repeats.
+                var retryConfiguration = configuration
+                var environment = OmpProcessEnvironment.resolved()
+                environment[Self.placeholderEnvironmentKey] = Self.placeholderEnvironmentValue
+                retryConfiguration.environment = environment
+
+                let retryClient = await clientFactory(retryConfiguration)
+                do {
+                    _ = try await retryClient.start()
+                    return StartupResult(client: retryClient, usedPlaceholder: true)
+                } catch {
+                    await retryClient.shutdown()
+                    throw originalError
+                }
             }
         }
         return Startup(id: id, generation: generation, task: task)
@@ -180,7 +226,7 @@ actor ProviderManagementService: ProviderManaging {
 
     private func awaitStartup(_ startup: Startup) async throws -> ProviderRPCClientBox {
         do {
-            let client = try await startup.task.value
+            let result = try await startup.task.value
             guard startup.generation == clientGeneration else {
                 clearStarting(startup)
                 throw CancellationError()
@@ -190,11 +236,12 @@ actor ProviderManagementService: ProviderManaging {
             case .ready(let client):
                 return client
             case .starting(let current) where current.id == startup.id:
-                clientState = .ready(client)
-                startForwarding(events: client.events)
-                return client
+                clientState = .ready(result.client)
+                placeholderProviderID = result.usedPlaceholder ? Self.placeholderProviderID : nil
+                startForwarding(events: result.client.events)
+                return result.client
             case .idle, .starting:
-                await client.shutdown()
+                await result.client.shutdown()
                 throw CancellationError()
             case .closing:
                 throw CancellationError()
@@ -235,6 +282,7 @@ actor ProviderManagementService: ProviderManaging {
 
         clientGeneration += 1
         activeLoginGeneration = nil
+        placeholderProviderID = nil
         eventForwarder?.cancel()
         eventForwarder = nil
         let state = clientState
@@ -245,8 +293,8 @@ actor ProviderManagementService: ProviderManaging {
         case .starting(let startup):
             startup.task.cancel()
             let closing = Closing(id: UUID(), task: Task {
-                if case .success(let client) = await startup.task.result {
-                    await client.shutdown()
+                if case .success(let result) = await startup.task.result {
+                    await result.client.shutdown()
                 }
             })
             clientState = .closing(closing)
@@ -289,11 +337,15 @@ actor ProviderManagementService: ProviderManaging {
             else {
                 throw ProviderManagementServiceError.invalidProviderResponse
             }
+            // The placeholder key makes OMP report this provider as
+            // authenticated purely because the env var exists. Mask it back
+            // to false: the user genuinely has not logged in.
+            let isMasked = placeholderProviderID == id
             return ProviderLoginProvider(
                 id: id,
                 name: name,
                 isAvailable: isAvailable,
-                isAuthenticated: isAuthenticated)
+                isAuthenticated: isMasked ? false : isAuthenticated)
         }
     }
 }

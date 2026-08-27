@@ -16,6 +16,38 @@ private let providerListResponse = RpcResponse(
         ]),
     ])]))
 
+private let anthropicAuthenticatedResponse = RpcResponse(
+    id: "providers",
+    command: "get_login_providers",
+    success: true,
+    data: .object(["providers": .array([
+        .object([
+            "id": .string("anthropic"),
+            "name": .string("Anthropic"),
+            "available": .bool(true),
+            "authenticated": .bool(true),
+        ]),
+    ])]))
+
+private let mixedProviderListResponse = RpcResponse(
+    id: "providers",
+    command: "get_login_providers",
+    success: true,
+    data: .object(["providers": .array([
+        .object([
+            "id": .string("anthropic"),
+            "name": .string("Anthropic"),
+            "available": .bool(true),
+            "authenticated": .bool(true),
+        ]),
+        .object([
+            "id": .string("openai-codex"),
+            "name": .string("OpenAI Codex"),
+            "available": .bool(true),
+            "authenticated": .bool(true),
+        ]),
+    ])]))
+
 private let loginResponse = RpcResponse(
     id: "login",
     command: "login",
@@ -187,6 +219,10 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
 }
 
 @Test func providerServiceShutsDownAClientWhoseStartupFails() async {
+    // A start failure now earns exactly one retry (see
+    // providerServiceRetriesOnceWithAPlaceholderAfterAStartFailure), and the
+    // same fake client is reused for both attempts here, so both counts
+    // double relative to the pre-retry behavior.
     let fake = FakeProviderRPCClient(
         responses: [],
         startFailure: ProviderTestError.startFailed)
@@ -196,8 +232,118 @@ private let openURLFrame = RpcFrame.extensionUIRequest(ExtensionUIRequest(
 
     _ = await Task { try await service.providers() }.result
 
+    #expect(await fake.startCount == 2)
+    #expect(await fake.shutdownCount == 2)
+}
+
+@Test func providerServiceStartsWithoutAPlaceholderWhenTheFirstStartSucceeds() async throws {
+    let fake = FakeProviderRPCClient(responses: [providerListResponse])
+    let configurations = ConfigurationRecorder()
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { configuration in
+            await configurations.append(configuration)
+            return fake
+        })
+
+    _ = try await service.providers()
+
+    let recorded = await configurations.all
+    #expect(recorded.count == 1)
+    #expect(recorded[0].environment?["ANTHROPIC_API_KEY"] == nil)
     #expect(await fake.startCount == 1)
-    #expect(await fake.shutdownCount == 1)
+}
+
+@Test func providerServiceRetriesOnceWithAPlaceholderAfterAStartFailure() async throws {
+    let failing = FakeProviderRPCClient(responses: [], startFailure: .startFailed)
+    let succeeding = FakeProviderRPCClient(responses: [providerListResponse])
+    let pool = ProviderClientPool(clients: [failing, succeeding])
+    let configurations = ConfigurationRecorder()
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { configuration in
+            await configurations.append(configuration)
+            return await pool.next()
+        })
+
+    _ = try await service.providers()
+
+    let recorded = await configurations.all
+    #expect(recorded.count == 2)
+    #expect(recorded[0].environment?["ANTHROPIC_API_KEY"] == nil)
+    #expect(recorded[1].environment?["ANTHROPIC_API_KEY"] == "10x-onboarding-placeholder-not-a-real-key")
+    #expect(recorded[1].environment?["PATH"] != nil)
+    #expect(await failing.startCount == 1)
+    #expect(await failing.shutdownCount == 1)
+    #expect(await succeeding.startCount == 1)
+    #expect(await pool.callCount == 2)
+}
+
+@Test func providerServicePropagatesTheOriginalErrorWhenTheRetryAlsoFails() async {
+    let first = FakeProviderRPCClient(responses: [], startFailure: .startFailed)
+    let second = FakeProviderRPCClient(responses: [], startFailure: .retryFailed)
+    let pool = ProviderClientPool(clients: [first, second])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in await pool.next() })
+
+    let result = await Task { try await service.providers() }.result
+
+    switch result {
+    case .success:
+        Issue.record("expected the providers() call to fail")
+    case .failure(let error):
+        #expect(error as? ProviderTestError == .startFailed)
+    }
+    #expect(await pool.callCount == 2)
+    #expect(await first.startCount == 1)
+    #expect(await first.shutdownCount == 1)
+    #expect(await second.startCount == 1)
+    #expect(await second.shutdownCount == 1)
+}
+
+@Test func providerServiceMasksThePlaceholderProviderWhenActive() async throws {
+    let failing = FakeProviderRPCClient(responses: [], startFailure: .startFailed)
+    let succeeding = FakeProviderRPCClient(responses: [mixedProviderListResponse])
+    let pool = ProviderClientPool(clients: [failing, succeeding])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in await pool.next() })
+
+    let providers = try await service.providers()
+
+    let anthropic = try #require(providers.first { $0.id == "anthropic" })
+    #expect(anthropic.isAuthenticated == false)
+    let codex = try #require(providers.first { $0.id == "openai-codex" })
+    #expect(codex.isAuthenticated == true)
+}
+
+@Test func providerServiceDoesNotMaskAnthropicWhenThePlaceholderIsNotActive() async throws {
+    let fake = FakeProviderRPCClient(responses: [anthropicAuthenticatedResponse])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in fake })
+
+    let providers = try await service.providers()
+
+    let anthropic = try #require(providers.first { $0.id == "anthropic" })
+    #expect(anthropic.isAuthenticated == true)
+}
+
+@Test func providerServiceStartsAFreshClientAfterASuccessfulLogin() async throws {
+    let first = FakeProviderRPCClient(responses: [loginResponse])
+    let second = FakeProviderRPCClient(responses: [providerListResponse])
+    let pool = ProviderClientPool(clients: [first, second])
+    let service = ProviderManagementService(
+        executableURL: URL(fileURLWithPath: "/tmp/omp"),
+        clientFactory: { _ in await pool.next() })
+
+    try await service.login(providerID: "cursor", generation: 1)
+    _ = try await service.providers()
+
+    #expect(await pool.callCount == 2)
+    #expect(await first.shutdownCount == 1)
+    #expect(await second.startCount == 1)
 }
 
 @Test func providerServiceShutsDownACancelledSharedStartupOnlyOnce() async {
@@ -385,6 +531,7 @@ private actor ConfigurationRecorder {
     private var configurations: [RpcClientConfiguration] = []
 
     var first: RpcClientConfiguration? { configurations.first }
+    var all: [RpcClientConfiguration] { configurations }
 
     func append(_ configuration: RpcClientConfiguration) {
         configurations.append(configuration)
@@ -506,8 +653,9 @@ private actor FactoryGate {
     }
 }
 
-private enum ProviderTestError: Error {
+private enum ProviderTestError: Error, Equatable {
     case startFailed
+    case retryFailed
 }
 
 private actor StartupWaiterGate {
