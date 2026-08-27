@@ -36,8 +36,12 @@ end
 wordmark = app_group.new_file("App/Resources/10x-wordmark.svg")
 app.resources_build_phase.add_file_reference(wordmark)
 
-icon = app_group.new_file("App/Resources/AppIcon.icon")
-icon.last_known_file_type = "folder.iconcomposer.icon"
+# App/Resources/AppIcon.icon remains in the repo as the authoring source, but is NOT
+# a build resource. Icon Composer assets are versioned against the Xcode that wrote
+# them, and actool on every Xcode currently available to GitHub runners (up to 26.3)
+# crashes compiling one authored in 26.6. AppIcon.icns is exported from that same
+# .icon and carries all ten macOS sizes, so it builds on any toolchain.
+icon = app_group.new_file("App/Resources/AppIcon.icns")
 app.resources_build_phase.add_file_reference(icon)
 
 fonts = app_group.new_file("App/Resources/Fonts")
@@ -101,7 +105,6 @@ app.build_configurations.each do |configuration|
     "SWIFT_STRICT_CONCURRENCY" => "complete",
     "MACOSX_DEPLOYMENT_TARGET" => "15.0",
     "ENABLE_APP_SANDBOX" => "NO",
-    "ASSETCATALOG_COMPILER_APPICON_NAME" => "AppIcon",
     "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME" => "",
     "DEVELOPMENT_TEAM" => "345S42BKPY",
   })
