@@ -27,7 +27,10 @@ import Testing
 @Test func coalescedPublicationNeverExceedsTwentyPerSecond() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .milliseconds(50))
     _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
-    let collector = Task { await collectSnapshotDates(from: processor.snapshots) }
+    let observed = PublicationTally()
+    let collector = Task {
+        await collectSnapshotDates(from: processor.snapshots, tally: observed)
+    }
     let windowStart = Date()
     let windowEnd = windowStart.addingTimeInterval(1)
     var index = 0
@@ -39,13 +42,22 @@ import Testing
             """))
         try await Task.sleep(for: .milliseconds(10))
     }
+    // Wait for the publisher rather than assuming it got scheduled. Its timer
+    // ticks every 50ms, but on a loaded machine it can be starved past the
+    // sampling window, and stop() does not flush — which left this test
+    // asserting a rate over zero publications.
+    await observed.waitForFirstPublication()
     await processor.stop()
 
     let publicationDates = await collector.value
     let inWindow = publicationDates.filter { date in
         date >= windowStart && date < windowEnd
     }
-    #expect(!inWindow.isEmpty)
+    // Guards against a vacuous pass. Deliberately not `inWindow`: this test is
+    // about the ceiling, and on a loaded machine the publisher can be starved
+    // until just past windowEnd, which empties the window without saying
+    // anything about the rate.
+    #expect(!publicationDates.isEmpty)
     #expect(inWindow.count <= 20)
     #expect(index > 0)
 }
@@ -267,12 +279,31 @@ private func collectSnapshots(from stream: AsyncStream<TranscriptSnapshot>) asyn
     return snapshots
 }
 
-private func collectSnapshotDates(from stream: AsyncStream<TranscriptSnapshot>) async -> [Date] {
+private func collectSnapshotDates(
+    from stream: AsyncStream<TranscriptSnapshot>,
+    tally: PublicationTally? = nil
+) async -> [Date] {
     var dates: [Date] = []
     for await _ in stream {
         dates.append(Date())
+        await tally?.record()
     }
     return dates
+}
+
+/// Lets the rate test observe that the publisher has run at least once, which
+/// it cannot see from the collector task's return value until the stream ends.
+private actor PublicationTally {
+    private var count = 0
+
+    func record() { count += 1 }
+
+    func waitForFirstPublication(timeout: Duration = .seconds(30)) async {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while count == 0, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
 }
 
 private func collectControlLabels(from stream: AsyncStream<RpcFrame>) async -> [String] {

@@ -175,7 +175,7 @@ import OmpKit
     let session = try #require(model.sessions.first)
     model.route = .session(session.path)
 
-    await model.archiveSession(session)
+    await model.archiveCurrentSession()
 
     #expect(model.route == .newSession)
     #expect(model.activeSession == nil)
@@ -242,9 +242,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let manager = try #require(model.processManager)
     #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
     #expect(await manager.handle(for: "/tmp/fake.jsonl") != nil)
@@ -272,8 +270,8 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.providerActivityCounts["test"] != 1 {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the background turn to start") {
+        model.providerActivityCounts["test"] == 1
     }
 
     #expect(model.providerActivityCounts["test"] == 1)
@@ -282,8 +280,8 @@ import OmpKit
     #expect(model.route == .newSession)
     #expect(model.providerActivityCounts["test"] == 1)
 
-    for _ in 0..<150 where model.providerActivityCounts["test"] != nil {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the background turn to finish") {
+        model.providerActivityCounts["test"] == nil
     }
     #expect(model.providerActivityCounts["test"] == nil)
     if let manager = model.processManager {
@@ -306,9 +304,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
     let original = try #require(model.activeSession)
 
@@ -404,8 +400,8 @@ import OmpKit
 
     model.openSession(metadata)
     let failed = try #require(model.activeSession)
-    for _ in 0..<100 where failed.sessionPath != nil || !isFailed(failed.runtimeState) {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the session to report its failure") {
+        failed.sessionPath == nil && isFailed(failed.runtimeState)
     }
     #expect(failed.sessionPath == nil)
     #expect(isFailed(failed.runtimeState))
@@ -434,21 +430,17 @@ import OmpKit
         sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
     await model.bootstrap()
     model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
-    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let original = try #require(model.activeSession)
     let manager = try #require(model.processManager)
-    for _ in 0..<100 where original.runtimeState != .streaming {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the session to start streaming") {
+        original.runtimeState == .streaming
     }
 
     #expect(original.runtimeState == .streaming)
 
     model.openNewSession()
-    for _ in 0..<100 where !original.isRecoveryPresented {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitUntil("recovery to be presented") { original.isRecoveryPresented }
     let isStopped = switch original.runtimeState {
     case .stopped:
         true
@@ -504,20 +496,20 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let manager = try #require(model.processManager)
     let metadata = navigationMetadata("/tmp/fake.jsonl")
-    let started = ContinuousClock.now
 
     let mutation = Task { await model.archiveSession(metadata) }
-    for _ in 0..<100 where !model.isSessionMutationInFlight {
-        try await Task.sleep(for: .milliseconds(5))
+    await waitUntil("the mutation to take the session lock") {
+        model.isSessionMutationInFlight
     }
 
+    // The detach has to land before the close, and this pair proves exactly
+    // that without timing the machine: archiveSession only returns once the
+    // child is closed, so a mutation still in flight cannot have finished
+    // closing — yet the session is already detached.
     #expect(model.isSessionMutationInFlight)
-    #expect(started.duration(to: .now) < .milliseconds(500))
     #expect(model.activeSession == nil)
     #expect(model.route == .newSession)
     model.openSession(navigationMetadata("/tmp/other.jsonl"))
@@ -535,6 +527,20 @@ import OmpKit
     model.openSettings()
     #expect(model.route == .settings)
     await manager.closeAll()
+}
+
+/// Waits until the model would hand back the *same* controller for `path`.
+///
+/// Deliberately not `activeSession?.sessionPath`: SessionController sets that
+/// partway through `openNew` and then keeps awaiting (state, history, messages,
+/// subscription), while AppModel indexes the path for reuse only once `openNew`
+/// returns. A test that waits on the path alone can act inside that window and
+/// get a second controller — and a second child — for one session.
+@MainActor
+private func waitForManagedSession(_ path: String, in model: AppModel) async {
+    await waitUntil("session \(path) to be registered for reuse") {
+        model.managedController(for: path) != nil
+    }
 }
 
 @MainActor
@@ -1114,9 +1120,7 @@ private actor StubAppComposerDefaults: ComposerDefaultPersisting {
             databaseURL: directory.appending(path: "SearchIndex-v1.sqlite"))))
 
     model.openSearch()
-    for _ in 0..<40 where model.sessions.isEmpty {
-        try await Task.sleep(for: .milliseconds(10))
-    }
+    await waitUntil("the session list to load") { !model.sessions.isEmpty }
 
     #expect(model.isSearchPresented)
     #expect(model.sessions.map(\.title) == ["Open search refresh"])

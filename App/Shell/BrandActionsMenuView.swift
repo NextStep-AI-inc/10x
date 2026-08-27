@@ -109,27 +109,6 @@ struct BrandActionsMenuView: View {
     }
 }
 
-struct BrandActionsKeyboardShortcuts: View {
-    let model: AppModel
-
-    var body: some View {
-        ZStack {
-            Button(action: model.openSearch) { EmptyView() }
-                .keyboardShortcut("k", modifiers: .command)
-                .accessibilityHidden(true)
-            Button(action: model.openNewSession) { EmptyView() }
-                .keyboardShortcut("n", modifiers: .command)
-                .accessibilityHidden(true)
-            Button { model.openSettings() } label: { EmptyView() }
-                .keyboardShortcut(",", modifiers: .command)
-                .accessibilityHidden(true)
-        }
-        .frame(width: 0, height: 0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-}
-
 private struct BrandActionItem: Identifiable {
     let id: String
     let title: String

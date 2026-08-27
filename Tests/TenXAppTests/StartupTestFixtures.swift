@@ -115,15 +115,41 @@ private actor ControlledStartupTimeout {
     }
 }
 
+/// Polls until `predicate` holds, bounded by a wall-clock deadline.
+///
+/// Deadline-based rather than a fixed iteration count on purpose. The suite
+/// runs its ~500 tests in parallel and dozens of them spawn a `fake_server.py`
+/// child, so a loaded machine stretches every spawn and RPC handshake. A count
+/// of iterations encodes "how fast the machine was the day it was written",
+/// which is what made whichever tests happened to be scheduled together fail.
+///
+/// The ceiling is deliberately far longer than any wait should take: it exists
+/// to turn a genuine hang into a failure, not to police latency. Waiting costs
+/// nothing on the passing path, since the poll returns as soon as the predicate
+/// holds.
 @MainActor
-func waitForModelState(
+@discardableResult
+func waitUntil(
+    _ description: String,
+    timeout: Duration = .seconds(30),
+    sourceLocation: SourceLocation = #_sourceLocation,
     _ predicate: @escaping @MainActor () async -> Bool
-) async {
-    for _ in 0..<200 {
-        if await predicate() { return }
+) async -> Bool {
+    let deadline = ContinuousClock.now.advanced(by: timeout)
+    while ContinuousClock.now < deadline {
+        if await predicate() { return true }
         try? await ContinuousClock().sleep(for: .milliseconds(10))
     }
-    Issue.record("Timed out waiting for startup fixture state")
+    Issue.record("Timed out waiting for \(description)", sourceLocation: sourceLocation)
+    return false
+}
+
+@MainActor
+func waitForModelState(
+    sourceLocation: SourceLocation = #_sourceLocation,
+    _ predicate: @escaping @MainActor () async -> Bool
+) async {
+    await waitUntil("startup fixture state", sourceLocation: sourceLocation, predicate)
 }
 
 @MainActor
