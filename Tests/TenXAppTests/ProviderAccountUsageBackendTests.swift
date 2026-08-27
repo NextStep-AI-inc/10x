@@ -26,6 +26,26 @@ private func snapshot(_ json: String) throws -> OmpUsageSnapshot {
     #expect(accounts.allSatisfy { $0.availability == .available })
 }
 
+@Test func connectionOrderIsScopedToTheProvidersOwnReports() throws {
+    // A bug that indexes into the whole `reports` array (rather than that
+    // provider's own filtered reports) would pass every other fixture in
+    // this file, since they're all single-provider. This interleaves a
+    // second provider's report between two anthropic ones: a whole-array
+    // index would give the second anthropic account connectionOrder 2, not 1.
+    let parsed = try snapshot("""
+    {"generatedAt":1,"reports":[
+      {"provider":"anthropic","fetchedAt":1,"limits":[],"metadata":{"email":"first@example.com","accountId":"acc-1"}},
+      {"provider":"openai-codex","fetchedAt":1,"limits":[],"metadata":{"email":"codex@example.com","accountId":"acc-codex"}},
+      {"provider":"anthropic","fetchedAt":1,"limits":[],"metadata":{"email":"second@example.com","accountId":"acc-2"}}
+    ],"accountsWithoutUsage":[],"disabledCredentials":[]}
+    """)
+
+    let accounts = ProviderAccountUsageBackend.accounts(from: parsed, providerID: "anthropic")
+
+    #expect(accounts.map(\.displayLabel) == ["first@example.com", "second@example.com"])
+    #expect(accounts.map(\.connectionOrder) == [0, 1])
+}
+
 @Test func duplicateLabelsAreDistinguishedByDetailLabel() throws {
     let parsed = try snapshot("""
     {"generatedAt":1,"reports":[

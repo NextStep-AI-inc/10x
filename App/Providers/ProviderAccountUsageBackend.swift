@@ -19,12 +19,18 @@ enum ProviderAccountUsageBackend {
             let metadata = report.metadata
             let email = nonEmptyString(metadata?["email"])
             let accountID = nonEmptyString(metadata?["accountId"])
+            // `accountRef(for:)` already guarantees one of these is present
+            // (it derives from the same two fields), so this never actually
+            // returns nil — but that invariant isn't visible to the compiler
+            // across the function boundary, and a real, if unreachable, skip
+            // beats fabricating a providerID-as-label placeholder.
+            guard let displayLabel = email ?? accountID else { return nil }
             let orgName = nonEmptyString(metadata?["orgName"])
             let planType = nonEmptyString(metadata?["planType"])
             return ProviderAccountSummary(
                 providerID: providerID,
                 accountRef: ref,
-                displayLabel: email ?? accountID ?? providerID,
+                displayLabel: displayLabel,
                 detailLabel: orgName ?? planType,
                 connectionOrder: connectionOrder,
                 availability: availability(
@@ -45,7 +51,7 @@ enum ProviderAccountUsageBackend {
                     id: limit.id,
                     label: limit.label,
                     sourceIndex: sourceIndex,
-                    remainingFraction: limit.amount.remainingFraction,
+                    remainingFraction: ProviderUsagePresentation.remainingFraction(limit.amount),
                     resetsAt: limit.window?.resetsAt.map(date(fromMilliseconds:)),
                     status: limit.status)
             }
