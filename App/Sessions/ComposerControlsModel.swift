@@ -143,24 +143,41 @@ final class ComposerControlsModel {
                 current: thinkingLevel,
                 for: model)
             applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
+            // Two RPCs, two failure domains: each rolls back only what it
+            // actually invalidated.
             do {
                 try await activeSession.setModel(provider: model.provider, modelID: model.modelID)
-                // OMP's model echo carries provider and id only, so a reconciled
-                // level would never reach the runtime. Send it, and only when it
-                // actually moved — a same-value RPC per switch is waste.
-                if thinkingLevel != priorThinking {
-                    try await activeSession.setThinkingLevel(thinkingLevel)
-                }
-                recordRecent(model)
-                errorMessage = nil
             } catch {
+                // Nothing reached the runtime, so the whole optimistic switch goes back.
                 selectedModel = prior
                 thinkingLevel = priorThinking
                 applyFastModeVisibility(preservingEnabled: priorFastEnabled)
                 errorMessage = Self.sanitizedMessage(
                     from: error,
                     fallback: "Couldn’t update the model.")
+                return
             }
+            recordRecent(model)
+
+            // OMP's model echo carries provider and id only, so a reconciled
+            // level would never reach the runtime. Send it, and only when it
+            // actually moved — a same-value RPC per switch is waste.
+            if thinkingLevel != priorThinking {
+                do {
+                    try await activeSession.setThinkingLevel(thinkingLevel)
+                } catch {
+                    // The switch already landed: the runtime IS on the new model,
+                    // so reverting the chip would misname what the user is talking
+                    // to. Only the level is untrue — revert that alone, and leave
+                    // Fast mode computed from the new model.
+                    thinkingLevel = priorThinking
+                    errorMessage = Self.sanitizedMessage(
+                        from: error,
+                        fallback: "Couldn’t update the thinking level.")
+                    return
+                }
+            }
+            errorMessage = nil
         }
     }
 

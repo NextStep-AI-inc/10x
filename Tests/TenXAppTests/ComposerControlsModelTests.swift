@@ -26,6 +26,17 @@ private let cursorModel = ComposerModelInfo(
     thinkingEfforts: [],
     requiresEffort: false)
 
+/// Requires an effort and has no service-tier family, so Fast mode is unavailable
+/// — the pair (anthropicOpus, this) discriminates which model Fast mode is
+/// computed from after a switch.
+private let fireworksRequiredEffort = ComposerModelInfo(
+    modelID: "kimi-k2-thinking",
+    name: "Kimi K2 Thinking",
+    provider: "fireworks",
+    api: "openai-completions",
+    thinkingEfforts: ["low", "medium", "high"],
+    requiresEffort: true)
+
 private let codexRequiredEffort = ComposerModelInfo(
     modelID: "gpt-5.2-codex",
     name: "GPT-5.2 Codex",
@@ -529,29 +540,39 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     #expect(await defaults.modelCalls.isEmpty)
 }
 
+/// The two RPCs are two failure domains. Once `setModel` lands the runtime really
+/// is on the new model, so reverting the chip would misname what the user is
+/// talking to — only the level it failed to set may be rolled back.
 @MainActor
-@Test func aFailedThinkingReconciliationRollsBackTheModelSwitchToo() async {
+@Test func aFailedThinkingReconciliationKeepsTheModelTheRuntimeIsRunning() async {
     let session = FakeComposerSessionController()
-    session.setThinkingError = FakeComposerError.rpcFailed
+    // Long enough to trip the sanitizer's fallback, so the assertion below reads
+    // the copy the user is actually shown.
+    session.setThinkingError = FakeComposerVerboseError()
     let model = ComposerControlsModel(
         catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
-            models: [anthropicOpus, codexRequiredEffort],
+            models: [anthropicOpus, fireworksRequiredEffort],
             selected: anthropicOpus,
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "fireworks"])
     model.attachActiveSession(session)
+    #expect(model.isFastModeVisible == true)
 
-    await model.selectModel(codexRequiredEffort, mode: .activeSession)
+    await model.selectModel(fireworksRequiredEffort, mode: .activeSession)
 
     #expect(session.setModelCalls.count == 1)
     #expect(session.setThinkingCalls == ["medium"])
-    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
+    // The switch landed, so the chip keeps naming the model the runtime runs…
+    #expect(model.selectedModel?.modelID == "kimi-k2-thinking")
+    // …Fast mode stays computed from that new model, not the abandoned old one…
+    #expect(model.isFastModeVisible == false)
+    // …and only the level that failed to send is rolled back.
     #expect(model.thinkingLevel == "auto")
-    #expect(model.errorMessage != nil)
+    #expect(model.errorMessage == "Couldn’t update the thinking level.")
 }
 
 // MARK: - Fakes
@@ -625,4 +646,12 @@ private final class FakeComposerSessionController: ComposerSessionControlling {
 private enum FakeComposerError: Error {
     case persistFailed
     case rpcFailed
+}
+
+/// Raw OMP failure text too long for the footer, so `sanitizedMessage` falls back
+/// to the app's own copy and a test can assert which message the user is shown.
+private struct FakeComposerVerboseError: LocalizedError {
+    var errorDescription: String? {
+        String(repeating: "omp reported a transport failure. ", count: 8)
+    }
 }

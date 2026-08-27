@@ -116,9 +116,22 @@ selection while `selectModel` is still awaiting, so `applyLiveSelection`'s
 anyway — never a thinking level. So after `setModel` succeeds, `selectModel`
 compares the reconciled level against the level held before the switch and, when
 they differ, issues one `setThinkingLevel` with the reconciled value. A switch
-that leaves the level alone issues none. Either call throwing rolls back the
-model, the level, and the Fast-mode intent together, the same way a failed
-`setModel` already does.
+that leaves the level alone issues none.
+
+The two calls are two failure domains, and each rolls back only what it
+invalidated:
+
+- `setModel` throws — nothing reached the runtime, so the whole optimistic switch
+  reverts: model, level, and Fast-mode intent, under `Couldn’t update the model.`
+- `setModel` succeeds and `setThinkingLevel` throws — the runtime is genuinely on
+  the new model, so the selection stays switched and Fast mode stays computed from
+  that new model. Only the level reverts, under `Couldn’t update the thinking
+  level.`
+
+Rolling the model back in the second case would leave the chip naming a model the
+session is not running, under an error claiming a model update failed that in fact
+succeeded — and nothing would self-correct, since `applyLiveSelection` drops both
+echoes while `isMutating` is still true.
 
 ## Fast mode
 
