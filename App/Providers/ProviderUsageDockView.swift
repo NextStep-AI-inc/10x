@@ -297,7 +297,6 @@ struct ProviderUsageDockView: View {
         }
         .padding(16)
         .frame(width: 360)
-        .frame(maxHeight: 440, alignment: .bottom)
         .background(TenXPalette.color(TenXPalette.canvasHex))
         .overlay {
             Rectangle()
@@ -305,6 +304,7 @@ struct ProviderUsageDockView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture {}
+        .frame(maxHeight: 440, alignment: .bottom)
     }
 
     private func providerDetails(_ provider: ProviderUsageProvider) -> some View {
@@ -385,39 +385,52 @@ struct ProviderUsageDockView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    accountSection(account, provider: provider)
+            ViewThatFits(in: .vertical) {
+                accountDetailsContent(provider: provider, account: account)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                    HStack(spacing: 8) {
-                        if provider.showsAccountSwitch {
-                            Button("Use this account") {
-                                interaction.beginConfirmation(
-                                    satisfaction: satisfaction(provider: provider, account: account),
-                                    availability: availability(provider: provider))
-                            }
-                            .buttonStyle(GhostActionStyle())
-                            .disabled(!canSwitch(provider: provider, account: account)
-                                || !hasAvailableUnsatisfiedScope(
-                                    provider: provider,
-                                    account: account))
-                        }
-
-                        Button("Manage accounts") {
-                            interaction.openSessionDidChange()
-                            onManageAccounts(provider.id)
-                        }
-                        .buttonStyle(GhostActionStyle())
-                    }
+                ScrollView {
+                    accountDetailsContent(provider: provider, account: account)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .scrollIndicators(.hidden)
             }
-            .scrollIndicators(.hidden)
+            .fixedSize(horizontal: false, vertical: true)
 
             Button("Close usage details", action: collapse)
                 .buttonStyle(GhostActionStyle())
                 .accessibilityLabel("Close usage details")
         }
+    }
+
+    private func accountDetailsContent(
+        provider: ProviderUsageProvider,
+        account: ProviderUsageAccount
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            accountSection(account, provider: provider)
+
+            HStack(spacing: 8) {
+                if provider.showsAccountSwitch {
+                    Button("Use this account") {
+                        interaction.beginConfirmation(
+                            satisfaction: satisfaction(provider: provider, account: account),
+                            availability: availability(provider: provider))
+                    }
+                    .buttonStyle(GhostActionStyle())
+                    .disabled(!canSwitch(provider: provider, account: account)
+                        || !hasAvailableUnsatisfiedScope(
+                            provider: provider,
+                            account: account))
+                }
+
+                Button("Manage accounts") {
+                    interaction.openSessionDidChange()
+                    onManageAccounts(provider.id)
+                }
+                .buttonStyle(GhostActionStyle())
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

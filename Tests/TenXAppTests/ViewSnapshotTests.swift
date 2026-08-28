@@ -969,6 +969,27 @@ try assertSnapshot(
 }
 
 @MainActor
+@Test func shortAccountUsagePanelDoesNotStretchToItsMaximumHeight() throws {
+    let size = CGSize(width: 430, height: 460)
+    let bitmap = try #require(renderSnapshotBitmap(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            initiallyInspectedAccountID: "anthropic:work")
+            .environment(\._accessibilityReduceMotion, true),
+        size: size))
+    let scale = CGFloat(bitmap.pixelsWide) / size.width
+    let panelLeftEdge = Int((size.width - 360) * scale)
+    let maximumShortPanelHeight = Int(380 * scale)
+
+    #expect(longestNonWhiteVerticalRun(
+        in: bitmap,
+        nearX: panelLeftEdge) < maximumShortPanelHeight)
+}
+
+@MainActor
 @Test func providerAccountSwitchConfirmationSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
@@ -981,6 +1002,34 @@ try assertSnapshot(
             .environment(\._accessibilityReduceMotion, true),
         name: "provider-account-switch-confirmation",
         size: CGSize(width: 430, height: 460))
+}
+
+private func longestNonWhiteVerticalRun(
+    in bitmap: NSBitmapImageRep,
+    nearX expectedX: Int
+) -> Int {
+    let xRange = max(0, expectedX - 2)...min(bitmap.pixelsWide - 1, expectedX + 2)
+    return xRange.map { x in
+        var longestRun = 0
+        var currentRun = 0
+        for y in 0..<bitmap.pixelsHigh {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+                currentRun = 0
+                continue
+            }
+            let darkestComponent = min(
+                color.redComponent,
+                min(color.greenComponent, color.blueComponent))
+            let isNonWhite = darkestComponent < 0.97
+            if isNonWhite {
+                currentRun += 1
+                longestRun = max(longestRun, currentRun)
+            } else {
+                currentRun = 0
+            }
+        }
+        return longestRun
+    }.max() ?? 0
 }
 
 @MainActor

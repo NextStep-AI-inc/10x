@@ -172,6 +172,13 @@ struct ProviderAccountStackGeometry: Equatable {
     /// winner) rather than computed here from this item's own hover/focus
     /// booleans alone — this item's size depends on whether a *different*
     /// item is raised, which this function has no way to know on its own.
+    func isVisible(
+        _ item: ProviderAccountStackItemGeometry,
+        isExpanded: Bool
+    ) -> Bool {
+        isExpanded || item.isForeground
+    }
+
     func visualState(
         for item: ProviderAccountStackItemGeometry,
         isRaised: Bool,
@@ -370,6 +377,7 @@ struct ProviderAccountStackView: View {
         let isRaised = account.id == raisedAccountID
         let isAnyItemRaised = raisedAccountID != nil
         let showsFocusOutline = account.id == effectiveFocusID
+        let isVisible = geometry.isVisible(item, isExpanded: isGroupExpanded)
         let visualState = geometry.visualState(
             for: item,
             isRaised: isRaised,
@@ -465,6 +473,8 @@ struct ProviderAccountStackView: View {
         }
         .offset(y: -totalOffset)
         .zIndex(visualState.zIndex)
+        .opacity(isVisible ? 1 : 0)
+        .allowsHitTesting(isVisible)
         .animation(
             visualState.animationDuration.map { .easeInOut(duration: $0) },
             value: visualState)

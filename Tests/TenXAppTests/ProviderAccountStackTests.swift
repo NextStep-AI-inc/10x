@@ -3,6 +3,19 @@ import Testing
 @testable import TenXApp
 
 @Suite struct ProviderAccountStackTests {
+@Test func collapsedStackShowsOnlyTheForegroundWheelUntilExpanded() throws {
+    let geometry = ProviderAccountStackGeometry(
+        accountIDs: ["account-a", "account-b", "account-c"],
+        foregroundAccountID: "account-b",
+        wheelDiameter: 54)
+    let foreground = try #require(geometry.items.first(where: { $0.accountID == "account-b" }))
+    let background = try #require(geometry.items.first(where: { $0.accountID == "account-a" }))
+
+    #expect(geometry.isVisible(foreground, isExpanded: false))
+    #expect(!geometry.isVisible(background, isExpanded: false))
+    #expect(geometry.isVisible(background, isExpanded: true))
+}
+
 @Test func foregroundAccountKeepsTheRegularWheelWhileSiblingsFanUpwardAtSmallerSize() throws {
     let geometry = ProviderAccountStackGeometry(
         accountIDs: ["account-a", "account-b", "account-c"],
