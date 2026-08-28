@@ -37,11 +37,17 @@ enum StartupSignalMotion {
         guard !reduceMotion else { return 0 }
         return CGFloat((elapsed / 1.8).truncatingRemainder(dividingBy: 1))
     }
+
+    static func determinateTrim(_ progress: Double) -> CGFloat {
+        guard progress.isFinite else { return progress.isNaN ? 0 : 1 }
+        return CGFloat(min(max(progress, 0), 1))
+    }
 }
 
 struct StartupSignalView: View {
     let isAnimating: Bool
     let isFailed: Bool
+    var progress: Double?
 
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.startupSignalReduceMotionOverride) private var reduceMotionOverride
@@ -50,7 +56,8 @@ struct StartupSignalView: View {
 
     var body: some View {
         let reduceMotion = reduceMotionOverride ?? systemReduceMotion
-        let shouldAnimate = isAnimating && !reduceMotion && !isFailed
+        let isDeterminate = progress != nil
+        let shouldAnimate = isAnimating && !reduceMotion && !isFailed && !isDeterminate
 
         TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !shouldAnimate)) { context in
             let liveElapsed = context.date.timeIntervalSince(startDate)
@@ -58,7 +65,7 @@ struct StartupSignalView: View {
             let amplitude = StartupSignalMotion.amplitude(
                 elapsed: reduceMotion ? 0 : elapsed,
                 reduceMotion: reduceMotion)
-            let progress = StartupSignalMotion.progress(
+            let travel = StartupSignalMotion.progress(
                 elapsed: reduceMotion ? 0 : elapsed,
                 reduceMotion: reduceMotion)
 
@@ -69,8 +76,14 @@ struct StartupSignalView: View {
                             ? TenXPalette.color(TenXPalette.signalRedHex)
                             : TenXPalette.color(TenXPalette.nearBlackHex),
                         style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                travelingSegment(amplitude: amplitude, progress: progress)
-                    .opacity(isFailed ? 0 : 1)
+                Group {
+                    if let progress {
+                        determinateFill(amplitude: amplitude, progress: progress)
+                    } else if isAnimating {
+                        travelingSegment(amplitude: amplitude, progress: travel)
+                    }
+                }
+                .opacity(isFailed ? 0 : 1)
             }
             .animation(.easeOut(duration: 0.35), value: isFailed)
             .onChange(of: shouldAnimate, initial: true) { _, newValue in
@@ -87,6 +100,16 @@ struct StartupSignalView: View {
             }
             .accessibilityHidden(true)
         }
+    }
+
+    @ViewBuilder
+    private func determinateFill(amplitude: CGFloat, progress: Double) -> some View {
+        StartupSignalShape(amplitude: amplitude)
+            .trim(from: 0, to: StartupSignalMotion.determinateTrim(progress))
+            .stroke(
+                TenXPalette.color(TenXPalette.cyanHex),
+                style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+            .animation(.easeOut(duration: 0.25), value: progress)
     }
 
     @ViewBuilder

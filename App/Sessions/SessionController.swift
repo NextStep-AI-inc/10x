@@ -10,7 +10,16 @@ import UserNotifications
 final class SessionController: ComposerSessionControlling, ProviderAccountSession {
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
     private(set) var items: [TranscriptItem] = []
-    private(set) var runtimeState: SessionRuntimeState = .loading
+    private(set) var runtimeState: SessionRuntimeState = .loading {
+        didSet {
+            guard runtimeState != oldValue else { return }
+            // One place, so every path that ends a run also stops the clock.
+            turnStartedAt = runtimeState == .streaming ? (turnStartedAt ?? Date()) : nil
+        }
+    }
+
+    /// When the current run began, for the working indicator's elapsed time.
+    private(set) var turnStartedAt: Date?
     private(set) var title = "Untitled session"
     private(set) var headerMetadata = SessionHeaderMetadata(
         branch: "",
@@ -35,12 +44,14 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private(set) var activeProviderAccounts: [String: String] = [:]
     private(set) var providerAccountSequence = 0
     var draft = ""
+    var attachments: [ComposerAttachment] = []
     var streamingBehavior: StreamingBehavior? = .steer
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
     private weak var accountCoordinator: ProviderAccountCoordinator?
     private let accountChannelRegistry: ProviderAccountChannelRegistry?
+    private let titleGenerator: OmpSessionTitleGenerator?
     private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
@@ -51,11 +62,13 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private var snapshotTask: Task<Void, Never>?
     private var controlTask: Task<Void, Never>?
     private var reconciliationTask: Task<Void, Never>?
+    private var titleGenerationTask: Task<Void, Never>?
     private var openingTask: Task<SessionProcessManager.Handle, any Error>?
     private var openingTaskToken: UInt64?
     private var openingCloseTask: Task<Void, Never>?
     private var reconciliationGeneration: UInt64 = 0
     private var pipelineGeneration: UInt64 = 0
+    private var titleGenerationGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
     /// This controller's one write handle onto the marker-filtered frame
@@ -68,6 +81,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     /// `.unavailable` rather than hanging. See
     /// `forwardToAccountChannelIfMarked`, the sole producer.
     private var accountChannelContinuation: AsyncStream<RpcFrame>.Continuation?
+    @ObservationIgnored private var isSendInFlight = false
     @ObservationIgnored private weak var attachedComposerControls: ComposerControlsModel?
     private static let transcriptLog = OSLog(
         subsystem: Bundle.main.bundleIdentifier ?? "TenXApp",
@@ -84,12 +98,14 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         id: UUID = UUID(),
         activityRegistry: SessionActivityRegistry? = nil,
         accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
+        titleGenerator: OmpSessionTitleGenerator? = nil,
         historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
     ) {
         self.processManager = processManager
         self.id = id
         self.accountCoordinator = activityRegistry
         self.accountChannelRegistry = accountChannelRegistry
+        self.titleGenerator = titleGenerator
         self.historyLoader = historyLoader
         activityRegistry?.register(self)
     }
@@ -108,6 +124,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         id: UUID = UUID(),
         providerID: String? = nil,
         activityRegistry: SessionActivityRegistry? = nil,
+        titleGenerator: OmpSessionTitleGenerator? = nil,
         historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
     ) {
         self.processManager = processManager
@@ -126,6 +143,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         // initializer has no parameter for one, unlike the live initializer
         // above.
         self.accountChannelRegistry = nil
+        self.titleGenerator = titleGenerator
         activityRegistry?.register(self)
     }
 
@@ -331,10 +349,9 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     }
 
     func sendPrompt() async {
-        guard let handle,
-              isComposerAvailable,
-              !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachments.isEmpty
+        guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return }
         guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return }
         defer { accountCoordinator?.endManagedTurn(sessionID: id) }
 
@@ -347,18 +364,81 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         }
 
         let message = draft
+        let staged = attachments
         let context = currentPipelineContext()
+        isSendInFlight = true
+        defer { isSendInFlight = false }
+
+        // The composer answers the keystroke, not the round trip: the draft
+        // clears and the run reads as started before omp has replied. The
+        // processor is moved first so a snapshot already in flight cannot
+        // publish the old idle state back over this one.
+        draft = ""
+        attachments = []
+        runtimeState = .streaming
+        reportActivity()
+        await context.processor?.setRuntimeState(.streaming)
+        guard isCurrent(context) else { return }
+
         do {
             _ = try await handle.client.send(.prompt(
                 message: message,
+                images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
             guard isCurrent(context) else { return }
-            draft = ""
-            runtimeState = .streaming
-            reportActivity()
-            await context.processor?.setRuntimeState(.streaming)
+            startTitleGenerationIfNeeded(
+                prompt: message,
+                behavior: behavior,
+                handle: handle,
+                context: context)
         } catch {
+            // Nothing reached omp, so the text is still the user's to send.
+            if isCurrent(context), draft.isEmpty {
+                draft = message
+                attachments = staged
+            }
             fail(error, function: "sendPrompt", context: context)
+        }
+    }
+
+    private func startTitleGenerationIfNeeded(
+        prompt: String,
+        behavior: StreamingBehavior?,
+        handle: SessionProcessManager.Handle,
+        context: PipelineContext
+    ) {
+        guard behavior == nil,
+              title == "New session" || title == "Untitled session",
+              titleGenerationTask == nil,
+              let titleGenerator,
+              let provider = liveComposerSelection.provider,
+              let modelID = liveComposerSelection.modelID
+        else { return }
+
+        titleGenerationGeneration &+= 1
+        let generation = titleGenerationGeneration
+        titleGenerationTask = Task { [weak self, titleGenerator] in
+            let generatedTitle = await titleGenerator.generate(
+                prompt: prompt,
+                provider: provider,
+                modelID: modelID)
+            guard let self else { return }
+            defer {
+                if self.titleGenerationGeneration == generation {
+                    self.titleGenerationTask = nil
+                }
+            }
+            guard let generatedTitle,
+                  self.isCurrent(context),
+                  self.title == "New session" || self.title == "Untitled session"
+            else { return }
+            do {
+                _ = try await handle.client.send(.setSessionName(generatedTitle))
+                guard self.isCurrent(context) else { return }
+                self.title = generatedTitle
+            } catch {
+                return
+            }
         }
     }
 
@@ -651,12 +731,15 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         snapshotTask?.cancel()
         controlTask?.cancel()
         reconciliationTask?.cancel()
+        titleGenerationTask?.cancel()
+        titleGenerationGeneration &+= 1
         openingTask = nil
         openingTaskToken = nil
         eventTask = nil
         snapshotTask = nil
         controlTask = nil
         reconciliationTask = nil
+        titleGenerationTask = nil
         if previousOpeningCloseTask != nil || openingTaskToClose != nil {
             openingCloseTask = Task { [processManager] in
                 await previousOpeningCloseTask?.value

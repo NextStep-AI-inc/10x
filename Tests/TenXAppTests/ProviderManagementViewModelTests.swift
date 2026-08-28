@@ -1229,6 +1229,145 @@ import Testing
     #expect(await usage.loadCount == 2)
 }
 
+// MARK: - loginMessageIsError
+
+// `loginMessage` carries both genuine failures and benign status updates.
+// `loginMessageIsError` is the severity channel the view styles on, so every
+// site that sets or clears `loginMessage` must keep it in sync.
+
+@MainActor
+@Test func providerModelMarksAConnectionFailureAsAnErrorAndClearsSeverityOnCancel() async throws {
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginError: .loginFailed)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+
+    await model.login(provider)
+
+    #expect(model.loginMessage == "Couldn’t connect to Cursor.")
+    #expect(model.loginMessageIsError == true)
+
+    await model.cancelLogin()
+
+    #expect(model.loginMessage == nil)
+    #expect(model.loginMessageIsError == false)
+}
+
+@MainActor
+@Test func providerModelMarksARespondFailureAsAnError() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], respondError: .respondFailed, loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
+    await service.emit(ExtensionUIRequest(
+        id: "input",
+        method: "input",
+        payload: .object(["title": .string("Paste the code")])))
+    await waitForModelState { model.sheetRequest?.id == "input" }
+    let request = try #require(model.sheetRequest)
+
+    await model.respond(to: request, with: .value("confirmed-code"))
+
+    #expect(model.loginMessage == "Couldn’t send the response.")
+    #expect(model.loginMessageIsError == true)
+
+    // A failed response is terminal: OMP is still blocked waiting for it, so
+    // the login is torn down rather than left spinning. Without this the row
+    // resolves to .cancel on `activeLoginProviderID` and renders "Connecting…"
+    // over the error, which is never shown.
+    #expect(model.activeLoginProviderID == nil)
+    #expect(model.sheetRequest == nil)
+    #expect(model.loginMessageProviderID == "cursor")
+    #expect(await service.cancelCount == 1)
+    let row = ProviderConnectionRowPresentation.make(
+        provider: provider,
+        hasCredentialIssue: false,
+        activeLoginProviderID: model.activeLoginProviderID,
+        loginMessage: model.loginMessage,
+        loginMessageIsError: model.loginMessageIsError)
+    #expect(row.action == .retry)
+    #expect(row.status == "Couldn’t send the response.")
+
+    await loginGate.release()
+    await login.value
+}
+
+@MainActor
+@Test func providerModelMarksTheConnectingNotificationAsStatusNotError() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
+    await service.emit(ExtensionUIRequest(
+        id: "notice",
+        method: "notify",
+        payload: .object(["message": .string("Waiting for approval.")])))
+    await waitForModelState { model.loginMessage == "Connecting to Cursor." }
+
+    #expect(model.loginMessage == "Connecting to Cursor.")
+    #expect(model.loginMessageIsError == false)
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
+}
+
+@MainActor
+@Test func providerModelMarksConnectionNeedsAttentionAsStatusNotError() async {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+
+    // A provider absent from `model.providers`, so the notification
+    // handler's lookup misses and falls back to the generic message.
+    let ghost = ProviderLoginProvider(id: "ghost", name: "Ghost", isAvailable: true, isAuthenticated: false)
+    let login = Task { await model.login(ghost) }
+    await loginGate.waitForStart()
+    await service.emit(ExtensionUIRequest(
+        id: "notice",
+        method: "notify",
+        payload: .object(["message": .string("Waiting for approval.")])))
+    await waitForModelState { model.loginMessage != nil }
+
+    #expect(model.loginMessage == "Connection needs attention.")
+    #expect(model.loginMessageIsError == false)
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
+}
+
 final class MutableClock: Sendable {
     private let date: Mutex<Date>
 

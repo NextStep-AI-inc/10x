@@ -155,7 +155,7 @@ struct ProviderUsageDockView: View {
         providers: [ProviderUsageProvider],
         activeCounts: [String: Int],
         generatingCounts: [ProviderAccountKey: Int] = [:],
-        isForegroundGenerating: Bool,
+        isForegroundGenerating: Bool = false,
         compactLayout: ProviderUsageDockCompactLayout = .standalone,
         accountScopeSatisfaction: [ProviderAccountKey: ProviderAccountScopeSatisfaction] = [:],
         pendingRemovalAccounts: Set<ProviderAccountKey> = [],

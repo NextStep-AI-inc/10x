@@ -12,6 +12,9 @@ struct AppDependencies: Sendable {
     let makeProviderModel: @MainActor @Sendable (URL) -> ProviderManagementViewModel
     let makeComposerControls: @MainActor @Sendable (URL) -> ComposerControlsModel
     let makeProviderAccountCoordinator: @MainActor @Sendable () -> ProviderAccountCoordinator
+    let makeUpdateChecker: @MainActor @Sendable (
+        @escaping @MainActor () async -> Void) -> any UpdateChecking
+    let makeSessionTitleGenerator: @Sendable (URL) -> OmpSessionTitleGenerator?
 
     @MainActor
     init(
@@ -28,7 +31,10 @@ struct AppDependencies: Sendable {
         makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel,
         makeProviderAccountCoordinator: @escaping @MainActor @Sendable () -> ProviderAccountCoordinator = {
             ProviderAccountCoordinator()
-        }
+        },
+        makeUpdateChecker: (@MainActor @Sendable (
+            @escaping @MainActor () async -> Void) -> any UpdateChecking)? = nil,
+        makeSessionTitleGenerator: @escaping @Sendable (URL) -> OmpSessionTitleGenerator? = { _ in nil }
     ) {
         self.ompLocator = ompLocator
         self.sessionLibrary = sessionLibrary
@@ -43,6 +49,12 @@ struct AppDependencies: Sendable {
         self.makeProviderModel = makeProviderModel
         self.makeComposerControls = makeComposerControls
         self.makeProviderAccountCoordinator = makeProviderAccountCoordinator
+        self.makeUpdateChecker = makeUpdateChecker ?? { prepareForInstall in
+            let controller = UpdateController(prepareForInstall: prepareForInstall)
+            controller.start()
+            return controller
+        }
+        self.makeSessionTitleGenerator = makeSessionTitleGenerator
     }
 
     @MainActor static let live = AppDependencies(
@@ -77,5 +89,13 @@ struct AppDependencies: Sendable {
         makeProviderAccountCoordinator: {
             ProviderAccountCoordinator(
                 primaryStore: ProviderPrimaryPreferenceStore(defaults: .standard))
+        },
+        makeUpdateChecker: { prepareForInstall in
+            let controller = UpdateController(prepareForInstall: prepareForInstall)
+            controller.start()
+            return controller
+        },
+        makeSessionTitleGenerator: { executableURL in
+            OmpSessionTitleGenerator(executableURL: executableURL)
         })
 }

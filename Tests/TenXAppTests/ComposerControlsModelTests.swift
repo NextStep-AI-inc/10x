@@ -26,6 +26,32 @@ private let cursorModel = ComposerModelInfo(
     thinkingEfforts: [],
     requiresEffort: false)
 
+/// Requires an effort and has no service-tier family, so Fast mode is unavailable
+/// — the pair (anthropicOpus, this) discriminates which model Fast mode is
+/// computed from after a switch.
+private let fireworksRequiredEffort = ComposerModelInfo(
+    modelID: "kimi-k2-thinking",
+    name: "Kimi K2 Thinking",
+    provider: "fireworks",
+    api: "openai-completions",
+    thinkingEfforts: ["low", "medium", "high"],
+    requiresEffort: true)
+
+private let codexRequiredEffort = ComposerModelInfo(
+    modelID: "gpt-5.2-codex",
+    name: "GPT-5.2 Codex",
+    provider: "openai-codex",
+    api: "openai-codex-responses",
+    thinkingEfforts: ["low", "medium", "high"],
+    requiresEffort: true)
+
+@MainActor
+private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
+    let defaults = UserDefaults(suiteName: "tests.\(name)")!
+    defaults.removePersistentDomain(forName: "tests.\(name)")
+    return RecentModelStore(defaults: defaults, key: "recent-model-keys")
+}
+
 @MainActor
 @Test func refreshFiltersToAuthenticatedProvidersAndSeedsSelection() async {
     let catalog = FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
@@ -34,7 +60,8 @@ private let cursorModel = ComposerModelInfo(
         thinkingLevel: "high",
         fastModeEnabled: true,
         fastModeActive: false))
-    let model = ComposerControlsModel(catalog: catalog, defaults: FakeComposerDefaults())
+    let model = ComposerControlsModel(
+        catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
 
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
@@ -55,7 +82,8 @@ private let cursorModel = ComposerModelInfo(
         thinkingLevel: "auto",
         fastModeEnabled: false,
         fastModeActive: false))
-    let model = ComposerControlsModel(catalog: catalog, defaults: FakeComposerDefaults())
+    let model = ComposerControlsModel(
+        catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
 
     await model.refresh(authenticatedProviderIDs: ["cursor"])
 
@@ -73,7 +101,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: defaults)
+        defaults: defaults,
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
     await model.selectModel(anthropicSonnet, mode: .newSession)
@@ -97,7 +126,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: defaults)
+        defaults: defaults,
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
     await model.selectModel(anthropicSonnet, mode: .newSession)
@@ -118,7 +148,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: defaults)
+        defaults: defaults,
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -142,7 +173,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: defaults)
+        defaults: defaults,
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
     await model.setFastMode(true, mode: .newSession)
@@ -163,7 +195,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -184,7 +217,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -206,7 +240,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -228,7 +263,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: true,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
     session.liveComposerSelection = ComposerLiveSelection(
         provider: "anthropic",
@@ -258,7 +294,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
     #expect(model.isFastModeVisible == true)
@@ -282,7 +319,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
     model.attachActiveSession(session)
 
@@ -309,7 +347,8 @@ private let cursorModel = ComposerModelInfo(
         modelID: "gpt-5",
         thinkingLevel: "low",
         fastModeEnabled: false)
-    let model = ComposerControlsModel(catalog: catalog, defaults: FakeComposerDefaults())
+    let model = ComposerControlsModel(
+        catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
     model.attachActiveSession(session)
 
@@ -334,7 +373,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "auto",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
     #expect(model.selectedModel?.modelID == "claude-opus-4-8")
 
@@ -359,7 +399,8 @@ private let cursorModel = ComposerModelInfo(
             thinkingLevel: "high",
             fastModeEnabled: false,
             fastModeActive: false)),
-        defaults: FakeComposerDefaults())
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"])
 
     #expect(model.thinkingOptions.isEmpty)
@@ -386,6 +427,152 @@ private let cursorModel = ComposerModelInfo(
     #expect(left.id == "anthropic/shared")
     #expect(right.id == "cursor/shared")
     #expect(left.id != right.id)
+}
+
+@MainActor
+@Test func selectingARequiredEffortModelDropsAutoFromTheThinkingLevel() async {
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+
+    await model.selectModel(codexRequiredEffort, mode: .newSession)
+
+    #expect(model.thinkingLevel == "medium")
+    #expect(model.spawnSelection.thinking == "medium")
+}
+
+@MainActor
+@Test func selectingAModelKeepsAThinkingLevelItStillOffers() async {
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "high",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+
+    await model.selectModel(codexRequiredEffort, mode: .newSession)
+
+    #expect(model.thinkingLevel == "high")
+}
+
+@MainActor
+@Test func aFailedActiveSwitchRestoresTheThinkingLevelToo() async {
+    let session = FakeComposerSessionController()
+    session.setModelError = FakeComposerError.rpcFailed
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    model.attachActiveSession(session)
+
+    await model.selectModel(codexRequiredEffort, mode: .activeSession)
+
+    #expect(model.selectedModel?.modelID == "claude-opus-4-8")
+    #expect(model.thinkingLevel == "auto")
+    #expect(model.errorMessage != nil)
+}
+
+@MainActor
+@Test func anActiveSwitchThatMovesTheThinkingLevelSendsItOnce() async {
+    let defaults = FakeComposerDefaults()
+    let session = FakeComposerSessionController()
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: defaults,
+        recents: isolatedRecents())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    model.attachActiveSession(session)
+
+    await model.selectModel(codexRequiredEffort, mode: .activeSession)
+
+    #expect(model.thinkingLevel == "medium")
+    #expect(session.setModelCalls.count == 1)
+    #expect(session.setThinkingCalls == ["medium"])
+    #expect(await defaults.thinkingCalls.isEmpty)
+    #expect(await defaults.modelCalls.isEmpty)
+    #expect(model.errorMessage == nil)
+}
+
+@MainActor
+@Test func anActiveSwitchThatKeepsTheThinkingLevelSendsNoThinkingRPC() async {
+    let defaults = FakeComposerDefaults()
+    let session = FakeComposerSessionController()
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, codexRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "high",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: defaults,
+        recents: isolatedRecents())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    model.attachActiveSession(session)
+
+    await model.selectModel(codexRequiredEffort, mode: .activeSession)
+
+    #expect(model.thinkingLevel == "high")
+    #expect(session.setModelCalls.count == 1)
+    #expect(session.setThinkingCalls.isEmpty)
+    #expect(await defaults.thinkingCalls.isEmpty)
+    #expect(await defaults.modelCalls.isEmpty)
+}
+
+/// The two RPCs are two failure domains. Once `setModel` lands the runtime really
+/// is on the new model, so reverting the chip would misname what the user is
+/// talking to — only the level it failed to set may be rolled back.
+@MainActor
+@Test func aFailedThinkingReconciliationKeepsTheModelTheRuntimeIsRunning() async {
+    let session = FakeComposerSessionController()
+    // Long enough to trip the sanitizer's fallback, so the assertion below reads
+    // the copy the user is actually shown.
+    session.setThinkingError = FakeComposerVerboseError()
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, fireworksRequiredEffort],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "fireworks"])
+    model.attachActiveSession(session)
+    #expect(model.isFastModeVisible == true)
+
+    await model.selectModel(fireworksRequiredEffort, mode: .activeSession)
+
+    #expect(session.setModelCalls.count == 1)
+    #expect(session.setThinkingCalls == ["medium"])
+    // The switch landed, so the chip keeps naming the model the runtime runs…
+    #expect(model.selectedModel?.modelID == "kimi-k2-thinking")
+    // …Fast mode stays computed from that new model, not the abandoned old one…
+    #expect(model.isFastModeVisible == false)
+    // …and only the level that failed to send is rolled back.
+    #expect(model.thinkingLevel == "auto")
+    #expect(model.errorMessage == "Couldn’t update the thinking level.")
 }
 
 // MARK: - Fakes
@@ -459,4 +646,12 @@ private final class FakeComposerSessionController: ComposerSessionControlling {
 private enum FakeComposerError: Error {
     case persistFailed
     case rpcFailed
+}
+
+/// Raw OMP failure text too long for the footer, so `sanitizedMessage` falls back
+/// to the app's own copy and a test can assert which message the user is shown.
+private struct FakeComposerVerboseError: LocalizedError {
+    var errorDescription: String? {
+        String(repeating: "omp reported a transport failure. ", count: 8)
+    }
 }

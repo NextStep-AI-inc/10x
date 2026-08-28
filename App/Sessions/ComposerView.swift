@@ -1,5 +1,12 @@
+import AppKit
 import OmpKit
 import SwiftUI
+import UniformTypeIdentifiers
+
+enum ComposerFlyout: Equatable {
+    case project
+    case model
+}
 
 enum ComposerPresentation {
     case newSession(
@@ -12,34 +19,59 @@ enum ComposerPresentation {
 
 struct ComposerView: View {
     @Binding var draft: String
-    @Binding var isProjectFlyoutPresented: Bool
+    @Binding var attachments: [ComposerAttachment]
+    @Binding var flyout: ComposerFlyout?
     let presentation: ComposerPresentation
     let controls: ComposerControlsModel?
     let controlsMode: ComposerControlsMode
     let onSend: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var isEditorFocused: Bool
+    @State private var attachmentMessage: String?
+    @State private var isDropTargeted = false
+    static let editorPadding: CGFloat = 16
+    /// SwiftUI's padding plus the line-fragment padding NSTextView adds inside it.
+    static let textInset: CGFloat = 21
+    static let minEditorHeight: CGFloat = 58
+    static let maxEditorHeight: CGFloat = 220
 
     init(
         draft: Binding<String>,
-        isProjectFlyoutPresented: Binding<Bool> = .constant(false),
+        attachments: Binding<[ComposerAttachment]> = .constant([]),
+        flyout: Binding<ComposerFlyout?> = .constant(nil),
         presentation: ComposerPresentation,
         controls: ComposerControlsModel? = nil,
         controlsMode: ComposerControlsMode = .newSession,
         onSend: @escaping () -> Void
     ) {
         _draft = draft
-        _isProjectFlyoutPresented = isProjectFlyoutPresented
+        _attachments = attachments
+        _flyout = flyout
         self.presentation = presentation
         self.controls = controls
         self.controlsMode = controlsMode
         self.onSend = onSend
     }
 
-    private var canSend: Bool {
-        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return false
+    /// Plain Return sends (or is swallowed while sending is unavailable);
+    /// Shift/Option/Command/Control+Return fall through to the text view.
+    nonisolated static func handleReturn(
+        modifiers: EventModifiers,
+        canSend: Bool,
+        send: () -> Void
+    ) -> KeyPress.Result {
+        guard modifiers.isDisjoint(with: [.shift, .option, .command, .control]) else {
+            return .ignored
         }
+        if canSend { send() }
+        return .handled
+    }
+
+    private var canSend: Bool {
+        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachments.isEmpty
+        guard hasContent else { return false }
         switch presentation {
         case .newSession(let projectURL, _, _, _):
             return projectURL != nil
@@ -50,9 +82,15 @@ struct ComposerView: View {
 
     var body: some View {
         composerCard
-            .animation(shelfAnimation, value: isProjectFlyoutPresented)
+            .animation(shelfAnimation, value: flyout)
             .onExitCommand {
-                isProjectFlyoutPresented = false
+                flyout = nil
+            }
+            // The composer is the only thing to type into on either screen, so
+            // it takes focus as soon as it can accept a keystroke.
+            .onAppear { isEditorFocused = isAvailable }
+            .onChange(of: isAvailable) { _, isAvailable in
+                if isAvailable { isEditorFocused = true }
             }
     }
 
@@ -62,39 +100,25 @@ struct ComposerView: View {
 
     private var composerCard: some View {
         VStack(spacing: 0) {
-            TextEditor(text: $draft)
-                .font(TenXTypography.body(size: 14))
-                .scrollContentBackground(.hidden)
-                .padding(16)
-                .frame(height: 58)
-                .disabled(!isAvailable)
-                .accessibilityLabel("Session prompt")
-                .accessibilityHint(composerModeLabel)
+            editor
+
+            if !attachments.isEmpty {
+                ComposerAttachmentsView(attachments: attachments, onRemove: remove)
+            }
 
             HStack(spacing: 4) {
+                attachButton
+
                 footerControls
 
                 Spacer()
 
-                Button(action: onSend) {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(canSend
-                            ? Color.white
-                            : TenXPalette.color(TenXPalette.mutedTextHex))
-                        .frame(width: 28, height: 28)
-                        .background(canSend
-                            ? TenXPalette.color(TenXPalette.nearBlackHex)
-                            : TenXPalette.color(TenXPalette.hoverNeutralHex))
-                }
-                .buttonStyle(.plain)
-                .disabled(!canSend)
-                .accessibilityLabel(sendLabel)
+                primaryAction
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
 
-            if let errorMessage = controls?.errorMessage {
+            if let errorMessage = attachmentMessage ?? controls?.errorMessage {
                 Text(errorMessage)
                     .font(TenXTypography.body(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
@@ -104,19 +128,40 @@ struct ComposerView: View {
                     .padding(.bottom, 10)
             }
         }
-        .background(.white)
-        .overlay {
+        // Fill and border live in one background layer: an overlay border would
+        // paint over card content, and the model flyout is card content.
+        .background {
             Rectangle()
-                .stroke(borderColor, lineWidth: 1)
+                .fill(.white)
+                .overlay {
+                    Rectangle()
+                        .stroke(borderColor, lineWidth: 1)
+                }
         }
         .overlay(alignment: .bottomLeading) {
             projectShelfOverlay
+        }
+        .overlay {
+            if isDropTargeted {
+                Rectangle()
+                    .stroke(TenXPalette.color(TenXPalette.cyanHex), lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            add(urls: urls)
+            return true
+        } isTargeted: { isDropTargeted = $0 }
+        // Concrete image types only. Plain and rich text never carry these, so
+        // an ordinary paste still reaches the editor.
+        .onPasteCommand(of: [.png, .jpeg, .tiff]) { providers in
+            add(providers: providers)
         }
     }
 
     @ViewBuilder
     private var projectShelfOverlay: some View {
-        if isProjectFlyoutPresented,
+        if flyout == .project,
            case .newSession(
             let projectURL,
             let projectURLs,
@@ -129,14 +174,14 @@ struct ComposerView: View {
                 triggerTitle: projectURL?.lastPathComponent ?? "Choose project",
                 onChoose: {
                     onChooseProject($0)
-                    isProjectFlyoutPresented = false
+                    flyout = nil
                 },
                 onAddExistingFolder: {
-                    isProjectFlyoutPresented = false
+                    flyout = nil
                     onAddExistingFolder()
                 },
                 onToggle: {
-                    isProjectFlyoutPresented = false
+                    flyout = nil
                 })
             .padding(.leading, 10)
             .padding(.bottom, 10)
@@ -151,19 +196,233 @@ struct ComposerView: View {
             removal: .opacity.combined(with: .offset(y: 4)))
     }
 
+    /// Grows with the draft instead of scrolling a fixed two-line window, so a
+    /// paragraph-length prompt stays readable while it is being written.
+    private var editor: some View {
+        // A hidden copy of the draft is the only thing in this stack with an
+        // intrinsic height, and the editor rides above it as an overlay so it
+        // cannot push the box taller. Sizing therefore lands in the same layout
+        // pass that draws the text, with no measure-then-resize frame.
+        Text(draft.isEmpty || draft.hasSuffix("\n") ? draft + " " : draft)
+            .font(TenXTypography.body(size: 14))
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, Self.textInset)
+            .padding(.vertical, Self.editorPadding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .hidden()
+            .overlay(alignment: .topLeading) {
+                if draft.isEmpty {
+                    Text(placeholder)
+                        .font(TenXTypography.body(size: 14))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                        .padding(.horizontal, Self.textInset)
+                        .padding(.vertical, Self.editorPadding)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .overlay {
+                TextEditor(text: $draft)
+                    .font(TenXTypography.body(size: 14))
+                    .scrollContentBackground(.hidden)
+                    .padding(Self.editorPadding)
+                    .focused($isEditorFocused)
+                    .disabled(!isAvailable)
+                    .onKeyPress(keys: [.return], phases: .down) { press in
+                        Self.handleReturn(
+                            modifiers: press.modifiers,
+                            canSend: canSend,
+                            send: onSend)
+                    }
+                    .accessibilityLabel("Session prompt")
+                    .accessibilityHint(composerModeLabel)
+            }
+            .frame(minHeight: Self.minEditorHeight, maxHeight: Self.maxEditorHeight)
+            // Without this the clamp is a range the parent can fill, and any
+            // spare vertical space in the window inflates the box to its cap.
+            .fixedSize(horizontal: false, vertical: true)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: draft)
+    }
+
+    private var placeholder: String {
+        switch presentation {
+        case .newSession:
+            return "Describe the task"
+        case .active(let controller) where controller.runtimeState == .streaming:
+            return "Steer or follow up"
+        case .active:
+            return "Send a message"
+        }
+    }
+
+    private var attachButton: some View {
+        Button(action: chooseAttachments) {
+            Image(systemName: "paperclip")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isAvailable)
+        .help("Attach an image. Images can also be dropped or pasted here.")
+        .accessibilityLabel("Attach an image")
+    }
+
+    private func chooseAttachments() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image]
+        panel.prompt = "Attach"
+
+        guard panel.runModal() == .OK else { return }
+        add(urls: panel.urls)
+        isEditorFocused = true
+    }
+
+    private func remove(_ id: ComposerAttachment.ID) {
+        attachments.removeAll { $0.id == id }
+        attachmentMessage = nil
+    }
+
+    /// Images are staged; anything else becomes a path in the message, which is
+    /// what the agent can actually act on.
+    private func add(urls: [URL]) {
+        var skipped: [String] = []
+        var paths: [String] = []
+        for url in urls {
+            guard ComposerAttachmentEncoder.isImage(url) else {
+                paths.append(url.path)
+                continue
+            }
+            guard attachments.count < ComposerAttachmentEncoder.maximumCount else {
+                skipped.append(url.lastPathComponent)
+                continue
+            }
+            guard let attachment = ComposerAttachmentEncoder.attachment(fromFileAt: url) else {
+                skipped.append(url.lastPathComponent)
+                continue
+            }
+            attachments.append(attachment)
+        }
+        if !paths.isEmpty { appendToDraft(paths.joined(separator: "\n")) }
+        report(skipped: skipped)
+    }
+
+    private func add(providers: [NSItemProvider]) {
+        guard attachments.count < ComposerAttachmentEncoder.maximumCount else {
+            report(skipped: ["Pasted image"])
+            return
+        }
+        for provider in providers {
+            _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
+                guard let image = object as? NSImage else { return }
+                Task { @MainActor in
+                    guard attachments.count < ComposerAttachmentEncoder.maximumCount,
+                          let attachment = ComposerAttachmentEncoder.attachment(
+                            from: image,
+                            name: "Pasted image")
+                    else { return }
+                    attachments.append(attachment)
+                    attachmentMessage = nil
+                }
+            }
+        }
+    }
+
+    private func appendToDraft(_ text: String) {
+        if draft.isEmpty {
+            draft = text
+        } else if draft.hasSuffix("\n") {
+            draft += text
+        } else {
+            draft += "\n" + text
+        }
+    }
+
+    private func report(skipped: [String]) {
+        guard !skipped.isEmpty else {
+            attachmentMessage = nil
+            return
+        }
+        let limit = ComposerAttachmentEncoder.maximumCount
+        attachmentMessage = skipped.count == 1
+            ? "Could not attach \(skipped[0]). The limit is \(limit) images."
+            : "Could not attach \(skipped.count) images. The limit is \(limit)."
+    }
+
+    /// One button, because there is only ever one obvious next move: send what
+    /// is typed, or stop the run there is nothing to add to.
+    private var primaryAction: some View {
+        let isStop = stoppableController != nil
+        let isEnabled = isStop || canSend
+        return Button {
+            if let controller = stoppableController {
+                Task { await controller.abort() }
+            } else {
+                // The warning describes an attach that is over once the prompt
+                // goes out, so it must not outlive the message it was about.
+                attachmentMessage = nil
+                onSend()
+            }
+            isEditorFocused = true
+        } label: {
+            Group {
+                if isStop {
+                    // A square, not stop.fill: the symbol's rounded corners are
+                    // the only radius in a composer built from straight edges.
+                    Rectangle().frame(width: 9, height: 9)
+                } else {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 12, weight: .bold))
+                }
+            }
+                .foregroundStyle(isEnabled
+                    ? Color.white
+                    : TenXPalette.color(TenXPalette.mutedTextHex))
+                .frame(width: 28, height: 28)
+                .background(isEnabled
+                    ? TenXPalette.color(TenXPalette.nearBlackHex)
+                    : TenXPalette.color(TenXPalette.hoverNeutralHex))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .help(isStop ? "Stop the response" : sendLabel)
+        .accessibilityLabel(isStop ? "Stop response" : sendLabel)
+    }
+
+    /// Stop takes over only when there is nothing staged to send: with text or
+    /// an image in the composer the button still has to send it, or Steer and
+    /// Follow up are dead.
+    private var stoppableController: SessionController? {
+        guard case .active(let controller) = presentation,
+              controller.runtimeState == .streaming,
+              attachments.isEmpty,
+              draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return controller
+    }
+
     @ViewBuilder
     private var footerControls: some View {
         switch presentation {
         case .newSession(let projectURL, _, _, _):
             ChooseProjectControl(
                 projectURL: projectURL,
-                isPresented: $isProjectFlyoutPresented)
-
-            Button("Local") {}
-                .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
+                isPresented: Binding(
+                    get: { flyout == .project },
+                    set: { flyout = $0 ? .project : nil }))
 
             if let controls {
-                ComposerSessionControlsView(model: controls, mode: controlsMode)
+                ComposerSessionControlsView(
+                    model: controls,
+                    mode: controlsMode,
+                    isPresented: Binding(
+                        get: { flyout == .model },
+                        set: { flyout = $0 ? .model : nil }))
             }
 
         case .active(let controller):
@@ -172,7 +431,12 @@ struct ComposerView: View {
                 behaviorButton("Follow up", behavior: .followUp, controller: controller)
             }
             if let controls {
-                ComposerSessionControlsView(model: controls, mode: controlsMode)
+                ComposerSessionControlsView(
+                    model: controls,
+                    mode: controlsMode,
+                    isPresented: Binding(
+                        get: { flyout == .model },
+                        set: { flyout = $0 ? .model : nil }))
             } else {
                 Text(controller.modelName)
                     .font(TenXTypography.body(size: 10, weight: .medium))

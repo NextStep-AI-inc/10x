@@ -3,9 +3,16 @@ import SwiftUI
 
 @main
 struct TenXApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @NSApplicationDelegateAdaptor(AppTerminationDelegate.self) private var appDelegate
+
+    init() {
+        // Before anything can spawn: a Finder launch inherits LaunchServices'
+        // PATH, which cannot resolve OMP's `bun` interpreter.
+        OmpProcessEnvironment.install()
+        _model = State(initialValue: AppModel())
+    }
 
     var body: some Scene {
         Window("Preparing your workspace", id: AppWindowID.startup) {
@@ -37,6 +44,9 @@ struct TenXApp: App {
         .defaultSize(width: 1180, height: 760)
         .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            TenXCommands(model: model)
+        }
     }
 }
 
@@ -46,6 +56,7 @@ private struct WorkspaceSceneView: View {
     let onAppear: @MainActor () -> Void
 
     @Environment(\.dismissWindow) private var dismissWindow
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         AppShellView(model: model)
@@ -61,6 +72,10 @@ private struct WorkspaceSceneView: View {
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 Task { await model.refreshProvidersIfNeeded() }
+            }
+            .onChange(of: model.updateState.isPresentingUpdate) { _, isPresenting in
+                guard isPresenting else { return }
+                openWindow(id: AppWindowID.startup)
             }
     }
 }

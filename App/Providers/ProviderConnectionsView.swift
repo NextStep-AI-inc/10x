@@ -25,6 +25,7 @@ struct ProviderConnectionsView: View {
     let isLoading: Bool
     let providerMessage: String?
     let loginMessage: String?
+    let loginMessageIsError: Bool
     let loginMessageProviderID: String?
     let removalMessage: String?
     let removalMessageProviderID: String?
@@ -81,7 +82,9 @@ struct ProviderConnectionsView: View {
         if let loginMessage, loginMessageProviderID == nil {
             Text(loginMessage)
                 .font(TenXTypography.body(size: 12))
-                .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                .foregroundStyle(loginMessageIsError
+                    ? TenXPalette.color(TenXPalette.signalRedHex)
+                    : TenXPalette.color(TenXPalette.mutedTextHex))
                 .padding(.top, 14)
         }
 
@@ -118,6 +121,7 @@ struct ProviderConnectionsView: View {
                         credentialIssue: credentialIssues.first(where: { $0.providerID == provider.id }),
                         activeLoginProviderID: activeLoginProviderID,
                         loginMessage: loginMessageProviderID == provider.id ? loginMessage : nil,
+                        loginMessageIsError: loginMessageIsError,
                         onConnect: { onConnect(provider) },
                         onCancel: onCancel)
                         .id(provider.id)

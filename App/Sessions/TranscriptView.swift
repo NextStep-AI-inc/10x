@@ -34,6 +34,10 @@ struct TranscriptView: View {
                         itemView(item)
                             .id(item.id)
                     }
+                    if isAwaitingOutput {
+                        TurnActivityView(startedAt: controller.turnStartedAt)
+                            .id(TurnActivityView.transcriptID)
+                    }
                 }
                 .frame(maxWidth: Self.contentMaxWidth)
                 .padding(.horizontal, 42)
@@ -55,15 +59,59 @@ struct TranscriptView: View {
                 let shouldFollow = !hasPositionedInitialContent || isNearBottom
                 hasPositionedInitialContent = true
                 guard shouldFollow else { return }
-                if isReduceMotionEnabled {
-                    proxy.scrollTo(item.id, anchor: .bottom)
-                } else {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo(item.id, anchor: .bottom)
-                    }
+                scroll(proxy, to: item.id)
+            }
+            // The indicator is not an item, so its arrival needs its own follow
+            // or it appears below the fold on the send that created it.
+            .onChange(of: isAwaitingOutput) { _, isAwaiting in
+                guard isAwaiting, isNearBottom else { return }
+                scroll(proxy, to: TurnActivityView.transcriptID)
+            }
+            .overlay(alignment: .bottom) { scrollToBottomButton(proxy) }
+        }
+    }
+
+    /// Only offered once following has actually been broken, so it never sits
+    /// over a transcript that is already tracking the bottom.
+    @ViewBuilder
+    private func scrollToBottomButton(_ proxy: ScrollViewProxy) -> some View {
+        if hasPositionedInitialContent, !isNearBottom, let lastID = controller.items.last?.id {
+            Button {
+                scroll(proxy, to: isAwaitingOutput ? TurnActivityView.transcriptID : lastID)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Jump to latest")
+                        .font(TenXTypography.body(size: 11, weight: .medium))
                 }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .frame(height: 26)
+                .background(TenXPalette.color(TenXPalette.nearBlackHex))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, 12)
+            .transition(.opacity)
+            .accessibilityLabel("Jump to latest")
+        }
+    }
+
+    private func scroll(_ proxy: ScrollViewProxy, to id: String) {
+        if isReduceMotionEnabled {
+            proxy.scrollTo(id, anchor: .bottom)
+        } else {
+            withAnimation(.easeOut(duration: 0.15)) {
+                proxy.scrollTo(id, anchor: .bottom)
             }
         }
+    }
+
+    private var isAwaitingOutput: Bool {
+        TurnActivityView.isAwaitingOutput(
+            runtimeState: controller.runtimeState,
+            lastItem: controller.items.last)
     }
 
     nonisolated static func shouldFollowBottom(
@@ -87,15 +135,24 @@ struct TranscriptView: View {
 
     private var loadingSkeleton: some View {
         VStack(alignment: .leading, spacing: 14) {
+            // Three grey hairlines alone read as an empty transcript, so the
+            // opening step says so in words.
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Opening session…")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
             ForEach([180.0, 320.0, 240.0], id: \.self) { width in
                 Rectangle()
                     .frame(width: width, height: 2)
+                    .foregroundStyle(TenXPalette.color(TenXPalette.separatorHex))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .foregroundStyle(TenXPalette.color(TenXPalette.separatorHex))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Loading session history")
+        .accessibilityLabel("Opening session")
     }
 
     private var activeActivityIDs: [String] {

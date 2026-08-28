@@ -191,6 +191,7 @@ struct ProvidersView: View {
                 isLoading: model.isLoadingProviders,
                 providerMessage: model.providerMessage,
                 loginMessage: model.loginMessage,
+                loginMessageIsError: model.loginMessageIsError,
                 loginMessageProviderID: model.loginMessageProviderID,
                 removalMessage: model.removalMessage,
                 removalMessageProviderID: model.removalMessageProviderID,

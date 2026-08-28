@@ -1,15 +1,28 @@
 import Foundation
 
+/// Why setup did or did not get a runtime. `unrunnable` is kept distinct from
+/// `notFound` because they need different things from the user: one is a
+/// missing install, the other an install that cannot execute.
+enum OmpLocation: Equatable, Sendable {
+    case found(OmpInstallation)
+    /// An executable is at this path, but it could not report a version.
+    case unrunnable(URL)
+    case notFound
+
+    var installation: OmpInstallation? {
+        guard case .found(let installation) = self else { return nil }
+        return installation
+    }
+}
+
 protocol OmpLocating: Sendable {
-    func locate(preferredURL: URL?) async throws -> OmpInstallation?
+    func locate(preferredURL: URL?) async throws -> OmpLocation
 }
 
 struct OmpExecutableLocator: OmpLocating {
-    static let knownPaths = [
-        "~/.bun/bin/omp",
-        "/opt/homebrew/bin/omp",
-        "/usr/local/bin/omp",
-    ]
+    /// Display strings for the setup screen, derived from the same directories
+    /// `candidates(preferredURL:)` probes so the two cannot drift.
+    static let knownPaths = OmpProcessEnvironment.toolDirectories.map { "\($0)/omp" }
 
     private let homeDirectory: URL
     private let pathDirectories: [String]
@@ -22,24 +35,28 @@ struct OmpExecutableLocator: OmpLocating {
         self.pathDirectories = path.split(separator: ":").map(String.init)
     }
 
-    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
+        var firstUnrunnable: URL?
         for candidate in candidates(preferredURL: preferredURL) {
             try Task.checkCancellation()
+            guard FileManager.default.isExecutableFile(atPath: candidate.path) else { continue }
             let installation = try await inspect(candidate)
             try Task.checkCancellation()
             if let installation {
-                return installation
+                return .found(installation)
             }
+            // Present and executable but silent: remember it so setup can say so
+            // rather than claiming nothing is installed.
+            if firstUnrunnable == nil { firstUnrunnable = candidate }
         }
-        return nil
+        if let firstUnrunnable { return .unrunnable(firstUnrunnable) }
+        return .notFound
     }
 
     private func candidates(preferredURL: URL?) -> [URL] {
-        let known = [
-            homeDirectory.appending(path: ".bun/bin/omp"),
-            URL(filePath: "/opt/homebrew/bin/omp"),
-            URL(filePath: "/usr/local/bin/omp"),
-        ]
+        let known = OmpProcessEnvironment
+            .resolvedToolDirectories(homeDirectory: homeDirectory)
+            .map { $0.appending(path: "omp") }
         let fromPath = pathDirectories
             .filter { $0.hasPrefix("/") }
             .map { URL(filePath: $0).appending(path: "omp") }
@@ -52,8 +69,6 @@ struct OmpExecutableLocator: OmpLocating {
     }
 
     private func inspect(_ candidate: URL) async throws -> OmpInstallation? {
-        guard FileManager.default.isExecutableFile(atPath: candidate.path) else { return nil }
-
         let data: Data
         do {
             // Deliberately no `-e <extension path>` here. This probe never
@@ -82,7 +97,4 @@ struct OmpExecutableLocator: OmpLocating {
         return OmpInstallation(executableURL: candidate, version: version)
     }
 
-    static func inspectionErrorDescription(for url: URL) -> String {
-        "[Setup:OmpExecutableLocator] Unable to inspect OMP — \(url.path)"
-    }
 }

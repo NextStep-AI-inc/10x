@@ -48,10 +48,41 @@ private struct ProviderRPCClientBox: ProviderRPCClient {
 actor ProviderManagementService: ProviderManaging {
     private typealias ClientFactory = @Sendable (RpcClientConfiguration) async -> ProviderRPCClientBox
 
+    /// OMP refuses to start `--mode rpc` when the profile has no model source
+    /// configured, which is exactly the state of a brand-new user — so a
+    /// fresh profile can never even list login providers. As a one-shot
+    /// retry, we start with a placeholder `ANTHROPIC_API_KEY` so RPC mode has
+    /// a model source to boot with. The key is not real, so `parseProviders`
+    /// forces this provider's `isAuthenticated` back to `false` whenever the
+    /// placeholder is active — the user is not actually connected, and this
+    /// reports the truth instead of a fabricated login.
+    private static let placeholderEnvironmentKey = "ANTHROPIC_API_KEY"
+    private static let placeholderEnvironmentValue = "10x-onboarding-placeholder-not-a-real-key"
+    private static let placeholderProviderID = "anthropic"
+
+    private struct StartupResult: Sendable {
+        let client: ProviderRPCClientBox
+        let usedPlaceholder: Bool
+    }
+
+    /// A ready client bundled with the mask that applies to whatever it
+    /// returns. Binding these together — rather than reading a separate
+    /// actor-global "is the placeholder active" field at response time — is
+    /// what keeps the mask correct under concurrency: a concurrent
+    /// `login()` can close this client and start a fresh, unmasked one
+    /// while a `providers()` call is still awaiting a response from THIS
+    /// client, and that response must still be masked according to the
+    /// client that actually produced it, not whatever the actor holds by
+    /// the time the response arrives.
+    private struct ActiveClient: Sendable {
+        let client: ProviderRPCClientBox
+        let maskedProviderID: String?
+    }
+
     private struct Startup {
         let id: UUID
         let generation: Int
-        let task: Task<ProviderRPCClientBox, Error>
+        let task: Task<StartupResult, Error>
     }
 
     private struct Closing {
@@ -62,7 +93,7 @@ actor ProviderManagementService: ProviderManaging {
     private enum ClientState {
         case idle
         case starting(Startup)
-        case ready(ProviderRPCClientBox)
+        case ready(ActiveClient)
         case closing(Closing)
     }
 
@@ -109,9 +140,9 @@ actor ProviderManagementService: ProviderManaging {
     }
 
     func providers() async throws -> [ProviderLoginProvider] {
-        let client = try await clientForRequest()
-        let response = try await client.send(.getLoginProviders(), timeout: nil)
-        return try parseProviders(response.data)
+        let active = try await clientForRequest()
+        let response = try await active.client.send(.getLoginProviders(), timeout: nil)
+        return try parseProviders(response.data, maskedProviderID: active.maskedProviderID)
     }
 
     func login(providerID: String, generation: Int) async throws {
@@ -125,13 +156,19 @@ actor ProviderManagementService: ProviderManaging {
             }
         }
 
-        let client = try await clientForRequest()
-        _ = try await client.send(.login(providerID: providerID), timeout: .seconds(600))
+        let active = try await clientForRequest()
+        _ = try await active.client.send(.login(providerID: providerID), timeout: .seconds(600))
+
+        // The profile now has real credentials and will boot on its own.
+        // Close the client so the next request starts a fresh one with no
+        // placeholder: a real login must not stay masked, and a stale
+        // placeholder key must never shadow the credentials just saved.
+        await closeClient()
     }
 
     func respond(requestID: String, body: [String: JSONValue]) async throws {
-        let client = try await clientForRequest()
-        try await client.sendRaw(.extensionUIResponse(id: requestID, body: body))
+        let active = try await clientForRequest()
+        try await active.client.sendRaw(.extensionUIResponse(id: requestID, body: body))
     }
 
     func cancelLogin() async {
@@ -143,10 +180,10 @@ actor ProviderManagementService: ProviderManaging {
         eventContinuation.finish()
     }
 
-    private func clientForRequest() async throws -> ProviderRPCClientBox {
+    private func clientForRequest() async throws -> ActiveClient {
         switch clientState {
-        case .ready(let client):
-            return client
+        case .ready(let active):
+            return active
         case .starting(let startup):
             await startupWaiterObserver()
             return try await awaitStartup(startup)
@@ -171,32 +208,53 @@ actor ProviderManagementService: ProviderManaging {
             let client = await clientFactory(configuration)
             do {
                 _ = try await client.start()
-                return client
+                return StartupResult(client: client, usedPlaceholder: false)
             } catch {
                 await client.shutdown()
-                throw error
+                let originalError = error
+
+                // Any start failure earns exactly one retry, with the
+                // placeholder model source merged in — no inspecting the
+                // error text, since OMP's refusal is the only case this can
+                // plausibly fix and every other failure just repeats.
+                var retryConfiguration = configuration
+                var environment = OmpProcessEnvironment.resolved()
+                environment[Self.placeholderEnvironmentKey] = Self.placeholderEnvironmentValue
+                retryConfiguration.environment = environment
+
+                let retryClient = await clientFactory(retryConfiguration)
+                do {
+                    _ = try await retryClient.start()
+                    return StartupResult(client: retryClient, usedPlaceholder: true)
+                } catch {
+                    await retryClient.shutdown()
+                    throw originalError
+                }
             }
         }
         return Startup(id: id, generation: generation, task: task)
     }
 
-    private func awaitStartup(_ startup: Startup) async throws -> ProviderRPCClientBox {
+    private func awaitStartup(_ startup: Startup) async throws -> ActiveClient {
         do {
-            let client = try await startup.task.value
+            let result = try await startup.task.value
             guard startup.generation == clientGeneration else {
                 clearStarting(startup)
                 throw CancellationError()
             }
 
             switch clientState {
-            case .ready(let client):
-                return client
+            case .ready(let active):
+                return active
             case .starting(let current) where current.id == startup.id:
-                clientState = .ready(client)
-                startForwarding(events: client.events)
-                return client
+                let active = ActiveClient(
+                    client: result.client,
+                    maskedProviderID: result.usedPlaceholder ? Self.placeholderProviderID : nil)
+                clientState = .ready(active)
+                startForwarding(events: active.client.events)
+                return active
             case .idle, .starting:
-                await client.shutdown()
+                await result.client.shutdown()
                 throw CancellationError()
             case .closing:
                 throw CancellationError()
@@ -247,16 +305,16 @@ actor ProviderManagementService: ProviderManaging {
         case .starting(let startup):
             startup.task.cancel()
             let closing = Closing(id: UUID(), task: Task {
-                if case .success(let client) = await startup.task.result {
-                    await client.shutdown()
+                if case .success(let result) = await startup.task.result {
+                    await result.client.shutdown()
                 }
             })
             clientState = .closing(closing)
             await closing.task.value
             clearClosing(closing)
-        case .ready(let client):
+        case .ready(let active):
             let closing = Closing(id: UUID(), task: Task {
-                await client.shutdown()
+                await active.client.shutdown()
             })
             clientState = .closing(closing)
             await closing.task.value
@@ -277,7 +335,14 @@ actor ProviderManagementService: ProviderManaging {
         clientState = .idle
     }
 
-    private func parseProviders(_ data: JSONValue?) throws -> [ProviderLoginProvider] {
+    /// `maskedProviderID` must come from the `ActiveClient` that produced
+    /// `data` (see `ActiveClient`'s doc comment) — never re-read from actor
+    /// state at parse time, since that state can have moved on to a
+    /// different client by the time a slow response arrives.
+    private func parseProviders(
+        _ data: JSONValue?,
+        maskedProviderID: String?
+    ) throws -> [ProviderLoginProvider] {
         guard let values = data?["providers"]?.arrayValue else {
             throw ProviderManagementServiceError.invalidProviderResponse
         }
@@ -291,11 +356,15 @@ actor ProviderManagementService: ProviderManaging {
             else {
                 throw ProviderManagementServiceError.invalidProviderResponse
             }
+            // The placeholder key makes OMP report this provider as
+            // authenticated purely because the env var exists. Mask it back
+            // to false: the user genuinely has not logged in.
+            let isMasked = maskedProviderID == id
             return ProviderLoginProvider(
                 id: id,
                 name: name,
                 isAvailable: isAvailable,
-                isAuthenticated: isAuthenticated)
+                isAuthenticated: isMasked ? false : isAuthenticated)
         }
     }
 }

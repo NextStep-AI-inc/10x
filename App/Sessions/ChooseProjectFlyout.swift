@@ -27,7 +27,7 @@ enum ChooseProjectFlyoutMetrics {
 }
 
 /// Stepped silhouette: wide folder panel over a narrower choose-project rect.
-private struct TwoRectShelfShape: Shape {
+struct TwoRectShelfShape: Shape {
     var topWidth: CGFloat
     var topHeight: CGFloat
     var bottomWidth: CGFloat
@@ -96,6 +96,14 @@ struct ChooseProjectShelf: View {
         ChooseProjectFlyoutMetrics.topHeight(projectCount: projectURLs.count)
     }
 
+    private var silhouette: TwoRectShelfShape {
+        TwoRectShelfShape(
+            topWidth: widths.top,
+            topHeight: topHeight,
+            bottomWidth: widths.bottom,
+            bottomHeight: ChooseProjectFlyoutMetrics.triggerHeight)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             listPiece
@@ -117,22 +125,11 @@ struct ChooseProjectShelf: View {
             width: widths.top,
             height: topHeight + ChooseProjectFlyoutMetrics.triggerHeight,
             alignment: .topLeading)
-        .background {
-            TwoRectShelfShape(
-                topWidth: widths.top,
-                topHeight: topHeight,
-                bottomWidth: widths.bottom,
-                bottomHeight: ChooseProjectFlyoutMetrics.triggerHeight)
-            .fill(Color.white)
-        }
+        .background { silhouette.fill(Color.white) }
         .overlay {
-            TwoRectShelfShape(
-                topWidth: widths.top,
-                topHeight: topHeight,
-                bottomWidth: widths.bottom,
-                bottomHeight: ChooseProjectFlyoutMetrics.triggerHeight)
-            .stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
+            silhouette.stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
         }
+        .dismissesOnOutsideInteraction(silhouette: silhouette, onDismiss: onToggle)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Choose project")
     }
@@ -222,7 +219,7 @@ struct ChooseProjectShelf: View {
     }
 }
 
-private struct FlyoutRowBackground: View {
+struct FlyoutRowBackground: View {
     let isSelected: Bool
     @State private var isHovering = false
 

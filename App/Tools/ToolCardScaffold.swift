@@ -107,7 +107,9 @@ struct ToolCardScaffold<Content: View>: View {
     private func leadingContent(showsOutcome: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Button(action: toggle) {
-                HStack(spacing: 8) {
+                // Baseline-align so the button reports the verb's text baseline,
+                // not the smaller chevron's — the row anchors on this guide.
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(accentColor)

@@ -11,6 +11,68 @@ import Testing
     #expect(SessionController.contextPercent(.object(["percentage": .double(0.63)])) == 63)
 }
 
+@Test func ompSessionTitleGeneratorUsesTheActiveModelAndParsesTaggedOutput() async throws {
+    let capture = TitleCommandCapture()
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { executableURL, arguments in
+            await capture.record(executableURL: executableURL, arguments: arguments)
+            return Data("Working...\n<title>Fix untitled session naming</title>\n".utf8)
+        })
+
+    let title = await generator.generate(
+        prompt: "The session still says Untitled session. Fix its name.",
+        provider: "openai-codex",
+        modelID: "gpt-5.6-sol")
+
+    #expect(title == "Fix untitled session naming")
+    let invocation = await capture.invocation
+    #expect(invocation?.executableURL.path == "/opt/omp")
+    #expect(invocation?.arguments.contains("openai-codex/gpt-5.6-sol") == true)
+    #expect(invocation?.arguments.contains("--no-session") == true)
+    #expect(invocation?.arguments.contains("--no-tools") == true)
+    #expect(invocation?.arguments.last?.contains("<user>") == true)
+}
+
+@Test func ompSessionTitleGeneratorRejectsNonTitleOutput() {
+    #expect(OmpSessionTitleGenerator.title(from: Data("<title/>".utf8)) == nil)
+    #expect(OmpSessionTitleGenerator.title(from: Data("<title>none</title>".utf8)) == nil)
+    #expect(OmpSessionTitleGenerator.title(from: Data("A helpful answer without title markers".utf8)) == nil)
+    #expect(OmpSessionTitleGenerator.title(from: Data(
+        "<title>one two three four five six seven eight nine ten eleven twelve thirteen</title>".utf8)) == nil)
+}
+
+@MainActor @Test func firstSuccessfulPromptPersistsGeneratedSessionTitleExactlyOnce() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLogURL = directory.appending(path: "commands.log")
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { _, _ in Data("<title>Fix untitled session naming</title>".utf8) })
+    let controller = SessionController(
+        processManager: manager,
+        titleGenerator: generator)
+
+    await controller.openNew(projectURL: directory)
+    controller.draft = "The session still says Untitled session. Fix its name."
+    await controller.sendPrompt()
+
+    #expect(await eventually { controller.title == "Fix untitled session naming" })
+    #expect(await eventually { controller.runtimeState == .idle })
+    controller.draft = "A follow-up that must not rename it"
+    await controller.sendPrompt()
+
+    let commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+        .split(separator: "\n")
+        .map(String.init)
+    #expect(commands.filter { $0 == "set_session_name" }.count == 1)
+    let promptIndex = try #require(commands.firstIndex(of: "prompt"))
+    let titleIndex = try #require(commands.firstIndex(of: "set_session_name"))
+    #expect(promptIndex < titleIndex)
+    await manager.closeAll()
+}
+
 @MainActor @Test func providerIDReadsOnlyANonemptyProviderFromAModelObject() {
     #expect(SessionController.providerID(from: .object([
         "id": .string("claude-sonnet"),
@@ -212,7 +274,8 @@ import Testing
 
 @MainActor
 private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
-    for _ in 0..<100 {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+    while ContinuousClock.now < deadline {
         if predicate() { return true }
         try? await Task.sleep(for: .milliseconds(20))
     }
@@ -628,6 +691,31 @@ private func fakeManager(mode: String) -> SessionProcessManager {
     })
 }
 
+private func commandLoggingFakeManager(commandLogURL: URL) -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            repositoryRoot()
+                .appending(path: "OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py").path,
+            "command-log",
+            commandLogURL.path,
+        ]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+}
+
+private actor TitleCommandCapture {
+    private(set) var invocation: (executableURL: URL, arguments: [String])?
+
+    func record(executableURL: URL, arguments: [String]) {
+        invocation = (executableURL, arguments)
+    }
+}
+
 private func delayedFakeManager(mode: String, markerURL: URL) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
@@ -657,7 +745,43 @@ private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
         .appending(path: "tenx-controller-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    TemporaryDirectoryRegistry.shared.register(url)
     return url
+}
+
+/// Removes the directories `temporaryDirectory()` hands out when the test host
+/// exits.
+///
+/// The process owns this rather than each test, because most callers pass the
+/// directory straight into `openNew(projectURL:)` with no local to hang a
+/// `defer` on, and Swift Testing has no teardown hook for free `@Test`
+/// functions. Left unmanaged these never got deleted: thousands of
+/// `tenx-controller-*` directories pile up in the temp folder, and once that
+/// folder is large enough `mktemp` starts failing — which surfaces as
+/// resource-shaped failures in unrelated suites much later in a run.
+private final class TemporaryDirectoryRegistry: @unchecked Sendable {
+    static let shared = TemporaryDirectoryRegistry()
+
+    private let lock = NSLock()
+    private var urls: [URL] = []
+
+    private init() {
+        atexit { TemporaryDirectoryRegistry.shared.removeAll() }
+    }
+
+    func register(_ url: URL) {
+        lock.lock()
+        defer { lock.unlock() }
+        urls.append(url)
+    }
+
+    private func removeAll() {
+        lock.lock()
+        let pending = urls
+        urls.removeAll()
+        lock.unlock()
+        for url in pending { try? FileManager.default.removeItem(at: url) }
+    }
 }
 
 private func metadata(

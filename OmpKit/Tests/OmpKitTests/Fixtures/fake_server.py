@@ -152,6 +152,10 @@ while True:
 
 STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
          "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
+if mode == "unique-session-file":
+    session_id = f"fake-{os.getpid()}"
+    STATE["sessionId"] = session_id
+    STATE["sessionFile"] = f"/tmp/{session_id}.jsonl"
 if mode in ("activity-lifecycle", "pending-streaming"):
     STATE = {"model": {"id": "initial-model", "provider": "initial-provider"},
              "isStreaming": True, "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
@@ -396,6 +400,13 @@ for line in sys.stdin:
     elif ctype == "extension_ui_response" and mode == "extension-timeout":
         emit({"type": "message_update", "message": {"id": "leaked-timeout-response",
               "role": "assistant", "content": [{"type": "text", "text": "stale timeout leaked"}]}})
+    elif mode == "block-subagent-subscription" and ctype == "set_subagent_subscription":
+        # Bounded: a busy wait never sees stdin close, so an unreleased gate would
+        # outlive the test that deleted its trigger directory.
+        deadline = time.monotonic() + 30
+        while not os.path.exists(sys.argv[2]) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
     elif mode in ("background-exit", "pending-streaming") and ctype == "set_subagent_subscription":
         emit({"id": cid, "type": "response", "command": ctype, "success": True})
         emit({"type": "agent_start"})

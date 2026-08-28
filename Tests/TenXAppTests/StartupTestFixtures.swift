@@ -12,10 +12,10 @@ actor CountingOmpLocator: OmpLocating {
         self.installation = installation
     }
 
-    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
         count += 1
         try Task.checkCancellation()
-        return installation
+        return installation.map(OmpLocation.found) ?? .notFound
     }
 }
 
@@ -28,11 +28,11 @@ actor GatedOmpLocator: OmpLocating {
         self.gate = gate
     }
 
-    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
         await gate.started()
         await gate.waitForRelease()
         try Task.checkCancellation()
-        return installation
+        return installation.map(OmpLocation.found) ?? .notFound
     }
 }
 
@@ -88,6 +88,7 @@ extension StartupTiming {
         return StartupTiming(
             minimumVisibility: .zero,
             timeout: .seconds(10),
+            updateCheckDeadline: .milliseconds(50),
             sleep: { duration in
                 guard duration == .seconds(10) else { return }
                 try await sleeper.sleep()
@@ -114,15 +115,41 @@ private actor ControlledStartupTimeout {
     }
 }
 
+/// Polls until `predicate` holds, bounded by a wall-clock deadline.
+///
+/// Deadline-based rather than a fixed iteration count on purpose. The suite
+/// runs its ~500 tests in parallel and dozens of them spawn a `fake_server.py`
+/// child, so a loaded machine stretches every spawn and RPC handshake. A count
+/// of iterations encodes "how fast the machine was the day it was written",
+/// which is what made whichever tests happened to be scheduled together fail.
+///
+/// The ceiling is deliberately far longer than any wait should take: it exists
+/// to turn a genuine hang into a failure, not to police latency. Waiting costs
+/// nothing on the passing path, since the poll returns as soon as the predicate
+/// holds.
 @MainActor
-func waitForModelState(
+@discardableResult
+func waitUntil(
+    _ description: String,
+    timeout: Duration = .seconds(30),
+    sourceLocation: SourceLocation = #_sourceLocation,
     _ predicate: @escaping @MainActor () async -> Bool
-) async {
-    for _ in 0..<200 {
-        if await predicate() { return }
+) async -> Bool {
+    let deadline = ContinuousClock.now.advanced(by: timeout)
+    while ContinuousClock.now < deadline {
+        if await predicate() { return true }
         try? await ContinuousClock().sleep(for: .milliseconds(10))
     }
-    Issue.record("Timed out waiting for startup fixture state")
+    Issue.record("Timed out waiting for \(description)", sourceLocation: sourceLocation)
+    return false
+}
+
+@MainActor
+func waitForModelState(
+    sourceLocation: SourceLocation = #_sourceLocation,
+    _ predicate: @escaping @MainActor () async -> Bool
+) async {
+    await waitUntil("startup fixture state", sourceLocation: sourceLocation, predicate)
 }
 
 @MainActor
@@ -134,6 +161,8 @@ func makeStartupDependencies(
     settingsRunner: any OmpConfigRunning,
     makeProviderModel: @escaping @MainActor @Sendable (URL) -> ProviderManagementViewModel,
     makeProcessManager: @escaping @Sendable (String) -> SessionProcessManager,
+    makeUpdateChecker: @escaping @MainActor @Sendable (
+        @escaping @MainActor () async -> Void) -> any UpdateChecking,
     makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel = stubAppComposerControlsFactory
 ) -> AppDependencies {
     AppDependencies(
@@ -146,7 +175,8 @@ func makeStartupDependencies(
             SettingsViewModel(service: OmpConfigService(runner: settingsRunner))
         },
         makeProviderModel: makeProviderModel,
-        makeComposerControls: makeComposerControls)
+        makeComposerControls: makeComposerControls,
+        makeUpdateChecker: makeUpdateChecker)
 }
 
 @MainActor
@@ -304,7 +334,15 @@ final class StartupFixture {
         timing: StartupTiming = .live,
         settingsRunner: any OmpConfigRunning = StartupConfigRunner(),
         providerModel: ProviderManagementViewModel? = nil,
-        providerFactory: StartupProviderModelFactory? = nil
+        providerFactory: StartupProviderModelFactory? = nil,
+        updateChecker: (any UpdateChecking)? = nil,
+        // Hands the test the very `prepareForInstall` closure `AppModel` wires into its
+        // checker. `SplashUpdateDriver.showReadyToInstallAndRelaunch` awaits that closure
+        // (it is `await self?.shutdown()`), so a test that wants to compose a real
+        // shutdown with an accepted update has no other way to reach it — every other
+        // seam substitutes the checker and drops the closure on the floor.
+        onMakeUpdateChecker: (
+            @MainActor @Sendable (@escaping @MainActor () async -> Void) -> Void)? = nil
     ) -> AppModel {
         let manager = processManager ?? self.processManager()
         let provider = providerModel ?? providerTestModel(providers: [
@@ -320,6 +358,7 @@ final class StartupFixture {
         } else {
             makeProvider = { _ in provider }
         }
+        let checker = updateChecker ?? stubUpdateCheckerReportingNoUpdate()
         let dependencies = makeStartupDependencies(
             locator: locator ?? CountingOmpLocator(installation: installation),
             library: library,
@@ -327,7 +366,11 @@ final class StartupFixture {
             timing: timing,
             settingsRunner: settingsRunner,
             makeProviderModel: makeProvider,
-            makeProcessManager: { _ in manager })
+            makeProcessManager: { _ in manager },
+            makeUpdateChecker: { prepareForInstall in
+                onMakeUpdateChecker?(prepareForInstall)
+                return checker
+            })
         return AppModel(dependencies: dependencies, preferenceDefaults: defaults)
     }
 

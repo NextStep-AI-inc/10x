@@ -24,6 +24,28 @@ private func json(_ data: Data) throws -> [String: Any] {
     #expect(obj["streamingBehavior"] == nil)
 }
 
+@Test func promptCarriesImagesInTheContractShape() throws {
+    let obj = try json(try RpcCommand.prompt(
+        message: "what is this",
+        images: [
+            PromptImage(base64Data: "AAEC", mimeType: "image/png"),
+            PromptImage(base64Data: "AwQF", mimeType: "image/jpeg"),
+        ],
+        streamingBehavior: nil).encodedLine(id: "req_img"))
+    let images = try #require(obj["images"] as? [[String: Any]])
+    #expect(images.count == 2)
+    #expect(images[0]["type"] as? String == "image")
+    #expect(images[0]["data"] as? String == "AAEC")
+    #expect(images[0]["mimeType"] as? String == "image/png")
+    #expect(images[1]["mimeType"] as? String == "image/jpeg")
+}
+
+@Test func promptOmitsImagesWhenThereAreNone() throws {
+    let obj = try json(try RpcCommand.prompt(message: "x", streamingBehavior: nil)
+        .encodedLine(id: "req_no_img"))
+    #expect(obj["images"] == nil)
+}
+
 @Test func switchSessionUsesSessionPathKey() throws {
     let obj = try json(try RpcCommand.switchSession(path: "/tmp/s.jsonl").encodedLine(id: "req_3"))
     #expect(obj["type"] as? String == "switch_session")

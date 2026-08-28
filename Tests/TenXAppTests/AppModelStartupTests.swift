@@ -135,6 +135,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .milliseconds(350),
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .milliseconds(350) {
                 await minimumGate.started()
@@ -172,6 +173,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .milliseconds(350),
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .milliseconds(350) {
                 await floorProbe.recordStart()
@@ -182,9 +184,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let model = fixture.model(locator: locator, timing: timing)
     let bootstrap = Task { await model.bootstrap() }
     await locatorGate.waitForStart()
-    for _ in 0..<100 where !(await floorProbe.hasStarted) {
-        await Task.yield()
-    }
+    await waitUntil("the startup floor to start") { await floorProbe.hasStarted }
 
     #expect(await floorProbe.hasStarted)
     #expect(model.startupState.handoffGeneration == 0)
@@ -203,6 +203,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .zero,
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .seconds(10) {
                 await timeoutGate.started()
@@ -215,7 +216,7 @@ final class AppTerminationDelegateTests: XCTestCase {
 
     await model.bootstrap()
 
-    #expect(model.route == .setup)
+    #expect(model.route == .onboarding(.installOmp))
     #expect(model.startupState.handoffGeneration == 1)
     #expect(model.startupState.phase == .handoff)
     await model.shutdown()
@@ -315,6 +316,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .milliseconds(350),
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .milliseconds(350) { await minimumGate.started() }
             try await ContinuousClock().sleep(for: .seconds(60))
@@ -348,6 +350,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     let timing = StartupTiming(
         minimumVisibility: .milliseconds(350),
         timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
         sleep: { duration in
             if duration == .milliseconds(350) {
                 await minimumGate.started()
@@ -555,7 +558,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     await replacement.value
 
     #expect(model.providerModel === replacementProvider)
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
     #expect(providerFactory.count == 2)
     #expect(await fallbackService.shutdownCount == 1)
     await model.shutdown()
@@ -622,7 +625,7 @@ final class AppTerminationDelegateTests: XCTestCase {
     }
 
     #expect(model.providerModel === replacementProvider)
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
     #expect(model.providerUsages.map(\.id) == ["cursor"])
     #expect(providerFactory.count == 2)
     #expect(await currentService.shutdownCount == 1)
@@ -733,4 +736,66 @@ private func enterRuntimeRecovery(
         model.startupState.markReady(stage, attemptID: attemptID)
     }
     model.startupState.enterRecovery(attemptID: attemptID)
+}
+
+/// Records which of two concurrent `shutdown()` calls has returned.
+@MainActor
+private final class ShutdownOrderProbe {
+    var didFinishFirst = false
+    var didFinishSecond = false
+}
+
+/// `shutdown()` used to return at the *start* of a shutdown already in flight, not at
+/// its completion: `guard !isShuttingDown else { return }`. Two callers reach it in
+/// production — Sparkle's install path through `prepareForInstall`, and
+/// `AppTerminationDelegate` when the app is asked to quit — so the second one could
+/// declare the app safe to terminate while the first was still reaping OMP children.
+///
+/// The gated locator here is what holds the first shutdown open: it parks the startup
+/// task somewhere cancellation cannot reach, which is exactly the state
+/// `await startup?.task.value` exists to wait out.
+@MainActor
+@Test func aSecondShutdownWaitsForTheFirstOneToFinish() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let locatorGate = LoadGate()
+    let timing = StartupTiming(
+        minimumVisibility: .zero,
+        timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
+        sleep: { duration in
+            guard duration == .seconds(10) else { return }
+            try await ContinuousClock().sleep(for: .seconds(60))
+        })
+    let model = fixture.model(
+        locator: GatedOmpLocator(installation: fixture.installation, gate: locatorGate),
+        timing: timing)
+    let probe = ShutdownOrderProbe()
+
+    let bootstrap = Task { await model.bootstrap() }
+    await locatorGate.waitForStart()
+
+    let first = Task { @MainActor [probe] in
+        await model.shutdown()
+        probe.didFinishFirst = true
+    }
+    while !model.isShuttingDown { await Task.yield() }
+    let second = Task { @MainActor [probe] in
+        await model.shutdown()
+        probe.didFinishSecond = true
+    }
+    for _ in 0..<200 { await Task.yield() }
+
+    #expect(!probe.didFinishFirst)
+    #expect(
+        !probe.didFinishSecond,
+        "The second shutdown reported completion while the first was still reaping.")
+
+    await locatorGate.release()
+    await first.value
+    await second.value
+
+    #expect(probe.didFinishFirst)
+    #expect(probe.didFinishSecond)
+    await bootstrap.value
 }

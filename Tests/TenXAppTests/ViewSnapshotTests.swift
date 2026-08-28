@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import OmpKit
 import SwiftUI
@@ -39,8 +40,97 @@ import Testing
 }
 
 @MainActor
-@Test func setupSnapshot() throws {
-    try assertSnapshot(SetupView(model: AppModel()), name: "omp-missing")
+@Test func onboardingInstallStepSnapshot() throws {
+    try assertSnapshot(
+        OnboardingView(model: AppModel(), step: .installOmp),
+        name: "onboarding-install")
+}
+
+@MainActor
+@Test func onboardingInstallStepUnrunnableSnapshot() throws {
+    let model = AppModel()
+    model.unrunnableOmpURL = URL(filePath: "/Users/example/.bun/bin/omp")
+    try assertSnapshot(
+        OnboardingView(model: model, step: .installOmp),
+        name: "onboarding-install-unrunnable")
+}
+
+@MainActor
+@Test func onboardingInstallStepVerifyingSnapshot() throws {
+    // The owner's reported bug: after a successful script, nothing showed
+    // that discovery was still running and would advance the flow itself.
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: ["Downloading omp…", "Installed to ~/.local/bin/omp"],
+            initialPhase: .verifying)
+            .padding(56),
+        name: "onboarding-install-verifying",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
+@Test func onboardingProjectStepEmptySnapshot() throws {
+    // A genuine first-run user: no sessions, so no suggestions. No disk
+    // scan runs, so this settles synchronously.
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-onboarding-project-empty")
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    try assertSnapshot(
+        OnboardingView(model: model, step: .chooseProject),
+        name: "onboarding-project-empty",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func onboardingProjectStepPickedFolderNoSessionsSnapshot() throws {
+    // The owner's reported bug: a folder picked with "Choose folder…" (never
+    // driven through `NSOpenPanel` here) must be visible even though there
+    // are no session-derived suggestions to show alongside it.
+    let model = isolatedSnapshotAppModel(
+        sessionLibraryPath: "/tmp/10x-onboarding-project-picked-no-sessions")
+    let url = URL(filePath: "/tmp/picked-with-no-sessions", directoryHint: .isDirectory)
+    model.selectedProjectURL = url
+    var selection = OnboardingProjectSelection()
+    selection.pick(url)
+    try assertSnapshot(
+        OnboardingProjectStepView(model: model, initialSelection: selection)
+            .padding(56),
+        name: "onboarding-project-picked-no-sessions",
+        size: CGSize(width: 760, height: 320))
+}
+
+@MainActor
+@Test func onboardingProjectStepPopulatedSnapshot() throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-onboarding-project-populated")
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/onboarding-populated-1.jsonl",
+            cwd: "/tmp/10x",
+            title: "Session",
+            modified: 3),
+        snapshotSession(
+            path: "/sessions/onboarding-populated-2.jsonl",
+            cwd: "/tmp/omp-cli",
+            title: "Session",
+            modified: 2),
+        // Deliberately long and nested, so the third (still-visible, above
+        // the scroll fold) row exercises OnboardingRowView's
+        // `.lineLimit(1)`/`.truncationMode(.head)` on the detail line.
+        snapshotSession(
+            path: "/sessions/onboarding-populated-3.jsonl",
+            cwd: "/tmp/workspace/a-genuinely-long-directory-name-used-to-exercise-the-truncated-detail-line",
+            title: "Session",
+            modified: 1),
+    ]
+    try assertSnapshot(
+        OnboardingView(model: model, step: .chooseProject),
+        name: "onboarding-project-populated",
+        size: CGSize(width: 760, height: 560))
 }
 
 @MainActor
@@ -55,10 +145,11 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-required")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-required",
         size: CGSize(width: 760, height: 560))
 }
@@ -85,19 +176,25 @@ import Testing
 
 @MainActor
 @Test func providerSetupLoadingSnapshot() async throws {
-    let loadingGate = LoadGate()
     let service = FakeProviderService(providers: [])
-    await service.enqueueProviderGate(loadingGate)
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    // Bootstrap first, before the gate is armed: bootstrap's own initial
+    // `loadProviders()` call must complete (there is nothing queued for it
+    // to catch yet), or the gated call it triggers would deadlock waiting
+    // on a release that only comes after this test takes its snapshot.
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-loading")
+
+    let loadingGate = LoadGate()
+    await service.enqueueProviderGate(loadingGate)
     let loading = Task { await model.load() }
     await loadingGate.waitForStart()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-loading",
         size: CGSize(width: 760, height: 560))
 
@@ -113,10 +210,11 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-connected")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-connected",
         size: CGSize(width: 760, height: 560))
 }
@@ -141,11 +239,12 @@ import Testing
         ProviderLoginProvider(
             id: "zed", name: "Zed", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-browse-all")
     await model.load()
     model.showAllProviders()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-browse-all-minimum-size",
         size: CGSize(width: 760, height: 560))
 }
@@ -170,11 +269,13 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(
+        model, path: "/tmp/10x-onboarding-provider-browse-all-mixed-rows")
     await model.load()
     model.showAllProviders()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-browse-all-mixed-rows-minimum-size",
         size: CGSize(width: 760, height: 560))
 }
@@ -191,12 +292,13 @@ import Testing
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) },
         formatTime: { _ in "4:00 PM" })
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-login-failure")
     await model.load()
     let provider = try #require(model.providers.first)
     await model.login(provider)
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-login-failure",
         size: CGSize(width: 760, height: 560))
 }
@@ -213,19 +315,20 @@ import Testing
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-active-login")
     await model.load()
     let provider = try #require(model.providers.first)
     let login = Task { await model.login(provider) }
     await loginGate.waitForStart()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-active-login",
         size: CGSize(width: 760, height: 560))
 
     await model.cancelLogin()
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-login-cancelled",
         size: CGSize(width: 760, height: 560))
 
@@ -532,6 +635,42 @@ import Testing
 }
 
 @MainActor
+@Test func providerConnectionsBenignStatusSnapshot() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(
+        providers: providerWorkspaceProviders,
+        loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try providerWorkspaceSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+
+    // A provider absent from `model.providers`, so the notification handler
+    // falls back to the catalog-level "Connection needs attention." status —
+    // the one benign message this view renders above the rows.
+    let ghost = ProviderLoginProvider(
+        id: "ghost", name: "Ghost", isAvailable: true, isAuthenticated: false)
+    let login = Task { await model.login(ghost) }
+    await loginGate.waitForStart()
+    await service.emit(ExtensionUIRequest(
+        id: "notice",
+        method: "notify",
+        payload: .object(["message": .string("Waiting for approval.")])))
+    await waitForModelState { model.loginMessage != nil }
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-connections-benign-status",
+        size: CGSize(width: 1180, height: 760))
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
+}
+
+@MainActor
 @Test func providerUsageDetailSnapshot() async throws {
     let model = try providerWorkspaceModel()
     await model.load()
@@ -772,6 +911,36 @@ private final class SnapshotProviderAccountSession: ProviderAccountSession {
 
 @MainActor
 @Test func providerAccountHoveredBackgroundSnapshot() throws {
+try assertSnapshot(
+    ProviderUsageDockView(
+        providers: providerUsageDockProviders(workPercentage: 36),
+        activeCounts: [:],
+        generatingCounts: providerUsageDockGeneratingCounts,
+        isForegroundGenerating: true,
+        visualFocusAccountID: "anthropic:work")
+        .environment(\._accessibilityReduceMotion, true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+    name: "provider-account-hovered-background",
+    size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerUsageDockIdleSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: ["anthropic": 2],
+            generatingCounts: [:],
+            isForegroundGenerating: false)
+            // macOS exposes the public Reduce Motion key as read-only.
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-usage-dock-idle",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerUsageDockExpandedSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
             providers: providerUsageDockProviders(workPercentage: 36),
@@ -860,7 +1029,6 @@ private final class SnapshotProviderAccountSession: ProviderAccountSession {
         ProviderUsageDockView(
             providers: providerUsageDockLegacyProviders,
             activeCounts: ["anthropic": 2],
-            isForegroundGenerating: true,
             initiallySelectedProviderID: "anthropic")
             .environment(\._accessibilityReduceMotion, true),
         name: "provider-usage-dock-expanded",
@@ -881,10 +1049,15 @@ private final class SnapshotProviderAccountSession: ProviderAccountSession {
             filePath: "/tmp/10x-full-shell-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
     let railExpansion = RailExpansionModel()
     railExpansion.pointerEntered()
@@ -922,10 +1095,15 @@ private final class SnapshotProviderAccountSession: ProviderAccountSession {
             filePath: "/tmp/10x-full-shell-usage-dock-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
 
     try assertSnapshot(
@@ -947,10 +1125,15 @@ private final class SnapshotProviderAccountSession: ProviderAccountSession {
             filePath: "/tmp/10x-full-shell-wide-usage-dock-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
 
     try assertSnapshot(
@@ -1096,18 +1279,87 @@ private func assertProviderSetupStarterSnapshot(
     let model = providerTestModel(providers: [
         ProviderLoginProvider(id: id, name: name, isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-starter-\(id)")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: snapshotName,
         size: CGSize(width: 760, height: 560))
 }
 
-private struct SnapshotOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test")
+/// Wraps a pre-built `ProviderManagementViewModel` in an `AppModel` whose
+/// `.connectProvider` step renders it, mirroring `fullShellExpandedRailOverflowSnapshot`
+/// below. `providerModel` is `private(set)` on `AppModel` — see the doc
+/// comment on `OnboardingStep.unmet` — so `dependencies.makeProviderModel`
+/// plus `bootstrap()` is the only way in. Callers that also need to arm a
+/// `LoadGate`/`LoginGate` on the underlying fake service must do so *after*
+/// this returns: bootstrap performs its own, ungated `loadProviders()` call
+/// as part of standing up the runtime, and an already-armed gate would block
+/// that call forever.
+@MainActor
+private func onboardingProviderAppModel(
+    _ providerModel: ProviderManagementViewModel,
+    path: String
+) async -> AppModel {
+    // An isolated `RecentProjectStore`, not the `.standard`-backed default:
+    // `prepareSessionsAndRecentProjects` auto-fills `selectedProjectURL` from
+    // whatever it ranks highest when nothing has been chosen yet, and the
+    // default reads the real UserDefaults domain — this machine's actual
+    // recent-projects history, not a fixture. Without this, the step
+    // counter this test snapshots would depend on whoever's Mac (and
+    // whatever they were last using) recorded the reference.
+    let suiteName = "TenXAppTests.OnboardingProviderAppModel.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("[Tests:ViewSnapshot] Unable to create defaults suite")
     }
+    defaults.removePersistentDomain(forName: suiteName)
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(filePath: path, directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        recentProjectStore: RecentProjectStore(defaults: defaults),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
+    await model.bootstrap()
+    return model
+}
+
+private struct SnapshotOmpLocator: OmpLocating {
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test"))
+    }
+}
+
+/// A `RecentProjectStore` backed by a fresh, empty `UserDefaults` suite, not
+/// the `.standard`-backed default: `knownProjectURLs`/`ProjectSessionGrouper`
+/// now render a rail (or onboarding project-step) row for every known
+/// project, including ones with no sessions, so any snapshot reading the
+/// default store would depend on whoever's Mac (and its real recent-projects
+/// history) produced the reference image.
+@MainActor
+private func isolatedRecentProjectStore() -> RecentProjectStore {
+    let suiteName = "TenXAppTests.ViewSnapshot.RecentProjectStore.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("[Tests:ViewSnapshot] Unable to create defaults suite")
+    }
+    defaults.removePersistentDomain(forName: suiteName)
+    return RecentProjectStore(defaults: defaults)
+}
+
+/// An `AppModel` with an isolated `RecentProjectStore`, for tests that build
+/// state directly (never calling `bootstrap()`) and so never invoke
+/// `makeProviderModel`/`makeComposerControls` — cheap stubs stand in.
+@MainActor
+private func isolatedSnapshotAppModel(sessionLibraryPath: String) -> AppModel {
+    AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: sessionLibraryPath,
+            directoryHint: .isDirectory)),
+        recentProjectStore: isolatedRecentProjectStore(),
+        makeProviderModel: { _ in providerTestModel(providers: []) },
+        makeComposerControls: stubComposerControlsFactory))
 }
 
 private func providerUsageDockProviders(workPercentage: Int = 0) -> [ProviderUsageProvider] { [
@@ -2112,6 +2364,29 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         size: CGSize(width: 220, height: 360))
 }
 
+/// The owner's reported bug: a project chosen with no sessions yet must
+/// still show up in the rail, above the fold, with no disclosure row.
+@MainActor
+@Test func expandedRailShowsProjectWithNoSessionsSnapshot() throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-rail-sessionless")
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/with-sessions.jsonl",
+            cwd: "/tmp/10x",
+            title: "Improve active session shell",
+            modified: 20),
+    ]
+    model.selectedProjectURL = URL(filePath: "/tmp/empty-project", directoryHint: .isDirectory)
+    model.route = .session("/sessions/with-sessions.jsonl")
+    let expansion = RailExpansionModel()
+    expansion.pointerEntered()
+
+    try assertSnapshot(
+        FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
+        name: "shell-rail-sessionless-project",
+        size: CGSize(width: 220, height: 320))
+}
+
 @MainActor
 @Test func archivedSessionsEmptySnapshot() throws {
     let model = AppModel()
@@ -2223,6 +2498,172 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             onSend: {}),
         name: "composer-footer-fast-absent",
         size: CGSize(width: 780, height: 140))
+}
+
+/// Guards the composer border against the open panel: the card's stroke must
+/// stay behind card content, so no hairline crosses the flyout.
+@MainActor
+@Test func composerWithModelFlyoutSnapshot() async throws {
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("Pick a model without the border cutting the panel."),
+                flyout: .constant(.model),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [URL(filePath: "/tmp/10x", directoryHint: .isDirectory)],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controls: controls,
+                controlsMode: .newSession,
+                onSend: {})
+        },
+        name: "composer-with-model-flyout",
+        size: CGSize(width: 780, height: 400))
+}
+
+private let modelPickerAnthropicOpus = ComposerModelInfo(
+    modelID: "claude-opus-4-8",
+    name: "Claude Opus 4.8",
+    provider: "anthropic",
+    api: "anthropic-messages",
+    thinkingEfforts: ["low", "high"],
+    requiresEffort: false)
+
+private let modelPickerOpenRouterOpus = ComposerModelInfo(
+    modelID: "anthropic/claude-opus-4-8",
+    name: "Claude Opus 4.8",
+    provider: "openrouter",
+    api: "openai-completions",
+    thinkingEfforts: [],
+    requiresEffort: false)
+
+@MainActor
+@Test func modelPickerDefaultSnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        recents: [modelPickerAnthropicOpus],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: modelPickerAnthropicOpus,
+            thinkingOptions: ["auto", "low", "high"],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: modelPickerAnthropicOpus),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-default",
+        size: CGSize(width: 340, height: 420))
+}
+
+@MainActor
+@Test func modelPickerSearchingSnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        recents: [modelPickerAnthropicOpus],
+        query: "opus")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: modelPickerAnthropicOpus,
+            thinkingOptions: ["auto", "low", "high"],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: modelPickerAnthropicOpus),
+            query: .constant("opus"),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-searching",
+        size: CGSize(width: 340, height: 420))
+}
+
+@MainActor
+@Test func modelPickerEmptySnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [],
+        recents: [],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: nil,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: false,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: false,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: nil),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-empty",
+        size: CGSize(width: 340, height: 420))
+}
+
+/// A model with Fast mode and no thinking efforts still needs the rule above the
+/// settings region, or the Fast row abuts the list with nothing dividing them.
+@MainActor
+@Test func modelPickerFastModeOnlySnapshot() throws {
+    let sonnet = ComposerModelInfo(
+        modelID: "claude-sonnet-4-5",
+        name: "Claude Sonnet 4.5",
+        provider: "anthropic",
+        api: "anthropic-messages",
+        thinkingEfforts: [],
+        requiresEffort: false)
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [sonnet],
+        recents: [],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: sonnet,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: true,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: sonnet),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-fast-only",
+        size: CGSize(width: 340, height: 260))
 }
 
 @MainActor
@@ -2490,7 +2931,7 @@ private func wideTranscriptController() -> SessionController {
 
 @MainActor
 private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-rail")
     model.sessions = [
         snapshotSession(
             path: "/sessions/selected.jsonl",
@@ -2516,7 +2957,7 @@ private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
 
 @MainActor
 private func snapshotOverflowRail() -> (AppModel, RailExpansionModel) {
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-overflow-rail")
     model.sessions = (1...7).map { index in
         snapshotSession(
             path: "/sessions/overflow-\(index).jsonl",
@@ -2627,6 +3068,13 @@ private let snapshotEmptyIDEStore: IDEPreferenceStore = {
 }()
 
 @MainActor
+private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
+    let defaults = UserDefaults(suiteName: "tests.\(name)")!
+    defaults.removePersistentDomain(forName: "tests.\(name)")
+    return RecentModelStore(defaults: defaults, key: "recent-model-keys")
+}
+
+@MainActor
 private func snapshotComposerControls(
     models: [ComposerModelInfo],
     selected: ComposerModelInfo,
@@ -2641,7 +3089,8 @@ private func snapshotComposerControls(
         fastModeActive: false))
     let model = ComposerControlsModel(
         catalog: catalog,
-        defaults: SnapshotComposerDefaults())
+        defaults: SnapshotComposerDefaults(),
+        recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)))
     return model
 }
@@ -2672,4 +3121,193 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
             fastModeEnabled: false,
             fastModeActive: false)),
         defaults: SnapshotComposerDefaults())
+}
+
+@MainActor
+@Test func transcriptWorkingIndicatorSnapshot() throws {
+    try assertSnapshot(
+        TranscriptView(controller: awaitingOutputController())
+            .environment(snapshotEmptyIDEStore),
+        name: "transcript-working-indicator",
+        size: CGSize(width: 700, height: 260))
+}
+
+@MainActor
+@Test func composerStopsARunWithNothingToSendSnapshot() throws {
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant(""),
+            presentation: .active(controller: awaitingOutputController()),
+            controlsMode: .activeSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-stop-control",
+        size: CGSize(width: 700, height: 180))
+}
+
+@MainActor
+@Test func composerStillSendsAStagedImageMidRunSnapshot() throws {
+    // Stop must not take the button while there is something to send, or an
+    // image attached mid-run could only be discarded.
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant(""),
+            attachments: .constant([
+                snapshotAttachment(name: "regression.png", width: 800, height: 500),
+            ]),
+            presentation: .active(controller: awaitingOutputController()),
+            controlsMode: .activeSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-sends-attachment-mid-run",
+        size: CGSize(width: 700, height: 240))
+}
+
+@MainActor
+private func awaitingOutputController() -> SessionController {
+    let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
+    let user = TranscriptMessage(
+        id: "awaiting-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Summarize the failing tests."),
+        ]),
+        timestamp: timestamp,
+        isFinal: true)
+    return SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [.message(user)],
+        runtimeState: .streaming,
+        title: "Working session")
+}
+
+@MainActor
+@Test func composerGrowsWithALongDraftSnapshot() throws {
+    let draft = """
+        Rework the transcript so a long prompt stays visible while it is being \
+        written, instead of scrolling inside a two line window. Keep the send \
+        control in the same place and do not change the footer height.
+        """
+    try assertSnapshot(
+        VStack(spacing: 24) {
+            ComposerView(
+                draft: .constant(""),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controlsMode: .newSession,
+                onSend: {})
+            ComposerView(
+                draft: .constant(draft),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controlsMode: .newSession,
+                onSend: {})
+            ComposerView(
+                draft: .constant(String(repeating: "This prompt is far too long to show in full. ", count: 12)),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controlsMode: .newSession,
+                onSend: {})
+        }
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-placeholder-and-growth",
+        size: CGSize(width: 700, height: 760))
+}
+
+@MainActor
+@Test func composerWithStagedAttachmentsSnapshot() throws {
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant("Why does this row wrap?"),
+            attachments: .constant([
+                snapshotAttachment(name: "sidebar-overflow.png", width: 1_200, height: 800),
+                snapshotAttachment(name: "footer-clipping.png", width: 640, height: 640),
+            ]),
+            presentation: .newSession(
+                projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                projectURLs: [],
+                onChooseProject: { _ in },
+                onAddExistingFolder: {}),
+            controlsMode: .newSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-with-attachments",
+        size: CGSize(width: 700, height: 260))
+}
+
+@MainActor
+@Test func transcriptUserMessageWithAnImageSnapshot() throws {
+    let message = TranscriptMessage(
+        id: "image-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string("The sidebar clips at this width."),
+                ]),
+                .object([
+                    "type": .string("image"),
+                    "data": .string(snapshotImageData(width: 320, height: 200)
+                        .base64EncodedString()),
+                    "mimeType": .string("image/png"),
+                ]),
+            ]),
+        ]),
+        isFinal: true)
+
+    try assertSnapshot(
+        MessageBubbleView(message: message)
+            .padding(24),
+        name: "user-message-with-image",
+        size: CGSize(width: 700, height: 300))
+}
+
+@MainActor
+private func snapshotAttachment(name: String, width: Int, height: Int) -> ComposerAttachment {
+    let fitted = ComposerAttachmentEncoder.fittedSize(width: width, height: height)
+    return ComposerAttachment(
+        id: UUID(uuidString: "00000000-0000-0000-0000-0000000000\(name.count)")
+            ?? UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+        name: name,
+        data: snapshotImageData(width: 64, height: 64),
+        mimeType: "image/png",
+        pixelWidth: fitted.width,
+        pixelHeight: fitted.height)
+}
+
+/// A fixed two-tone bitmap, so the recorded reference does not move between runs.
+private func snapshotImageData(width: Int, height: Int) -> Data {
+    let representation = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: representation)
+    NSColor(red: 0, green: 0.65, blue: 0.77, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: width, height: height).fill()
+    NSColor(white: 0.05, alpha: 1).setFill()
+    NSRect(x: 0, y: 0, width: width / 2, height: height / 2).fill()
+    NSGraphicsContext.restoreGraphicsState()
+    return representation.representation(using: .png, properties: [:])!
 }

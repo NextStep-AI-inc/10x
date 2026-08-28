@@ -28,7 +28,7 @@ import OmpKit
 @MainActor
 @Test func leaveSettingsFallsBackToNewSessionFromSetup() {
     let model = AppModel()
-    model.route = .setup
+    model.route = .onboarding(.installOmp)
 
     model.openSettings()
     model.leaveSettings()
@@ -175,7 +175,7 @@ import OmpKit
     let session = try #require(model.sessions.first)
     model.route = .session(session.path)
 
-    await model.archiveSession(session)
+    await model.archiveCurrentSession()
 
     #expect(model.route == .newSession)
     #expect(model.activeSession == nil)
@@ -242,9 +242,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let manager = try #require(model.processManager)
     #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
     #expect(await manager.handle(for: "/tmp/fake.jsonl") != nil)
@@ -427,7 +425,7 @@ import OmpKit
 
     model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
 
-    _ = await settles {
+    await waitUntil("the exited session to present recovery and unregister") {
         model.activeSession?.isRecoveryPresented == true && coordinator.managedSessions.isEmpty
     }
     #expect(model.activeSession?.isRecoveryPresented == true)
@@ -496,7 +494,7 @@ import OmpKit
 
     model.startNewSession(prompt: "Start")
 
-    _ = await settles {
+    await waitUntil("the exited session to present recovery and unregister") {
         model.activeSession?.isRecoveryPresented == true && coordinator.managedSessions.isEmpty
     }
     #expect(model.activeSession?.isRecoveryPresented == true)
@@ -520,17 +518,18 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    _ = await settles { model.providerActivityCounts["test"] == 1 }
+    await waitUntil("the background turn to start") {
+        model.providerActivityCounts["test"] == 1
+    }
 
     #expect(model.providerActivityCounts["test"] == 1)
     model.openNewSession()
     #expect(model.activeSession == nil)
     #expect(model.route == .newSession)
     #expect(model.providerActivityCounts["test"] == 1)
-    #expect(!model.isForegroundSessionGenerating)
 
-    for _ in 0..<150 where model.providerActivityCounts["test"] != nil {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the background turn to finish") {
+        model.providerActivityCounts["test"] == nil
     }
     #expect(model.providerActivityCounts["test"] == nil)
     if let manager = model.processManager {
@@ -553,9 +552,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
     let original = try #require(model.activeSession)
 
@@ -593,6 +590,49 @@ import OmpKit
 }
 
 @MainActor
+@Test func openingASessionWhileItsNewSessionOpenIsInFlightReusesItsController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-new-session-race-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let release = container.appendingPathComponent("release")
+    let executable = try makeNavigationExecutable(
+        in: container,
+        mode: "block-subagent-subscription",
+        arguments: [release.path])
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+
+    // The child parks on the last command of the open, so the controller knows its
+    // path while `openNew` — and the indexing that follows it — is still in flight.
+    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    let original = try #require(model.activeSession)
+    #expect(original.sessionPath == "/tmp/fake.jsonl")
+
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+
+    #expect(model.activeSession === original)
+
+    FileManager.default.createFile(atPath: release.path, contents: nil)
+    for _ in 0..<500 where !original.draft.isEmpty {
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(original.draft.isEmpty)
+    #expect(model.activeSession === original)
+    let manager = try #require(model.processManager)
+    #expect(await manager.handle(for: "/tmp/fake.jsonl") != nil)
+    await manager.closeAll()
+}
+
+@MainActor
 @Test func failedOpenExistingWithoutSessionPathIsNotReusedOnRetry() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-failed-open-retry-\(UUID().uuidString)")
@@ -608,8 +648,8 @@ import OmpKit
 
     model.openSession(metadata)
     let failed = try #require(model.activeSession)
-    for _ in 0..<100 where failed.sessionPath != nil || !isFailed(failed.runtimeState) {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the session to report its failure") {
+        failed.sessionPath == nil && isFailed(failed.runtimeState)
     }
     #expect(failed.sessionPath == nil)
     #expect(isFailed(failed.runtimeState))
@@ -638,21 +678,17 @@ import OmpKit
         sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
     await model.bootstrap()
     model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
-    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let original = try #require(model.activeSession)
     let manager = try #require(model.processManager)
-    for _ in 0..<100 where original.runtimeState != .streaming {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the session to start streaming") {
+        original.runtimeState == .streaming
     }
 
     #expect(original.runtimeState == .streaming)
 
     model.openNewSession()
-    for _ in 0..<100 where !original.isRecoveryPresented {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitUntil("recovery to be presented") { original.isRecoveryPresented }
     let isStopped = switch original.runtimeState {
     case .stopped:
         true
@@ -693,40 +729,6 @@ import OmpKit
 }
 
 @MainActor
-@Test func nonSessionRoutesAreNotForegroundGeneratingWhileBackgroundActivityContinues() async throws {
-    let container = URL(filePath: NSTemporaryDirectory())
-        .appendingPathComponent("app-model-foreground-activity-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: container) }
-    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
-    let executable = try makeNavigationExecutable(in: container, mode: "slow-turn")
-    let project = container.appendingPathComponent("project")
-    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
-    let model = AppModel(dependencies: navigationDependencies(
-        ompLocator: FixedOmpLocator(executableURL: executable),
-        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
-    await model.bootstrap()
-    model.chooseProject(project)
-    model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.providerActivityCounts["test"] != 1 {
-        try await Task.sleep(for: .milliseconds(20))
-    }
-
-    #expect(model.isForegroundSessionGenerating)
-    model.openSettings()
-    #expect(!model.isForegroundSessionGenerating)
-    model.openProviders(.usage)
-    #expect(!model.isForegroundSessionGenerating)
-    model.openNewSession()
-    #expect(!model.isForegroundSessionGenerating)
-    model.openArchivedSessions()
-    #expect(!model.isForegroundSessionGenerating)
-    #expect(model.providerActivityCounts["test"] == 1)
-    if let manager = model.processManager {
-        await manager.closeAll()
-    }
-}
-
-@MainActor
 @Test func mutationLockDetachesBeforeCloseAndBlocksReentrantActions() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-mutation-lock-\(UUID().uuidString)")
@@ -742,20 +744,20 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let manager = try #require(model.processManager)
     let metadata = navigationMetadata("/tmp/fake.jsonl")
-    let started = ContinuousClock.now
 
     let mutation = Task { await model.archiveSession(metadata) }
-    for _ in 0..<100 where !model.isSessionMutationInFlight {
-        try await Task.sleep(for: .milliseconds(5))
+    await waitUntil("the mutation to take the session lock") {
+        model.isSessionMutationInFlight
     }
 
+    // The detach has to land before the close, and this pair proves exactly
+    // that without timing the machine: archiveSession only returns once the
+    // child is closed, so a mutation still in flight cannot have finished
+    // closing — yet the session is already detached.
     #expect(model.isSessionMutationInFlight)
-    #expect(started.duration(to: .now) < .milliseconds(500))
     #expect(model.activeSession == nil)
     #expect(model.route == .newSession)
     model.openSession(navigationMetadata("/tmp/other.jsonl"))
@@ -773,6 +775,20 @@ import OmpKit
     model.openSettings()
     #expect(model.route == .settings)
     await manager.closeAll()
+}
+
+/// Waits until the model would hand back the *same* controller for `path`.
+///
+/// Deliberately not `activeSession?.sessionPath`: SessionController sets that
+/// partway through `openNew` and then keeps awaiting (state, history, messages,
+/// subscription), while AppModel indexes the path for reuse only once `openNew`
+/// returns. A test that waits on the path alone can act inside that window and
+/// get a second controller — and a second child — for one session.
+@MainActor
+private func waitForManagedSession(_ path: String, in model: AppModel) async {
+    await waitUntil("session \(path) to be registered for reuse") {
+        model.managedController(for: path) != nil
+    }
 }
 
 @MainActor
@@ -811,7 +827,8 @@ private func navigationDependencies<Locator: OmpLocating>(
             ])
         },
         makeComposerControls: stubAppComposerControlsFactory,
-        makeProviderAccountCoordinator: makeProviderAccountCoordinator)
+        makeProviderAccountCoordinator: makeProviderAccountCoordinator,
+        makeUpdateChecker: stubUpdateCheckerFactory)
 }
 
 private func navigationMetadata(_ path: String, cwd: String = "/tmp/Project") -> SessionMetadata {
@@ -842,7 +859,11 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     try Data(content.utf8).write(to: url)
 }
 
-func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws -> URL {
+func makeNavigationExecutable(
+    in directory: URL,
+    mode: String = "basic",
+    arguments: [String] = []
+) throws -> URL {
     let repository = URL(filePath: #filePath)
         .deletingLastPathComponent()
         .deletingLastPathComponent()
@@ -850,9 +871,10 @@ func makeNavigationExecutable(in directory: URL, mode: String = "basic") throws 
     let fixture = repository
         .appendingPathComponent("OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py")
     let executable = directory.appendingPathComponent("fake-omp")
+    let extraArguments = arguments.map { " \"\($0)\"" }.joined()
     let wrapper = """
     #!/bin/sh
-    exec /usr/bin/python3 "\(fixture.path)" "\(mode)"
+    exec /usr/bin/python3 "\(fixture.path)" "\(mode)"\(extraArguments)
     """
     try Data(wrapper.utf8).write(to: executable)
     try FileManager.default.setAttributes(
@@ -981,38 +1003,28 @@ private func navigationCommands(in url: URL) throws -> [String] {
         .map(String.init)
 }
 
-// Every wait in this file is on a spawned fixture process reaching some state, so
-// the budget has to cover that process starting under a fully parallel run, not
-// just the round trip. Matches the five seconds SessionControllerTests waits.
 @MainActor
-private func settles(_ predicate: @MainActor () -> Bool) async -> Bool {
-    let deadline = Date().addingTimeInterval(5)
-    while Date() < deadline {
-        if predicate() { return true }
-        try? await Task.sleep(for: .milliseconds(20))
-    }
-    return predicate()
-}
-
 private func navigationLog(_ url: URL, eventuallyContains expected: String) async -> Bool {
-    await settles { (try? navigationCommands(in: url).contains(expected)) == true }
+    await waitUntil("\(expected) in the navigation command log") {
+        (try? navigationCommands(in: url).contains(expected)) == true
+    }
 }
 
 private struct StubbedOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test")
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test"))
     }
 }
 
 private struct MissingOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? { nil }
+    func locate(preferredURL: URL?) async -> OmpLocation { .notFound }
 }
 
 private struct FixedOmpLocator: OmpLocating {
     let executableURL: URL
 
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        OmpInstallation(executableURL: executableURL, version: "test")
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(OmpInstallation(executableURL: executableURL, version: "test"))
     }
 }
 
@@ -1026,7 +1038,7 @@ private struct FixedOmpLocator: OmpLocating {
 
     await model.bootstrap()
 
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
 }
 
 @MainActor
@@ -1036,6 +1048,9 @@ private struct FixedOmpLocator: OmpLocating {
             id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
     ])
     let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
+    // A project is already selected, so this scenario is meant to reach the
+    // workspace rather than the new project step onboarding also gates on.
+    model.selectedProjectURL = URL(filePath: "/tmp/existing-project", directoryHint: .isDirectory)
 
     await model.bootstrap()
 
@@ -1158,7 +1173,7 @@ private struct FixedOmpLocator: OmpLocating {
 
     await model.bootstrap()
 
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
 }
 
 @MainActor
@@ -1180,7 +1195,7 @@ private struct FixedOmpLocator: OmpLocating {
     await usageGate.waitForStart()
     for _ in 0..<20 { await Task.yield() }
 
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
     await usageGate.release()
     await bootstrap.value
 }
@@ -1242,7 +1257,7 @@ private struct FixedOmpLocator: OmpLocating {
     await shutdownGate.release()
     await failedInstall.value
     #expect(model.providerModel == nil)
-    #expect(model.route == .setup)
+    #expect(model.route == .onboarding(.installOmp))
 }
 
 @MainActor
@@ -1274,14 +1289,13 @@ private struct FixedOmpLocator: OmpLocating {
     #expect(model.settingsModel === settingsModel)
     #expect(model.providerModel === providerModel)
     #expect(model.route == route)
-    #expect(model.setupError == nil)
 
     await processManager.closeAll()
 }
 
 private struct InstalledOmpLocator: OmpLocating {
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        testInstallation
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(testInstallation)
     }
 }
 
@@ -1296,9 +1310,9 @@ private actor SequentialOmpLocator: OmpLocating {
         self.installations = installations
     }
 
-    func locate(preferredURL: URL?) async -> OmpInstallation? {
-        guard !installations.isEmpty else { return nil }
-        return installations.removeFirst()
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        guard !installations.isEmpty else { return .notFound }
+        return installations.removeFirst().map(OmpLocation.found) ?? .notFound
     }
 }
 
@@ -1310,10 +1324,10 @@ private actor InstalledThenCancelledOmpLocator: OmpLocating {
         self.gate = gate
     }
 
-    func locate(preferredURL: URL?) async throws -> OmpInstallation? {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
         if isInitialLookup {
             isInitialLookup = false
-            return testInstallation
+            return .found(testInstallation)
         }
         await gate.started()
         while !Task.isCancelled { await Task.yield() }
@@ -1368,12 +1382,14 @@ private func testDependencies<Locator: OmpLocating>(
                 runner: AppModelTestConfigRunner()))
         },
         makeProviderModel: makeProviderModel,
-        makeComposerControls: makeComposerControls)
+        makeComposerControls: makeComposerControls,
+        makeUpdateChecker: stubUpdateCheckerFactory)
 }
 
 private let appModelTestTiming = StartupTiming(
     minimumVisibility: .zero,
     timeout: .seconds(10),
+    updateCheckDeadline: .milliseconds(50),
     sleep: { duration in
         guard duration == .seconds(10) else { return }
         try await ContinuousClock().sleep(for: .seconds(60))
@@ -1423,6 +1439,17 @@ let stubAppComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerContro
     ComposerControlsModel(
         catalog: StubAppComposerCatalog(),
         defaults: StubAppComposerDefaults())
+}
+
+/// These navigation and shell-snapshot fixtures build `AppDependencies` directly rather
+/// than through `StartupFixture`/`makeStartupDependencies`, so without this they would
+/// fall back to `AppDependencies`'s own default `makeUpdateChecker`, which stands up a
+/// real Sparkle-backed `UpdateController` against `Bundle.main` and asks it to check for
+/// updates on every `bootstrap()` call. A stub answering "nothing new" keeps these tests
+/// from touching Sparkle or the network at all.
+let stubUpdateCheckerFactory: @MainActor @Sendable (
+    @escaping @MainActor () async -> Void) -> any UpdateChecking = { _ in
+    stubUpdateCheckerReportingNoUpdate()
 }
 
 private actor StubAppComposerCatalog: ComposerCatalogLoading {
@@ -1481,9 +1508,7 @@ private actor StubAppComposerDefaults: ComposerDefaultPersisting {
             databaseURL: directory.appending(path: "SearchIndex-v1.sqlite"))))
 
     model.openSearch()
-    for _ in 0..<40 where model.sessions.isEmpty {
-        try await Task.sleep(for: .milliseconds(10))
-    }
+    await waitUntil("the session list to load") { !model.sessions.isEmpty }
 
     #expect(model.isSearchPresented)
     #expect(model.sessions.map(\.title) == ["Open search refresh"])

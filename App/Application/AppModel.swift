@@ -35,10 +35,12 @@ final class AppModel {
         case missingOmp
     }
 
-    var route: AppRoute = .setup
+    var route: AppRoute = .onboarding(.installOmp)
     var installation: OmpInstallation?
     var selectedProjectURL: URL?
-    var setupError: String?
+    /// Set when OMP is installed but would not run, so setup can say that
+    /// instead of reporting it as missing.
+    var unrunnableOmpURL: URL?
     var sessions: [SessionMetadata] = []
     var archivedSessions: [SessionMetadata] = []
     var pendingDeletion: SessionDeletionRequest?
@@ -73,9 +75,23 @@ final class AppModel {
         sessionActivityRegistry.activeCounts
     }
 
+    /// Removed on main by `9406c7b` as unused once the constrained wheels moved
+    /// into the composer footer and stopped greying. The account stack reads it
+    /// again: a provider's wheels grey together while the session in front of
+    /// the user is generating, which is what tells you the usage you are
+    /// looking at is the account currently doing the work.
     var isForegroundSessionGenerating: Bool {
         guard case .session = route else { return false }
         return activeSession?.runtimeState == .streaming
+    }
+
+    var menuState: AppMenuState {
+        AppMenuState(
+            route: route,
+            sessions: sessions,
+            activeSessionPath: activeSession?.sessionPath,
+            runtimeState: activeSession?.runtimeState,
+            isSessionMutationInFlight: isSessionMutationInFlight)
     }
 
     var activeSessionIdentityToken: UUID? {
@@ -157,6 +173,14 @@ final class AppModel {
     @ObservationIgnored private var pendingUnexpectedExits: [
         String: SessionProcessManager.UnexpectedExit
     ] = [:]
+    @ObservationIgnored private lazy var updateChecker: any UpdateChecking =
+        dependencies.makeUpdateChecker { [weak self] in
+            await self?.shutdown()
+        }
+    @ObservationIgnored private var menuUpdateCheckTask: Task<Void, Never>?
+    @ObservationIgnored private var shutdownOperation: Task<Void, Never>?
+
+    var updateState: UpdateState { updateChecker.state }
 
     init(
         dependencies: AppDependencies = .live,
@@ -237,23 +261,73 @@ final class AppModel {
         if startupOperation?.id == id { startupOperation = nil }
     }
 
-    func useOmp(at url: URL) async {
-        let locatedInstallation: OmpInstallation?
+    func checkForUpdatesFromMenu() {
+        // `isPresentingUpdate` is false while a check is still running, so it alone does
+        // not stop a second check from starting on top of an in-flight one. The menu item
+        // is disabled until handoff, which keeps a launch check safe, but a user can click
+        // twice in the workspace. One check at a time.
+        guard !isShuttingDown,
+              !updateState.isPresentingUpdate,
+              updateState.phase != .checking
+        else { return }
+        beginMenuUpdateCheck()
+    }
+
+    func acceptUpdate() { updateChecker.accept() }
+
+    func dismissUpdate() { updateChecker.dismiss() }
+
+    func retryUpdate() {
+        updateChecker.dismiss()
+        beginMenuUpdateCheck()
+    }
+
+    /// Starts a user-initiated check and tracks its deadline watchdog, cancelling
+    /// whatever watchdog is already running first. The cancel-first step matters: without
+    /// it, a stale watchdog from an earlier check could still be asleep when a later
+    /// check (a re-click, or `retryUpdate` from a visible failure) begins, wake at its
+    /// own deadline, see `state.phase` still `.checking` (now for the *newer* check), and
+    /// incorrectly fail it. Only one watchdog may be armed at a time, and it must always
+    /// be the one watching the most recent check. Both `checkForUpdatesFromMenu` and
+    /// `retryUpdate` route through this rather than calling `UpdateChecking.check(...)`
+    /// directly, so a retry from a stalled-and-failed state gets its own deadline too —
+    /// otherwise retrying against a still-broken updater would stall silently again.
+    private func beginMenuUpdateCheck() {
+        menuUpdateCheckTask?.cancel()
+        let timing = dependencies.startupTiming
+        menuUpdateCheckTask = updateChecker.checkFromMenu(
+            deadline: timing.menuUpdateCheckDeadline,
+            sleep: timing.sleep)
+    }
+
+    func useOmp(at url: URL? = nil) async {
+        let location: OmpLocation
         do {
-            locatedInstallation = try await dependencies.ompLocator.locate(preferredURL: url)
+            location = try await dependencies.ompLocator.locate(preferredURL: url)
             try Task.checkCancellation()
         } catch is CancellationError {
             return
         } catch {
             return
         }
-        guard await replaceWorkspaceRuntime(with: locatedInstallation),
+        guard await replaceWorkspaceRuntime(with: location.installation),
               !Task.isCancelled,
               !isShuttingDown
         else { return }
-        setupError = locatedInstallation == nil
-            ? OmpExecutableLocator.inspectionErrorDescription(for: url)
-            : nil
+        applySetupDiagnosis(location)
+    }
+
+    /// Setup needs to tell "nothing installed" apart from "installed but it
+    /// would not run", so it can ask for the right thing.
+    private func applySetupDiagnosis(_ location: OmpLocation) {
+        switch location {
+        case .found:
+            unrunnableOmpURL = nil
+        case .unrunnable(let url):
+            unrunnableOmpURL = url
+        case .notFound:
+            unrunnableOmpURL = nil
+        }
     }
 
     func chooseProject(_ url: URL) {
@@ -264,6 +338,55 @@ final class AppModel {
         clearActiveSession()
         detachComposerControlsAndRefresh()
         route = .newSession
+    }
+
+    /// Every project 10x remembers for listing (the rail, the composer's
+    /// project flyout, onboarding) — wider than the two `rankedProjects`
+    /// warms a client for at startup. Always includes `selectedProjectURL`,
+    /// even before a selection lands in the store (e.g. the moment
+    /// `chooseProject` sets it, before `recordSelection` has been read
+    /// back).
+    var knownProjectURLs: [URL] {
+        var urls = dependencies.recentProjectStore.knownProjects()
+        if let selectedProjectURL {
+            let standardized = selectedProjectURL.standardizedFileURL
+            if !urls.contains(where: { $0.path == standardized.path }) {
+                urls.insert(standardized, at: 0)
+            }
+        }
+        return urls
+    }
+
+    /// Every requirement the workspace does not yet satisfy, in order.
+    func unmetRequirements() -> [OnboardingStep] {
+        OnboardingStep.unmet(
+            installation: installation,
+            hasAuthenticatedProvider: providerModel?.hasAuthenticatedProvider == true,
+            selectedProjectURL: selectedProjectURL)
+    }
+
+    /// The requirement to ask for now.
+    func firstUnmetRequirement() -> OnboardingStep? {
+        unmetRequirements().first
+    }
+
+    /// Routes to the first unmet requirement, or to the workspace. Replaces
+    /// eight scattered decisions and preserves their force-to-`newSession`
+    /// semantics: every caller runs before the splash hands off, or inside a
+    /// runtime replacement that already discarded managed sessions.
+    func gateRoute() {
+        route = firstUnmetRequirement().map(AppRoute.onboarding) ?? .newSession
+    }
+
+    /// Records a project chosen during onboarding.
+    ///
+    /// Deliberately not `chooseProject`: that ends with `route = .newSession`,
+    /// so the first selection would leave onboarding and no second folder
+    /// could be added. There is no active session to tear down here.
+    func recordOnboardingProject(_ url: URL) {
+        let project = url.standardizedFileURL
+        selectedProjectURL = project
+        dependencies.recentProjectStore.recordSelection(project)
     }
 
     func chooseNewProject() {
@@ -294,7 +417,7 @@ final class AppModel {
         let destination = routeBeforeSettings ?? .newSession
         routeBeforeSettings = nil
         switch destination {
-        case .setup, .providerSetup, .settings:
+        case .onboarding, .settings:
             route = .newSession
         default:
             route = destination
@@ -329,8 +452,7 @@ final class AppModel {
     }
 
     func completeProviderSetup() {
-        guard providerModel?.hasAuthenticatedProvider == true else { return }
-        route = .newSession
+        gateRoute()
         Task { await refreshComposerControls() }
     }
 
@@ -349,6 +471,16 @@ final class AppModel {
         guard let metadata = sessions.first(where: { $0.path == result.sessionPath }) else { return }
         closeSearch()
         openSession(metadata)
+    }
+
+    func openPreviousSession() {
+        guard let session = menuState.previousSession else { return }
+        openSession(session)
+    }
+
+    func openNextSession() {
+        guard let session = menuState.nextSession else { return }
+        openSession(session)
     }
 
     func openSession(_ metadata: SessionMetadata) {
@@ -390,15 +522,19 @@ final class AppModel {
         }
     }
 
-    func startNewSession(prompt: String) {
+    func startNewSession(prompt: String, attachments: [ComposerAttachment] = []) {
         guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
         guard sessionActivityRegistry.canCreateManagedSession else { return }
         let primarySnapshot = sessionActivityRegistry.newSessionPrimarySnapshot()
         let controller = makeSessionController(processManager: processManager)
         controller.draft = prompt
+        controller.attachments = attachments
         composerControls?.detachActiveSession()
-        route = .session("new:\(UUID().uuidString)")
+        // omp does not name the session until the child is up, so the route
+        // carries a placeholder until `openNew` reports the real path.
+        let placeholderRoute = AppRoute.session("new:\(UUID().uuidString)")
+        route = placeholderRoute
         let selection = composerControls?.spawnSelection
         activeSession = controller
         Task { [weak self, controller, selectedProjectURL, selection, primarySnapshot] in
@@ -413,7 +549,7 @@ final class AppModel {
                 }
                 return
             }
-            guard controller.sessionPath != nil else {
+            guard let sessionPath = controller.sessionPath else {
                 self.removeManagedSession(controller)
                 return
             }
@@ -421,6 +557,12 @@ final class AppModel {
             await self.sessionActivityRegistry.prepareForFirstPrompt(
                 sessionID: controller.id,
                 primarySnapshot: primarySnapshot)
+            // Without this the rail can never mark the session the user is
+            // looking at, and reopening it from the rail would spawn a second
+            // child for a session that is already running here.
+            if self.activeSession === controller, self.route == placeholderRoute {
+                self.route = .session(sessionPath)
+            }
             if self.activeSession === controller {
                 if fastOutcome == .unsupported || fastOutcome == .failed {
                     await self.composerControls?.setFastMode(false, mode: .newSession)
@@ -537,9 +679,29 @@ final class AppModel {
         startupState.enterRecovery(attemptID: attemptID)
     }
 
+    /// Runs once and is re-entrant: a second caller awaits the *completion* of the
+    /// shutdown already in flight rather than returning immediately. Both Sparkle's
+    /// install path (`prepareForInstall`) and `AppTerminationDelegate` call this, and a
+    /// second caller returning early let the app quit while OMP children were still
+    /// being reaped — the delegate would set `isShutdownComplete` and reply
+    /// `.terminateNow` off a shutdown that had barely started.
     func shutdown() async {
-        guard !isShuttingDown else { return }
+        if let shutdownOperation {
+            await shutdownOperation.value
+            return
+        }
+        // Set before the task is created, not inside it, so every guard that reads
+        // `isShuttingDown` sees it the moment this function is entered.
         isShuttingDown = true
+        let operation = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.performShutdown()
+        }
+        shutdownOperation = operation
+        await operation.value
+    }
+
+    private func performShutdown() async {
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
         lifecycleGeneration &+= 1
@@ -567,6 +729,9 @@ final class AppModel {
         let usage = providerUsageOperation
         providerUsageOperation = nil
         usage?.task.cancel()
+        let menuUpdateCheck = menuUpdateCheckTask
+        menuUpdateCheckTask = nil
+        menuUpdateCheck?.cancel()
 
         let provider = providerModel
         let controls = composerControls
@@ -588,6 +753,7 @@ final class AppModel {
         await warmExits?.value
         await activeExits?.value
         await usage?.task.value
+        await menuUpdateCheck?.value
     }
 
     func requestDeleteSession(_ metadata: SessionMetadata) {
@@ -607,13 +773,25 @@ final class AppModel {
     }
 
     func archiveSession(_ metadata: SessionMetadata) async {
+        await archiveSession(path: metadata.path, subject: sessionDisplayName(metadata))
+    }
+
+    func archiveCurrentSession() async {
+        guard let path = menuState.currentSessionPath else { return }
+        let subject = sessions.first(where: { $0.path == path }).map(sessionDisplayName)
+            ?? activeSession?.title
+            ?? "Untitled session"
+        await archiveSession(path: path, subject: subject)
+    }
+
+    private func archiveSession(path: String, subject: String) async {
         guard beginSessionMutation() else { return }
         defer { endSessionMutation() }
         await mutateActive(
-            paths: [metadata.path],
+            paths: [path],
             action: "archive",
-            subject: sessionDisplayName(metadata)) {
-                await dependencies.sessionLibrary.archive(paths: [metadata.path])
+            subject: subject) {
+                await dependencies.sessionLibrary.archive(paths: [path])
             }
     }
 
@@ -782,7 +960,10 @@ final class AppModel {
         let controller = SessionController(
             processManager: processManager,
             activityRegistry: sessionActivityRegistry,
-            accountChannelRegistry: accountChannelRegistry)
+            accountChannelRegistry: accountChannelRegistry,
+            titleGenerator: installation.flatMap {
+                dependencies.makeSessionTitleGenerator($0.executableURL)
+            })
         managedSessions[controller.id] = controller
         if let intendedSessionPath {
             managedSessionPaths[intendedSessionPath] = controller.id
@@ -790,12 +971,20 @@ final class AppModel {
         return controller
     }
 
-    private func managedController(for sessionPath: String) -> SessionController? {
-        guard let controllerID = managedSessionPaths[sessionPath] else { return nil }
-        guard let controller = managedSessions[controllerID] else {
+    // Not private: the navigation tests wait on the reuse registry rather than on
+    // activeSession.sessionPath, which a controller sets partway through its open.
+    func managedController(for sessionPath: String) -> SessionController? {
+        if let controllerID = managedSessionPaths[sessionPath] {
+            if let controller = managedSessions[controllerID] { return controller }
             managedSessionPaths.removeValue(forKey: sessionPath)
-            return nil
         }
+        // A controller learns its path partway through its own open, so the index still
+        // lags it. Reuse it from that moment rather than opening a second controller
+        // over the same child.
+        guard let controller = managedSessions.values
+            .first(where: { $0.sessionPath == sessionPath })
+        else { return nil }
+        managedSessionPaths[sessionPath] = controller.id
         return controller
     }
 
@@ -869,6 +1058,14 @@ final class AppModel {
             try checkStartupAttempt(id)
             switch preparation {
             case .ready, .missingOmp:
+                await updateChecker.state.waitWhilePresenting()
+                // The gate also opens on cancellation, which is how an accepted update
+                // gets out of here: `shutdown()` cancels this task and then awaits it
+                // from inside Sparkle's install callback. Handing off from a cancelled
+                // attempt would flash a workspace window open over an install that is
+                // about to replace the app. Re-check both, because `isShuttingDown` is
+                // set before this task is cancelled and either one can arrive first.
+                guard !isShuttingDown, !Task.isCancelled else { return }
                 startupState.requestHandoff(attemptID: id)
             }
         } catch {
@@ -913,7 +1110,10 @@ final class AppModel {
     ) async throws -> StartupPreparation {
         if stages.contains(.runtime) {
             let hasRuntime = try await prepareRuntime(attemptID: attemptID)
-            if !hasRuntime { return .missingOmp }
+            if !hasRuntime {
+                startupState.markReady(.updates, attemptID: attemptID)
+                return .missingOmp
+            }
         }
 
         try checkStartupAttempt(attemptID)
@@ -930,18 +1130,33 @@ final class AppModel {
                         stages: stages)
                 }
             }
+            if stages.contains(.updates) {
+                group.addTask { await self.prepareUpdates(attemptID: attemptID) }
+            }
             try await group.waitForAll()
         }
         try checkStartupAttempt(attemptID)
         return .ready
     }
 
+    /// Advisory. Deliberately non-throwing and deliberately incapable of marking the row
+    /// stopped, so a network failure or a slow feed can never put the splash into
+    /// recovery or extend the launch beyond the deadline.
+    private func prepareUpdates(attemptID: UUID) async {
+        startupState.markLoading(.updates, attemptID: attemptID)
+        await updateChecker.checkAtLaunch(
+            deadline: dependencies.startupTiming.updateCheckDeadline,
+            sleep: dependencies.startupTiming.sleep)
+        startupState.resolveAdvisoryCheck(attemptID: attemptID)
+    }
+
     private func prepareRuntime(attemptID: UUID) async throws -> Bool {
         startupState.markLoading(.runtime, attemptID: attemptID)
-        let located = try await dependencies.ompLocator.locate(preferredURL: nil)
+        let location = try await dependencies.ompLocator.locate(preferredURL: nil)
         try checkStartupAttempt(attemptID)
+        applySetupDiagnosis(location)
 
-        guard let located else {
+        guard let located = location.installation else {
             await stopProviderUsage()
             let oldProvider = providerModel
             let oldComposerControls = composerControls
@@ -959,7 +1174,7 @@ final class AppModel {
             providerModel = nil
             composerControls = nil
             providerUsages = []
-            route = .setup
+            gateRoute()
             return false
         }
 
@@ -1002,8 +1217,7 @@ final class AppModel {
         settingsModel = settings
         providerModel = provider
         composerControls = controls
-        setupError = nil
-        route = .providerSetup
+        gateRoute()
         await restartProcessWatchers(for: manager)
         try checkStartupAttempt(attemptID)
         await stopProviderUsage()
@@ -1017,7 +1231,7 @@ final class AppModel {
         await refreshComposerControls()
         try checkStartupAttempt(attemptID)
         guard composerControls === controls else { throw CancellationError() }
-        route = provider.hasAuthenticatedProvider ? .newSession : .providerSetup
+        gateRoute()
         startupState.markReady(.runtime, attemptID: attemptID)
         return true
     }
@@ -1069,6 +1283,10 @@ final class AppModel {
         }
         try checkStartupAttempt(attemptID)
         startupState.markReady(.recentProjects, attemptID: attemptID)
+        // Startup assigns `selectedProjectURL` in this stage, after the runtime
+        // stage already routed. Without re-gating, every returning user would
+        // be shown the project step.
+        gateRoute()
     }
 
     private func cancelUnfinishedStartupWork(
@@ -1125,7 +1343,7 @@ final class AppModel {
             providerModel = nil
             composerControls = nil
             providerUsages = []
-            route = .setup
+            gateRoute()
             return true
         }
 
@@ -1145,8 +1363,7 @@ final class AppModel {
         providerModel = provider
         composerControls = controls
         providerUsages = []
-        setupError = nil
-        route = .providerSetup
+        gateRoute()
         await restartProcessWatchers(for: manager)
         guard isCurrentLifecycle(generation),
               processManager === manager,
@@ -1164,7 +1381,7 @@ final class AppModel {
         guard isCurrentLifecycle(generation),
               composerControls === controls
         else { return false }
-        route = provider.hasAuthenticatedProvider ? .newSession : .providerSetup
+        gateRoute()
         return true
     }
 
@@ -1362,7 +1579,7 @@ final class AppModel {
             lifecycleGeneration: lifecycleGeneration),
               composerControls === controls
         else { return }
-        route = provider.hasAuthenticatedProvider ? .newSession : .providerSetup
+        gateRoute()
     }
 
     private func startSessionChangeWatching() {
