@@ -173,22 +173,26 @@ grep -q 'sparkle:edSignature' "$APPCAST" || {
   exit 1
 }
 
-# A signature made with the wrong key parses and publishes, then is silently rejected by
-# every install. Assert the key that signed it is the one the shipped app trusts.
-PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" App/Info.plist)"
-# `|| true` is load-bearing. generate_keys -p reads the LOGIN KEYCHAIN, which exists on
-# a developer machine and not in CI, where the key arrives as a file. Without it the
-# failing substitution trips `set -e` and kills the release after notarization has
-# already succeeded, with no message at all. So this check runs locally and is skipped
-# in CI, and the skip is stated rather than silent.
-SIGNING_KEY="$("$BUILD/sparkle/bin/generate_keys" -p 2>/dev/null | tr -d '[:space:]' || true)"
-if [ -z "$SIGNING_KEY" ]; then
-  echo "    note: no keychain signing key here, so the key/plist match is unchecked."
-  echo "    The appcast signature itself is asserted below."
-elif [ "$SIGNING_KEY" != "$PUBLIC_KEY" ]; then
-  echo "error: signing key does not match SUPublicEDKey in App/Info.plist." >&2
-  echo "The appcast would publish cleanly and be rejected by every installed copy." >&2
-  exit 1
+# A signature made with the wrong key parses and publishes, then is silently rejected
+# by every install. This compares the key that WOULD sign against the one the shipped
+# app trusts.
+#
+# Only meaningful on the local path. generate_keys -p reads the login keychain, but CI
+# signs with SPARKLE_ED_PRIVATE_KEY_FILE, a different source entirely, so comparing the
+# two there is not a weaker check, it is a wrong one: it failed a release whose
+# signature was correct. Where the file is the source, the file is the authority.
+if [ -n "${SPARKLE_ED_PRIVATE_KEY_FILE:-}" ]; then
+  echo "    note: signing from a key file, so the keychain/plist match does not apply."
+else
+  PUBLIC_KEY="$(/usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" App/Info.plist)"
+  SIGNING_KEY="$("$BUILD/sparkle/bin/generate_keys" -p 2>/dev/null | tr -d '[:space:]' || true)"
+  if [ -z "$SIGNING_KEY" ]; then
+    echo "    note: no keychain signing key found, so the match is unchecked."
+  elif [ "$SIGNING_KEY" != "$PUBLIC_KEY" ]; then
+    echo "error: the keychain signing key does not match SUPublicEDKey in App/Info.plist." >&2
+    echo "The appcast would publish cleanly and be rejected by every installed copy." >&2
+    exit 1
+  fi
 fi
 
 grep -q "releases/download/v$VERSION/" "$APPCAST" || {
