@@ -26,7 +26,7 @@
 - Generate: `10x.xcodeproj/project.pbxproj`
 - Generate: `10x.xcodeproj/xcshareddata/xcschemes/10x.xcscheme`
 
-- [ ] **Step 1: Write the failing project-generation test**
+- [x] **Step 1: Write the failing project-generation test**
 
 ```swift
 import Foundation
@@ -45,7 +45,7 @@ import Testing
 }
 ```
 
-- [ ] **Step 2: Regenerate and verify RED**
+- [x] **Step 2: Regenerate and verify RED**
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -56,7 +56,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: one test runs and fails because the generated scheme lacks `parallelizable = "NO"`.
 
-- [ ] **Step 3: Make the generator serialize its testable**
+- [x] **Step 3: Make the generator serialize its testable**
 
 Immediately after `scheme.add_test_target(tests)`, add:
 
@@ -66,7 +66,7 @@ raise "[generate_xcodeproj] generated scheme has no testable" unless testable
 testable.parallelizable = false
 ```
 
-- [ ] **Step 4: Regenerate and verify GREEN**
+- [x] **Step 4: Regenerate and verify GREEN**
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -79,7 +79,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: regeneration is byte-stable and the selected test passes.
 
-- [ ] **Step 5: Commit the generated scheme behavior**
+- [x] **Step 5: Commit the generated scheme behavior**
 
 ```bash
 git add Tests/TenXAppTests/ProjectGenerationTests.swift scripts/generate_xcodeproj.rb \
@@ -95,7 +95,7 @@ git commit -m "fix(tests): serialize the macOS test bundle"
 - Modify: `Tests/TenXAppTests/OmpUsageServiceTests.swift`
 - Modify: `Tests/TenXAppTests/ProviderManagementViewModelTests.swift`
 
-- [ ] **Step 1: Write a failing cleanup test**
+- [x] **Step 1: Write a failing cleanup test**
 
 ```swift
 @Test func pidWaitCancelsAndAwaitsItsOperationOnTimeout() async throws {
@@ -116,7 +116,7 @@ git commit -m "fix(tests): serialize the macOS test bundle"
 }
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
@@ -126,7 +126,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: compilation fails because the timeout/task-owning overload does not exist.
 
-- [ ] **Step 3: Implement the minimum cleanup overload**
+- [x] **Step 3: Implement the minimum cleanup overload**
 
 Change the existing helper to accept `timeout`, then add:
 
@@ -149,7 +149,7 @@ func waitForPIDs<Success, Failure: Error>(
 
 Use this overload for each `OmpCommandFixture.waitForPIDs` call made after starting an unstructured operation in the four owned test files. Keep success-path assertions unchanged.
 
-- [ ] **Step 4: Verify GREEN and affected process tests**
+- [x] **Step 4: Verify GREEN and affected process tests**
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
@@ -165,7 +165,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: seven tests run and pass; no owned child command remains afterward.
 
-- [ ] **Step 5: Commit cleanup hardening**
+- [x] **Step 5: Commit cleanup hardening**
 
 ```bash
 git add Tests/TenXAppTests/OmpCommandRunnerTests.swift \
@@ -181,11 +181,11 @@ git commit -m "test: reap commands after fixture startup failures"
 - Modify: `docs/testing.md`
 - Modify: this plan checklist as work completes
 
-- [ ] **Step 1: Document the execution contract**
+- [x] **Step 1: Document the execution contract**
 
 After the full-suite command, explain that the generated shared scheme intentionally serializes `TenXAppTests` because the target contains process-spawning, MainActor snapshot, and startup-watchdog tests. State that callers should not override it with `-parallel-testing-enabled YES`; focused selectors remain fast.
 
-- [ ] **Step 2: Run generator and static checks**
+- [x] **Step 2: Run generator and static checks**
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -195,7 +195,7 @@ git diff --check
 
 Expected: the second generation produces no diff and `git diff --check` is clean.
 
-- [ ] **Step 3: Run the complete suite from fresh derived data**
+- [x] **Step 3: Run the complete suite from fresh derived data**
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
@@ -204,7 +204,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: 899 tests pass after adding both regression tests, the run prints `** TEST SUCCEEDED **`, and `xcodebuild` exits without intervention.
 
-- [ ] **Step 4: Run a Release build**
+- [x] **Step 4: Run a Release build**
 
 ```bash
 xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release \

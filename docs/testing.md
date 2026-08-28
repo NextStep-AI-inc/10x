@@ -6,6 +6,13 @@ Everything lives in one scheme. The whole suite:
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 ```
 
+The generated shared scheme intentionally runs `TenXAppTests` serially. This
+target mixes process-spawning tests, MainActor snapshot rendering, and startup
+watchdogs; Swift Testing's default full-target parallelism can exhaust a shared
+Mac and turn scheduler delay into unrelated timeout and snapshot failures. Do
+not override the scheme with `-parallel-testing-enabled YES`. Focused selectors
+remain fast because they execute only the requested tests.
+
 ## Selecting a single test
 
 The suite is Swift Testing free `@Test` functions, not `XCTestCase` subclasses.
