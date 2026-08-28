@@ -29,6 +29,15 @@ func assertSnapshot<Content: View>(
 
 @MainActor
 private func renderSnapshot<Content: View>(_ content: Content, size: CGSize) -> Data? {
+    renderSnapshotBitmap(content, size: size)?
+        .representation(using: .png, properties: [:])
+}
+
+@MainActor
+func renderSnapshotBitmap<Content: View>(
+    _ content: Content,
+    size: CGSize
+) -> NSBitmapImageRep? {
     let host = makeSnapshotHost(content, size: size)
     host.layoutSubtreeIfNeeded()
     host.displayIfNeeded()
@@ -36,7 +45,7 @@ private func renderSnapshot<Content: View>(_ content: Content, size: CGSize) -> 
         return nil
     }
     host.cacheDisplay(in: host.bounds, to: bitmap)
-    return bitmap.representation(using: .png, properties: [:])
+    return bitmap
 }
 
 @MainActor

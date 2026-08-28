@@ -268,6 +268,34 @@ private func waitForReadyWaiter(_ client: RpcClient) async -> Bool {
     await c.shutdown()
 }
 
+@Test func providerAccountFailoverEventsFlowWithoutBreakingResponses() async throws {
+    let c = makeClient(mode: "provider-account-failover")
+    let stream = c.events
+    _ = try await c.start()
+
+    async let response = c.send(.getState())
+    let event = await withTimeout(.seconds(10)) { () -> ProviderAccountChangedEvent? in
+        for await frame in stream {
+            if case .providerAccountChanged(let event) = frame {
+                return event
+            }
+        }
+        return nil
+    } ?? nil
+
+    let state = try await response
+    #expect(state.success)
+    #expect(state.command == "get_state")
+    guard let failover = event else {
+        Issue.record("provider account failover event was not yielded"); return
+    }
+    #expect(failover.providerID == "openai-codex")
+    #expect(failover.accountRef == "acct_failover")
+    #expect(failover.reason == .automaticFailover)
+    #expect(failover.sequence == 4)
+    await c.shutdown()
+}
+
 @Test func eofFailsPendingRequests() async throws {
     let c = makeClient(mode: "eof-on-get-state")
     _ = try await c.start()

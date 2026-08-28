@@ -1,0 +1,8 @@
+      at <anonymous> (/Users/tannerpham/CS Projects/.worktrees/oh-my-pi-provider-account-rpc/packages/coding-agent/test/export-html-template.test.ts:196:42)
+(fail) HTML export template > preserves exact bytes in a compiled bundle launched from an unrelated directory [606.70ms]
+
+ 13752 pass
+ 408 skip
+ 6 fail
+ 297276 expect() calls
+Ran 14166 tests across 1378 files. [175.61s]

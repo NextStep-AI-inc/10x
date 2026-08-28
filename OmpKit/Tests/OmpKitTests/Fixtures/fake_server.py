@@ -16,6 +16,7 @@
   delayed-prompt-success — delays a prompt success response so controller replacement can race it
   delayed-prompt-failure — delays a prompt failure response so controller replacement can race it
   activity-lifecycle — scripted provider/config/runtime events for controller activity tests
+  provider-account-failover — emits a provider account event before a normal response
 """
 import base64
 import json
@@ -247,6 +248,15 @@ for line in sys.stdin:
                 time.sleep(0.01)
         if mode == "noisy":
             emit({"type": "notice", "level": "info", "message": "before response", "source": "fake"})
+        if mode == "provider-account-failover":
+            emit({
+                "type": "provider_account_changed",
+                "providerId": "openai-codex",
+                "accountRef": "acct_failover",
+                "reason": "automaticFailover",
+                "sequence": 4,
+                "future": {"ignored": True},
+            })
         if mode == "chunked":
             large_state = {**STATE, "padding": "x" * 1048576}
             payload = json.dumps(

@@ -703,12 +703,235 @@ import Testing
         size: CGSize(width: 1180, height: 760))
 }
 
+@Suite struct ViewSnapshotTests {
+@MainActor
+@Test func providerAccountConnectionsRowsSnapshot() async throws {
+    let providerID = "openai-codex"
+    // Task 10b: accounts render from the usage snapshot now
+    // (`ProviderAccountUsageBackend`), not a per-account RPC fixture — and
+    // the snapshot must carry per-account identity or tier detection falls
+    // back to `.providerOnly`, which hides accounts entirely regardless of
+    // the read path. `remainingFraction: nil` keeps each account's usage
+    // windows empty, matching what the retired RPC fixture (no usage
+    // attached) rendered.
+    let personal = AccountSnapshotEntry(
+        accountID: "a1", email: "same@example.com", orgName: "Personal", remainingFraction: nil)
+    let work = AccountSnapshotEntry(
+        accountID: "a2", email: "same@example.com", orgName: "Work",
+        isDisabled: true, remainingFraction: nil)
+    let personalRef = personal.accountRef(providerID: providerID)
+    let workRef = work.accountRef(providerID: providerID)
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "ChatGPT",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: providerID, accounts: [personal, work])),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    // This reference predates tier-gated Remove (task 11): pin `.extensionBacked`
+    // explicitly so it keeps meaning "Remove is enabled" rather than silently
+    // becoming another `.stockOMP` render once Remove is gated by tier. Without
+    // this, `ProviderAccountTier.detect` would land on `.stockOMP` here too (a
+    // snapshot with per-account identity and no installed hello), which is
+    // exactly what `providerAccountConnectionsStockTierSnapshot` below now
+    // covers on purpose.
+    model.installTierHelloProvider {
+        ProviderExtensionHello(contractVersion: ProviderAccountTier.contractVersion)
+    }
+    await model.load()
+    #expect(model.accountTier == .extensionBacked)
+    let suiteName = "TenXAppTests.ProviderConnectionsSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        personalRef,
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: workRef))
+
+    try assertSnapshot(
+        ProvidersView(model: model, accountCoordinator: coordinator),
+        name: "provider-account-connections",
+        size: CGSize(width: 880, height: 680))
+}
+
+@MainActor
+@Test func providerAccountConnectionsStockTierSnapshot() async throws {
+    let providerID = "openai-codex"
+    // `.stockOMP`: per-account identity is present (the fixture below carries
+    // it) but no extension hello is installed, matching a live app before any
+    // session channel attaches, or a genuinely stock `omp`. Remove must be
+    // disabled on every row, with the tier-wide reason stated once under the
+    // provider header rather than repeated per row.
+    //
+    // Mirrors `providerAccountConnectionsRowsSnapshot`'s fixture and
+    // coordinator setup exactly (same accounts, same primary, same session
+    // counts) so the two reference images differ only in what the tier
+    // actually changes — the disabled Remove buttons and the one section
+    // note — not in incidental fixture drift. Restoring Primary/session
+    // metadata to this tier is the point of this reference; a fixture that
+    // never populated that data would restore nothing to look at.
+    let personal = AccountSnapshotEntry(
+        accountID: "a1", email: "same@example.com", orgName: "Personal", remainingFraction: nil)
+    let work = AccountSnapshotEntry(
+        accountID: "a2", email: "same@example.com", orgName: "Work",
+        isDisabled: true, remainingFraction: nil)
+    let personalRef = personal.accountRef(providerID: providerID)
+    let workRef = work.accountRef(providerID: providerID)
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "ChatGPT",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: providerID, accounts: [personal, work])),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+    #expect(model.accountTier == .stockOMP)
+    let suiteName = "TenXAppTests.ProviderConnectionsStockTierSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        personalRef,
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: workRef))
+
+    try assertSnapshot(
+        ProvidersView(model: model, accountCoordinator: coordinator),
+        name: "provider-account-connections-stock-tier",
+        size: CGSize(width: 880, height: 680))
+}
+
+@MainActor
+@Test func providerAccountRemovalConfirmationSnapshot() throws {
+    try assertSnapshot(
+        ProviderAccountRemovalConfirmationView(
+            providerName: "ChatGPT",
+            accountLabel: "same@example.com",
+            accountDetailLabel: "Work",
+            hasDuplicateAccountLabel: true,
+            affectedSessionCount: 2,
+            isLastAccount: false,
+            isRemoving: false,
+            onCancel: { _ in },
+            onRemove: {}),
+        name: "provider-account-removal-confirmation",
+        size: CGSize(width: 880, height: 680))
+}
+
+@MainActor
+@Test func providerAccountMultipleIdleSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: [:],
+            isForegroundGenerating: false)
+            // macOS exposes the public Reduce Motion key as read-only.
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-account-multiple-idle",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+private final class SnapshotProviderAccountSession: ProviderAccountSession {
+    let id = UUID()
+    let providerID: String?
+    let runtimeState: SessionRuntimeState = .idle
+    private(set) var currentProviderAccountRef: String?
+    private(set) var providerAccountSequence = 0
+
+    init(providerID: String, accountRef: String) {
+        self.providerID = providerID
+        currentProviderAccountRef = accountRef
+    }
+
+    func setProviderAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> SetSessionProviderAccountResult {
+        currentProviderAccountRef = accountRef
+        providerAccountSequence += 1
+        return SetSessionProviderAccountResult(
+            account: ProviderAccountSummary(
+                providerID: providerID,
+                accountRef: accountRef,
+                displayLabel: "Account",
+                connectionOrder: 0,
+                availability: .available,
+                isActiveForSession: true),
+            sequence: providerAccountSequence)
+    }
+}
+
+@MainActor
+@Test func providerAccountGeneratingGrayscaleSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true)
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-account-generating-grayscale",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerAccountHoveredBackgroundSnapshot() throws {
+try assertSnapshot(
+    ProviderUsageDockView(
+        providers: providerUsageDockProviders(workPercentage: 36),
+        activeCounts: [:],
+        generatingCounts: providerUsageDockGeneratingCounts,
+        isForegroundGenerating: true,
+        visualFocusAccountID: "anthropic:work")
+        .environment(\._accessibilityReduceMotion, true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+    name: "provider-account-hovered-background",
+    size: CGSize(width: 430, height: 460))
+}
+
 @MainActor
 @Test func providerUsageDockIdleSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
-            providers: providerUsageDockProviders,
-            activeCounts: ["anthropic": 2])
+            providers: providerUsageDockProviders(),
+            activeCounts: ["anthropic": 2],
+            generatingCounts: [:],
+            isForegroundGenerating: false)
             // macOS exposes the public Reduce Motion key as read-only.
             .environment(\._accessibilityReduceMotion, true)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
@@ -717,15 +940,178 @@ import Testing
 }
 
 @MainActor
+@Test func usageWheelFillsSpacesBetweenRingsWithCanvasColor() throws {
+    let size = CGSize(width: 54, height: 54)
+    let account = providerUsageDockProviders()[0].accounts[0]
+    let provider = ProviderUsageProvider(
+        id: "anthropic",
+        name: "Anthropic",
+        accounts: [account])
+    let bitmap = try #require(renderSnapshotBitmap(
+        ProviderUsageWheelView(
+            provider: provider,
+            activeCount: 0,
+            isGrayscale: false,
+            diameter: size.width,
+            showsProviderLabel: false,
+            presentationMode: .account(.available))
+            .background(Color(red: 1, green: 0, blue: 1)),
+        size: size))
+    let scale = CGFloat(bitmap.pixelsWide) / size.width
+    let sample = try #require(bitmap.colorAt(
+        x: Int(45 * scale),
+        y: Int(27 * scale))?.usingColorSpace(NSColorSpace.deviceRGB))
+
+    #expect(sample.redComponent > 0.97)
+    #expect(sample.greenComponent > 0.97)
+    #expect(sample.blueComponent > 0.97)
+}
+
+@MainActor
 @Test func providerUsageDockExpandedSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
-            providers: providerUsageDockProviders,
+            providers: providerUsageDockProviders(workPercentage: 36),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            visualFocusAccountID: "anthropic:work")
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-account-hovered-background",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerAccountExpandedSemanticSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            initiallyInspectedAccountID: "anthropic:work")
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-account-expanded-semantic",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func shortAccountUsagePanelDoesNotStretchToItsMaximumHeight() throws {
+    let size = CGSize(width: 430, height: 460)
+    let bitmap = try #require(renderSnapshotBitmap(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            initiallyInspectedAccountID: "anthropic:work")
+            .environment(\._accessibilityReduceMotion, true),
+        size: size))
+    let scale = CGFloat(bitmap.pixelsWide) / size.width
+    let panelLeftEdge = Int((size.width - 360) * scale)
+    let maximumShortPanelHeight = Int(380 * scale)
+
+    #expect(longestNonWhiteVerticalRun(
+        in: bitmap,
+        nearX: panelLeftEdge) < maximumShortPanelHeight)
+}
+
+@MainActor
+@Test func providerAccountSwitchConfirmationSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            initiallyInspectedAccountID: "anthropic:work",
+            initiallyShowsConfirmation: true)
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-account-switch-confirmation",
+        size: CGSize(width: 430, height: 460))
+}
+
+private func longestNonWhiteVerticalRun(
+    in bitmap: NSBitmapImageRep,
+    nearX expectedX: Int
+) -> Int {
+    let xRange = max(0, expectedX - 2)...min(bitmap.pixelsWide - 1, expectedX + 2)
+    return xRange.map { x in
+        var longestRun = 0
+        var currentRun = 0
+        for y in 0..<bitmap.pixelsHigh {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+                currentRun = 0
+                continue
+            }
+            let darkestComponent = min(
+                color.redComponent,
+                min(color.greenComponent, color.blueComponent))
+            let isNonWhite = darkestComponent < 0.97
+            if isNonWhite {
+                currentRun += 1
+                longestRun = max(longestRun, currentRun)
+            } else {
+                currentRun = 0
+            }
+        }
+        return longestRun
+    }.max() ?? 0
+}
+
+@MainActor
+@Test func providerAccountSwitchConfirmationRestartSnapshot() throws {
+    // `.stockOMP`: switching still works, but only by restarting the
+    // session's `omp` process. The scope confirmation must say so plainly
+    // rather than let the same "Switch account" control silently do
+    // something the user wasn't told about.
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            requiresRestartToSwitch: true,
+            initiallyInspectedAccountID: "anthropic:work",
+            initiallyShowsConfirmation: true)
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-account-switch-confirmation-restart",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerAccountSwitchConfirmationRestartHiddenForAllNewSessionsSnapshot() throws {
+    // "All new sessions" only sets the provider's primary account for
+    // sessions started later ("Existing sessions stay unchanged" is its own
+    // option text) and restarts nothing, so the restart notice must not
+    // show for this scope even in `.stockOMP` — unlike "This session" and
+    // "All current sessions", covered above.
+    try assertSnapshot(
+        ProviderAccountSwitchConfirmationView(
+            accountLabel: "work@example.com",
+            satisfaction: .none,
+            availability: .all,
+            isSwitchAvailable: true,
+            requiresRestartToSwitch: true,
+            selectedScope: .constant(.allNewSessions),
+            onCancel: {},
+            onConfirm: {}),
+        name: "provider-account-switch-confirmation-restart-hidden-for-new-sessions",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerUsageDockLegacyExpandedSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockLegacyProviders,
             activeCounts: ["anthropic": 2],
             initiallySelectedProviderID: "anthropic")
             .environment(\._accessibilityReduceMotion, true),
         name: "provider-usage-dock-expanded",
         size: CGSize(width: 430, height: 460))
+}
 }
 
 @MainActor
@@ -835,6 +1221,126 @@ import Testing
 }
 
 @MainActor
+private func fullShellAccountProviderModel() -> ProviderManagementViewModel {
+    ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: fullShellProviders),
+        usageService: FakeUsageService(snapshot: fullShellAccountUsageSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) },
+        formatTime: { _ in "4:00 PM" })
+}
+
+/// Task 10b: accounts and their usage windows now derive from the usage
+/// snapshot (`ProviderAccountUsageBackend`), not the retired per-account RPC
+/// fixture — a bespoke builder rather than `multiAccountUsageSnapshotFixture`
+/// because these accounts need TWO usage windows apiece (matching the
+/// original fixture's five-hour + weekly pair) where that shared helper only
+/// ever attaches one. `accountRef` values are opaque hashes now rather than
+/// the old fixture's literal `"acct_claude_personal"` strings, but nothing
+/// in the three snapshot tests below asserts against a ref directly, and
+/// `foregroundAccountRef` picks by `connectionOrder` — preserved here in the
+/// same order as before — not by ref value, so the rendered rows are
+/// unaffected.
+private func fullShellAccountUsageSnapshot() -> OmpUsageSnapshot {
+    func window(
+        providerID: String, accountID: String, kind: String, label: String,
+        remainingFraction: Double, resetsAtMs: Int64
+    ) -> OmpUsageLimit {
+        OmpUsageLimit(
+            id: "\(accountID):\(kind)",
+            label: label,
+            scope: OmpUsageScope(
+                provider: providerID, accountId: accountID, projectId: nil, orgId: nil,
+                modelId: nil, tier: nil, windowId: nil, shared: nil),
+            window: OmpUsageWindow(id: kind, label: label, resetsAt: resetsAtMs),
+            amount: OmpUsageAmount(
+                used: nil, limit: nil, remaining: nil, usedFraction: nil,
+                remainingFraction: remainingFraction, unit: "percent"),
+            status: nil,
+            notes: nil)
+    }
+    func report(providerID: String, accountID: String, email: String, remainingFiveHour: Double) -> OmpUsageReport {
+        let remainingWeekly = max(0, remainingFiveHour - 0.2)
+        return OmpUsageReport(
+            provider: providerID,
+            fetchedAt: 1,
+            limits: [
+                window(
+                    providerID: providerID, accountID: accountID, kind: "five-hour", label: "5 hour",
+                    remainingFraction: remainingFiveHour, resetsAtMs: 1_787_700_000_000),
+                window(
+                    providerID: providerID, accountID: accountID, kind: "weekly", label: "Weekly",
+                    remainingFraction: remainingWeekly, resetsAtMs: 1_788_061_624_000),
+            ],
+            metadata: ["accountId": .string(accountID), "email": .string(email)])
+    }
+    return OmpUsageSnapshot(
+        generatedAt: 1,
+        reports: [
+            report(providerID: "anthropic", accountID: "acct_claude_personal", email: "tanner@example.com", remainingFiveHour: 0.82),
+            report(providerID: "anthropic", accountID: "acct_claude_work", email: "work@example.com", remainingFiveHour: 0.24),
+            report(providerID: "openai-codex", accountID: "acct_chatgpt_personal", email: "tanner@example.com", remainingFiveHour: 0.61),
+            report(providerID: "openai-codex", accountID: "acct_chatgpt_team", email: "team@example.com", remainingFiveHour: 0.45),
+            report(providerID: "openai-codex", accountID: "acct_chatgpt_school", email: "school@example.com", remainingFiveHour: 0.9),
+        ],
+        accountsWithoutUsage: [],
+        disabledCredentials: [])
+}
+
+@MainActor
+private func fullShellAccountModel(
+    directory: String
+) async -> (AppModel, ProviderManagementViewModel) {
+    let providerModel = fullShellAccountProviderModel()
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: directory,
+            directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
+    await model.bootstrap()
+    await providerModel.load()
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    model.sessions = fullShellSessions
+    return (model, providerModel)
+}
+
+@MainActor
+@Test func fullShellAccountDockWideWindowSnapshot() async throws {
+    let (model, _) = await fullShellAccountModel(
+        directory: "/tmp/10x-full-shell-account-dock-wide")
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-account-dock-wide-window",
+        size: CGSize(width: 1280, height: 760))
+}
+
+@MainActor
+@Test func fullShellAccountDockCompactTriggerWindowSnapshot() async throws {
+    let (model, _) = await fullShellAccountModel(
+        directory: "/tmp/10x-full-shell-account-dock-compact")
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-account-dock-compact-trigger-window",
+        size: CGSize(width: 1180, height: 760))
+}
+
+@MainActor
+@Test func fullShellAccountDockMinimumWindowSnapshot() async throws {
+    let (model, _) = await fullShellAccountModel(
+        directory: "/tmp/10x-full-shell-account-dock-minimum")
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-account-dock-minimum-window",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
 private func providerWorkspaceModel() throws -> ProviderManagementViewModel {
     providerTestModel(
         providers: providerWorkspaceProviders,
@@ -934,13 +1440,14 @@ private func isolatedSnapshotAppModel(sessionLibraryPath: String) -> AppModel {
         makeComposerControls: stubComposerControlsFactory))
 }
 
-private let providerUsageDockProviders = [
+private func providerUsageDockProviders(workPercentage: Int = 0) -> [ProviderUsageProvider] { [
     ProviderUsageProvider(
         id: "anthropic",
         name: "Anthropic",
         accounts: [
             providerUsageDockAccount(
                 id: "anthropic:personal",
+                accountRef: "acct_personal",
                 label: "tanner@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -958,22 +1465,26 @@ private let providerUsageDockProviders = [
                 ]),
             providerUsageDockAccount(
                 id: "anthropic:work",
+                accountRef: "acct_work",
                 label: "work@example.com",
                 limits: [
                     providerUsageDockLimit(
                         id: "anthropic:work:monthly",
                         label: "Monthly",
-                        percentage: 0,
+                        percentage: workPercentage,
                         reset: "in 18 days",
                         rank: 43_200),
                 ]),
-        ]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "acct_personal"),
     ProviderUsageProvider(
         id: "openai-codex",
         name: "OpenAI Codex",
         accounts: [
             providerUsageDockAccount(
                 id: "openai-codex:personal",
+                accountRef: "acct_openai",
                 label: "tanner@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -983,13 +1494,16 @@ private let providerUsageDockProviders = [
                         reset: "in 2 hours",
                         rank: 300),
                 ]),
-        ]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "acct_openai"),
     ProviderUsageProvider(
         id: "cursor",
         name: "Cursor",
         accounts: [
             providerUsageDockAccount(
                 id: "cursor:personal",
+                accountRef: "acct_cursor",
                 label: "tanner@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -999,11 +1513,26 @@ private let providerUsageDockProviders = [
                         reset: "in 5 days",
                         rank: 10_080),
                 ]),
-        ]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "acct_cursor"),
+] }
+
+private let providerUsageDockGeneratingCounts = [
+    ProviderAccountKey(providerID: "anthropic", accountRef: "acct_personal"): 2,
+    ProviderAccountKey(providerID: "anthropic", accountRef: "acct_work"): 1,
 ]
+
+private let providerUsageDockLegacyProviders = providerUsageDockProviders().map { provider in
+    ProviderUsageProvider(
+        id: provider.id,
+        name: provider.name,
+        accounts: provider.accounts)
+}
 
 private func providerUsageDockAccount(
     id: String,
+    accountRef: String,
     label: String,
     limits: [ProviderUsageLimit]
 ) -> ProviderUsageAccount {
@@ -1020,7 +1549,9 @@ private func providerUsageDockAccount(
         limits: limits,
         amounts: [],
         notes: [],
-        isUsageAvailable: true)
+        isUsageAvailable: true,
+        accountRef: accountRef,
+        availability: .available)
 }
 
 private func providerUsageDockLimit(

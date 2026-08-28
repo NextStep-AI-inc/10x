@@ -113,6 +113,50 @@ import Testing
         .contains("5 hour, 20 percent remaining"))
 }
 
+@Test func providerAccountWheelAccessibilityNamesSafeIdentityActivityAndLimits() {
+    let account = ProviderUsageAccount(
+        id: "anthropic:work",
+        label: "work@example.com",
+        identity: .empty,
+        limits: [ProviderUsageLimit(
+            id: "five-hour",
+            label: "5 hour",
+            percentage: 82,
+            resetWindow: "in 2 hours")],
+        amounts: [],
+        notes: [],
+        isUsageAvailable: true,
+        accountRef: "acct_work")
+
+    #expect(ProviderUsageAccessibility.accountWheelLabel(
+        provider: "Anthropic",
+        account: account) == "Anthropic, work@example.com")
+    #expect(ProviderUsageAccessibility.accountWheelValue(
+        account: account,
+        activeCount: 2
+    ) == "work@example.com, 2 active sessions, 5 hour, 82 percent remaining, resets in 2 hours")
+}
+
+@Test func providerAccountSwitchConfirmationUsesExactCopyAndStableRadioOrder() {
+    let presentation = ProviderAccountSwitchConfirmationPresentation(accountLabel: "work@example.com")
+
+    #expect(presentation.title == "Use work@example.com?")
+    #expect(presentation.message == "Choose where this account should be used.")
+    #expect(presentation.options.map(\.title) == [
+        "This session",
+        "All current sessions",
+        "All new sessions",
+    ])
+    #expect(presentation.options.map(\.message) == [
+        "Switch the open session. If it is generating, switch after the current turn.",
+        "Switch every 10x-managed session using this provider. Generating sessions finish their current turn first.",
+        "Set this as the provider's primary account. Existing sessions stay unchanged.",
+    ])
+    #expect(presentation.cancelActionLabel == "Cancel")
+    #expect(presentation.confirmActionLabel == "Switch account")
+    #expect(presentation.usesRadioGroupSemantics)
+}
+
 @MainActor
 @Test func updateRowsAnnounceTheirTitleAndStatus() {
     let state = UpdateState()

@@ -499,10 +499,15 @@ private struct ProviderCommand: Sendable, Equatable {
     let timeout: Duration?
 }
 
+private enum FakeSendOutcome: Sendable {
+    case response(RpcResponse)
+    case failure(RpcClientError)
+}
+
 private actor FakeProviderRPCClient: ProviderRPCClient {
     private let eventStream: AsyncStream<RpcFrame>
     private let eventContinuation: AsyncStream<RpcFrame>.Continuation
-    private var responses: [RpcResponse]
+    private var outcomes: [FakeSendOutcome]
     private let startGate: StartGate?
     private let loginGate: StartGate?
     /// Gates the response to a `get_login_providers` command specifically,
@@ -524,7 +529,22 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
         providersGate: StartGate? = nil,
         startFailure: ProviderTestError? = nil
     ) {
-        self.responses = responses
+        self.outcomes = responses.map(FakeSendOutcome.response)
+        self.startGate = startGate
+        self.loginGate = loginGate
+        self.providersGate = providersGate
+        self.startFailure = startFailure
+        (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream()
+    }
+
+    init(
+        outcomes: [FakeSendOutcome],
+        startGate: StartGate? = nil,
+        loginGate: StartGate? = nil,
+        providersGate: StartGate? = nil,
+        startFailure: ProviderTestError? = nil
+    ) {
+        self.outcomes = outcomes
         self.startGate = startGate
         self.loginGate = loginGate
         self.providersGate = providersGate
@@ -558,7 +578,12 @@ private actor FakeProviderRPCClient: ProviderRPCClient {
             await providersGate?.started()
             await providersGate?.waitForRelease()
         }
-        return responses.removeFirst()
+        switch outcomes.removeFirst() {
+        case .response(let response):
+            return response
+        case .failure(let error):
+            throw error
+        }
     }
 
     func sendRaw(_ command: RpcCommand) async throws {

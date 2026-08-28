@@ -2,6 +2,18 @@ import Foundation
 import OmpKit
 
 struct ExtensionUIRouter {
+    /// Title of the `tenx.provider-accounts.v1` machine command channel
+    /// (`ProviderAccountExtensionChannel`, `App/Providers/ProviderAccountExtensionBackend.swift`).
+    /// The extension answers this channel via `method: "input"` requests
+    /// carrying this exact string as their dialog `title`, but the channel
+    /// is not user-facing — it is a request/reply loop between 10x and the
+    /// bundled extension. `parse` below excludes it so it can never become
+    /// a sheet, an inline request, or any other UI surface. Shared wire
+    /// contract with `OmpExtension/src/command-channel.ts`'s
+    /// `CHANNEL_MARKER`; defined once here rather than as a literal
+    /// repeated at each comparison site.
+    static let providerAccountChannelTitle = "tenx.provider-accounts.v1"
+
     private(set) var inlineRequests: [ExtensionUIState] = []
     private(set) var sheetRequest: ExtensionUIState?
     private(set) var notifications: [ExtensionUIState] = []
@@ -48,6 +60,15 @@ struct ExtensionUIRouter {
 
     static func parse(_ request: ExtensionUIRequest) -> ExtensionUIState? {
         let payload = request.payload
+        // Reserved machine-channel marker: never surface it as UI. Scoped
+        // away from "setTitle" deliberately — that method's own `title`
+        // field means the session's display name, a different concept
+        // that happens to share the same JSON key, and must not be
+        // dropped on a coincidental string match.
+        if request.method != "setTitle",
+           payload["title"]?.stringValue == Self.providerAccountChannelTitle {
+            return nil
+        }
         switch request.method {
         case "confirm":
             guard let title = payload["title"]?.stringValue,

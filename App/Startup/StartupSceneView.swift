@@ -6,6 +6,14 @@ enum AppWindowID {
     static let workspace = "workspace"
 }
 
+enum StartupBootstrapPolicy {
+    static func shouldBootstrap(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        environment["XCTestConfigurationFilePath"] == nil
+    }
+}
+
 struct StartupSceneView: View {
     let model: AppModel
 
@@ -17,7 +25,10 @@ struct StartupSceneView: View {
             presentation: presentation,
             buildVersion: Bundle.main.object(
                 forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
-        .task { await model.bootstrap() }
+        .task {
+            guard StartupBootstrapPolicy.shouldBootstrap() else { return }
+            await model.bootstrap()
+        }
         .onChange(of: model.startupState.handoffGeneration, initial: true) { _, _ in
             guard model.startupState.consumeWorkspaceOpenRequest() else { return }
             Task { @MainActor in

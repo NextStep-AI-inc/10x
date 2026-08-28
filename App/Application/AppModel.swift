@@ -58,10 +58,31 @@ final class AppModel {
     private(set) var providerModel: ProviderManagementViewModel?
     private(set) var composerControls: ComposerControlsModel?
     private(set) var startupState = StartupState()
-    let sessionActivityRegistry = SessionActivityRegistry()
+    let sessionActivityRegistry: SessionActivityRegistry
+    /// Every managed session's live `ProviderAccountChannel`, keyed by
+    /// session id — see `SessionController.attachAccountChannel` (the sole
+    /// writer) and `ProviderAccountTieredRoutingBackend`
+    /// (`App/Providers/ProviderAccountExtensionBackend.swift`), which reads
+    /// it as `sessionActivityRegistry`'s installed `routingBackend` (see
+    /// `init`). Owned here (rather than by `AppDependencies`, unlike
+    /// `sessionActivityRegistry`) because it needs no factory or
+    /// test-double seam of its own: it is a plain, empty-at-construction
+    /// registry with no external dependencies, so every `AppModel` gets its
+    /// own real one.
+    let accountChannelRegistry = ProviderAccountChannelRegistry()
 
     var providerActivityCounts: [String: Int] {
         sessionActivityRegistry.activeCounts
+    }
+
+    /// Removed on main by `9406c7b` as unused once the constrained wheels moved
+    /// into the composer footer and stopped greying. The account stack reads it
+    /// again: a provider's wheels grey together while the session in front of
+    /// the user is generating, which is what tells you the usage you are
+    /// looking at is the account currently doing the work.
+    var isForegroundSessionGenerating: Bool {
+        guard case .session = route else { return false }
+        return activeSession?.runtimeState == .streaming
     }
 
     var menuState: AppMenuState {
@@ -71,6 +92,73 @@ final class AppModel {
             activeSessionPath: activeSession?.sessionPath,
             runtimeState: activeSession?.runtimeState,
             isSessionMutationInFlight: isSessionMutationInFlight)
+    }
+
+    var activeSessionIdentityToken: UUID? {
+        activeSession?.id
+    }
+
+    var accountGeneratingCounts: [ProviderAccountKey: Int] {
+        sessionActivityRegistry.generatingCounts
+    }
+
+    var pendingRemovalAccounts: Set<ProviderAccountKey> {
+        sessionActivityRegistry.pendingRemovalAccounts
+    }
+
+    func accountScopeSatisfaction(
+        openSessionID: UUID?
+    ) -> [ProviderAccountKey: ProviderAccountScopeSatisfaction] {
+        guard let providerModel else { return [:] }
+        return providerModel.dockProviders.reduce(into: [:]) { satisfaction, provider in
+            guard provider.capability == .accountRouting else { return }
+            for account in provider.accounts {
+                guard let accountRef = account.accountRef else { continue }
+                let key = ProviderAccountKey(providerID: provider.id, accountRef: accountRef)
+                satisfaction[key] = sessionActivityRegistry.scopeSatisfaction(
+                    providerID: provider.id,
+                    accountRef: accountRef,
+                    openSessionID: openSessionID)
+            }
+        }
+    }
+
+    func accountScopeAvailability(
+        openSessionID: UUID?
+    ) -> [String: ProviderAccountScopeAvailability] {
+        guard let providerModel else { return [:] }
+        return providerModel.dockProviders.reduce(into: [:]) { availability, provider in
+            guard provider.capability == .accountRouting else { return }
+            availability[provider.id] = sessionActivityRegistry.scopeAvailability(
+                providerID: provider.id,
+                openSessionID: openSessionID)
+        }
+    }
+
+    func useProviderAccount(
+        _ accountRef: String,
+        scope: ProviderAccountScope,
+        openSessionID: UUID?
+    ) async {
+        guard let providerID = providerID(forAccountRef: accountRef) else { return }
+        await sessionActivityRegistry.useAccount(
+            accountRef,
+            providerID: providerID,
+            scope: scope,
+            openSessionID: openSessionID)
+    }
+
+    func manageProviderAccounts(providerID: String) {
+        guard !isSessionMutationInFlight else { return }
+        providerModel?.focusConnections(providerID: providerID)
+        route = .providers(.connections)
+    }
+
+    private func providerID(forAccountRef accountRef: String) -> String? {
+        providerModel?.dockProviders.first { provider in
+            provider.capability == .accountRouting
+                && provider.accounts.contains { $0.accountRef == accountRef }
+        }?.id
     }
 
     @ObservationIgnored private let dependencies: AppDependencies
@@ -94,6 +182,9 @@ final class AppModel {
     @ObservationIgnored private var hasStartedWarmRetention = false
     @ObservationIgnored private var managedSessions: [UUID: SessionController] = [:]
     @ObservationIgnored private var managedSessionPaths: [String: UUID] = [:]
+    @ObservationIgnored private var pendingUnexpectedExits: [
+        String: SessionProcessManager.UnexpectedExit
+    ] = [:]
     @ObservationIgnored private lazy var updateChecker: any UpdateChecking =
         dependencies.makeUpdateChecker { [weak self] in
             await self?.shutdown()
@@ -110,10 +201,41 @@ final class AppModel {
         fileOpenService: FileOpenService = .live
     ) {
         self.dependencies = dependencies
+        sessionActivityRegistry = dependencies.makeProviderAccountCoordinator()
         self.ideRegistry = ideRegistry
         idePreferenceStore = IDEPreferenceStore(defaults: preferenceDefaults, registry: ideRegistry)
         self.fileOpenService = fileOpenService
         startMemoryPressureMonitoring()
+        // Installed here, after every stored property has a value (`self`
+        // cannot be captured in a closure any earlier), rather than inside
+        // `AppDependencies`'s coordinator factory: both arguments close
+        // over session-level state (`accountChannelRegistry`,
+        // `managedSessions`) that exists only on `AppModel`, never on the
+        // dependency-injection composition root. See
+        // `ProviderAccountCoordinator.install`'s doc comment for the full
+        // reasoning.
+        sessionActivityRegistry.install(
+            routingBackend: ProviderAccountTieredRoutingBackend(registry: accountChannelRegistry),
+            restartSession: { [weak self] sessionID in
+                guard let self, let controller = self.managedSessions[sessionID] else { return false }
+                await controller.restart()
+                // `restart()`'s only failure signal is landing in
+                // `.failed` (its `fail(_:function:"restart",...)` path).
+                // Its early-return guard (missing `projectURL`/`sessionPath`)
+                // leaves `runtimeState` untouched instead, which would read
+                // as success here — unreachable in practice, because the
+                // coordinator only ever calls this after
+                // `ProviderAccountPinBackend.route` already resolved this
+                // same session's file via `sessionFileForID`, which
+                // requires `sessionPath` to already be non-nil.
+                if case .failed = controller.runtimeState { return false }
+                return true
+            })
+    }
+
+    deinit {
+        memoryPressureSource?.cancel()
+        sessionChangeTask?.cancel()
     }
 
     var sessionSearch: any SessionSearching {
@@ -392,6 +514,7 @@ final class AppModel {
             composerControls?.attachActiveSession(controller)
             return
         }
+        guard sessionActivityRegistry.canCreateManagedSession else { return }
         let controller = makeSessionController(
             processManager: processManager,
             intendedSessionPath: metadata.path)
@@ -419,6 +542,8 @@ final class AppModel {
     func startNewSession(prompt: String, attachments: [ComposerAttachment] = []) {
         guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
+        guard sessionActivityRegistry.canCreateManagedSession else { return }
+        let primarySnapshot = sessionActivityRegistry.newSessionPrimarySnapshot()
         let controller = makeSessionController(processManager: processManager)
         controller.draft = prompt
         controller.attachments = attachments
@@ -429,7 +554,7 @@ final class AppModel {
         route = placeholderRoute
         let selection = composerControls?.spawnSelection
         activeSession = controller
-        Task { [weak self, controller, selectedProjectURL, selection] in
+        Task { [weak self, controller, selectedProjectURL, selection, primarySnapshot] in
             guard let self else { return }
             let fastOutcome = await controller.openNew(
                 projectURL: selectedProjectURL,
@@ -446,6 +571,9 @@ final class AppModel {
                 return
             }
             self.indexManagedSessionPath(for: controller)
+            await self.sessionActivityRegistry.prepareForFirstPrompt(
+                sessionID: controller.id,
+                primarySnapshot: primarySnapshot)
             // Without this the rail can never mark the session the user is
             // looking at, and reopening it from the rail would spawn a second
             // child for a session that is already running here.
@@ -849,6 +977,7 @@ final class AppModel {
         let controller = SessionController(
             processManager: processManager,
             activityRegistry: sessionActivityRegistry,
+            accountChannelRegistry: accountChannelRegistry,
             titleGenerator: installation.flatMap {
                 dependencies.makeSessionTitleGenerator($0.executableURL)
             })
@@ -881,6 +1010,28 @@ final class AppModel {
               let sessionPath = controller.sessionPath
         else { return }
         managedSessionPaths[sessionPath] = controller.id
+        if let exit = pendingUnexpectedExits.removeValue(forKey: sessionPath) {
+            handleUnexpectedExit(exit, controller: controller)
+        }
+    }
+
+    private func receiveUnexpectedExit(_ exit: SessionProcessManager.UnexpectedExit) {
+        if let controller = managedController(for: exit.sessionPath)
+            ?? managedSessions.values.first(where: { $0.sessionPath == exit.sessionPath })
+        {
+            managedSessionPaths[exit.sessionPath] = controller.id
+            handleUnexpectedExit(exit, controller: controller)
+        } else {
+            pendingUnexpectedExits[exit.sessionPath] = exit
+        }
+    }
+
+    private func handleUnexpectedExit(
+        _ exit: SessionProcessManager.UnexpectedExit,
+        controller: SessionController
+    ) {
+        controller.handleUnexpectedExit(code: exit.code, stderrTail: exit.stderrTail)
+        sessionActivityRegistry.unregister(sessionID: controller.id)
     }
 
     private func removeManagedSession(_ controller: SessionController) {
@@ -901,6 +1052,7 @@ final class AppModel {
         }
         managedSessions.removeAll()
         managedSessionPaths.removeAll()
+        pendingUnexpectedExits.removeAll()
         activeSession = nil
     }
 
@@ -1087,7 +1239,7 @@ final class AppModel {
         try checkStartupAttempt(attemptID)
         await stopProviderUsage()
         try checkStartupAttempt(attemptID)
-        startProviderUsage(for: provider)
+        configureProviderModel(provider)
         await provider.loadProviders()
         try checkStartupAttempt(attemptID)
         guard providerModel === provider,
@@ -1126,7 +1278,7 @@ final class AppModel {
             try checkStartupAttempt(attemptID)
             sessions = loaded.0
             archivedSessions = loaded.1
-            startSessionChangeWatching()
+            await startSessionChangeWatching()
             startupState.markReady(.sessions, attemptID: attemptID)
         }
 
@@ -1235,7 +1387,7 @@ final class AppModel {
               providerModel === provider,
               composerControls === controls
         else { return false }
-        startProviderUsage(for: provider)
+        configureProviderModel(provider)
         await provider.loadProviders()
         guard isCurrentLifecycle(generation),
               processManager === manager,
@@ -1347,7 +1499,7 @@ final class AppModel {
                 else { return }
                 self.sessions = loaded.0
                 self.archivedSessions = loaded.1
-                self.startSessionChangeWatching()
+                await self.startSessionChangeWatching()
             })
         }
         if stages.contains(.settings) {
@@ -1414,7 +1566,7 @@ final class AppModel {
                 return
             }
             providerModel = provider
-            startProviderUsage(for: provider)
+            configureProviderModel(provider)
         }
         if composerControls == nil {
             guard isCurrentFallback(
@@ -1447,11 +1599,13 @@ final class AppModel {
         gateRoute()
     }
 
-    private func startSessionChangeWatching() {
-        guard sessionChangeTask == nil else { return }
+    private func startSessionChangeWatching() async {
+        guard sessionChangeTask == nil, !isShuttingDown else { return }
+        let library = dependencies.sessionLibrary
+        await library.startWatching()
+        guard sessionChangeTask == nil, !isShuttingDown else { return }
         sessionChangeGeneration &+= 1
         let generation = sessionChangeGeneration
-        let library = dependencies.sessionLibrary
         sessionChangeTask = Task { [weak self] in
             for await _ in library.changes {
                 guard let self,
@@ -1469,6 +1623,77 @@ final class AppModel {
                 self.archivedSessions = loaded.1
             }
         }
+    }
+
+    /// Runs once for every freshly (re)created `providerModel`, in place of
+    /// calling `startProviderUsage` directly: installs how account removal
+    /// reaches the extension and how tier detection learns whether one is
+    /// even listening, then starts the usage load. Both installs close over
+    /// `accountChannelRegistry`, which — like `sessionActivityRegistry`'s
+    /// routing backend (see `init`'s `sessionActivityRegistry.install` call
+    /// and its doc comment) — exists only here, never in
+    /// `AppDependencies.makeProviderModel`'s zero-argument factory, so
+    /// composing either can't happen at construction time. Unlike the
+    /// coordinator, `providerModel` is not a single construction-time
+    /// singleton — `replaceWorkspaceRuntime` and `loadProviderFallback` both
+    /// rebuild or reuse it across the app's lifetime — so this runs at
+    /// every site that assigns a new one, not once from `init`.
+    ///
+    /// The removal transport tries any currently attached session channel
+    /// (`ProviderAccountChannelRegistry.anyChannel()`): removal reaches
+    /// `ctx.modelRegistry.authStorage`, which every session's extension
+    /// instance shares, so which session's channel carries the command does
+    /// not matter (see `anyChannel()`'s doc comment). No channel attached —
+    /// no live session, or the stock tier, which has no removal path at all
+    /// (`ProviderAccountTier.supportsRemoval`) — throws `.unavailable`
+    /// rather than inventing one.
+    ///
+    /// **Reconciling two different lifetimes (task-10b fix round 1,
+    /// "Finding 1").** `accountChannelRegistry`'s entries are session-scoped
+    /// — attached when a session's frames start flowing, detached when its
+    /// pipeline stops (`SessionController.attachAccountChannel`/
+    /// `stopEventPipeline`) — while tier detection runs from
+    /// `ProviderManagementViewModel.refreshAccountUsage`, a provider
+    /// refresh with no session in the picture at all. This install reuses
+    /// the exact same reconciliation the removal transport above already
+    /// made: `anyChannel()` again, because `hello`'s answer — like
+    /// `removeAccount`'s effect — is not session data, it's a fact about
+    /// the app's one bundled extension build, so any live channel gives the
+    /// same answer any other would. Before any session exists,
+    /// `anyChannel()` returns `nil`, the closure returns `nil`, and
+    /// `resolveExtensionHello()` reports no hello available — which
+    /// `ProviderAccountTier.detect` already treats exactly like a
+    /// channel that answered with the wrong contract version: fail closed
+    /// to `.stockOMP` (or `.providerOnly`, if the snapshot has no
+    /// per-account identity at all yet either). So "the tier before any
+    /// session exists" is never `.extensionBacked` — it's whatever the
+    /// usage snapshot alone supports, same as stock OMP with the extension
+    /// absent entirely, until a session attaches a channel and a later
+    /// refresh's probe succeeds.
+    private func configureProviderModel(_ provider: ProviderManagementViewModel) {
+        provider.installTierHelloProvider { [weak self] in
+            guard let self, let channel = self.accountChannelRegistry.anyChannel() else { return nil }
+            return await ProviderAccountExtensionBackend(channel: channel).hello()
+        }
+        provider.installAccountRemovalTransport { [weak self] providerID, accountRef in
+            guard let self, let channel = self.accountChannelRegistry.anyChannel() else {
+                throw ProviderAccountChannelError.unavailable
+            }
+            return try await ProviderAccountExtensionBackend(channel: channel).removeAccount(
+                providerID: providerID, accountRef: accountRef)
+        }
+        // Task-10b final fix, Finding 2: keeps `provider.accountTier` from
+        // going stale in either direction against this same registry — see
+        // `ProviderAccountChannelRegistry.onAvailabilityChange`'s doc
+        // comment for the two directions, and `ProviderManagementViewModel
+        // .redetectAccountTier`'s for why recomputing the tier alone is
+        // enough. `[weak provider]` because this closure is retained by
+        // `accountChannelRegistry`, which outlives any one `providerModel`
+        // across `replaceWorkspaceRuntime`/`loadProviderFallback` rebuilds.
+        accountChannelRegistry.onAvailabilityChange = { [weak provider] in
+            provider?.redetectAccountTier()
+        }
+        startProviderUsage(for: provider)
     }
 
     private func startProviderUsage(for provider: ProviderManagementViewModel) {
@@ -1532,10 +1757,7 @@ final class AppModel {
                         generation: generation,
                         processManager: processManager)
                 else { continue }
-                guard let controller = self.managedController(for: exit.sessionPath) else { continue }
-                controller.handleUnexpectedExit(
-                    code: exit.code,
-                    stderrTail: exit.stderrTail)
+                self.receiveUnexpectedExit(exit)
             }
         }
         warmExitTask = Task { [weak self] in
@@ -1560,6 +1782,7 @@ final class AppModel {
         warm?.cancel()
         await active?.value
         await warm?.value
+        pendingUnexpectedExits.removeAll()
     }
 
     private func isCurrentProcessWatcher(

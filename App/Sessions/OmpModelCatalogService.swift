@@ -65,6 +65,7 @@ actor OmpModelCatalogService {
         var configuration = RpcClientConfiguration()
         configuration.executable = executableURL.path
         configuration.noSession = true
+        configuration.extraArguments += ProviderExtensionBundle.spawnArguments()
         self.configuration = configuration
         self.clientFactory = { configuration in
             CatalogRPCClientBox(await clientFactory(configuration))
@@ -75,6 +76,7 @@ actor OmpModelCatalogService {
         var configuration = RpcClientConfiguration()
         configuration.executable = executableURL.path
         configuration.noSession = true
+        configuration.extraArguments += ProviderExtensionBundle.spawnArguments()
         self.configuration = configuration
         self.clientFactory = { configuration in
             CatalogRPCClientBox(RpcClient(configuration: configuration))

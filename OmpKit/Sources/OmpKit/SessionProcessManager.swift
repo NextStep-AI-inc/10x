@@ -109,6 +109,9 @@ public actor SessionProcessManager {
     }
 
     private let executable: String
+    /// Appended to every `RpcClientConfiguration` this actor builds — e.g. an
+    /// App-layer `-e <extension path>` that must load on every `omp` spawn.
+    private let extraArguments: [String]
     private let warmGracePeriod: Duration
     private let sleep: Sleep
     private let clientFactory: ClientFactory
@@ -130,6 +133,7 @@ public actor SessionProcessManager {
 
     public init(
         executable: String = "omp",
+        extraArguments: [String] = [],
         warmGracePeriod: Duration = .seconds(300),
         sleep: @escaping Sleep = { duration in
             try await ContinuousClock().sleep(for: duration)
@@ -138,6 +142,7 @@ public actor SessionProcessManager {
     ) {
         self.init(
             executable: executable,
+            extraArguments: extraArguments,
             warmGracePeriod: warmGracePeriod,
             sleep: sleep,
             clientFactory: clientFactory,
@@ -147,6 +152,7 @@ public actor SessionProcessManager {
 
     init(
         executable: String = "omp",
+        extraArguments: [String] = [],
         warmGracePeriod: Duration = .seconds(300),
         sleep: @escaping Sleep = { duration in
             try await ContinuousClock().sleep(for: duration)
@@ -156,6 +162,7 @@ public actor SessionProcessManager {
         beforeWarmRegistration: WarmRegistrationHook?
     ) {
         self.executable = executable
+        self.extraArguments = extraArguments
         self.warmGracePeriod = warmGracePeriod
         self.sleep = sleep
         self.clientFactory = clientFactory
@@ -229,10 +236,12 @@ public actor SessionProcessManager {
 
         let factory = clientFactory
         let executable = executable
+        let extraArguments = extraArguments
         let openingID = UUID()
         let task = Task { () throws -> ManagedHandle in
             var configuration = RpcClientConfiguration()
             configuration.executable = executable
+            configuration.extraArguments = extraArguments
             configuration.cwd = URL(fileURLWithPath: cwd)
             configuration.resumeSessionPath = sessionPath
             let client = factory(configuration)
@@ -305,6 +314,7 @@ public actor SessionProcessManager {
         } else {
             var configuration = RpcClientConfiguration()
             configuration.executable = executable
+            configuration.extraArguments = extraArguments
             configuration.cwd = URL(fileURLWithPath: projectDirectory)
             configuration.provider = provider
             configuration.model = model
@@ -365,10 +375,12 @@ public actor SessionProcessManager {
         let openingID = UUID()
         let factory = clientFactory
         let executable = executable
+        let extraArguments = extraArguments
         let sessionDirectory = freshSessionDirectory(for: project)
         let task = Task { () throws -> ManagedWarmHandle in
             var configuration = RpcClientConfiguration()
             configuration.executable = executable
+            configuration.extraArguments = extraArguments
             configuration.cwd = URL(filePath: project, directoryHint: .isDirectory)
             configuration.extraArguments = ["--session-dir", sessionDirectory]
             let client = factory(configuration)
