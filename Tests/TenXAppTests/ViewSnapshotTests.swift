@@ -940,6 +940,34 @@ try assertSnapshot(
 }
 
 @MainActor
+@Test func usageWheelFillsSpacesBetweenRingsWithCanvasColor() throws {
+    let size = CGSize(width: 54, height: 54)
+    let account = providerUsageDockProviders()[0].accounts[0]
+    let provider = ProviderUsageProvider(
+        id: "anthropic",
+        name: "Anthropic",
+        accounts: [account])
+    let bitmap = try #require(renderSnapshotBitmap(
+        ProviderUsageWheelView(
+            provider: provider,
+            activeCount: 0,
+            isGrayscale: false,
+            diameter: size.width,
+            showsProviderLabel: false,
+            presentationMode: .account(.available))
+            .background(Color(red: 1, green: 0, blue: 1)),
+        size: size))
+    let scale = CGFloat(bitmap.pixelsWide) / size.width
+    let sample = try #require(bitmap.colorAt(
+        x: Int(45 * scale),
+        y: Int(27 * scale))?.usingColorSpace(NSColorSpace.deviceRGB))
+
+    #expect(sample.redComponent > 0.97)
+    #expect(sample.greenComponent > 0.97)
+    #expect(sample.blueComponent > 0.97)
+}
+
+@MainActor
 @Test func providerUsageDockExpandedSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(

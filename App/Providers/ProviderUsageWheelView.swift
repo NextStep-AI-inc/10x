@@ -113,6 +113,12 @@ struct ProviderUsageWheelView: View {
         ProviderUsageRingGeometry.coreDiameter(for: diameter)
     }
 
+    private var wheelFillDiameter: CGFloat {
+        ProviderUsageRingGeometry.visibleDiameter(
+            limitCount: presentationMode.renderedRingCount(limitCount: ringLimits.count),
+            outerDiameter: diameter)
+    }
+
     /// Below this the core is under ~13pt and the abbreviation crowds the row,
     /// so the inline-composer size drops both and reads as rings alone.
     private var showsText: Bool {
@@ -122,6 +128,10 @@ struct ProviderUsageWheelView: View {
     var body: some View {
         VStack(spacing: 5) {
             ZStack {
+                Circle()
+                    .fill(TenXPalette.color(TenXPalette.canvasHex))
+                    .frame(width: wheelFillDiameter, height: wheelFillDiameter)
+
                 if presentationMode.showsPlaceholderTrack, let metric = metrics.first {
                     ringTrack(metric: metric)
                 } else {
