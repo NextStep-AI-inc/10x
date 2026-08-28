@@ -2,6 +2,16 @@ import Foundation
 import Testing
 @testable import TenXApp
 
+@Test func startupBootstrapRunsOutsideAnXCTestHost() {
+    #expect(StartupBootstrapPolicy.shouldBootstrap(environment: [:]))
+}
+
+@Test func startupBootstrapDoesNotRunInsideAnXCTestHost() {
+    #expect(!StartupBootstrapPolicy.shouldBootstrap(environment: [
+        "XCTestConfigurationFilePath": "/tmp/TenXAppTests.xctestconfiguration",
+    ]))
+}
+
 @Test func liveStartupTimingKeepsSplashVisibleForAtLeastOneSecond() async throws {
     let clock = ContinuousClock()
     let start = clock.now

@@ -234,6 +234,18 @@ final class ProviderAccountCoordinator {
         primaryStore.primaryAccountRef(providerID: providerID)
     }
 
+    func scopeAvailability(
+        providerID: String,
+        openSessionID: UUID?
+    ) -> ProviderAccountScopeAvailability {
+        let providerSessionIDs = managedSessions.compactMap { sessionID, session in
+            session.providerID == providerID ? sessionID : nil
+        }
+        return ProviderAccountScopeAvailability(
+            isThisSessionAvailable: openSessionID.map(providerSessionIDs.contains) ?? false,
+            areAllCurrentSessionsAvailable: !providerSessionIDs.isEmpty)
+    }
+
     @discardableResult
     func reconcilePrimaryAccount(
         providerID: String,

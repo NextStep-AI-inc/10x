@@ -123,6 +123,18 @@ final class AppModel {
         }
     }
 
+    func accountScopeAvailability(
+        openSessionID: UUID?
+    ) -> [String: ProviderAccountScopeAvailability] {
+        guard let providerModel else { return [:] }
+        return providerModel.dockProviders.reduce(into: [:]) { availability, provider in
+            guard provider.capability == .accountRouting else { return }
+            availability[provider.id] = sessionActivityRegistry.scopeAvailability(
+                providerID: provider.id,
+                openSessionID: openSessionID)
+        }
+    }
+
     func useProviderAccount(
         _ accountRef: String,
         scope: ProviderAccountScope,
@@ -219,6 +231,11 @@ final class AppModel {
                 if case .failed = controller.runtimeState { return false }
                 return true
             })
+    }
+
+    deinit {
+        memoryPressureSource?.cancel()
+        sessionChangeTask?.cancel()
     }
 
     var sessionSearch: any SessionSearching {
@@ -1261,7 +1278,7 @@ final class AppModel {
             try checkStartupAttempt(attemptID)
             sessions = loaded.0
             archivedSessions = loaded.1
-            startSessionChangeWatching()
+            await startSessionChangeWatching()
             startupState.markReady(.sessions, attemptID: attemptID)
         }
 
@@ -1482,7 +1499,7 @@ final class AppModel {
                 else { return }
                 self.sessions = loaded.0
                 self.archivedSessions = loaded.1
-                self.startSessionChangeWatching()
+                await self.startSessionChangeWatching()
             })
         }
         if stages.contains(.settings) {
@@ -1582,11 +1599,13 @@ final class AppModel {
         gateRoute()
     }
 
-    private func startSessionChangeWatching() {
-        guard sessionChangeTask == nil else { return }
+    private func startSessionChangeWatching() async {
+        guard sessionChangeTask == nil, !isShuttingDown else { return }
+        let library = dependencies.sessionLibrary
+        await library.startWatching()
+        guard sessionChangeTask == nil, !isShuttingDown else { return }
         sessionChangeGeneration &+= 1
         let generation = sessionChangeGeneration
-        let library = dependencies.sessionLibrary
         sessionChangeTask = Task { [weak self] in
             for await _ in library.changes {
                 guard let self,

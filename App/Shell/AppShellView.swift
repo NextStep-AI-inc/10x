@@ -214,6 +214,8 @@ struct AppShellView: View {
                 compactLayout: compactLayout,
                 accountScopeSatisfaction: model.accountScopeSatisfaction(
                     openSessionID: model.activeSessionIdentityToken),
+                accountScopeAvailability: model.accountScopeAvailability(
+                    openSessionID: model.activeSessionIdentityToken),
                 pendingRemovalAccounts: model.pendingRemovalAccounts,
                 requiresRestartToSwitch: providerModel.accountTier.requiresRestartToSwitch,
                 activeSessionIdentityToken: model.activeSessionIdentityToken,

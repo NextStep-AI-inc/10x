@@ -31,9 +31,19 @@ private actor StubChannel: ProviderAccountChannel {
 /// real `ProviderAccountExtensionChannel` actually hangs: its waits don't
 /// check `Task.isCancelled` either.
 private actor HangingChannel: ProviderAccountChannel {
+    private var continuations: [CheckedContinuation<JSONValue, any Error>] = []
+
     func send(_ command: ProviderAccountChannelCommand) async throws -> JSONValue {
-        try await withCheckedThrowingContinuation { (_: CheckedContinuation<JSONValue, any Error>) in
-            // Never resumed — this is the point.
+        try await withCheckedThrowingContinuation { continuation in
+            continuations.append(continuation)
+        }
+    }
+
+    func release() {
+        let pending = continuations
+        continuations.removeAll()
+        for continuation in pending {
+            continuation.resume(throwing: ProviderAccountChannelError.unavailable)
         }
     }
 }
@@ -167,7 +177,8 @@ private actor HangingChannel: ProviderAccountChannel {
 /// extension accepted the command but never answers — the case
 /// `helloTimeout` exists to bound.
 @Test func helloThatNeverAnswersDegradesWithinTheTimeoutInsteadOfHanging() async throws {
-    let backend = ProviderAccountExtensionBackend(channel: HangingChannel())
+    let channel = HangingChannel()
+    let backend = ProviderAccountExtensionBackend(channel: channel)
 
     let clock = ContinuousClock()
     let start = clock.now
@@ -180,6 +191,7 @@ private actor HangingChannel: ProviderAccountChannel {
     // 50ms," so it stays robust to scheduler jitter under load while still
     // failing hard on an accidental return to an unbounded wait.
     #expect(elapsed < .seconds(2))
+    await channel.release()
 }
 
 /// The discriminating test: exercises the real, concrete

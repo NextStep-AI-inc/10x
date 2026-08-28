@@ -1563,13 +1563,16 @@ private func accountProviderModel() throws -> (
         accountB.accountRef(providerID: "openai-codex"))
 }
 
+private func emptyNavigationSessionLibrary() -> SessionLibrary {
+    SessionLibrary(root: FileManager.default.temporaryDirectory
+        .appendingPathComponent("navigation-sessions-\(UUID().uuidString)"))
+}
+
 @Test func dockAccountStateMirrorsTheCoordinator() async throws {
     let coordinator = ProviderAccountCoordinator()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: MissingOmpLocator(),
-        sessionLibrary: SessionLibrary(root: URL(
-            filePath: NSTemporaryDirectory(),
-            directoryHint: .isDirectory)),
+        sessionLibrary: emptyNavigationSessionLibrary(),
         makeProviderAccountCoordinator: { coordinator }))
     let session = DockAccountSession(providerID: "openai-codex", accountRef: "acct_A")
     coordinator.register(session)
@@ -1590,9 +1593,7 @@ private func accountProviderModel() throws -> (
     let (providerModel, accountARef, accountBRef) = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
-        sessionLibrary: SessionLibrary(root: URL(
-            filePath: NSTemporaryDirectory(),
-            directoryHint: .isDirectory)),
+        sessionLibrary: emptyNavigationSessionLibrary(),
         makeProviderAccountCoordinator: { coordinator },
         makeProviderModel: { _ in providerModel }))
     await model.bootstrap()
@@ -1623,9 +1624,7 @@ private func accountProviderModel() throws -> (
     let (providerModel, _, _) = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
-        sessionLibrary: SessionLibrary(root: URL(
-            filePath: NSTemporaryDirectory(),
-            directoryHint: .isDirectory)),
+        sessionLibrary: emptyNavigationSessionLibrary(),
         makeProviderModel: { _ in providerModel }))
     await model.bootstrap()
 
@@ -1699,9 +1698,7 @@ private func accountProviderModel() throws -> (
     let (providerModel, accountARef, _) = try accountProviderModel()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
-        sessionLibrary: SessionLibrary(root: URL(
-            filePath: NSTemporaryDirectory(),
-            directoryHint: .isDirectory)),
+        sessionLibrary: emptyNavigationSessionLibrary(),
         makeProviderAccountCoordinator: { coordinator },
         makeProviderModel: { _ in providerModel }))
     await model.bootstrap()
@@ -1730,9 +1727,7 @@ private func accountProviderModel() throws -> (
 
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: StubbedOmpLocator(),
-        sessionLibrary: SessionLibrary(root: URL(
-            filePath: NSTemporaryDirectory(),
-            directoryHint: .isDirectory)),
+        sessionLibrary: emptyNavigationSessionLibrary(),
         makeProviderAccountCoordinator: { coordinator }))
 
     // Installed synchronously in `AppModel.init`, not deferred to

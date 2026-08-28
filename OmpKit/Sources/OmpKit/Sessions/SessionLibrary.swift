@@ -117,6 +117,14 @@ public actor SessionLibrary {
         return changeStream
     }
 
+    /// Installs the directory watchers before a caller begins relying on
+    /// `changes`. Reading `changes` also starts them lazily, but callers that
+    /// load state and then hand off to live updates need an awaitable barrier
+    /// so a write cannot land between those two steps.
+    public func startWatching() {
+        startWatchingIfNeeded()
+    }
+
     /// Every session, newest modification first.
     ///
     /// Scans exactly `<root>/<bucket>/*.jsonl`. Subagent transcripts live one

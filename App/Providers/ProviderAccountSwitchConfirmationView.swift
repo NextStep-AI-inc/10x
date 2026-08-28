@@ -63,6 +63,35 @@ struct ProviderAccountScopeSatisfaction: Equatable, Sendable {
     }
 }
 
+struct ProviderAccountScopeAvailability: Equatable, Sendable {
+    let isThisSessionAvailable: Bool
+    let areAllCurrentSessionsAvailable: Bool
+
+    static let all = ProviderAccountScopeAvailability(
+        isThisSessionAvailable: true,
+        areAllCurrentSessionsAvailable: true)
+    static let newSessionsOnly = ProviderAccountScopeAvailability(
+        isThisSessionAvailable: false,
+        areAllCurrentSessionsAvailable: false)
+
+    func isAvailable(_ scope: ProviderAccountScopeOption) -> Bool {
+        switch scope {
+        case .thisSession: isThisSessionAvailable
+        case .allCurrentSessions: areAllCurrentSessionsAvailable
+        case .allNewSessions: true
+        }
+    }
+
+    func unavailableMessage(for scope: ProviderAccountScopeOption) -> String? {
+        guard !isAvailable(scope) else { return nil }
+        return switch scope {
+        case .thisSession: "Open a session to use this scope."
+        case .allCurrentSessions: "No current sessions use this provider."
+        case .allNewSessions: nil
+        }
+    }
+}
+
 struct ProviderAccountSwitchScopePresentation: Equatable, Sendable {
     let scope: ProviderAccountScopeOption
     let title: String
@@ -120,6 +149,7 @@ struct ProviderAccountSwitchConfirmationPresentation: Equatable, Sendable {
 struct ProviderAccountSwitchConfirmationView: View {
     let accountLabel: String
     let satisfaction: ProviderAccountScopeSatisfaction
+    let availability: ProviderAccountScopeAvailability
     let isSwitchAvailable: Bool
     let requiresRestartToSwitch: Bool
     @Binding var selectedScope: ProviderAccountScopeOption
@@ -162,7 +192,7 @@ struct ProviderAccountSwitchConfirmationView: View {
                         Text(option.title)
                             .font(TenXTypography.body(size: 13, weight: .medium))
                             .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                        Text(option.message)
+                        Text(availability.unavailableMessage(for: option.scope) ?? option.message)
                             .font(TenXTypography.body(size: 11))
                             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                             .fixedSize(horizontal: false, vertical: true)
@@ -181,7 +211,8 @@ struct ProviderAccountSwitchConfirmationView: View {
                         }
                     }
                     .tag(option.scope)
-                    .disabled(satisfaction.isSatisfied(option.scope))
+                    .disabled(satisfaction.isSatisfied(option.scope)
+                        || !availability.isAvailable(option.scope))
                     .accessibilityElement(children: .combine)
                 }
             }
@@ -204,7 +235,9 @@ struct ProviderAccountSwitchConfirmationView: View {
                 Button(presentation.confirmActionLabel, action: onConfirm)
                     .buttonStyle(.borderedProminent)
                     .tint(TenXPalette.color(TenXPalette.interactiveCyanHex))
-                    .disabled(satisfaction.areAllScopesSatisfied || !isSwitchAvailable)
+                    .disabled(!availability.isAvailable(selectedScope)
+                        || satisfaction.isSatisfied(selectedScope)
+                        || !isSwitchAvailable)
             }
         }
         .accessibilityElement(children: .contain)

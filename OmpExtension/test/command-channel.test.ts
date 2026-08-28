@@ -26,8 +26,9 @@ class FakeUI {
 
 test("the extension receives a command from the client and answers it", async () => {
 	const sessionDir = path.join(os.tmpdir(), `tenx-channel-${Date.now()}`);
+	const ompExecutable = Bun.which("omp") ?? path.join(os.homedir(), ".bun", "bin", "omp");
 	const child = Bun.spawn(
-		["omp", "--mode", "rpc", "--no-title", "--no-session", "-e", path.join(import.meta.dir, "..", "index.ts")],
+		[ompExecutable, "--mode", "rpc", "--no-title", "--no-session", "-e", path.join(import.meta.dir, "..", "index.ts")],
 		{ env: { ...Bun.env, PI_CODING_AGENT_DIR: sessionDir }, stdin: "pipe", stdout: "pipe", stderr: "pipe" },
 	);
 	const enc = new TextEncoder();

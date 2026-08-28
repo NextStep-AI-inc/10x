@@ -6,6 +6,30 @@ import Testing
 @Suite @MainActor struct ProviderAccountCoordinatorTests {
     private let providerID = "openai-codex"
 
+    @Test func scopeAvailabilityTracksManagedAndOpenSessionsForTheProvider() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        #expect(coordinator.scopeAvailability(
+            providerID: providerID,
+            openSessionID: nil) == .newSessionsOnly)
+
+        let session = FakeProviderAccountSession(providerID: providerID, accountRef: "acct_A")
+        coordinator.register(session)
+
+        #expect(coordinator.scopeAvailability(
+            providerID: providerID,
+            openSessionID: nil) == ProviderAccountScopeAvailability(
+                isThisSessionAvailable: false,
+                areAllCurrentSessionsAvailable: true))
+        #expect(coordinator.scopeAvailability(
+            providerID: providerID,
+            openSessionID: session.id) == .all)
+        #expect(coordinator.scopeAvailability(
+            providerID: "anthropic",
+            openSessionID: session.id) == .newSessionsOnly)
+    }
+
     @Test func thisSessionPinsOnlyTheMatchingOpenSession() async throws {
         let (coordinator, defaults, suiteName) = try makeCoordinator()
         defer { defaults.removePersistentDomain(forName: suiteName) }

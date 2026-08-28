@@ -376,7 +376,7 @@ actor ProviderAccountExtensionChannel: ProviderAccountChannel {
                 do {
                     try await respond(requestID, body)
                 } catch {
-                    await self.failInFlight(commandID: command.id)
+                    self.failInFlight(commandID: command.id)
                 }
             }
         }

@@ -78,9 +78,14 @@ final class ProviderUsageDockInteraction {
         isShowingConfirmation = false
     }
 
-    func beginConfirmation(satisfaction: ProviderAccountScopeSatisfaction) {
+    func beginConfirmation(
+        satisfaction: ProviderAccountScopeSatisfaction,
+        availability: ProviderAccountScopeAvailability = .all
+    ) {
         guard inspectedAccountID != nil,
-              let firstUnsatisfiedScope = satisfaction.firstUnsatisfiedScope
+              let firstUnsatisfiedScope = ProviderAccountScopeOption.allCases.first(where: {
+                  availability.isAvailable($0) && !satisfaction.isSatisfied($0)
+              })
         else { return }
         selectedScope = firstUnsatisfiedScope
         isShowingConfirmation = true
@@ -88,9 +93,10 @@ final class ProviderUsageDockInteraction {
 
     func selectScope(
         _ scope: ProviderAccountScopeOption,
-        satisfaction: ProviderAccountScopeSatisfaction
+        satisfaction: ProviderAccountScopeSatisfaction,
+        availability: ProviderAccountScopeAvailability = .all
     ) {
-        guard !satisfaction.isSatisfied(scope) else { return }
+        guard availability.isAvailable(scope), !satisfaction.isSatisfied(scope) else { return }
         selectedScope = scope
     }
 
@@ -100,9 +106,11 @@ final class ProviderUsageDockInteraction {
 
     func confirm(
         accountRef: String,
-        satisfaction: ProviderAccountScopeSatisfaction
+        satisfaction: ProviderAccountScopeSatisfaction,
+        availability: ProviderAccountScopeAvailability = .all
     ) {
         guard isShowingConfirmation,
+              availability.isAvailable(selectedScope),
               !satisfaction.isSatisfied(selectedScope)
         else { return }
         onUseAccount(accountRef, selectedScope.routingScope)
@@ -139,6 +147,7 @@ struct ProviderUsageDockView: View {
     let isForegroundGenerating: Bool
     let compactLayout: ProviderUsageDockCompactLayout
     let accountScopeSatisfaction: [ProviderAccountKey: ProviderAccountScopeSatisfaction]
+    let accountScopeAvailability: [String: ProviderAccountScopeAvailability]
     let pendingRemovalAccounts: Set<ProviderAccountKey>
     let requiresRestartToSwitch: Bool
     let activeSessionIdentityToken: UUID?
@@ -158,6 +167,7 @@ struct ProviderUsageDockView: View {
         isForegroundGenerating: Bool = false,
         compactLayout: ProviderUsageDockCompactLayout = .standalone,
         accountScopeSatisfaction: [ProviderAccountKey: ProviderAccountScopeSatisfaction] = [:],
+        accountScopeAvailability: [String: ProviderAccountScopeAvailability] = [:],
         pendingRemovalAccounts: Set<ProviderAccountKey> = [],
         requiresRestartToSwitch: Bool = false,
         activeSessionIdentityToken: UUID? = nil,
@@ -174,6 +184,7 @@ struct ProviderUsageDockView: View {
         self.isForegroundGenerating = isForegroundGenerating
         self.compactLayout = compactLayout
         self.accountScopeSatisfaction = accountScopeSatisfaction
+        self.accountScopeAvailability = accountScopeAvailability
         self.pendingRemovalAccounts = pendingRemovalAccounts
         self.requiresRestartToSwitch = requiresRestartToSwitch
         self.activeSessionIdentityToken = activeSessionIdentityToken
@@ -268,6 +279,7 @@ struct ProviderUsageDockView: View {
                     ProviderAccountSwitchConfirmationView(
                         accountLabel: account.label,
                         satisfaction: satisfaction(provider: provider, account: account),
+                        availability: availability(provider: provider),
                         isSwitchAvailable: canSwitch(provider: provider, account: account),
                         requiresRestartToSwitch: requiresRestartToSwitch,
                         selectedScope: selectedScopeBinding(provider: provider, account: account),
@@ -381,13 +393,14 @@ struct ProviderUsageDockView: View {
                         if provider.showsAccountSwitch {
                             Button("Use this account") {
                                 interaction.beginConfirmation(
-                                    satisfaction: satisfaction(provider: provider, account: account))
+                                    satisfaction: satisfaction(provider: provider, account: account),
+                                    availability: availability(provider: provider))
                             }
                             .buttonStyle(GhostActionStyle())
                             .disabled(!canSwitch(provider: provider, account: account)
-                                || satisfaction(
+                                || !hasAvailableUnsatisfiedScope(
                                     provider: provider,
-                                    account: account).areAllScopesSatisfied)
+                                    account: account))
                         }
 
                         Button("Manage accounts") {
@@ -593,6 +606,23 @@ struct ProviderUsageDockView: View {
             .flatMap { accountScopeSatisfaction[$0] } ?? .none
     }
 
+    private func availability(
+        provider: ProviderUsageProvider
+    ) -> ProviderAccountScopeAvailability {
+        accountScopeAvailability[provider.id] ?? .all
+    }
+
+    private func hasAvailableUnsatisfiedScope(
+        provider: ProviderUsageProvider,
+        account: ProviderUsageAccount
+    ) -> Bool {
+        let satisfaction = satisfaction(provider: provider, account: account)
+        let availability = availability(provider: provider)
+        return ProviderAccountScopeOption.allCases.contains {
+            availability.isAvailable($0) && !satisfaction.isSatisfied($0)
+        }
+    }
+
     private func canSwitch(
         provider: ProviderUsageProvider,
         account: ProviderUsageAccount
@@ -612,7 +642,8 @@ struct ProviderUsageDockView: View {
             set: { scope in
                 interaction.selectScope(
                     scope,
-                    satisfaction: satisfaction(provider: provider, account: account))
+                    satisfaction: satisfaction(provider: provider, account: account),
+                    availability: availability(provider: provider))
             })
     }
 
@@ -648,7 +679,8 @@ struct ProviderUsageDockView: View {
         else { return }
         interaction.confirm(
             accountRef: accountRef,
-            satisfaction: satisfaction(provider: provider, account: account))
+            satisfaction: satisfaction(provider: provider, account: account),
+            availability: availability(provider: provider))
     }
 
     private func collapse() {

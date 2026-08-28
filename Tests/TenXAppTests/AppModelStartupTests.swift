@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OmpKit
 import Testing
 import XCTest
 @testable import TenXApp
@@ -432,6 +433,24 @@ final class AppTerminationDelegateTests: XCTestCase {
 
     #expect(model.sessions.first?.cwd.hasSuffix("Watched") == true)
     await model.shutdown()
+}
+
+@MainActor
+@Test func releasingAnAppModelStopsItsSessionWatcher() async throws {
+    weak var retainedLibrary: SessionLibrary?
+
+    do {
+        let fixture = try StartupFixture()
+        let model = fixture.model()
+        retainedLibrary = fixture.library
+        await model.bootstrap()
+        fixture.cleanup()
+    }
+
+    for _ in 0..<100 where retainedLibrary != nil {
+        await Task.yield()
+    }
+    #expect(retainedLibrary == nil)
 }
 
 @MainActor

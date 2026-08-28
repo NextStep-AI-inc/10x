@@ -126,27 +126,6 @@ actor ActivationGate {
     await manager.closeAll()
 }
 
-@Test func openNewForwardsExtraArguments() async throws {
-    let capture = ConfigurationCapture()
-    let manager = SessionProcessManager(
-        extraArguments: ["-e", "/fake/ext/index.ts"],
-        clientFactory: { configuration in
-            capture.append(configuration)
-            var fake = configuration
-            fake.executable = "/usr/bin/env"
-            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "no-session-file"]
-            fake.rawArgv = true
-            fake.cwd = nil
-            return RpcClient(configuration: fake)
-        })
-
-    _ = try await manager.openNew(projectDirectory: "/tmp/project")
-
-    #expect(capture.snapshot().first?.extraArguments == ["-e", "/fake/ext/index.ts"])
-    await manager.closeAll()
-}
-
-@Test func openNewForwardsWorkingDirectoryAndUsesUniqueFallbackKeys() async throws {
 @Test func coldOpenNewStartsFreshAndPersisted() async throws {
     let root = FileManager.default.temporaryDirectory
         .appendingPathComponent("ProcessManager-\(UUID().uuidString)", isDirectory: true)

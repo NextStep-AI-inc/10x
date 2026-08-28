@@ -1014,6 +1014,7 @@ try assertSnapshot(
         ProviderAccountSwitchConfirmationView(
             accountLabel: "work@example.com",
             satisfaction: .none,
+            availability: .all,
             isSwitchAvailable: true,
             requiresRestartToSwitch: true,
             selectedScope: .constant(.allNewSessions),

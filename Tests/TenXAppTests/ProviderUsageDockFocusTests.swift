@@ -115,6 +115,38 @@ import Testing
 }
 
 @MainActor
+@Test func newSessionConfirmationSkipsScopesWithoutManagedSessions() {
+    var routedScope: ProviderAccountScope?
+    let interaction = ProviderUsageDockInteraction { _, scope in
+        routedScope = scope
+    }
+    let availability = ProviderAccountScopeAvailability.newSessionsOnly
+
+    interaction.inspect(providerID: "anthropic", accountID: "anthropic:work")
+    interaction.beginConfirmation(
+        satisfaction: .none,
+        availability: availability)
+
+    #expect(interaction.selectedScope == .allNewSessions)
+
+    interaction.selectScope(
+        .thisSession,
+        satisfaction: .none,
+        availability: availability)
+    #expect(interaction.selectedScope == .allNewSessions)
+
+    interaction.confirm(
+        accountRef: "acct_work",
+        satisfaction: .none,
+        availability: availability)
+    if case .allNewSessions = routedScope {
+        // The only available scope is routed.
+    } else {
+        Issue.record("Expected all-new-sessions routing")
+    }
+}
+
+@MainActor
 @Test func staleSatisfiedScopeRequiresExplicitUnsatisfiedSelection() {
     var routedScope: ProviderAccountScope?
     let interaction = ProviderUsageDockInteraction { _, scope in
