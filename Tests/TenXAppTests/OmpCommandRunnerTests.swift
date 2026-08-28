@@ -75,7 +75,8 @@ import Testing
             await resultBox.store(.failure(error))
         }
     }
-    let pids = try await fixture.waitForPIDs(in: pidFile, count: 2)
+    let pids = try await fixture.waitForPIDs(
+        in: pidFile, count: 2, cancelling: operation)
     defer { for pid in pids { kill(pid, SIGKILL) } }
 
     // The runner needs its 500ms SIGTERM grace plus a reap before it can
@@ -118,7 +119,8 @@ import Testing
             executableURL: executable,
             arguments: [pidFile.path])
     }
-    let pids = try await fixture.waitForPIDs(in: pidFile, count: 2)
+    let pids = try await fixture.waitForPIDs(
+        in: pidFile, count: 2, cancelling: operation)
 
     operation.cancel()
     await #expect(throws: CancellationError.self) {
@@ -143,7 +145,8 @@ import Testing
             executableURL: executable,
             arguments: [pidFile.path])
     }
-    let pids = try await fixture.waitForPIDs(in: pidFile, count: 2)
+    let pids = try await fixture.waitForPIDs(
+        in: pidFile, count: 2, cancelling: operation)
     defer { for pid in pids { kill(pid, SIGKILL) } }
 
     operation.cancel()
@@ -181,11 +184,13 @@ import Testing
             executableURL: executable,
             arguments: [pidFile.path])
     }
-    var pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    var pids = try await fixture.waitForPIDs(
+        in: pidFile, count: 1, cancelling: operation)
     defer { for pid in pids { kill(pid, SIGKILL) } }
 
     operation.cancel()
-    pids = try await fixture.waitForPIDs(in: pidFile, count: 2)
+    pids = try await fixture.waitForPIDs(
+        in: pidFile, count: 2, cancelling: operation)
     await #expect(throws: CancellationError.self) {
         _ = try await operation.value
     }
@@ -194,6 +199,23 @@ import Testing
         #expect(kill(pid, 0) == -1)
         #expect(errno == ESRCH)
     }
+}
+
+@Test func pidWaitCancelsAndAwaitsItsOperationOnTimeout() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+    let operation = Task {
+        try await ContinuousClock().sleep(for: .seconds(60))
+    }
+
+    await #expect(throws: OmpCommandFixtureError.self) {
+        _ = try await fixture.waitForPIDs(
+            in: fixture.root.appending(path: "never-created.pid"),
+            count: 1,
+            timeout: .milliseconds(20),
+            cancelling: operation)
+    }
+    #expect(operation.isCancelled)
 }
 
 enum OmpCommandFixtureError: Error {
@@ -233,8 +255,12 @@ struct OmpCommandFixture {
         return url
     }
 
-    func waitForPIDs(in file: URL, count: Int) async throws -> [pid_t] {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(10))
+    func waitForPIDs(
+        in file: URL,
+        count: Int,
+        timeout: Duration = .seconds(10)
+    ) async throws -> [pid_t] {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
         var observedContents: String?
         while ContinuousClock.now < deadline {
             if let data = try? Data(contentsOf: file) {
@@ -253,6 +279,21 @@ struct OmpCommandFixture {
             file: file,
             expectedCount: count,
             observedContents: observedContents)
+    }
+
+    func waitForPIDs<Success, Failure: Error>(
+        in file: URL,
+        count: Int,
+        timeout: Duration = .seconds(10),
+        cancelling operation: Task<Success, Failure>
+    ) async throws -> [pid_t] {
+        do {
+            return try await waitForPIDs(in: file, count: count, timeout: timeout)
+        } catch {
+            operation.cancel()
+            _ = await operation.result
+            throw error
+        }
     }
 
     func waitForResult(

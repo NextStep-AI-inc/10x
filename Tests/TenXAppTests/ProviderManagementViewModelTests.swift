@@ -798,7 +798,8 @@ import Testing
             runner: OmpUsageProcessRunner(executableURL: executable)),
         openURL: { _ in })
     let load = Task { await model.loadUsage() }
-    let pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    let pids = try await fixture.waitForPIDs(
+        in: pidFile, count: 1, cancelling: load)
     let pid = try #require(pids.first)
 
     await model.shutdown()

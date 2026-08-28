@@ -35,7 +35,8 @@ import Testing
     let service = OmpUsageService(
         runner: OmpUsageProcessRunner(executableURL: executable))
     let operation = Task { try await service.loadUsage() }
-    let pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    let pids = try await fixture.waitForPIDs(
+        in: pidFile, count: 1, cancelling: operation)
     let pid = try #require(pids.first)
 
     operation.cancel()

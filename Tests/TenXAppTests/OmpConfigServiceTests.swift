@@ -116,7 +116,8 @@ import Testing
     let service = OmpConfigService(
         runner: OmpConfigProcessRunner(executableURL: executable))
     let operation = Task { try await service.path() }
-    let pids = try await fixture.waitForPIDs(in: pidFile, count: 1)
+    let pids = try await fixture.waitForPIDs(
+        in: pidFile, count: 1, cancelling: operation)
     let pid = try #require(pids.first)
 
     operation.cancel()
