@@ -364,6 +364,8 @@ struct ProviderAccountStackView: View {
         item: ProviderAccountStackItemGeometry
     ) -> some View {
         let accountProvider = providerPresentingOnly(account)
+        let wheelPresentationMode = ProviderUsageWheelPresentationMode
+            .account(account.usageState)
         let activeCount = generatingCount(for: account)
         let isRaised = account.id == raisedAccountID
         let isAnyItemRaised = raisedAccountID != nil
@@ -394,7 +396,7 @@ struct ProviderAccountStackView: View {
                 isGrayscale: visualState.isGrayscale,
                 diameter: visualState.currentDiameter,
                 showsProviderLabel: false,
-                presentationMode: .account(account.usageState))
+                presentationMode: wheelPresentationMode)
                 .frame(
                     width: currentHitTarget,
                     height: currentHitTarget)
@@ -405,23 +407,30 @@ struct ProviderAccountStackView: View {
                 .contentShape(Circle())
                 .overlay {
                     if showsSeparationRing {
-                        // Framed at diameter-plus-ring-width, not at the
-                        // disc's own diameter: `.stroke` centers on its
-                        // path, so framing it at the disc's exact size
-                        // would spend half the stroke eating into the
-                        // disc's own drawn area, leaving only the other
-                        // half as visible separation from whatever
-                        // overlaps it. This puts the ring's inner edge
-                        // exactly at the disc's boundary and its full
-                        // width outside it.
+                        // Measured from the wheel's *visible* edge, not the
+                        // diameter it is laid out at — its outermost usage
+                        // ring stops short of that frame, so a separation
+                        // ring placed at the frame floats a couple of points
+                        // clear of the wheel with the wheel behind showing
+                        // through the gap. Then framed at visible-diameter
+                        // plus ring width, because `.stroke` centers on its
+                        // path: framing it at the visible edge exactly would
+                        // spend half the stroke eating into the wheel's own
+                        // ink and leave only the other half as separation.
+                        // Together these put the ring's inner edge flush
+                        // against the wheel and its full width outside.
+                        let visibleDiameter = ProviderUsageRingGeometry.visibleDiameter(
+                            limitCount: wheelPresentationMode.renderedRingCount(
+                                limitCount: accountProvider.ringLimits.count),
+                            outerDiameter: visualState.currentDiameter)
                         Circle()
                             .stroke(
                                 TenXPalette.color(TenXPalette.canvasHex),
                                 lineWidth: geometry.separationRingWidth)
                             .frame(
-                                width: visualState.currentDiameter
+                                width: visibleDiameter
                                     + geometry.separationRingWidth,
-                                height: visualState.currentDiameter
+                                height: visibleDiameter
                                     + geometry.separationRingWidth)
                     }
                 }

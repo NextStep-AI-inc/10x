@@ -14,6 +14,24 @@ enum ProviderUsageRingGeometry {
         coreDiameter * outerDiameter / diameter
     }
 
+    /// Outer edge of the outermost ring actually drawn — the wheel's visible
+    /// boundary, which is smaller than `outerDiameter`. Every ring is a stroke
+    /// centered on its own radius, and the outermost radius plus half a line
+    /// width still stops short of the frame the wheel is laid out in, so the
+    /// wheel's ink never reaches its own edge. Anything meant to sit flush
+    /// against a wheel has to measure from here: drawn at `outerDiameter`
+    /// instead it floats clear of the wheel, and whatever is behind shows
+    /// through the gap between the two.
+    static func visibleDiameter(
+        limitCount: Int,
+        outerDiameter: CGFloat = diameter
+    ) -> CGFloat {
+        guard let outermost = metrics(
+            limitCount: limitCount, outerDiameter: outerDiameter).last
+        else { return outerDiameter }
+        return outermost.diameter + outermost.lineWidth
+    }
+
     static func metrics(
         limitCount: Int,
         outerDiameter: CGFloat = diameter
