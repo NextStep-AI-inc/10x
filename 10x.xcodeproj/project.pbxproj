@@ -83,6 +83,7 @@
 		48012D1628CF8ADDF5E2B43C7BC00397 /* ToolEventReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EFC9F571B31A95C4E963E3CE6F5F5FA /* ToolEventReducer.swift */; };
 		488860D2FBFEFEF9B7CAAE3F85C00219 /* RecentProjectStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36CB95BC646298C16585D2058D8AD89 /* RecentProjectStoreTests.swift */; };
 		4945885CCA5AA51E5A5A722CFAA29D28 /* ProviderUsageDockFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D34678F2BAF33A703AA6950F45CF117 /* ProviderUsageDockFocusTests.swift */; };
+		497ED54D2C5E628D06EF8DC485E875DB /* ProjectGenerationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25485B5C75456A2B9E694623580BD1B7 /* ProjectGenerationTests.swift */; };
 		4A0AFD9E671813F38CFA3A1472066F2D /* SessionSearchDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ED0B06D0ACA3A31602C718C4FDF22F6 /* SessionSearchDocument.swift */; };
 		4A7A88741764A2428D2C415267A69556 /* OutsideInteractionDismissal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A331113A1950AEA534E20052C95F1087 /* OutsideInteractionDismissal.swift */; };
 		4B1BC133340D91429B7410CD7AD98B15 /* TurnActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDEF3C8E979206D3524D161DB99A960C /* TurnActivityTests.swift */; };
@@ -337,6 +338,7 @@
 		232D48B6C9FE88E2A942ED5CD80FAC55 /* OmpUsageRunning.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpUsageRunning.swift; path = App/Providers/OmpUsageRunning.swift; sourceTree = "<group>"; };
 		237D585093E84752237E9B5D6B92B6EE /* SettingControlView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingControlView.swift; path = App/Settings/SettingControlView.swift; sourceTree = "<group>"; };
 		2485E25AC3EE175E5F09E20F4EE77B5F /* OmpModelCatalogServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpModelCatalogServiceTests.swift; path = Tests/TenXAppTests/OmpModelCatalogServiceTests.swift; sourceTree = "<group>"; };
+		25485B5C75456A2B9E694623580BD1B7 /* ProjectGenerationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProjectGenerationTests.swift; path = Tests/TenXAppTests/ProjectGenerationTests.swift; sourceTree = "<group>"; };
 		2B233143EB5B6F2CBE4259CB809610C0 /* UnifiedDiffParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UnifiedDiffParser.swift; path = App/Tools/UnifiedDiffParser.swift; sourceTree = "<group>"; };
 		2BBBA68798C58DABEFA1D4BC83DF0BE2 /* SettingDefinition.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingDefinition.swift; path = App/Settings/SettingDefinition.swift; sourceTree = "<group>"; };
 		2BFA2121D323EB252B392DAD6F5314F8 /* RailScrollNavigationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailScrollNavigationTests.swift; path = Tests/TenXAppTests/RailScrollNavigationTests.swift; sourceTree = "<group>"; };
@@ -810,6 +812,7 @@
 				1EF69D68CDAC979D339A885DB18E85B2 /* OnboardingRoutingTests.swift */,
 				984CBA3F4504C89EBB8D2BBF6710E709 /* OnboardingStepTests.swift */,
 				EDFF67A9D90589ECD9B4DBF77A72E1D3 /* PreferredIDESettingRowTests.swift */,
+				25485B5C75456A2B9E694623580BD1B7 /* ProjectGenerationTests.swift */,
 				07B3CCCE759F5025816240590B7D52BE /* ProjectSessionGrouperTests.swift */,
 				9B88C7A4D6AD8CE818E0914F5B781195 /* ProviderAccountCoordinatorTests.swift */,
 				3BA87665FD6C254B1A72A42F96F3B255 /* ProviderAccountExtensionBackendTests.swift */,
@@ -1218,6 +1221,7 @@
 				E41203435B01C45D9A52D8EBB1D1F10B /* OnboardingRoutingTests.swift in Sources */,
 				98267A87836F5D958C782955A673A3C7 /* OnboardingStepTests.swift in Sources */,
 				A5C7CC305635633BBA38B8B7F0C82938 /* PreferredIDESettingRowTests.swift in Sources */,
+				497ED54D2C5E628D06EF8DC485E875DB /* ProjectGenerationTests.swift in Sources */,
 				940057D6C04D447D473082F824C51CEE /* ProjectSessionGrouperTests.swift in Sources */,
 				EC8998A7FB97F0513E826A26E933136B /* ProviderAccountCoordinatorTests.swift in Sources */,
 				C9DAC06C3F3150F2F90F449706B5B2BC /* ProviderAccountExtensionBackendTests.swift in Sources */,

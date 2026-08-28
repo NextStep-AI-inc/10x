@@ -320,6 +320,9 @@ end
 scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(app)
 scheme.add_test_target(tests)
+testable = scheme.test_action.testables.first
+raise "[generate_xcodeproj] generated scheme has no testable" unless testable
+testable.parallelizable = false
 scheme.test_action.should_use_launch_scheme_args_env = false
 # Deliberately no TestAction EnvironmentVariables: any entry here wins over the
 # values xcodebuild injects from TEST_RUNNER_-prefixed shell variables, so a
