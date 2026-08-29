@@ -204,8 +204,17 @@ import Testing
 @Test func pidWaitCancelsAndAwaitsItsOperationOnTimeout() async throws {
     let fixture = try OmpCommandFixture()
     defer { fixture.cleanup() }
+    let completion = CancellationCompletionProbe()
     let operation = Task {
-        try await ContinuousClock().sleep(for: .seconds(60))
+        do {
+            try await ContinuousClock().sleep(for: .seconds(60))
+        } catch {
+            await Task.detached {
+                try? await ContinuousClock().sleep(for: .milliseconds(200))
+            }.value
+            await completion.finish()
+            throw error
+        }
     }
 
     await #expect(throws: OmpCommandFixtureError.self) {
@@ -216,6 +225,7 @@ import Testing
             cancelling: operation)
     }
     #expect(operation.isCancelled)
+    #expect(await completion.isFinished)
 }
 
 enum OmpCommandFixtureError: Error {
@@ -231,6 +241,14 @@ actor OmpCommandResultBox {
 
     func result() -> Result<Data, any Error>? {
         storedResult
+    }
+}
+
+private actor CancellationCompletionProbe {
+    private(set) var isFinished = false
+
+    func finish() {
+        isFinished = true
     }
 }
 
