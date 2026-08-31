@@ -39,6 +39,7 @@
 		22C5344583CACDB956A9AE48CFA86102 /* RailMapLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0AFA12CF60F8C5D5D3928D1AFD8BA2 /* RailMapLayoutTests.swift */; };
 		23E3A622A35DE13BCBBBE2438CFDCC6A /* BrandActionsMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D5F1D5CE8D07D7C5BCF906B5FB09F1 /* BrandActionsMenuView.swift */; };
 		23FE06D8223E2986CB69C428C5733337 /* ProviderPrimaryPreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4214214DE724350A6B2449F40E4630 /* ProviderPrimaryPreferenceStore.swift */; };
+		2420EB64385E79B8C0E3B3BAFDEFD14A /* CommandBrowserPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4943EFF43BB0CB6DF2D747F2D52A1258 /* CommandBrowserPresentation.swift */; };
 		245BCD39DA1F091025C5F70E62934AD4 /* ToolDisclosureState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BDA8110B9C4CBAF62E1870E6F96D17 /* ToolDisclosureState.swift */; };
 		249623683C65C8D3F0BADD70877C857F /* ProviderAccountCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F84F534E86961DE1AF8CEC1FA5D067 /* ProviderAccountCoordinator.swift */; };
 		25015873A725FFA8626EEA4B12C8F2D5 /* ComposerControlsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DE789082B8E3E9DF0189841BCBC9D6 /* ComposerControlsModel.swift */; };
@@ -113,6 +114,7 @@
 		68D45FA7B8B362F391C6FE90113A9B40 /* ProviderAccountUsageBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7209CB64DB2E21ABFF2061A708773B65 /* ProviderAccountUsageBackendTests.swift */; };
 		69D4FC369909DAD477FBC7CD926BF06C /* RecentModelStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15D18E5167B8BD5F6410D74F2273945 /* RecentModelStoreTests.swift */; };
 		6A1671902307CC6EF5797F52A945C02A /* SourceSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1358E8B1E1F95D30DD0AE9DB03D31DE2 /* SourceSurface.swift */; };
+		6BCE0F6B0987E45E09E01588A027007D /* CommandBrowserPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58043053EC04980C89EF92C5F0202233 /* CommandBrowserPresentationTests.swift */; };
 		6F58BFA6292FC2E0E0EDE2EE5B859B98 /* RailAccessibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE1EBE2E7662963A090F73332018C1AC /* RailAccessibility.swift */; };
 		7049282BFAB398ABA9978F90609A8E64 /* SettingsCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AFDCCE445DD5D7268D9CB0D20120496 /* SettingsCatalogTests.swift */; };
 		70881DE24D299BFE6786160332404A18 /* RailPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB43F424A6A27983B5BB253D4CE75AC4 /* RailPresentation.swift */; };
@@ -375,6 +377,7 @@
 		45B635F1A1222C69CB52D0B90DECC1B7 /* ProviderAccountRemovalConfirmationView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountRemovalConfirmationView.swift; path = App/Providers/ProviderAccountRemovalConfirmationView.swift; sourceTree = "<group>"; };
 		4728491E7F6F938EA77B319321EFA262 /* SettingsViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsViewModel.swift; path = App/Settings/SettingsViewModel.swift; sourceTree = "<group>"; };
 		48746C37C1E70B8DAEF2236EA7775B7F /* AppRouteTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppRouteTests.swift; path = Tests/TenXAppTests/AppRouteTests.swift; sourceTree = "<group>"; };
+		4943EFF43BB0CB6DF2D747F2D52A1258 /* CommandBrowserPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CommandBrowserPresentation.swift; path = App/Sessions/CommandBrowserPresentation.swift; sourceTree = "<group>"; };
 		4A35E8A634BF91C74F76FAFB5DB3EA35 /* TranscriptEventProcessorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptEventProcessorTests.swift; path = Tests/TenXAppTests/TranscriptEventProcessorTests.swift; sourceTree = "<group>"; };
 		4A87EB3BC3A4E6795E06B7178A561E74 /* SettingsCategory.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsCategory.swift; path = App/Settings/SettingsCategory.swift; sourceTree = "<group>"; };
 		4A981545D5E9E9723EB649A5D1490BA6 /* RailMapLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailMapLayout.swift; path = App/Shell/RailMapLayout.swift; sourceTree = "<group>"; };
@@ -393,6 +396,7 @@
 		5731C6B3B04EE96034BF661955BCA493 /* UpdateConfigurationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateConfigurationTests.swift; path = Tests/TenXAppTests/UpdateConfigurationTests.swift; sourceTree = "<group>"; };
 		57E710370317194863E647F692341814 /* SplashPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SplashPresentation.swift; path = App/Startup/SplashPresentation.swift; sourceTree = "<group>"; };
 		57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileReferenceResolverTests.swift; path = Tests/TenXAppTests/FileReferenceResolverTests.swift; sourceTree = "<group>"; };
+		58043053EC04980C89EF92C5F0202233 /* CommandBrowserPresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CommandBrowserPresentationTests.swift; path = Tests/TenXAppTests/CommandBrowserPresentationTests.swift; sourceTree = "<group>"; };
 		5836439CE715F44410D41A544472954F /* ProviderExtensionBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderExtensionBundle.swift; path = App/Providers/ProviderExtensionBundle.swift; sourceTree = "<group>"; };
 		58D4D422BE2A6A0F123C8C956FE2FEEC /* TranscriptHistoryMapper.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptHistoryMapper.swift; path = App/Sessions/TranscriptHistoryMapper.swift; sourceTree = "<group>"; };
 		58EB3A884A3678D421DF5CC36EC1B57B /* ProviderExtensionBundleTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderExtensionBundleTests.swift; path = Tests/TenXAppTests/ProviderExtensionBundleTests.swift; sourceTree = "<group>"; };
@@ -675,6 +679,7 @@
 				B6AD70F36AF30D7D396456DBAD288AC8 /* AssistantMessageContentView.swift */,
 				A78207AC2A26009BADC702EE948558E8 /* ChooseProjectFlyout.swift */,
 				722A90AFEAB60805D76D3078CB9B153C /* CodeBlockView.swift */,
+				4943EFF43BB0CB6DF2D747F2D52A1258 /* CommandBrowserPresentation.swift */,
 				61BC2F097A3439B18D2A37EED250BD94 /* ComposerAttachment.swift */,
 				9D9D6899E872ED851831FE481330E0A5 /* ComposerAttachmentsView.swift */,
 				FC401EACACBD59AF101F4168D6767F18 /* ComposerCatalogService.swift */,
@@ -790,6 +795,7 @@
 				3B359C25C1853CA0C9D8303FB93D8799 /* AppModelUpdateTests.swift */,
 				48746C37C1E70B8DAEF2236EA7775B7F /* AppRouteTests.swift */,
 				6F72105DE6359519C511B5D2CB1F2E8B /* BundleIdentityTests.swift */,
+				58043053EC04980C89EF92C5F0202233 /* CommandBrowserPresentationTests.swift */,
 				C543F89CEF87A7F35837C4F1D3389076 /* ComposerAttachmentTests.swift */,
 				8EBD16FB5447285EB04367AB01C558D9 /* ComposerCatalogServiceTests.swift */,
 				F8682EE2CABA7CA682ADFC2A8CA21B4F /* ComposerControlsModelTests.swift */,
@@ -1097,6 +1103,7 @@
 				5CACD74B6EE3C78BFB67961EE2D34C92 /* AssistantMessageContentView.swift in Sources */,
 				61C051649E204A2EE7664AC8C4A0DA77 /* ChooseProjectFlyout.swift in Sources */,
 				E291E3DE386CC36E6FC7125827CC0695 /* CodeBlockView.swift in Sources */,
+				2420EB64385E79B8C0E3B3BAFDEFD14A /* CommandBrowserPresentation.swift in Sources */,
 				45C29D4852FEB1374811F46606EC2268 /* ComposerAttachment.swift in Sources */,
 				F5AA922492FD90FB7E0873818465F1C3 /* ComposerAttachmentsView.swift in Sources */,
 				0FB311CB19F5B760705ADD225B593363 /* ComposerCatalogService.swift in Sources */,
@@ -1199,6 +1206,7 @@
 				F9CED5BCC51213FE16D5697F66757D21 /* AppModelUpdateTests.swift in Sources */,
 				0D344CE46865C9A36FC65D0C49B64849 /* AppRouteTests.swift in Sources */,
 				02F65CD9412B25CECC87C242A04F7D56 /* BundleIdentityTests.swift in Sources */,
+				6BCE0F6B0987E45E09E01588A027007D /* CommandBrowserPresentationTests.swift in Sources */,
 				C9313509198DE12EC7F33825EBE53A80 /* ComposerAttachmentTests.swift in Sources */,
 				9C763A845D88ADBBE59E04E1DE63E37E /* ComposerCatalogServiceTests.swift in Sources */,
 				0B110410F106BCEE20EADE3BE3E68620 /* ComposerControlsModelTests.swift in Sources */,
