@@ -24,6 +24,11 @@ enum ComposerControlsMode {
     case activeSession
 }
 
+enum ComposerControlsMutationOutcome: Equatable, Sendable {
+    case success
+    case failure(String)
+}
+
 struct ComposerSpawnSelection: Equatable, Sendable {
     let provider: String?
     let modelID: String?
@@ -125,8 +130,12 @@ final class ComposerControlsModel {
         applyFastModeVisibility(preservingEnabled: selection.fastModeEnabled)
     }
 
-    func selectModel(_ model: ComposerModelInfo, mode: ComposerControlsMode) async {
-        guard !isMutating else { return }
+    @discardableResult
+    func selectModel(
+        _ model: ComposerModelInfo,
+        mode: ComposerControlsMode
+    ) async -> ComposerControlsMutationOutcome {
+        guard !isMutating else { return .failure(Self.mutationUnavailableMessage) }
         switch mode {
         case .newSession:
             isMutating = true
@@ -140,11 +149,14 @@ final class ComposerControlsModel {
                     for: model)
                 applyFastModeVisibility(preservingEnabled: isFastModeEnabled)
                 errorMessage = nil
+                return .success
             } catch {
-                errorMessage = "Couldn’t update the default model."
+                let message = "Couldn’t update the default model."
+                errorMessage = message
+                return .failure(message)
             }
         case .activeSession:
-            guard let activeSession else { return }
+            guard let activeSession else { return .failure(Self.mutationUnavailableMessage) }
             isMutating = true
             defer { isMutating = false }
             let prior = selectedModel
@@ -164,10 +176,11 @@ final class ComposerControlsModel {
                 selectedModel = prior
                 thinkingLevel = priorThinking
                 applyFastModeVisibility(preservingEnabled: priorFastEnabled)
-                errorMessage = Self.sanitizedMessage(
+                let message = Self.sanitizedMessage(
                     from: error,
                     fallback: "Couldn’t update the model.")
-                return
+                errorMessage = message
+                return .failure(message)
             }
             recordRecent(model)
 
@@ -183,18 +196,24 @@ final class ComposerControlsModel {
                     // to. Only the level is untrue — revert that alone, and leave
                     // Fast mode computed from the new model.
                     thinkingLevel = priorThinking
-                    errorMessage = Self.sanitizedMessage(
+                    let message = Self.sanitizedMessage(
                         from: error,
                         fallback: "Couldn’t update the thinking level.")
-                    return
+                    errorMessage = message
+                    return .failure(message)
                 }
             }
             errorMessage = nil
+            return .success
         }
     }
 
-    func selectThinking(_ level: String, mode: ComposerControlsMode) async {
-        guard !isMutating else { return }
+    @discardableResult
+    func selectThinking(
+        _ level: String,
+        mode: ComposerControlsMode
+    ) async -> ComposerControlsMutationOutcome {
+        guard !isMutating else { return .failure(Self.mutationUnavailableMessage) }
         switch mode {
         case .newSession:
             isMutating = true
@@ -203,11 +222,14 @@ final class ComposerControlsModel {
                 try await defaults.setDefaultThinkingLevel(level)
                 thinkingLevel = level
                 errorMessage = nil
+                return .success
             } catch {
-                errorMessage = "Couldn’t update the default thinking level."
+                let message = "Couldn’t update the default thinking level."
+                errorMessage = message
+                return .failure(message)
             }
         case .activeSession:
-            guard let activeSession else { return }
+            guard let activeSession else { return .failure(Self.mutationUnavailableMessage) }
             isMutating = true
             defer { isMutating = false }
             let prior = thinkingLevel
@@ -215,23 +237,32 @@ final class ComposerControlsModel {
             do {
                 try await activeSession.setThinkingLevel(level)
                 errorMessage = nil
+                return .success
             } catch {
                 thinkingLevel = prior
-                errorMessage = Self.sanitizedMessage(
+                let message = Self.sanitizedMessage(
                     from: error,
                     fallback: "Couldn’t update the thinking level.")
+                errorMessage = message
+                return .failure(message)
             }
         }
     }
 
-    func setFastMode(_ enabled: Bool, mode: ComposerControlsMode) async {
-        guard isFastModeVisible else { return }
+    @discardableResult
+    func setFastMode(
+        _ enabled: Bool,
+        mode: ComposerControlsMode
+    ) async -> ComposerControlsMutationOutcome {
+        guard !isMutating else { return .failure(Self.mutationUnavailableMessage) }
+        guard isFastModeVisible else { return .failure(Self.fastModeUnavailableMessage) }
         switch mode {
         case .newSession:
             isFastModeEnabled = enabled
             errorMessage = nil
+            return .success
         case .activeSession:
-            guard let activeSession else { return }
+            guard let activeSession else { return .failure(Self.mutationUnavailableMessage) }
             isMutating = true
             defer { isMutating = false }
             let priorEnabled = isFastModeEnabled
@@ -240,18 +271,22 @@ final class ComposerControlsModel {
                 let supported = try await activeSession.setFastMode(enabled)
                 if supported {
                     errorMessage = nil
+                    return .success
                 } else {
                     // Soft unsupported only — hide chip and clear intent.
                     isFastModeEnabled = false
                     isFastModeVisible = false
-                    errorMessage = "Fast mode isn’t available for this model."
+                    errorMessage = Self.fastModeUnavailableMessage
+                    return .failure(Self.fastModeUnavailableMessage)
                 }
             } catch {
                 // Transport / OMP failure — keep chip; restore prior intent.
                 isFastModeEnabled = priorEnabled
-                errorMessage = Self.sanitizedMessage(
+                let message = Self.sanitizedMessage(
                     from: error,
                     fallback: "Couldn’t update Fast mode.")
+                errorMessage = message
+                return .failure(message)
             }
         }
     }
@@ -293,6 +328,9 @@ final class ComposerControlsModel {
             isFastModeEnabled = false
         }
     }
+
+    private static let mutationUnavailableMessage = "Couldn’t update this setting."
+    private static let fastModeUnavailableMessage = "Fast mode isn’t available for this model."
 
     /// One-line user copy; strips absolute paths so raw OMP text stays out of the footer.
     private static func sanitizedMessage(from error: Error, fallback: String) -> String {

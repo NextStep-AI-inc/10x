@@ -146,8 +146,9 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
         recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
 
-    await model.selectModel(anthropicSonnet, mode: .newSession)
+    let outcome = await model.selectModel(anthropicSonnet, mode: .newSession)
 
+    #expect(outcome == .success)
     let modelCalls = await defaults.modelCalls
     #expect(modelCalls.count == 1)
     #expect(modelCalls.first?.0 == "anthropic")
@@ -171,8 +172,9 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
         recents: isolatedRecents())
     await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
 
-    await model.selectModel(anthropicSonnet, mode: .newSession)
+    let outcome = await model.selectModel(anthropicSonnet, mode: .newSession)
 
+    #expect(outcome == .failure("Couldn’t update the default model."))
     #expect(model.selectedModel?.modelID == "claude-opus-4-8")
     #expect(model.errorMessage != nil)
     #expect(await defaults.modelCalls.count == 1)
@@ -194,8 +196,9 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.selectModel(anthropicSonnet, mode: .activeSession)
+    let outcome = await model.selectModel(anthropicSonnet, mode: .activeSession)
 
+    #expect(outcome == .success)
     #expect(session.setModelCalls.count == 1)
     #expect(session.setModelCalls.first?.0 == "anthropic")
     #expect(session.setModelCalls.first?.1 == "claude-sonnet-4-5")
@@ -241,8 +244,9 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.setFastMode(true, mode: .activeSession)
+    let outcome = await model.setFastMode(true, mode: .activeSession)
 
+    #expect(outcome == .success)
     #expect(session.setFastModeCalls == [true])
     #expect(model.isFastModeEnabled == true)
 }
@@ -263,8 +267,9 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.selectModel(anthropicSonnet, mode: .activeSession)
+    let outcome = await model.selectModel(anthropicSonnet, mode: .activeSession)
 
+    #expect(outcome != .success)
     #expect(session.setModelCalls.count == 1)
     #expect(model.selectedModel?.modelID == "claude-opus-4-8")
     #expect(model.errorMessage != nil)
@@ -286,8 +291,9 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.selectThinking("high", mode: .activeSession)
+    let outcome = await model.selectThinking("high", mode: .activeSession)
 
+    #expect(outcome != .success)
     #expect(session.setThinkingCalls == ["high"])
     #expect(model.thinkingLevel == "auto")
     #expect(model.errorMessage != nil)
@@ -341,12 +347,75 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     model.attachActiveSession(session)
     #expect(model.isFastModeVisible == true)
 
-    await model.setFastMode(true, mode: .activeSession)
+    let outcome = await model.setFastMode(true, mode: .activeSession)
 
+    #expect(outcome == .failure("Fast mode isn’t available for this model."))
     #expect(session.setFastModeCalls == [true])
     #expect(model.isFastModeEnabled == false)
     #expect(model.isFastModeVisible == false)
     #expect(model.errorMessage == "Fast mode isn’t available for this model.")
+
+    let invisibleOutcome = await model.setFastMode(true, mode: .activeSession)
+    #expect(invisibleOutcome == .failure("Fast mode isn’t available for this model."))
+}
+
+@MainActor
+@Test func mutationOutcomesRejectMissingControllerAndRepeatedIdenticalRPCFailures() async {
+    let catalog = FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+        models: [anthropicOpus, anthropicSonnet],
+        selected: anthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false,
+        fastModeActive: false))
+    let controls = ComposerControlsModel(
+        catalog: catalog,
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
+    await controls.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
+
+    #expect(
+        await controls.selectModel(anthropicSonnet, mode: .activeSession)
+            == .failure("Couldn’t update this setting."))
+
+    let session = FakeComposerSessionController()
+    session.setModelError = FakeComposerVerboseError()
+    controls.attachActiveSession(session)
+
+    let firstFailure = await controls.selectModel(anthropicSonnet, mode: .activeSession)
+    let secondFailure = await controls.selectModel(anthropicSonnet, mode: .activeSession)
+
+    #expect(firstFailure == .failure("Couldn’t update the model."))
+    #expect(secondFailure == .failure("Couldn’t update the model."))
+    #expect(session.setModelCalls.count == 2)
+}
+
+@MainActor
+@Test func mutationOutcomesRejectInFlightMutationWithoutReportingSuccess() async {
+    let gate = RefreshLoadGate()
+    let controls = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, anthropicSonnet],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
+    await controls.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
+    let session = BlockingComposerSessionController(gate: gate)
+    controls.attachActiveSession(session)
+
+    let activeMutation = Task {
+        await controls.selectModel(anthropicSonnet, mode: .activeSession)
+    }
+    await gate.waitUntilBlocked()
+
+    #expect(
+        await controls.selectModel(anthropicOpus, mode: .activeSession)
+            == .failure("Couldn’t update this setting."))
+
+    await gate.release()
+    #expect(await activeMutation.value == .success)
 }
 
 @MainActor
@@ -365,8 +434,9 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.setFastMode(true, mode: .activeSession)
+    let outcome = await model.setFastMode(true, mode: .activeSession)
 
+    #expect(outcome != .success)
     #expect(session.setFastModeCalls == [true])
     #expect(model.isFastModeEnabled == false)
     #expect(model.isFastModeVisible == true)
@@ -720,6 +790,30 @@ private actor FakeComposerDefaults: ComposerDefaultPersisting {
     func setDefaultThinkingLevel(_ level: String) async throws {
         thinkingCalls.append(level)
         if shouldFail { throw FakeComposerError.persistFailed }
+    }
+}
+
+@MainActor
+private final class BlockingComposerSessionController: ComposerSessionControlling {
+    var liveComposerSelection = ComposerLiveSelection(
+        provider: nil,
+        modelID: nil,
+        thinkingLevel: nil,
+        fastModeEnabled: false)
+    private let gate: RefreshLoadGate
+
+    init(gate: RefreshLoadGate) {
+        self.gate = gate
+    }
+
+    func setModel(provider: String, modelID: String) async throws {
+        await gate.block()
+    }
+
+    func setThinkingLevel(_ level: String) async throws {}
+
+    func setFastMode(_ enabled: Bool) async throws -> Bool {
+        true
     }
 }
 
