@@ -927,7 +927,9 @@ final class AppModel {
             (providerModel?.providers ?? [])
                 .filter(\.isAuthenticated)
                 .map(\.id))
-        await composerControls?.refresh(authenticatedProviderIDs: authenticatedIDs)
+        await composerControls?.refresh(
+            authenticatedProviderIDs: authenticatedIDs,
+            projectURL: selectedProjectURL)
     }
 
     private func finish(

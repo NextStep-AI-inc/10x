@@ -1453,7 +1453,13 @@ let stubUpdateCheckerFactory: @MainActor @Sendable (
 }
 
 private actor StubAppComposerCatalog: ComposerCatalogLoading {
-    func load() async throws -> ComposerCatalogSnapshot {
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
+
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
         ComposerCatalogSnapshot(
             models: [],
             selected: nil,
@@ -1467,8 +1473,13 @@ private actor StubAppComposerCatalog: ComposerCatalogLoading {
 
 private actor CountingAppComposerCatalog: ComposerCatalogLoading {
     private(set) var loadCount = 0
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
 
-    func load() async throws -> ComposerCatalogSnapshot {
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
         loadCount += 1
         return ComposerCatalogSnapshot(
             models: [],

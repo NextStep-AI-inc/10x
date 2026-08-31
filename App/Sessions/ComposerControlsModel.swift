@@ -1,12 +1,13 @@
 import Foundation
 import Observation
 
-protocol ComposerCatalogLoading: Sendable {
-    func load() async throws -> ComposerCatalogSnapshot
+protocol ComposerCatalogLoading: AnyObject, Sendable {
+    var commandUpdates: AsyncStream<ComposerCommandCatalogState> { get }
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot
     func shutdown() async
 }
 
-extension OmpModelCatalogService: ComposerCatalogLoading {}
+extension ComposerCatalogService: ComposerCatalogLoading {}
 
 @MainActor
 protocol ComposerSessionControlling: AnyObject {
@@ -43,10 +44,11 @@ final class ComposerControlsModel {
     private(set) var errorMessage: String?
     private(set) var recentModels: [ComposerModelInfo] = []
 
-    @ObservationIgnored private let catalog: any ComposerCatalogLoading
+    @ObservationIgnored let catalog: any ComposerCatalogLoading
     @ObservationIgnored private let defaults: any ComposerDefaultPersisting
     @ObservationIgnored private let recents: RecentModelStore
     @ObservationIgnored private weak var activeSession: (any ComposerSessionControlling)?
+    @ObservationIgnored private var refreshGeneration = 0
 
     init(
         catalog: any ComposerCatalogLoading,
@@ -71,11 +73,18 @@ final class ComposerControlsModel {
             fastModeEnabled: isFastModeEnabled)
     }
 
-    func refresh(authenticatedProviderIDs: Set<String>) async {
+    func refresh(authenticatedProviderIDs: Set<String>, projectURL: URL?) async {
+        refreshGeneration += 1
+        let generation = refreshGeneration
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            if refreshGeneration == generation {
+                isLoading = false
+            }
+        }
         do {
-            let snapshot = try await catalog.load()
+            let snapshot = try await catalog.load(projectURL: projectURL)
+            guard refreshGeneration == generation else { return }
             models = ComposerControlsPresentation.authenticatedModels(
                 catalog: snapshot.models,
                 authenticatedProviderIDs: authenticatedProviderIDs)
@@ -94,7 +103,10 @@ final class ComposerControlsModel {
                 applyFastModeVisibility(preservingEnabled: snapshot.fastModeEnabled)
             }
             errorMessage = nil
+        } catch is CancellationError {
+            return
         } catch {
+            guard refreshGeneration == generation else { return }
             errorMessage = "Models couldn’t be loaded."
         }
     }

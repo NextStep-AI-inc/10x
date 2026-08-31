@@ -3169,18 +3169,23 @@ private func snapshotComposerControls(
         catalog: catalog,
         defaults: SnapshotComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)))
+    await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)), projectURL: nil)
     return model
 }
 
 private actor SnapshotComposerCatalog: ComposerCatalogLoading {
     private let snapshot: ComposerCatalogSnapshot
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
 
     init(snapshot: ComposerCatalogSnapshot) {
         self.snapshot = snapshot
     }
 
-    func load() async throws -> ComposerCatalogSnapshot { snapshot }
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot { snapshot }
 
     func shutdown() async {}
 }
