@@ -159,7 +159,8 @@ struct AppShellView: View {
             if let activeSession = model.activeSession {
                 ActiveSessionView(
                     controller: activeSession,
-                    controls: model.composerControls)
+                    controls: model.composerControls,
+                    commands: model.composerCommands)
             } else {
                 Text("Session unavailable")
                     .font(TenXTypography.body(size: 13))

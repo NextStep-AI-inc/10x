@@ -336,6 +336,8 @@ final class StartupFixture {
         providerModel: ProviderManagementViewModel? = nil,
         providerFactory: StartupProviderModelFactory? = nil,
         updateChecker: (any UpdateChecking)? = nil,
+        makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel =
+            stubAppComposerControlsFactory,
         // Hands the test the very `prepareForInstall` closure `AppModel` wires into its
         // checker. `SplashUpdateDriver.showReadyToInstallAndRelaunch` awaits that closure
         // (it is `await self?.shutdown()`), so a test that wants to compose a real
@@ -370,7 +372,8 @@ final class StartupFixture {
             makeUpdateChecker: { prepareForInstall in
                 onMakeUpdateChecker?(prepareForInstall)
                 return checker
-            })
+            },
+            makeComposerControls: makeComposerControls)
         return AppModel(dependencies: dependencies, preferenceDefaults: defaults)
     }
 

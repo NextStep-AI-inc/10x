@@ -166,7 +166,7 @@ import Testing
             fastModeEnabled: true,
             fastModeActive: false)),
         defaults: NoopComposerDefaults())
-    await controls.refresh(authenticatedProviderIDs: ["test"])
+    await controls.refresh(authenticatedProviderIDs: ["test"], projectURL: nil)
     #expect(controls.thinkingLevel == "high")
     #expect(controls.isFastModeEnabled == true)
 
@@ -255,12 +255,17 @@ private func composerFakeServerURL() -> URL {
 
 private actor StaticComposerCatalog: ComposerCatalogLoading {
     private let snapshot: ComposerCatalogSnapshot
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
 
     init(snapshot: ComposerCatalogSnapshot) {
         self.snapshot = snapshot
     }
 
-    func load() async throws -> ComposerCatalogSnapshot { snapshot }
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot { snapshot }
     func shutdown() async {}
 }
 

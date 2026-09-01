@@ -2653,6 +2653,411 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
 }
 
 @MainActor
+@Test func commandBrowserModelChildSnapshot() async throws {
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+    let commandModel = ComposerCommandModel(
+        catalog: controls.catalog,
+        controls: controls,
+        onStartNewSession: { _, _ in })
+    _ = commandModel.updateDraft("/model")
+    _ = commandModel.complete()
+
+    try assertSnapshot(
+        CommandBrowserNativeControlsView(
+            commandModel: commandModel,
+            controls: controls,
+            query: .constant(""),
+            onEffect: { _ in },
+            restoreEditorFocus: {}),
+        name: "command-browser-model-child",
+        size: CGSize(width: 340, height: 320))
+}
+
+@MainActor
+@Test func commandBrowserRootSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        CommandBrowserView(
+            model: commandModel,
+            controls: controls,
+            query: .constant(""),
+            onEffect: { _ in },
+            onDismiss: {},
+            restoreEditorFocus: {})
+            .frame(width: 780, height: 520, alignment: .topLeading),
+        name: "command-browser-root",
+        size: CGSize(width: 780, height: 520))
+}
+
+@MainActor
+@Test func commandBrowserStreamingSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .streaming)
+    _ = session
+    #expect(commandModel.updateDraft("/compact"))
+
+    try assertSnapshot(
+        CommandBrowserView(
+            model: commandModel,
+            controls: controls,
+            query: .constant(""),
+            onEffect: { _ in },
+            onDismiss: {},
+            restoreEditorFocus: {})
+            .frame(width: 780, height: 520, alignment: .topLeading),
+        name: "command-browser-streaming",
+        size: CGSize(width: 780, height: 520))
+}
+
+@MainActor
+@Test func commandBrowserUnavailableSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: [],
+        runtimeState: .idle,
+        catalogState: .unavailable)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+    commandModel.selectSource(.commands)
+
+    try assertSnapshot(
+        CommandBrowserView(
+            model: commandModel,
+            controls: controls,
+            query: .constant(""),
+            onEffect: { _ in },
+            onDismiss: {},
+            restoreEditorFocus: {})
+            .frame(width: 780, height: 520, alignment: .topLeading),
+        name: "command-browser-unavailable",
+        size: CGSize(width: 780, height: 520))
+}
+
+@MainActor
+@Test func commandBrowserNoMatchSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/modxyz"))
+
+    try assertSnapshot(
+        CommandBrowserView(
+            model: commandModel,
+            controls: controls,
+            query: .constant("modxyz"),
+            onEffect: { _ in },
+            onDismiss: {},
+            restoreEditorFocus: {})
+            .frame(width: 780, height: 520, alignment: .topLeading),
+        name: "command-browser-no-match",
+        size: CGSize(width: 780, height: 520))
+}
+
+@MainActor
+@Test func commandBrowserMinimumWindowSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            HStack(spacing: 0) {
+                CommandBrowserView(
+                    model: commandModel,
+                    controls: controls,
+                    query: .constant(""),
+                    onEffect: { _ in },
+                    onDismiss: {},
+                    restoreEditorFocus: {})
+                    .frame(width: 616, height: 360, alignment: .topLeading)
+                Spacer(minLength: 0)
+            }
+            .frame(width: 760, alignment: .leading)
+            Rectangle()
+                .fill(TenXPalette.color(TenXPalette.nearBlackHex))
+                .frame(height: 1)
+            Text("/")
+                .font(TenXTypography.body(size: 13))
+                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                .padding(.horizontal, 12)
+                .frame(width: 760, height: 52, alignment: .leading)
+                .overlay(Rectangle().stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1))
+        },
+        name: "command-browser-minimum-window",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserActiveWithAttachmentsSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/"),
+                attachments: .constant([
+                    snapshotAttachment(name: "source-map.png", width: 1_200, height: 800),
+                    snapshotAttachment(name: "layout-note.png", width: 640, height: 640),
+                ]),
+                flyout: .constant(.commands),
+                presentation: .active(controller: SessionController(
+                    processManager: SessionProcessManager(),
+                    previewItems: [],
+                    runtimeState: .idle,
+                    modelName: "Claude Opus 4.8",
+                    thinkingLevel: "Auto")),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .activeSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-active-attachments",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserNewSessionCommandsUnavailableSnapshot() async throws {
+    let (commandModel, controls) = await snapshotNewSessionCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands)
+    #expect(commandModel.updateDraft("/"))
+    commandModel.selectSource(.commands)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/"),
+                flyout: .constant(.commands),
+                presentation: .newSession(
+                    projectURL: nil,
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .newSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-new-session-commands-unavailable",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserStreamingSteerSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .streaming)
+    _ = session
+    #expect(commandModel.updateDraft("/compact"))
+
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .streaming,
+        modelName: "Claude Opus 4.8",
+        thinkingLevel: "Auto")
+    controller.selectStreamingBehavior(.steer)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/compact"),
+                flyout: .constant(.commands),
+                presentation: .active(controller: controller),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .activeSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-streaming-steer",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserLongNamesMinimumWindowSnapshot() async throws {
+    let longCommands = [
+        AvailableSlashCommand(
+            name: "skill:extremely-detailed-refactor-investigation-with-follow-up-questions",
+            description: "Review every touched surface and produce a compact plan that still leaves the draft editable.",
+            inputHint: "<scope>",
+            source: .skill),
+        AvailableSlashCommand(
+            name: "extension:very-long-linear-project-management-workflow",
+            description: "Create or update a project tracking issue with the current session context.",
+            source: .extensionCommand),
+        AvailableSlashCommand(
+            name: "prompt:review-accessibility-keyboard-navigation-and-copy",
+            description: "Run the saved review prompt for keyboard interaction and interface text.",
+            inputHint: "<component>",
+            source: .mcpPrompt),
+    ]
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: longCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/"),
+                flyout: .constant(.commands),
+                presentation: .active(controller: SessionController(
+                    processManager: SessionProcessManager(),
+                    previewItems: [],
+                    runtimeState: .idle,
+                    modelName: "Claude Opus 4.8",
+                    thinkingLevel: "Auto")),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .activeSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-long-names-minimum-window",
+        size: CGSize(width: 760, height: 560))
+}
+
+@Test func commandBrowserPanelBoundsClampTheOuterViewHeight() {
+    #expect(CommandBrowserView.panelSize(for: CGSize(width: 780, height: 520))
+        == CGSize(width: 780, height: CommandBrowserMetrics.maximumHeight))
+    #expect(CommandBrowserView.panelSize(for: CGSize(width: 616, height: 120))
+        == CGSize(width: 616, height: CommandBrowserMetrics.minimumHeight))
+}
+
+@Test func commandBrowserSourceSelectionFromChildRoutesBacksToRoot() {
+    #expect(CommandBrowserView.sourceSelectionNavigation(for: .root) == .stayRoot)
+    #expect(CommandBrowserView.sourceSelectionNavigation(for: .arguments(CommandBrowserRowID(
+        rawSource: "builtin",
+        canonicalName: "compact"))) == .backToRoot)
+    #expect(CommandBrowserView.sourceSelectionNavigation(for: .subcommands(CommandBrowserRowID(
+        rawSource: "builtin",
+        canonicalName: "parent"))) == .backToRoot)
+    #expect(CommandBrowserView.sourceSelectionNavigation(for: .native(.model)) == .backToRoot)
+}
+
+@Test func commandBrowserScrollTargetRequiresTheSelectedRowToBeVisible() {
+    let rows = CommandBrowserPresentation.rows(commands: snapshotCommandBrowserCommands, mode: .activeIdle)
+    let selected = rows.last?.id
+
+    #expect(CommandBrowserView.selectedRowScrollTarget(selected, visibleRows: rows) == selected)
+    #expect(CommandBrowserView.selectedRowScrollTarget(CommandBrowserRowID(
+        rawSource: "custom",
+        canonicalName: "removed"), visibleRows: rows) == nil)
+    #expect(CommandBrowserView.selectedRowScrollTarget(nil, visibleRows: rows) == nil)
+}
+
+@Test func commandBrowserNativeControlsRestoreFocusOnlyAfterLeavingChild() {
+    #expect(CommandBrowserNativeControlsView.nativeRows(
+        command: .fast,
+        thinkingOptions: [],
+        thinkingLevel: "auto",
+        isFastModeVisible: false,
+        isFastModeEnabled: false).isEmpty)
+    #expect(CommandBrowserNativeControlsView.nativeRows(
+        command: .fast,
+        thinkingOptions: [],
+        thinkingLevel: "auto",
+        isFastModeVisible: true,
+        isFastModeEnabled: false).map(\.title) == ["On", "Off", "Status"])
+    #expect(CommandBrowserNativeControlsView.shouldRestoreEditorFocus(
+        effect: .none,
+        isPresented: true,
+        route: .native(.model)) == false)
+    #expect(CommandBrowserNativeControlsView.shouldRestoreEditorFocus(
+        effect: .replaceDraft(""),
+        isPresented: false,
+        route: .root))
+    #expect(CommandBrowserNativeControlsView.shouldRestoreEditorFocus(
+        effect: .keepDraft,
+        isPresented: true,
+        route: .root))
+}
+
+@Test func commandBrowserNativeControlsHighlightStartsOnTheCurrentSettingAndUpdates() {
+    let efforts = CommandBrowserNativeControlsView.nativeRows(
+        command: .effort,
+        thinkingOptions: ["auto", "low", "high"],
+        thinkingLevel: "high",
+        isFastModeVisible: true,
+        isFastModeEnabled: false)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .effort,
+        rows: efforts,
+        thinkingLevel: "high",
+        isFastModeEnabled: false,
+        previousIndex: 0) == 2)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .fast,
+        rows: CommandBrowserNativeControlsView.nativeRows(
+            command: .fast,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: true),
+        thinkingLevel: "auto",
+        isFastModeEnabled: true,
+        previousIndex: 1) == 0)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .fast,
+        rows: CommandBrowserNativeControlsView.nativeRows(
+            command: .fast,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false),
+        thinkingLevel: "auto",
+        isFastModeEnabled: false,
+        previousIndex: 0) == 1)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .effort,
+        rows: CommandBrowserNativeControlsView.nativeRows(
+            command: .effort,
+            thinkingOptions: ["auto", "low"],
+            thinkingLevel: "missing",
+            isFastModeVisible: true,
+            isFastModeEnabled: false),
+        thinkingLevel: "missing",
+        isFastModeEnabled: false,
+        previousIndex: 5) == 1)
+}
+
+@MainActor
 @Test func modelPickerSearchingSnapshot() throws {
     let sections = ComposerControlsPresentation.pickerSections(
         models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
@@ -3170,20 +3575,138 @@ private func snapshotComposerControls(
         catalog: catalog,
         defaults: SnapshotComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)))
+    await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)), projectURL: nil)
     return model
 }
 
 private actor SnapshotComposerCatalog: ComposerCatalogLoading {
     private let snapshot: ComposerCatalogSnapshot
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
 
     init(snapshot: ComposerCatalogSnapshot) {
         self.snapshot = snapshot
     }
 
-    func load() async throws -> ComposerCatalogSnapshot { snapshot }
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot { snapshot }
 
     func shutdown() async {}
+}
+
+private let snapshotCommandBrowserCommands = [
+    AvailableSlashCommand(
+        name: "compact",
+        aliases: ["summarize"],
+        description: "Compact the current session",
+        inputHint: "[instructions]",
+        subcommands: [
+            AvailableSlashSubcommand(
+                name: "status",
+                description: "Show compaction status",
+                usage: "/compact status"),
+        ],
+        source: .builtin),
+    AvailableSlashCommand(
+        name: "context",
+        description: "Show session context",
+        source: .builtin),
+    AvailableSlashCommand(
+        name: "skill:brainstorming",
+        description: "Explore a feature direction",
+        inputHint: "<topic>",
+        source: .skill),
+    AvailableSlashCommand(
+        name: "extension:linear",
+        description: "Create or update a Linear issue",
+        source: .extensionCommand),
+    AvailableSlashCommand(
+        name: "prompt:review",
+        description: "Run a saved review prompt",
+        inputHint: "<scope>",
+        source: .mcpPrompt),
+]
+
+@MainActor
+private func snapshotCommandBrowserModel(
+    commands: [AvailableSlashCommand],
+    runtimeState: SessionRuntimeState,
+    catalogState: ComposerCommandCatalogState? = nil
+) async -> (ComposerCommandModel, ComposerControlsModel, SnapshotCommandBrowserSession) {
+    let catalog = SnapshotCommandBrowserCatalog(commands: commands)
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+    let model = ComposerCommandModel(
+        catalog: catalog,
+        controls: controls,
+        onStartNewSession: { _, _ in })
+    let state = catalogState ?? .available(commands)
+    let session = SnapshotCommandBrowserSession(
+        runtimeState: runtimeState,
+        catalogState: state)
+    model.attachActiveSession(session)
+    await Task.yield()
+    return (model, controls, session)
+}
+
+@MainActor
+private func snapshotNewSessionCommandBrowserModel(
+    commands: [AvailableSlashCommand]
+) async -> (ComposerCommandModel, ComposerControlsModel) {
+    let catalog = SnapshotCommandBrowserCatalog(commands: commands)
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+    let model = ComposerCommandModel(
+        catalog: catalog,
+        controls: controls,
+        onStartNewSession: { _, _ in })
+    await Task.yield()
+    return (model, controls)
+}
+
+private actor SnapshotCommandBrowserCatalog: ComposerCatalogLoading {
+    nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
+
+    init(commands: [AvailableSlashCommand]) {
+        let updates = AsyncStream<ComposerCommandCatalogState>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        commandUpdates = updates.stream
+        updates.continuation.yield(.available(commands))
+        updates.continuation.finish()
+    }
+
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
+        ComposerCatalogSnapshot(
+            models: [],
+            selected: nil,
+            thinkingLevel: nil,
+            fastModeEnabled: false,
+            fastModeActive: false)
+    }
+
+    func shutdown() async {}
+}
+
+@MainActor
+private final class SnapshotCommandBrowserSession: ComposerCommandSession {
+    var runtimeState: SessionRuntimeState
+    var commandCatalogState: ComposerCommandCatalogState
+    let commandUpdates = AsyncStream<ComposerCommandCatalogState> { _ in }
+
+    init(runtimeState: SessionRuntimeState, catalogState: ComposerCommandCatalogState) {
+        self.runtimeState = runtimeState
+        self.commandCatalogState = catalogState
+    }
+
+    func sendSlashCommand(_ text: String) async {}
 }
 
 private actor SnapshotComposerDefaults: ComposerDefaultPersisting {

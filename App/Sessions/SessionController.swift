@@ -7,7 +7,7 @@ import UserNotifications
 
 @MainActor
 @Observable
-final class SessionController: ComposerSessionControlling, ProviderAccountSession {
+final class SessionController: ComposerSessionControlling, ComposerCommandSession, ProviderAccountSession {
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
     private(set) var items: [TranscriptItem] = []
     private(set) var runtimeState: SessionRuntimeState = .loading {
@@ -43,6 +43,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private(set) var providerID: String?
     private(set) var activeProviderAccounts: [String: String] = [:]
     private(set) var providerAccountSequence = 0
+    private(set) var commandCatalogState: ComposerCommandCatalogState = .loading
     var draft = ""
     var attachments: [ComposerAttachment] = []
     var streamingBehavior: StreamingBehavior? = .steer
@@ -71,6 +72,8 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private var titleGenerationGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
+    nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
+    private let commandContinuation: AsyncStream<ComposerCommandCatalogState>.Continuation
     /// This controller's one write handle onto the marker-filtered frame
     /// source feeding the current pipeline's `ProviderAccountExtensionChannel`
     /// (built in `attachAccountChannel`). Recreated every `finishOpening` (a
@@ -83,9 +86,22 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private var accountChannelContinuation: AsyncStream<RpcFrame>.Continuation?
     @ObservationIgnored private var isSendInFlight = false
     @ObservationIgnored private weak var attachedComposerControls: ComposerControlsModel?
+    @ObservationIgnored private var pendingSlashAttachments: PendingSlashAttachments?
     private static let transcriptLog = OSLog(
         subsystem: Bundle.main.bundleIdentifier ?? "TenXApp",
         category: .pointsOfInterest)
+
+    private enum AttachmentDisposition {
+        case clearImmediately
+        case waitForAgent
+    }
+
+    private struct PendingSlashAttachments {
+        let ids: Set<ComposerAttachment.ID>
+        let generation: UInt64
+        var lifecycleObserved: Bool
+        var awaitingResponse: Bool
+    }
 
     private struct PipelineContext {
         let generation: UInt64
@@ -107,6 +123,10 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         self.accountChannelRegistry = accountChannelRegistry
         self.titleGenerator = titleGenerator
         self.historyLoader = historyLoader
+        let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        self.commandUpdates = commandUpdates.stream
+        self.commandContinuation = commandUpdates.continuation
         activityRegistry?.register(self)
     }
 
@@ -144,7 +164,15 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         // above.
         self.accountChannelRegistry = nil
         self.titleGenerator = titleGenerator
+        let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        self.commandUpdates = commandUpdates.stream
+        self.commandContinuation = commandUpdates.continuation
         activityRegistry?.register(self)
+    }
+
+    deinit {
+        commandContinuation.finish()
     }
 
     var currentProviderAccountRef: String? {
@@ -160,8 +188,14 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         }
     }
 
+    var availableCommands: [AvailableSlashCommand] {
+        guard case .available(let commands) = commandCatalogState else { return [] }
+        return commands
+    }
+
     func openExisting(_ metadata: SessionMetadata) async {
         let priorSessionPath = stopAndDetachCurrentSession()
+        publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
         if let priorSessionPath {
@@ -218,6 +252,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
             ? .failed
             : .notRequested
         let priorSessionPath = stopAndDetachCurrentSession()
+        publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
         if let priorSessionPath {
@@ -349,22 +384,42 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     }
 
     func sendPrompt() async {
-        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        await send(
+            text: draft,
+            behavior: runtimeState == .streaming ? streamingBehavior : nil,
+            attachmentDisposition: .clearImmediately,
+            failureFunction: "sendPrompt")
+    }
+
+    func sendSlashCommand(_ text: String) async {
+        await send(
+            text: text,
+            behavior: runtimeState == .streaming ? .followUp : nil,
+            attachmentDisposition: .waitForAgent,
+            failureFunction: "sendSlashCommand")
+    }
+
+    private func send(
+        text: String,
+        behavior requestedBehavior: StreamingBehavior?,
+        attachmentDisposition: AttachmentDisposition,
+        failureFunction: String
+    ) async {
+        let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !attachments.isEmpty
         guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return }
-        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return }
-        defer { accountCoordinator?.endManagedTurn(sessionID: id) }
-
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {
-            guard let streamingBehavior else { return }
-            behavior = streamingBehavior
+            guard let requestedBehavior else { return }
+            behavior = requestedBehavior
         } else {
             behavior = nil
         }
+        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return }
+        defer { accountCoordinator?.endManagedTurn(sessionID: id) }
 
-        let message = draft
         let staged = attachments
+        let stagedIDs = Set(staged.map(\.id))
         let context = currentPipelineContext()
         isSendInFlight = true
         defer { isSendInFlight = false }
@@ -374,31 +429,88 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         // processor is moved first so a snapshot already in flight cannot
         // publish the old idle state back over this one.
         draft = ""
-        attachments = []
+        if attachmentDisposition == .clearImmediately {
+            attachments = []
+        } else {
+            pendingSlashAttachments = PendingSlashAttachments(
+                ids: stagedIDs,
+                generation: context.generation,
+                lifecycleObserved: false,
+                awaitingResponse: true)
+        }
         runtimeState = .streaming
         reportActivity()
         await context.processor?.setRuntimeState(.streaming)
         guard isCurrent(context) else { return }
 
         do {
-            _ = try await handle.client.send(.prompt(
-                message: message,
+            let response = try await handle.client.send(.prompt(
+                message: text,
                 images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
             guard isCurrent(context) else { return }
+            await applyAttachmentDisposition(
+                attachmentDisposition,
+                response: response,
+                stagedIDs: stagedIDs,
+                context: context)
             startTitleGenerationIfNeeded(
-                prompt: message,
+                prompt: text,
                 behavior: behavior,
                 handle: handle,
                 context: context)
         } catch {
             // Nothing reached omp, so the text is still the user's to send.
-            if isCurrent(context), draft.isEmpty {
-                draft = message
-                attachments = staged
+            if isCurrent(context) {
+                if attachmentDisposition == .waitForAgent {
+                    pendingSlashAttachments = nil
+                }
+                guard draft.isEmpty else {
+                    fail(error, function: failureFunction, context: context)
+                    return
+                }
+                draft = text
+                if attachmentDisposition == .clearImmediately {
+                    attachments = staged
+                }
             }
-            fail(error, function: "sendPrompt", context: context)
+            fail(error, function: failureFunction, context: context)
         }
+    }
+
+    private func applyAttachmentDisposition(
+        _ disposition: AttachmentDisposition,
+        response: RpcResponse,
+        stagedIDs: Set<ComposerAttachment.ID>,
+        context: PipelineContext
+    ) async {
+        guard disposition == .waitForAgent else { return }
+        switch response.data?["agentInvoked"]?.boolValue {
+        case true:
+            removeAttachments(withIDs: stagedIDs)
+            pendingSlashAttachments = nil
+        case false:
+            pendingSlashAttachments = nil
+            runtimeState = .idle
+            reportActivity()
+            await context.processor?.setRuntimeState(.idle)
+        case nil:
+            guard var pending = pendingSlashAttachments,
+                  pending.generation == context.generation
+            else { return }
+            if pending.lifecycleObserved {
+                removeAttachments(withIDs: pending.ids)
+                pendingSlashAttachments = nil
+            } else {
+                pending.awaitingResponse = false
+                pendingSlashAttachments = pending
+            }
+        }
+    }
+
+    private func removeAttachments(withIDs ids: Set<ComposerAttachment.ID>) {
+        guard !ids.isEmpty else { return }
+        attachments.removeAll { ids.contains($0.id) }
     }
 
     private func startTitleGenerationIfNeeded(
@@ -455,6 +567,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     func restart() async {
         guard let projectURL, let sessionPath else { return }
         stopEventPipeline()
+        publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
         await processManager.close(sessionPath: sessionPath)
@@ -614,9 +727,19 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
                 hasReconciliationWarning: didHistoryLoadFail,
                 runtimeState: runtimeState)
             install(snapshot: initialSnapshot)
+            guard isCurrent(processorContext) else { return }
+            let eventFence = RpcEventConsumptionFence()
+            startEventPipeline(
+                processor: processor,
+                client: handle.client,
+                eventFence: eventFence)
+            await loadInitialCommandCatalog(
+                client: handle.client,
+                context: processorContext,
+                eventFence: eventFence)
+            guard isCurrent(processorContext) else { return }
             _ = try? await handle.client.send(.setSubagentSubscription(level: .progress))
             guard isCurrent(processorContext) else { return }
-            startEventPipeline(processor: processor, client: handle.client)
         } catch {
             fail(error, function: failureFunction, context: openingContext)
         }
@@ -641,11 +764,47 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         }
     }
 
-    private func startEventPipeline(processor: TranscriptEventProcessor, client: RpcClient) {
+    private func loadInitialCommandCatalog(
+        client: RpcClient,
+        context: PipelineContext,
+        eventFence: RpcEventConsumptionFence
+    ) async {
+        let commandCatalog: ComposerCommandCatalogState
+        do {
+            let receipt = try await client.sendWithEventFence(.getAvailableCommands())
+            guard await eventFence.wait(through: receipt.precedingEventCount) else { return }
+            guard isCurrent(context) else { return }
+            let response = receipt.response
+            guard response.success, let data = response.data else {
+                throw AvailableSlashCommandDecodingError.invalidSnapshot
+            }
+            commandCatalog = .available(try AvailableSlashCommandDecoder.decodeSnapshot(data))
+        } catch {
+            guard isCurrent(context) else { return }
+            commandCatalog = .unavailable
+        }
+        guard isCurrent(context) else { return }
+        publishCommandCatalog(commandCatalog)
+    }
+
+    private func startEventPipeline(
+        processor: TranscriptEventProcessor,
+        client: RpcClient,
+        eventFence: RpcEventConsumptionFence
+    ) {
         guard currentPipelineContext(for: processor) != nil else { return }
         attachAccountChannel(client: client)
-        eventTask = Task { [processor, events = client.events] in
-            await processor.run(events: events)
+        eventTask = Task.detached { [weak self, processor, events = client.events, eventFence] in
+            for await frame in events {
+                guard !Task.isCancelled else { break }
+                await processor.consume(frame)
+                if case .event("available_commands_update", _) = frame {
+                    await self?.consumeCommandCatalogUpdate(frame, processor: processor)
+                }
+                await eventFence.didConsumeEvent()
+            }
+            await eventFence.finish()
+            await processor.stop()
         }
         snapshotTask = Task { [weak self, processor] in
             for await snapshot in processor.snapshots {
@@ -706,8 +865,17 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         accountChannelContinuation?.yield(.extensionUIRequest(request))
     }
 
+    private func consumeCommandCatalogUpdate(
+        _ frame: RpcFrame,
+        processor: TranscriptEventProcessor
+    ) {
+        guard let context = currentPipelineContext(for: processor) else { return }
+        guard isCurrent(context) else { return }
+        applyEventMetadata(frame)
+    }
     private func stopEventPipeline() {
         let detachedProcessor = processor
+        let hadActivePipeline = handle != nil || detachedProcessor != nil || openingTask != nil
         let openingTaskToClose = openingTask
         let previousOpeningCloseTask = openingCloseTask
         eventTask?.cancel()
@@ -743,6 +911,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         extensionTimeoutTasks.removeAll()
         extensionRouter = ExtensionUIRouter()
         extensionSheetRequest = nil
+        pendingSlashAttachments = nil
         // Ends the account channel's frame source — its listener loop sees
         // the stream finish and calls `handleStreamEnded()`, failing
         // anything in flight with `.unavailable` (the coordinator's signal
@@ -754,6 +923,9 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         handle = nil
         processor = nil
         installedSnapshotRevision = 0
+        if hadActivePipeline {
+            publishCommandCatalog(.unavailable)
+        }
         if let detachedProcessor {
             Task.detached { await detachedProcessor.stop() }
         }
@@ -811,6 +983,10 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
 
         if case .extensionUIRequest(let request) = frame {
             await consumeExtensionUI(request, processor: processor, context: context)
+            return
+        }
+
+        if case .event("available_commands_update", _) = frame {
             return
         }
 
@@ -880,6 +1056,10 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
               currentPipelineContext(for: processor) != nil
         else { return nil }
         return { [weak self, processor] in
+            if case .event("available_commands_update", _) = frame {
+                self?.consumeCommandCatalogUpdate(frame, processor: processor)
+                return
+            }
             await self?.handleControl(frame, processor: processor)
         }
     }
@@ -970,9 +1150,34 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
             }
         case "model_changed":
             Task { [weak self] in await self?.refreshState() }
+        case "available_commands_update":
+            do {
+                publishCommandCatalog(.available(
+                    try AvailableSlashCommandDecoder.decodeSnapshot(payload)))
+            } catch {
+                publishCommandCatalog(.unavailable)
+            }
+        case "agent_start", "turn_start":
+            guard var pendingSlashAttachments,
+                  pendingSlashAttachments.generation == pipelineGeneration
+            else { break }
+            if pendingSlashAttachments.awaitingResponse {
+                pendingSlashAttachments.lifecycleObserved = true
+                self.pendingSlashAttachments = pendingSlashAttachments
+            } else {
+                removeAttachments(withIDs: pendingSlashAttachments.ids)
+                self.pendingSlashAttachments = nil
+            }
+        case "prompt_result":
+            pendingSlashAttachments = nil
         default:
             break
         }
+    }
+
+    private func publishCommandCatalog(_ state: ComposerCommandCatalogState) {
+        commandCatalogState = state
+        commandContinuation.yield(state)
     }
 
     private func refreshState() async {
@@ -1106,6 +1311,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     ) {
         guard isCurrent(context) else { return }
         runtimeState = .failed("[Session:\(function)] Session command failed: \(error)")
+        publishCommandCatalog(.unavailable)
         reportActivity()
         let state = runtimeState
         let failedProcessor = context.processor
@@ -1188,5 +1394,48 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
 
     private static func loadHistory(path: String) async throws -> TranscriptHistory? {
         try await SessionTimelineLoader().load(path: path)
+    }
+}
+
+private actor RpcEventConsumptionFence {
+    private struct Waiter {
+        let target: UInt64
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
+    private var consumedEventCount: UInt64 = 0
+    private var nextWaiterID: UInt64 = 0
+    private var waiters: [UInt64: Waiter] = [:]
+    private var isFinished = false
+
+    func didConsumeEvent() {
+        consumedEventCount &+= 1
+        resumeSatisfiedWaiters()
+    }
+
+    func wait(through target: UInt64) async -> Bool {
+        if consumedEventCount >= target { return true }
+        if isFinished { return false }
+        return await withCheckedContinuation { continuation in
+            nextWaiterID &+= 1
+            waiters[nextWaiterID] = Waiter(target: target, continuation: continuation)
+        }
+    }
+
+    func finish() {
+        guard !isFinished else { return }
+        isFinished = true
+        let pending = waiters.values
+        waiters.removeAll()
+        pending.forEach { $0.continuation.resume(returning: false) }
+    }
+
+    private func resumeSatisfiedWaiters() {
+        let satisfiedIDs = waiters.compactMap { id, waiter in
+            waiter.target <= consumedEventCount ? id : nil
+        }
+        for id in satisfiedIDs {
+            waiters.removeValue(forKey: id)?.continuation.resume(returning: true)
+        }
     }
 }

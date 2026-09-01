@@ -110,6 +110,39 @@ import Testing
     await processor.stop()
 }
 
+@Test func commandUpdatesForwardWithoutMutatingTheTranscript() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    let before = await processor.currentSnapshot()
+    var controls = processor.controlEvents.makeAsyncIterator()
+
+    await processor.consume(try event(#"{"type":"available_commands_update","commands":[{"name":"compact","source":"builtin"}]}"#))
+
+    let control = try #require(await controls.next())
+    let after = await processor.currentSnapshot()
+    #expect(control.controlLabel == "event:available_commands_update")
+    #expect(after.revision == before.revision)
+    #expect(after.items == before.items)
+    await processor.stop()
+}
+
+@Test func lifecycleStartsForwardAndPreserveRuntimeMutation() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    var controls = processor.controlEvents.makeAsyncIterator()
+
+    await processor.consume(try event(#"{"type":"agent_start"}"#))
+    let agentSnapshot = await processor.currentSnapshot()
+    await processor.consume(try event(#"{"type":"turn_start"}"#))
+    let turnSnapshot = await processor.currentSnapshot()
+
+    #expect(try #require(await controls.next()).controlLabel == "event:agent_start")
+    #expect(try #require(await controls.next()).controlLabel == "event:turn_start")
+    #expect(agentSnapshot.runtimeState == .streaming)
+    #expect(turnSnapshot.runtimeState == .streaming)
+    #expect(agentSnapshot.items.isEmpty)
+    #expect(turnSnapshot.items.isEmpty)
+    await processor.stop()
+}
+
 @Test func staleTimerCompletionDoesNotCancelReplacementTimerOrPublishEarly() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
     _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)

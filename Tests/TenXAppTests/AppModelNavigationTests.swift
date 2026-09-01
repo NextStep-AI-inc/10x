@@ -801,7 +801,9 @@ private func navigationDependencies<Locator: OmpLocating>(
     },
     makeProviderModel: (
         @MainActor @Sendable (URL) -> ProviderManagementViewModel
-    )? = nil
+    )? = nil,
+    makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel =
+        stubAppComposerControlsFactory
 ) -> AppDependencies {
     let defaults = appModelTestDefaults()
     return AppDependencies(
@@ -826,7 +828,7 @@ private func navigationDependencies<Locator: OmpLocating>(
                     isAuthenticated: true),
             ])
         },
-        makeComposerControls: stubAppComposerControlsFactory,
+        makeComposerControls: makeComposerControls,
         makeProviderAccountCoordinator: makeProviderAccountCoordinator,
         makeUpdateChecker: stubUpdateCheckerFactory)
 }
@@ -1105,6 +1107,153 @@ private struct FixedOmpLocator: OmpLocating {
 
     await model.refreshProvidersIfNeeded()
     #expect(await catalog.loadCount == loadsAfterBootstrap + 1)
+}
+
+@MainActor
+@Test func appModelSharesOneCatalogBetweenControlsAndCommands() async throws {
+    let catalog = ControllableAppComposerCatalog()
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        providerModel: providerModel,
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+
+    await model.bootstrap()
+
+    let controls = try #require(model.composerControls)
+    let commands = try #require(model.composerCommands)
+    #expect(commands.testingCatalogIdentity == ObjectIdentifier(controls.catalog))
+}
+
+@MainActor
+@Test func openingAndLeavingASessionSwitchesCommandSources() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-command-source-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let catalog = ControllableAppComposerCatalog()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+    await model.bootstrap()
+    model.chooseProject(project)
+
+    model.startNewSession(prompt: "Start")
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
+    await waitUntil("command model to attach to active session") {
+        model.composerCommands?.isAttachedToActiveSession == true
+    }
+
+    #expect(model.composerCommands?.isAttachedToActiveSession == true)
+    model.openNewSession()
+    #expect(model.composerCommands?.isAttachedToActiveSession == false)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@MainActor
+@Test func choosingProjectRefreshesTheSharedCommandCatalog() async throws {
+    let catalog = ControllableAppComposerCatalog()
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        providerModel: providerModel,
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+    await model.bootstrap()
+    let project = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-command-project-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: project) }
+
+    model.chooseProject(project)
+    await waitUntil("project refresh to hit shared command catalog") {
+        await catalog.hasLoaded(projectPath: project.path, minimumCount: 2)
+    }
+
+    #expect(await catalog.loadCount >= 2)
+    #expect(await catalog.hasLoaded(projectPath: project.path, minimumCount: 2))
+}
+
+@MainActor
+@Test func onboardingProjectSelectionRefreshesTheSharedCommandCatalog() async throws {
+    let catalog = ControllableAppComposerCatalog()
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        providerModel: providerModel,
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+    await model.bootstrap()
+    let project = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-onboarding-command-project-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: project) }
+
+    model.recordOnboardingProject(project)
+    model.gateRoute()
+    await waitUntil("onboarding project refresh to hit shared command catalog") {
+        await catalog.hasLoaded(projectPath: project.path, minimumCount: 2)
+    }
+
+    #expect(model.route == .newSession)
+    #expect(await catalog.hasLoaded(projectPath: project.path, minimumCount: 2))
+}
+
+@MainActor
+@Test func startupAutoSelectionRefreshesTheSharedCommandCatalogBeforeNewSession() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let project = try fixture.project("Auto Selected")
+    try fixture.writeSession(cwd: project, modified: Date(timeIntervalSince1970: 100))
+    let catalog = ControllableAppComposerCatalog()
+    let model = fixture.model(makeComposerControls: { _ in
+        ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+    })
+
+    await model.bootstrap()
+
+    #expect(model.route == .newSession)
+    #expect(model.selectedProjectURL?.path == project.path)
+    #expect(await catalog.hasLoaded(projectPath: project.path, minimumCount: 1))
+}
+
+@MainActor
+@Test func shutdownStopsCommandObservationBeforeCatalogShutdown() async throws {
+    let catalog = ControllableAppComposerCatalog()
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        providerModel: providerModel,
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+    await model.bootstrap()
+    let commands = try #require(model.composerCommands)
+
+    await model.shutdown()
+    await catalog.publish(.available([AvailableSlashCommand(name: "after", source: .builtin)]))
+
+    #expect(commands.catalogState == .available([]))
+    #expect(await catalog.shutdownCount == 1)
+    #expect(commands.testingIsObservingCatalog == false)
 }
 
 @MainActor
@@ -1453,7 +1602,13 @@ let stubUpdateCheckerFactory: @MainActor @Sendable (
 }
 
 private actor StubAppComposerCatalog: ComposerCatalogLoading {
-    func load() async throws -> ComposerCatalogSnapshot {
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
+
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
         ComposerCatalogSnapshot(
             models: [],
             selected: nil,
@@ -1467,8 +1622,13 @@ private actor StubAppComposerCatalog: ComposerCatalogLoading {
 
 private actor CountingAppComposerCatalog: ComposerCatalogLoading {
     private(set) var loadCount = 0
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
 
-    func load() async throws -> ComposerCatalogSnapshot {
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
         loadCount += 1
         return ComposerCatalogSnapshot(
             models: [],
@@ -1479,6 +1639,47 @@ private actor CountingAppComposerCatalog: ComposerCatalogLoading {
     }
 
     func shutdown() async {}
+}
+
+private actor ControllableAppComposerCatalog: ComposerCatalogLoading {
+    private let continuation: AsyncStream<ComposerCommandCatalogState>.Continuation
+    nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
+    private(set) var loadCount = 0
+    private(set) var loadedProjectPaths: [String?] = []
+    private(set) var shutdownCount = 0
+
+    init() {
+        var captured: AsyncStream<ComposerCommandCatalogState>.Continuation?
+        commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+            bufferingPolicy: .bufferingNewest(10)) { continuation in
+                captured = continuation
+            }
+        continuation = captured!
+        continuation.yield(.available([]))
+    }
+
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
+        loadCount += 1
+        loadedProjectPaths.append(projectURL?.path)
+        return ComposerCatalogSnapshot(
+            models: [],
+            selected: nil,
+            thinkingLevel: nil,
+            fastModeEnabled: false,
+            fastModeActive: false)
+    }
+
+    func hasLoaded(projectPath: String, minimumCount: Int) -> Bool {
+        loadCount >= minimumCount && loadedProjectPaths.last == projectPath
+    }
+
+    func publish(_ state: ComposerCommandCatalogState) {
+        continuation.yield(state)
+    }
+
+    func shutdown() async {
+        shutdownCount += 1
+    }
 }
 
 private actor StubAppComposerDefaults: ComposerDefaultPersisting {

@@ -81,7 +81,7 @@ struct AppDependencies: Sendable {
         },
         makeComposerControls: { executableURL in
             ComposerControlsModel(
-                catalog: OmpModelCatalogService(executableURL: executableURL),
+                catalog: ComposerCatalogService(executableURL: executableURL),
                 defaults: OmpComposerDefaultStore(
                     config: OmpConfigService(
                         runner: OmpConfigProcessRunner(executableURL: executableURL))))

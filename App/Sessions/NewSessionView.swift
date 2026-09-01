@@ -25,6 +25,7 @@ struct NewSessionView: View {
                     onChooseProject: model.chooseProject,
                     onAddExistingFolder: addExistingFolder),
                 controls: model.composerControls,
+                commands: model.composerCommands,
                 controlsMode: .newSession,
                 onSend: {
                     flyout = nil
