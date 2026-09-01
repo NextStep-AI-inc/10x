@@ -153,8 +153,8 @@ One `Show more` control at the document boundary increases the global budget. St
 
 Replace Boolean `isShowingAll` state with `ProgressiveReveal` on:
 
-- console lines: 100 initial, 200 per page;
-- tool collections: 50 initial, 100 per page;
+- console lines: preserve the existing 10-line preview, then reveal 100 per page;
+- tool collections: preserve the existing 8-item preview, then reveal 50 per page;
 - source surfaces: preserve a smaller extractor-provided preview when present, then reveal 200 lines per page;
 - JSON object and array children: 12 initial, 50 per page for each explicitly expanded node;
 - long JSON scalar text: 2,000 characters initially, 4,000 per page;
@@ -226,4 +226,3 @@ Invalid pagination inputs are clamped by the pure policy. Production view code n
 7. Full Copy and Save operations preserve the original payload.
 8. Oversized regression fixtures, the full suite, and the signed Release build pass.
 9. The follow-up PR contains these changes while PR #18 remains unchanged.
-
