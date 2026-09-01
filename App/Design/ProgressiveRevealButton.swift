@@ -12,11 +12,13 @@ struct ProgressiveRevealButton: View {
                 reveal.revealNextPage(total: total)
             }
             .accessibilityLabel("Show \(reveal.nextPageCount(total: total)) more \(accessibilityNoun)")
+            .buttonStyle(GhostActionStyle(horizontalPadding: 0))
         } else if reveal.visibleCount(total: total) > reveal.initialLimit {
             Button("Show fewer") {
                 reveal.collapse()
             }
             .accessibilityLabel("Show fewer \(accessibilityNoun)")
+            .buttonStyle(GhostActionStyle(horizontalPadding: 0))
         }
     }
 }
