@@ -23,6 +23,7 @@ struct ComposerView: View {
     @Binding var flyout: ComposerFlyout?
     let presentation: ComposerPresentation
     let controls: ComposerControlsModel?
+    let commands: ComposerCommandModel?
     let controlsMode: ComposerControlsMode
     let onSend: () -> Void
 
@@ -42,6 +43,7 @@ struct ComposerView: View {
         flyout: Binding<ComposerFlyout?> = .constant(nil),
         presentation: ComposerPresentation,
         controls: ComposerControlsModel? = nil,
+        commands: ComposerCommandModel? = nil,
         controlsMode: ComposerControlsMode = .newSession,
         onSend: @escaping () -> Void
     ) {
@@ -50,6 +52,7 @@ struct ComposerView: View {
         _flyout = flyout
         self.presentation = presentation
         self.controls = controls
+        self.commands = commands
         self.controlsMode = controlsMode
         self.onSend = onSend
     }

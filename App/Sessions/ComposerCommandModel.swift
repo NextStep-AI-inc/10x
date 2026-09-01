@@ -334,6 +334,26 @@ final class ComposerCommandModel {
         applyCatalogState(warmCatalogState)
     }
 
+    func stopObservingCatalog() {
+        detachActiveSession()
+        warmStreamTask?.cancel()
+        warmStreamTask = nil
+    }
+
+    #if DEBUG
+    var testingCatalogIdentity: ObjectIdentifier {
+        ObjectIdentifier(warmCatalog)
+    }
+
+    var isAttachedToActiveSession: Bool {
+        activeSession != nil
+    }
+
+    var testingIsObservingCatalog: Bool {
+        warmStreamTask != nil || streamTask != nil
+    }
+    #endif
+
     private func observeWarmCatalog(_ stream: AsyncStream<ComposerCommandCatalogState>) {
         warmStreamTask = Task { [weak self] in
             for await state in stream {

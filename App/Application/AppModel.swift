@@ -57,6 +57,7 @@ final class AppModel {
     let fileOpenService: FileOpenService
     private(set) var providerModel: ProviderManagementViewModel?
     private(set) var composerControls: ComposerControlsModel?
+    private(set) var composerCommands: ComposerCommandModel?
     private(set) var startupState = StartupState()
     let sessionActivityRegistry: SessionActivityRegistry
     /// Every managed session's live `ProviderAccountChannel`, keyed by
@@ -174,6 +175,7 @@ final class AppModel {
     @ObservationIgnored private var processWatcherGeneration = 0
     @ObservationIgnored private var providerUsageOperation: ProviderUsageOperation?
     @ObservationIgnored private var fallbackOperation: FallbackOperation?
+    @ObservationIgnored private var composerCommandCatalogIdentity: ObjectIdentifier?
     @ObservationIgnored private(set) var fallbackGeneration = 0
     @ObservationIgnored private(set) var lifecycleGeneration = 0
     @ObservationIgnored private(set) var isShuttingDown = false
@@ -349,9 +351,7 @@ final class AppModel {
 
     func chooseProject(_ url: URL) {
         guard !isSessionMutationInFlight else { return }
-        let project = url.standardizedFileURL
-        selectedProjectURL = project
-        dependencies.recentProjectStore.recordSelection(project)
+        recordProjectSelection(url)
         clearActiveSession()
         detachComposerControlsAndRefresh()
         route = .newSession
@@ -401,9 +401,8 @@ final class AppModel {
     /// so the first selection would leave onboarding and no second folder
     /// could be added. There is no active session to tear down here.
     func recordOnboardingProject(_ url: URL) {
-        let project = url.standardizedFileURL
-        selectedProjectURL = project
-        dependencies.recentProjectStore.recordSelection(project)
+        recordProjectSelection(url)
+        scheduleComposerControlsRefresh()
     }
 
     func chooseNewProject() {
@@ -508,10 +507,10 @@ final class AppModel {
         }
         guard let processManager else { return }
         if let controller = managedController(for: metadata.path) {
-            composerControls?.detachActiveSession()
+            detachComposerSources()
             activeSession = controller
             route = .session(metadata.path)
-            composerControls?.attachActiveSession(controller)
+            attachComposerSources(to: controller)
             return
         }
         guard sessionActivityRegistry.canCreateManagedSession else { return }
@@ -520,7 +519,7 @@ final class AppModel {
             intendedSessionPath: metadata.path)
         activeSession = controller
         route = .session(metadata.path)
-        composerControls?.detachActiveSession()
+        detachComposerSources()
         Task { [weak self, controller] in
             guard let self else { return }
             await controller.openExisting(metadata)
@@ -535,7 +534,7 @@ final class AppModel {
             }
             self.indexManagedSessionPath(for: controller)
             guard self.activeSession === controller else { return }
-            self.composerControls?.attachActiveSession(controller)
+            self.attachComposerSources(to: controller)
         }
     }
 
@@ -547,7 +546,7 @@ final class AppModel {
         let controller = makeSessionController(processManager: processManager)
         controller.draft = prompt
         controller.attachments = attachments
-        composerControls?.detachActiveSession()
+        detachComposerSources()
         // omp does not name the session until the child is up, so the route
         // carries a placeholder until `openNew` reports the real path.
         let placeholderRoute = AppRoute.session("new:\(UUID().uuidString)")
@@ -585,7 +584,7 @@ final class AppModel {
                     await self.composerControls?.setFastMode(false, mode: .newSession)
                 }
                 if self.activeSession === controller {
-                    self.composerControls?.attachActiveSession(controller)
+                    self.attachComposerSources(to: controller)
                 }
             }
             await controller.sendPrompt()
@@ -754,6 +753,7 @@ final class AppModel {
         let controls = composerControls
         let manager = processManager
         discardManagedSessions()
+        discardComposerCommands()
         async let providerShutdown: Void = provider?.shutdown() ?? ()
         async let composerShutdown: Void = controls?.shutdown() ?? ()
         async let processShutdown: Void = manager?.closeAll() ?? ()
@@ -911,10 +911,31 @@ final class AppModel {
     }
 
     private func detachComposerControlsAndRefresh() {
-        composerControls?.detachActiveSession()
+        detachComposerSources()
+        scheduleComposerControlsRefresh()
+    }
+
+    private func scheduleComposerControlsRefresh() {
         composerControlsRefreshGeneration &+= 1
         let generation = composerControlsRefreshGeneration
         Task { await refreshComposerControlsIfCurrent(generation: generation) }
+    }
+
+    private func recordProjectSelection(_ url: URL) {
+        selectProject(url, recordInRecentProjects: true)
+    }
+
+    private func selectProject(_ url: URL, recordInRecentProjects: Bool) {
+        let project = url.standardizedFileURL
+        selectedProjectURL = project
+        guard recordInRecentProjects else { return }
+        dependencies.recentProjectStore.recordSelection(project)
+    }
+
+    private func refreshComposerControlsForCurrentSelection() async {
+        composerControlsRefreshGeneration &+= 1
+        let generation = composerControlsRefreshGeneration
+        await refreshComposerControlsIfCurrent(generation: generation)
     }
 
     private func refreshComposerControlsIfCurrent(generation: Int) async {
@@ -968,7 +989,7 @@ final class AppModel {
     }
 
     private func clearActiveSession() {
-        composerControls?.detachActiveSession()
+        detachComposerSources()
         activeSession = nil
     }
 
@@ -1048,7 +1069,7 @@ final class AppModel {
     }
 
     private func discardManagedSessions() {
-        composerControls?.detachActiveSession()
+        detachComposerSources()
         for controller in managedSessions.values {
             controller.stopActivityTracking()
         }
@@ -1056,6 +1077,37 @@ final class AppModel {
         managedSessionPaths.removeAll()
         pendingUnexpectedExits.removeAll()
         activeSession = nil
+    }
+
+    private func attachComposerSources(to controller: SessionController) {
+        composerControls?.attachActiveSession(controller)
+        composerCommands?.attachActiveSession(controller)
+    }
+
+    private func detachComposerSources() {
+        composerControls?.detachActiveSession()
+        composerCommands?.detachActiveSession()
+    }
+
+    private func bindComposerCommands(to controls: ComposerControlsModel) {
+        let identity = ObjectIdentifier(controls.catalog)
+        guard composerCommandCatalogIdentity != identity || composerCommands == nil else {
+            return
+        }
+        composerCommands?.stopObservingCatalog()
+        composerCommandCatalogIdentity = identity
+        composerCommands = ComposerCommandModel(
+            catalog: controls.catalog,
+            controls: controls,
+            onStartNewSession: { [weak self] prompt, attachments in
+                self?.startNewSession(prompt: prompt, attachments: attachments)
+            })
+    }
+
+    private func discardComposerCommands() {
+        composerCommands?.stopObservingCatalog()
+        composerCommands = nil
+        composerCommandCatalogIdentity = nil
     }
 
     private func runStartupAttempt(id: UUID, stages: Set<StartupStageID>) async {
@@ -1181,6 +1233,7 @@ final class AppModel {
             let oldComposerControls = composerControls
             let oldManager = processManager
             discardManagedSessions()
+            discardComposerCommands()
             await oldProvider?.shutdown()
             await oldComposerControls?.shutdown()
             await oldManager?.closeAll()
@@ -1192,6 +1245,7 @@ final class AppModel {
             settingsModel = nil
             providerModel = nil
             composerControls = nil
+            composerCommands = nil
             providerUsages = []
             gateRoute()
             return false
@@ -1220,6 +1274,7 @@ final class AppModel {
             let oldComposerControls = composerControls
             let oldManager = processManager
             discardManagedSessions()
+            discardComposerCommands()
             await oldProvider?.shutdown()
             await oldComposerControls?.shutdown()
             await oldManager?.closeAll()
@@ -1236,6 +1291,7 @@ final class AppModel {
         settingsModel = settings
         providerModel = provider
         composerControls = controls
+        bindComposerCommands(to: controls)
         gateRoute()
         await restartProcessWatchers(for: manager)
         try checkStartupAttempt(attemptID)
@@ -1288,8 +1344,8 @@ final class AppModel {
         try checkStartupAttempt(attemptID)
         startupState.markLoading(.recentProjects, attemptID: attemptID)
         let projects = dependencies.recentProjectStore.rankedProjects(sessions: sessions)
-        if selectedProjectURL == nil {
-            selectedProjectURL = projects.first
+        if selectedProjectURL == nil, let project = projects.first {
+            selectProject(project, recordInRecentProjects: false)
         }
         guard let processManager else { throw CancellationError() }
         try await withThrowingTaskGroup(of: Void.self) { group in
@@ -1300,6 +1356,8 @@ final class AppModel {
             }
             try await group.waitForAll()
         }
+        try checkStartupAttempt(attemptID)
+        await refreshComposerControlsForCurrentSelection()
         try checkStartupAttempt(attemptID)
         startupState.markReady(.recentProjects, attemptID: attemptID)
         // Startup assigns `selectedProjectURL` in this stage, after the runtime
@@ -1323,6 +1381,7 @@ final class AppModel {
         let controls = composerControls
         providerModel = nil
         composerControls = nil
+        discardComposerCommands()
         providerUsages = []
         let usage = providerUsageOperation
         providerUsageOperation = nil
@@ -1346,6 +1405,7 @@ final class AppModel {
         let oldComposerControls = composerControls
         let oldManager = processManager
         discardManagedSessions()
+        discardComposerCommands()
         await oldProvider?.shutdown()
         guard isCurrentLifecycle(generation) else { return false }
         await oldComposerControls?.shutdown()
@@ -1361,6 +1421,7 @@ final class AppModel {
             settingsModel = nil
             providerModel = nil
             composerControls = nil
+            composerCommands = nil
             providerUsages = []
             gateRoute()
             return true
@@ -1381,6 +1442,7 @@ final class AppModel {
         settingsModel = settings
         providerModel = provider
         composerControls = controls
+        bindComposerCommands(to: controls)
         providerUsages = []
         gateRoute()
         await restartProcessWatchers(for: manager)
@@ -1577,11 +1639,13 @@ final class AppModel {
                 generation: generation,
                 lifecycleGeneration: lifecycleGeneration)
             else {
+                discardComposerCommands()
                 await controls.shutdown()
                 return
             }
             composerControls = controls
         }
+        bindComposerCommands(to: controls)
         await provider.loadProviders()
         guard isCurrentFallback(
             id: id,
