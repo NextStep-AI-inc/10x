@@ -15,7 +15,7 @@
 **Files:**
 - Modify: `Tests/TenXAppTests/SplashUpdateDriverTests.swift`
 
-- [ ] **Step 1: Invert the existing duplicate-quit test**
+- [x] **Step 1: Invert the existing duplicate-quit test**
 
 Change the existing test's final expectation so the currently injected termination
 closure must remain untouched:
@@ -39,14 +39,14 @@ closure must remain untouched:
 }
 ```
 
-- [ ] **Step 2: Run the test to verify the current implementation fails**
+- [x] **Step 2: Run the test to verify the current implementation fails**
 
 Run:
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x \
   -destination 'platform=macOS' \
-  -only-testing:TenXAppTests/installingDoesNotSendADuplicateQuitWhileSparkleWaits
+  '-only-testing:TenXAppTests/installingDoesNotSendADuplicateQuitWhileSparkleWaits()'
 ```
 
 Expected: FAIL because the deferred termination closure is called once.
@@ -57,7 +57,7 @@ Expected: FAIL because the deferred termination closure is called once.
 - Modify: `App/Updates/SplashUpdateDriver.swift`
 - Modify: `Tests/TenXAppTests/SplashUpdateDriverTests.swift`
 
-- [ ] **Step 1: Delete the termination dependency from the driver**
+- [x] **Step 1: Delete the termination dependency from the driver**
 
 Remove the `terminate` property and initializer parameter so the initializer becomes:
 
@@ -74,7 +74,7 @@ init(
 }
 ```
 
-- [ ] **Step 2: Make the install callback presentation-only**
+- [x] **Step 2: Make the install callback presentation-only**
 
 Replace the callback body and ownership comment with:
 
@@ -91,7 +91,7 @@ func showInstallingUpdate(
 }
 ```
 
-- [ ] **Step 3: Keep a durable behavior test without a production-only test hook**
+- [x] **Step 3: Keep a durable behavior test without a production-only test hook**
 
 Remove the constructor's no-op `terminate` argument, delete `Counter`, and replace the
 two termination tests with:
@@ -117,19 +117,19 @@ two termination tests with:
 This pins the supported Sparkle callback contract without retaining an otherwise unused
 termination injection point solely for tests.
 
-- [ ] **Step 4: Run focused updater tests**
+- [x] **Step 4: Run focused updater tests**
 
 Run:
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x \
   -destination 'platform=macOS' \
-  -only-testing:TenXAppTests/SplashUpdateDriverTests
+  '-only-testing:TenXAppTests/installingReliesOnSparklesExistingTerminationRequest()'
 ```
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the fix**
+- [x] **Step 5: Commit the fix**
 
 ```bash
 git add App/Updates/SplashUpdateDriver.swift Tests/TenXAppTests/SplashUpdateDriverTests.swift
@@ -141,7 +141,7 @@ git commit -m "fix(updates): let Sparkle own application termination"
 **Files:**
 - Modify: pull request description only
 
-- [ ] **Step 1: Run the full test suite**
+- [x] **Step 1: Run the full test suite**
 
 Run:
 
@@ -151,7 +151,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: `** TEST SUCCEEDED **`.
 
-- [ ] **Step 2: Build the Release app**
+- [x] **Step 2: Build the Release app**
 
 Run:
 
@@ -163,7 +163,7 @@ xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release \
 Expected: `** BUILD SUCCEEDED **` and a signed app at
 `/private/tmp/tenx-update-relaunch-fix/Build/Products/Release/10x.app`.
 
-- [ ] **Step 3: Exercise the real update lifecycle**
+- [x] **Step 3: Exercise the real update lifecycle**
 
 Launch the Release app, accept the offered update, and verify all of the following:
 
@@ -184,4 +184,3 @@ gh pr edit 16 --body-file /tmp/tenx-pr-16.md
 ```
 
 Expected: PR 16 contains the focused test, full-suite, Release-build, and live-update evidence.
-
