@@ -1,7 +1,7 @@
 import OmpKit
 import SwiftUI
 
-struct MessageBubbleView: View {
+struct MessageBubbleView: View, Equatable {
     let message: TranscriptMessage
 
     static let assistantContentSpacing: CGFloat = 14
@@ -9,6 +9,17 @@ struct MessageBubbleView: View {
 
     static func visibleText(from message: JSONValue) -> String {
         TranscriptMessage.visibleText(from: message)
+    }
+
+    nonisolated static func == (lhs: MessageBubbleView, rhs: MessageBubbleView) -> Bool {
+        lhs.message.id == rhs.message.id
+            && lhs.message.role == rhs.message.role
+            && lhs.message.document == rhs.message.document
+            && lhs.message.timestamp == rhs.message.timestamp
+            && lhs.message.attribution == rhs.message.attribution
+            && lhs.message.isFinal == rhs.message.isFinal
+            && lhs.message.showsResponseMetadata == rhs.message.showsResponseMetadata
+            && lhs.message.stopReason == rhs.message.stopReason
     }
 
     var body: some View {

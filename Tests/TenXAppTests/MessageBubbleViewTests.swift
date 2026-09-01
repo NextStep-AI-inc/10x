@@ -48,6 +48,30 @@ import Testing
         message: assistantMessage(id: "assistant-1", text: "Stable answer", isFinal: true)))
 }
 
+@MainActor @Test func messageBubbleEqualityIgnoresUnrenderedRawBookkeeping() {
+    let original = assistantMessage(
+        id: "assistant-1",
+        text: "Stable answer",
+        extraFields: ["internalRevision": .string("one")],
+        isFinal: false)
+    let unrelatedUpdate = assistantMessage(
+        id: "assistant-1",
+        text: "Stable answer",
+        extraFields: ["internalRevision": .string("two")],
+        isFinal: false)
+
+    #expect(MessageBubbleView(message: original) == MessageBubbleView(message: unrelatedUpdate))
+}
+
+@MainActor @Test func messageBubbleEqualityTracksRenderedContentAndFinality() {
+    let base = assistantMessage(id: "assistant-1", text: "Stable answer", isFinal: false)
+
+    #expect(MessageBubbleView(message: base) != MessageBubbleView(
+        message: assistantMessage(id: "assistant-1", text: "Changed answer", isFinal: false)))
+    #expect(MessageBubbleView(message: base) != MessageBubbleView(
+        message: assistantMessage(id: "assistant-1", text: "Stable answer", isFinal: true)))
+}
+
 @Test func skillTextSegmentsAreBoundedAndLossless() {
     let source = "# Skill\n\n"
         + String(repeating: "Follow this instruction carefully. ", count: 180)

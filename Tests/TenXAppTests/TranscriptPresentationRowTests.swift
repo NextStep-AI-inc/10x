@@ -116,6 +116,18 @@ import Testing
     #expect(initialObservation[1] != updatedObservation[1])
 }
 
+@Test func automaticTranscriptFollowingNeverStacksAnimations() {
+    #expect(!TranscriptView.shouldAnimateScroll(
+        intent: .automatic,
+        isReduceMotionEnabled: false))
+    #expect(TranscriptView.shouldAnimateScroll(
+        intent: .explicit,
+        isReduceMotionEnabled: false))
+    #expect(!TranscriptView.shouldAnimateScroll(
+        intent: .explicit,
+        isReduceMotionEnabled: true))
+}
+
 private func message(id: String) -> TranscriptMessage {
     TranscriptMessage(
         id: id,
