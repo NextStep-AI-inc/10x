@@ -43,6 +43,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private(set) var providerID: String?
     private(set) var activeProviderAccounts: [String: String] = [:]
     private(set) var providerAccountSequence = 0
+    private(set) var commandCatalogState: ComposerCommandCatalogState = .loading
     var draft = ""
     var attachments: [ComposerAttachment] = []
     var streamingBehavior: StreamingBehavior? = .steer
@@ -71,6 +72,8 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private var titleGenerationGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
+    nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
+    private let commandContinuation: AsyncStream<ComposerCommandCatalogState>.Continuation
     /// This controller's one write handle onto the marker-filtered frame
     /// source feeding the current pipeline's `ProviderAccountExtensionChannel`
     /// (built in `attachAccountChannel`). Recreated every `finishOpening` (a
@@ -107,6 +110,10 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         self.accountChannelRegistry = accountChannelRegistry
         self.titleGenerator = titleGenerator
         self.historyLoader = historyLoader
+        let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        self.commandUpdates = commandUpdates.stream
+        self.commandContinuation = commandUpdates.continuation
         activityRegistry?.register(self)
     }
 
@@ -144,7 +151,15 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         // above.
         self.accountChannelRegistry = nil
         self.titleGenerator = titleGenerator
+        let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        self.commandUpdates = commandUpdates.stream
+        self.commandContinuation = commandUpdates.continuation
         activityRegistry?.register(self)
+    }
+
+    deinit {
+        commandContinuation.finish()
     }
 
     var currentProviderAccountRef: String? {
@@ -160,8 +175,14 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         }
     }
 
+    var availableCommands: [AvailableSlashCommand] {
+        guard case .available(let commands) = commandCatalogState else { return [] }
+        return commands
+    }
+
     func openExisting(_ metadata: SessionMetadata) async {
         let priorSessionPath = stopAndDetachCurrentSession()
+        publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
         if let priorSessionPath {
@@ -218,6 +239,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
             ? .failed
             : .notRequested
         let priorSessionPath = stopAndDetachCurrentSession()
+        publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
         if let priorSessionPath {
@@ -455,6 +477,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     func restart() async {
         guard let projectURL, let sessionPath else { return }
         stopEventPipeline()
+        publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
         await processManager.close(sessionPath: sessionPath)
@@ -614,9 +637,19 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
                 hasReconciliationWarning: didHistoryLoadFail,
                 runtimeState: runtimeState)
             install(snapshot: initialSnapshot)
+            guard isCurrent(processorContext) else { return }
+            let eventFence = RpcEventConsumptionFence()
+            startEventPipeline(
+                processor: processor,
+                client: handle.client,
+                eventFence: eventFence)
+            await loadInitialCommandCatalog(
+                client: handle.client,
+                context: processorContext,
+                eventFence: eventFence)
+            guard isCurrent(processorContext) else { return }
             _ = try? await handle.client.send(.setSubagentSubscription(level: .progress))
             guard isCurrent(processorContext) else { return }
-            startEventPipeline(processor: processor, client: handle.client)
         } catch {
             fail(error, function: failureFunction, context: openingContext)
         }
@@ -641,14 +674,43 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         }
     }
 
-    private func startEventPipeline(processor: TranscriptEventProcessor, client: RpcClient) {
+    private func loadInitialCommandCatalog(
+        client: RpcClient,
+        context: PipelineContext,
+        eventFence: RpcEventConsumptionFence
+    ) async {
+        let commandCatalog: ComposerCommandCatalogState
+        do {
+            let receipt = try await client.sendWithEventFence(.getAvailableCommands())
+            guard await eventFence.wait(through: receipt.precedingEventCount) else { return }
+            guard isCurrent(context) else { return }
+            let response = receipt.response
+            guard response.success, let data = response.data else {
+                throw AvailableSlashCommandDecodingError.invalidSnapshot
+            }
+            commandCatalog = .available(try AvailableSlashCommandDecoder.decodeSnapshot(data))
+        } catch {
+            guard isCurrent(context) else { return }
+            commandCatalog = .unavailable
+        }
+        guard isCurrent(context) else { return }
+        publishCommandCatalog(commandCatalog)
+    }
+
+    private func startEventPipeline(
+        processor: TranscriptEventProcessor,
+        client: RpcClient,
+        eventFence: RpcEventConsumptionFence
+    ) {
         guard let context = currentPipelineContext(for: processor) else { return }
         attachAccountChannel(client: client)
-        eventTask = Task { [weak self, processor, events = client.events] in
+        eventTask = Task { [weak self, processor, events = client.events, eventFence] in
             for await frame in events {
                 guard !Task.isCancelled else { break }
                 await self?.consume(frame, processor: processor, context: context)
+                await eventFence.didConsumeEvent()
             }
+            await eventFence.finish()
             await processor.stop()
         }
         snapshotTask = Task { [weak self, processor] in
@@ -716,6 +778,9 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         context: PipelineContext
     ) async {
         guard isCurrent(context) else { return }
+        if case .event("available_commands_update", _) = frame {
+            applyEventMetadata(frame)
+        }
         await processor.consume(frame)
         guard isCurrent(context) else { return }
         if case .providerAccountChanged(let event) = frame {
@@ -725,6 +790,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
 
     private func stopEventPipeline() {
         let detachedProcessor = processor
+        let hadActivePipeline = handle != nil || detachedProcessor != nil || openingTask != nil
         let openingTaskToClose = openingTask
         let previousOpeningCloseTask = openingCloseTask
         eventTask?.cancel()
@@ -771,6 +837,9 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         handle = nil
         processor = nil
         installedSnapshotRevision = 0
+        if hadActivePipeline {
+            publishCommandCatalog(.unavailable)
+        }
         if let detachedProcessor {
             Task.detached { await detachedProcessor.stop() }
         }
@@ -828,6 +897,10 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
 
         if case .extensionUIRequest(let request) = frame {
             await consumeExtensionUI(request, processor: processor, context: context)
+            return
+        }
+
+        if case .event("available_commands_update", _) = frame {
             return
         }
 
@@ -981,9 +1054,21 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
             }
         case "model_changed":
             Task { [weak self] in await self?.refreshState() }
+        case "available_commands_update":
+            do {
+                publishCommandCatalog(.available(
+                    try AvailableSlashCommandDecoder.decodeSnapshot(payload)))
+            } catch {
+                publishCommandCatalog(.unavailable)
+            }
         default:
             break
         }
+    }
+
+    private func publishCommandCatalog(_ state: ComposerCommandCatalogState) {
+        commandCatalogState = state
+        commandContinuation.yield(state)
     }
 
     private func refreshState() async {
@@ -1117,6 +1202,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     ) {
         guard isCurrent(context) else { return }
         runtimeState = .failed("[Session:\(function)] Session command failed: \(error)")
+        publishCommandCatalog(.unavailable)
         reportActivity()
         let state = runtimeState
         let failedProcessor = context.processor
@@ -1199,5 +1285,48 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
 
     private static func loadHistory(path: String) async throws -> TranscriptHistory? {
         try await SessionTimelineLoader().load(path: path)
+    }
+}
+
+private actor RpcEventConsumptionFence {
+    private struct Waiter {
+        let target: UInt64
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
+    private var consumedEventCount: UInt64 = 0
+    private var nextWaiterID: UInt64 = 0
+    private var waiters: [UInt64: Waiter] = [:]
+    private var isFinished = false
+
+    func didConsumeEvent() {
+        consumedEventCount &+= 1
+        resumeSatisfiedWaiters()
+    }
+
+    func wait(through target: UInt64) async -> Bool {
+        if consumedEventCount >= target { return true }
+        if isFinished { return false }
+        return await withCheckedContinuation { continuation in
+            nextWaiterID &+= 1
+            waiters[nextWaiterID] = Waiter(target: target, continuation: continuation)
+        }
+    }
+
+    func finish() {
+        guard !isFinished else { return }
+        isFinished = true
+        let pending = waiters.values
+        waiters.removeAll()
+        pending.forEach { $0.continuation.resume(returning: false) }
+    }
+
+    private func resumeSatisfiedWaiters() {
+        let satisfiedIDs = waiters.compactMap { id, waiter in
+            waiter.target <= consumedEventCount ? id : nil
+        }
+        for id in satisfiedIDs {
+            waiters.removeValue(forKey: id)?.continuation.resume(returning: true)
+        }
     }
 }

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		006E4755358C1DA20AB58A11B0627B31 /* ComposerModelInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6591DBF910CAB9E12B80C3616F099278 /* ComposerModelInfo.swift */; };
+		02DFC7FCA4426E3156722441A8C7090C /* SessionControllerCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE2386BE3F48EE843454A4E3526B773 /* SessionControllerCommandTests.swift */; };
 		02F65CD9412B25CECC87C242A04F7D56 /* BundleIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F72105DE6359519C511B5D2CB1F2E8B /* BundleIdentityTests.swift */; };
 		037CFC6CA0112DB5B17FD340904C649A /* ComposerDefaultStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4408B3A68F48614CC61D78B4F39F8A68 /* ComposerDefaultStoreTests.swift */; };
 		048F447D7E2A63506EE6B9AB6D143940 /* StartupSplashSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF5808862D9C60706C383E28558A306D /* StartupSplashSnapshotTests.swift */; };
@@ -445,6 +446,7 @@
 		768B841E66BD95E02EB6BE2DD8565041 /* ToolCardRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolCardRegistry.swift; path = App/Tools/ToolCardRegistry.swift; sourceTree = "<group>"; };
 		78D08DB7AE17357C71EA7099C22D7A1C /* StartupSignalTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StartupSignalTests.swift; path = Tests/TenXAppTests/StartupSignalTests.swift; sourceTree = "<group>"; };
 		7B018E6582189677BC342D92DC1A14C5 /* ComposerControlsPresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerControlsPresentationTests.swift; path = Tests/TenXAppTests/ComposerControlsPresentationTests.swift; sourceTree = "<group>"; };
+		7BE2386BE3F48EE843454A4E3526B773 /* SessionControllerCommandTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionControllerCommandTests.swift; path = Tests/TenXAppTests/SessionControllerCommandTests.swift; sourceTree = "<group>"; };
 		7DC5DB3892AA492B5E6EA8BC0A9B2CA7 /* ComposerDefaultPersisting.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerDefaultPersisting.swift; path = App/Sessions/ComposerDefaultPersisting.swift; sourceTree = "<group>"; };
 		819BDD93255C127E9E60F23828548A76 /* RecentProjectStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecentProjectStore.swift; path = App/Startup/RecentProjectStore.swift; sourceTree = "<group>"; };
 		820616B4ADC325CD37B2DD16742382D2 /* SessionSearchDocumentBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionSearchDocumentBuilder.swift; path = App/Search/SessionSearchDocumentBuilder.swift; sourceTree = "<group>"; };
@@ -851,6 +853,7 @@
 				B15D18E5167B8BD5F6410D74F2273945 /* RecentModelStoreTests.swift */,
 				A36CB95BC646298C16585D2058D8AD89 /* RecentProjectStoreTests.swift */,
 				32F7824AC7717CA55F9E9B852C8AB294 /* SearchModalModelTests.swift */,
+				7BE2386BE3F48EE843454A4E3526B773 /* SessionControllerCommandTests.swift */,
 				C81E5DA519ACF24ECFEA60EEA9E6B4A7 /* SessionControllerComposerControlsTests.swift */,
 				8FCE005EDE56CD93F1447FFBE253CC50 /* SessionControllerTests.swift */,
 				8CA6C5484CCCD828D9CBA15E3C79078D /* SessionHeaderMetadataTests.swift */,
@@ -1264,6 +1267,7 @@
 				69D4FC369909DAD477FBC7CD926BF06C /* RecentModelStoreTests.swift in Sources */,
 				488860D2FBFEFEF9B7CAAE3F85C00219 /* RecentProjectStoreTests.swift in Sources */,
 				AEE1CC0619E1B64704DECBEAF61CBA75 /* SearchModalModelTests.swift in Sources */,
+				02DFC7FCA4426E3156722441A8C7090C /* SessionControllerCommandTests.swift in Sources */,
 				D69987337438D8374E42DAEB0B96AE02 /* SessionControllerComposerControlsTests.swift in Sources */,
 				1C537CAEC7398A7946038A0217946A49 /* SessionControllerTests.swift in Sources */,
 				741D91F33918CCC7B84410E97C7AEFA1 /* SessionHeaderMetadataTests.swift in Sources */,

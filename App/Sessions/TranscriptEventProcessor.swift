@@ -216,6 +216,9 @@ actor TranscriptEventProcessor {
              "config_update",
              "thinking_level_changed",
              "model_changed",
+             "available_commands_update",
+             "agent_start",
+             "turn_start",
              "message_end",
              "turn_end",
              "prompt_result":

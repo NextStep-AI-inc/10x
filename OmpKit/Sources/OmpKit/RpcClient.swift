@@ -8,6 +8,21 @@ public enum RpcClientError: Error, Sendable {
     case startupFailed(String)
 }
 
+/// A response plus the number of event frames that preceded it on stdout.
+///
+/// The owner of ``RpcClient/events`` can use this as an explicit delivery
+/// fence: consume this many frames before applying the response when stdout
+/// order matters across the event and response channels.
+public struct RpcResponseEventFence: Sendable, Equatable {
+    public let response: RpcResponse
+    public let precedingEventCount: UInt64
+
+    public init(response: RpcResponse, precedingEventCount: UInt64) {
+        self.response = response
+        self.precedingEventCount = precedingEventCount
+    }
+}
+
 /// An error response that arrived with no request waiting for it — typically a
 /// late failure for a prompt that was already acknowledged. Recorded rather
 /// than thrown, since no caller is left to receive it.
@@ -74,7 +89,7 @@ public actor RpcClient {
 
     private struct PendingRequest {
         let command: String
-        let continuation: CheckedContinuation<RpcResponse, any Error>
+        let continuation: CheckedContinuation<RpcResponseEventFence, any Error>
         var timeoutTask: Task<Void, Never>?
     }
 
@@ -102,6 +117,7 @@ public actor RpcClient {
     private var receivedReady: ReadyFrame?
     private var protocolV2Enabled = false
     private var streamsFinished = false
+    private var yieldedEventCount: UInt64 = 0
 
     public private(set) var negotiatedProtocolVersion = 1
     public private(set) var protocolErrors: [RpcProtocolError] = []
@@ -188,6 +204,27 @@ public actor RpcClient {
     /// Sends a command and waits for the response carrying the same id.
     @discardableResult
     public func send(_ command: RpcCommand, timeout: Duration? = nil) async throws -> RpcResponse {
+        let receipt = try await sendWithEventFence(command, timeout: timeout)
+        let response = receipt.response
+        guard response.success else {
+            throw RpcClientError.commandFailed(
+                command: response.command,
+                error: response.error ?? "unknown error",
+                code: response.code)
+        }
+        return response
+    }
+
+    /// Sends a command while retaining stdout ordering relative to `events`.
+    ///
+    /// `precedingEventCount` is captured when the response frame is decoded,
+    /// after every earlier event frame has been yielded to the event stream.
+    /// Command-failure responses are returned, not thrown, so callers that need
+    /// the fence can still order failure handling behind earlier events.
+    public func sendWithEventFence(
+        _ command: RpcCommand,
+        timeout: Duration? = nil
+    ) async throws -> RpcResponseEventFence {
         guard started, !terminated else { throw RpcClientError.notStarted }
         let id = "req_\(nextRequestNumber)"
         nextRequestNumber += 1
@@ -346,14 +383,19 @@ public actor RpcClient {
             } else {
                 receivedReady = ready
             }
-            eventContinuation.yield(frame)
+            yieldEvent(frame)
         case .response(let response):
             deliver(response)
         case .chunk:
             break   // handled above
         case .extensionUIRequest, .providerAccountChanged, .event:
-            eventContinuation.yield(frame)
+            yieldEvent(frame)
         }
+    }
+
+    private func yieldEvent(_ frame: RpcFrame) {
+        yieldedEventCount &+= 1
+        eventContinuation.yield(frame)
     }
 
     private func deliver(_ response: RpcResponse) {
@@ -384,14 +426,9 @@ public actor RpcClient {
         }
         request.timeoutTask?.cancel()
 
-        if response.success {
-            request.continuation.resume(returning: response)
-        } else {
-            request.continuation.resume(throwing: RpcClientError.commandFailed(
-                command: response.command,
-                error: response.error ?? "unknown error",
-                code: response.code))
-        }
+        request.continuation.resume(returning: RpcResponseEventFence(
+            response: response,
+            precedingEventCount: yieldedEventCount))
     }
 
     private func handleStreamEnd(exitCode: Int32, stderrTail: String) {
