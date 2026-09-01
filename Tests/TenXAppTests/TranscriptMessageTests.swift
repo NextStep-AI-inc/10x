@@ -55,6 +55,26 @@ import Testing
     #expect(items == [.tool(completed)])
 }
 
+@Test func normalizerEmitsOnlyTheFirstDuplicateToolCallID() throws {
+    let raw = try decodeJSON(#"""
+    {"role":"assistant","content":[
+      {"type":"text","text":"Before"},
+      {"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"App.swift"}},
+      {"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"App.swift"}},
+      {"type":"text","text":"After"}
+    ]}
+    """#)
+
+    let items = TranscriptMessageNormalizer.items(
+        id: "assistant-1",
+        raw: raw,
+        isFinal: false)
+
+    #expect(items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+    #expect(items.filter { if case .tool = $0 { return true }; return false }.count == 1)
+    #expect(Set(items.map(\.id)).count == items.count)
+}
+
 @Test func malformedToolCallDoesNotCreateAGroupBoundary() throws {
     let raw = try decodeJSON(#"""
     {"role":"assistant","content":[

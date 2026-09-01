@@ -30,9 +30,9 @@ struct TranscriptView: View {
                             .buttonStyle(GhostActionStyle())
                         }
                     }
-                    ForEach(controller.items) { item in
+                    ForEach(controller.items, id: \.viewID) { item in
                         itemView(item)
-                            .id(item.id)
+                            .id(item.viewID)
                     }
                     if isAwaitingOutput {
                         TurnActivityView(startedAt: controller.turnStartedAt)
@@ -59,7 +59,7 @@ struct TranscriptView: View {
                 let shouldFollow = !hasPositionedInitialContent || isNearBottom
                 hasPositionedInitialContent = true
                 guard shouldFollow else { return }
-                scroll(proxy, to: item.id)
+                scroll(proxy, to: item.viewID)
             }
             // The indicator is not an item, so its arrival needs its own follow
             // or it appears below the fold on the send that created it.
@@ -75,7 +75,7 @@ struct TranscriptView: View {
     /// over a transcript that is already tracking the bottom.
     @ViewBuilder
     private func scrollToBottomButton(_ proxy: ScrollViewProxy) -> some View {
-        if hasPositionedInitialContent, !isNearBottom, let lastID = controller.items.last?.id {
+        if hasPositionedInitialContent, !isNearBottom, let lastID = controller.items.last?.viewID {
             Button {
                 scroll(proxy, to: isAwaitingOutput ? TurnActivityView.transcriptID : lastID)
             } label: {

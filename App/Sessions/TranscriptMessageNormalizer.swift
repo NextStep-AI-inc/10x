@@ -30,6 +30,7 @@ enum TranscriptMessageNormalizer {
         var visibleSegment = 0
         var hasVisibleMessage = false
         var blockRun: [JSONValue] = []
+        var emittedToolIDs: Set<String> = []
 
         for block in content {
             if let tool = toolPresentation(
@@ -38,6 +39,7 @@ enum TranscriptMessageNormalizer {
                 timestamp: timestamp,
                 existingTools: existingTools,
                 fallbackDate: fallbackDate) {
+                guard emittedToolIDs.insert(tool.id).inserted else { continue }
                 flush(
                     blockRun,
                     into: &result,
