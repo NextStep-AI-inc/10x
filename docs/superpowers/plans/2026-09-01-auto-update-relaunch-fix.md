@@ -176,7 +176,7 @@ The workspace becomes visible after relaunch.
 
 Expected: the app relaunches on the offered version and no updater helper remains stuck.
 
-- [ ] **Step 4: Push and update the draft PR with exact evidence**
+- [x] **Step 4: Push and update the draft PR with exact evidence**
 
 ```bash
 git push

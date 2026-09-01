@@ -34,4 +34,3 @@ Sparkle sends quit
   termination and the relaunching state transition.
 - Run focused and full tests, build Release, and repeat the real updater flow.
 - Do not change update UI, Sparkle version, release version, or shutdown semantics.
-
