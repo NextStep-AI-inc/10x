@@ -85,7 +85,7 @@ current budget + one finite page
 
 ### 1. Diff rendering
 
-`DiffView` will own an immutable render presentation prepared when the diff value enters the view. The presentation contains stable file, hunk, and line identities plus syntax spans for each line. `body` will no longer call `SourceTokenizer.spans`.
+`DiffView` will own an immutable render presentation prepared when the diff value enters the view. The presentation contains stable file, hunk, and line identities but does not tokenize hidden lines. A page loader tokenizes only the newly visible page off the main actor and caches those spans. `body` will no longer call `SourceTokenizer.spans`.
 
 The view applies one budget across visible diff lines rather than one independent budget per hunk. This prevents a diff with many hunks or files from multiplying the ceiling. File and hunk headers appear only when at least one row from that section is in the current slice. Existing collapsed context runs remain collapsed and do not consume one view per hidden line.
 
@@ -218,7 +218,7 @@ Invalid pagination inputs are clamped by the pure policy. Production view code n
 ## Acceptance criteria
 
 1. No listed surface has a one-click path from a bounded preview to an arbitrary number of SwiftUI children.
-2. Large diffs do not tokenize lines from `body` and reveal at most one finite page per action.
+2. Large diffs do not tokenize lines from `body` or tokenize hidden pages, and reveal at most one finite page per action.
 3. Inline and local tool media decode once per item off the main actor.
 4. Provider wheels have no continuously evaluated `TimelineView`.
 5. Installer output publishes in batches, renders lazily, and retains the complete log.
