@@ -8,11 +8,8 @@ private func makeDriver(
     _ state: UpdateState,
     prepareForInstall: @escaping @MainActor () async -> Void = {}
 ) -> SplashUpdateDriver {
-    // terminate is a no-op here on purpose: the real default quits NSApplication, which
-    // in a test process means quitting the test runner mid-suite.
     SplashUpdateDriver(
-        state: state, currentVersion: "0.1.0", prepareForInstall: prepareForInstall,
-        terminate: {})
+        state: state, currentVersion: "0.1.0", prepareForInstall: prepareForInstall)
 }
 
 @MainActor
@@ -50,52 +47,19 @@ private func makeDriver(
 }
 
 @MainActor
-@Test func installingTerminatesTheAppSoSparkleCanSwapTheBundle() async {
-    // Sparkle cannot replace a running bundle. When it reports the app has not
-    // terminated, the driver must quit it; nothing else in the app knows an install
-    // is in flight. Without this the installer waits forever and the splash sits on
-    // "Relaunching 10x" until the user quits by hand.
+@Test func installingReliesOnSparklesExistingTerminationRequest() async {
     let state = UpdateState()
-    let terminated = Counter()
-    let driver = SplashUpdateDriver(
-        state: state, currentVersion: "0.1.0", prepareForInstall: {},
-        terminate: { terminated.bump() })
+    let retried = Preparation()
+    let driver = makeDriver(state)
 
     driver.showInstallingUpdate(
-        withApplicationTerminated: false, retryTerminatingApplication: {})
-
-    // The quit is deliberately deferred to a later run-loop turn; calling it inline
-    // deadlocks against AppTerminationDelegate. So it is NOT expected to have happened
-    // by the time this callback returns.
-    #expect(terminated.count == 0)
-    #expect(state.phase == .relaunching)
-
-    for _ in 0..<200 where terminated.count == 0 { await Task.yield() }
-
-    #expect(terminated.count == 1)
-}
-
-@MainActor
-@Test func installingDoesNotTerminateAgainWhenAlreadyTerminated() async {
-    let state = UpdateState()
-    let terminated = Counter()
-    let driver = SplashUpdateDriver(
-        state: state, currentVersion: "0.1.0", prepareForInstall: {},
-        terminate: { terminated.bump() })
-
-    driver.showInstallingUpdate(
-        withApplicationTerminated: true, retryTerminatingApplication: {})
+        withApplicationTerminated: false,
+        retryTerminatingApplication: { Task { await retried.record() } })
 
     for _ in 0..<200 { await Task.yield() }
 
-    #expect(terminated.count == 0)
+    #expect(await retried.count == 0)
     #expect(state.phase == .relaunching)
-}
-
-@MainActor
-final class Counter {
-    private(set) var count = 0
-    func bump() { count += 1 }
 }
 
 @MainActor
