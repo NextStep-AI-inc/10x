@@ -2799,6 +2799,155 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
         size: CGSize(width: 760, height: 560))
 }
 
+@MainActor
+@Test func composerCommandBrowserActiveWithAttachmentsSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/"),
+                attachments: .constant([
+                    snapshotAttachment(name: "source-map.png", width: 1_200, height: 800),
+                    snapshotAttachment(name: "layout-note.png", width: 640, height: 640),
+                ]),
+                flyout: .constant(.commands),
+                presentation: .active(controller: SessionController(
+                    processManager: SessionProcessManager(),
+                    previewItems: [],
+                    runtimeState: .idle,
+                    modelName: "Claude Opus 4.8",
+                    thinkingLevel: "Auto")),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .activeSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-active-attachments",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserNewSessionCommandsUnavailableSnapshot() async throws {
+    let (commandModel, controls) = await snapshotNewSessionCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands)
+    #expect(commandModel.updateDraft("/"))
+    commandModel.selectSource(.commands)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/"),
+                flyout: .constant(.commands),
+                presentation: .newSession(
+                    projectURL: nil,
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .newSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-new-session-commands-unavailable",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserStreamingSteerSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .streaming)
+    _ = session
+    #expect(commandModel.updateDraft("/compact"))
+
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .streaming,
+        modelName: "Claude Opus 4.8",
+        thinkingLevel: "Auto")
+    controller.selectStreamingBehavior(.steer)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/compact"),
+                flyout: .constant(.commands),
+                presentation: .active(controller: controller),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .activeSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-streaming-steer",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserLongNamesMinimumWindowSnapshot() async throws {
+    let longCommands = [
+        AvailableSlashCommand(
+            name: "skill:extremely-detailed-refactor-investigation-with-follow-up-questions",
+            description: "Review every touched surface and produce a compact plan that still leaves the draft editable.",
+            inputHint: "<scope>",
+            source: .skill),
+        AvailableSlashCommand(
+            name: "extension:very-long-linear-project-management-workflow",
+            description: "Create or update a project tracking issue with the current session context.",
+            source: .extensionCommand),
+        AvailableSlashCommand(
+            name: "prompt:review-accessibility-keyboard-navigation-and-copy",
+            description: "Run the saved review prompt for keyboard interaction and interface text.",
+            inputHint: "<component>",
+            source: .mcpPrompt),
+    ]
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: longCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/"),
+                flyout: .constant(.commands),
+                presentation: .active(controller: SessionController(
+                    processManager: SessionProcessManager(),
+                    previewItems: [],
+                    runtimeState: .idle,
+                    modelName: "Claude Opus 4.8",
+                    thinkingLevel: "Auto")),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .activeSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-long-names-minimum-window",
+        size: CGSize(width: 760, height: 560))
+}
+
 @Test func commandBrowserPanelBoundsClampTheOuterViewHeight() {
     #expect(CommandBrowserView.panelSize(for: CGSize(width: 780, height: 520))
         == CGSize(width: 780, height: CommandBrowserMetrics.maximumHeight))
@@ -3502,6 +3651,24 @@ private func snapshotCommandBrowserModel(
     model.attachActiveSession(session)
     await Task.yield()
     return (model, controls, session)
+}
+
+@MainActor
+private func snapshotNewSessionCommandBrowserModel(
+    commands: [AvailableSlashCommand]
+) async -> (ComposerCommandModel, ComposerControlsModel) {
+    let catalog = SnapshotCommandBrowserCatalog(commands: commands)
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+    let model = ComposerCommandModel(
+        catalog: catalog,
+        controls: controls,
+        onStartNewSession: { _, _ in })
+    await Task.yield()
+    return (model, controls)
 }
 
 private actor SnapshotCommandBrowserCatalog: ComposerCatalogLoading {

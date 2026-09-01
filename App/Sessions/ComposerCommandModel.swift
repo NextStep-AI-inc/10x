@@ -123,6 +123,10 @@ final class ComposerCommandModel {
         }
         parsedDraft = parsed
         isPresented = true
+        if shouldKeepArgumentRoute(for: parsed) {
+            inlineMessage = nil
+            return true
+        }
         if route != .root {
             route = .root
             clearSelectedSubcommand()
@@ -435,6 +439,31 @@ final class ComposerCommandModel {
 
     private func row(for id: CommandBrowserRowID) -> CommandBrowserRow? {
         CommandBrowserPresentation.rows(commands: commands, mode: resolvedMode).first { $0.id == id }
+    }
+
+    private func shouldKeepArgumentRoute(for parsed: ParsedSlashDraft) -> Bool {
+        guard case .arguments(let rowID) = route,
+              let row = row(for: rowID),
+              matches(row: row, token: parsed.query)
+        else { return false }
+        guard let selectedSubcommandName else { return true }
+        guard let subcommand = row.subcommands.first(where: { $0.name == selectedSubcommandName }),
+              firstArgumentToken(in: parsed.arguments) == selectedSubcommandName
+        else { return false }
+        selectedSubcommandUsage = subcommand.usage
+        return true
+    }
+
+    private func matches(row: CommandBrowserRow, token: String) -> Bool {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ([row.canonicalName] + row.aliases).contains(trimmed)
+    }
+
+    private func firstArgumentToken(in text: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let boundary = trimmed.firstIndex(where: \.isWhitespace) ?? trimmed.endIndex
+        return String(trimmed[..<boundary])
     }
 
     private func needsArgumentStage(_ row: CommandBrowserRow) -> Bool {

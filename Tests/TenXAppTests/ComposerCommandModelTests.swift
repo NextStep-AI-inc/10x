@@ -1,7 +1,87 @@
 import Foundation
 import OmpKit
+import SwiftUI
 import Testing
 @testable import TenXApp
+
+@Test func commandBrowserKeyRoutingCoversTheWholeModalWithoutAPointer() {
+    func route(
+        _ key: KeyEquivalent,
+        modifiers: EventModifiers
+    ) -> ComposerCommandKeyAction? {
+        ComposerCommandKeyRouting.route(key, modifiers: modifiers)
+    }
+
+    #expect(route(.upArrow, modifiers: []) == .move(.previous))
+    #expect(route(.downArrow, modifiers: []) == .move(.next))
+    #expect(route(.home, modifiers: []) == .move(.first))
+    #expect(route(.end, modifiers: []) == .move(.last))
+    #expect(route(.pageUp, modifiers: []) == .move(.pagePrevious))
+    #expect(route(.pageDown, modifiers: []) == .move(.pageNext))
+    #expect(route(.tab, modifiers: [.control]) == .cycle(.forward))
+    #expect(route(.tab, modifiers: [.control, .option]) == nil)
+    #expect(route(.tab, modifiers: [.control, .command]) == nil)
+    #expect(route(.tab, modifiers: [.control, .shift]) == .cycle(.backward))
+    #expect(route(.tab, modifiers: [.control, .shift, .option]) == nil)
+    #expect(route(.tab, modifiers: [.control, .shift, .command]) == nil)
+    #expect(route(KeyEquivalent("3"), modifiers: [.command]) == .sourceIndex(3))
+    #expect(route(.return, modifiers: []) == .activate)
+    #expect(route(.tab, modifiers: []) == .complete)
+    #expect(route(.escape, modifiers: []) == .back)
+    #expect(route(.leftArrow, modifiers: []) == nil)
+}
+
+@Test func commandBrowserComposerQueryStateKeepsRootAndNativeModelSearchSeparate() {
+    #expect(ComposerCommandQueryRouting.query(draft: "/modxyz", route: .root) == "modxyz")
+    #expect(ComposerCommandQueryRouting.query(draft: "  /model", route: .root) == "model")
+    #expect(ComposerCommandQueryRouting.query(draft: "/model", route: .native(.model)) == "")
+    #expect(ComposerCommandQueryRouting.query(draft: "/effort", route: .native(.effort)) == "effort")
+}
+
+@Test func commandBrowserNewSessionNoMatchActivationUsesTheExistingSendPath() {
+    #expect(ComposerCommandActivationRouting.action(
+        isNewSession: true,
+        hasVisibleRows: false,
+        hasSelection: false) == .sendUnchangedDraft)
+    #expect(ComposerCommandActivationRouting.action(
+        isNewSession: true,
+        hasVisibleRows: true,
+        hasSelection: false) == .useCommandModel)
+    #expect(ComposerCommandActivationRouting.action(
+        isNewSession: false,
+        hasVisibleRows: false,
+        hasSelection: false) == .useCommandModel)
+}
+
+@Test func commandBrowserComposerFocusReturnsOnlyWhenTheEditorOwnsInput() {
+    #expect(!ComposerCommandFocusRouting.shouldRestoreEditorFocus(
+        effect: .none,
+        isPresented: true,
+        route: .native(.model)))
+    #expect(!ComposerCommandFocusRouting.shouldRestoreEditorFocus(
+        effect: .keepDraft,
+        isPresented: true,
+        route: .native(.model)))
+    #expect(ComposerCommandFocusRouting.shouldRestoreEditorFocus(
+        effect: .keepDraft,
+        isPresented: true,
+        route: .root))
+    #expect(ComposerCommandFocusRouting.shouldRestoreEditorFocus(
+        effect: .replaceDraft("/compact "),
+        isPresented: true,
+        route: .arguments(CommandBrowserRowID(rawSource: "builtin", canonicalName: "compact"))))
+    #expect(ComposerCommandFocusRouting.shouldRestoreEditorFocus(
+        effect: .executed,
+        isPresented: false,
+        route: .root))
+}
+
+@Test func commandBrowserExitCommandUsesCommandSpecificDismissal() {
+    #expect(ComposerCommandDismissalRouting.action(for: .commands) == .dismissCommands)
+    #expect(ComposerCommandDismissalRouting.action(for: .model) == .hideFlyoutOnly)
+    #expect(ComposerCommandDismissalRouting.action(for: .project) == .hideFlyoutOnly)
+    #expect(ComposerCommandDismissalRouting.action(for: nil) == .hideFlyoutOnly)
+}
 
 @MainActor
 @Test func commandModelOpensOnlyForAValidSlashDraft() async {
@@ -223,6 +303,84 @@ import Testing
     model.highlight(CommandBrowserRowID(rawSource: "mcp_prompt", canonicalName: "prompt:review"))
     #expect(model.complete() == .replaceDraft("/prompt:review "))
     #expect(model.route == .arguments(CommandBrowserRowID(rawSource: "mcp_prompt", canonicalName: "prompt:review")))
+    #expect(session.sent.isEmpty)
+}
+
+@MainActor
+@Test func commandModelKeepsStagedSkillAndPromptArgumentsWhenComposerObserverSeesEdits() async {
+    let cases = [
+        AvailableSlashCommand(name: "skill:write", source: .skill),
+        AvailableSlashCommand(name: "prompt:review", source: .mcpPrompt),
+    ]
+    for command in cases {
+        let session = CommandModelSession(state: .idle, catalog: .available([command]))
+        let model = commandModel(catalog: CommandModelCatalog(commands: [command]))
+        model.attachActiveSession(session)
+        let rowID = CommandBrowserRowID(rawSource: command.source.rawValue, canonicalName: command.name)
+
+        #expect(model.updateDraft("/\(command.name)"))
+        #expect(await model.activate() == .replaceDraft("/\(command.name) "))
+        #expect(model.route == .arguments(rowID))
+        #expect(model.updateDraft("/\(command.name) draft the spec"))
+        #expect(model.route == .arguments(rowID))
+        #expect(await model.activate() == .executed)
+        #expect(session.sent == ["/\(command.name) draft the spec"])
+    }
+}
+
+@MainActor
+@Test func commandModelKeepsSelectedSubcommandWhenComposerObserverSeesArgumentEdits() async {
+    let child = AvailableSlashSubcommand(name: "child", usage: "child <file>")
+    let parent = AvailableSlashCommand(name: "parent", subcommands: [child], source: .builtin)
+    let session = CommandModelSession(state: .idle, catalog: .available([parent]))
+    let model = commandModel(catalog: CommandModelCatalog(commands: [parent]))
+    model.attachActiveSession(session)
+
+    #expect(model.updateDraft("/parent"))
+    #expect(await model.activate() == .replaceDraft("/parent "))
+    #expect(model.selectSubcommand(named: "child") == .replaceDraft("/parent child "))
+    #expect(model.route == .arguments(CommandBrowserRowID(rawSource: "builtin", canonicalName: "parent")))
+    #expect(model.updateDraft("/parent child foo"))
+    #expect(model.route == .arguments(CommandBrowserRowID(rawSource: "builtin", canonicalName: "parent")))
+    #expect(model.selectedSubcommandUsage == "child <file>")
+    #expect(await model.activate() == .executed)
+    #expect(session.sent == ["/parent child foo"])
+}
+
+@MainActor
+@Test func commandModelReturnsToRootWhenComposerObserverSeesAChangedStagedCommand() async {
+    let commands = [
+        AvailableSlashCommand(name: "compact", inputHint: "[note]", source: .builtin),
+        AvailableSlashCommand(name: "skill:write", source: .skill),
+    ]
+    let session = CommandModelSession(state: .idle, catalog: .available(commands))
+    let model = commandModel(catalog: CommandModelCatalog(commands: commands))
+    model.attachActiveSession(session)
+
+    #expect(model.updateDraft("/skill:write"))
+    #expect(await model.activate() == .replaceDraft("/skill:write "))
+    #expect(model.route == .arguments(CommandBrowserRowID(rawSource: "skill", canonicalName: "skill:write")))
+    #expect(model.updateDraft("/compact notes"))
+    #expect(model.route == .root)
+    #expect(model.selectedSubcommandUsage == nil)
+    #expect(model.highlightedRow?.canonicalName == "compact")
+}
+
+@MainActor
+@Test func commandModelReturnsToRootWhenComposerObserverSeesAChangedSelectedSubcommand() async {
+    let child = AvailableSlashSubcommand(name: "child", usage: "child <file>")
+    let parent = AvailableSlashCommand(name: "parent", subcommands: [child], source: .builtin)
+    let session = CommandModelSession(state: .idle, catalog: .available([parent]))
+    let model = commandModel(catalog: CommandModelCatalog(commands: [parent]))
+    model.attachActiveSession(session)
+
+    #expect(model.updateDraft("/parent"))
+    #expect(await model.activate() == .replaceDraft("/parent "))
+    #expect(model.selectSubcommand(named: "child") == .replaceDraft("/parent child "))
+    #expect(model.route == .arguments(CommandBrowserRowID(rawSource: "builtin", canonicalName: "parent")))
+    #expect(model.updateDraft("/parent other foo"))
+    #expect(model.route == .root)
+    #expect(model.selectedSubcommandUsage == nil)
     #expect(session.sent.isEmpty)
 }
 
