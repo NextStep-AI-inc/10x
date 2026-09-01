@@ -11,6 +11,7 @@ struct ActiveSessionView: View {
             SessionHeaderView(controller: controller)
 
             TranscriptView(controller: controller)
+                .id(controller.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if controller.isRecoveryPresented,

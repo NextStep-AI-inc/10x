@@ -3,8 +3,8 @@ import SwiftUI
 
 @Observable
 final class ToolDisclosureState: @unchecked Sendable {
-    private var choices: [String: Bool] = [:]
-    private var groupChoices: [String: Bool] = [:]
+    @ObservationIgnored private var choices: [String: DisclosureChoice] = [:]
+    @ObservationIgnored private var groupChoices: [String: DisclosureChoice] = [:]
 
     func isExpanded(for presentation: ToolPresentation) -> Bool {
         isExpanded(
@@ -13,7 +13,7 @@ final class ToolDisclosureState: @unchecked Sendable {
     }
 
     func isExpanded(id: String, defaultValue: Bool) -> Bool {
-        choices[id] ?? defaultValue
+        choice(for: id, in: &choices).value ?? defaultValue
     }
 
     func setExpanded(_ isExpanded: Bool, for presentation: ToolPresentation) {
@@ -21,29 +21,44 @@ final class ToolDisclosureState: @unchecked Sendable {
     }
 
     func setExpanded(_ isExpanded: Bool, id: String) {
-        choices[id] = isExpanded
+        choice(for: id, in: &choices).value = isExpanded
     }
 
     func isGroupExpanded(id: String) -> Bool {
-        groupChoices[id] ?? true
+        choice(for: id, in: &groupChoices).value ?? true
     }
 
     func setGroupExpanded(_ isExpanded: Bool, id: String) {
-        groupChoices[id] = isExpanded
+        choice(for: id, in: &groupChoices).value = isExpanded
     }
 
     func collapseAll(ids: [String]) {
-        for id in ids { choices[id] = false }
+        for id in ids { setExpanded(false, id: id) }
     }
 
     func expand(ids: [String]) {
-        for id in ids { choices[id] = true }
+        for id in ids { setExpanded(true, id: id) }
     }
 
     nonisolated static func defaultExpanded(for presentation: ToolPresentation) -> Bool {
         presentation.phase != .complete
             || ToolCardRegistry.kind(for: presentation.name).startsExpandedWhenComplete
     }
+
+    private func choice(
+        for id: String,
+        in choices: inout [String: DisclosureChoice]
+    ) -> DisclosureChoice {
+        if let choice = choices[id] { return choice }
+        let choice = DisclosureChoice()
+        choices[id] = choice
+        return choice
+    }
+}
+
+@Observable
+private final class DisclosureChoice: @unchecked Sendable {
+    var value: Bool?
 }
 
 private struct ToolDisclosureStateKey: EnvironmentKey {

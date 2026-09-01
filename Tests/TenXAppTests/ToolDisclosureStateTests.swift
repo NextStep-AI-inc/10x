@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import OmpKit
 import Testing
 @testable import TenXApp
@@ -108,6 +109,35 @@ import Testing
     #expect(!state.isGroupExpanded(id: updatedGroupID))
 }
 
+@Test func unrelatedDisclosureChangesDoNotInvalidateObservedRows() {
+    let state = ToolDisclosureState()
+    let groupInvalidations = LockedCounter()
+    let toolInvalidations = LockedCounter()
+
+    withObservationTracking {
+        _ = state.isGroupExpanded(id: "observed-group")
+    } onChange: {
+        groupInvalidations.increment()
+    }
+    withObservationTracking {
+        _ = state.isExpanded(id: "observed-tool", defaultValue: true)
+    } onChange: {
+        toolInvalidations.increment()
+    }
+
+    state.setGroupExpanded(false, id: "other-group")
+    state.setExpanded(false, id: "other-tool")
+
+    #expect(groupInvalidations.value == 0)
+    #expect(toolInvalidations.value == 0)
+
+    state.setGroupExpanded(false, id: "observed-group")
+    state.setExpanded(false, id: "observed-tool")
+
+    #expect(groupInvalidations.value == 1)
+    #expect(toolInvalidations.value == 1)
+}
+
 private func tool(id: String, name: String, phase: ToolPhase) -> ToolPresentation {
     ToolPresentation(
         id: id,
@@ -124,4 +154,17 @@ private func toolGroupID(in rows: [TranscriptPresentationRow]) -> String? {
         if case .toolGroup(let group) = row { return group.id }
     }
     return nil
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.withLock { count }
+    }
+
+    func increment() {
+        lock.withLock { count += 1 }
+    }
 }
