@@ -46,19 +46,25 @@ enum TenXPalette {
         hoverNeutralHex: darkHoverNeutralHex,
     ]
 
+    private static let dynamicColors = Dictionary(uniqueKeysWithValues:
+        darkCounterparts.map { light, dark in
+            (light, pair(light: light, dark: dark))
+        })
+
     /// The dark value paired with a light token, for tests that do their
     /// contrast math in hex space.
     static func darkHex(for lightHex: Int) -> Int? { darkCounterparts[lightHex] }
 
     static func color(_ value: Int) -> Color {
-        guard let darkValue = darkCounterparts[value] else {
+        guard let color = dynamicColors[value] else {
             // Not a token — a one-off hex keeps its literal value in both
             // appearances rather than silently resolving to something else.
-            return Color(nsColor: nsColor(value))
+            return Color(
+                red: Double((value >> 16) & 0xFF) / 255,
+                green: Double((value >> 8) & 0xFF) / 255,
+                blue: Double(value & 0xFF) / 255)
         }
-        return Color(nsColor: NSColor(name: nil) { appearance in
-            appearance.isDarkAqua ? nsColor(darkValue) : nsColor(value)
-        })
+        return color
     }
 
     static let surfaceElevatedDarkHex = 0x232321

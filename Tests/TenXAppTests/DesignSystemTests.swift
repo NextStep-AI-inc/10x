@@ -92,6 +92,13 @@ private func composite(foreground: Int, opacity: Double, background: Int) -> Int
     }
 }
 
+@Test func paletteReturnsStableDynamicColors() {
+    let first = TenXPalette.color(TenXPalette.nearBlackHex)
+    let second = TenXPalette.color(TenXPalette.nearBlackHex)
+
+    #expect(first == second)
+}
+
 @Test func darkForegroundsMeetNormalTextContrastOnDarkCanvas() throws {
     // Every token the app draws text with, against the surface it draws on.
     for foreground in [
