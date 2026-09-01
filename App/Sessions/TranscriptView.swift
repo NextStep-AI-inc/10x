@@ -10,7 +10,10 @@ struct TranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
 
     var body: some View {
-        let presentationRows = Self.followObservation(for: controller.items)
+        let allPresentationRows = Self.followObservation(for: controller.items)
+        let presentationRows = TranscriptPresentationRow.visibleRows(
+            from: allPresentationRows,
+            isGroupExpanded: disclosureState.isGroupExpanded)
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -34,6 +37,7 @@ struct TranscriptView: View {
                     }
                     ForEach(presentationRows, id: \.id) { row in
                         rowView(row)
+                            .padding(.top, row.isGroupedTool ? -12 : 0)
                             .id(row.id)
                     }
                     if isAwaitingOutput {
@@ -56,8 +60,8 @@ struct TranscriptView: View {
             } action: { _, value in
                 isNearBottom = value
             }
-            .onChange(of: presentationRows) { _, rows in
-                guard let lastID = rows.last?.id else { return }
+            .onChange(of: allPresentationRows) { _, _ in
+                guard let lastID = presentationRows.last?.id else { return }
                 let shouldFollow = !hasPositionedInitialContent || isNearBottom
                 hasPositionedInitialContent = true
                 guard shouldFollow else { return }
@@ -186,6 +190,8 @@ struct TranscriptView: View {
             itemView(item)
         case .toolGroup(let group):
             ToolCallGroupView(group: group)
+        case .groupedTool(_, let tool):
+            ToolCardView(presentation: tool)
         }
     }
 

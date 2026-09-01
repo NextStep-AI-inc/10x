@@ -15,11 +15,41 @@ import Testing
     #expect(rows.map(\.id) == [
         "message:before",
         "tool-group-one",
+        "tool:one",
+        "tool:two",
         "message:after",
         "tool-group-three",
+        "tool:three",
     ])
     #expect(toolIDs(in: rows) == [["one", "two"], ["three"]])
     #expect(toolPhases(in: rows) == [.running, .failed])
+}
+
+@Test func groupedToolsAreIndependentRowsThatDisappearWhenTheirGroupCollapses() {
+    let rows = TranscriptPresentationRow.rows(from: [
+        .message(message(id: "before")),
+        .tool(tool(id: "one", phase: .complete)),
+        .tool(tool(id: "two", phase: .complete)),
+        .message(message(id: "after")),
+    ])
+
+    #expect(rows.map(\.id) == [
+        "message:before",
+        "tool-group-one",
+        "tool:one",
+        "tool:two",
+        "message:after",
+    ])
+
+    let collapsedRows = TranscriptPresentationRow.visibleRows(
+        from: rows,
+        isGroupExpanded: { $0 != "tool-group-one" })
+
+    #expect(collapsedRows.map(\.id) == [
+        "message:before",
+        "tool-group-one",
+        "message:after",
+    ])
 }
 
 @Test func noticeEndsToolGroupRatherThanBeingAbsorbed() {
@@ -29,11 +59,17 @@ import Testing
         .tool(tool(id: "after", phase: .complete)),
     ])
 
-    #expect(rows.map(\.id) == ["tool-group-before", "notice:notice", "tool-group-after"])
+    #expect(rows.map(\.id) == [
+        "tool-group-before",
+        "tool:before",
+        "notice:notice",
+        "tool-group-after",
+        "tool:after",
+    ])
     #expect(toolIDs(in: rows) == [["before"], ["after"]])
 }
 
-@Test func earlierToolUpdateInvalidatesFinalPresentationRowForFollowBottom() {
+@Test func earlierToolUpdateChangesObservationWithoutInvalidatingTheFinalRow() {
     let finalTool = tool(id: "two", phase: .running)
     let initialRows = TranscriptPresentationRow.rows(from: [
         .tool(tool(id: "one", phase: .running)),
@@ -46,8 +82,9 @@ import Testing
     let initialLastRow = try! #require(initialRows.last)
     let updatedLastRow = try! #require(updatedRows.last)
 
-    #expect(initialLastRow.id == updatedLastRow.id)
-    #expect(initialLastRow != updatedLastRow)
+    #expect(initialRows != updatedRows)
+    #expect(initialLastRow == updatedLastRow)
+    #expect(initialLastRow.id == "tool:two")
 }
 
 @Test func followObservationTracksMiddleToolGroupChangesWhenLaterMessageIsLast() {
@@ -70,7 +107,12 @@ import Testing
     #expect(initialObservation != updatedObservation)
     #expect(initialLastRow == updatedLastRow)
     #expect(initialLastRow.id == "message:after")
-    #expect(initialObservation.map(\.id) == ["message:before", "tool-group-one", "message:after"])
+    #expect(initialObservation.map(\.id) == [
+        "message:before",
+        "tool-group-one",
+        "tool:one",
+        "message:after",
+    ])
     #expect(initialObservation[1] != updatedObservation[1])
 }
 

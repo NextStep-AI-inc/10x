@@ -20,12 +20,19 @@ struct TranscriptToolGroup: Equatable, Sendable {
 enum TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case item(TranscriptItem)
     case toolGroup(TranscriptToolGroup)
+    case groupedTool(groupID: String, tool: ToolPresentation)
 
     var id: String {
         switch self {
         case .item(let item): item.viewID
         case .toolGroup(let group): group.id
+        case .groupedTool(_, let tool): "tool:\(tool.id)"
         }
+    }
+
+    var isGroupedTool: Bool {
+        if case .groupedTool = self { return true }
+        return false
     }
 
     static func rows(from items: [TranscriptItem]) -> [Self] {
@@ -35,6 +42,9 @@ enum TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         func appendPendingTools() {
             guard let group = TranscriptToolGroup(pendingTools) else { return }
             rows.append(.toolGroup(group))
+            rows.append(contentsOf: group.tools.map {
+                .groupedTool(groupID: group.id, tool: $0)
+            })
             pendingTools.removeAll(keepingCapacity: true)
         }
 
@@ -48,5 +58,15 @@ enum TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         }
         appendPendingTools()
         return rows
+    }
+
+    static func visibleRows(
+        from rows: [Self],
+        isGroupExpanded: (String) -> Bool
+    ) -> [Self] {
+        rows.filter { row in
+            guard case .groupedTool(let groupID, _) = row else { return true }
+            return isGroupExpanded(groupID)
+        }
     }
 }

@@ -3,23 +3,10 @@ import SwiftUI
 struct ToolCallGroupView: View {
     let group: TranscriptToolGroup
     @Environment(\.toolDisclosureState) private var disclosureState
-    @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
     @State private var localChoice: Bool?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            header
-
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(group.tools) { tool in
-                        ToolCardView(presentation: tool)
-                    }
-                }
-                .transition(isReduceMotionEnabled ? .identity : .opacity)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        header
     }
 
     private var header: some View {
@@ -64,15 +51,11 @@ struct ToolCallGroupView: View {
     }
 
     private func toggle() {
-        let update = {
-            if let disclosureState {
-                disclosureState.setGroupExpanded(!isExpanded, id: group.id)
-            } else {
-                localChoice = !isExpanded
-            }
+        if let disclosureState {
+            disclosureState.setGroupExpanded(!isExpanded, id: group.id)
+        } else {
+            localChoice = !isExpanded
         }
-        if isReduceMotionEnabled { update() }
-        else { withAnimation(.easeInOut(duration: 0.14), update) }
     }
 
     private var statusColor: Color {
