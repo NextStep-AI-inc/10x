@@ -1677,7 +1677,7 @@ Repeat source selection, row activation, scrolling, outside dismissal, and child
 
 Write the README with branch/SHA, exact build/test commands and counts, covered matrix, skipped checks with reasons, and screenshot names. Stop the feature app after Tanner finishes testing; remove only this task's `/private/tmp/tenx-command-browser-*` build directories.
 
-- [ ] **Step 8: Commit evidence and run the final diff gate**
+- [x] **Step 8: Commit evidence and run the final diff gate**
 
 ```bash
 git add docs/superpowers/evidence/2026-08-31-command-browser
