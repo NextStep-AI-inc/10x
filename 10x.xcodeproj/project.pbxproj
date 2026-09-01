@@ -70,6 +70,7 @@
 		35C8A4BACD86ABF85EE52F97185E3E5A /* ProviderUsagePresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 191B41F1B92228F1DB3A5A1DCA4CB0E9 /* ProviderUsagePresentation.swift */; };
 		365DCA8899ACDD39F08E1A6862B3BC2C /* IDEPreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 153320A3E0CBC5F87098D9794539D14E /* IDEPreferenceStore.swift */; };
 		37C12BD1F88E0A5F1FF47D6F154588E2 /* StartupTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6670CE700ABFA86FC05FC86F62099E0 /* StartupTestFixtures.swift */; };
+		389B6973393979F318D544E25F8D3849 /* CommandBrowserAccessibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1343DDBA8016BBC901CEB291AC9260 /* CommandBrowserAccessibility.swift */; };
 		396461495BD8FC53548627E492B88D86 /* AppDependencies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FB081247C5B8B0C7512C136CF575306 /* AppDependencies.swift */; };
 		39998F279E7F1091B7F879558AC6283A /* DesignSystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A369C82D303CBB255F0027D059D9346 /* DesignSystemTests.swift */; };
 		39AF91ADA09EAC0132F6EC7C1F794C9B /* IDERegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70480B74480456F9EB012E088B3F9F93 /* IDERegistry.swift */; };
@@ -211,6 +212,7 @@
 		C1A53FA4B6EDFC0C4C9DDFB4F0007576 /* FileOpenService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA33C0D751449FD35D1B2FF51803BB10 /* FileOpenService.swift */; };
 		C248BA5BB250C6AE7B34B48BC9256C37 /* ActiveSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 548CA6213C928CA4B52FAC3EBD197B0F /* ActiveSessionView.swift */; };
 		C35DA5416F0D267F771C160627B1995E /* TranscriptHistoryMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58D4D422BE2A6A0F123C8C956FE2FEEC /* TranscriptHistoryMapper.swift */; };
+		C36FB0CA7A9C378A8C47E8AD89AD49D2 /* CommandBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2EBEF52FEFC257C1D51EA39C0D25443 /* CommandBrowserView.swift */; };
 		C609B7FB0E74B067B308947981F19315 /* MessageContentParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD958A4AA2C6C9733395C292C2B2E550 /* MessageContentParserTests.swift */; };
 		C6E24A2EDBF13D1F8FC870EC5466DE70 /* ProviderUsageDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22A7A802AEFDD87347E88F5CE13F9499 /* ProviderUsageDetailView.swift */; };
 		C74D2B015D1EF6B3A5E428DFDCB81029 /* ProviderAccountStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0322A2E48A1A3A90933CDA7CE7C5FA57 /* ProviderAccountStackView.swift */; };
@@ -480,6 +482,7 @@
 		99AF55E14B238A681359594E9F4F8DE1 /* ProviderUsageDockLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageDockLayout.swift; path = App/Providers/ProviderUsageDockLayout.swift; sourceTree = "<group>"; };
 		99B38E50D7808478EE8222F8C7A8A976 /* FileReferenceActivation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileReferenceActivation.swift; path = App/FileReferences/FileReferenceActivation.swift; sourceTree = "<group>"; };
 		99D0BCC78F8A2B4778B9CB46F862BE89 /* ProviderAccountTier.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountTier.swift; path = App/Providers/ProviderAccountTier.swift; sourceTree = "<group>"; };
+		9A1343DDBA8016BBC901CEB291AC9260 /* CommandBrowserAccessibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CommandBrowserAccessibility.swift; path = App/Sessions/CommandBrowserAccessibility.swift; sourceTree = "<group>"; };
 		9B3C83997921E809B669E49EC2941D65 /* OmpCommandRunnerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpCommandRunnerTests.swift; path = Tests/TenXAppTests/OmpCommandRunnerTests.swift; sourceTree = "<group>"; };
 		9B88C7A4D6AD8CE818E0914F5B781195 /* ProviderAccountCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountCoordinatorTests.swift; path = Tests/TenXAppTests/ProviderAccountCoordinatorTests.swift; sourceTree = "<group>"; };
 		9C133747F6397FABD958011509EE75A7 /* ToolCardScaffold.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolCardScaffold.swift; path = App/Tools/ToolCardScaffold.swift; sourceTree = "<group>"; };
@@ -492,6 +495,7 @@
 		9EAF6E622E959FF3194039CD938F765F /* RailPresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailPresentationTests.swift; path = Tests/TenXAppTests/RailPresentationTests.swift; sourceTree = "<group>"; };
 		9FD8DA63189AEF1F213279CBC6377E70 /* TranscriptHistoryMapperTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptHistoryMapperTests.swift; path = Tests/TenXAppTests/TranscriptHistoryMapperTests.swift; sourceTree = "<group>"; };
 		A110462B6B1BCD6D92975EF7F652FF55 /* ProviderUsageRingGeometryTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageRingGeometryTests.swift; path = Tests/TenXAppTests/ProviderUsageRingGeometryTests.swift; sourceTree = "<group>"; };
+		A2EBEF52FEFC257C1D51EA39C0D25443 /* CommandBrowserView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CommandBrowserView.swift; path = App/Sessions/CommandBrowserView.swift; sourceTree = "<group>"; };
 		A331113A1950AEA534E20052C95F1087 /* OutsideInteractionDismissal.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OutsideInteractionDismissal.swift; path = App/Design/OutsideInteractionDismissal.swift; sourceTree = "<group>"; };
 		A36CB95BC646298C16585D2058D8AD89 /* RecentProjectStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecentProjectStoreTests.swift; path = Tests/TenXAppTests/RecentProjectStoreTests.swift; sourceTree = "<group>"; };
 		A48D1A0B6CD1705C516A105AE2829607 /* ArchivedSessionsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ArchivedSessionsView.swift; path = App/Sessions/ArchivedSessionsView.swift; sourceTree = "<group>"; };
@@ -689,8 +693,10 @@
 				B6AD70F36AF30D7D396456DBAD288AC8 /* AssistantMessageContentView.swift */,
 				A78207AC2A26009BADC702EE948558E8 /* ChooseProjectFlyout.swift */,
 				722A90AFEAB60805D76D3078CB9B153C /* CodeBlockView.swift */,
+				9A1343DDBA8016BBC901CEB291AC9260 /* CommandBrowserAccessibility.swift */,
 				6025403149619D6E29D9D20C2B47FAC0 /* CommandBrowserNativeControlsView.swift */,
 				4943EFF43BB0CB6DF2D747F2D52A1258 /* CommandBrowserPresentation.swift */,
+				A2EBEF52FEFC257C1D51EA39C0D25443 /* CommandBrowserView.swift */,
 				61BC2F097A3439B18D2A37EED250BD94 /* ComposerAttachment.swift */,
 				9D9D6899E872ED851831FE481330E0A5 /* ComposerAttachmentsView.swift */,
 				FC401EACACBD59AF101F4168D6767F18 /* ComposerCatalogService.swift */,
@@ -1118,8 +1124,10 @@
 				5CACD74B6EE3C78BFB67961EE2D34C92 /* AssistantMessageContentView.swift in Sources */,
 				61C051649E204A2EE7664AC8C4A0DA77 /* ChooseProjectFlyout.swift in Sources */,
 				E291E3DE386CC36E6FC7125827CC0695 /* CodeBlockView.swift in Sources */,
+				389B6973393979F318D544E25F8D3849 /* CommandBrowserAccessibility.swift in Sources */,
 				428955BACB0929C00CF717E144A83047 /* CommandBrowserNativeControlsView.swift in Sources */,
 				2420EB64385E79B8C0E3B3BAFDEFD14A /* CommandBrowserPresentation.swift in Sources */,
+				C36FB0CA7A9C378A8C47E8AD89AD49D2 /* CommandBrowserView.swift in Sources */,
 				45C29D4852FEB1374811F46606EC2268 /* ComposerAttachment.swift in Sources */,
 				F5AA922492FD90FB7E0873818465F1C3 /* ComposerAttachmentsView.swift in Sources */,
 				0FB311CB19F5B760705ADD225B593363 /* ComposerCatalogService.swift in Sources */,

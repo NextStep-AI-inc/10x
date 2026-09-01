@@ -3,6 +3,48 @@ import Testing
 @testable import TenXApp
 
 @Suite struct AccessibilityLabelTests {
+@Test func commandBrowserAccessibilityNamesRowsAndQueueState() {
+    #expect(CommandBrowserAccessibility.rowLabel(
+        name: "compact",
+        description: "Compact the current session",
+        source: "Commands",
+        position: 4,
+        count: 12,
+        executionNote: "Runs after the current response"
+    ) == "compact, Compact the current session, Commands, 4 of 12, Runs after the current response")
+}
+
+@Test func commandBrowserAccessibilityPluralizesSourceCounts() {
+    #expect(CommandBrowserAccessibility.sourceValue(count: 1) == "1 command")
+    #expect(CommandBrowserAccessibility.sourceValue(count: 2) == "2 commands")
+}
+
+@Test func commandBrowserAccessibilityNamesSourceChanges() {
+    #expect(CommandBrowserAccessibility.sourceSelectionAnnouncement(
+        source: .commands,
+        count: 0,
+        message: "Start a session to use OMP commands."
+    ) == "Commands, 0 commands, Start a session to use OMP commands.")
+}
+
+@Test func commandBrowserAccessibilityAnnouncesLoadedCommandCount() {
+    #expect(CommandBrowserAccessibility.catalogLoadedAnnouncement(count: 1) == "1 command loaded")
+    #expect(CommandBrowserAccessibility.catalogLoadedAnnouncement(count: 5) == "5 commands loaded")
+}
+
+@Test func commandBrowserAccessibilityMapsRootSourceActions() {
+    let actions = CommandBrowserAccessibility.rootSourceActions(
+        [
+            CommandBrowserSourceItem(id: .all, count: 4, message: nil),
+            CommandBrowserSourceItem(id: .app, count: 3, message: nil),
+            CommandBrowserSourceItem(id: .commands, count: 1, message: nil),
+        ]
+    )
+
+    #expect(actions.map(\.name) == ["All", "App", "Commands"])
+    #expect(!actions.contains { $0.source == .prompts })
+}
+
 @Test func railSessionLabelsIncludeHierarchyAndState() {
     #expect(RailAccessibility.sessionLabel(
         title: "Bauhaus macOS interface",
