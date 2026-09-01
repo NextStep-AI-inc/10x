@@ -301,7 +301,7 @@ struct FloatingRailView: View {
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 .frame(maxWidth: .infinity)
                 .frame(height: 22)
-                .background(.white.opacity(0.9))
+                .background(TenXPalette.color(TenXPalette.canvasHex).opacity(0.9))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

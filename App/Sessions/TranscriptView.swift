@@ -93,7 +93,7 @@ struct TranscriptView: View {
                     Text("Jump to latest")
                         .font(TenXTypography.body(size: 11, weight: .medium))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(TenXPalette.onEmphasis)
                 .padding(.horizontal, 12)
                 .frame(height: 26)
                 .background(TenXPalette.color(TenXPalette.nearBlackHex))

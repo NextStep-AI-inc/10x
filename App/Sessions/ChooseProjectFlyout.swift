@@ -125,7 +125,7 @@ struct ChooseProjectShelf: View {
             width: widths.top,
             height: topHeight + ChooseProjectFlyoutMetrics.triggerHeight,
             alignment: .topLeading)
-        .background { silhouette.fill(Color.white) }
+        .background { silhouette.fill(TenXPalette.surfaceElevated) }
         .overlay {
             silhouette.stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
         }

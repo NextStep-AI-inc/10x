@@ -539,7 +539,7 @@ struct ProviderAccountStackView: View {
         Text("+\(otherAccountsCount)")
             .font(TenXTypography.mono(size: 9, weight: .semibold))
             .foregroundStyle(isBadgeLive
-                ? Color.white
+                ? TenXPalette.onEmphasis
                 : TenXPalette.color(TenXPalette.mutedTextHex))
             .padding(.horizontal, 4)
             .frame(minWidth: 15, minHeight: 15)

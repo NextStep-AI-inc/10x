@@ -132,7 +132,7 @@ struct ComposerView: View {
         // paint over card content, and the model flyout is card content.
         .background {
             Rectangle()
-                .fill(.white)
+                .fill(TenXPalette.surfaceElevated)
                 .overlay {
                     Rectangle()
                         .stroke(borderColor, lineWidth: 1)
@@ -380,7 +380,7 @@ struct ComposerView: View {
                 }
             }
                 .foregroundStyle(isEnabled
-                    ? Color.white
+                    ? TenXPalette.onEmphasis
                     : TenXPalette.color(TenXPalette.mutedTextHex))
                 .frame(width: 28, height: 28)
                 .background(isEnabled

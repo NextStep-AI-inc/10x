@@ -61,7 +61,7 @@ struct ExtensionInputSheet: View {
         }
         .padding(28)
         .frame(width: 520)
-        .background(.white)
+        .background(TenXPalette.surfaceElevated)
     }
 
     private var title: String {

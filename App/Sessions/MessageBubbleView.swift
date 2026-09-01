@@ -34,7 +34,7 @@ struct MessageBubbleView: View {
                 if !message.visibleText.isEmpty {
                     Text(message.visibleText)
                         .font(TenXTypography.body(size: 14))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(TenXPalette.onEmphasis)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 14)

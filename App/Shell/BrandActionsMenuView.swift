@@ -54,7 +54,7 @@ struct BrandActionsMenuView: View {
         }
         .padding(6)
         .frame(width: 188, alignment: .leading)
-        .background(.white)
+        .background(TenXPalette.surfaceElevated)
         .overlay {
             Rectangle()
                 .stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)

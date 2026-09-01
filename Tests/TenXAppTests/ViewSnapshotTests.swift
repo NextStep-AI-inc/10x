@@ -3390,3 +3390,222 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
     NSGraphicsContext.restoreGraphicsState()
     return representation.representation(using: .png, properties: [:])!
 }
+
+// MARK: - Dark appearance
+//
+// The palette resolves per-appearance, so these render the same views the light
+// references cover, with the host pinned to `.darkAqua`. They are what catches a
+// token that was never given a dark value — the failure looks like near-black
+// text on a near-black canvas, which no contrast unit test can see.
+
+@MainActor
+@Test func fullShellDarkSnapshot() async throws {
+    let providerModel = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: fullShellProviders),
+        usageService: FakeUsageService(snapshot: try fullShellUsageSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: "/tmp/10x-full-shell-dark-snapshot",
+            directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
+    model.sessions = fullShellSessions
+    let railExpansion = RailExpansionModel()
+    railExpansion.pointerEntered()
+
+    try assertSnapshot(
+        AppShellView(model: model, railExpansion: railExpansion),
+        name: "full-shell-dark",
+        size: CGSize(width: 760, height: 560),
+        appearance: .dark)
+}
+
+/// Covers both halves of the emphasis pairing at once: the send button's fill
+/// inverts to near-white and its arrow has to invert with it, and the flyout
+/// behind it has to lift off the canvas without the light mode's drop shadow.
+@MainActor
+@Test func composerWithModelFlyoutDarkSnapshot() async throws {
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("Pick a model without the border cutting the panel."),
+                flyout: .constant(.model),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [URL(filePath: "/tmp/10x", directoryHint: .isDirectory)],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controls: controls,
+                controlsMode: .newSession,
+                onSend: {})
+        },
+        name: "composer-with-model-flyout-dark",
+        size: CGSize(width: 780, height: 400),
+        appearance: .dark)
+}
+
+@MainActor
+@Test func genericToolCardDarkSnapshot() throws {
+    let presentation = ToolPresentation(
+        id: "snapshot-tool",
+        name: "custom_future_tool",
+        arguments: .object(["query": .string("Bauhaus interface")]),
+        result: .object(["content": .array([
+            .object(["type": .string("text"), "text": .string("Completed locally")]),
+        ])]),
+        phase: .complete,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 1.4))
+    try assertSnapshot(
+        ToolCardView(presentation: presentation)
+            .frame(width: 720),
+        name: "generic-tool-card-dark",
+        appearance: .dark)
+}
+
+@MainActor
+@Test func approvalCardDarkSnapshot() throws {
+    try assertSnapshot(
+        ApprovalCardView(
+            state: .confirm(
+                id: "approval",
+                title: "Allow this command?",
+                message: "Run the local test suite in this project.",
+                timeout: nil),
+            onRespond: { _ in },
+            onOpenURL: { _ in },
+            onCopyURL: { _ in })
+            .frame(width: 720),
+        name: "approval-card-dark",
+        appearance: .dark)
+}
+
+@MainActor
+@Test func continuousSettingsDarkSnapshot() async throws {
+    let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
+    let suiteName = "TenXAppTests.SettingsDarkSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let registry = IDERegistry.testing(applications: [:])
+    let store = IDEPreferenceStore(defaults: defaults, registry: registry)
+    let providerModel = try providerWorkspaceModel()
+    await model.load()
+    try assertSnapshot(
+        SettingsView(
+            model: model,
+            registry: registry,
+            store: store,
+            providerModel: providerModel),
+        name: "continuous-settings-dark",
+        appearance: .dark)
+}
+
+/// The user's own message is drawn on an emphasis fill, so it carries the same
+/// inversion risk as the send button — and it is the single most repeated
+/// surface in the app.
+@MainActor
+@Test func richTranscriptWideDarkSnapshot() throws {
+    try assertSnapshot(
+        TranscriptView(controller: richTranscriptController())
+            .environment(snapshotEmptyIDEStore)
+            .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+            .environment(\.fileOpenService, snapshotFileOpenService),
+        name: "rich-transcript-wide-dark",
+        size: CGSize(width: 1_180, height: 2_000),
+        appearance: .dark)
+}
+
+/// Diff tints are opacity washes over the canvas rather than their own tokens.
+/// They only read on a dark canvas because the color underneath them resolved
+/// dark first — this is the snapshot that catches it if that stops being true.
+@MainActor
+@Test func activityStructuredDiffDarkSnapshot() throws {
+    let longLine = "let title = \"" + String(repeating: "structured-transcript-", count: 10) + "\""
+    let patch = """
+    diff --git a/App/Transcript.swift b/App/Transcript.swift
+    --- a/App/Transcript.swift
+    +++ b/App/Transcript.swift
+    @@ -1,10 +1,10 @@
+     import SwiftUI
+     struct Transcript {
+         let id: String
+         let role: String
+         let model: String
+         let mode: String
+         let date: Date
+         let state: State
+    -let title = "Old transcript"
+    +    \(longLine) // 10 repeated segments
+    diff --git a/App/Palette.swift b/App/Palette.swift
+    --- a/App/Palette.swift
+    +++ b/App/Palette.swift
+    @@ -4,2 +4,2 @@
+    -let addition = Color.green
+    +let addition = Color.cyan
+     let removal = Color.red
+    """
+    let presentation = ToolPresentation(
+        id: "diff-tool",
+        name: "edit",
+        arguments: .object(["path": .string("/tmp/Transcript.swift")]),
+        result: .object(["details": .object(["diff": .string(patch)])]),
+        phase: .complete,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 1.7))
+    try assertSnapshot(
+        ToolCardView(presentation: presentation)
+            .environment(snapshotEmptyIDEStore)
+            .frame(width: 720),
+        name: "activity-structured-diff-dark",
+        size: CGSize(width: 800, height: 650),
+        appearance: .dark)
+}
+
+/// A scrim over the canvas plus a raised panel: in light mode the scrim is a
+/// white wash, and it has to become a dark one rather than blowing out.
+@MainActor
+@Test func sessionDeletionConfirmationDarkSnapshot() throws {
+    let request = SessionDeletionRequest.session(snapshotSession(
+        path: "/sessions/delete-me.jsonl",
+        cwd: "/tmp/10x",
+        title: "Refine session management",
+        modified: 1_787_601_600))
+
+    try assertSnapshot(
+        SessionDeletionConfirmationView(
+            request: request,
+            onCancel: {},
+            onDelete: {}),
+        name: "session-deletion-confirmation-dark",
+        appearance: .dark)
+}
+
+@MainActor
+@Test func brandActionsMenuDarkSnapshot() throws {
+    let model = AppModel()
+    model.route = .newSession
+
+    try assertSnapshot(
+        BrandActionsMenuView(
+            model: model,
+            isPresented: .constant(true),
+            revealsImmediately: true),
+        name: "brand-actions-menu-dark",
+        size: CGSize(width: 220, height: 180),
+        appearance: .dark)
+}
