@@ -82,7 +82,7 @@
 - Create: `OmpKit/Sources/OmpKit/Wire/AvailableSlashCommand.swift`
 - Create: `OmpKit/Tests/OmpKitTests/AvailableSlashCommandTests.swift`
 
-- [ ] **Step 1: Write the failing decoder tests**
+- [x] **Step 1: Write the failing decoder tests**
 
 Create `OmpKit/Tests/OmpKitTests/AvailableSlashCommandTests.swift` with these free `@Test` functions:
 
@@ -157,7 +157,7 @@ import Testing
 }
 ```
 
-- [ ] **Step 2: Run the OmpKit test and verify it fails**
+- [x] **Step 2: Run the OmpKit test and verify it fails**
 
 Run:
 
@@ -167,7 +167,7 @@ swift test --package-path OmpKit --filter AvailableSlashCommand
 
 Expected: compilation fails because `AvailableSlashCommandDecoder` and its value types do not exist.
 
-- [ ] **Step 3: Implement the typed command and shared decoder**
+- [x] **Step 3: Implement the typed command and shared decoder**
 
 Create `OmpKit/Sources/OmpKit/Wire/AvailableSlashCommand.swift` with this public surface:
 
@@ -289,13 +289,13 @@ public enum AvailableSlashCommandDecoder {
 }
 ```
 
-- [ ] **Step 4: Run all OmpKit tests**
+- [x] **Step 4: Run all OmpKit tests**
 
 Run: `swift test --package-path OmpKit`
 
 Expected: all OmpKit tests pass, including four new decoder tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add OmpKit/Sources/OmpKit/Wire/AvailableSlashCommand.swift OmpKit/Tests/OmpKitTests/AvailableSlashCommandTests.swift
@@ -313,7 +313,7 @@ git commit -m "feat(ompkit): decode available slash commands"
 - Rename: `Tests/TenXAppTests/OmpModelCatalogServiceTests.swift` → `Tests/TenXAppTests/ComposerCatalogServiceTests.swift`
 - Modify: test catalog fakes that conform to `ComposerCatalogLoading`
 
-- [ ] **Step 1: Add failing service tests**
+- [x] **Step 1: Add failing service tests**
 
 Rename the test file and update its fake client to expose an event continuation,
 record received `RpcClientConfiguration` values, and provide `record(_:)` and
@@ -402,7 +402,7 @@ record received `RpcClientConfiguration` values, and provide `record(_:)` and
 }
 ```
 
-- [ ] **Step 2: Run the targeted tests and verify they fail**
+- [x] **Step 2: Run the targeted tests and verify they fail**
 
 First rename the files, regenerate the project, then run:
 
@@ -417,7 +417,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: compilation fails because the renamed service and command state are not implemented.
 
-- [ ] **Step 3: Add the catalog state and project-aware protocol**
+- [x] **Step 3: Add the catalog state and project-aware protocol**
 
 Create `App/Sessions/ComposerCommandCatalogState.swift`:
 
@@ -483,7 +483,7 @@ func refresh(authenticatedProviderIDs: Set<String>, projectURL: URL?) async {
 }
 ```
 
-- [ ] **Step 4: Implement one warm client and its command update task**
+- [x] **Step 4: Implement one warm client and its command update task**
 
 Rename the actor and error to `ComposerCatalogService` and `ComposerCatalogServiceError`. Keep `configuration` mutable, set `configuration.cwd` to the standardized project URL before creating a client, and replace the client only when cwd changes. Add one event task and one `bufferingNewest(1)` update stream:
 
@@ -529,7 +529,7 @@ actor ComposerCatalogService: ComposerCatalogLoading {
 
 `shutdown()` must cancel and await `eventTask`, shut down the client once, clear it, yield `.unavailable`, and finish the update stream. `selectProject(_:)` must cancel the old event task and shut down the old client before mutating cwd.
 
-- [ ] **Step 5: Update catalog fakes and all refresh call sites**
+- [x] **Step 5: Update catalog fakes and all refresh call sites**
 
 Every fake `ComposerCatalogLoading` gets a buffered stream and accepts `projectURL`. Every call to `refresh` passes the current project:
 
@@ -541,7 +541,7 @@ await composerControls?.refresh(
 
 Snapshot-only fakes return `.available([])` so existing model-picker snapshots remain unchanged.
 
-- [ ] **Step 6: Run catalog and existing controls tests**
+- [x] **Step 6: Run catalog and existing controls tests**
 
 Run:
 
@@ -558,7 +558,7 @@ Expected: five tests execute and pass. Then run
 `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -only-testing:TenXAppTests`
 and confirm the full app test target passes.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add App/Sessions/ComposerCommandCatalogState.swift App/Sessions/ComposerCatalogService.swift App/Sessions/ComposerControlsModel.swift App/Application/AppModel.swift Tests/TenXAppTests 10x.xcodeproj
@@ -573,7 +573,7 @@ git commit -m "feat(composer): publish the OMP command catalog"
 - Create: `App/Sessions/CommandBrowserPresentation.swift`
 - Create: `Tests/TenXAppTests/CommandBrowserPresentationTests.swift`
 
-- [ ] **Step 1: Write failing trigger, mapping, ordering, and ranking tests**
+- [x] **Step 1: Write failing trigger, mapping, ordering, and ranking tests**
 
 Cover the approved matrix with free tests. Use these exact assertions as the core:
 
@@ -672,7 +672,7 @@ private func matchNames(_ query: String) -> [String] {
 
 Add tests for exact, prefix, word-boundary, substring, subcommand, description/usage order; alphabetical tie-breaking; alias display; duplicate identity; malformed unknown source; empty sources; and selection retention by `(rawSource, canonicalName)`.
 
-- [ ] **Step 2: Regenerate and verify the tests fail**
+- [x] **Step 2: Regenerate and verify the tests fail**
 
 ```bash
 bundle exec ruby scripts/generate_xcodeproj.rb
@@ -682,7 +682,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: compilation fails because `CommandBrowserPresentation` does not exist.
 
-- [ ] **Step 3: Implement the pure presentation values**
+- [x] **Step 3: Implement the pure presentation values**
 
 Define these non-SwiftUI values in `CommandBrowserPresentation.swift`:
 
@@ -755,7 +755,7 @@ struct CommandBrowserSourceItem: Identifiable, Equatable, Sendable {
 
 Implement source mapping, fixed App descriptors, App collision replacement, stable ordering, New Session availability, streaming notes, and the rank ladder from the spec. Normalize matching by lowercasing and removing `:`, `_`, and `-`. Run bounded Damerau-Levenshtein only when direct results are empty, cap distance at two, and set `initialSelection` to `nil` for close results.
 
-- [ ] **Step 4: Run every presentation test**
+- [x] **Step 4: Run every presentation test**
 
 Run each newly added free function explicitly or run the full target. Confirm the log includes all new tests and no `Executed 0 tests` line:
 
@@ -766,7 +766,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: the full app test target passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add App/Sessions/CommandBrowserPresentation.swift Tests/TenXAppTests/CommandBrowserPresentationTests.swift 10x.xcodeproj
@@ -781,7 +781,7 @@ git commit -m "feat(composer): rank slash command suggestions"
 - Create: `App/Sessions/ComposerCommandModel.swift`
 - Create: `Tests/TenXAppTests/ComposerCommandModelTests.swift`
 
-- [ ] **Step 1: Write failing state-machine tests**
+- [x] **Step 1: Write failing state-machine tests**
 
 Create a fake catalog with a controllable update stream, fake controls, and a fake session conforming to the protocol below. Add tests for:
 
@@ -847,7 +847,7 @@ Create a fake catalog with a controllable update stream, fake controls, and a fa
 
 Also test Home, End, Page Up, Page Down, source cycling, direct source indices, removed selected row, removed active child, unavailable copy, native child routes, active idle execution, streaming execution, and new-session workflow execution.
 
-- [ ] **Step 2: Regenerate and verify the first test fails**
+- [x] **Step 2: Regenerate and verify the first test fails**
 
 ```bash
 bundle exec ruby scripts/generate_xcodeproj.rb
@@ -857,7 +857,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: compilation fails because `ComposerCommandModel` is missing.
 
-- [ ] **Step 3: Define the state machine and source protocol**
+- [x] **Step 3: Define the state machine and source protocol**
 
 Use this public-to-App surface:
 
@@ -941,7 +941,7 @@ final class ComposerCommandModel {
 
 Keep all ordering and matching calls in `CommandBrowserPresentation`. The model owns only current draft parse, source, identity, route, attachment to warm/active streams, and execution decisions. Each source attachment increments a generation; update tasks check the captured generation before mutating state.
 
-- [ ] **Step 4: Implement native and OMP activation rules**
+- [x] **Step 4: Implement native and OMP activation rules**
 
 The activation switch must be exhaustive:
 
@@ -972,7 +972,7 @@ case .omp(let command):
 
 `executeSlash` calls the attached active session when present. In New Session it calls an injected `@MainActor (String, [ComposerAttachment]) -> Void` closure only for available Skills and Prompts. It never executes unavailable Commands or Extensions. Completion uses the canonical name and never an alias.
 
-- [ ] **Step 5: Implement native mutation wrappers**
+- [x] **Step 5: Implement native mutation wrappers**
 
 Add `applyModel`, `applyEffort`, and `applyFast` methods that delegate to the existing `ComposerControlsModel`. Capture the prior `errorMessage`, await the mutation, and dismiss only when the control model has no new error. On failure keep the child open and copy the sanitized control error into `inlineMessage`. During active streaming, set the detail note to `Applies to the next request` without delaying the mutation.
 
@@ -982,7 +982,7 @@ Attachments are never passed to or changed by these methods. A failed mutation
 returns `.none` so the child and draft stay open. `/fast` Status uses the same
 successful dismissal effect without calling `setFastMode`.
 
-- [ ] **Step 6: Run all model tests**
+- [x] **Step 6: Run all model tests**
 
 Run the full app target and verify every new free function executes:
 
@@ -993,7 +993,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add App/Sessions/ComposerCommandModel.swift Tests/TenXAppTests/ComposerCommandModelTests.swift 10x.xcodeproj
@@ -1011,7 +1011,7 @@ git commit -m "feat(composer): add command browser state machine"
 - Create: `Tests/TenXAppTests/SessionControllerCommandTests.swift`
 - Modify: `Tests/TenXAppTests/Fixtures/composer_fake_server.py`
 
-- [ ] **Step 1: Write failing control-routing tests**
+- [x] **Step 1: Write failing control-routing tests**
 
 Add a processor test that consumes an `available_commands_update` event and proves it appears on `controlEvents` without changing snapshot revision or items. Add `agent_start` and `turn_start` forwarding assertions because the delayed attachment path needs those lifecycle boundaries.
 
@@ -1032,7 +1032,7 @@ Add a processor test that consumes an `available_commands_update` event and prov
 }
 ```
 
-- [ ] **Step 2: Write failing active-catalog tests**
+- [x] **Step 2: Write failing active-catalog tests**
 
 Extend the Python fixture with `get_available_commands` and an update mode. Add tests:
 
@@ -1066,7 +1066,7 @@ Extend the Python fixture with `get_available_commands` and an update mode. Add 
 }
 ```
 
-- [ ] **Step 3: Regenerate and verify the tests fail**
+- [x] **Step 3: Regenerate and verify the tests fail**
 
 ```bash
 bundle exec ruby scripts/generate_xcodeproj.rb
@@ -1077,7 +1077,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: assertions fail because updates are not forwarded or stored.
 
-- [ ] **Step 4: Forward command and lifecycle control traffic**
+- [x] **Step 4: Forward command and lifecycle control traffic**
 
 Add these event types to `TranscriptEventProcessor.isControlFrame`:
 
@@ -1090,7 +1090,7 @@ case "available_commands_update",
 
 Do not add reducer cases; the existing default `.none` keeps command metadata transcript-silent. Lifecycle events retain their existing runtime mutation.
 
-- [ ] **Step 5: Add the active command stream to SessionController**
+- [x] **Step 5: Add the active command stream to SessionController**
 
 Add:
 
@@ -1106,11 +1106,11 @@ private let commandContinuation: AsyncStream<ComposerCommandCatalogState>.Contin
 
 Initialize the buffered stream in both initializers. In `finishOpening`, request `get_available_commands` after `get_state`, decode the complete response, publish it, and use `.unavailable` on unsupported/malformed responses without failing session opening. In `applyEventMetadata`, decode `available_commands_update` and publish a full replacement. Reset to `.loading` when a new pipeline begins and `.unavailable` when it stops.
 
-- [ ] **Step 6: Run processor and active-catalog tests**
+- [x] **Step 6: Run processor and active-catalog tests**
 
 Run the new functions plus existing processor/controller tests. Expected: all selected tests execute and pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add App/Sessions/TranscriptEventProcessor.swift App/Sessions/SessionController.swift Tests/TenXAppTests/TranscriptEventProcessorTests.swift Tests/TenXAppTests/SessionControllerCommandTests.swift Tests/TenXAppTests/Fixtures/composer_fake_server.py 10x.xcodeproj
@@ -1126,7 +1126,7 @@ git commit -m "feat(sessions): publish active slash commands"
 - Modify: `Tests/TenXAppTests/SessionControllerCommandTests.swift`
 - Modify: `Tests/TenXAppTests/Fixtures/composer_fake_server.py`
 
-- [ ] **Step 1: Add failing slash-execution tests**
+- [x] **Step 1: Add failing slash-execution tests**
 
 Give the fixture modes `slash-local`, `slash-agent`, `slash-legacy-agent`, `slash-failure`, and `slash-streaming-record`. Record the complete prompt body, images, and streaming behavior. Add tests proving:
 
@@ -1182,11 +1182,11 @@ Give the fixture modes `slash-local`, `slash-agent`, `slash-legacy-agent`, `slas
 `recordedStreamingBehavior()` decodes the fixture JSON through a small
 `Decodable` record type. Do not use a type cast in the test helper.
 
-- [ ] **Step 2: Run the focused tests and verify they fail**
+- [x] **Step 2: Run the focused tests and verify they fail**
 
 Run the five free test functions explicitly. Expected: compilation fails because `sendSlashCommand` is not implemented.
 
-- [ ] **Step 3: Extract the shared prompt request core**
+- [x] **Step 3: Extract the shared prompt request core**
 
 Keep `sendPrompt()` behavior unchanged by moving its transport work into a private method with explicit policy:
 
@@ -1220,7 +1220,7 @@ func sendSlashCommand(_ text: String) async {
 
 The shared `send` method captures the exact staged attachments, clears the slash draft immediately, marks runtime streaming optimistically, sends canonical text at byte zero, and restores text only when the current draft is still empty after transport failure.
 
-- [ ] **Step 4: Implement attachment disposition from response and events**
+- [x] **Step 4: Implement attachment disposition from response and events**
 
 For `.waitForAgent`:
 
@@ -1241,11 +1241,11 @@ case nil:
 
 In `applyEventMetadata`, clear those exact IDs on `agent_start` or `turn_start` when the generation matches. On `prompt_result`, discard the pending record without removing attachments. Never replace the full attachments array, because images added after the command was sent must survive.
 
-- [ ] **Step 5: Run the slash tests and regression suite**
+- [x] **Step 5: Run the slash tests and regression suite**
 
 Run the five new tests, then all app tests. Confirm existing ordinary prompt tests still pass and the fixture records `followUp` while the visible composer mode remains Steer.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add App/Sessions/SessionController.swift Tests/TenXAppTests/SessionControllerCommandTests.swift Tests/TenXAppTests/Fixtures/composer_fake_server.py
@@ -1265,7 +1265,7 @@ git commit -m "feat(sessions): execute slash commands safely"
 - Modify: `Tests/TenXAppTests/StartupTestFixtures.swift`
 - Modify: `Tests/TenXAppTests/AppModelNavigationTests.swift`
 
-- [ ] **Step 1: Write failing AppModel lifecycle tests**
+- [x] **Step 1: Write failing AppModel lifecycle tests**
 
 Add tests that prove `composerCommands` is created with the same catalog instance held by controls, detached to warm New Session mode, attached to the current controller, refreshed when the selected project changes, and stopped before the catalog shuts down.
 
@@ -1295,11 +1295,11 @@ Add tests that prove `composerCommands` is created with the same catalog instanc
 
 Expose test-only identity and attachment state under `#if DEBUG`; do not expose the service publicly.
 
-- [ ] **Step 2: Run the focused tests and verify they fail**
+- [x] **Step 2: Run the focused tests and verify they fail**
 
 Run both functions explicitly. Expected: compilation fails because `AppModel.composerCommands` does not exist.
 
-- [ ] **Step 3: Create and lifecycle-bind the command model**
+- [x] **Step 3: Create and lifecycle-bind the command model**
 
 Add `private(set) var composerCommands: ComposerCommandModel?`. Whenever controls are created, create commands from `controls.catalog` and `controls`:
 
@@ -1314,15 +1314,15 @@ let commands = ComposerCommandModel(
 
 Whenever controls attach/detach a `SessionController`, make the command model attach/detach in the same branch. On project selection and foreground/provider refresh, call the existing controls refresh; the shared service publishes its command result to the command model. During shutdown or runtime replacement, stop command observation before `controls.shutdown()` closes the shared catalog.
 
-- [ ] **Step 4: Pass the model to both composer hosts**
+- [x] **Step 4: Pass the model to both composer hosts**
 
 Add `commands: ComposerCommandModel?` to `ComposerView`. `NewSessionView` passes `model.composerCommands`; `ActiveSessionView` passes the same model after AppModel has attached the controller. Do not add a second command model in either SwiftUI view.
 
-- [ ] **Step 5: Run AppModel and full app tests**
+- [x] **Step 5: Run AppModel and full app tests**
 
 Run the new lifecycle functions, existing startup/navigation tests, then the entire app target. Expected: all pass with one warm catalog client per selected project.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add App/Application App/Sessions/ComposerCommandModel.swift App/Sessions/NewSessionView.swift App/Sessions/ActiveSessionView.swift Tests/TenXAppTests/StartupTestFixtures.swift Tests/TenXAppTests/AppModelNavigationTests.swift
@@ -1339,15 +1339,15 @@ git commit -m "feat(app): bind composer command sources"
 - Create: `App/Sessions/CommandBrowserNativeControlsView.swift`
 - Modify: `Tests/TenXAppTests/ViewSnapshotTests.swift`
 
-- [ ] **Step 1: Add a failing shared-content snapshot**
+- [x] **Step 1: Add a failing shared-content snapshot**
 
 Add `commandBrowserModelChildSnapshot()` that renders the model child with two providers, a selected model, loading false, and no footer trigger. The expected panel area is square-edged and uses the same model rows as `composerWithModelFlyoutSnapshot()`.
 
-- [ ] **Step 2: Regenerate and verify the snapshot is missing**
+- [x] **Step 2: Regenerate and verify the snapshot is missing**
 
 Run only `commandBrowserModelChildSnapshot()`. Expected: the test fails and writes `command-browser-model-child.actual.png` because the new view does not exist or has no reference.
 
-- [ ] **Step 3: Extract reusable model content**
+- [x] **Step 3: Extract reusable model content**
 
 Move search field, list region, row identity, highlight movement, and scroll-to-highlight from `ModelPickerFlyout` into `ModelPickerContent`. Keep the footer flyout's settings region and stepped trigger chrome in `ModelPickerFlyout`.
 
@@ -1366,7 +1366,7 @@ struct ModelPickerContent: View {
 
 The footer flyout composes `ModelPickerContent` with its existing dimensions and then renders Effort/Fast settings and trigger. Existing footer and model-picker snapshots must remain byte-identical.
 
-- [ ] **Step 4: Implement the three native child surfaces**
+- [x] **Step 4: Implement the three native child surfaces**
 
 `CommandBrowserNativeControlsView` switches on `AppCommand`:
 
@@ -1376,7 +1376,7 @@ The footer flyout composes `ModelPickerContent` with its existing dimensions and
 
 Use exact labels `Model`, `Effort`, `Fast mode`, `On`, `Off`, `Status`, `Applies to the next request`, and existing sanitized control errors. Escape calls `commandModel.back()` and restores editor focus.
 
-- [ ] **Step 5: Preserve existing snapshots and record the new child**
+- [x] **Step 5: Preserve existing snapshots and record the new child**
 
 Run all existing model-picker and composer footer snapshots first; they must pass without recording. Then record only the new child:
 
@@ -1388,7 +1388,7 @@ TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test -project 10x.xcodeproj -scheme 10
 
 Open the PNG and verify row typography, selection, border, spacing, and no clipping before accepting it.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add App/Sessions/ModelPickerContent.swift App/Sessions/ModelPickerFlyout.swift App/Sessions/CommandBrowserNativeControlsView.swift Tests/TenXAppTests/ViewSnapshotTests.swift Tests/TenXAppTests/ReferenceImages/command-browser-model-child.png 10x.xcodeproj
@@ -1405,7 +1405,7 @@ git commit -m "feat(composer): reuse native command controls"
 - Modify: `Tests/TenXAppTests/AccessibilityLabelTests.swift`
 - Modify: `Tests/TenXAppTests/ViewSnapshotTests.swift`
 
-- [ ] **Step 1: Write failing accessibility tests**
+- [x] **Step 1: Write failing accessibility tests**
 
 Add natural labels and pluralization:
 
@@ -1427,7 +1427,7 @@ Add natural labels and pluralization:
 }
 ```
 
-- [ ] **Step 2: Add failing panel snapshots**
+- [x] **Step 2: Add failing panel snapshots**
 
 Add deterministic snapshots for:
 
@@ -1437,7 +1437,7 @@ Add deterministic snapshots for:
 - `commandBrowserNoMatchSnapshot()` showing `No commands match “/modxyz”.`
 - `commandBrowserMinimumWindowSnapshot()` inside a 760 × 560 shell.
 
-- [ ] **Step 3: Implement metrics and the three-column panel**
+- [x] **Step 3: Implement metrics and the three-column panel**
 
 Create one root `CommandBrowserView` and private row components in the same file, matching existing repo practice. Use these bounded metrics:
 
@@ -1476,11 +1476,11 @@ VStack(spacing: 0) {
 
 Only the result column scrolls. Source and detail columns stay fixed. Collapse detail before the source rail if available width drops below the three-column minimum. Use `FlyoutRowBackground` for selected/hovered rows and cyan text/accent for the active source; do not add decorative dividers beyond the column separators.
 
-- [ ] **Step 4: Wire pointer and accessibility actions to model intents**
+- [x] **Step 4: Wire pointer and accessibility actions to model intents**
 
 Single click highlights and activates a row through the same model methods as Enter. Hover changes only background. Add VoiceOver adjustable actions for previous/next result, named actions for each source, full untruncated help text, position/count values, queued notes, expanded state for children, and announcements for loading completion, errors, source changes, and removed commands.
 
-- [ ] **Step 5: Record and inspect the panel snapshots**
+- [x] **Step 5: Record and inspect the panel snapshots**
 
 Record only the five new functions with `TEST_RUNNER_RECORD_SNAPSHOTS=1`. Open every PNG. Verify:
 
@@ -1491,11 +1491,11 @@ Record only the five new functions with `TEST_RUNNER_RECORD_SNAPSHOTS=1`. Open e
 - streaming and unavailable states are honest and readable;
 - the panel contains no em dash or marketing copy.
 
-- [ ] **Step 6: Run accessibility and snapshot regressions**
+- [x] **Step 6: Run accessibility and snapshot regressions**
 
 Run all `AccessibilityLabelTests` free functions and the complete app test target. Existing reference images must remain unchanged except the deliberately extracted model child if its new reference was reviewed in Task 8.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add App/Sessions/CommandBrowserView.swift App/Sessions/CommandBrowserAccessibility.swift Tests/TenXAppTests/AccessibilityLabelTests.swift Tests/TenXAppTests/ViewSnapshotTests.swift Tests/TenXAppTests/ReferenceImages 10x.xcodeproj
@@ -1513,7 +1513,7 @@ git commit -m "feat(composer): render the command browser"
 - Modify: `Tests/TenXAppTests/ComposerCommandModelTests.swift`
 - Modify: `Tests/TenXAppTests/ViewSnapshotTests.swift`
 
-- [ ] **Step 1: Add failing key-routing tests**
+- [x] **Step 1: Add failing key-routing tests**
 
 Extract a pure `ComposerCommandKeyRouting` helper in `ComposerView.swift` and test these mappings:
 
@@ -1535,11 +1535,11 @@ Extract a pure `ComposerCommandKeyRouting` helper in `ComposerView.swift` and te
 }
 ```
 
-- [ ] **Step 2: Verify the routing test fails**
+- [x] **Step 2: Verify the routing test fails**
 
 Run only `commandBrowserKeyRoutingCoversTheWholeModalWithoutAPointer()`. Expected: compilation fails because the router is missing.
 
-- [ ] **Step 3: Add command flyout state and draft observation**
+- [x] **Step 3: Add command flyout state and draft observation**
 
 Extend:
 
@@ -1553,13 +1553,13 @@ enum ComposerFlyout: Equatable {
 
 When the composer is available, `onChange(of: draft)` calls `commands.updateDraft(draft)`. A true result sets `flyout = .commands`, which closes Project or Model. Removing the valid leading slash closes only the command browser and leaves the remaining draft untouched. Opening Project or Model dismisses command state. Disabled loading/stopped/failed composers never open it.
 
-- [ ] **Step 4: Route keys before ordinary Return-to-send**
+- [x] **Step 4: Route keys before ordinary Return-to-send**
 
 Replace the Return-only handler with one handler that first checks `flyout == .commands`. Map every approved key to a command-model intent and return `.handled`; return `.ignored` for text editing, paste, Backspace, Left, Right, and modified Return so the `TextEditor` remains the editing surface.
 
 For `.replaceDraft`, assign the canonical text and keep editor focus. For `.executed` or `.dismiss`, close the flyout and restore focus. Enter with close results and no explicit highlight submits the unchanged typed slash through the existing send path; it never silently corrects the typo.
 
-- [ ] **Step 5: Attach the overlay above the composer without relayout**
+- [x] **Step 5: Attach the overlay above the composer without relayout**
 
 Add the browser to `composerCard.overlay(alignment: .topLeading)` and align its bottom edge to the composer's top edge:
 
@@ -1579,7 +1579,7 @@ if flyout == .commands, let commands {
 
 Use the existing `shelfAnimation`; Reduce Motion remains `.identity`. The overlay must not change transcript or composer height.
 
-- [ ] **Step 6: Add integrated snapshots**
+- [x] **Step 6: Add integrated snapshots**
 
 Add and record:
 
@@ -1590,7 +1590,7 @@ Add and record:
 
 Inspect every new image and confirm existing composer, model flyout, attachments, Stop, and growth snapshots remain byte-identical.
 
-- [ ] **Step 7: Run the complete app test target**
+- [x] **Step 7: Run the complete app test target**
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
@@ -1599,7 +1599,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: all tests pass with a nonzero Swift Testing summary.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add App/Sessions/ComposerView.swift App/Sessions/NewSessionView.swift App/Sessions/ActiveSessionView.swift Tests/TenXAppTests/ComposerCommandModelTests.swift Tests/TenXAppTests/ViewSnapshotTests.swift Tests/TenXAppTests/ReferenceImages
@@ -1615,7 +1615,7 @@ git commit -m "feat(composer): open commands from slash input"
 - Create: `docs/superpowers/evidence/2026-08-31-command-browser/README.md`
 - Create: `docs/superpowers/evidence/2026-08-31-command-browser/*.png`
 
-- [ ] **Step 1: Regenerate and prove the generated project is stable**
+- [x] **Step 1: Regenerate and prove the generated project is stable**
 
 ```bash
 bundle exec ruby scripts/generate_xcodeproj.rb
@@ -1625,7 +1625,7 @@ git status --short
 
 Expected: generation succeeds, whitespace check is clean, and only intentional branch files are modified.
 
-- [ ] **Step 2: Run both complete test gates**
+- [x] **Step 2: Run both complete test gates**
 
 ```bash
 swift test --package-path OmpKit
@@ -1635,7 +1635,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
 
 Expected: all OmpKit and TenXApp tests pass. Save the final test counts in the evidence README.
 
-- [ ] **Step 3: Build Release from the feature worktree**
+- [x] **Step 3: Build Release from the feature worktree**
 
 ```bash
 xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release \
@@ -1645,7 +1645,7 @@ xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release \
 
 Expected: `** BUILD SUCCEEDED **` and the app exists at `/private/tmp/tenx-command-browser-release/Build/Products/Release/10x.app`.
 
-- [ ] **Step 4: Launch the Release build using `launching-local-builds`**
+- [x] **Step 4: Launch the Release build using `launching-local-builds`**
 
 Confirm branch and SHA, ensure no other session owns this worktree's app instance, then launch:
 
@@ -1655,7 +1655,7 @@ open -n /private/tmp/tenx-command-browser-release/Build/Products/Release/10x.app
 
 Use Computer Use to confirm the window is visible and responsive before making any handoff claim. Keep the app alive for the user flow; do not kill another session's app.
 
-- [ ] **Step 5: Walk the keyboard-only matrix in the real build**
+- [x] **Step 5: Walk the keyboard-only matrix in the real build**
 
 Use an authenticated OMP setup and realistic command catalog. Without a mouse:
 
@@ -1673,7 +1673,7 @@ Capture screenshots of root, native child, New Session unavailable, streaming qu
 
 Repeat source selection, row activation, scrolling, outside dismissal, and child cancellation with the pointer. Run VoiceOver and Full Keyboard Access through sources, rows, details, child controls, errors, and dismissal. Resize continuously from 760 × 560 to a large window and verify no clipping or transcript relayout. Enable Reduce Motion and verify opening/closing uses no motion.
 
-- [ ] **Step 7: Document evidence and clean the bench**
+- [x] **Step 7: Document evidence and clean the bench**
 
 Write the README with branch/SHA, exact build/test commands and counts, covered matrix, skipped checks with reasons, and screenshot names. Stop the feature app after Tanner finishes testing; remove only this task's `/private/tmp/tenx-command-browser-*` build directories.
 
