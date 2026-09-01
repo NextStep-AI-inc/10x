@@ -12,6 +12,15 @@ Modes (argv[1]):
   unsupported-catalog — get_available_commands reports unsupported
   malformed-catalog-update — valid command discovery followed by malformed replacement data
   prompt-failure   — prompt reports a transport failure
+  slash-local      — slash prompt succeeds locally without invoking an agent
+  slash-agent      — slash prompt invokes an agent in the response
+  slash-legacy-agent — slash prompt relies on lifecycle events for agent detection
+  slash-event-before-response — legacy lifecycle confirmation arrives before the prompt response
+  slash-event-before-local — lifecycle event arrives before a local-only prompt response
+  slash-event-before-failure — lifecycle event arrives before a failed prompt response
+  slash-failure    — slash prompt reports a transport failure
+  slash-prompt-result — slash prompt completes locally through a prompt_result event
+  slash-streaming-record — records streaming behavior for slash prompts
   fast-unsupported — set_fast_mode succeeds with active=false
   fast-rpc-fail    — set_fast_mode returns success=false (transport failure)
   set-model-echo   — set_model returns the requested model id/provider
@@ -19,10 +28,12 @@ Modes (argv[1]):
 import json
 import os
 import signal
+import time
 import sys
 
 mode = sys.argv[1] if len(sys.argv) > 1 else "basic"
 record_path = os.environ.get("OMP_FAKE_RECORD")
+prompt_record_path = os.environ.get("OMP_FAKE_PROMPT_RECORD")
 W = sys.stdout
 
 
@@ -36,6 +47,18 @@ def record(ctype):
         return
     with open(record_path, "a", encoding="utf-8") as handle:
         handle.write(ctype + "\n")
+
+
+def record_prompt(cmd):
+    if not prompt_record_path:
+        return
+    record = {
+        "message": cmd.get("message"),
+        "images": cmd.get("images", []),
+        "streamingBehavior": cmd.get("streamingBehavior"),
+    }
+    with open(prompt_record_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, separators=(",", ":")) + "\n")
 
 
 STATE = {
@@ -137,8 +160,47 @@ for line in sys.stdin:
             emit({"type": "available_commands_update", **RETRY_CATALOG})
         elif mode == "malformed-catalog-update":
             emit({"type": "available_commands_update", "commands": "wrong"})
-    elif ctype == "prompt" and mode == "prompt-failure":
-        emit({"id": cid, "type": "response", "command": "prompt",
-              "success": False, "error": "prompt unavailable"})
+    elif ctype == "prompt":
+        record_prompt(cmd)
+        if mode in {"prompt-failure", "slash-failure"}:
+            emit({"id": cid, "type": "response", "command": "prompt",
+                  "success": False, "error": "prompt unavailable"})
+        elif mode == "slash-local":
+            emit({"id": cid, "type": "response", "command": "prompt",
+                  "success": True, "data": {"agentInvoked": False}})
+        elif mode == "slash-agent":
+            time.sleep(0.2)
+            emit({"id": cid, "type": "response", "command": "prompt",
+                  "success": True, "data": {"agentInvoked": True}})
+        elif mode == "slash-legacy-agent":
+            emit({"id": cid, "type": "response", "command": "prompt",
+                  "success": True, "data": {}})
+            emit({"type": "turn_start"})
+        elif mode == "slash-event-before-response":
+            emit({"type": "turn_start"})
+            time.sleep(0.2)
+            emit({"id": cid, "type": "response", "command": "prompt",
+                  "success": True, "data": {}})
+        elif mode == "slash-event-before-local":
+            emit({"type": "turn_start"})
+            time.sleep(0.2)
+            emit({"id": cid, "type": "response", "command": "prompt",
+                  "success": True, "data": {"agentInvoked": False}})
+        elif mode == "slash-event-before-failure":
+            emit({"type": "turn_start"})
+            time.sleep(0.2)
+            emit({"id": cid, "type": "response", "command": "prompt",
+                  "success": False, "error": "prompt unavailable"})
+        elif mode == "slash-prompt-result":
+            emit({"id": cid, "type": "response", "command": "prompt",
+                  "success": True, "data": {}})
+            emit({"type": "prompt_result"})
+        elif mode == "slash-streaming-record":
+            emit({"id": cid, "type": "response", "command": "prompt",
+                  "success": True, "data": {"agentInvoked": True}})
+            if not str(cmd.get("message", "")).startswith("/"):
+                emit({"type": "agent_start"})
+        else:
+            emit({"id": cid, "type": "response", "command": "prompt", "success": True})
     else:
         emit({"id": cid, "type": "response", "command": ctype or "parse", "success": True})

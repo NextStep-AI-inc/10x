@@ -215,15 +215,172 @@ import Testing
     await manager.closeAll()
 }
 
-private func commandFakeManager(mode: String, readyPIDURL: URL? = nil) -> SessionProcessManager {
+@MainActor
+@Test func localSlashCommandKeepsAttachmentsAndReturnsIdle() async throws {
+    let fixture = try await SlashControllerFixture(mode: "slash-local")
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "/usage"
+    fixture.controller.attachments = [fixture.firstAttachment]
+
+    await fixture.controller.sendSlashCommand("/usage")
+
+    #expect(fixture.controller.draft.isEmpty)
+    #expect(fixture.controller.attachments.map(\.id) == [fixture.firstAttachment.id])
+    #expect(fixture.controller.runtimeState == .idle)
+    #expect(fixture.controller.items.count == 1)
+    guard case .threadStart = fixture.controller.items[0] else {
+        Issue.record("Local slash command should not add transcript prompt items")
+        await fixture.cleanup()
+        return
+    }
+    #expect(try fixture.recordedPrompt().message == "/usage")
+    await fixture.cleanup()
+}
+
+@MainActor
+@Test func agentSlashCommandClearsOnlyAcceptedAttachmentIdentities() async throws {
+    let fixture = try await SlashControllerFixture(mode: "slash-agent")
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "/skill:brainstorming plan it"
+    fixture.controller.attachments = [fixture.firstAttachment]
+    let send = Task {
+        await fixture.controller.sendSlashCommand("/skill:brainstorming plan it")
+    }
+    #expect(await fixture.waitUntilPromptArrives())
+    fixture.controller.attachments.append(fixture.secondAttachment)
+    await send.value
+
+    #expect(fixture.controller.attachments.map(\.id) == [fixture.secondAttachment.id])
+    let prompt = try fixture.recordedPrompt()
+    #expect(prompt.message == "/skill:brainstorming plan it")
+    #expect(prompt.images.count == 1)
+    let image = try #require(prompt.images.first)
+    #expect(image.type == "image")
+    #expect(image.mimeType == fixture.firstAttachment.mimeType)
+    #expect(Data(base64Encoded: image.data) == fixture.firstAttachment.data)
+    await fixture.cleanup()
+}
+
+@MainActor
+@Test func legacyAgentLifecycleClearsPendingAttachments() async throws {
+    let fixture = try await SlashControllerFixture(mode: "slash-legacy-agent")
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "/compact"
+    fixture.controller.attachments = [fixture.firstAttachment]
+
+    await fixture.controller.sendSlashCommand("/compact")
+
+    #expect(await commandEventually { fixture.controller.attachments.isEmpty })
+    await fixture.cleanup()
+}
+
+@MainActor
+@Test func legacyAgentLifecycleCanConfirmBeforePromptResponseResumes() async throws {
+    let fixture = try await SlashControllerFixture(mode: "slash-event-before-response")
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "/compact"
+    fixture.controller.attachments = [fixture.firstAttachment]
+
+    await fixture.controller.sendSlashCommand("/compact")
+
+    #expect(fixture.controller.attachments.isEmpty)
+    await fixture.cleanup()
+}
+
+@MainActor
+@Test func lifecycleBeforeLocalSlashResponseDoesNotClearAttachments() async throws {
+    let fixture = try await SlashControllerFixture(mode: "slash-event-before-local")
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "/usage"
+    fixture.controller.attachments = [fixture.firstAttachment]
+
+    await fixture.controller.sendSlashCommand("/usage")
+
+    #expect(fixture.controller.draft.isEmpty)
+    #expect(fixture.controller.attachments.map(\.id) == [fixture.firstAttachment.id])
+    #expect(fixture.controller.runtimeState == .idle)
+    await fixture.cleanup()
+}
+
+@MainActor
+@Test func lifecycleBeforeSlashFailureRestoresDraftAndAttachments() async throws {
+    let fixture = try await SlashControllerFixture(mode: "slash-event-before-failure")
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "/compact"
+    fixture.controller.attachments = [fixture.firstAttachment]
+
+    await fixture.controller.sendSlashCommand("/compact")
+
+    #expect(fixture.controller.draft == "/compact")
+    #expect(fixture.controller.attachments.map(\.id) == [fixture.firstAttachment.id])
+    await fixture.cleanup()
+}
+
+@MainActor
+@Test func slashCommandDuringStreamingAlwaysUsesFollowUp() async throws {
+    let fixture = try await SlashControllerFixture(mode: "slash-streaming-record")
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "start streaming"
+    await fixture.controller.sendPrompt()
+    #expect(await commandEventually { fixture.controller.runtimeState == .streaming })
+    fixture.controller.selectStreamingBehavior(.steer)
+    fixture.controller.draft = "/retry"
+
+    await fixture.controller.sendSlashCommand("/retry")
+
+    #expect(try fixture.recordedPrompt(at: 1).streamingBehavior == "followUp")
+    #expect(fixture.controller.streamingBehavior == .steer)
+    await fixture.cleanup()
+}
+
+@MainActor
+@Test func slashTransportFailureRestoresDraftAndAttachments() async throws {
+    let fixture = try await SlashControllerFixture(mode: "slash-failure")
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "/compact"
+    fixture.controller.attachments = [fixture.firstAttachment]
+
+    await fixture.controller.sendSlashCommand("/compact")
+
+    #expect(fixture.controller.draft == "/compact")
+    #expect(fixture.controller.attachments.map(\.id) == [fixture.firstAttachment.id])
+    await fixture.cleanup()
+}
+
+@MainActor
+@Test func promptResultDropsPendingSlashWithoutClearingAttachments() async throws {
+    let fixture = try await SlashControllerFixture(mode: "slash-prompt-result")
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "/usage"
+    fixture.controller.attachments = [fixture.firstAttachment]
+
+    await fixture.controller.sendSlashCommand("/usage")
+
+    #expect(await commandEventually { fixture.controller.runtimeState == .idle })
+    #expect(fixture.controller.attachments.map(\.id) == [fixture.firstAttachment.id])
+    await fixture.cleanup()
+}
+
+private func commandFakeManager(
+    mode: String,
+    readyPIDURL: URL? = nil,
+    promptRecordURL: URL? = nil
+) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
         fake.executable = "/usr/bin/python3"
         fake.extraArguments = [commandFakeServerURL().path, mode]
         fake.rawArgv = true
         fake.cwd = nil
+        var environment: [String: String] = [:]
         if let readyPIDURL {
-            fake.environment = ["OMP_FAKE_READY_PID": readyPIDURL.path]
+            environment["OMP_FAKE_READY_PID"] = readyPIDURL.path
+        }
+        if let promptRecordURL {
+            environment["OMP_FAKE_PROMPT_RECORD"] = promptRecordURL.path
+        }
+        if !environment.isEmpty {
+            fake.environment = environment
         }
         return RpcClient(configuration: fake)
     })
@@ -248,6 +405,76 @@ private func commandRemove(_ url: URL) {
 
 private func commandEvent(_ json: String) throws -> RpcFrame {
     try RpcFrame.decode(line: Data(json.utf8))
+}
+
+@MainActor
+private final class SlashControllerFixture {
+    let controller: SessionController
+    let manager: SessionProcessManager
+    let project: URL
+    let promptRecordURL: URL
+    let firstAttachment = ComposerAttachment(
+        id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+        name: "one.png",
+        data: Data([1, 2, 3]),
+        mimeType: "image/png",
+        pixelWidth: 1,
+        pixelHeight: 1)
+    let secondAttachment = ComposerAttachment(
+        id: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+        name: "two.png",
+        data: Data([4, 5, 6]),
+        mimeType: "image/png",
+        pixelWidth: 1,
+        pixelHeight: 1)
+    private var didCleanUp = false
+
+    init(mode: String) async throws {
+        let directory = try commandTemporaryDirectory()
+        project = directory
+        promptRecordURL = directory.appendingPathComponent("prompts.jsonl")
+        manager = commandFakeManager(mode: mode, promptRecordURL: promptRecordURL)
+        controller = SessionController(processManager: manager)
+        await controller.openNew(projectURL: directory)
+    }
+
+    func cleanup() async {
+        guard !didCleanUp else { return }
+        didCleanUp = true
+        await manager.closeAll()
+        commandRemove(project)
+    }
+
+    func cleanupAfterFailure() {
+        guard !didCleanUp else { return }
+        Task { await manager.closeAll() }
+        commandRemove(project)
+    }
+
+    func waitUntilPromptArrives() async -> Bool {
+        await commandEventually({
+            (try? String(contentsOf: promptRecordURL, encoding: .utf8).isEmpty) == false
+        }, timeout: .seconds(5))
+    }
+
+    func recordedPrompt(at index: Int = 0) throws -> RecordedPrompt {
+        let lines = try String(contentsOf: promptRecordURL, encoding: .utf8)
+            .split(separator: "\n")
+        let line = try #require(lines.indices.contains(index) ? String(lines[index]) : nil)
+        return try JSONDecoder().decode(RecordedPrompt.self, from: Data(line.utf8))
+    }
+}
+
+private struct RecordedPrompt: Decodable {
+    let message: String
+    let images: [RecordedPromptImage]
+    let streamingBehavior: String?
+}
+
+private struct RecordedPromptImage: Decodable {
+    let type: String
+    let data: String
+    let mimeType: String
 }
 
 @MainActor

@@ -7,7 +7,7 @@ import UserNotifications
 
 @MainActor
 @Observable
-final class SessionController: ComposerSessionControlling, ProviderAccountSession {
+final class SessionController: ComposerSessionControlling, ComposerCommandSession, ProviderAccountSession {
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
     private(set) var items: [TranscriptItem] = []
     private(set) var runtimeState: SessionRuntimeState = .loading {
@@ -86,9 +86,22 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     private var accountChannelContinuation: AsyncStream<RpcFrame>.Continuation?
     @ObservationIgnored private var isSendInFlight = false
     @ObservationIgnored private weak var attachedComposerControls: ComposerControlsModel?
+    @ObservationIgnored private var pendingSlashAttachments: PendingSlashAttachments?
     private static let transcriptLog = OSLog(
         subsystem: Bundle.main.bundleIdentifier ?? "TenXApp",
         category: .pointsOfInterest)
+
+    private enum AttachmentDisposition {
+        case clearImmediately
+        case waitForAgent
+    }
+
+    private struct PendingSlashAttachments {
+        let ids: Set<ComposerAttachment.ID>
+        let generation: UInt64
+        var lifecycleObserved: Bool
+        var awaitingResponse: Bool
+    }
 
     private struct PipelineContext {
         let generation: UInt64
@@ -371,22 +384,42 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     }
 
     func sendPrompt() async {
-        let hasContent = !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        await send(
+            text: draft,
+            behavior: runtimeState == .streaming ? streamingBehavior : nil,
+            attachmentDisposition: .clearImmediately,
+            failureFunction: "sendPrompt")
+    }
+
+    func sendSlashCommand(_ text: String) async {
+        await send(
+            text: text,
+            behavior: runtimeState == .streaming ? .followUp : nil,
+            attachmentDisposition: .waitForAgent,
+            failureFunction: "sendSlashCommand")
+    }
+
+    private func send(
+        text: String,
+        behavior requestedBehavior: StreamingBehavior?,
+        attachmentDisposition: AttachmentDisposition,
+        failureFunction: String
+    ) async {
+        let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !attachments.isEmpty
         guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return }
-        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return }
-        defer { accountCoordinator?.endManagedTurn(sessionID: id) }
-
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {
-            guard let streamingBehavior else { return }
-            behavior = streamingBehavior
+            guard let requestedBehavior else { return }
+            behavior = requestedBehavior
         } else {
             behavior = nil
         }
+        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return }
+        defer { accountCoordinator?.endManagedTurn(sessionID: id) }
 
-        let message = draft
         let staged = attachments
+        let stagedIDs = Set(staged.map(\.id))
         let context = currentPipelineContext()
         isSendInFlight = true
         defer { isSendInFlight = false }
@@ -396,31 +429,88 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         // processor is moved first so a snapshot already in flight cannot
         // publish the old idle state back over this one.
         draft = ""
-        attachments = []
+        if attachmentDisposition == .clearImmediately {
+            attachments = []
+        } else {
+            pendingSlashAttachments = PendingSlashAttachments(
+                ids: stagedIDs,
+                generation: context.generation,
+                lifecycleObserved: false,
+                awaitingResponse: true)
+        }
         runtimeState = .streaming
         reportActivity()
         await context.processor?.setRuntimeState(.streaming)
         guard isCurrent(context) else { return }
 
         do {
-            _ = try await handle.client.send(.prompt(
-                message: message,
+            let response = try await handle.client.send(.prompt(
+                message: text,
                 images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
             guard isCurrent(context) else { return }
+            await applyAttachmentDisposition(
+                attachmentDisposition,
+                response: response,
+                stagedIDs: stagedIDs,
+                context: context)
             startTitleGenerationIfNeeded(
-                prompt: message,
+                prompt: text,
                 behavior: behavior,
                 handle: handle,
                 context: context)
         } catch {
             // Nothing reached omp, so the text is still the user's to send.
-            if isCurrent(context), draft.isEmpty {
-                draft = message
-                attachments = staged
+            if isCurrent(context) {
+                if attachmentDisposition == .waitForAgent {
+                    pendingSlashAttachments = nil
+                }
+                guard draft.isEmpty else {
+                    fail(error, function: failureFunction, context: context)
+                    return
+                }
+                draft = text
+                if attachmentDisposition == .clearImmediately {
+                    attachments = staged
+                }
             }
-            fail(error, function: "sendPrompt", context: context)
+            fail(error, function: failureFunction, context: context)
         }
+    }
+
+    private func applyAttachmentDisposition(
+        _ disposition: AttachmentDisposition,
+        response: RpcResponse,
+        stagedIDs: Set<ComposerAttachment.ID>,
+        context: PipelineContext
+    ) async {
+        guard disposition == .waitForAgent else { return }
+        switch response.data?["agentInvoked"]?.boolValue {
+        case true:
+            removeAttachments(withIDs: stagedIDs)
+            pendingSlashAttachments = nil
+        case false:
+            pendingSlashAttachments = nil
+            runtimeState = .idle
+            reportActivity()
+            await context.processor?.setRuntimeState(.idle)
+        case nil:
+            guard var pending = pendingSlashAttachments,
+                  pending.generation == context.generation
+            else { return }
+            if pending.lifecycleObserved {
+                removeAttachments(withIDs: pending.ids)
+                pendingSlashAttachments = nil
+            } else {
+                pending.awaitingResponse = false
+                pendingSlashAttachments = pending
+            }
+        }
+    }
+
+    private func removeAttachments(withIDs ids: Set<ComposerAttachment.ID>) {
+        guard !ids.isEmpty else { return }
+        attachments.removeAll { ids.contains($0.id) }
     }
 
     private func startTitleGenerationIfNeeded(
@@ -826,6 +916,7 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         extensionTimeoutTasks.removeAll()
         extensionRouter = ExtensionUIRouter()
         extensionSheetRequest = nil
+        pendingSlashAttachments = nil
         // Ends the account channel's frame source — its listener loop sees
         // the stream finish and calls `handleStreamEnded()`, failing
         // anything in flight with `.unavailable` (the coordinator's signal
@@ -1061,6 +1152,19 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
             } catch {
                 publishCommandCatalog(.unavailable)
             }
+        case "agent_start", "turn_start":
+            guard var pendingSlashAttachments,
+                  pendingSlashAttachments.generation == pipelineGeneration
+            else { break }
+            if pendingSlashAttachments.awaitingResponse {
+                pendingSlashAttachments.lifecycleObserved = true
+                self.pendingSlashAttachments = pendingSlashAttachments
+            } else {
+                removeAttachments(withIDs: pendingSlashAttachments.ids)
+                self.pendingSlashAttachments = nil
+            }
+        case "prompt_result":
+            pendingSlashAttachments = nil
         default:
             break
         }
