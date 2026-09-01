@@ -39,7 +39,7 @@ import Testing
 
     await controller.openNew(projectURL: project)
     let staleFrame = try commandEvent(#"{"type":"available_commands_update","commands":[{"name":"stale","source":"builtin"}]}"#)
-    let staleConsumer = try #require(controller.testingCapturedAccountEventConsumer(staleFrame))
+    let staleConsumer = try #require(controller.testingCapturedControlConsumer(staleFrame))
     await controller.restart()
     await staleConsumer()
 

@@ -334,7 +334,7 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     let manager = fakeManager(mode: "basic")
     let controller = SessionController(processManager: manager)
     await controller.openExisting(metadata(path: "/tmp/stale-account-event.jsonl", cwd: "/tmp"))
-    let consumeStaleEvent = try #require(controller.testingCapturedAccountEventConsumer(
+    let consumeStaleEvent = try #require(controller.testingCapturedControlConsumer(
         .providerAccountChanged(ProviderAccountChangedEvent(
             providerID: "openai-codex",
             accountRef: "acct_stale",
@@ -346,6 +346,24 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
 
     #expect(controller.currentProviderAccountRef == nil)
     #expect(controller.providerAccountSequence == 0)
+    await manager.closeAll()
+}
+
+@MainActor @Test func accountControlFromActivePipelineUpdatesController() async throws {
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(metadata(path: "/tmp/active-account-event.jsonl", cwd: "/tmp"))
+    let applyAccountChange = try #require(controller.testingCapturedControlConsumer(
+        .providerAccountChanged(ProviderAccountChangedEvent(
+            providerID: "test",
+            accountRef: "acct_active",
+            reason: .manual,
+            sequence: 4))))
+
+    await applyAccountChange()
+
+    #expect(controller.currentProviderAccountRef == "acct_active")
+    #expect(controller.providerAccountSequence == 4)
     await manager.closeAll()
 }
 

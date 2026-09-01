@@ -792,12 +792,15 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         client: RpcClient,
         eventFence: RpcEventConsumptionFence
     ) {
-        guard let context = currentPipelineContext(for: processor) else { return }
+        guard currentPipelineContext(for: processor) != nil else { return }
         attachAccountChannel(client: client)
-        eventTask = Task { [weak self, processor, events = client.events, eventFence] in
+        eventTask = Task.detached { [weak self, processor, events = client.events, eventFence] in
             for await frame in events {
                 guard !Task.isCancelled else { break }
-                await self?.consume(frame, processor: processor, context: context)
+                await processor.consume(frame)
+                if case .event("available_commands_update", _) = frame {
+                    await self?.consumeCommandCatalogUpdate(frame, processor: processor)
+                }
                 await eventFence.didConsumeEvent()
             }
             await eventFence.finish()
@@ -862,22 +865,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         accountChannelContinuation?.yield(.extensionUIRequest(request))
     }
 
-    private func consume(
+    private func consumeCommandCatalogUpdate(
         _ frame: RpcFrame,
-        processor: TranscriptEventProcessor,
-        context: PipelineContext
-    ) async {
+        processor: TranscriptEventProcessor
+    ) {
+        guard let context = currentPipelineContext(for: processor) else { return }
         guard isCurrent(context) else { return }
-        if case .event("available_commands_update", _) = frame {
-            applyEventMetadata(frame)
-        }
-        await processor.consume(frame)
-        guard isCurrent(context) else { return }
-        if case .providerAccountChanged(let event) = frame {
-            handleProviderAccountChange(event)
-        }
+        applyEventMetadata(frame)
     }
-
     private func stopEventPipeline() {
         let detachedProcessor = processor
         let hadActivePipeline = handle != nil || detachedProcessor != nil || openingTask != nil
@@ -995,6 +990,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             return
         }
 
+        if case .providerAccountChanged(let event) = frame {
+            guard isCurrent(context) else { return }
+            handleProviderAccountChange(event)
+            return
+        }
+
         guard isCurrent(context) else { return }
         applyEventMetadata(frame)
         if isReconciliationBoundary(frame) {
@@ -1048,14 +1049,18 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
 #if DEBUG
-    func testingCapturedAccountEventConsumer(
+    func testingCapturedControlConsumer(
         _ frame: RpcFrame
     ) -> (@MainActor () async -> Void)? {
         guard let processor,
-              let context = currentPipelineContext(for: processor)
+              currentPipelineContext(for: processor) != nil
         else { return nil }
         return { [weak self, processor] in
-            await self?.consume(frame, processor: processor, context: context)
+            if case .event("available_commands_update", _) = frame {
+                self?.consumeCommandCatalogUpdate(frame, processor: processor)
+                return
+            }
+            await self?.handleControl(frame, processor: processor)
         }
     }
 

@@ -1,13 +1,47 @@
 import AppKit
 import SwiftUI
 import Testing
+@testable import TenXApp
 
 final class SnapshotToken: NSObject {}
+
+/// Which appearance a snapshot is rendered in. Pinned explicitly rather than
+/// inherited, so a reference recorded on a machine set to dark mode matches one
+/// recorded on a machine set to light.
+enum SnapshotAppearance {
+    case light
+    case dark
+
+    var appearanceName: NSAppearance.Name {
+        switch self {
+        case .light: .aqua
+        case .dark: .darkAqua
+        }
+    }
+
+    var colorScheme: ColorScheme {
+        switch self {
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+
+    /// The ground the hosting view paints behind the content. Light keeps the
+    /// literal white the existing references were recorded against; dark uses
+    /// the canvas token so the backdrop matches what the app actually draws.
+    var backdrop: Color {
+        switch self {
+        case .light: Color.white
+        case .dark: TenXPalette.color(TenXPalette.canvasHex)
+        }
+    }
+}
 
 @MainActor
 func assertSnapshot<Content: View>(
     _ content: Content,
     name: String,
+    appearance: SnapshotAppearance = .light,
     size: CGSize = CGSize(width: 900, height: 600),
     sourceFile: String = #filePath
 ) throws {
@@ -17,28 +51,38 @@ func assertSnapshot<Content: View>(
     // usually draws it correctly; when the miss is sticky, an identical view of
     // a different static type always does. Everything past the first attempt
     // runs only on a mismatch, and a real regression differs on all of them.
-    let sameColorScheme = content.environment(\.colorScheme, .light)
+    let sameColorScheme = content.environment(\.colorScheme, appearance.colorScheme)
     let attempts: [() -> Data?] = [
-        { renderSnapshot(content, size: size) },
-        { renderSnapshot(content, size: size) },
-        { renderSnapshot(sameColorScheme, size: size) },
-        { renderSnapshot(sameColorScheme.environment(\.colorScheme, .light), size: size) },
+        { renderSnapshot(content, size: size, appearance: appearance) },
+        { renderSnapshot(content, size: size, appearance: appearance) },
+        { renderSnapshot(sameColorScheme, size: size, appearance: appearance) },
+        {
+            renderSnapshot(
+                sameColorScheme.environment(\.colorScheme, appearance.colorScheme),
+                size: size,
+                appearance: appearance)
+        },
     ]
     try captureAndCompare(attempts: attempts, name: name, sourceFile: sourceFile)
 }
 
 @MainActor
-private func renderSnapshot<Content: View>(_ content: Content, size: CGSize) -> Data? {
-    renderSnapshotBitmap(content, size: size)?
+private func renderSnapshot<Content: View>(
+    _ content: Content,
+    size: CGSize,
+    appearance: SnapshotAppearance
+) -> Data? {
+    renderSnapshotBitmap(content, size: size, appearance: appearance)?
         .representation(using: .png, properties: [:])
 }
 
 @MainActor
 func renderSnapshotBitmap<Content: View>(
     _ content: Content,
-    size: CGSize
+    size: CGSize,
+    appearance: SnapshotAppearance = .light
 ) -> NSBitmapImageRep? {
-    let host = makeSnapshotHost(content, size: size)
+    let host = makeSnapshotHost(content, size: size, appearance: appearance)
     host.layoutSubtreeIfNeeded()
     host.displayIfNeeded()
     guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
@@ -51,14 +95,17 @@ func renderSnapshotBitmap<Content: View>(
 @MainActor
 private func makeSnapshotHost<Content: View>(
     _ content: Content,
-    size: CGSize
+    size: CGSize,
+    appearance: SnapshotAppearance
 ) -> NSHostingView<some View> {
     let root = content
         .frame(width: size.width, height: size.height)
-        .background(Color.white)
-        .environment(\.colorScheme, .light)
+        .background(appearance.backdrop)
+        .environment(\.colorScheme, appearance.colorScheme)
     let host = NSHostingView(rootView: root)
-    host.appearance = NSAppearance(named: .aqua)
+    // Set before the backdrop resolves: the palette's dynamic colors read the
+    // host's appearance, not the process's.
+    host.appearance = NSAppearance(named: appearance.appearanceName)
     host.frame = CGRect(origin: .zero, size: size)
     return host
 }

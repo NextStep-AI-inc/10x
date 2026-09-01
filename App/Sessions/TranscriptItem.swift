@@ -27,4 +27,23 @@ enum TranscriptItem: Identifiable, Equatable, Sendable {
             return state.id
         }
     }
+
+    var viewID: String {
+        switch self {
+        case .threadStart(let id, _):
+            "thread-start:\(id)"
+        case .message(let message):
+            "message:\(message.id)"
+        case .annotation(let annotation):
+            "annotation:\(annotation.id)"
+        case .subagent(let presentation):
+            "subagent:\(presentation.id)"
+        case .notice(let id, _, _):
+            "notice:\(id)"
+        case .tool(let presentation):
+            "tool:\(presentation.id)"
+        case .extensionUI(let state):
+            "extension-ui:\(state.id)"
+        }
+    }
 }

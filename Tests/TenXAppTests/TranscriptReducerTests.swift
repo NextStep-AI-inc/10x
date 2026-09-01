@@ -187,6 +187,135 @@ import Testing
     #expect(!message.isFinal)
 }
 
+@Test func liveAssistantToolSegmentsStayInSourceOrderAndUpdateInPlace() throws {
+    var reducer = TranscriptReducer()
+    let assistant = """
+        {"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Checking."},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"/tmp/project/App.swift"}},{"type":"text","text":"Found it."}]}
+        """
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":\(assistant)}
+        """))
+
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.visibleText) == ["Checking.", "Found it."])
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Checking again."},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"/tmp/project/App.swift","lineEnd":12}},{"type":"text","text":"Found the updated file."}]}}
+        """))
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"read-1","toolName":"read","result":{"content":[{"type":"text","text":"file contents"}]},"isError":false}
+        """))
+
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+    let tools = reducer.items.compactMap { item -> ToolPresentation? in
+        guard case .tool(let tool) = item else { return nil }
+        return tool
+    }
+    #expect(tools.count == 1)
+    #expect(tools[0].phase == .complete)
+    #expect(tools[0].result != nil)
+}
+
+@Test func reconciliationKeepsPendingInlineToolBetweenAssistantSegments() throws {
+    var reducer = TranscriptReducer()
+    let assistant = """
+        {"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Checking."},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"/tmp/project/App.swift"}},{"type":"text","text":"Found it."}]}
+        """
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_end","message":\(assistant)}
+        """))
+    let expectedItems = reducer.items
+
+    _ = reducer.reconcile(history: TranscriptHistory(items: []))
+
+    #expect(reducer.items == expectedItems)
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+}
+
+@Test func duplicateInlineToolIDsDoNotAppendOrCrashOnFullSnapshotReplacement() throws {
+    var reducer = TranscriptReducer()
+    let assistant = """
+        {"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Before"},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"App.swift"}},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"App.swift"}},{"type":"text","text":"After"}]}
+        """
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":\(assistant)}
+        """))
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":\(assistant)}
+        """))
+
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+    #expect(reducer.items.filter { if case .tool = $0 { return true }; return false }.count == 1)
+    #expect(Set(reducer.items.map(\.id)).count == reducer.items.count)
+}
+
+@Test func toolIDCollisionDoesNotReplaceAnExistingMessage() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"shared","role":"assistant","content":[{"type":"text","text":"Keep this message"}]}}
+        """))
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"assistant-2","role":"assistant","content":[{"type":"text","text":"Read it"},{"type":"toolCall","id":"shared","name":"read","arguments":{"path":"App.swift"}}]}}
+        """))
+    _ = reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"shared","toolName":"read","result":{"content":[{"type":"text","text":"file contents"}]},"isError":false}
+        """))
+
+    let sharedMessages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item, message.id == "shared" else { return nil }
+        return message
+    }
+    let sharedTools = reducer.items.compactMap { item -> ToolPresentation? in
+        guard case .tool(let tool) = item, tool.id == "shared" else { return nil }
+        return tool
+    }
+    #expect(sharedMessages.map(\.visibleText) == ["Keep this message"])
+    #expect(sharedTools.count == 1)
+    #expect(sharedTools[0].phase == .complete)
+
+    let sharedItems = reducer.items.filter { $0.id == "shared" }
+    #expect(sharedItems.map(\.id) == ["shared", "shared"])
+    #expect(Set(sharedItems.map(\.viewID)).count == 2)
+}
+
+@Test func toolPersistenceDoesNotResolveAMessageWithTheSameID() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"shared","role":"assistant","content":[{"type":"text","text":"Keep this message"}]}}
+        """))
+    _ = reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"shared","toolName":"read","result":{"content":[{"type":"text","text":"file contents"}]},"isError":false}
+        """))
+
+    _ = reducer.reconcile(history: TranscriptHistory(items: [
+        .tool(ToolPresentation(
+            id: "shared",
+            name: "read",
+            arguments: .object([:]),
+            result: try message("""
+                {"role":"toolResult","toolCallId":"shared","content":[{"type":"text","text":"file contents"}]}
+                """),
+            phase: .complete,
+            startDate: .distantPast,
+            endDate: .distantPast)),
+    ]))
+
+    let sharedMessages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item, message.id == "shared" else { return nil }
+        return message
+    }
+    #expect(sharedMessages.map(\.visibleText) == ["Keep this message"])
+}
+
 @Test func messageEndReplacesAndFinalizesTheInflightSnapshot() throws {
     var reducer = TranscriptReducer()
 

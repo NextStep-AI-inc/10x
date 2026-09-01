@@ -29,6 +29,7 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
     let timestamp: Date?
     let attribution: TranscriptResponseAttribution
     let isFinal: Bool
+    let showsResponseMetadata: Bool
     let stopReason: String?
     let document: ContentDocument
 
@@ -41,7 +42,8 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         raw: JSONValue,
         timestamp: Date? = nil,
         attribution: TranscriptResponseAttribution = .none,
-        isFinal: Bool
+        isFinal: Bool,
+        showsResponseMetadata: Bool = true
     ) {
         self.id = id
         let rawRole = raw["role"]?.stringValue
@@ -59,6 +61,7 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             agent: attribution.agent,
             modelRole: attribution.modelRole)
         self.isFinal = isFinal
+        self.showsResponseMetadata = showsResponseMetadata
         stopReason = raw["stopReason"]?.stringValue
         let normalizedDocument = Self.contentDocument(from: raw)
         let displayText: String

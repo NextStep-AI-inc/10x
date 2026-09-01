@@ -215,7 +215,7 @@ struct ProviderUsageWheelView: View {
                     Text(countText)
                         .font(TenXTypography.mono(size: 9, weight: .semibold))
                         .foregroundStyle(activeCount > 0
-                            ? Color.white
+                            ? TenXPalette.onEmphasis
                             : TenXPalette.color(TenXPalette.mutedTextHex))
                 }
             }

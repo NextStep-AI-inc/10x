@@ -214,7 +214,7 @@ struct ModelPickerFlyout: View {
             Text(level)
                 .font(TenXTypography.body(size: 11))
                 .foregroundStyle(isSelected
-                    ? Color.white
+                    ? TenXPalette.onEmphasis
                     : TenXPalette.color(TenXPalette.mutedTextHex))
                 .padding(.horizontal, 7)
                 .padding(.vertical, 2)

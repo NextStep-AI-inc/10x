@@ -27,13 +27,24 @@ import Testing
             message: try historyJSON(#"{"role":"user","content":[{"type":"text","text":"Update App.swift"}],"timestamp":1787601603000}"#)),
         .message(
             base: historyBase("assistant-1", "user-1", 4),
-            message: try historyJSON(#"{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","content":[{"type":"text","text":"I will update it."},{"type":"toolCall","id":"tool-1","name":"edit","arguments":{"path":"/tmp/project/App.swift"}}],"timestamp":1787601604000,"stopReason":"toolUse"}"#)),
+            message: try historyJSON(#"{"role":"assistant","provider":"openai-codex","model":"gpt-5.6-sol","content":[{"type":"text","text":"I will update it."},{"type":"toolCall","id":"tool-1","name":"edit","arguments":{"path":"/tmp/project/App.swift"}},{"type":"text","text":"The update is complete."}],"timestamp":1787601604000,"stopReason":"toolUse"}"#)),
         .message(
             base: historyBase("result-1", "assistant-1", 5),
             message: try historyJSON(#"{"role":"toolResult","toolCallId":"tool-1","toolName":"edit","content":[{"type":"text","text":"done"}],"timestamp":1787601605000,"isError":false}"#)),
     ]
 
     let history = TranscriptHistoryMapper.map(header: header, path: entries)
+
+    #expect(history.items.map(\.id) == [
+        "thread-start-session-1",
+        "user-1",
+        "assistant-1",
+        "tool-1",
+        "assistant-1-segment-1",
+    ])
+    guard history.items.count == 5 else {
+        return
+    }
 
     guard case .threadStart(_, let startedAt) = history.items[0] else {
         Issue.record("expected thread start"); return
@@ -54,6 +65,7 @@ import Testing
     #expect(assistant.attribution.provider == "openai-codex")
     #expect(assistant.attribution.mode == "plan")
     #expect(assistant.visibleText == "I will update it.")
+    #expect(assistant.showsResponseMetadata)
 
     guard case .tool(let tool) = history.items[3] else {
         Issue.record("expected paired tool"); return
@@ -62,6 +74,12 @@ import Testing
     #expect(tool.arguments["path"]?.stringValue == "/tmp/project/App.swift")
     #expect(tool.phase == .complete)
     #expect(history.items.filter { if case .tool = $0 { true } else { false } }.count == 1)
+
+    guard case .message(let continuation) = history.items[4] else {
+        Issue.record("expected assistant continuation"); return
+    }
+    #expect(continuation.visibleText == "The update is complete.")
+    #expect(!continuation.showsResponseMetadata)
 }
 
 @Test func historyMapperAnnotatesChangesAfterConversationStarts() throws {
