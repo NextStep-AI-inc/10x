@@ -642,14 +642,10 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     }
 
     private func startEventPipeline(processor: TranscriptEventProcessor, client: RpcClient) {
-        guard let context = currentPipelineContext(for: processor) else { return }
+        guard currentPipelineContext(for: processor) != nil else { return }
         attachAccountChannel(client: client)
-        eventTask = Task { [weak self, processor, events = client.events] in
-            for await frame in events {
-                guard !Task.isCancelled else { break }
-                await self?.consume(frame, processor: processor, context: context)
-            }
-            await processor.stop()
+        eventTask = Task { [processor, events = client.events] in
+            await processor.run(events: events)
         }
         snapshotTask = Task { [weak self, processor] in
             for await snapshot in processor.snapshots {
@@ -708,19 +704,6 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
         guard request.payload["title"]?.stringValue == ExtensionUIRouter.providerAccountChannelTitle
         else { return }
         accountChannelContinuation?.yield(.extensionUIRequest(request))
-    }
-
-    private func consume(
-        _ frame: RpcFrame,
-        processor: TranscriptEventProcessor,
-        context: PipelineContext
-    ) async {
-        guard isCurrent(context) else { return }
-        await processor.consume(frame)
-        guard isCurrent(context) else { return }
-        if case .providerAccountChanged(let event) = frame {
-            handleProviderAccountChange(event)
-        }
     }
 
     private func stopEventPipeline() {
@@ -831,6 +814,12 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
             return
         }
 
+        if case .providerAccountChanged(let event) = frame {
+            guard isCurrent(context) else { return }
+            handleProviderAccountChange(event)
+            return
+        }
+
         guard isCurrent(context) else { return }
         applyEventMetadata(frame)
         if isReconciliationBoundary(frame) {
@@ -884,14 +873,14 @@ final class SessionController: ComposerSessionControlling, ProviderAccountSessio
     }
 
 #if DEBUG
-    func testingCapturedAccountEventConsumer(
+    func testingCapturedControlConsumer(
         _ frame: RpcFrame
     ) -> (@MainActor () async -> Void)? {
         guard let processor,
-              let context = currentPipelineContext(for: processor)
+              currentPipelineContext(for: processor) != nil
         else { return nil }
         return { [weak self, processor] in
-            await self?.consume(frame, processor: processor, context: context)
+            await self?.handleControl(frame, processor: processor)
         }
     }
 
