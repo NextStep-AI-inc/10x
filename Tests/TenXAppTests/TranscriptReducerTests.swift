@@ -762,6 +762,30 @@ private func message(_ json: String) throws -> JSONValue {
     #expect(messages.first?.isFinal == true)
 }
 
+@Test func aDisplayedSkillMessageSurvivesHistoryBeforePersistenceCatchesUp() {
+    var reducer = TranscriptReducer()
+    let skill = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string("# Skill\n\nFollow these instructions."),
+    ])
+
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": skill])))
+    _ = reducer.reconcile(history: TranscriptHistory(items: []))
+
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.id) == ["skill-1"])
+    #expect(messages.first?.visibleText == "# Skill\n\nFollow these instructions.")
+    #expect(messages.first?.isFinal == true)
+}
+
 @Test func aLateSkillSnapshotDoesNotReplaceTheStreamingAssistant() {
     var reducer = TranscriptReducer()
     let skillStart = JSONValue.object([

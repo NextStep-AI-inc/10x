@@ -1,7 +1,7 @@
 # Renderer saturation audit
 
-Date: 2026-09-01  
-Baseline: `origin/main` at `d52f6dc`  
+Date: 2026-09-01
+Baseline: `origin/main` at `d52f6dc`
 Scope: SwiftUI surfaces that render data whose size or update rate is controlled by sessions, tools, providers, subprocesses, or stored user content.
 
 ## Incident evidence
@@ -89,4 +89,3 @@ The fix is not considered verified until a fresh Release artifact demonstrates a
 3. Streaming output remains interactive while the skill block is on screen.
 4. CPU falls back toward idle after publications stop.
 5. The main-thread sample no longer spends the entire interval in recursive transcript layout.
-

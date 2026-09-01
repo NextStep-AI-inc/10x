@@ -572,6 +572,9 @@ struct TranscriptReducer {
         var changed = false
         for item in normalized {
             changed = replaceOrAppend(item) || changed
+            guard case .message(let message) = item else { continue }
+            pendingPersistenceIDs.insert(.message(message.id))
+            pendingMessageFingerprints[message.id] = Self.fingerprint(message)
         }
         return changed
     }
