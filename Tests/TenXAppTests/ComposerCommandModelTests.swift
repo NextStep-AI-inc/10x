@@ -276,8 +276,9 @@ import Testing
     #expect(model.updateDraft("/skill:write"))
     model.highlight(model.visibleRows.first { $0.canonicalName == "skill:write" }?.id)
     #expect(await model.activate() == .replaceDraft("/skill:write "))
-    #expect(await model.activate() == .executed)
-    #expect(started == ["/skill:write "])
+    #expect(!model.isPresented)
+    #expect(model.route == .root)
+    #expect(started.isEmpty)
     #expect(model.updateDraft("/compact"))
     model.highlight(model.visibleRows.first { $0.canonicalName == "compact" }?.id)
     #expect(await model.activate() == .none)
@@ -362,7 +363,8 @@ import Testing
     #expect(model.updateDraft("/skill:write"))
     model.highlight(CommandBrowserRowID(rawSource: "skill", canonicalName: "skill:write"))
     #expect(model.complete() == .replaceDraft("/skill:write "))
-    #expect(model.route == .arguments(CommandBrowserRowID(rawSource: "skill", canonicalName: "skill:write")))
+    #expect(!model.isPresented)
+    #expect(model.route == .root)
     #expect(session.sent.isEmpty)
 
     #expect(model.updateDraft("/prompt:review"))
@@ -373,25 +375,66 @@ import Testing
 }
 
 @MainActor
-@Test func commandModelKeepsStagedSkillAndPromptArgumentsWhenComposerObserverSeesEdits() async {
-    let cases = [
-        AvailableSlashCommand(name: "skill:write", source: .skill),
-        AvailableSlashCommand(name: "prompt:review", source: .mcpPrompt),
-    ]
-    for command in cases {
-        let session = CommandModelSession(state: .idle, catalog: .available([command]))
-        let model = commandModel(catalog: CommandModelCatalog(commands: [command]))
-        model.attachActiveSession(session)
-        let rowID = CommandBrowserRowID(rawSource: command.source.rawValue, canonicalName: command.name)
+@Test func commandModelKeepsStagedPromptArgumentsWhenComposerObserverSeesEdits() async {
+    let command = AvailableSlashCommand(name: "prompt:review", source: .mcpPrompt)
+    let session = CommandModelSession(state: .idle, catalog: .available([command]))
+    let model = commandModel(catalog: CommandModelCatalog(commands: [command]))
+    model.attachActiveSession(session)
+    let rowID = CommandBrowserRowID(rawSource: command.source.rawValue, canonicalName: command.name)
 
-        #expect(model.updateDraft("/\(command.name)"))
-        #expect(await model.activate() == .replaceDraft("/\(command.name) "))
-        #expect(model.route == .arguments(rowID))
-        #expect(model.updateDraft("/\(command.name) draft the spec"))
-        #expect(model.route == .arguments(rowID))
-        #expect(await model.activate() == .executed)
-        #expect(session.sent == ["/\(command.name) draft the spec"])
-    }
+    #expect(model.updateDraft("/\(command.name)"))
+    #expect(await model.activate() == .replaceDraft("/\(command.name) "))
+    #expect(model.route == .arguments(rowID))
+    #expect(model.updateDraft("/\(command.name) draft the spec"))
+    #expect(model.route == .arguments(rowID))
+    #expect(await model.activate() == .executed)
+    #expect(session.sent == ["/\(command.name) draft the spec"])
+}
+
+@MainActor
+@Test func commandModelCompletesSkillsWithTabOrEnterWithoutSending() async {
+    let skill = AvailableSlashCommand(
+        name: "skill:using-superpowers",
+        inputHint: "arguments",
+        source: .skill)
+    let session = CommandModelSession(state: .idle, catalog: .available([skill]))
+    let model = commandModel(catalog: CommandModelCatalog(commands: [skill]))
+    model.attachActiveSession(session)
+    let rowID = CommandBrowserRowID(
+        rawSource: "skill",
+        canonicalName: "skill:using-superpowers")
+
+    #expect(model.updateDraft("/using-superpowers"))
+    model.highlight(rowID)
+    #expect(model.complete() == .replaceDraft("/skill:using-superpowers "))
+    #expect(!model.isPresented)
+    #expect(model.route == .root)
+    #expect(session.sent.isEmpty)
+
+    #expect(model.updateDraft("/using-superpowers keep context"))
+    model.highlight(rowID)
+    #expect(await model.activate() == .replaceDraft("/skill:using-superpowers keep context"))
+    #expect(!model.isPresented)
+    #expect(model.route == .root)
+    #expect(session.sent.isEmpty)
+}
+
+@MainActor
+@Test func commandModelKeepsSubcommandBearingSkillsInTheChildRoute() async {
+    let skill = AvailableSlashCommand(
+        name: "skill:parent",
+        subcommands: [AvailableSlashSubcommand(name: "child")],
+        source: .skill)
+    let session = CommandModelSession(state: .idle, catalog: .available([skill]))
+    let model = commandModel(catalog: CommandModelCatalog(commands: [skill]))
+    model.attachActiveSession(session)
+
+    #expect(model.updateDraft("/parent"))
+    #expect(await model.activate() == .replaceDraft("/skill:parent "))
+    #expect(model.route == .subcommands(CommandBrowserRowID(
+        rawSource: "skill",
+        canonicalName: "skill:parent")))
+    #expect(session.sent.isEmpty)
 }
 
 @MainActor
@@ -423,13 +466,13 @@ import Testing
     let model = commandModel(catalog: CommandModelCatalog(commands: commands))
     model.attachActiveSession(session)
 
+    #expect(model.updateDraft("/compact"))
+    #expect(await model.activate() == .replaceDraft("/compact "))
+    #expect(model.route == .arguments(CommandBrowserRowID(rawSource: "builtin", canonicalName: "compact")))
     #expect(model.updateDraft("/skill:write"))
-    #expect(await model.activate() == .replaceDraft("/skill:write "))
-    #expect(model.route == .arguments(CommandBrowserRowID(rawSource: "skill", canonicalName: "skill:write")))
-    #expect(model.updateDraft("/compact notes"))
     #expect(model.route == .root)
     #expect(model.selectedSubcommandUsage == nil)
-    #expect(model.highlightedRow?.canonicalName == "compact")
+    #expect(model.highlightedRow?.canonicalName == "skill:write")
 }
 
 @MainActor
@@ -730,14 +773,17 @@ import Testing
     }
     #expect(await eventually { model.updateDraft("/") && model.visibleRows.count == 5 })
 
-    for (name, source) in [("skill:write", "skill"), ("prompt:review", "mcp_prompt")] {
-        #expect(model.updateDraft("/\(name)"))
-        model.highlight(CommandBrowserRowID(rawSource: source, canonicalName: name))
-        #expect(await model.activate(attachments: [attachment]) == .replaceDraft("/\(name) "))
-        #expect(await model.activate(attachments: [attachment]) == .executed)
-    }
-    #expect(starts.map(\.0) == ["/skill:write ", "/prompt:review "])
-    #expect(starts.allSatisfy { $0.1.map(\.id) == [attachment.id] })
+    #expect(model.updateDraft("/skill:write"))
+    model.highlight(CommandBrowserRowID(rawSource: "skill", canonicalName: "skill:write"))
+    #expect(await model.activate(attachments: [attachment]) == .replaceDraft("/skill:write "))
+    #expect(starts.isEmpty)
+
+    #expect(model.updateDraft("/prompt:review"))
+    model.highlight(CommandBrowserRowID(rawSource: "mcp_prompt", canonicalName: "prompt:review"))
+    #expect(await model.activate(attachments: [attachment]) == .replaceDraft("/prompt:review "))
+    #expect(await model.activate(attachments: [attachment]) == .executed)
+    #expect(starts.map(\.0) == ["/prompt:review "])
+    #expect(starts.first?.1.map(\.id) == [attachment.id])
 }
 
 @MainActor

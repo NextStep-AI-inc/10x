@@ -233,6 +233,9 @@ final class ComposerCommandModel {
             route = .native(command)
             return .keepDraft
         case .omp:
+            if row.source == .skills, row.subcommands.isEmpty {
+                return completeSkill(row)
+            }
             let requiresStage = needsArgumentStage(row) || !row.subcommands.isEmpty
             let canonical = canonicalSlashText(for: row, trailingSpace: requiresStage)
             if !requiresStage {
@@ -295,6 +298,9 @@ final class ComposerCommandModel {
                     draft = canonical
                     parsedDraft = CommandBrowserPresentation.parseDraft(canonical)
                     return .replaceDraft(canonical)
+                }
+                if row.source == .skills, row.subcommands.isEmpty {
+                    return completeSkill(row)
                 }
                 if needsArgumentStage(row) {
                     let canonical = canonicalSlashText(for: row, trailingSpace: true)
@@ -534,6 +540,12 @@ final class ComposerCommandModel {
     private func needsArgumentStage(_ row: CommandBrowserRow) -> Bool {
         guard case .omp = row.kind else { return false }
         return row.inputHint != nil || row.source == .skills || row.source == .prompts
+    }
+
+    private func completeSkill(_ row: CommandBrowserRow) -> CommandBrowserEffect {
+        let canonical = canonicalSlashText(for: row, trailingSpace: true)
+        dismissPresentation()
+        return .replaceDraft(canonical)
     }
 
     private func canonicalSlashText(for row: CommandBrowserRow, trailingSpace: Bool = false) -> String {
