@@ -45,7 +45,9 @@ struct MessageBubbleView: View {
             }
         } else if message.role == .assistant {
             VStack(alignment: .leading, spacing: Self.assistantContentSpacing) {
-                ResponseMetadataView(message: message)
+                if message.showsResponseMetadata {
+                    ResponseMetadataView(message: message)
+                }
                 AssistantMessageContentView(message: message)
                     .equatable()
             }

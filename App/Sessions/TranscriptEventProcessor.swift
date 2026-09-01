@@ -71,9 +71,12 @@ actor TranscriptEventProcessor {
 
     func consume(_ frame: RpcFrame) {
         guard !isStopped else { return }
-        if case .extensionUIRequest = frame {
+        switch frame {
+        case .extensionUIRequest, .providerAccountChanged:
             controlContinuation.yield(frame)
             return
+        default:
+            break
         }
 
         let mutation = reducer.consume(frame)

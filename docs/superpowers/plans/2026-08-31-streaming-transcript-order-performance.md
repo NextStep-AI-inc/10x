@@ -268,8 +268,8 @@ import Testing
     }"#)
     let completed = ToolPresentation(
         id: "bash-1",
-        name: "bash",
-        arguments: .object(["command": .string("pwd")]),
+        name: "stale-bash",
+        arguments: .object(["command": .string("old")]),
         result: .object(["output": .string("/tmp")]),
         phase: .complete,
         startDate: Date(timeIntervalSince1970: 1),
@@ -281,7 +281,16 @@ import Testing
         isFinal: true,
         existingTools: [completed.id: completed])
 
-    #expect(items == [.tool(completed)])
+    guard case .tool(let tool) = items.first else {
+        Issue.record("The assistant tool call should produce a tool row")
+        return
+    }
+    #expect(tool.name == "bash")
+    #expect(tool.arguments == .object(["command": .string("pwd")]))
+    #expect(tool.phase == completed.phase)
+    #expect(tool.result == completed.result)
+    #expect(tool.startDate == completed.startDate)
+    #expect(tool.endDate == completed.endDate)
 }
 
 @Test func malformedToolCallDoesNotCreateAGroupBoundary() throws {
@@ -390,12 +399,14 @@ enum TranscriptMessageNormalizer {
                 timestamp: timestamp,
                 attribution: attribution,
                 isFinal: isFinal)
-            return keeps(message) ? [.message(message)] : []
+            let retainsPlaceholder = message.role == .assistant && !isFinal
+            return keeps(message) || retainsPlaceholder ? [.message(message)] : []
         }
 
         var result: [TranscriptItem] = []
         var visibleBlocks: [JSONValue] = []
         var visibleSegmentOrdinal = 0
+        var hasVisibleMessage = false
 
         func segmentRaw(_ blocks: [JSONValue]) -> JSONValue {
             guard case .object(var object) = raw else { return raw }
@@ -408,16 +419,18 @@ enum TranscriptMessageNormalizer {
             let segmentID = visibleSegmentOrdinal == 0
                 ? id
                 : "\(id)-segment-\(visibleSegmentOrdinal)"
+            let messageRaw = segmentRaw(visibleBlocks)
             let message = TranscriptMessage(
                 id: segmentID,
-                raw: segmentRaw(visibleBlocks),
+                raw: messageRaw,
                 timestamp: timestamp,
                 attribution: attribution,
                 isFinal: isFinal,
                 showsResponseMetadata: visibleSegmentOrdinal == 0)
-            if keeps(message) {
+            if keepsVisible(message, raw: messageRaw) {
                 result.append(.message(message))
                 visibleSegmentOrdinal += 1
+                hasVisibleMessage = true
             }
             visibleBlocks.removeAll(keepingCapacity: true)
         }
@@ -438,14 +451,22 @@ enum TranscriptMessageNormalizer {
         }
         appendVisibleSegment()
 
-        if result.isEmpty {
+        if !hasVisibleMessage, isTerminalFailure(raw) {
             let message = TranscriptMessage(
                 id: id,
                 raw: raw,
                 timestamp: timestamp,
                 attribution: attribution,
                 isFinal: isFinal)
-            if keeps(message) || !isFinal { result.append(.message(message)) }
+            result.append(.message(message))
+        } else if result.isEmpty, blocks.isEmpty, !isFinal {
+            let message = TranscriptMessage(
+                id: id,
+                raw: raw,
+                timestamp: timestamp,
+                attribution: attribution,
+                isFinal: isFinal)
+            result.append(.message(message))
         }
         return result
     }
@@ -465,7 +486,14 @@ enum TranscriptMessageNormalizer {
         guard let id = block["id"]?.stringValue ?? block["toolCallId"]?.stringValue,
               let name = block["name"]?.stringValue ?? block["toolName"]?.stringValue
         else { return nil }
-        if let existing = existingTools[id] { return existing }
+        if let existing = existingTools[id] {
+            var refreshed = existing
+            refreshed.name = name
+            if let arguments = block["arguments"] ?? block["args"] {
+                refreshed.arguments = arguments
+            }
+            return refreshed
+        }
         return ToolPresentation(
             id: id,
             name: name,
@@ -480,6 +508,17 @@ enum TranscriptMessageNormalizer {
         if message.role == .user || !message.document.blocks.isEmpty { return true }
         guard message.role == .assistant else { return false }
         return ["error", "aborted"].contains(message.stopReason?.lowercased())
+    }
+
+    private static func keepsVisible(_ message: TranscriptMessage, raw: JSONValue) -> Bool {
+        guard TranscriptMessage.isDisplayable(raw) else { return false }
+        return !TranscriptMessage.visibleText(from: raw).isEmpty
+            || !message.document.images.isEmpty
+    }
+
+    private static func isTerminalFailure(_ raw: JSONValue) -> Bool {
+        guard raw["role"]?.stringValue == "assistant" else { return false }
+        return ["error", "aborted"].contains(raw["stopReason"]?.stringValue?.lowercased())
     }
 }
 ```

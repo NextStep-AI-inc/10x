@@ -162,6 +162,34 @@ import Testing
     #expect(await controls.next() == nil)
 }
 
+@Test func providerAccountChangesAreLosslessControlEvents() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    let initial = await processor.load(
+        .messages([]),
+        threadStartDate: nil,
+        hasReconciliationWarning: false,
+        runtimeState: .idle)
+    let collector = Task { await collectControlLabels(from: processor.controlEvents) }
+
+    await processor.consume(.providerAccountChanged(ProviderAccountChangedEvent(
+        providerID: "openai-codex",
+        accountRef: "acct-a",
+        reason: .manual,
+        sequence: 1)))
+    await processor.consume(.providerAccountChanged(ProviderAccountChangedEvent(
+        providerID: "openai-codex",
+        accountRef: "acct-b",
+        reason: .automaticFailover,
+        sequence: 2)))
+    await processor.stop()
+
+    #expect(await collector.value == [
+        "provider-account:acct-a:1",
+        "provider-account:acct-b:2",
+    ])
+    #expect(await processor.currentSnapshot() == initial)
+}
+
 @Test func olderReconciliationGenerationCannotOverwriteNewerSnapshot() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
     _ = await processor.load(.history(TranscriptHistory(items: [])), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
@@ -359,6 +387,8 @@ private extension RpcFrame {
         switch self {
         case .extensionUIRequest(let request):
             return "extension:\(request.id)"
+        case .providerAccountChanged(let event):
+            return "provider-account:\(event.accountRef):\(event.sequence)"
         case .event(let type, _):
             return "event:\(type)"
         default:

@@ -10,6 +10,11 @@ struct TranscriptView: View {
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
 
     var body: some View {
+        let allPresentationRows = Self.followObservation(for: controller.items)
+        let presentationRows = TranscriptPresentationRow.visibleRows(
+            from: allPresentationRows,
+            isGroupExpanded: disclosureState.isGroupExpanded)
+
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 22) {
@@ -30,9 +35,10 @@ struct TranscriptView: View {
                             .buttonStyle(GhostActionStyle())
                         }
                     }
-                    ForEach(controller.items) { item in
-                        itemView(item)
-                            .id(item.id)
+                    ForEach(presentationRows, id: \.id) { row in
+                        rowView(row)
+                            .padding(.top, row.isGroupedTool ? -12 : 0)
+                            .id(row.id)
                     }
                     if isAwaitingOutput {
                         TurnActivityView(startedAt: controller.turnStartedAt)
@@ -54,12 +60,12 @@ struct TranscriptView: View {
             } action: { _, value in
                 isNearBottom = value
             }
-            .onChange(of: controller.items.last) { _, item in
-                guard let item else { return }
+            .onChange(of: allPresentationRows) { _, _ in
+                guard let lastID = presentationRows.last?.id else { return }
                 let shouldFollow = !hasPositionedInitialContent || isNearBottom
                 hasPositionedInitialContent = true
                 guard shouldFollow else { return }
-                scroll(proxy, to: item.id)
+                scroll(proxy, to: lastID)
             }
             // The indicator is not an item, so its arrival needs its own follow
             // or it appears below the fold on the send that created it.
@@ -67,15 +73,17 @@ struct TranscriptView: View {
                 guard isAwaiting, isNearBottom else { return }
                 scroll(proxy, to: TurnActivityView.transcriptID)
             }
-            .overlay(alignment: .bottom) { scrollToBottomButton(proxy) }
+            .overlay(alignment: .bottom) {
+                scrollToBottomButton(proxy, lastID: presentationRows.last?.id)
+            }
         }
     }
 
     /// Only offered once following has actually been broken, so it never sits
     /// over a transcript that is already tracking the bottom.
     @ViewBuilder
-    private func scrollToBottomButton(_ proxy: ScrollViewProxy) -> some View {
-        if hasPositionedInitialContent, !isNearBottom, let lastID = controller.items.last?.id {
+    private func scrollToBottomButton(_ proxy: ScrollViewProxy, lastID: String?) -> some View {
+        if hasPositionedInitialContent, !isNearBottom, let lastID {
             Button {
                 scroll(proxy, to: isAwaitingOutput ? TurnActivityView.transcriptID : lastID)
             } label: {
@@ -112,6 +120,12 @@ struct TranscriptView: View {
         TurnActivityView.isAwaitingOutput(
             runtimeState: controller.runtimeState,
             lastItem: controller.items.last)
+    }
+
+    nonisolated static func followObservation(
+        for items: [TranscriptItem]
+    ) -> [TranscriptPresentationRow] {
+        TranscriptPresentationRow.rows(from: items)
     }
 
     nonisolated static func shouldFollowBottom(
@@ -166,6 +180,18 @@ struct TranscriptView: View {
             default:
                 nil
             }
+        }
+    }
+
+    @ViewBuilder
+    private func rowView(_ row: TranscriptPresentationRow) -> some View {
+        switch row {
+        case .item(let item):
+            itemView(item)
+        case .toolGroup(let group):
+            ToolCallGroupView(group: group)
+        case .groupedTool(_, let tool):
+            ToolCardView(presentation: tool)
         }
     }
 

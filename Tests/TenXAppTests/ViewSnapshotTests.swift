@@ -1298,11 +1298,12 @@ private func fullShellAccountModel(
             filePath: directory,
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
         makeComposerControls: stubComposerControlsFactory))
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     await model.bootstrap()
     await providerModel.load()
-    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     model.sessions = fullShellSessions
     return (model, providerModel)
 }
