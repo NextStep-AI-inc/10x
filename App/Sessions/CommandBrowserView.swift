@@ -298,12 +298,19 @@ struct CommandBrowserView: View {
 
     private func detailMetadata(for row: CommandBrowserRow) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            if let executionNote = row.executionNote {
+            if row.source == .skills, row.subcommands.isEmpty {
+                detailPair("Enter", "Complete in prompt")
+            } else if let executionNote = row.executionNote {
                 detailPair("Enter", executionNote)
             } else {
                 detailPair("Enter", row.source == .app ? "Open control" : "Open")
             }
-            detailPair("Tab", row.inputHint == nil && row.subcommands.isEmpty ? "Complete in prompt" : "Complete with input")
+            detailPair(
+                "Tab",
+                (row.source == .skills && row.subcommands.isEmpty)
+                    || (row.inputHint == nil && row.subcommands.isEmpty)
+                    ? "Complete in prompt"
+                    : "Complete with input")
             if !row.aliases.isEmpty {
                 detailPair("Aliases", row.aliases.joined(separator: ", "))
             }
