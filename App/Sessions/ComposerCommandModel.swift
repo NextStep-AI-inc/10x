@@ -169,12 +169,14 @@ final class ComposerCommandModel {
         selectedRowID = nextSelection
     }
 
-    func cycleSource(_ cycle: CommandBrowserCycle) {
+    @discardableResult
+    func cycleSource(_ cycle: CommandBrowserCycle) -> Bool {
+        let changedRoute = route != .root
         if route != .root {
             returnToRootForSourceNavigation()
         }
         let visibleSources = sources.map(\.id)
-        guard let current = visibleSources.firstIndex(of: selectedSource), !visibleSources.isEmpty else { return }
+        guard let current = visibleSources.firstIndex(of: selectedSource), !visibleSources.isEmpty else { return changedRoute }
         let index: Int
         switch cycle {
         case .forward:
@@ -182,27 +184,34 @@ final class ComposerCommandModel {
         case .backward:
             index = current == visibleSources.startIndex ? visibleSources.index(before: visibleSources.endIndex) : current - 1
         }
-        selectSource(visibleSources[index])
+        return selectSource(visibleSources[index]) || changedRoute
     }
 
-    func selectVisibleSource(at oneBasedIndex: Int) {
+    @discardableResult
+    func selectVisibleSource(at oneBasedIndex: Int) -> Bool {
         let visibleSources = sources.map(\.id)
-        guard visibleSources.indices.contains(oneBasedIndex - 1) else { return }
-        selectSource(visibleSources[oneBasedIndex - 1])
+        guard visibleSources.indices.contains(oneBasedIndex - 1) else { return false }
+        return selectSource(visibleSources[oneBasedIndex - 1])
     }
 
-    func selectSource(_ source: CommandBrowserSource) {
+    @discardableResult
+    func selectSource(_ source: CommandBrowserSource) -> Bool {
+        let previousRoute = route
         if route != .root {
             returnToRootForSourceNavigation()
         }
-        guard sources.contains(where: { $0.id == source }) else { return }
+        guard sources.contains(where: { $0.id == source }) else { return previousRoute != route }
         let priorSelection = selectedRowID
+        let priorSource = selectedSource
         selectedSource = source
         clearSelectedSubcommand()
         selectedRowID = presentation.initialSelection
         if selectedRowID != priorSelection {
             clearInvalidatedChildRecovery()
         }
+        return previousRoute != route
+            || priorSource != selectedSource
+            || priorSelection != selectedRowID
     }
 
     func highlight(_ rowID: CommandBrowserRowID?) {

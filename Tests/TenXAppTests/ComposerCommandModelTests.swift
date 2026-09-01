@@ -77,6 +77,25 @@ import Testing
         route: .root))
 }
 
+@Test func commandBrowserSourceSwitchRestoresEditorFocusOnlyWhenLeavingNativeChild() {
+    #expect(ComposerCommandSourceSwitchFocusRouting.shouldRestoreEditorFocus(
+        didSwitch: true,
+        previousRoute: .native(.model),
+        currentRoute: .root))
+    #expect(ComposerCommandSourceSwitchFocusRouting.shouldRestoreEditorFocus(
+        didSwitch: true,
+        previousRoute: .native(.effort),
+        currentRoute: .root))
+    #expect(!ComposerCommandSourceSwitchFocusRouting.shouldRestoreEditorFocus(
+        didSwitch: true,
+        previousRoute: .root,
+        currentRoute: .root))
+    #expect(!ComposerCommandSourceSwitchFocusRouting.shouldRestoreEditorFocus(
+        didSwitch: false,
+        previousRoute: .native(.model),
+        currentRoute: .native(.model)))
+}
+
 @Test func commandBrowserExitCommandUsesCommandSpecificDismissal() {
     #expect(ComposerCommandDismissalRouting.action(for: .commands) == .dismissCommands)
     #expect(ComposerCommandDismissalRouting.action(for: .model) == .hideFlyoutOnly)
@@ -529,6 +548,20 @@ import Testing
     #expect(model.route == .root)
     #expect(model.selectedSource == .skills)
     #expect(model.highlightedRow?.canonicalName == "parent-helper")
+}
+
+@MainActor
+@Test func commandModelReportsSourceNavigationStateChangesForComposerSync() async {
+    let model = commandModel(catalog: CommandModelCatalog())
+
+    #expect(model.updateDraft("/model"))
+    #expect(await model.activate() == .keepDraft)
+    #expect(model.route == .native(.model))
+    #expect(model.selectVisibleSource(at: 2))
+    #expect(model.route == .root)
+    #expect(model.selectedSource == .app)
+    #expect(ComposerCommandQueryRouting.query(draft: "/model", route: model.route) == "model")
+    #expect(!model.selectVisibleSource(at: 99))
 }
 
 @MainActor

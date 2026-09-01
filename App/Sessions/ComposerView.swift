@@ -164,6 +164,17 @@ enum ComposerCommandFocusRouting {
     }
 }
 
+enum ComposerCommandSourceSwitchFocusRouting {
+    nonisolated static func shouldRestoreEditorFocus(
+        didSwitch: Bool,
+        previousRoute: CommandBrowserRoute,
+        currentRoute: CommandBrowserRoute
+    ) -> Bool {
+        guard didSwitch, case .native = previousRoute else { return false }
+        return currentRoute == .root
+    }
+}
+
 enum ComposerCommandQueryRouting {
     nonisolated static func query(
         draft: String,
@@ -554,9 +565,31 @@ struct ComposerView: View {
                 model.moveSelection(move)
             }
         case .cycle(let cycle):
-            model.cycleSource(cycle)
+            let previousRoute = model.route
+            let didSwitch = model.cycleSource(cycle)
+            if didSwitch {
+                syncCommandQuery()
+                if ComposerCommandSourceSwitchFocusRouting.shouldRestoreEditorFocus(
+                    didSwitch: didSwitch,
+                    previousRoute: previousRoute,
+                    currentRoute: model.route)
+                {
+                    restoreEditorFocus()
+                }
+            }
         case .sourceIndex(let index):
-            model.selectVisibleSource(at: index)
+            let previousRoute = model.route
+            let didSwitch = model.selectVisibleSource(at: index)
+            if didSwitch {
+                syncCommandQuery()
+                if ComposerCommandSourceSwitchFocusRouting.shouldRestoreEditorFocus(
+                    didSwitch: didSwitch,
+                    previousRoute: previousRoute,
+                    currentRoute: model.route)
+                {
+                    restoreEditorFocus()
+                }
+            }
         case .activate:
             if Self.commandActivationAction(
                 presentation: presentation,
