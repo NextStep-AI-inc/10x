@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Sparkle
 
@@ -10,7 +9,6 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
     private let state: UpdateState
     private let currentVersion: String
     private let prepareForInstall: @MainActor () async -> Void
-    private let terminate: @MainActor () -> Void
     private var decision: CheckedContinuation<SPUUserUpdateChoice, Never>?
     private var checkCancellation: (() -> Void)?
 
@@ -28,13 +26,11 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
     init(
         state: UpdateState,
         currentVersion: String,
-        prepareForInstall: @escaping @MainActor () async -> Void,
-        terminate: @escaping @MainActor () -> Void = { NSApplication.shared.terminate(nil) }
+        prepareForInstall: @escaping @MainActor () async -> Void
     ) {
         self.state = state
         self.currentVersion = currentVersion
         self.prepareForInstall = prepareForInstall
-        self.terminate = terminate
         super.init()
     }
 
@@ -165,32 +161,15 @@ final class SplashUpdateDriver: NSObject, SPUUserDriver {
         return .install
     }
 
-    /// Sparkle cannot swap the bundle while the app it is replacing is still running.
-    /// `applicationTerminated == false` means it is waiting on us to quit, and the
-    /// driver owns that: nothing else in the app knows an install is in flight. Without
-    /// this the installer sits waiting forever while the splash shows `Relaunching 10x`,
-    /// and the only way out is quitting by hand.
-    ///
-    /// `AppModel.shutdown()` has already run, awaited in `showReadyToInstallAndRelaunch`
-    /// before we consented, so the OMP children are already reaped by this point.
+    /// Sparkle sends the application a quit event before this callback. The driver must
+    /// not send another one while `AppTerminationDelegate` is preparing its asynchronous
+    /// reply, because a nested `NSApplication.terminate(_:)` blocks the main actor and
+    /// prevents that reply from completing.
     func showInstallingUpdate(
-        withApplicationTerminated applicationTerminated: Bool,
-        retryTerminatingApplication: @escaping () -> Void
+        withApplicationTerminated _: Bool,
+        retryTerminatingApplication _: @escaping () -> Void
     ) {
         state.beginRelaunching()
-        guard !applicationTerminated else { return }
-        // Hand the quit to a later run-loop turn instead of calling it inline.
-        //
-        // Calling terminate() synchronously from inside this callback deadlocks: the
-        // main thread enters -[NSApplication _shouldTerminate] and stays there, while
-        // AppTerminationDelegate answers .terminateLater and defers its actual reply to
-        // a @MainActor task. That task needs the main thread the delegate is blocking,
-        // so the reply never lands, Sparkle keeps waiting, and the splash sits on
-        // Relaunching 10x until the user quits by hand. Quitting by hand worked for
-        // exactly this reason: it starts from a clean run-loop turn.
-        DispatchQueue.main.async { [terminate] in
-            MainActor.assumeIsolated { terminate() }
-        }
     }
 
     func showUpdateInstalledAndRelaunched(_ relaunched: Bool) async {
