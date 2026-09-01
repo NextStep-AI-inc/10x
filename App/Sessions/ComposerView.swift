@@ -153,9 +153,14 @@ struct ComposerView: View {
             return true
         } isTargeted: { isDropTargeted = $0 }
         // Concrete image types only. Plain and rich text never carry these, so
-        // an ordinary paste still reaches the editor.
+        // an ordinary paste still reaches the editor. This only runs when the
+        // editor is not focused: a focused editor claims every paste from the
+        // responder chain first, which is what the monitor is for.
         .onPasteCommand(of: [.png, .jpeg, .tiff]) { providers in
             add(providers: providers)
+        }
+        .background {
+            ComposerPasteMonitor(onPaste: paste)
         }
     }
 
@@ -312,23 +317,41 @@ struct ComposerView: View {
     }
 
     private func add(providers: [NSItemProvider]) {
-        guard attachments.count < ComposerAttachmentEncoder.maximumCount else {
-            report(skipped: ["Pasted image"])
-            return
-        }
         for provider in providers {
             _ = provider.loadObject(ofClass: NSImage.self) { object, _ in
                 guard let image = object as? NSImage else { return }
                 Task { @MainActor in
-                    guard attachments.count < ComposerAttachmentEncoder.maximumCount,
-                          let attachment = ComposerAttachmentEncoder.attachment(
-                            from: image,
-                            name: "Pasted image")
-                    else { return }
-                    attachments.append(attachment)
-                    attachmentMessage = nil
+                    add(images: [image])
                 }
             }
+        }
+    }
+
+    /// The ⌘V interception lands here with the pasteboard already classified.
+    private func paste(_ content: ComposerPasteboard.Content) {
+        switch content {
+        case .imageFiles(let urls):
+            add(urls: urls)
+        case .images(let images):
+            add(images: images)
+        case .none:
+            break
+        }
+    }
+
+    /// Stages already-decoded images, stopping at the attachment limit.
+    private func add(images: [NSImage]) {
+        for image in images {
+            guard attachments.count < ComposerAttachmentEncoder.maximumCount else {
+                report(skipped: ["Pasted image"])
+                return
+            }
+            guard let attachment = ComposerAttachmentEncoder.attachment(
+                from: image,
+                name: "Pasted image")
+            else { continue }
+            attachments.append(attachment)
+            attachmentMessage = nil
         }
     }
 

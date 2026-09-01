@@ -53,6 +53,7 @@
 		2B8A8E21D48A190600704931C51E2117 /* IDEApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5799BC39D7647D45E72ACECA5F6FF59 /* IDEApplication.swift */; };
 		2BF9A63C547B16E879513EA4281141FC /* SubagentPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F832078FCA06EAA16415025A84C752D5 /* SubagentPresentation.swift */; };
 		2CEE7F3B8C310837833FF0D9672A30AB /* ComposerSessionControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 563C3A7D6488F446FD8A7AA4540D9118 /* ComposerSessionControlsView.swift */; };
+		2E5753AE85C4B352A2397CDF504452A8 /* ComposerPasteboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C1CA1E2798BF23A0AC3F8889000DE08 /* ComposerPasteboardTests.swift */; };
 		2F5ADAB185C76B249C7D5F226D28ADDB /* TranscriptReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D422F7E810EB9916337FD969ACB8E5A6 /* TranscriptReducer.swift */; };
 		2F983B0828D1ABF111E5E796D43309F6 /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E6E607099E0887B0EE584761AD07EFCA /* Cocoa.framework */; };
 		2FA2CED35BD69E6850395FDC3730D25B /* OmpConfigServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877A2FC56C324B52234C33EA8FA709FE /* OmpConfigServiceTests.swift */; };
@@ -157,6 +158,7 @@
 		A60F9BBED30310ABF4128961FABECE31 /* SessionRuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 144FEB107522651ECAFD41008C930D94 /* SessionRuntimeState.swift */; };
 		A801330082D1F2AC5D94C962C0590ACC /* ProviderUsagePresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF32B1A72E3334179FF48200801CC4CE /* ProviderUsagePresentationTests.swift */; };
 		A9748D7F38DB4B1395D99589D425048E /* ProviderManagementServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82A9E71E8FAAD3DB09E8B5D80EC6D3C8 /* ProviderManagementServiceTests.swift */; };
+		A98CFDE37A3BE2EF65DB2E729FC0DA6E /* ComposerPasteboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95695337B52DAE51C6305F72C5B80F5F /* ComposerPasteboard.swift */; };
 		A99FD1E7A846993E23CDB4030BCB1CC2 /* ProviderUsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E807E71640D125B6C6A96E3154162B7 /* ProviderUsageSnapshot.swift */; };
 		A9CDDE1457AFD98481D1850C90E5079D /* SessionActivityRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C47E388DCC2CA080D0186A6F4CF45C7 /* SessionActivityRegistry.swift */; };
 		AB714F626D4A8FC11A938954229D29C8 /* ProviderUsageDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9319E4E7CCAD5F4188FC30AB93456D7 /* ProviderUsageDockView.swift */; };
@@ -315,6 +317,7 @@
 		5ADC0A76BAA3F44789A7E156E1D95F14 /* ComposerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerView.swift; path = App/Sessions/ComposerView.swift; sourceTree = "<group>"; };
 		5B3CA0D4BF41671855A221DDA0BE965F /* OmpProcessEnvironment.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpProcessEnvironment.swift; path = App/Application/OmpProcessEnvironment.swift; sourceTree = "<group>"; };
 		5BB8763379A60FF807A6B74B58B7F1B1 /* RuntimeRecoveryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RuntimeRecoveryView.swift; path = App/Sessions/RuntimeRecoveryView.swift; sourceTree = "<group>"; };
+		5C1CA1E2798BF23A0AC3F8889000DE08 /* ComposerPasteboardTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerPasteboardTests.swift; path = Tests/TenXAppTests/ComposerPasteboardTests.swift; sourceTree = "<group>"; };
 		5D35CC722BF764BECABED8F77C2DC92A /* ToolPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolPresentation.swift; path = App/Tools/ToolPresentation.swift; sourceTree = "<group>"; };
 		5DB5CFF097EC6F595636C69F1E48D0CC /* ProviderUsageSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageSnapshotTests.swift; path = Tests/TenXAppTests/ProviderUsageSnapshotTests.swift; sourceTree = "<group>"; };
 		60E8D1C18A406BA058720372146DAA57 /* ProviderLoginProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderLoginProvider.swift; path = App/Providers/ProviderLoginProvider.swift; sourceTree = "<group>"; };
@@ -359,6 +362,7 @@
 		91812CFE3017F7226113A400C82E2F55 /* TenXAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TenXAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9257018FF50D56D632B8C65AAD62B5A1 /* ProviderManagementViewModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderManagementViewModelTests.swift; path = Tests/TenXAppTests/ProviderManagementViewModelTests.swift; sourceTree = "<group>"; };
 		954B1806AAC25D04ACCB2563F2D17FC6 /* OmpUsageService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpUsageService.swift; path = App/Providers/OmpUsageService.swift; sourceTree = "<group>"; };
+		95695337B52DAE51C6305F72C5B80F5F /* ComposerPasteboard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerPasteboard.swift; path = App/Sessions/ComposerPasteboard.swift; sourceTree = "<group>"; };
 		962089969C661B3172D5ED6DC78219BE /* AppRoute.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppRoute.swift; path = App/Application/AppRoute.swift; sourceTree = "<group>"; };
 		96ABF3DD1037317D6B61BA9DFFD6BEA0 /* ToolContentExtractorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolContentExtractorTests.swift; path = Tests/TenXAppTests/ToolContentExtractorTests.swift; sourceTree = "<group>"; };
 		96D5F1D5CE8D07D7C5BCF906B5FB09F1 /* BrandActionsMenuView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BrandActionsMenuView.swift; path = App/Shell/BrandActionsMenuView.swift; sourceTree = "<group>"; };
@@ -545,6 +549,7 @@
 				BFE8BF1F950DDF0BA45B43F6C14DD2E3 /* ComposerControlsPresentation.swift */,
 				7DC5DB3892AA492B5E6EA8BC0A9B2CA7 /* ComposerDefaultPersisting.swift */,
 				6591DBF910CAB9E12B80C3616F099278 /* ComposerModelInfo.swift */,
+				95695337B52DAE51C6305F72C5B80F5F /* ComposerPasteboard.swift */,
 				563C3A7D6488F446FD8A7AA4540D9118 /* ComposerSessionControlsView.swift */,
 				5ADC0A76BAA3F44789A7E156E1D95F14 /* ComposerView.swift */,
 				42EC21FECB1C4E09E49926AA5572960B /* ContentDocument.swift */,
@@ -650,6 +655,7 @@
 				F8682EE2CABA7CA682ADFC2A8CA21B4F /* ComposerControlsModelTests.swift */,
 				7B018E6582189677BC342D92DC1A14C5 /* ComposerControlsPresentationTests.swift */,
 				4408B3A68F48614CC61D78B4F39F8A68 /* ComposerDefaultStoreTests.swift */,
+				5C1CA1E2798BF23A0AC3F8889000DE08 /* ComposerPasteboardTests.swift */,
 				3A369C82D303CBB255F0027D059D9346 /* DesignSystemTests.swift */,
 				08DB11A869FEF85B09424595F2F49EB8 /* ExtensionUIRouterTests.swift */,
 				44178CCDE8E16FFA71077383483CE251 /* FileOpenServiceTests.swift */,
@@ -906,6 +912,7 @@
 				3571BA37AA76FACBBDAEEB8E0BCED4A3 /* ComposerControlsPresentation.swift in Sources */,
 				8B380F9563B777225E48D331D46EBBF0 /* ComposerDefaultPersisting.swift in Sources */,
 				006E4755358C1DA20AB58A11B0627B31 /* ComposerModelInfo.swift in Sources */,
+				A98CFDE37A3BE2EF65DB2E729FC0DA6E /* ComposerPasteboard.swift in Sources */,
 				2CEE7F3B8C310837833FF0D9672A30AB /* ComposerSessionControlsView.swift in Sources */,
 				BFE50037FF83AC93F46119CBE069D879 /* ComposerView.swift in Sources */,
 				ECD3CA1F7235CAB70094DABD4D9244F7 /* ContentDocument.swift in Sources */,
@@ -998,6 +1005,7 @@
 				0B110410F106BCEE20EADE3BE3E68620 /* ComposerControlsModelTests.swift in Sources */,
 				8C9997E9A704769C9CCED9923EFEEF0D /* ComposerControlsPresentationTests.swift in Sources */,
 				037CFC6CA0112DB5B17FD340904C649A /* ComposerDefaultStoreTests.swift in Sources */,
+				2E5753AE85C4B352A2397CDF504452A8 /* ComposerPasteboardTests.swift in Sources */,
 				39998F279E7F1091B7F879558AC6283A /* DesignSystemTests.swift in Sources */,
 				106BA924E08810EECA7E472B8CD45060 /* ExtensionUIRouterTests.swift in Sources */,
 				DCDAC1258767E034A80CB119F6688157 /* FileOpenServiceTests.swift in Sources */,
