@@ -2652,6 +2652,110 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
 }
 
 @MainActor
+@Test func commandBrowserModelChildSnapshot() async throws {
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+    let commandModel = ComposerCommandModel(
+        catalog: controls.catalog,
+        controls: controls,
+        onStartNewSession: { _, _ in })
+    _ = commandModel.updateDraft("/model")
+    _ = commandModel.complete()
+
+    try assertSnapshot(
+        CommandBrowserNativeControlsView(
+            commandModel: commandModel,
+            controls: controls,
+            query: .constant(""),
+            onEffect: { _ in },
+            restoreEditorFocus: {}),
+        name: "command-browser-model-child",
+        size: CGSize(width: 340, height: 320))
+}
+
+@Test func commandBrowserNativeControlsRestoreFocusOnlyAfterLeavingChild() {
+    #expect(CommandBrowserNativeControlsView.nativeRows(
+        command: .fast,
+        thinkingOptions: [],
+        thinkingLevel: "auto",
+        isFastModeVisible: false,
+        isFastModeEnabled: false).isEmpty)
+    #expect(CommandBrowserNativeControlsView.nativeRows(
+        command: .fast,
+        thinkingOptions: [],
+        thinkingLevel: "auto",
+        isFastModeVisible: true,
+        isFastModeEnabled: false).map(\.title) == ["On", "Off", "Status"])
+    #expect(CommandBrowserNativeControlsView.shouldRestoreEditorFocus(
+        effect: .none,
+        isPresented: true,
+        route: .native(.model)) == false)
+    #expect(CommandBrowserNativeControlsView.shouldRestoreEditorFocus(
+        effect: .replaceDraft(""),
+        isPresented: false,
+        route: .root))
+    #expect(CommandBrowserNativeControlsView.shouldRestoreEditorFocus(
+        effect: .keepDraft,
+        isPresented: true,
+        route: .root))
+}
+
+@Test func commandBrowserNativeControlsHighlightStartsOnTheCurrentSettingAndUpdates() {
+    let efforts = CommandBrowserNativeControlsView.nativeRows(
+        command: .effort,
+        thinkingOptions: ["auto", "low", "high"],
+        thinkingLevel: "high",
+        isFastModeVisible: true,
+        isFastModeEnabled: false)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .effort,
+        rows: efforts,
+        thinkingLevel: "high",
+        isFastModeEnabled: false,
+        previousIndex: 0) == 2)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .fast,
+        rows: CommandBrowserNativeControlsView.nativeRows(
+            command: .fast,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: true),
+        thinkingLevel: "auto",
+        isFastModeEnabled: true,
+        previousIndex: 1) == 0)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .fast,
+        rows: CommandBrowserNativeControlsView.nativeRows(
+            command: .fast,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false),
+        thinkingLevel: "auto",
+        isFastModeEnabled: false,
+        previousIndex: 0) == 1)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .effort,
+        rows: CommandBrowserNativeControlsView.nativeRows(
+            command: .effort,
+            thinkingOptions: ["auto", "low"],
+            thinkingLevel: "missing",
+            isFastModeVisible: true,
+            isFastModeEnabled: false),
+        thinkingLevel: "missing",
+        isFastModeEnabled: false,
+        previousIndex: 5) == 1)
+}
+
+@MainActor
 @Test func modelPickerSearchingSnapshot() throws {
     let sections = ComposerControlsPresentation.pickerSections(
         models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
