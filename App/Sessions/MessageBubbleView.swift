@@ -32,11 +32,10 @@ struct MessageBubbleView: View {
                     MessageImageView(image: image)
                 }
                 if !message.visibleText.isEmpty {
-                    Text(message.visibleText)
-                        .font(TenXTypography.body(size: 14))
-                        .foregroundStyle(TenXPalette.onEmphasis)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    TranscriptPlainTextView(
+                        text: message.visibleText,
+                        font: TenXTypography.body(size: 14),
+                        color: TenXPalette.onEmphasis)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .background(TenXPalette.color(TenXPalette.nearBlackHex))
@@ -53,11 +52,10 @@ struct MessageBubbleView: View {
             }
             .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
         } else {
-            Text(message.visibleText)
-                .font(TenXTypography.mono(size: 12))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+            TranscriptPlainTextView(
+                text: message.visibleText,
+                font: TenXTypography.mono(size: 12),
+                color: TenXPalette.color(TenXPalette.mutedTextHex))
         }
     }
 }

@@ -48,6 +48,34 @@ import Testing
         message: assistantMessage(id: "assistant-1", text: "Stable answer", isFinal: true)))
 }
 
+@Test func skillTextSegmentsAreBoundedAndLossless() {
+    let source = "# Skill\n\n"
+        + String(repeating: "Follow this instruction carefully. ", count: 180)
+    let segments = TranscriptTextSegments.make(
+        source,
+        maximumCharacters: 1_024)
+
+    #expect(segments.count > 1)
+    #expect(segments.allSatisfy { $0.text.count <= 1_024 })
+    #expect(segments.map(\.text).joined() == source)
+}
+
+@Test func shortTranscriptTextRemainsOneSegment() {
+    let source = "Reviewer notes are ready."
+
+    #expect(TranscriptTextSegments.make(source).map(\.text) == [source])
+}
+
+@Test func unbrokenTranscriptTextStillHonorsTheSegmentBudget() {
+    let source = String(repeating: "x", count: 2_500)
+    let segments = TranscriptTextSegments.make(
+        source,
+        maximumCharacters: 1_024)
+
+    #expect(segments.map(\.text).joined() == source)
+    #expect(segments.map(\.text.count) == [1_024, 1_024, 452])
+}
+
 private func assistantMessage(
     id: String,
     text: String,
