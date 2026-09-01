@@ -48,6 +48,11 @@ struct TranscriptReducer {
             if Self.isMalformedToolResult(message) { return .none }
             if let mutation = consumeToolResult(message) { return mutation }
             let id = messageID(message)
+            if Self.isCompleteAtStart(message) {
+                return appendCompleteMessage(id: id, raw: message)
+                    ? .immediate
+                    : .none
+            }
             inflightMessageID = id
             _ = replaceInflightMessage(id: id, raw: message, isFinal: false)
             return .immediate
@@ -371,6 +376,13 @@ struct TranscriptReducer {
             && message["toolCallId"]?.stringValue == nil
     }
 
+    private static func isCompleteAtStart(_ message: JSONValue) -> Bool {
+        switch message["role"]?.stringValue {
+        case "custom", "hookMessage": true
+        default: false
+        }
+    }
+
     private static func toolResultPresentation(
         _ message: JSONValue,
         existingTool: ToolPresentation? = nil,
@@ -540,6 +552,18 @@ struct TranscriptReducer {
         items.insert(contentsOf: normalized, at: min(insertionIndex, items.endIndex))
         inflightItemIDs = normalized.compactMap(Self.inflightIdentity)
         return previous != items
+    }
+
+    private mutating func appendCompleteMessage(id: String, raw: JSONValue) -> Bool {
+        let normalized = TranscriptMessageNormalizer.items(
+            id: id,
+            raw: raw,
+            isFinal: true)
+        var changed = false
+        for item in normalized {
+            changed = replaceOrAppend(item) || changed
+        }
+        return changed
     }
 
     private mutating func syntheticID(prefix: String) -> String {

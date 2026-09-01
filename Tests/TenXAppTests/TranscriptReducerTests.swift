@@ -728,6 +728,40 @@ private func message(_ json: String) throws -> JSONValue {
     #expect(reducer.items.count == 1)
 }
 
+@Test func aDisplayedSkillMessageCompletesBeforeTheAssistantStarts() {
+    var reducer = TranscriptReducer()
+    let skillText = "# Skill\n\n" + String(
+        repeating: "Follow this instruction carefully.\n",
+        count: 240)
+    let skill = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string(skillText),
+    ])
+    let assistant = JSONValue.object([
+        "id": .string("assistant-1"),
+        "role": .string("assistant"),
+        "content": .string("Starting work."),
+    ])
+
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": skill])))
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": assistant])))
+
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.id) == ["skill-1", "assistant-1"])
+    #expect(messages.first?.visibleText == skillText)
+    #expect(messages.first?.isFinal == true)
+}
+
 @Test func aChangeReplayedFromTheSessionFileIsNotShownTwice() {
     var reducer = TranscriptReducer()
     _ = reducer.consume(.event(
