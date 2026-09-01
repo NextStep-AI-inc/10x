@@ -762,6 +762,49 @@ private func message(_ json: String) throws -> JSONValue {
     #expect(messages.first?.isFinal == true)
 }
 
+@Test func aLateSkillSnapshotDoesNotReplaceTheStreamingAssistant() {
+    var reducer = TranscriptReducer()
+    let skillStart = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string("# Skill\n\nInitial instructions."),
+    ])
+    let skillUpdate = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string("# Skill\n\nComplete instructions."),
+    ])
+    let assistant = JSONValue.object([
+        "id": .string("assistant-1"),
+        "role": .string("assistant"),
+        "content": .string("Starting work."),
+    ])
+
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": skillStart])))
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": assistant])))
+    _ = reducer.consume(.event(
+        type: "message_update",
+        payload: .object(["message": skillUpdate])))
+
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.id) == ["skill-1", "assistant-1"])
+    #expect(messages[0].visibleText == "# Skill\n\nComplete instructions.")
+    #expect(messages[0].isFinal == true)
+    #expect(messages[1].visibleText == "Starting work.")
+    #expect(messages[1].isFinal == false)
+}
+
 @Test func aChangeReplayedFromTheSessionFileIsNotShownTwice() {
     var reducer = TranscriptReducer()
     _ = reducer.consume(.event(

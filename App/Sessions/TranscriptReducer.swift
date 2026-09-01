@@ -59,6 +59,11 @@ struct TranscriptReducer {
         case "message_update":
             guard let message = payload["message"] else { return .none }
             guard TranscriptMessage.isDisplayable(message) else { return .none }
+            if Self.isCompleteAtStart(message) {
+                return appendCompleteMessage(id: messageID(message), raw: message)
+                    ? .immediate
+                    : .none
+            }
             let id = inflightMessageID ?? messageID(message)
             inflightMessageID = id
             return replaceInflightMessage(id: id, raw: message, isFinal: false) ? .coalesced : .none
@@ -67,6 +72,11 @@ struct TranscriptReducer {
             guard TranscriptMessage.isDisplayable(message) else { return .none }
             if Self.isMalformedToolResult(message) { return .none }
             if let mutation = consumeToolResult(message) { return mutation }
+            if Self.isCompleteAtStart(message) {
+                return appendCompleteMessage(id: messageID(message), raw: message)
+                    ? .immediate
+                    : .none
+            }
             let id = inflightMessageID ?? messageID(message)
             _ = replaceInflightMessage(id: id, raw: message, isFinal: true)
             for item in items {
