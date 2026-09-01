@@ -49,6 +49,7 @@ final class ComposerCommandModel {
     private(set) var catalogState: ComposerCommandCatalogState = .loading
     private(set) var inlineMessage: String?
     private(set) var selectedSubcommandUsage: String?
+    private(set) var highlightedSubcommandName: String?
 
     @ObservationIgnored private let warmCatalog: any ComposerCatalogLoading
     @ObservationIgnored private let controls: ComposerControlsModel
@@ -169,6 +170,9 @@ final class ComposerCommandModel {
     }
 
     func cycleSource(_ cycle: CommandBrowserCycle) {
+        if route != .root {
+            returnToRootForSourceNavigation()
+        }
         let visibleSources = sources.map(\.id)
         guard let current = visibleSources.firstIndex(of: selectedSource), !visibleSources.isEmpty else { return }
         let index: Int
@@ -188,7 +192,10 @@ final class ComposerCommandModel {
     }
 
     func selectSource(_ source: CommandBrowserSource) {
-        guard route == .root, sources.contains(where: { $0.id == source }) else { return }
+        if route != .root {
+            returnToRootForSourceNavigation()
+        }
+        guard sources.contains(where: { $0.id == source }) else { return }
         let priorSelection = selectedRowID
         selectedSource = source
         clearSelectedSubcommand()
@@ -208,6 +215,9 @@ final class ComposerCommandModel {
     }
 
     func complete() -> CommandBrowserEffect {
+        if case .subcommands = route {
+            return selectHighlightedSubcommand()
+        }
         guard let row = highlightedRow else { return .none }
         switch row.kind {
         case .app(let command):
@@ -220,8 +230,11 @@ final class ComposerCommandModel {
                 dismissPresentation()
                 return .replaceDraft(canonical)
             }
-            route = row.subcommands.isEmpty ? .arguments(row.id) : .subcommands(row.id)
             clearSelectedSubcommand()
+            route = row.subcommands.isEmpty ? .arguments(row.id) : .subcommands(row.id)
+            if !row.subcommands.isEmpty {
+                highlightedSubcommandName = row.subcommands.first?.name
+            }
             draft = canonical
             parsedDraft = CommandBrowserPresentation.parseDraft(canonical)
             return .replaceDraft(canonical)
@@ -237,6 +250,7 @@ final class ComposerCommandModel {
 
         selectedSubcommandName = subcommand.name
         selectedSubcommandUsage = subcommand.usage
+        highlightedSubcommandName = subcommand.name
         route = .arguments(rowID)
         let canonical = "/\(row.canonicalName) \(canonicalName) "
         draft = canonical
@@ -250,7 +264,7 @@ final class ComposerCommandModel {
             return .none
         case .subcommands(let rowID):
             guard row(for: rowID) != nil else { return unavailableChildEffect() }
-            return .none
+            return selectHighlightedSubcommand()
         case .arguments(let rowID):
             guard let row = row(for: rowID) else { return unavailableChildEffect() }
             return await execute(row: row, attachments: attachments)
@@ -268,6 +282,7 @@ final class ComposerCommandModel {
                     let canonical = canonicalSlashText(for: row, trailingSpace: true)
                     route = .subcommands(row.id)
                     clearSelectedSubcommand()
+                    highlightedSubcommandName = row.subcommands.first?.name
                     draft = canonical
                     parsedDraft = CommandBrowserPresentation.parseDraft(canonical)
                     return .replaceDraft(canonical)
@@ -323,6 +338,36 @@ final class ComposerCommandModel {
     func dismiss() -> CommandBrowserEffect {
         dismissPresentation()
         return .dismiss
+    }
+
+    func moveSubcommandSelection(_ move: CommandBrowserMove) {
+        guard case .subcommands(let rowID) = route,
+              let row = row(for: rowID),
+              !row.subcommands.isEmpty
+        else {
+            highlightedSubcommandName = nil
+            return
+        }
+        let names = row.subcommands.map(\.name)
+        let current = highlightedSubcommandName.flatMap { names.firstIndex(of: $0) }
+        let last = names.index(before: names.endIndex)
+        let page = max(1, min(8, names.count))
+        let index: Int
+        switch move {
+        case .first:
+            index = names.startIndex
+        case .last:
+            index = last
+        case .previous:
+            index = current.map { $0 == names.startIndex ? last : $0 - 1 } ?? last
+        case .next:
+            index = current.map { $0 == last ? names.startIndex : $0 + 1 } ?? names.startIndex
+        case .pagePrevious:
+            index = max(names.startIndex, (current ?? names.startIndex) - page)
+        case .pageNext:
+            index = min(last, (current ?? names.startIndex) + page)
+        }
+        highlightedSubcommandName = names[index]
     }
 
     func attachActiveSession(_ session: any ComposerCommandSession) {
@@ -398,9 +443,11 @@ final class ComposerCommandModel {
         mode = resolvedMode
         switch route {
         case .subcommands(let rowID):
-            if row(for: rowID) == nil {
+            guard let row = row(for: rowID), !row.subcommands.isEmpty else {
                 markUnavailableChild(for: rowID)
+                break
             }
+            retainHighlightedSubcommand(in: row)
         case .arguments(let rowID):
             guard let row = row(for: rowID) else {
                 markUnavailableChild(for: rowID)
@@ -439,6 +486,15 @@ final class ComposerCommandModel {
 
     private func row(for id: CommandBrowserRowID) -> CommandBrowserRow? {
         CommandBrowserPresentation.rows(commands: commands, mode: resolvedMode).first { $0.id == id }
+    }
+
+    private func selectHighlightedSubcommand() -> CommandBrowserEffect {
+        guard case .subcommands(let rowID) = route,
+              let row = row(for: rowID)
+        else { return unavailableChildEffect() }
+        retainHighlightedSubcommand(in: row)
+        guard let highlightedSubcommandName else { return unavailableChildEffect() }
+        return selectSubcommand(named: highlightedSubcommandName)
     }
 
     private func shouldKeepArgumentRoute(for parsed: ParsedSlashDraft) -> Bool {
@@ -556,6 +612,27 @@ final class ComposerCommandModel {
     private func clearSelectedSubcommand() {
         selectedSubcommandName = nil
         selectedSubcommandUsage = nil
+        highlightedSubcommandName = nil
+    }
+
+    private func retainHighlightedSubcommand(in row: CommandBrowserRow) {
+        guard !row.subcommands.isEmpty else {
+            highlightedSubcommandName = nil
+            return
+        }
+        if let highlightedSubcommandName,
+           row.subcommands.contains(where: { $0.name == highlightedSubcommandName })
+        {
+            return
+        }
+        highlightedSubcommandName = row.subcommands.first?.name
+    }
+
+    private func returnToRootForSourceNavigation() {
+        route = .root
+        clearSelectedSubcommand()
+        inlineMessage = nil
+        refreshSelection(previous: selectedRowID)
     }
 
     private func dismissPresentation() {

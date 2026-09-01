@@ -205,6 +205,7 @@
 		B24374A9E4F25605FD62C639DD68F6CE /* PreferredIDESettingRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F07ECBFB6BDAE4C811DB1D7ABEBF18F7 /* PreferredIDESettingRowView.swift */; };
 		BA3C702B9C529BB7BE46D44A11C94776 /* ToolCardScaffold.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C133747F6397FABD958011509EE75A7 /* ToolCardScaffold.swift */; };
 		BBEDA3D36D56D53B7852CB4F3CAFE398 /* ProviderAccountRemovalConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B635F1A1222C69CB52D0B90DECC1B7 /* ProviderAccountRemovalConfirmationView.swift */; };
+		BC1ABAADBCBE5BDF11F56CF8CD1B1E5E /* CommandBrowserKeyboardMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B17783DD19B2A5A68DA3BA376D131E57 /* CommandBrowserKeyboardMonitor.swift */; };
 		BC9FF24B56A051B4A890CA54B5E29270 /* TranscriptMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A6D61E7BBBF6C63AD9B56AF5526F74D /* TranscriptMessage.swift */; };
 		BD98BDD407BAABE3AD0724D4FDE1D85C /* SessionSearchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3EF186EA996949E598D53D7B5E831D4 /* SessionSearchService.swift */; };
 		BDC5536A0CB42AA9E6C4612E54C342E4 /* SessionSearchDocumentBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 820616B4ADC325CD37B2DD16742382D2 /* SessionSearchDocumentBuilder.swift */; };
@@ -510,6 +511,7 @@
 		AF3E432F37F8D0D53810A7FB0AEFEC1B /* ToolEventReducerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolEventReducerTests.swift; path = Tests/TenXAppTests/ToolEventReducerTests.swift; sourceTree = "<group>"; };
 		AF5808862D9C60706C383E28558A306D /* StartupSplashSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StartupSplashSnapshotTests.swift; path = Tests/TenXAppTests/StartupSplashSnapshotTests.swift; sourceTree = "<group>"; };
 		B15D18E5167B8BD5F6410D74F2273945 /* RecentModelStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecentModelStoreTests.swift; path = Tests/TenXAppTests/RecentModelStoreTests.swift; sourceTree = "<group>"; };
+		B17783DD19B2A5A68DA3BA376D131E57 /* CommandBrowserKeyboardMonitor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CommandBrowserKeyboardMonitor.swift; path = App/Sessions/CommandBrowserKeyboardMonitor.swift; sourceTree = "<group>"; };
 		B19E8F1FA7804943C964A988E5E2734D /* TenXApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TenXApp.swift; path = App/TenXApp.swift; sourceTree = "<group>"; };
 		B20D35C6C67F5F0451C060614D296474 /* SearchModalModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SearchModalModel.swift; path = App/Search/SearchModalModel.swift; sourceTree = "<group>"; };
 		B3731B0F5988DEBA30A2D9CEDFF9DE28 /* ToolDisclosureStateTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolDisclosureStateTests.swift; path = Tests/TenXAppTests/ToolDisclosureStateTests.swift; sourceTree = "<group>"; };
@@ -694,6 +696,7 @@
 				A78207AC2A26009BADC702EE948558E8 /* ChooseProjectFlyout.swift */,
 				722A90AFEAB60805D76D3078CB9B153C /* CodeBlockView.swift */,
 				9A1343DDBA8016BBC901CEB291AC9260 /* CommandBrowserAccessibility.swift */,
+				B17783DD19B2A5A68DA3BA376D131E57 /* CommandBrowserKeyboardMonitor.swift */,
 				6025403149619D6E29D9D20C2B47FAC0 /* CommandBrowserNativeControlsView.swift */,
 				4943EFF43BB0CB6DF2D747F2D52A1258 /* CommandBrowserPresentation.swift */,
 				A2EBEF52FEFC257C1D51EA39C0D25443 /* CommandBrowserView.swift */,
@@ -1125,6 +1128,7 @@
 				61C051649E204A2EE7664AC8C4A0DA77 /* ChooseProjectFlyout.swift in Sources */,
 				E291E3DE386CC36E6FC7125827CC0695 /* CodeBlockView.swift in Sources */,
 				389B6973393979F318D544E25F8D3849 /* CommandBrowserAccessibility.swift in Sources */,
+				BC1ABAADBCBE5BDF11F56CF8CD1B1E5E /* CommandBrowserKeyboardMonitor.swift in Sources */,
 				428955BACB0929C00CF717E144A83047 /* CommandBrowserNativeControlsView.swift in Sources */,
 				2420EB64385E79B8C0E3B3BAFDEFD14A /* CommandBrowserPresentation.swift in Sources */,
 				C36FB0CA7A9C378A8C47E8AD89AD49D2 /* CommandBrowserView.swift in Sources */,

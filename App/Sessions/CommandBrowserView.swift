@@ -234,37 +234,66 @@ struct CommandBrowserView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
                 .padding(.bottom, 8)
-            ForEach(row.subcommands, id: \.name) { subcommand in
+            ForEach(Array(row.subcommands.enumerated()), id: \.element.name) { index, subcommand in
+                let isHighlighted = subcommand.name == model.highlightedSubcommandName
                 Button {
                     onEffect(model.selectSubcommand(named: subcommand.name))
                     restoreEditorFocus()
                 } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(subcommand.name)
-                            .font(TenXTypography.mono(size: 12, weight: .semibold))
-                            .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                            .lineLimit(1)
-                        if let description = subcommand.description, !description.isEmpty {
-                            Text(description)
-                                .font(TenXTypography.body(size: 11))
-                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                                .lineLimit(2)
+                    HStack(spacing: 8) {
+                        Rectangle()
+                            .fill(isHighlighted ? TenXPalette.color(TenXPalette.cyanHex) : .clear)
+                            .frame(width: 2)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(subcommand.name)
+                                .font(TenXTypography.mono(size: 12, weight: isHighlighted ? .semibold : .regular))
+                                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                                .lineLimit(1)
+                            if let description = subcommand.description, !description.isEmpty {
+                                Text(description)
+                                    .font(TenXTypography.body(size: 11))
+                                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                                    .lineLimit(2)
+                            }
                         }
+                        Spacer(minLength: 8)
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.trailing, 12)
                     .frame(maxWidth: .infinity, minHeight: CommandBrowserMetrics.rowHeight, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .background(FlyoutRowBackground(isSelected: false))
+                .background(FlyoutRowBackground(isSelected: isHighlighted))
                 .accessibilityLabel(subcommand.name)
-                .accessibilityValue(subcommand.description ?? subcommand.usage ?? "")
+                .accessibilityValue(subcommandAccessibilityValue(
+                    subcommand,
+                    position: index + 1,
+                    count: row.subcommands.count,
+                    isSelected: isHighlighted))
+                .accessibilityHint(isHighlighted ? "Highlighted subcommand" : "Subcommand")
             }
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Subcommands")
         .accessibilityValue("Expanded")
+    }
+
+    private func subcommandAccessibilityValue(
+        _ subcommand: AvailableSlashSubcommand,
+        position: Int,
+        count: Int,
+        isSelected: Bool
+    ) -> String {
+        [
+            isSelected ? "Selected" : "Not selected",
+            "\(position) of \(count)",
+            subcommand.description,
+            subcommand.usage,
+        ].compactMap { value in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }.joined(separator: ", ")
     }
 
     private func detailMetadata(for row: CommandBrowserRow) -> some View {

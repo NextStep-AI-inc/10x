@@ -397,6 +397,12 @@ struct ComposerView: View {
                 onEffect: applyCommandEffect,
                 onDismiss: dismissCommands,
                 restoreEditorFocus: restoreEditorFocus)
+            .background {
+                CommandBrowserKeyboardMonitor(route: commands.route) { action in
+                    handleCommandKeyAction(action, model: commands)
+                    return true
+                }
+            }
             .frame(height: CommandBrowserMetrics.maximumHeight)
             .offset(y: -CommandBrowserMetrics.maximumHeight)
             .transition(shelfTransition)
@@ -522,6 +528,9 @@ struct ComposerView: View {
             guard let action = ComposerCommandKeyRouting.route(press.key, modifiers: press.modifiers) else {
                 return .ignored
             }
+            guard CommandBrowserKeyboardCapturePolicy.shouldCapture(action, route: commands.route) else {
+                return .ignored
+            }
             handleCommandKeyAction(action, model: commands)
             return .handled
         }
@@ -539,7 +548,11 @@ struct ComposerView: View {
     ) {
         switch action {
         case .move(let move):
-            model.moveSelection(move)
+            if case .subcommands = model.route {
+                model.moveSubcommandSelection(move)
+            } else {
+                model.moveSelection(move)
+            }
         case .cycle(let cycle):
             model.cycleSource(cycle)
         case .sourceIndex(let index):

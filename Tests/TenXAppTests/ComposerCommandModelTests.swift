@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import OmpKit
 import SwiftUI
@@ -83,6 +84,51 @@ import Testing
     #expect(ComposerCommandDismissalRouting.action(for: nil) == .hideFlyoutOnly)
 }
 
+@Test func commandBrowserKeyboardMonitorTranslatesRealAppKitEvents() {
+    #expect(CommandBrowserKeyboardEventRouting.action(for: keyDown(keyCode: 125)) == .move(.next))
+    #expect(CommandBrowserKeyboardEventRouting.action(for: keyDown(keyCode: 48, characters: "\t", modifiers: .control)) == .cycle(.forward))
+    #expect(CommandBrowserKeyboardEventRouting.action(for: keyDown(keyCode: 48, characters: "\t", modifiers: [.control, .shift])) == .cycle(.backward))
+    #expect(CommandBrowserKeyboardEventRouting.action(for: keyDown(keyCode: 20, characters: "3", modifiers: .command)) == .sourceIndex(3))
+    #expect(CommandBrowserKeyboardEventRouting.action(for: keyDown(keyCode: 76)) == .activate)
+    #expect(CommandBrowserKeyboardEventRouting.action(for: keyDown(keyCode: 125, modifiers: .option)) == nil)
+}
+
+@Test func commandBrowserKeyboardCapturePolicyFollowsTheCurrentRoute() {
+    let rowID = CommandBrowserRowID(rawSource: "builtin", canonicalName: "compact")
+
+    #expect(CommandBrowserKeyboardCapturePolicy.shouldCapture(.move(.next), route: .root))
+    #expect(CommandBrowserKeyboardCapturePolicy.shouldCapture(.sourceIndex(3), route: .root))
+    #expect(CommandBrowserKeyboardCapturePolicy.shouldCapture(.activate, route: .root))
+    #expect(!CommandBrowserKeyboardCapturePolicy.shouldCapture(.move(.next), route: .arguments(rowID)))
+    #expect(!CommandBrowserKeyboardCapturePolicy.shouldCapture(.complete, route: .arguments(rowID)))
+    #expect(CommandBrowserKeyboardCapturePolicy.shouldCapture(.activate, route: .arguments(rowID)))
+    #expect(CommandBrowserKeyboardCapturePolicy.shouldCapture(.back, route: .arguments(rowID)))
+    #expect(!CommandBrowserKeyboardCapturePolicy.shouldCapture(.move(.next), route: .native(.model)))
+    #expect(!CommandBrowserKeyboardCapturePolicy.shouldCapture(.activate, route: .native(.model)))
+    #expect(!CommandBrowserKeyboardCapturePolicy.shouldCapture(.back, route: .native(.model)))
+    #expect(CommandBrowserKeyboardCapturePolicy.shouldCapture(.cycle(.forward), route: .native(.model)))
+    #expect(CommandBrowserKeyboardCapturePolicy.shouldCapture(.move(.next), route: .subcommands(rowID)))
+    #expect(CommandBrowserKeyboardCapturePolicy.shouldCapture(.sourceIndex(3), route: .subcommands(rowID)))
+}
+
+@Test func commandBrowserKeyboardMonitorConsumesOnlyHandledCommandEvents() {
+    var handled: [ComposerCommandKeyAction] = []
+    let down = keyDown(keyCode: 125)
+    let left = keyDown(keyCode: 123)
+    let argumentReturn = keyDown(keyCode: 36, characters: "\r")
+    let rowID = CommandBrowserRowID(rawSource: "builtin", canonicalName: "compact")
+
+    #expect(CommandBrowserKeyboardEventRouting.result(for: down, route: .root) { action in
+        handled.append(action)
+        return true
+    } == .consume)
+    #expect(handled == [.move(.next)])
+    #expect(CommandBrowserKeyboardEventRouting.result(for: left, route: .root) { _ in true } == .pass)
+    #expect(CommandBrowserKeyboardEventRouting.result(for: down, route: .arguments(rowID)) { _ in true } == .pass)
+    #expect(CommandBrowserKeyboardEventRouting.result(for: argumentReturn, route: .arguments(rowID)) { _ in false } == .pass)
+    #expect(CommandBrowserKeyboardEventRouting.result(for: argumentReturn, route: .arguments(rowID)) { _ in true } == .consume)
+}
+
 @MainActor
 @Test func commandModelOpensOnlyForAValidSlashDraft() async {
     let catalog = CommandModelCatalog()
@@ -104,6 +150,7 @@ import Testing
     let model = commandModel(catalog: catalog)
     await Task.yield()
     #expect(model.updateDraft("/"))
+    model.selectSource(.app)
     model.moveSelection(.last)
     #expect(model.highlightedRow?.canonicalName == "fast")
     model.moveSelection(.next)
@@ -385,10 +432,14 @@ import Testing
 }
 
 @MainActor
-@Test func commandModelDoesNotAdvanceOrSendFromSubcommandsWithoutASelection() async {
+@Test func commandModelSelectsHighlightedSubcommandsBeforeSendingArguments() async {
     let parent = AvailableSlashCommand(
         name: "parent",
-        subcommands: [AvailableSlashSubcommand(name: "child", usage: "child <file>")],
+        subcommands: [
+            AvailableSlashSubcommand(name: "alpha"),
+            AvailableSlashSubcommand(name: "beta"),
+            AvailableSlashSubcommand(name: "gamma"),
+        ],
         source: .builtin)
     let session = CommandModelSession(state: .idle, catalog: .available([parent]))
     let model = commandModel(catalog: CommandModelCatalog(commands: [parent]))
@@ -397,10 +448,22 @@ import Testing
     #expect(model.updateDraft("/parent"))
     #expect(await model.activate() == .replaceDraft("/parent "))
     #expect(model.route == .subcommands(CommandBrowserRowID(rawSource: "builtin", canonicalName: "parent")))
-    #expect(await model.activate() == .none)
-    #expect(await model.activate() == .none)
-    #expect(model.route == .subcommands(CommandBrowserRowID(rawSource: "builtin", canonicalName: "parent")))
-    #expect(session.sent.isEmpty)
+    #expect(model.highlightedSubcommandName == "alpha")
+    model.moveSubcommandSelection(.next)
+    #expect(model.highlightedSubcommandName == "beta")
+    model.moveSubcommandSelection(.last)
+    #expect(model.highlightedSubcommandName == "gamma")
+    model.moveSubcommandSelection(.next)
+    #expect(model.highlightedSubcommandName == "alpha")
+    model.moveSubcommandSelection(.pageNext)
+    #expect(model.highlightedSubcommandName == "gamma")
+    model.moveSubcommandSelection(.pagePrevious)
+    #expect(model.highlightedSubcommandName == "alpha")
+    #expect(model.complete() == .replaceDraft("/parent alpha "))
+    #expect(model.route == .arguments(CommandBrowserRowID(rawSource: "builtin", canonicalName: "parent")))
+    #expect(model.updateDraft("/parent alpha foo"))
+    #expect(await model.activate() == .executed)
+    #expect(session.sent == ["/parent alpha foo"])
 }
 
 @MainActor
@@ -420,6 +483,52 @@ import Testing
     #expect(model.selectedSubcommandUsage == "child <file>")
     #expect(await model.activate() == .executed)
     #expect(session.sent == ["/parent child "])
+}
+
+@MainActor
+@Test func commandModelRetainsAndRehomesHighlightedSubcommandAcrossCatalogUpdates() async {
+    let alpha = AvailableSlashSubcommand(name: "alpha")
+    let beta = AvailableSlashSubcommand(name: "beta")
+    let gamma = AvailableSlashSubcommand(name: "gamma")
+    let session = StreamingCommandSession(
+        state: .idle,
+        catalog: .available([AvailableSlashCommand(name: "parent", subcommands: [alpha, beta, gamma], source: .builtin)]))
+    let model = commandModel(catalog: CommandModelCatalog(commands: [
+        AvailableSlashCommand(name: "parent", subcommands: [alpha, beta, gamma], source: .builtin),
+    ]))
+    model.attachActiveSession(session)
+
+    #expect(model.updateDraft("/parent"))
+    #expect(await model.activate() == .replaceDraft("/parent "))
+    model.moveSubcommandSelection(.next)
+    #expect(model.highlightedSubcommandName == "beta")
+    session.yield(.available([AvailableSlashCommand(name: "parent", subcommands: [gamma, beta], source: .builtin)]))
+    #expect(await eventually { model.highlightedSubcommandName == "beta" })
+    session.yield(.available([AvailableSlashCommand(name: "parent", subcommands: [gamma], source: .builtin)]))
+    #expect(await eventually { model.highlightedSubcommandName == "gamma" })
+    session.yield(.available([AvailableSlashCommand(name: "parent", subcommands: [], source: .builtin)]))
+    #expect(await eventually { model.route == .root })
+    #expect(model.inlineMessage == "This command is no longer available.")
+}
+
+@MainActor
+@Test func commandModelSourceSwitchesFromChildRoutesViaRoot() async {
+    let parent = AvailableSlashCommand(
+        name: "parent",
+        subcommands: [AvailableSlashSubcommand(name: "child")],
+        source: .builtin)
+    let skill = AvailableSlashCommand(name: "parent-helper", source: .skill)
+    let session = CommandModelSession(state: .idle, catalog: .available([parent, skill]))
+    let model = commandModel(catalog: CommandModelCatalog(commands: [parent, skill]))
+    model.attachActiveSession(session)
+
+    #expect(model.updateDraft("/parent"))
+    #expect(await model.activate() == .replaceDraft("/parent "))
+    #expect(model.route == .subcommands(CommandBrowserRowID(rawSource: "builtin", canonicalName: "parent")))
+    model.selectVisibleSource(at: 4)
+    #expect(model.route == .root)
+    #expect(model.selectedSource == .skills)
+    #expect(model.highlightedRow?.canonicalName == "parent-helper")
 }
 
 @MainActor
@@ -776,6 +885,24 @@ private let commandModelCommands = [
     AvailableSlashCommand(name: "compact", aliases: ["alias"], inputHint: "[note]", source: .builtin),
     AvailableSlashCommand(name: "skill:write", source: .skill),
 ]
+
+private func keyDown(
+    keyCode: UInt16,
+    characters: String = "",
+    modifiers: NSEvent.ModifierFlags = []
+) -> NSEvent {
+    NSEvent.keyEvent(
+        with: .keyDown,
+        location: .zero,
+        modifierFlags: modifiers,
+        timestamp: 0,
+        windowNumber: 1,
+        context: nil,
+        characters: characters,
+        charactersIgnoringModifiers: characters,
+        isARepeat: false,
+        keyCode: keyCode)!
+}
 
 @MainActor
 private func commandModel(catalog: any ComposerCatalogLoading) -> ComposerCommandModel {
