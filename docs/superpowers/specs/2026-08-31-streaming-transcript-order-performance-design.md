@@ -93,6 +93,8 @@ The normalizer walks the assistant message's content array once and emits:
 
 Adjacent visible blocks remain in one assistant segment until a tool call creates a boundary. Segment identities derive from the parent message identity and stable content position so a growing full-snapshot replacement updates existing rows instead of appending duplicates.
 
+Each full assistant snapshot is authoritative for the tool name and any arguments present in its tool-call content block. When a matching execution presentation exists, the normalizer merges those current details by tool-call ID while preserving the execution phase, result, start date, and end date. If the snapshot omits arguments, the existing arguments remain available.
+
 The live reducer retains the authoritative full-message replacement rule. A `message_update` replaces the in-flight message's normalized segment range; `message_end` finalizes that range. Tool execution events update the matching tool presentation by tool-call ID without moving it. Persisted history uses the same normalization before merging tool results, so reopening and reconciliation cannot produce a different order.
 
 For the example above, both live and reopened timelines become:
