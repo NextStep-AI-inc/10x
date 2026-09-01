@@ -41,8 +41,8 @@ enum SnapshotAppearance {
 func assertSnapshot<Content: View>(
     _ content: Content,
     name: String,
-    size: CGSize = CGSize(width: 900, height: 600),
     appearance: SnapshotAppearance = .light,
+    size: CGSize = CGSize(width: 900, height: 600),
     sourceFile: String = #filePath
 ) throws {
     // Rendering in parallel with the rest of the suite, a detached hosting view

@@ -41,7 +41,8 @@ proves both that `srgbRed:` round-trips identically to the old
 `Color(red:green:blue:)` and that resolution follows the host, not
 `NSApp.effectiveAppearance`.
 
-**Full suite.** 933/933 passing, no stray `.actual.png`.
+**Full suite.** 974/974 passing, no stray `.actual.png`, and no light
+reference moved when the dark mirrors were added.
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
@@ -59,14 +60,29 @@ dark foreground clears 4.5:1 on the dark canvas (lowest: `signalRed` 6.58);
 The two accents move *up* in luminance — the light ramp darkens them for
 contrast against white, which inverts once the canvas is dark.
 
-**Nine dark snapshot references**, rendered from the real views through a
-`.darkAqua`-pinned host and inspected individually: `full-shell-dark`,
-`composer-with-model-flyout-dark`, `rich-transcript-wide-dark`,
-`activity-structured-diff-dark`, `continuous-settings-dark`,
-`session-deletion-confirmation-dark`, `brand-actions-menu-dark`,
-`generic-tool-card-dark`, `approval-card-dark`.
+**48 dark snapshot references**, rendered from the real views through a
+`.darkAqua`-pinned host. Contact sheets, grouped by area, are next to this file:
 
-Looking at them caught three defects no contrast test could see:
+| Sheet | Screens |
+|---|---|
+| `01-shell-and-navigation-dark.png` | 7 |
+| `02-transcript-and-messages-dark.png` | 6 |
+| `03-tool-cards-dark.png` | 12 |
+| `04-composer-and-model-picker-dark.png` | 7 |
+| `05-providers-and-accounts-dark.png` | 6 |
+| `06-onboarding-settings-system-dark.png` | 10 |
+
+37 of these are generated from the light fixtures rather than hand-written, so
+the two appearances stay in step: same view, same state, only the host
+appearance differs. The generator rewrites the snapshot name only inside
+`assertSnapshot(...)` — `name:` is also a `ToolPresentation` argument, and
+renaming a tool would change what the card says.
+
+`search-modal` and `choose-project-shelf` had no reference at **either**
+appearance; both are now covered in light and dark. Both are raised panels over
+a canvas-tinted scrim, the exact pair of tokens contrast math cannot check.
+
+Looking at the renders caught three defects no contrast test could see:
 
 1. The composer card fill was `.fill(.white)` — a bare literal my first sweep's
    pattern missed. It rendered as a white slab on the dark shell.
@@ -94,6 +110,11 @@ is a separate feature.
 **`SplashView`'s black shadow** stays black; a shadow is not a surface.
 
 ## For the owner to test
+
+`continuous-settings-dark` re-recorded once with a sub-pixel difference in the
+bottom text field — same layout and content, text rasterization only. It then
+held byte-stable across three isolated runs and two full parallel runs, so it is
+recorded as-is rather than being marked flaky.
 
 Everything above is snapshot-rendered. Launching the real app in dark mode and
 exercising hover states, focus rings, and the provider usage wheels against live
