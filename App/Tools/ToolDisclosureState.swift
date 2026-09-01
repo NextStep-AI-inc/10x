@@ -4,6 +4,7 @@ import SwiftUI
 @Observable
 final class ToolDisclosureState: @unchecked Sendable {
     private var choices: [String: Bool] = [:]
+    private var groupChoices: [String: Bool] = [:]
 
     func isExpanded(for presentation: ToolPresentation) -> Bool {
         isExpanded(
@@ -21,6 +22,14 @@ final class ToolDisclosureState: @unchecked Sendable {
 
     func setExpanded(_ isExpanded: Bool, id: String) {
         choices[id] = isExpanded
+    }
+
+    func isGroupExpanded(id: String) -> Bool {
+        groupChoices[id] ?? true
+    }
+
+    func setGroupExpanded(_ isExpanded: Bool, id: String) {
+        groupChoices[id] = isExpanded
     }
 
     func collapseAll(ids: [String]) {
