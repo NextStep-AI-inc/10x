@@ -51,15 +51,20 @@ struct ToolSurfaceView: View {
     }
 }
 
+enum ToolSurfacePagination {
+    static let console = ProgressiveReveal(initialLimit: 10, pageSize: 100)
+    static let collection = ProgressiveReveal(initialLimit: 8, pageSize: 50)
+    static let jsonChildren = ProgressiveReveal(initialLimit: 12, pageSize: 50)
+    static let jsonScalar = ProgressiveReveal(initialLimit: 2_000, pageSize: 4_000)
+}
+
 private struct ConsoleSurfaceView: View {
     let command: String?
     let output: String
     let exitCode: Int?
 
     @State private var isWrapped = true
-    @State private var isShowingAll = false
-
-    private static let previewLineLimit = 10
+    @State private var reveal = ToolSurfacePagination.console
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -101,12 +106,11 @@ private struct ConsoleSurfaceView: View {
                 .font(TenXTypography.mono(size: 10, weight: .medium))
 
                 outputText
-                if hasHiddenLines {
-                    Button(isShowingAll ? "Show less" : "Show all \(lines.count) lines") {
-                        isShowingAll.toggle()
-                    }
-                    .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-                }
+                ProgressiveRevealButton(
+                    reveal: $reveal,
+                    total: lines.count,
+                    noun: "lines",
+                    accessibilityNoun: "output lines")
             }
         }
     }
@@ -137,11 +141,7 @@ private struct ConsoleSurfaceView: View {
     }
 
     private var visibleLines: ArraySlice<String> {
-        isShowingAll ? lines[...] : lines.prefix(Self.previewLineLimit)
-    }
-
-    private var hasHiddenLines: Bool {
-        lines.count > Self.previewLineLimit
+        lines.prefix(reveal.visibleCount(total: lines.count))
     }
 
     private func copy(_ value: String) {
@@ -152,9 +152,7 @@ private struct ConsoleSurfaceView: View {
 
 private struct CollectionSurfaceView: View {
     let items: [ToolCollectionItem]
-    @State private var isShowingAll = false
-
-    private static let previewLimit = 8
+    @State private var reveal = ToolSurfacePagination.collection
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -187,17 +185,16 @@ private struct CollectionSurfaceView: View {
                 .padding(.vertical, 2)
             }
 
-            if items.count > Self.previewLimit {
-                Button(isShowingAll ? "Show fewer" : "Show all \(items.count) items") {
-                    isShowingAll.toggle()
-                }
-                .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-            }
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: items.count,
+                noun: "items",
+                accessibilityNoun: "collection items")
         }
     }
 
     private var visibleItems: [ToolCollectionItem] {
-        isShowingAll ? items : Array(items.prefix(Self.previewLimit))
+        Array(items.prefix(reveal.visibleCount(total: items.count)))
     }
 }
 
@@ -411,12 +408,6 @@ private struct DataTreeSurfaceView: View {
 
 enum DataTreeSurfaceLayout {
     static let maximumDepth = 6
-    static let previewChildLimit = 12
-
-    static func visibleChildCount(total: Int, isShowingAll: Bool) -> Int {
-        let boundedTotal = max(0, total)
-        return isShowingAll ? boundedTotal : min(boundedTotal, previewChildLimit)
-    }
 }
 
 private struct JSONValueNode: View {
@@ -425,7 +416,7 @@ private struct JSONValueNode: View {
     let depth: Int
 
     @State private var isExpanded: Bool
-    @State private var isShowingAllChildren = false
+    @State private var childrenReveal = ToolSurfacePagination.jsonChildren
 
     init(label: String?, value: JSONValue, depth: Int) {
         self.label = label
@@ -480,19 +471,16 @@ private struct JSONValueNode: View {
     }
 
     private func visibleChildCount(total: Int) -> Int {
-        DataTreeSurfaceLayout.visibleChildCount(
-            total: total,
-            isShowingAll: isShowingAllChildren)
+        childrenReveal.visibleCount(total: total)
     }
 
     @ViewBuilder
     private func childDisclosure(total: Int, noun: String) -> some View {
-        if total > DataTreeSurfaceLayout.previewChildLimit {
-            Button(isShowingAllChildren ? "Show fewer" : "Show all \(total) \(noun)") {
-                isShowingAllChildren.toggle()
-            }
-            .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-        }
+        ProgressiveRevealButton(
+            reveal: $childrenReveal,
+            total: total,
+            noun: noun,
+            accessibilityNoun: "JSON \(noun)")
     }
 
     private func nodeLabel(_ detail: String) -> some View {
@@ -534,7 +522,7 @@ private struct JSONValueNode: View {
 private struct DataScalarRow: View {
     let label: String?
     let text: String
-    @State private var isExpanded = false
+    @State private var reveal = ToolSurfacePagination.jsonScalar
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -543,10 +531,9 @@ private struct DataScalarRow: View {
                     Text(label)
                         .font(TenXTypography.mono(size: 10, weight: .semibold))
                 }
-                Text(text)
+                Text(visibleText)
                     .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                    .lineLimit(isExpanded ? nil : 4)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .contextMenu {
@@ -554,13 +541,16 @@ private struct DataScalarRow: View {
                     }
                     .accessibilityAction(named: "Copy value") { copy(text) }
             }
-            if text.count > 320 {
-                Button(isExpanded ? "Show less" : "Show all") {
-                    isExpanded.toggle()
-                }
-                .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-            }
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: text.count,
+                noun: "characters",
+                accessibilityNoun: "JSON characters")
         }
+    }
+
+    private var visibleText: String {
+        String(text.prefix(reveal.visibleCount(total: text.count)))
     }
 }
 

@@ -314,7 +314,7 @@ struct SourceSurface: View {
     let previewLineLimit: Int?
 
     @State private var isWrapped: Bool
-    @State private var isShowingAll = false
+    @State private var reveal: ProgressiveReveal
 
     init(
         presentation: SourcePresentation,
@@ -324,6 +324,9 @@ struct SourceSurface: View {
         self.presentation = presentation
         self.previewLineLimit = previewLineLimit
         _isWrapped = State(initialValue: isInitiallyWrapped)
+        _reveal = State(initialValue: ProgressiveReveal(
+            initialLimit: previewLineLimit ?? 200,
+            pageSize: 200))
     }
 
     var body: some View {
@@ -336,13 +339,11 @@ struct SourceSurface: View {
                     rows.fixedSize(horizontal: true, vertical: false)
                 }
             }
-            if hasHiddenLines {
-                Button(isShowingAll ? "Show less" : "Show all \(presentation.lines.count) lines") {
-                    isShowingAll.toggle()
-                }
-                .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-                .accessibilityLabel(isShowingAll ? "Show fewer source lines" : "Show all source lines")
-            }
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: presentation.lines.count,
+                noun: "lines",
+                accessibilityNoun: "source lines")
         }
         .padding(10)
         .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
@@ -381,15 +382,20 @@ struct SourceSurface: View {
     }
 
     private var visibleLines: ArraySlice<SourceLine> {
-        guard let previewLineLimit, !isShowingAll else {
-            return presentation.lines[...]
-        }
-        return presentation.lines.prefix(previewLineLimit)
+        presentation.lines.prefix(Self.visibleLineCount(
+            total: presentation.lines.count,
+            previewLineLimit: previewLineLimit,
+            reveal: reveal))
     }
 
-    private var hasHiddenLines: Bool {
-        guard let previewLineLimit else { return false }
-        return presentation.lines.count > previewLineLimit
+    nonisolated static func visibleLineCount(
+        total: Int,
+        previewLineLimit: Int?,
+        reveal: ProgressiveReveal
+    ) -> Int {
+        let boundedTotal = max(0, total)
+        let previewCount = min(boundedTotal, previewLineLimit ?? 200)
+        return max(previewCount, reveal.visibleCount(total: boundedTotal))
     }
 
     private func copy() {
