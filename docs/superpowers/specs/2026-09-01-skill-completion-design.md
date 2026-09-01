@@ -1,6 +1,6 @@
 # Skill Completion Dismissal
 
-**Status:** Approved design, pending written-spec review
+**Status:** Approved
 
 **Date:** 2026-09-01
 
