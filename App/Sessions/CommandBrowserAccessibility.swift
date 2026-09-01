@@ -6,6 +6,23 @@ struct CommandBrowserSourceAction: Equatable, Sendable {
 }
 
 enum CommandBrowserAccessibility {
+    static func rowLabel(for row: CommandBrowserRow, position: Int, count: Int) -> String {
+        rowLabel(
+            name: row.canonicalName,
+            description: row.summary,
+            source: row.source.rawValue,
+            position: position,
+            count: count,
+            executionNote: row.source == .skills && row.subcommands.isEmpty ? nil : row.executionNote)
+    }
+
+    static func rowHint(for row: CommandBrowserRow) -> String {
+        if row.source == .skills, row.subcommands.isEmpty {
+            return "Complete in prompt"
+        }
+        return row.inputHint ?? helpText()
+    }
+
     static func rowLabel(
         name: String,
         description: String,

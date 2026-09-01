@@ -420,6 +420,40 @@ import Testing
 }
 
 @MainActor
+@Test func commandModelKeepsCompletedSkillsDismissedUntilTheirCanonicalTokenChanges() async {
+    let skill = AvailableSlashCommand(
+        name: "skill:using-superpowers",
+        aliases: ["using-superpowers"],
+        inputHint: "arguments",
+        source: .skill)
+    let session = CommandModelSession(state: .idle, catalog: .available([skill]))
+    let model = commandModel(catalog: CommandModelCatalog(commands: [skill]))
+    model.attachActiveSession(session)
+    let rowID = CommandBrowserRowID(
+        rawSource: "skill",
+        canonicalName: "skill:using-superpowers")
+
+    #expect(model.updateDraft("/using-superpowers"))
+    model.highlight(rowID)
+    #expect(model.complete() == .replaceDraft("/skill:using-superpowers "))
+    #expect(!model.updateDraft("/skill:using-superpowers write a concise checklist"))
+    #expect(!model.isPresented)
+    #expect(model.route == .root)
+    #expect(session.sent.isEmpty)
+
+    #expect(model.updateDraft("/using-superpowers write a concise checklist"))
+    #expect(model.isPresented)
+    #expect(model.route == .root)
+
+    model.highlight(rowID)
+    #expect(model.complete() == .replaceDraft("/skill:using-superpowers write a concise checklist"))
+    #expect(!model.updateDraft(""))
+    #expect(model.updateDraft("/using-superpowers"))
+    #expect(model.isPresented)
+    #expect(session.sent.isEmpty)
+}
+
+@MainActor
 @Test func commandModelKeepsSubcommandBearingSkillsInTheChildRoute() async {
     let skill = AvailableSlashCommand(
         name: "skill:parent",

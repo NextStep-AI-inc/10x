@@ -598,13 +598,10 @@ private struct CommandBrowserResultRow: View {
         .buttonStyle(.plain)
         .background(FlyoutRowBackground(isSelected: isSelected))
         .accessibilityLabel(CommandBrowserAccessibility.rowLabel(
-            name: row.canonicalName,
-            description: row.summary,
-            source: row.source.rawValue,
+            for: row,
             position: position,
-            count: count,
-            executionNote: row.executionNote))
+            count: count))
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
-        .accessibilityHint(row.inputHint ?? CommandBrowserAccessibility.helpText())
+        .accessibilityHint(CommandBrowserAccessibility.rowHint(for: row))
     }
 }

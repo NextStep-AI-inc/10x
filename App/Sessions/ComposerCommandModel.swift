@@ -63,6 +63,7 @@ final class ComposerCommandModel {
     @ObservationIgnored private var parsedDraft: ParsedSlashDraft?
     @ObservationIgnored private var selectedSubcommandName: String?
     @ObservationIgnored private var invalidatedChildRowID: CommandBrowserRowID?
+    @ObservationIgnored private var completedSkillToken: String?
     @ObservationIgnored private var draft = ""
     @ObservationIgnored private var mode: CommandBrowserMode = .newSession
 
@@ -114,6 +115,7 @@ final class ComposerCommandModel {
         draft = text
         clearInvalidatedChildRecovery()
         guard let parsed = CommandBrowserPresentation.parseDraft(text) else {
+            completedSkillToken = nil
             parsedDraft = nil
             clearSelectedSubcommand()
             isPresented = false
@@ -123,6 +125,15 @@ final class ComposerCommandModel {
             return false
         }
         parsedDraft = parsed
+        if completedSkillToken == parsed.query {
+            isPresented = false
+            selectedSource = .all
+            selectedRowID = nil
+            route = .root
+            inlineMessage = nil
+            return false
+        }
+        completedSkillToken = nil
         isPresented = true
         if shouldKeepArgumentRoute(for: parsed) {
             inlineMessage = nil
@@ -544,6 +555,7 @@ final class ComposerCommandModel {
 
     private func completeSkill(_ row: CommandBrowserRow) -> CommandBrowserEffect {
         let canonical = canonicalSlashText(for: row, trailingSpace: true)
+        completedSkillToken = row.canonicalName
         dismissPresentation()
         return .replaceDraft(canonical)
     }

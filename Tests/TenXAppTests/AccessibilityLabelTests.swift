@@ -1,4 +1,5 @@
 import Foundation
+import OmpKit
 import Testing
 @testable import TenXApp
 
@@ -12,6 +13,35 @@ import Testing
         count: 12,
         executionNote: "Runs after the current response"
     ) == "compact, Compact the current session, Commands, 4 of 12, Runs after the current response")
+}
+
+@Test func commandBrowserAccessibilityCompletesLeafSkillsWithoutQueueingThem() {
+    let skill = AvailableSlashCommand(
+        name: "skill:using-superpowers",
+        description: "Plan the work",
+        inputHint: "arguments",
+        source: .skill)
+    let command = AvailableSlashCommand(
+        name: "compact",
+        description: "Compact the current session",
+        source: .builtin)
+    let rows = CommandBrowserPresentation.rows(
+        commands: [skill, command],
+        mode: .activeStreaming)
+    guard let skillRow = rows.first(where: { $0.canonicalName == skill.name }),
+          let commandRow = rows.first(where: { $0.canonicalName == command.name })
+    else {
+        Issue.record("Expected streaming command rows.")
+        return
+    }
+
+    #expect(CommandBrowserAccessibility.rowLabel(for: skillRow, position: 1, count: 2)
+        == "skill:using-superpowers, Plan the work, Skills, 1 of 2")
+    #expect(CommandBrowserAccessibility.rowHint(for: skillRow) == "Complete in prompt")
+    #expect(CommandBrowserAccessibility.rowLabel(for: commandRow, position: 2, count: 2)
+        == "compact, Compact the current session, Commands, 2 of 2, Runs after the current response")
+    #expect(CommandBrowserAccessibility.rowHint(for: commandRow)
+        == CommandBrowserAccessibility.helpText())
 }
 
 @Test func commandBrowserAccessibilityPluralizesSourceCounts() {
