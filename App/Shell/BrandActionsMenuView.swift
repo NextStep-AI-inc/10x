@@ -54,7 +54,7 @@ struct BrandActionsMenuView: View {
         }
         .padding(6)
         .frame(width: 188, alignment: .leading)
-        .background(.white)
+        .background(TenXPalette.surfaceElevated)
         .overlay {
             Rectangle()
                 .stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
@@ -106,27 +106,6 @@ struct BrandActionsMenuView: View {
             value: isRevealed)
         .accessibilityLabel(item.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-}
-
-struct BrandActionsKeyboardShortcuts: View {
-    let model: AppModel
-
-    var body: some View {
-        ZStack {
-            Button(action: model.openSearch) { EmptyView() }
-                .keyboardShortcut("k", modifiers: .command)
-                .accessibilityHidden(true)
-            Button(action: model.openNewSession) { EmptyView() }
-                .keyboardShortcut("n", modifiers: .command)
-                .accessibilityHidden(true)
-            Button { model.openSettings() } label: { EmptyView() }
-                .keyboardShortcut(",", modifiers: .command)
-                .accessibilityHidden(true)
-        }
-        .frame(width: 0, height: 0)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 }
 

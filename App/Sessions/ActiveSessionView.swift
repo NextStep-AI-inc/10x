@@ -3,6 +3,7 @@ import SwiftUI
 struct ActiveSessionView: View {
     let controller: SessionController
     var controls: ComposerControlsModel?
+    var commands: ComposerCommandModel?
 
     @State private var flyout: ComposerFlyout?
 
@@ -11,6 +12,7 @@ struct ActiveSessionView: View {
             SessionHeaderView(controller: controller)
 
             TranscriptView(controller: controller)
+                .id(controller.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if controller.isRecoveryPresented,
@@ -31,6 +33,7 @@ struct ActiveSessionView: View {
                 flyout: $flyout,
                 presentation: .active(controller: controller),
                 controls: controls,
+                commands: commands,
                 controlsMode: .activeSession,
                 onSend: {
                     Task { await controller.sendPrompt() }

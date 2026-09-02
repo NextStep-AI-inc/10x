@@ -187,6 +187,292 @@ import Testing
     #expect(!message.isFinal)
 }
 
+@Test func rapidInflightReplacementUsesOnlyItsImmediateSemanticPredecessor() throws {
+    var reducer = TranscriptReducer()
+
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Prefix"}]}}
+        """))
+    let original = try #require(message(withID: "m1", in: reducer.items))
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Prefix draft"}]}}
+        """))
+    let intermediate = try #require(message(withID: "m1", in: reducer.items))
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Prefix final"}]}}
+        """))
+    let replacement = try #require(message(withID: "m1", in: reducer.items))
+
+    #expect(original.renderLineageKey == .base(messageID: "m1"))
+    #expect(intermediate.renderLineageKey == original.renderLineageKey)
+    #expect(replacement.renderLineageKey == original.renderLineageKey)
+    #expect(intermediate.document.predecessorRenderVersion == original.document.renderVersion)
+    #expect(replacement.document.predecessorRenderVersion == nil)
+    #expect(replacement.document.renderVersion != intermediate.document.renderVersion)
+}
+
+@Test func inflightSegmentsAssignLineageByStableToolBoundaries() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Before"},{"type":"toolCall","id":"read-1","name":"read","arguments":{}},{"type":"text","text":"After"}]}}
+        """))
+    let firstBefore = try #require(message(withID: "assistant-1", in: reducer.items))
+    let firstAfter = try #require(message(withID: "assistant-1-segment-1", in: reducer.items))
+    #expect(reducer.items.map(\.id) == [
+        "assistant-1",
+        "read-1",
+        "assistant-1-segment-1",
+    ])
+
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Before appended"},{"type":"toolCall","id":"read-1","name":"read","arguments":{}},{"type":"text","text":"After appended"}]}}
+        """))
+    let secondBefore = try #require(message(withID: "assistant-1", in: reducer.items))
+    let secondAfter = try #require(message(withID: "assistant-1-segment-1", in: reducer.items))
+
+    #expect(reducer.items.map(\.id) == [
+        "assistant-1",
+        "read-1",
+        "assistant-1-segment-1",
+    ])
+    #expect(firstBefore.renderLineageKey == TranscriptRenderLineageKey(
+        baseMessageID: "assistant-1",
+        precedingToolCallID: nil,
+        followingToolCallID: "read-1"))
+    #expect(firstAfter.renderLineageKey == TranscriptRenderLineageKey(
+        baseMessageID: "assistant-1",
+        precedingToolCallID: "read-1",
+        followingToolCallID: nil))
+    #expect(secondBefore.renderLineageKey == firstBefore.renderLineageKey)
+    #expect(secondAfter.renderLineageKey == firstAfter.renderLineageKey)
+    #expect(secondBefore.document.predecessorRenderVersion == firstBefore.document.renderVersion)
+    #expect(secondAfter.document.predecessorRenderVersion == firstAfter.document.renderVersion)
+    #expect(secondBefore.document.predecessorRenderVersion != firstAfter.document.renderVersion)
+    #expect(secondAfter.document.predecessorRenderVersion != firstBefore.document.renderVersion)
+}
+
+@Test func toolTopologyInsertionDoesNotTransferLineageToReusedOrdinalSegmentID() throws {
+    var reducer = TranscriptReducer()
+    let priorText = (0..<500).map { "Prior occupant paragraph \($0)" }
+        .joined(separator: "\n\n")
+    let original = JSONValue.object([
+        "id": .string("assistant-1"),
+        "role": .string("assistant"),
+        "content": .array([
+            .object(["type": .string("text"), "text": .string("Opening")]),
+            .object([
+                "type": .string("toolCall"),
+                "id": .string("read-1"),
+                "name": .string("read"),
+                "arguments": .object([:]),
+            ]),
+            .object(["type": .string("text"), "text": .string(priorText)]),
+        ]),
+    ])
+    _ = reducer.consume(.event(
+        type: "message_update",
+        payload: .object(["message": original])))
+    let priorOccupant = try #require(message(
+        withID: "assistant-1-segment-1",
+        in: reducer.items))
+    var priorState = ContentDocumentRenderState(document: priorOccupant.document)
+    priorState.reveal.revealNextPage(
+        total: ContentRenderSlicer.unitCount(priorOccupant.document))
+
+    let insertedText = priorText + "\n\nStreamed append"
+    let changedTopology = JSONValue.object([
+        "id": .string("assistant-1"),
+        "role": .string("assistant"),
+        "content": .array([
+            .object(["type": .string("text"), "text": .string("Opening")]),
+            .object([
+                "type": .string("toolCall"),
+                "id": .string("search-1"),
+                "name": .string("search"),
+                "arguments": .object([:]),
+            ]),
+            .object(["type": .string("text"), "text": .string(insertedText)]),
+            .object([
+                "type": .string("toolCall"),
+                "id": .string("read-1"),
+                "name": .string("read"),
+                "arguments": .object([:]),
+            ]),
+            .object(["type": .string("text"), "text": .string("After read")]),
+        ]),
+    ])
+    _ = reducer.consume(.event(
+        type: "message_update",
+        payload: .object(["message": changedTopology])))
+    let reusedOrdinal = try #require(message(
+        withID: "assistant-1-segment-1",
+        in: reducer.items))
+
+    #expect(reducer.items.map(\.id) == [
+        "assistant-1",
+        "search-1",
+        "assistant-1-segment-1",
+        "read-1",
+        "assistant-1-segment-2",
+    ])
+    #expect(reusedOrdinal.visibleText == insertedText)
+    #expect(priorOccupant.renderLineageKey == TranscriptRenderLineageKey(
+        baseMessageID: "assistant-1",
+        precedingToolCallID: "read-1",
+        followingToolCallID: nil))
+    #expect(reusedOrdinal.renderLineageKey == TranscriptRenderLineageKey(
+        baseMessageID: "assistant-1",
+        precedingToolCallID: "search-1",
+        followingToolCallID: "read-1"))
+    #expect(reusedOrdinal.document.predecessorRenderVersion == nil)
+    #expect(priorState.effective(for: reusedOrdinal.document).reveal.limit == 160)
+}
+
+@Test func identicalInflightFinalizationReusesTheDocumentVersion() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Complete"}]}}
+        """))
+    let inflight = try #require(message(withID: "m1", in: reducer.items))
+
+    reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Complete"}],"stopReason":"stop"}}
+        """))
+    let final = try #require(message(withID: "m1", in: reducer.items))
+
+    #expect(final.document.renderVersion == inflight.document.renderVersion)
+    #expect(final.document.predecessorRenderVersion == inflight.document.predecessorRenderVersion)
+}
+
+@Test func liveAssistantToolSegmentsStayInSourceOrderAndUpdateInPlace() throws {
+    var reducer = TranscriptReducer()
+    let assistant = """
+        {"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Checking."},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"/tmp/project/App.swift"}},{"type":"text","text":"Found it."}]}
+        """
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":\(assistant)}
+        """))
+
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.visibleText) == ["Checking.", "Found it."])
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Checking again."},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"/tmp/project/App.swift","lineEnd":12}},{"type":"text","text":"Found the updated file."}]}}
+        """))
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"read-1","toolName":"read","result":{"content":[{"type":"text","text":"file contents"}]},"isError":false}
+        """))
+
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+    let tools = reducer.items.compactMap { item -> ToolPresentation? in
+        guard case .tool(let tool) = item else { return nil }
+        return tool
+    }
+    #expect(tools.count == 1)
+    #expect(tools[0].phase == .complete)
+    #expect(tools[0].result != nil)
+}
+
+@Test func reconciliationKeepsPendingInlineToolBetweenAssistantSegments() throws {
+    var reducer = TranscriptReducer()
+    let assistant = """
+        {"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Checking."},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"/tmp/project/App.swift"}},{"type":"text","text":"Found it."}]}
+        """
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_end","message":\(assistant)}
+        """))
+    let expectedItems = reducer.items
+
+    _ = reducer.reconcile(history: TranscriptHistory(items: []))
+
+    #expect(reducer.items == expectedItems)
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+}
+
+@Test func duplicateInlineToolIDsDoNotAppendOrCrashOnFullSnapshotReplacement() throws {
+    var reducer = TranscriptReducer()
+    let assistant = """
+        {"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Before"},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"App.swift"}},{"type":"toolCall","id":"read-1","name":"read","arguments":{"path":"App.swift"}},{"type":"text","text":"After"}]}
+        """
+
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":\(assistant)}
+        """))
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":\(assistant)}
+        """))
+
+    #expect(reducer.items.map(\.id) == ["assistant-1", "read-1", "assistant-1-segment-1"])
+    #expect(reducer.items.filter { if case .tool = $0 { return true }; return false }.count == 1)
+    #expect(Set(reducer.items.map(\.id)).count == reducer.items.count)
+}
+
+@Test func toolIDCollisionDoesNotReplaceAnExistingMessage() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"shared","role":"assistant","content":[{"type":"text","text":"Keep this message"}]}}
+        """))
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"assistant-2","role":"assistant","content":[{"type":"text","text":"Read it"},{"type":"toolCall","id":"shared","name":"read","arguments":{"path":"App.swift"}}]}}
+        """))
+    _ = reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"shared","toolName":"read","result":{"content":[{"type":"text","text":"file contents"}]},"isError":false}
+        """))
+
+    let sharedMessages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item, message.id == "shared" else { return nil }
+        return message
+    }
+    let sharedTools = reducer.items.compactMap { item -> ToolPresentation? in
+        guard case .tool(let tool) = item, tool.id == "shared" else { return nil }
+        return tool
+    }
+    #expect(sharedMessages.map(\.visibleText) == ["Keep this message"])
+    #expect(sharedTools.count == 1)
+    #expect(sharedTools[0].phase == .complete)
+
+    let sharedItems = reducer.items.filter { $0.id == "shared" }
+    #expect(sharedItems.map(\.id) == ["shared", "shared"])
+    #expect(Set(sharedItems.map(\.viewID)).count == 2)
+}
+
+@Test func toolPersistenceDoesNotResolveAMessageWithTheSameID() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"shared","role":"assistant","content":[{"type":"text","text":"Keep this message"}]}}
+        """))
+    _ = reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"shared","toolName":"read","result":{"content":[{"type":"text","text":"file contents"}]},"isError":false}
+        """))
+
+    _ = reducer.reconcile(history: TranscriptHistory(items: [
+        .tool(ToolPresentation(
+            id: "shared",
+            name: "read",
+            arguments: .object([:]),
+            result: try message("""
+                {"role":"toolResult","toolCallId":"shared","content":[{"type":"text","text":"file contents"}]}
+                """),
+            phase: .complete,
+            startDate: .distantPast,
+            endDate: .distantPast)),
+    ]))
+
+    let sharedMessages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item, message.id == "shared" else { return nil }
+        return message
+    }
+    #expect(sharedMessages.map(\.visibleText) == ["Keep this message"])
+}
+
 @Test func messageEndReplacesAndFinalizesTheInflightSnapshot() throws {
     var reducer = TranscriptReducer()
 
@@ -572,6 +858,13 @@ private func message(_ json: String) throws -> JSONValue {
     try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
 }
 
+private func message(withID id: String, in items: [TranscriptItem]) -> TranscriptMessage? {
+    items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item, message.id == id else { return nil }
+        return message
+    }.first
+}
+
 @Test func steeringMessagesOmpHidesNeverReachTheTranscript() {
     var reducer = TranscriptReducer()
     let hidden = JSONValue.object([
@@ -597,6 +890,158 @@ private func message(_ json: String) throws -> JSONValue {
 
     #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": shown]))) != .none)
     #expect(reducer.items.count == 1)
+}
+
+@Test func aDisplayedSkillMessageCompletesBeforeTheAssistantStarts() {
+    var reducer = TranscriptReducer()
+    let skillText = "# Skill\n\n" + String(
+        repeating: "Follow this instruction carefully.\n",
+        count: 240)
+    let skill = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string(skillText),
+    ])
+    let assistant = JSONValue.object([
+        "id": .string("assistant-1"),
+        "role": .string("assistant"),
+        "content": .string("Starting work."),
+    ])
+
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": skill])))
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": assistant])))
+
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.id) == ["skill-1", "assistant-1"])
+    #expect(messages.first?.visibleText == skillText)
+    #expect(messages.first?.isFinal == true)
+}
+
+@Test func aDisplayedSkillMessageSurvivesHistoryBeforePersistenceCatchesUp() {
+    var reducer = TranscriptReducer()
+    let skill = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string("# Skill\n\nFollow these instructions."),
+    ])
+
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": skill])))
+    _ = reducer.reconcile(history: TranscriptHistory(items: []))
+
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.id) == ["skill-1"])
+    #expect(messages.first?.visibleText == "# Skill\n\nFollow these instructions.")
+    #expect(messages.first?.isFinal == true)
+}
+
+@Test func aDisplayedSkillMessageKeepsItsPlaceWhenHistoryCatchesUp() throws {
+    var reducer = TranscriptReducer()
+    let skill = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string("# Skill\n\nFollow these instructions."),
+    ])
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": skill])))
+
+    let header = SessionHeader(
+        id: "session-skill",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let skillBase = SessionEntryBase(
+        id: "skill-1",
+        parentId: nil,
+        timestamp: "2026-08-24T20:00:01.000Z")
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .unknown(
+            type: "custom_message",
+            base: skillBase,
+            raw: try message(##"{"type":"custom_message","id":"skill-1","parentId":null,"timestamp":"2026-08-24T20:00:01.000Z","customType":"skill-prompt","display":true,"attribution":"user","content":"# Skill\n\nFollow these instructions."}"##)),
+        .message(
+            base: SessionEntryBase(
+                id: "assistant-1",
+                parentId: "skill-1",
+                timestamp: "2026-08-24T20:00:02.000Z"),
+            message: try message(#"{"role":"assistant","content":"Starting work."}"#)),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.id) == ["skill-1", "assistant-1"])
+    #expect(messages.map(\.visibleText) == [
+        "# Skill\n\nFollow these instructions.",
+        "Starting work.",
+    ])
+}
+
+@Test func aLateSkillSnapshotDoesNotReplaceTheStreamingAssistant() {
+    var reducer = TranscriptReducer()
+    let skillStart = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string("# Skill\n\nInitial instructions."),
+    ])
+    let skillUpdate = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string("# Skill\n\nComplete instructions."),
+    ])
+    let assistant = JSONValue.object([
+        "id": .string("assistant-1"),
+        "role": .string("assistant"),
+        "content": .string("Starting work."),
+    ])
+
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": skillStart])))
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": assistant])))
+    _ = reducer.consume(.event(
+        type: "message_update",
+        payload: .object(["message": skillUpdate])))
+
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.id) == ["skill-1", "assistant-1"])
+    #expect(messages[0].visibleText == "# Skill\n\nComplete instructions.")
+    #expect(messages[0].isFinal == true)
+    #expect(messages[1].visibleText == "Starting work.")
+    #expect(messages[1].isFinal == false)
 }
 
 @Test func aChangeReplayedFromTheSessionFileIsNotShownTwice() {

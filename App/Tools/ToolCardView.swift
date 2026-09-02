@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct ToolCardView: View {
+struct ToolCardView: View, Equatable {
     let presentation: ToolPresentation
 
     var body: some View {

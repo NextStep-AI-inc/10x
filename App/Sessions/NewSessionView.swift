@@ -20,10 +20,12 @@ struct NewSessionView: View {
                     projectURL: model.selectedProjectURL,
                     projectURLs: ProjectSessionGrouper.choosableProjectURLs(
                         from: model.sessions,
-                        including: model.selectedProjectURL),
+                        including: model.selectedProjectURL,
+                        knownProjectURLs: model.knownProjectURLs),
                     onChooseProject: model.chooseProject,
                     onAddExistingFolder: addExistingFolder),
                 controls: model.composerControls,
+                commands: model.composerCommands,
                 controlsMode: .newSession,
                 onSend: {
                     flyout = nil

@@ -20,11 +20,9 @@ protocol OmpLocating: Sendable {
 }
 
 struct OmpExecutableLocator: OmpLocating {
-    static let knownPaths = [
-        "~/.bun/bin/omp",
-        "/opt/homebrew/bin/omp",
-        "/usr/local/bin/omp",
-    ]
+    /// Display strings for the setup screen, derived from the same directories
+    /// `candidates(preferredURL:)` probes so the two cannot drift.
+    static let knownPaths = OmpProcessEnvironment.toolDirectories.map { "\($0)/omp" }
 
     private let homeDirectory: URL
     private let pathDirectories: [String]
@@ -56,11 +54,9 @@ struct OmpExecutableLocator: OmpLocating {
     }
 
     private func candidates(preferredURL: URL?) -> [URL] {
-        let known = [
-            homeDirectory.appending(path: ".bun/bin/omp"),
-            URL(filePath: "/opt/homebrew/bin/omp"),
-            URL(filePath: "/usr/local/bin/omp"),
-        ]
+        let known = OmpProcessEnvironment
+            .resolvedToolDirectories(homeDirectory: homeDirectory)
+            .map { $0.appending(path: "omp") }
         let fromPath = pathDirectories
             .filter { $0.hasPrefix("/") }
             .map { URL(filePath: $0).appending(path: "omp") }
@@ -75,6 +71,14 @@ struct OmpExecutableLocator: OmpLocating {
     private func inspect(_ candidate: URL) async throws -> OmpInstallation? {
         let data: Data
         do {
+            // Deliberately no `-e <extension path>` here. This probe never
+            // reaches `session_start` (the extension's only hook) — a plain
+            // `--version` invocation isn't an RPC session, so loading the
+            // extension would buy nothing. It would only add risk: OMP
+            // discovery itself would then depend on the extension parsing
+            // correctly, and a broken extension would make the app unable to
+            // find `omp` at all (Setup screen) instead of only losing account
+            // routing.
             data = try await OmpCommandRunner().run(
                 executableURL: candidate,
                 arguments: ["--version"])

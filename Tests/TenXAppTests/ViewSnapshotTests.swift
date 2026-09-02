@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 import OmpKit
 import SwiftUI
 import Testing
@@ -40,15 +41,122 @@ import Testing
 }
 
 @MainActor
-@Test func setupSnapshot() throws {
-    try assertSnapshot(SetupView(model: AppModel()), name: "omp-missing")
+@Test func onboardingInstallStepSnapshot() throws {
+    try assertSnapshot(
+        OnboardingView(model: AppModel(), step: .installOmp),
+        name: "onboarding-install")
 }
 
 @MainActor
-@Test func setupUnrunnableSnapshot() throws {
+@Test func onboardingInstallStepUnrunnableSnapshot() throws {
     let model = AppModel()
     model.unrunnableOmpURL = URL(filePath: "/Users/example/.bun/bin/omp")
-    try assertSnapshot(SetupView(model: model), name: "omp-unrunnable")
+    try assertSnapshot(
+        OnboardingView(model: model, step: .installOmp),
+        name: "onboarding-install-unrunnable")
+}
+
+@MainActor
+@Test func onboardingInstallStepVerifyingSnapshot() throws {
+    // The owner's reported bug: after a successful script, nothing showed
+    // that discovery was still running and would advance the flow itself.
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: ["Downloading omp…", "Installed to ~/.local/bin/omp"],
+            initialPhase: .verifying)
+            .padding(56),
+        name: "onboarding-install-verifying",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
+@Test func onboardingInstallStepPagedLogSnapshot() throws {
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: (0..<400).map { "Installer line \($0)" })
+            .padding(56),
+        name: "onboarding-install-paged-log",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
+@Test func onboardingInstallStepExpandedPagedLogSnapshot() throws {
+    var reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+    reveal.revealNextPage(total: 400)
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: (0..<400).map { "Installer line \($0)" },
+            initialLogReveal: reveal)
+            .padding(56),
+        name: "onboarding-install-expanded-paged-log",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
+@Test func onboardingProjectStepEmptySnapshot() throws {
+    // A genuine first-run user: no sessions, so no suggestions. No disk
+    // scan runs, so this settles synchronously.
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-onboarding-project-empty")
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    try assertSnapshot(
+        OnboardingView(model: model, step: .chooseProject),
+        name: "onboarding-project-empty",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func onboardingProjectStepPickedFolderNoSessionsSnapshot() throws {
+    // The owner's reported bug: a folder picked with "Choose folder…" (never
+    // driven through `NSOpenPanel` here) must be visible even though there
+    // are no session-derived suggestions to show alongside it.
+    let model = isolatedSnapshotAppModel(
+        sessionLibraryPath: "/tmp/10x-onboarding-project-picked-no-sessions")
+    let url = URL(filePath: "/tmp/picked-with-no-sessions", directoryHint: .isDirectory)
+    model.selectedProjectURL = url
+    var selection = OnboardingProjectSelection()
+    selection.pick(url)
+    try assertSnapshot(
+        OnboardingProjectStepView(model: model, initialSelection: selection)
+            .padding(56),
+        name: "onboarding-project-picked-no-sessions",
+        size: CGSize(width: 760, height: 320))
+}
+
+@MainActor
+@Test func onboardingProjectStepPopulatedSnapshot() throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-onboarding-project-populated")
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/onboarding-populated-1.jsonl",
+            cwd: "/tmp/10x",
+            title: "Session",
+            modified: 3),
+        snapshotSession(
+            path: "/sessions/onboarding-populated-2.jsonl",
+            cwd: "/tmp/omp-cli",
+            title: "Session",
+            modified: 2),
+        // Deliberately long and nested, so the third (still-visible, above
+        // the scroll fold) row exercises OnboardingRowView's
+        // `.lineLimit(1)`/`.truncationMode(.head)` on the detail line.
+        snapshotSession(
+            path: "/sessions/onboarding-populated-3.jsonl",
+            cwd: "/tmp/workspace/a-genuinely-long-directory-name-used-to-exercise-the-truncated-detail-line",
+            title: "Session",
+            modified: 1),
+    ]
+    try assertSnapshot(
+        OnboardingView(model: model, step: .chooseProject),
+        name: "onboarding-project-populated",
+        size: CGSize(width: 760, height: 560))
 }
 
 @MainActor
@@ -63,10 +171,11 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-required")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-required",
         size: CGSize(width: 760, height: 560))
 }
@@ -93,19 +202,25 @@ import Testing
 
 @MainActor
 @Test func providerSetupLoadingSnapshot() async throws {
-    let loadingGate = LoadGate()
     let service = FakeProviderService(providers: [])
-    await service.enqueueProviderGate(loadingGate)
     let model = ProviderManagementViewModel(
         providerService: service,
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    // Bootstrap first, before the gate is armed: bootstrap's own initial
+    // `loadProviders()` call must complete (there is nothing queued for it
+    // to catch yet), or the gated call it triggers would deadlock waiting
+    // on a release that only comes after this test takes its snapshot.
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-loading")
+
+    let loadingGate = LoadGate()
+    await service.enqueueProviderGate(loadingGate)
     let loading = Task { await model.load() }
     await loadingGate.waitForStart()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-loading",
         size: CGSize(width: 760, height: 560))
 
@@ -121,10 +236,11 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-connected")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-connected",
         size: CGSize(width: 760, height: 560))
 }
@@ -149,11 +265,12 @@ import Testing
         ProviderLoginProvider(
             id: "zed", name: "Zed", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-browse-all")
     await model.load()
     model.showAllProviders()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-browse-all-minimum-size",
         size: CGSize(width: 760, height: 560))
 }
@@ -178,11 +295,13 @@ import Testing
         ProviderLoginProvider(
             id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(
+        model, path: "/tmp/10x-onboarding-provider-browse-all-mixed-rows")
     await model.load()
     model.showAllProviders()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-browse-all-mixed-rows-minimum-size",
         size: CGSize(width: 760, height: 560))
 }
@@ -199,12 +318,13 @@ import Testing
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) },
         formatTime: { _ in "4:00 PM" })
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-login-failure")
     await model.load()
     let provider = try #require(model.providers.first)
     await model.login(provider)
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-login-failure",
         size: CGSize(width: 760, height: 560))
 }
@@ -221,19 +341,20 @@ import Testing
         usageService: FakeUsageService(snapshot: .empty),
         openURL: { _ in },
         now: { Date(timeIntervalSince1970: 100) })
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-active-login")
     await model.load()
     let provider = try #require(model.providers.first)
     let login = Task { await model.login(provider) }
     await loginGate.waitForStart()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-active-login",
         size: CGSize(width: 760, height: 560))
 
     await model.cancelLogin()
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: "provider-setup-login-cancelled",
         size: CGSize(width: 760, height: 560))
 
@@ -462,7 +583,8 @@ import Testing
         phase: .complete,
         startDate: timestamp,
         endDate: timestamp.addingTimeInterval(0.5))
-    let disclosureState = ToolDisclosureState(mode: .compact)
+    let disclosureState = ToolDisclosureState()
+    for id in [read.id, edit.id, write.id] { disclosureState.setExpanded(false, id: id) }
 
     try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
@@ -539,6 +661,42 @@ import Testing
 }
 
 @MainActor
+@Test func providerConnectionsBenignStatusSnapshot() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(
+        providers: providerWorkspaceProviders,
+        loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: try providerWorkspaceSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+
+    // A provider absent from `model.providers`, so the notification handler
+    // falls back to the catalog-level "Connection needs attention." status —
+    // the one benign message this view renders above the rows.
+    let ghost = ProviderLoginProvider(
+        id: "ghost", name: "Ghost", isAvailable: true, isAuthenticated: false)
+    let login = Task { await model.login(ghost) }
+    await loginGate.waitForStart()
+    await service.emit(ExtensionUIRequest(
+        id: "notice",
+        method: "notify",
+        payload: .object(["message": .string("Waiting for approval.")])))
+    await waitForModelState { model.loginMessage != nil }
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-connections-benign-status",
+        size: CGSize(width: 1180, height: 760))
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
+}
+
+@MainActor
 @Test func providerUsageDetailSnapshot() async throws {
     let model = try providerWorkspaceModel()
     await model.load()
@@ -571,12 +729,235 @@ import Testing
         size: CGSize(width: 1180, height: 760))
 }
 
+@Suite struct ViewSnapshotTests {
+@MainActor
+@Test func providerAccountConnectionsRowsSnapshot() async throws {
+    let providerID = "openai-codex"
+    // Task 10b: accounts render from the usage snapshot now
+    // (`ProviderAccountUsageBackend`), not a per-account RPC fixture — and
+    // the snapshot must carry per-account identity or tier detection falls
+    // back to `.providerOnly`, which hides accounts entirely regardless of
+    // the read path. `remainingFraction: nil` keeps each account's usage
+    // windows empty, matching what the retired RPC fixture (no usage
+    // attached) rendered.
+    let personal = AccountSnapshotEntry(
+        accountID: "a1", email: "same@example.com", orgName: "Personal", remainingFraction: nil)
+    let work = AccountSnapshotEntry(
+        accountID: "a2", email: "same@example.com", orgName: "Work",
+        isDisabled: true, remainingFraction: nil)
+    let personalRef = personal.accountRef(providerID: providerID)
+    let workRef = work.accountRef(providerID: providerID)
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "ChatGPT",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: providerID, accounts: [personal, work])),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    // This reference predates tier-gated Remove (task 11): pin `.extensionBacked`
+    // explicitly so it keeps meaning "Remove is enabled" rather than silently
+    // becoming another `.stockOMP` render once Remove is gated by tier. Without
+    // this, `ProviderAccountTier.detect` would land on `.stockOMP` here too (a
+    // snapshot with per-account identity and no installed hello), which is
+    // exactly what `providerAccountConnectionsStockTierSnapshot` below now
+    // covers on purpose.
+    model.installTierHelloProvider {
+        ProviderExtensionHello(contractVersion: ProviderAccountTier.contractVersion)
+    }
+    await model.load()
+    #expect(model.accountTier == .extensionBacked)
+    let suiteName = "TenXAppTests.ProviderConnectionsSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        personalRef,
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: workRef))
+
+    try assertSnapshot(
+        ProvidersView(model: model, accountCoordinator: coordinator),
+        name: "provider-account-connections",
+        size: CGSize(width: 880, height: 680))
+}
+
+@MainActor
+@Test func providerAccountConnectionsStockTierSnapshot() async throws {
+    let providerID = "openai-codex"
+    // `.stockOMP`: per-account identity is present (the fixture below carries
+    // it) but no extension hello is installed, matching a live app before any
+    // session channel attaches, or a genuinely stock `omp`. Remove must be
+    // disabled on every row, with the tier-wide reason stated once under the
+    // provider header rather than repeated per row.
+    //
+    // Mirrors `providerAccountConnectionsRowsSnapshot`'s fixture and
+    // coordinator setup exactly (same accounts, same primary, same session
+    // counts) so the two reference images differ only in what the tier
+    // actually changes — the disabled Remove buttons and the one section
+    // note — not in incidental fixture drift. Restoring Primary/session
+    // metadata to this tier is the point of this reference; a fixture that
+    // never populated that data would restore nothing to look at.
+    let personal = AccountSnapshotEntry(
+        accountID: "a1", email: "same@example.com", orgName: "Personal", remainingFraction: nil)
+    let work = AccountSnapshotEntry(
+        accountID: "a2", email: "same@example.com", orgName: "Work",
+        isDisabled: true, remainingFraction: nil)
+    let personalRef = personal.accountRef(providerID: providerID)
+    let workRef = work.accountRef(providerID: providerID)
+    let service = FakeProviderService(providers: [ProviderLoginProvider(
+        id: providerID,
+        name: "ChatGPT",
+        isAvailable: true,
+        isAuthenticated: true)])
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: providerID, accounts: [personal, work])),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    await model.load()
+    #expect(model.accountTier == .stockOMP)
+    let suiteName = "TenXAppTests.ProviderConnectionsStockTierSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        personalRef,
+        providerID: providerID,
+        scope: .allNewSessions,
+        openSessionID: nil)
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: personalRef))
+    coordinator.register(SnapshotProviderAccountSession(
+        providerID: providerID,
+        accountRef: workRef))
+
+    try assertSnapshot(
+        ProvidersView(model: model, accountCoordinator: coordinator),
+        name: "provider-account-connections-stock-tier",
+        size: CGSize(width: 880, height: 680))
+}
+
+@MainActor
+@Test func providerAccountRemovalConfirmationSnapshot() throws {
+    try assertSnapshot(
+        ProviderAccountRemovalConfirmationView(
+            providerName: "ChatGPT",
+            accountLabel: "same@example.com",
+            accountDetailLabel: "Work",
+            hasDuplicateAccountLabel: true,
+            affectedSessionCount: 2,
+            isLastAccount: false,
+            isRemoving: false,
+            onCancel: { _ in },
+            onRemove: {}),
+        name: "provider-account-removal-confirmation",
+        size: CGSize(width: 880, height: 680))
+}
+
+@MainActor
+@Test func providerAccountMultipleIdleSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: [:],
+            isForegroundGenerating: false)
+            // macOS exposes the public Reduce Motion key as read-only.
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-account-multiple-idle",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+private final class SnapshotProviderAccountSession: ProviderAccountSession {
+    let id = UUID()
+    let providerID: String?
+    let runtimeState: SessionRuntimeState = .idle
+    private(set) var currentProviderAccountRef: String?
+    private(set) var providerAccountSequence = 0
+
+    init(providerID: String, accountRef: String) {
+        self.providerID = providerID
+        currentProviderAccountRef = accountRef
+    }
+
+    func setProviderAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> SetSessionProviderAccountResult {
+        currentProviderAccountRef = accountRef
+        providerAccountSequence += 1
+        return SetSessionProviderAccountResult(
+            account: ProviderAccountSummary(
+                providerID: providerID,
+                accountRef: accountRef,
+                displayLabel: "Account",
+                connectionOrder: 0,
+                availability: .available,
+                isActiveForSession: true),
+            sequence: providerAccountSequence)
+    }
+}
+
+@MainActor
+@Test func providerAccountGeneratingGrayscaleSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true)
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-account-generating-grayscale",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerAccountHoveredBackgroundSnapshot() throws {
+try assertSnapshot(
+    ProviderUsageDockView(
+        providers: providerUsageDockProviders(workPercentage: 36),
+        activeCounts: [:],
+        generatingCounts: providerUsageDockGeneratingCounts,
+        isForegroundGenerating: true,
+        visualFocusAccountID: "anthropic:work")
+        .environment(\._accessibilityReduceMotion, true)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+    name: "provider-account-hovered-background",
+    size: CGSize(width: 430, height: 460))
+}
+
 @MainActor
 @Test func providerUsageDockIdleSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
-            providers: providerUsageDockProviders,
-            activeCounts: ["anthropic": 2])
+            providers: providerUsageDockProviders(),
+            activeCounts: ["anthropic": 2],
+            generatingCounts: [:],
+            isForegroundGenerating: false)
             // macOS exposes the public Reduce Motion key as read-only.
             .environment(\._accessibilityReduceMotion, true)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
@@ -585,15 +966,178 @@ import Testing
 }
 
 @MainActor
+@Test func usageWheelFillsSpacesBetweenRingsWithCanvasColor() throws {
+    let size = CGSize(width: 54, height: 54)
+    let account = providerUsageDockProviders()[0].accounts[0]
+    let provider = ProviderUsageProvider(
+        id: "anthropic",
+        name: "Anthropic",
+        accounts: [account])
+    let bitmap = try #require(renderSnapshotBitmap(
+        ProviderUsageWheelView(
+            provider: provider,
+            activeCount: 0,
+            isGrayscale: false,
+            diameter: size.width,
+            showsProviderLabel: false,
+            presentationMode: .account(.available))
+            .background(Color(red: 1, green: 0, blue: 1)),
+        size: size))
+    let scale = CGFloat(bitmap.pixelsWide) / size.width
+    let sample = try #require(bitmap.colorAt(
+        x: Int(45 * scale),
+        y: Int(27 * scale))?.usingColorSpace(NSColorSpace.deviceRGB))
+
+    #expect(sample.redComponent > 0.97)
+    #expect(sample.greenComponent > 0.97)
+    #expect(sample.blueComponent > 0.97)
+}
+
+@MainActor
 @Test func providerUsageDockExpandedSnapshot() throws {
     try assertSnapshot(
         ProviderUsageDockView(
-            providers: providerUsageDockProviders,
+            providers: providerUsageDockProviders(workPercentage: 36),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            visualFocusAccountID: "anthropic:work")
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-account-hovered-background",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerAccountExpandedSemanticSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            initiallyInspectedAccountID: "anthropic:work")
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-account-expanded-semantic",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func shortAccountUsagePanelDoesNotStretchToItsMaximumHeight() throws {
+    let size = CGSize(width: 430, height: 460)
+    let bitmap = try #require(renderSnapshotBitmap(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            initiallyInspectedAccountID: "anthropic:work")
+            .environment(\._accessibilityReduceMotion, true),
+        size: size))
+    let scale = CGFloat(bitmap.pixelsWide) / size.width
+    let panelLeftEdge = Int((size.width - 360) * scale)
+    let maximumShortPanelHeight = Int(380 * scale)
+
+    #expect(longestNonWhiteVerticalRun(
+        in: bitmap,
+        nearX: panelLeftEdge) < maximumShortPanelHeight)
+}
+
+@MainActor
+@Test func providerAccountSwitchConfirmationSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            initiallyInspectedAccountID: "anthropic:work",
+            initiallyShowsConfirmation: true)
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-account-switch-confirmation",
+        size: CGSize(width: 430, height: 460))
+}
+
+private func longestNonWhiteVerticalRun(
+    in bitmap: NSBitmapImageRep,
+    nearX expectedX: Int
+) -> Int {
+    let xRange = max(0, expectedX - 2)...min(bitmap.pixelsWide - 1, expectedX + 2)
+    return xRange.map { x in
+        var longestRun = 0
+        var currentRun = 0
+        for y in 0..<bitmap.pixelsHigh {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+                currentRun = 0
+                continue
+            }
+            let darkestComponent = min(
+                color.redComponent,
+                min(color.greenComponent, color.blueComponent))
+            let isNonWhite = darkestComponent < 0.97
+            if isNonWhite {
+                currentRun += 1
+                longestRun = max(longestRun, currentRun)
+            } else {
+                currentRun = 0
+            }
+        }
+        return longestRun
+    }.max() ?? 0
+}
+
+@MainActor
+@Test func providerAccountSwitchConfirmationRestartSnapshot() throws {
+    // `.stockOMP`: switching still works, but only by restarting the
+    // session's `omp` process. The scope confirmation must say so plainly
+    // rather than let the same "Switch account" control silently do
+    // something the user wasn't told about.
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: [:],
+            generatingCounts: providerUsageDockGeneratingCounts,
+            isForegroundGenerating: true,
+            requiresRestartToSwitch: true,
+            initiallyInspectedAccountID: "anthropic:work",
+            initiallyShowsConfirmation: true)
+            .environment(\._accessibilityReduceMotion, true),
+        name: "provider-account-switch-confirmation-restart",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerAccountSwitchConfirmationRestartHiddenForAllNewSessionsSnapshot() throws {
+    // "All new sessions" only sets the provider's primary account for
+    // sessions started later ("Existing sessions stay unchanged" is its own
+    // option text) and restarts nothing, so the restart notice must not
+    // show for this scope even in `.stockOMP` — unlike "This session" and
+    // "All current sessions", covered above.
+    try assertSnapshot(
+        ProviderAccountSwitchConfirmationView(
+            accountLabel: "work@example.com",
+            satisfaction: .none,
+            availability: .all,
+            isSwitchAvailable: true,
+            requiresRestartToSwitch: true,
+            selectedScope: .constant(.allNewSessions),
+            onCancel: {},
+            onConfirm: {}),
+        name: "provider-account-switch-confirmation-restart-hidden-for-new-sessions",
+        size: CGSize(width: 430, height: 460))
+}
+
+@MainActor
+@Test func providerUsageDockLegacyExpandedSnapshot() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockLegacyProviders,
             activeCounts: ["anthropic": 2],
             initiallySelectedProviderID: "anthropic")
             .environment(\._accessibilityReduceMotion, true),
         name: "provider-usage-dock-expanded",
         size: CGSize(width: 430, height: 460))
+}
 }
 
 @MainActor
@@ -609,10 +1153,15 @@ import Testing
             filePath: "/tmp/10x-full-shell-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
     let railExpansion = RailExpansionModel()
     railExpansion.pointerEntered()
@@ -650,10 +1199,15 @@ import Testing
             filePath: "/tmp/10x-full-shell-usage-dock-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
 
     try assertSnapshot(
@@ -675,16 +1229,142 @@ import Testing
             filePath: "/tmp/10x-full-shell-wide-usage-dock-snapshot",
             directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
-    await model.bootstrap()
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
+    // Set before bootstrap so the project-step gate that closes over startup
+    // sees a project already selected and lands on the workspace, not
+    // onboarding: this fixture is exercising the full shell, not the flow.
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
     model.sessions = fullShellSessions
 
     try assertSnapshot(
         AppShellView(model: model),
         name: "full-shell-usage-dock-wide-window",
         size: CGSize(width: 1280, height: 760))
+}
+
+@MainActor
+private func fullShellAccountProviderModel() -> ProviderManagementViewModel {
+    ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: fullShellProviders),
+        usageService: FakeUsageService(snapshot: fullShellAccountUsageSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) },
+        formatTime: { _ in "4:00 PM" })
+}
+
+/// Task 10b: accounts and their usage windows now derive from the usage
+/// snapshot (`ProviderAccountUsageBackend`), not the retired per-account RPC
+/// fixture — a bespoke builder rather than `multiAccountUsageSnapshotFixture`
+/// because these accounts need TWO usage windows apiece (matching the
+/// original fixture's five-hour + weekly pair) where that shared helper only
+/// ever attaches one. `accountRef` values are opaque hashes now rather than
+/// the old fixture's literal `"acct_claude_personal"` strings, but nothing
+/// in the three snapshot tests below asserts against a ref directly, and
+/// `foregroundAccountRef` picks by `connectionOrder` — preserved here in the
+/// same order as before — not by ref value, so the rendered rows are
+/// unaffected.
+private func fullShellAccountUsageSnapshot() -> OmpUsageSnapshot {
+    func window(
+        providerID: String, accountID: String, kind: String, label: String,
+        remainingFraction: Double, resetsAtMs: Int64
+    ) -> OmpUsageLimit {
+        OmpUsageLimit(
+            id: "\(accountID):\(kind)",
+            label: label,
+            scope: OmpUsageScope(
+                provider: providerID, accountId: accountID, projectId: nil, orgId: nil,
+                modelId: nil, tier: nil, windowId: nil, shared: nil),
+            window: OmpUsageWindow(id: kind, label: label, resetsAt: resetsAtMs),
+            amount: OmpUsageAmount(
+                used: nil, limit: nil, remaining: nil, usedFraction: nil,
+                remainingFraction: remainingFraction, unit: "percent"),
+            status: nil,
+            notes: nil)
+    }
+    func report(providerID: String, accountID: String, email: String, remainingFiveHour: Double) -> OmpUsageReport {
+        let remainingWeekly = max(0, remainingFiveHour - 0.2)
+        return OmpUsageReport(
+            provider: providerID,
+            fetchedAt: 1,
+            limits: [
+                window(
+                    providerID: providerID, accountID: accountID, kind: "five-hour", label: "5 hour",
+                    remainingFraction: remainingFiveHour, resetsAtMs: 1_787_700_000_000),
+                window(
+                    providerID: providerID, accountID: accountID, kind: "weekly", label: "Weekly",
+                    remainingFraction: remainingWeekly, resetsAtMs: 1_788_061_624_000),
+            ],
+            metadata: ["accountId": .string(accountID), "email": .string(email)])
+    }
+    return OmpUsageSnapshot(
+        generatedAt: 1,
+        reports: [
+            report(providerID: "anthropic", accountID: "acct_claude_personal", email: "tanner@example.com", remainingFiveHour: 0.82),
+            report(providerID: "anthropic", accountID: "acct_claude_work", email: "work@example.com", remainingFiveHour: 0.24),
+            report(providerID: "openai-codex", accountID: "acct_chatgpt_personal", email: "tanner@example.com", remainingFiveHour: 0.61),
+            report(providerID: "openai-codex", accountID: "acct_chatgpt_team", email: "team@example.com", remainingFiveHour: 0.45),
+            report(providerID: "openai-codex", accountID: "acct_chatgpt_school", email: "school@example.com", remainingFiveHour: 0.9),
+        ],
+        accountsWithoutUsage: [],
+        disabledCredentials: [])
+}
+
+@MainActor
+private func fullShellAccountModel(
+    directory: String
+) async -> (AppModel, ProviderManagementViewModel) {
+    let providerModel = fullShellAccountProviderModel()
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: directory,
+            directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
+    await providerModel.load()
+    model.sessions = fullShellSessions
+    return (model, providerModel)
+}
+
+@MainActor
+@Test func fullShellAccountDockWideWindowSnapshot() async throws {
+    let (model, _) = await fullShellAccountModel(
+        directory: "/tmp/10x-full-shell-account-dock-wide")
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-account-dock-wide-window",
+        size: CGSize(width: 1280, height: 760))
+}
+
+@MainActor
+@Test func fullShellAccountDockCompactTriggerWindowSnapshot() async throws {
+    let (model, _) = await fullShellAccountModel(
+        directory: "/tmp/10x-full-shell-account-dock-compact")
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-account-dock-compact-trigger-window",
+        size: CGSize(width: 1180, height: 760))
+}
+
+@MainActor
+@Test func fullShellAccountDockMinimumWindowSnapshot() async throws {
+    let (model, _) = await fullShellAccountModel(
+        directory: "/tmp/10x-full-shell-account-dock-minimum")
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-account-dock-minimum-window",
+        size: CGSize(width: 760, height: 560))
 }
 
 @MainActor
@@ -704,12 +1384,50 @@ private func assertProviderSetupStarterSnapshot(
     let model = providerTestModel(providers: [
         ProviderLoginProvider(id: id, name: name, isAvailable: true, isAuthenticated: false),
     ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-starter-\(id)")
     await model.load()
 
     try assertSnapshot(
-        ProviderSetupView(model: model, onContinue: {}),
+        OnboardingView(model: appModel, step: .connectProvider),
         name: snapshotName,
         size: CGSize(width: 760, height: 560))
+}
+
+/// Wraps a pre-built `ProviderManagementViewModel` in an `AppModel` whose
+/// `.connectProvider` step renders it, mirroring `fullShellExpandedRailOverflowSnapshot`
+/// below. `providerModel` is `private(set)` on `AppModel` — see the doc
+/// comment on `OnboardingStep.unmet` — so `dependencies.makeProviderModel`
+/// plus `bootstrap()` is the only way in. Callers that also need to arm a
+/// `LoadGate`/`LoginGate` on the underlying fake service must do so *after*
+/// this returns: bootstrap performs its own, ungated `loadProviders()` call
+/// as part of standing up the runtime, and an already-armed gate would block
+/// that call forever.
+@MainActor
+private func onboardingProviderAppModel(
+    _ providerModel: ProviderManagementViewModel,
+    path: String
+) async -> AppModel {
+    // An isolated `RecentProjectStore`, not the `.standard`-backed default:
+    // `prepareSessionsAndRecentProjects` auto-fills `selectedProjectURL` from
+    // whatever it ranks highest when nothing has been chosen yet, and the
+    // default reads the real UserDefaults domain — this machine's actual
+    // recent-projects history, not a fixture. Without this, the step
+    // counter this test snapshots would depend on whoever's Mac (and
+    // whatever they were last using) recorded the reference.
+    let suiteName = "TenXAppTests.OnboardingProviderAppModel.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("[Tests:ViewSnapshot] Unable to create defaults suite")
+    }
+    defaults.removePersistentDomain(forName: suiteName)
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(filePath: path, directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        recentProjectStore: RecentProjectStore(defaults: defaults),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory))
+    await model.bootstrap()
+    return model
 }
 
 private struct SnapshotOmpLocator: OmpLocating {
@@ -718,13 +1436,45 @@ private struct SnapshotOmpLocator: OmpLocating {
     }
 }
 
-private let providerUsageDockProviders = [
+/// A `RecentProjectStore` backed by a fresh, empty `UserDefaults` suite, not
+/// the `.standard`-backed default: `knownProjectURLs`/`ProjectSessionGrouper`
+/// now render a rail (or onboarding project-step) row for every known
+/// project, including ones with no sessions, so any snapshot reading the
+/// default store would depend on whoever's Mac (and its real recent-projects
+/// history) produced the reference image.
+@MainActor
+private func isolatedRecentProjectStore() -> RecentProjectStore {
+    let suiteName = "TenXAppTests.ViewSnapshot.RecentProjectStore.\(UUID().uuidString)"
+    guard let defaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("[Tests:ViewSnapshot] Unable to create defaults suite")
+    }
+    defaults.removePersistentDomain(forName: suiteName)
+    return RecentProjectStore(defaults: defaults)
+}
+
+/// An `AppModel` with an isolated `RecentProjectStore`, for tests that build
+/// state directly (never calling `bootstrap()`) and so never invoke
+/// `makeProviderModel`/`makeComposerControls` — cheap stubs stand in.
+@MainActor
+private func isolatedSnapshotAppModel(sessionLibraryPath: String) -> AppModel {
+    AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: sessionLibraryPath,
+            directoryHint: .isDirectory)),
+        recentProjectStore: isolatedRecentProjectStore(),
+        makeProviderModel: { _ in providerTestModel(providers: []) },
+        makeComposerControls: stubComposerControlsFactory))
+}
+
+private func providerUsageDockProviders(workPercentage: Int = 0) -> [ProviderUsageProvider] { [
     ProviderUsageProvider(
         id: "anthropic",
         name: "Anthropic",
         accounts: [
             providerUsageDockAccount(
                 id: "anthropic:personal",
+                accountRef: "acct_personal",
                 label: "tanner@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -742,22 +1492,26 @@ private let providerUsageDockProviders = [
                 ]),
             providerUsageDockAccount(
                 id: "anthropic:work",
+                accountRef: "acct_work",
                 label: "work@example.com",
                 limits: [
                     providerUsageDockLimit(
                         id: "anthropic:work:monthly",
                         label: "Monthly",
-                        percentage: 0,
+                        percentage: workPercentage,
                         reset: "in 18 days",
                         rank: 43_200),
                 ]),
-        ]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "acct_personal"),
     ProviderUsageProvider(
         id: "openai-codex",
         name: "OpenAI Codex",
         accounts: [
             providerUsageDockAccount(
                 id: "openai-codex:personal",
+                accountRef: "acct_openai",
                 label: "tanner@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -767,13 +1521,16 @@ private let providerUsageDockProviders = [
                         reset: "in 2 hours",
                         rank: 300),
                 ]),
-        ]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "acct_openai"),
     ProviderUsageProvider(
         id: "cursor",
         name: "Cursor",
         accounts: [
             providerUsageDockAccount(
                 id: "cursor:personal",
+                accountRef: "acct_cursor",
                 label: "tanner@example.com",
                 limits: [
                     providerUsageDockLimit(
@@ -783,11 +1540,26 @@ private let providerUsageDockProviders = [
                         reset: "in 5 days",
                         rank: 10_080),
                 ]),
-        ]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "acct_cursor"),
+] }
+
+private let providerUsageDockGeneratingCounts = [
+    ProviderAccountKey(providerID: "anthropic", accountRef: "acct_personal"): 2,
+    ProviderAccountKey(providerID: "anthropic", accountRef: "acct_work"): 1,
 ]
+
+private let providerUsageDockLegacyProviders = providerUsageDockProviders().map { provider in
+    ProviderUsageProvider(
+        id: provider.id,
+        name: provider.name,
+        accounts: provider.accounts)
+}
 
 private func providerUsageDockAccount(
     id: String,
+    accountRef: String,
     label: String,
     limits: [ProviderUsageLimit]
 ) -> ProviderUsageAccount {
@@ -804,7 +1576,9 @@ private func providerUsageDockAccount(
         limits: limits,
         amounts: [],
         notes: [],
-        isUsageAvailable: true)
+        isUsageAvailable: true,
+        accountRef: accountRef,
+        availability: .available)
 }
 
 private func providerUsageDockLimit(
@@ -1128,7 +1902,8 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         phase: .complete,
         startDate: timestamp,
         endDate: timestamp.addingTimeInterval(1.2))
-    let disclosure = ToolDisclosureState(mode: .expanded)
+    let disclosure = ToolDisclosureState()
+    for id in [source.id, collection.id, mcp.id] { disclosure.setExpanded(true, id: id) }
 
     try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
@@ -1140,6 +1915,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         .environment(snapshotEmptyIDEStore)
         .environment(\.fileReferenceBaseURL, snapshotProjectURL)
         .environment(\.fileOpenService, snapshotFileOpenService)
+        .environment(\.toolMediaLoaderFactory, snapshotMediaLoader)
         .frame(width: 720, alignment: .leading),
         name: "semantic-tool-surfaces",
         size: CGSize(width: 800, height: 1_500))
@@ -1226,10 +2002,8 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         phase: .complete,
         startDate: timestamp,
         endDate: timestamp.addingTimeInterval(0.9))
-    // Auto, with the four cards this flow is about opened by hand: the read
-    // stays closed, which is the contrast the reference documents.
-    let disclosure = ToolDisclosureState(mode: .auto)
-    for card in [edit, grep, bash, web] { disclosure.setExpanded(true, for: card) }
+    let disclosure = ToolDisclosureState()
+    for id in [edit.id, grep.id, bash.id, web.id] { disclosure.setExpanded(true, id: id) }
 
     try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
@@ -1459,9 +2233,44 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     ]
 
     try assertSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-media",
         size: CGSize(width: 600, height: 1_300))
+}
+
+@MainActor
+@Test func toolMediaLoadingSnapshot() async throws {
+    let gate = SnapshotMediaGate()
+    let item = ToolMediaItem(
+        id: "loading-media",
+        kind: .image,
+        name: "Transcript preview",
+        mimeType: "image/png",
+        data: snapshotImageData(width: 500, height: 340).base64EncodedString(),
+        url: nil)
+    let loader = ToolMediaLoader(decode: { _ in
+        await gate.wait()
+        return .unavailable
+    })
+    let loadTask = Task { await loader.load(item) }
+    await gate.waitForStart()
+
+    do {
+        try assertSnapshot(
+            MediaItemView(item: item, loader: loader)
+                .frame(width: 520, alignment: .leading),
+            name: "tool-media-loading",
+            size: CGSize(width: 600, height: 300))
+    } catch {
+        loadTask.cancel()
+        await gate.open()
+        await loadTask.value
+        throw error
+    }
+    loadTask.cancel()
+    await gate.open()
+    await loadTask.value
 }
 
 @MainActor
@@ -1530,7 +2339,8 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     ]
 
     try assertSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-mcp-fallback",
         size: CGSize(width: 600, height: 1_600))
 }
@@ -1662,6 +2472,41 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
+@Test func contentDocumentBudgetSnapshot() throws {
+    let paragraphs = (1...4).map { "Paragraph \($0) stays visible before the bounded source." }
+        .joined(separator: "\n\n")
+    let tableRows = (1...4).map { "| Row \($0) | Ready |" }.joined(separator: "\n")
+    let quote = (1...3).map { "> Quoted block \($0)\n>" }.joined(separator: "\n")
+    let list = (1...4).map { parent in
+        (["- Parent \(parent)"] + (1...4).map { "  - Child \(parent).\($0)" })
+            .joined(separator: "\n")
+    }.joined(separator: "\n")
+    let source = (1...500).map { "let renderedLine\($0) = \($0)" }
+        .joined(separator: "\n")
+    let document = MessageContentParser.parse("""
+    \(paragraphs)
+
+    | Name | State |
+    | --- | --- |
+    \(tableRows)
+
+    \(quote)
+
+    \(list)
+
+    ```swift
+    \(source)
+    ```
+    """)
+
+    try assertSnapshot(
+        ContentDocumentView(document: document)
+            .frame(width: 720, alignment: .leading),
+        name: "content-document-budget-initial",
+        size: CGSize(width: 800, height: 3_500))
+}
+
+@MainActor
 @Test func activeSessionHeaderSnapshot() throws {
     let controller = SessionController(
         processManager: SessionProcessManager(),
@@ -1707,6 +2552,29 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
         name: "shell-rail-overflow-expanded",
         size: CGSize(width: 220, height: 360))
+}
+
+/// The owner's reported bug: a project chosen with no sessions yet must
+/// still show up in the rail, above the fold, with no disclosure row.
+@MainActor
+@Test func expandedRailShowsProjectWithNoSessionsSnapshot() throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-rail-sessionless")
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/with-sessions.jsonl",
+            cwd: "/tmp/10x",
+            title: "Improve active session shell",
+            modified: 20),
+    ]
+    model.selectedProjectURL = URL(filePath: "/tmp/empty-project", directoryHint: .isDirectory)
+    model.route = .session("/sessions/with-sessions.jsonl")
+    let expansion = RailExpansionModel()
+    expansion.pointerEntered()
+
+    try assertSnapshot(
+        FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
+        name: "shell-rail-sessionless-project",
+        size: CGSize(width: 220, height: 320))
 }
 
 @MainActor
@@ -1893,6 +2761,411 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggle: {}),
         name: "model-picker-default",
         size: CGSize(width: 340, height: 420))
+}
+
+@MainActor
+@Test func commandBrowserModelChildSnapshot() async throws {
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+    let commandModel = ComposerCommandModel(
+        catalog: controls.catalog,
+        controls: controls,
+        onStartNewSession: { _, _ in })
+    _ = commandModel.updateDraft("/model")
+    _ = commandModel.complete()
+
+    try assertSnapshot(
+        CommandBrowserNativeControlsView(
+            commandModel: commandModel,
+            controls: controls,
+            query: .constant(""),
+            onEffect: { _ in },
+            restoreEditorFocus: {}),
+        name: "command-browser-model-child",
+        size: CGSize(width: 340, height: 320))
+}
+
+@MainActor
+@Test func commandBrowserRootSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        CommandBrowserView(
+            model: commandModel,
+            controls: controls,
+            query: .constant(""),
+            onEffect: { _ in },
+            onDismiss: {},
+            restoreEditorFocus: {})
+            .frame(width: 780, height: 520, alignment: .topLeading),
+        name: "command-browser-root",
+        size: CGSize(width: 780, height: 520))
+}
+
+@MainActor
+@Test func commandBrowserStreamingSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .streaming)
+    _ = session
+    #expect(commandModel.updateDraft("/compact"))
+
+    try assertSnapshot(
+        CommandBrowserView(
+            model: commandModel,
+            controls: controls,
+            query: .constant(""),
+            onEffect: { _ in },
+            onDismiss: {},
+            restoreEditorFocus: {})
+            .frame(width: 780, height: 520, alignment: .topLeading),
+        name: "command-browser-streaming",
+        size: CGSize(width: 780, height: 520))
+}
+
+@MainActor
+@Test func commandBrowserUnavailableSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: [],
+        runtimeState: .idle,
+        catalogState: .unavailable)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+    commandModel.selectSource(.commands)
+
+    try assertSnapshot(
+        CommandBrowserView(
+            model: commandModel,
+            controls: controls,
+            query: .constant(""),
+            onEffect: { _ in },
+            onDismiss: {},
+            restoreEditorFocus: {})
+            .frame(width: 780, height: 520, alignment: .topLeading),
+        name: "command-browser-unavailable",
+        size: CGSize(width: 780, height: 520))
+}
+
+@MainActor
+@Test func commandBrowserNoMatchSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/modxyz"))
+
+    try assertSnapshot(
+        CommandBrowserView(
+            model: commandModel,
+            controls: controls,
+            query: .constant("modxyz"),
+            onEffect: { _ in },
+            onDismiss: {},
+            restoreEditorFocus: {})
+            .frame(width: 780, height: 520, alignment: .topLeading),
+        name: "command-browser-no-match",
+        size: CGSize(width: 780, height: 520))
+}
+
+@MainActor
+@Test func commandBrowserMinimumWindowSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            HStack(spacing: 0) {
+                CommandBrowserView(
+                    model: commandModel,
+                    controls: controls,
+                    query: .constant(""),
+                    onEffect: { _ in },
+                    onDismiss: {},
+                    restoreEditorFocus: {})
+                    .frame(width: 616, height: 360, alignment: .topLeading)
+                Spacer(minLength: 0)
+            }
+            .frame(width: 760, alignment: .leading)
+            Rectangle()
+                .fill(TenXPalette.color(TenXPalette.nearBlackHex))
+                .frame(height: 1)
+            Text("/")
+                .font(TenXTypography.body(size: 13))
+                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                .padding(.horizontal, 12)
+                .frame(width: 760, height: 52, alignment: .leading)
+                .overlay(Rectangle().stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1))
+        },
+        name: "command-browser-minimum-window",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserActiveWithAttachmentsSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/"),
+                attachments: .constant([
+                    snapshotAttachment(name: "source-map.png", width: 1_200, height: 800),
+                    snapshotAttachment(name: "layout-note.png", width: 640, height: 640),
+                ]),
+                flyout: .constant(.commands),
+                presentation: .active(controller: SessionController(
+                    processManager: SessionProcessManager(),
+                    previewItems: [],
+                    runtimeState: .idle,
+                    modelName: "Claude Opus 4.8",
+                    thinkingLevel: "Auto")),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .activeSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-active-attachments",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserNewSessionCommandsUnavailableSnapshot() async throws {
+    let (commandModel, controls) = await snapshotNewSessionCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands)
+    #expect(commandModel.updateDraft("/"))
+    commandModel.selectSource(.commands)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/"),
+                flyout: .constant(.commands),
+                presentation: .newSession(
+                    projectURL: nil,
+                    projectURLs: [],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .newSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-new-session-commands-unavailable",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserStreamingSteerSnapshot() async throws {
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: snapshotCommandBrowserCommands,
+        runtimeState: .streaming)
+    _ = session
+    #expect(commandModel.updateDraft("/compact"))
+
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .streaming,
+        modelName: "Claude Opus 4.8",
+        thinkingLevel: "Auto")
+    controller.selectStreamingBehavior(.steer)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/compact"),
+                flyout: .constant(.commands),
+                presentation: .active(controller: controller),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .activeSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-streaming-steer",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func composerCommandBrowserLongNamesMinimumWindowSnapshot() async throws {
+    let longCommands = [
+        AvailableSlashCommand(
+            name: "skill:extremely-detailed-refactor-investigation-with-follow-up-questions",
+            description: "Review every touched surface and produce a compact plan that still leaves the draft editable.",
+            inputHint: "<scope>",
+            source: .skill),
+        AvailableSlashCommand(
+            name: "extension:very-long-linear-project-management-workflow",
+            description: "Create or update a project tracking issue with the current session context.",
+            source: .extensionCommand),
+        AvailableSlashCommand(
+            name: "prompt:review-accessibility-keyboard-navigation-and-copy",
+            description: "Run the saved review prompt for keyboard interaction and interface text.",
+            inputHint: "<component>",
+            source: .mcpPrompt),
+    ]
+    let (commandModel, controls, session) = await snapshotCommandBrowserModel(
+        commands: longCommands,
+        runtimeState: .idle)
+    _ = session
+    #expect(commandModel.updateDraft("/"))
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("/"),
+                flyout: .constant(.commands),
+                presentation: .active(controller: SessionController(
+                    processManager: SessionProcessManager(),
+                    previewItems: [],
+                    runtimeState: .idle,
+                    modelName: "Claude Opus 4.8",
+                    thinkingLevel: "Auto")),
+                controls: controls,
+                commands: commandModel,
+                controlsMode: .activeSession,
+                onSend: {})
+            .frame(width: 676)
+        }
+        .padding(.horizontal, 42)
+        .padding(.bottom, 28),
+        name: "composer-command-browser-long-names-minimum-window",
+        size: CGSize(width: 760, height: 560))
+}
+
+@Test func commandBrowserPanelBoundsClampTheOuterViewHeight() {
+    #expect(CommandBrowserView.panelSize(for: CGSize(width: 780, height: 520))
+        == CGSize(width: 780, height: CommandBrowserMetrics.maximumHeight))
+    #expect(CommandBrowserView.panelSize(for: CGSize(width: 616, height: 120))
+        == CGSize(width: 616, height: CommandBrowserMetrics.minimumHeight))
+}
+
+@Test func commandBrowserSourceSelectionFromChildRoutesBacksToRoot() {
+    #expect(CommandBrowserView.sourceSelectionNavigation(for: .root) == .stayRoot)
+    #expect(CommandBrowserView.sourceSelectionNavigation(for: .arguments(CommandBrowserRowID(
+        rawSource: "builtin",
+        canonicalName: "compact"))) == .backToRoot)
+    #expect(CommandBrowserView.sourceSelectionNavigation(for: .subcommands(CommandBrowserRowID(
+        rawSource: "builtin",
+        canonicalName: "parent"))) == .backToRoot)
+    #expect(CommandBrowserView.sourceSelectionNavigation(for: .native(.model)) == .backToRoot)
+}
+
+@Test func commandBrowserScrollTargetRequiresTheSelectedRowToBeVisible() {
+    let rows = CommandBrowserPresentation.rows(commands: snapshotCommandBrowserCommands, mode: .activeIdle)
+    let selected = rows.last?.id
+
+    #expect(CommandBrowserView.selectedRowScrollTarget(selected, visibleRows: rows) == selected)
+    #expect(CommandBrowserView.selectedRowScrollTarget(CommandBrowserRowID(
+        rawSource: "custom",
+        canonicalName: "removed"), visibleRows: rows) == nil)
+    #expect(CommandBrowserView.selectedRowScrollTarget(nil, visibleRows: rows) == nil)
+}
+
+@Test func commandBrowserNativeControlsRestoreFocusOnlyAfterLeavingChild() {
+    #expect(CommandBrowserNativeControlsView.nativeRows(
+        command: .fast,
+        thinkingOptions: [],
+        thinkingLevel: "auto",
+        isFastModeVisible: false,
+        isFastModeEnabled: false).isEmpty)
+    #expect(CommandBrowserNativeControlsView.nativeRows(
+        command: .fast,
+        thinkingOptions: [],
+        thinkingLevel: "auto",
+        isFastModeVisible: true,
+        isFastModeEnabled: false).map(\.title) == ["On", "Off", "Status"])
+    #expect(CommandBrowserNativeControlsView.shouldRestoreEditorFocus(
+        effect: .none,
+        isPresented: true,
+        route: .native(.model)) == false)
+    #expect(CommandBrowserNativeControlsView.shouldRestoreEditorFocus(
+        effect: .replaceDraft(""),
+        isPresented: false,
+        route: .root))
+    #expect(CommandBrowserNativeControlsView.shouldRestoreEditorFocus(
+        effect: .keepDraft,
+        isPresented: true,
+        route: .root))
+}
+
+@Test func commandBrowserNativeControlsHighlightStartsOnTheCurrentSettingAndUpdates() {
+    let efforts = CommandBrowserNativeControlsView.nativeRows(
+        command: .effort,
+        thinkingOptions: ["auto", "low", "high"],
+        thinkingLevel: "high",
+        isFastModeVisible: true,
+        isFastModeEnabled: false)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .effort,
+        rows: efforts,
+        thinkingLevel: "high",
+        isFastModeEnabled: false,
+        previousIndex: 0) == 2)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .fast,
+        rows: CommandBrowserNativeControlsView.nativeRows(
+            command: .fast,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: true),
+        thinkingLevel: "auto",
+        isFastModeEnabled: true,
+        previousIndex: 1) == 0)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .fast,
+        rows: CommandBrowserNativeControlsView.nativeRows(
+            command: .fast,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false),
+        thinkingLevel: "auto",
+        isFastModeEnabled: false,
+        previousIndex: 0) == 1)
+
+    #expect(CommandBrowserNativeControlsView.currentNativeHighlightIndex(
+        command: .effort,
+        rows: CommandBrowserNativeControlsView.nativeRows(
+            command: .effort,
+            thinkingOptions: ["auto", "low"],
+            thinkingLevel: "missing",
+            isFastModeVisible: true,
+            isFastModeEnabled: false),
+        thinkingLevel: "missing",
+        isFastModeEnabled: false,
+        previousIndex: 5) == 1)
 }
 
 @MainActor
@@ -2253,7 +3526,7 @@ private func wideTranscriptController() -> SessionController {
 
 @MainActor
 private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-rail")
     model.sessions = [
         snapshotSession(
             path: "/sessions/selected.jsonl",
@@ -2279,7 +3552,7 @@ private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
 
 @MainActor
 private func snapshotOverflowRail() -> (AppModel, RailExpansionModel) {
-    let model = AppModel()
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-snapshot-overflow-rail")
     model.sessions = (1...7).map { index in
         snapshotSession(
             path: "/sessions/overflow-\(index).jsonl",
@@ -2346,7 +3619,8 @@ private func snapshotToolCardStack(
     _ presentations: [ToolPresentation],
     width: CGFloat
 ) -> some View {
-    let disclosure = ToolDisclosureState(mode: .expanded)
+    let disclosure = ToolDisclosureState()
+    for id in presentations.map(\.id) { disclosure.setExpanded(true, id: id) }
     return VStack(alignment: .leading, spacing: 18) {
         ForEach(presentations) { presentation in
             ToolCardView(presentation: presentation)
@@ -2412,20 +3686,138 @@ private func snapshotComposerControls(
         catalog: catalog,
         defaults: SnapshotComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)))
+    await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)), projectURL: nil)
     return model
 }
 
 private actor SnapshotComposerCatalog: ComposerCatalogLoading {
     private let snapshot: ComposerCatalogSnapshot
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
 
     init(snapshot: ComposerCatalogSnapshot) {
         self.snapshot = snapshot
     }
 
-    func load() async throws -> ComposerCatalogSnapshot { snapshot }
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot { snapshot }
 
     func shutdown() async {}
+}
+
+private let snapshotCommandBrowserCommands = [
+    AvailableSlashCommand(
+        name: "compact",
+        aliases: ["summarize"],
+        description: "Compact the current session",
+        inputHint: "[instructions]",
+        subcommands: [
+            AvailableSlashSubcommand(
+                name: "status",
+                description: "Show compaction status",
+                usage: "/compact status"),
+        ],
+        source: .builtin),
+    AvailableSlashCommand(
+        name: "context",
+        description: "Show session context",
+        source: .builtin),
+    AvailableSlashCommand(
+        name: "skill:brainstorming",
+        description: "Explore a feature direction",
+        inputHint: "<topic>",
+        source: .skill),
+    AvailableSlashCommand(
+        name: "extension:linear",
+        description: "Create or update a Linear issue",
+        source: .extensionCommand),
+    AvailableSlashCommand(
+        name: "prompt:review",
+        description: "Run a saved review prompt",
+        inputHint: "<scope>",
+        source: .mcpPrompt),
+]
+
+@MainActor
+private func snapshotCommandBrowserModel(
+    commands: [AvailableSlashCommand],
+    runtimeState: SessionRuntimeState,
+    catalogState: ComposerCommandCatalogState? = nil
+) async -> (ComposerCommandModel, ComposerControlsModel, SnapshotCommandBrowserSession) {
+    let catalog = SnapshotCommandBrowserCatalog(commands: commands)
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+    let model = ComposerCommandModel(
+        catalog: catalog,
+        controls: controls,
+        onStartNewSession: { _, _ in })
+    let state = catalogState ?? .available(commands)
+    let session = SnapshotCommandBrowserSession(
+        runtimeState: runtimeState,
+        catalogState: state)
+    model.attachActiveSession(session)
+    await Task.yield()
+    return (model, controls, session)
+}
+
+@MainActor
+private func snapshotNewSessionCommandBrowserModel(
+    commands: [AvailableSlashCommand]
+) async -> (ComposerCommandModel, ComposerControlsModel) {
+    let catalog = SnapshotCommandBrowserCatalog(commands: commands)
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+    let model = ComposerCommandModel(
+        catalog: catalog,
+        controls: controls,
+        onStartNewSession: { _, _ in })
+    await Task.yield()
+    return (model, controls)
+}
+
+private actor SnapshotCommandBrowserCatalog: ComposerCatalogLoading {
+    nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
+
+    init(commands: [AvailableSlashCommand]) {
+        let updates = AsyncStream<ComposerCommandCatalogState>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        commandUpdates = updates.stream
+        updates.continuation.yield(.available(commands))
+        updates.continuation.finish()
+    }
+
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
+        ComposerCatalogSnapshot(
+            models: [],
+            selected: nil,
+            thinkingLevel: nil,
+            fastModeEnabled: false,
+            fastModeActive: false)
+    }
+
+    func shutdown() async {}
+}
+
+@MainActor
+private final class SnapshotCommandBrowserSession: ComposerCommandSession {
+    var runtimeState: SessionRuntimeState
+    var commandCatalogState: ComposerCommandCatalogState
+    let commandUpdates = AsyncStream<ComposerCommandCatalogState> { _ in }
+
+    init(runtimeState: SessionRuntimeState, catalogState: ComposerCommandCatalogState) {
+        self.runtimeState = runtimeState
+        self.commandCatalogState = catalogState
+    }
+
+    func sendSlashCommand(_ text: String) async {}
 }
 
 private actor SnapshotComposerDefaults: ComposerDefaultPersisting {
@@ -2631,4 +4023,1537 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
     NSRect(x: 0, y: 0, width: width / 2, height: height / 2).fill()
     NSGraphicsContext.restoreGraphicsState()
     return representation.representation(using: .png, properties: [:])!
+}
+
+@MainActor
+private func snapshotMediaLoader(for item: ToolMediaItem) -> ToolMediaLoader {
+    guard let path = item.url,
+          let data = try? Data(contentsOf: URL(filePath: path)),
+          let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let image = CGImageSourceCreateImageAtIndex(
+            source,
+            0,
+            [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+    else {
+        return ToolMediaLoader(preloaded: item, state: .unavailable)
+    }
+    return ToolMediaLoader(preloaded: item, media: DecodedToolMedia(data: data, image: image))
+}
+
+private actor SnapshotMediaGate {
+    private var isStarted = false
+    private var isOpen = false
+    private var waitContinuation: CheckedContinuation<Void, Never>?
+    private var startContinuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        isStarted = true
+        startContinuation?.resume()
+        startContinuation = nil
+        guard !isOpen else { return }
+        await withCheckedContinuation { waitContinuation = $0 }
+    }
+
+    func waitForStart() async {
+        guard !isStarted else { return }
+        await withCheckedContinuation { startContinuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        waitContinuation?.resume()
+        waitContinuation = nil
+    }
+}
+
+// MARK: - Dark appearance
+//
+// The palette resolves per-appearance, so these render the same views the light
+// references cover, with the host pinned to `.darkAqua`. They are what catches a
+// token that was never given a dark value — the failure looks like near-black
+// text on a near-black canvas, which no contrast unit test can see.
+
+@MainActor
+@Test func fullShellDarkSnapshot() async throws {
+    let providerModel = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: fullShellProviders),
+        usageService: FakeUsageService(snapshot: try fullShellUsageSnapshot()),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 1_787_675_746) })
+    let model = AppModel(dependencies: AppDependencies(
+        ompLocator: SnapshotOmpLocator(),
+        sessionLibrary: SessionLibrary(root: URL(
+            filePath: "/tmp/10x-full-shell-dark-snapshot",
+            directoryHint: .isDirectory)),
+        sessionSearch: SessionSearchService(),
+        recentProjectStore: isolatedRecentProjectStore(),
+        makeProviderModel: { _ in providerModel },
+        makeComposerControls: stubComposerControlsFactory,
+        makeUpdateChecker: stubUpdateCheckerFactory))
+    model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
+    await model.bootstrap()
+    model.sessions = fullShellSessions
+    let railExpansion = RailExpansionModel()
+    railExpansion.pointerEntered()
+
+    try assertSnapshot(
+        AppShellView(model: model, railExpansion: railExpansion),
+        name: "full-shell-dark",
+        appearance: .dark,
+        size: CGSize(width: 760, height: 560))
+}
+
+/// Covers both halves of the emphasis pairing at once: the send button's fill
+/// inverts to near-white and its arrow has to invert with it, and the flyout
+/// behind it has to lift off the canvas without the light mode's drop shadow.
+@MainActor
+@Test func composerWithModelFlyoutDarkSnapshot() async throws {
+    let controls = await snapshotComposerControls(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        selected: modelPickerAnthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false)
+
+    try assertSnapshot(
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            ComposerView(
+                draft: .constant("Pick a model without the border cutting the panel."),
+                flyout: .constant(.model),
+                presentation: .newSession(
+                    projectURL: URL(filePath: "/tmp/10x", directoryHint: .isDirectory),
+                    projectURLs: [URL(filePath: "/tmp/10x", directoryHint: .isDirectory)],
+                    onChooseProject: { _ in },
+                    onAddExistingFolder: {}),
+                controls: controls,
+                controlsMode: .newSession,
+                onSend: {})
+        },
+        name: "composer-with-model-flyout-dark",
+        appearance: .dark,
+        size: CGSize(width: 780, height: 400))
+}
+
+@MainActor
+@Test func genericToolCardDarkSnapshot() throws {
+    let presentation = ToolPresentation(
+        id: "snapshot-tool",
+        name: "custom_future_tool",
+        arguments: .object(["query": .string("Bauhaus interface")]),
+        result: .object(["content": .array([
+            .object(["type": .string("text"), "text": .string("Completed locally")]),
+        ])]),
+        phase: .complete,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 1.4))
+    try assertSnapshot(
+        ToolCardView(presentation: presentation)
+            .frame(width: 720),
+        name: "generic-tool-card-dark",
+        appearance: .dark)
+}
+
+@MainActor
+@Test func approvalCardDarkSnapshot() throws {
+    try assertSnapshot(
+        ApprovalCardView(
+            state: .confirm(
+                id: "approval",
+                title: "Allow this command?",
+                message: "Run the local test suite in this project.",
+                timeout: nil),
+            onRespond: { _ in },
+            onOpenURL: { _ in },
+            onCopyURL: { _ in })
+            .frame(width: 720),
+        name: "approval-card-dark",
+        appearance: .dark)
+}
+
+@MainActor
+@Test func continuousSettingsDarkSnapshot() async throws {
+    let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
+    let suiteName = "TenXAppTests.SettingsDarkSnapshot.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let registry = IDERegistry.testing(applications: [:])
+    let store = IDEPreferenceStore(defaults: defaults, registry: registry)
+    let providerModel = try providerWorkspaceModel()
+    await model.load()
+    try assertSnapshot(
+        SettingsView(
+            model: model,
+            registry: registry,
+            store: store,
+            providerModel: providerModel),
+        name: "continuous-settings-dark",
+        appearance: .dark)
+}
+
+/// The user's own message is drawn on an emphasis fill, so it carries the same
+/// inversion risk as the send button — and it is the single most repeated
+/// surface in the app.
+@MainActor
+@Test func richTranscriptWideDarkSnapshot() throws {
+    try assertSnapshot(
+        TranscriptView(controller: richTranscriptController())
+            .environment(snapshotEmptyIDEStore)
+            .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+            .environment(\.fileOpenService, snapshotFileOpenService),
+        name: "rich-transcript-wide-dark",
+        appearance: .dark,
+        size: CGSize(width: 1_180, height: 2_000))
+}
+
+/// Diff tints are opacity washes over the canvas rather than their own tokens.
+/// They only read on a dark canvas because the color underneath them resolved
+/// dark first — this is the snapshot that catches it if that stops being true.
+@MainActor
+@Test func activityStructuredDiffDarkSnapshot() throws {
+    let longLine = "let title = \"" + String(repeating: "structured-transcript-", count: 10) + "\""
+    let patch = """
+    diff --git a/App/Transcript.swift b/App/Transcript.swift
+    --- a/App/Transcript.swift
+    +++ b/App/Transcript.swift
+    @@ -1,10 +1,10 @@
+     import SwiftUI
+     struct Transcript {
+         let id: String
+         let role: String
+         let model: String
+         let mode: String
+         let date: Date
+         let state: State
+    -let title = "Old transcript"
+    +    \(longLine) // 10 repeated segments
+    diff --git a/App/Palette.swift b/App/Palette.swift
+    --- a/App/Palette.swift
+    +++ b/App/Palette.swift
+    @@ -4,2 +4,2 @@
+    -let addition = Color.green
+    +let addition = Color.cyan
+     let removal = Color.red
+    """
+    let presentation = ToolPresentation(
+        id: "diff-tool",
+        name: "edit",
+        arguments: .object(["path": .string("/tmp/Transcript.swift")]),
+        result: .object(["details": .object(["diff": .string(patch)])]),
+        phase: .complete,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 1.7))
+    try assertSnapshot(
+        ToolCardView(presentation: presentation)
+            .environment(snapshotEmptyIDEStore)
+            .frame(width: 720),
+        name: "activity-structured-diff-dark",
+        appearance: .dark,
+        size: CGSize(width: 800, height: 650))
+}
+
+/// A scrim over the canvas plus a raised panel: in light mode the scrim is a
+/// white wash, and it has to become a dark one rather than blowing out.
+@MainActor
+@Test func sessionDeletionConfirmationDarkSnapshot() throws {
+    let request = SessionDeletionRequest.session(snapshotSession(
+        path: "/sessions/delete-me.jsonl",
+        cwd: "/tmp/10x",
+        title: "Refine session management",
+        modified: 1_787_601_600))
+
+    try assertSnapshot(
+        SessionDeletionConfirmationView(
+            request: request,
+            onCancel: {},
+            onDelete: {}),
+        name: "session-deletion-confirmation-dark",
+        appearance: .dark)
+}
+
+@MainActor
+@Test func brandActionsMenuDarkSnapshot() throws {
+    let model = AppModel()
+    model.route = .newSession
+
+    try assertSnapshot(
+        BrandActionsMenuView(
+            model: model,
+            isPresented: .constant(true),
+            revealsImmediately: true),
+        name: "brand-actions-menu-dark",
+        appearance: .dark,
+        size: CGSize(width: 220, height: 180))
+}
+
+// MARK: - Dark appearance mirrors
+//
+// Generated from the light fixtures in this file so the two stay in step:
+// same view, same state, host pinned to .darkAqua. These are the catalog of
+// what dark mode looks like, and the net for a token that no contrast
+// assertion can see is wrong.
+
+@MainActor
+@Test func collapsedRailSnapshotDark() throws {
+    let (model, expansion) = snapshotRail(isExpanded: false)
+
+    try assertSnapshot(
+        FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
+        name: "shell-rail-collapsed-dark", appearance: .dark,
+        size: CGSize(width: 64, height: 620))
+}
+@MainActor
+@Test func expandedRailSnapshotDark() throws {
+    let (model, expansion) = snapshotRail(isExpanded: true)
+
+    try assertSnapshot(
+        FloatingRailView(model: model, expansion: expansion, isBrandMenuPresented: .constant(false)),
+        name: "shell-rail-expanded-dark", appearance: .dark,
+        size: CGSize(width: 220, height: 620))
+}
+@MainActor
+@Test func archivedSessionsPopulatedSnapshotDark() throws {
+    let model = AppModel()
+    model.archivedSessions = [
+        snapshotSession(
+            path: "/sessions/archived-shell.jsonl",
+            cwd: "/tmp/10x",
+            title: "Refine session management",
+            modified: 1_787_601_600),
+        snapshotSession(
+            path: "/sessions/archived-untitled.jsonl",
+            cwd: "/tmp/10x",
+            title: "",
+            modified: 1_787_515_200),
+        snapshotSession(
+            path: "/sessions/archived-nextstep.jsonl",
+            cwd: "/tmp/NextStep",
+            title: "Review course navigation",
+            modified: 1_787_428_800),
+    ]
+
+    try assertSnapshot(
+        ArchivedSessionsView(model: model),
+        name: "archived-sessions-populated-dark", appearance: .dark)
+}
+@MainActor
+@Test func activeSessionHeaderSnapshotDark() throws {
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .streaming,
+        title: "Active session",
+        headerMetadata: SessionHeaderMetadata(
+            branch: "codex/active-session-shell",
+            repo: "10x",
+            worktreePath: ".worktrees/active-session-shell"))
+
+    try assertSnapshot(
+        SessionHeaderView(controller: controller),
+        name: "active-session-header-dark", appearance: .dark,
+        size: CGSize(width: 900, height: 80))
+}
+@MainActor
+@Test func richAssistantMessageSnapshotDark() throws {
+    let message = TranscriptMessage(
+        id: "assistant-message",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("""
+            # Transcript ready
+
+            The agent view now keeps **routine work compact** while preserving the detail you need.
+
+            - Actual model and mode attribution
+            - Structured code with copy
+            - Actionable [documentation](https://example.com/docs)
+
+            | Surface | Behavior |
+            | --- | --- |
+            | Source | Wraps by default without losing indentation |
+            | References | Stay where the response introduced them |
+
+            > Changes stay quiet until they need attention.
+
+            ```swift
+            let state = TranscriptState.compact // preserve the reader's place
+            if state.isReady {
+                render(state, references: true, maximumVisibleCharacters: 120)
+            }
+            ```
+            """),
+        ]),
+        timestamp: Date(timeIntervalSince1970: 1_787_601_600),
+        attribution: TranscriptResponseAttribution(
+            provider: "openai-codex",
+            model: "gpt-5.6-sol",
+            mode: "design",
+            agent: nil,
+            modelRole: nil),
+        isFinal: true)
+    try assertSnapshot(
+        MessageBubbleView(message: message)
+            .environment(snapshotEmptyIDEStore)
+            .frame(width: 720),
+        name: "chat-rich-assistant-dark", appearance: .dark,
+        size: CGSize(width: 800, height: 700))
+}
+@MainActor
+@Test func userMessageSnapshotDark() throws {
+    let message = TranscriptMessage(
+        id: "user-message",
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Make the transcript compact, but keep every useful detail available."),
+        ]),
+        timestamp: Date(timeIntervalSince1970: 1_787_601_600),
+        isFinal: true)
+    try assertSnapshot(
+        MessageBubbleView(message: message).frame(width: 720),
+        name: "chat-user-message-dark", appearance: .dark,
+        size: CGSize(width: 800, height: 220))
+}
+@MainActor
+@Test func transcriptUserMessageWithAnImageSnapshotDark() throws {
+    let message = TranscriptMessage(
+        id: "image-user",
+        raw: .object([
+            "role": .string("user"),
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string("The sidebar clips at this width."),
+                ]),
+                .object([
+                    "type": .string("image"),
+                    "data": .string(snapshotImageData(width: 320, height: 200)
+                        .base64EncodedString()),
+                    "mimeType": .string("image/png"),
+                ]),
+            ]),
+        ]),
+        isFinal: true)
+
+    try assertSnapshot(
+        MessageBubbleView(message: message)
+            .padding(24),
+        name: "user-message-with-image-dark", appearance: .dark,
+        size: CGSize(width: 700, height: 300))
+}
+@MainActor
+@Test func transcriptWorkingIndicatorSnapshotDark() throws {
+    try assertSnapshot(
+        TranscriptView(controller: awaitingOutputController())
+            .environment(snapshotEmptyIDEStore),
+        name: "transcript-working-indicator-dark", appearance: .dark,
+        size: CGSize(width: 700, height: 260))
+}
+@MainActor
+@Test func longWrappingMessageSnapshotDark() throws {
+    let longValue = String(repeating: "unbroken-segment-", count: 38)
+    let longReference = "/tmp/" + String(repeating: "nested-folder/", count: 8)
+        + "a-very-long-reference-name-that-must-not-overflow.swift:42"
+    let message = TranscriptMessage(
+        id: "long-message",
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("The output stays inside the transcript:\n\n\(longValue)\n\n`\(longReference)`"),
+        ]),
+        attribution: TranscriptResponseAttribution(
+            provider: nil,
+            model: "claude-sonnet-4-6",
+            mode: nil,
+            agent: nil,
+            modelRole: nil),
+        isFinal: true)
+    try assertSnapshot(
+        MessageBubbleView(message: message)
+            .environment(snapshotEmptyIDEStore)
+            .frame(width: 520),
+        name: "chat-long-wrapping-dark", appearance: .dark,
+        size: CGSize(width: 600, height: 420))
+}
+@MainActor
+@Test func semanticToolSurfacesSnapshotDark() throws {
+    let timestamp = Date(timeIntervalSince1970: 1)
+    let source = ToolPresentation(
+        id: "semantic-source",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: snapshotTextResult("struct TranscriptView: View {\n    let controller: SessionController\n}"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.3))
+    let collection = ToolPresentation(
+        id: "semantic-collection",
+        name: "web_search",
+        arguments: .object(["query": .string("Open multimodal protocol")]),
+        result: .object(["details": .object(["results": .array([
+            .object([
+                "title": .string("OMP reference"),
+                "url": .string("https://example.com/omp"),
+                "snippet": .string("A typed protocol for model tools and ordered content blocks."),
+            ]),
+            .object([
+                "title": .string("Tool result guide"),
+                "url": .string("https://example.com/tools"),
+                "snippet": .string("Text, resources, images, and structured details remain in order."),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.6))
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    let mcp = ToolPresentation(
+        id: "semantic-mcp",
+        name: "mcp__vision__render",
+        arguments: .object(["quality": .string("high")]),
+        result: .object([
+            "content": .array([
+                .object(["type": .string("text"), "text": .string("Rendered preview")]),
+                .object([
+                    "type": .string("image"),
+                    "url": .string(previewPath),
+                    "mimeType": .string("image/png"),
+                    "name": .string("Wrapped source preview"),
+                ]),
+                .object([
+                    "type": .string("resource_link"),
+                    "name": .string("Render report"),
+                    "uri": .string("https://example.com/report"),
+                ]),
+                .object([
+                    "type": .string("image"),
+                    "data": .string("not-valid-base64"),
+                    "mimeType": .string("image/png"),
+                    "name": .string("Malformed preview"),
+                ]),
+            ]),
+            "details": .object([
+                "width": .int(800),
+                "height": .int(600),
+                "nested": .object(["status": .string("complete")]),
+            ]),
+        ]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(1.2))
+    let disclosure = ToolDisclosureState()
+    for id in [source.id, collection.id, mcp.id] { disclosure.setExpanded(true, id: id) }
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ToolCardView(presentation: source)
+            ToolCardView(presentation: collection)
+            ToolCardView(presentation: mcp)
+        }
+        .environment(\.toolDisclosureState, disclosure)
+        .environment(snapshotEmptyIDEStore)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .environment(\.toolMediaLoaderFactory, snapshotMediaLoader)
+        .frame(width: 720, alignment: .leading),
+        name: "semantic-tool-surfaces-dark", appearance: .dark,
+        size: CGSize(width: 800, height: 1_500))
+}
+@MainActor
+@Test func coordinationToolCardsSnapshotDark() throws {
+    let cards = [
+        snapshotToolPresentation(
+            id: "coordination-task",
+            name: "task",
+            arguments: .object([
+                "title": .string("Audit the complete transcript surface while preserving every long file reference and execution detail"),
+            ]),
+            result: .object(["details": .object([
+                "status": .string("running"),
+                "progress": .string("Inspecting compact and expanded states."),
+                "completed": .int(2),
+                "total": .int(5),
+                "history": .array([
+                    .string("Mapped transcript routing"),
+                    .string("Checked disclosure persistence"),
+                ]),
+                "artifacts": .array([
+                    .object(["path": .string("App/Tools/ToolCardView.swift")]),
+                ]),
+            ])]),
+            phase: .running,
+            duration: 4.2),
+        snapshotToolPresentation(
+            id: "coordination-todo",
+            name: "todo",
+            arguments: .object(["todos": .array([
+                .object(["content": .string("Map the OMP catalog"), "status": .string("completed")]),
+                .object(["content": .string("Verify compact wrapping"), "status": .string("in_progress")]),
+                .object(["content": .string("Launch the Release build"), "status": .string("pending")]),
+            ])]),
+            result: nil,
+            phase: .complete,
+            duration: 0.3),
+        snapshotToolPresentation(
+            id: "coordination-proposal",
+            name: "propose",
+            arguments: .object([
+                "path": .string("App/Sessions/TranscriptView.swift"),
+                "reason": .string("Route every tool through the shared semantic card contract."),
+            ]),
+            result: .object(["details": .object(["status": .string("complete")])]),
+            phase: .complete,
+            duration: 0.6),
+        snapshotToolPresentation(
+            id: "coordination-security",
+            name: "security_scan",
+            arguments: .object(["target": .string("App/Sessions")]),
+            result: .object([
+                "error": .string("Scan stopped after an unreadable fixture"),
+                "details": .object([
+                    "status": .string("failed"),
+                    "findings": .array([.object([
+                        "title": .string("Unchecked file URL"),
+                        "severity": .string("high"),
+                        "path": .string("App/Sessions/TranscriptReference.swift"),
+                        "line": .int(42),
+                    ])]),
+                ]),
+            ]),
+            phase: .failed,
+            duration: 1.8),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-coordination-dark", appearance: .dark,
+        size: CGSize(width: 600, height: 1_150))
+}
+@MainActor
+@Test func mediaToolCardsSnapshotDark() throws {
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    let imageResult = JSONValue.object([
+        "content": .array([.object([
+            "type": .string("image"),
+            "url": .string(previewPath),
+            "mimeType": .string("image/png"),
+            "name": .string("Transcript preview"),
+        ])]),
+        "details": .object([
+            "width": .int(500),
+            "height": .int(340),
+            "scale": .double(2),
+        ]),
+    ])
+    let cards = [
+        snapshotToolPresentation(
+            id: "media-inspect",
+            name: "inspect_image",
+            arguments: .object(["path": .string(previewPath)]),
+            result: imageResult,
+            phase: .complete,
+            duration: 0.7),
+        snapshotToolPresentation(
+            id: "media-computer",
+            name: "computer",
+            arguments: .object([
+                "action": .string("click"),
+                "application": .string("Safari"),
+            ]),
+            result: .object([
+                "content": imageResult["content"] ?? .array([]),
+                "details": .object([
+                    "action": .string("click"),
+                    "x": .int(412),
+                    "y": .int(288),
+                ]),
+            ]),
+            phase: .complete,
+            duration: 1.1),
+        snapshotToolPresentation(
+            id: "media-question",
+            name: "ask",
+            arguments: .object([
+                "questions": .array([.object([
+                    "id": .string("tool-card-density"),
+                    "question": .string("How should completed tool calls balance scanability and detail?"),
+                    "options": .array([
+                        .object([
+                            "label": .string("Compact until expanded"),
+                            "description": .string("Keep the two-corner summary row and reveal semantic detail on demand."),
+                        ]),
+                        .object([
+                            "label": .string("Always expanded"),
+                            "description": .string("Show every tool result directly in the transcript."),
+                        ]),
+                    ]),
+                    "recommended": .int(0),
+                ])]),
+            ]),
+            result: .object([
+                "content": .array([.object([
+                    "type": .string("text"),
+                    "text": .string("User selected: Compact until expanded"),
+                ])]),
+                "details": .object([
+                    "selectedOptions": .array([.string("Compact until expanded")]),
+                ]),
+            ]),
+            phase: .complete,
+            duration: 3.4),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
+        name: "tool-cards-media-dark", appearance: .dark,
+        size: CGSize(width: 600, height: 1_300))
+}
+@MainActor
+@Test func memoryToolCardsSnapshotDark() throws {
+    let cards = [
+        snapshotToolPresentation(
+            id: "memory-retain",
+            name: "retain",
+            arguments: .object(["memory": .string("Use one semantic card contract")]),
+            result: .object(["details": .object(["memories": .array([
+                .object([
+                    "id": .string("memory-1"),
+                    "text": .string("Use one semantic card contract"),
+                    "status": .string("stored"),
+                ]),
+                .object([
+                    "id": .string("memory-2"),
+                    "text": .string("Wrap source by default"),
+                    "status": .string("stored"),
+                ]),
+            ])])]),
+            phase: .complete,
+            duration: 0.4),
+        snapshotToolPresentation(
+            id: "memory-recall",
+            name: "recall",
+            arguments: .object(["query": .string("obsolete transcript rule")]),
+            result: .object(["details": .object(["memories": .array([])])]),
+            phase: .complete,
+            duration: 0.2),
+        snapshotToolPresentation(
+            id: "memory-edit",
+            name: "memory_edit",
+            arguments: .object([
+                "id": .string("memory-1"),
+                "content": .string("## Transcript rule\n\nKeep references where they are written."),
+            ]),
+            result: .object(["details": .object([
+                "status": .string("updated"),
+                "version": .int(2),
+            ])]),
+            phase: .complete,
+            duration: 0.5),
+        snapshotToolPresentation(
+            id: "memory-skill",
+            name: "manage_skill",
+            arguments: .object([
+                "operation": .string("update"),
+                "name": .string("rich-chat"),
+                "content": .string("# Rich chat\n\n- Reuse the two-corner card\n- Compose semantic surfaces\n- Preserve complete source"),
+            ]),
+            result: .object(["details": .object([
+                "status": .string("updated"),
+                "path": .string("skills/rich-chat/SKILL.md"),
+            ])]),
+            phase: .complete,
+            duration: 0.8),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520),
+        name: "tool-cards-memory-dark", appearance: .dark,
+        size: CGSize(width: 600, height: 1_100))
+}
+@MainActor
+@Test func mcpFallbackToolCardsSnapshotDark() throws {
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    var nestedFallback = JSONValue.string(String(repeating: "bounded-value-", count: 18))
+    for depth in (1...8).reversed() {
+        nestedFallback = .object(["level\(depth)": nestedFallback])
+    }
+    let cards = [
+        snapshotToolPresentation(
+            id: "fallback-mcp",
+            name: "mcp__vision__render_preview",
+            arguments: .object(["quality": .string("high")]),
+            result: .object([
+                "content": .array([
+                    .object(["type": .string("text"), "text": .string("Rendered the requested transcript preview.")]),
+                    .object([
+                        "type": .string("image"),
+                        "url": .string(previewPath),
+                        "mimeType": .string("image/png"),
+                        "name": .string("Wrapped transcript"),
+                    ]),
+                    .object([
+                        "type": .string("resource_link"),
+                        "name": .string("Render report"),
+                        "uri": .string("https://example.com/render-report"),
+                    ]),
+                ]),
+                "details": .object([
+                    "width": .int(800),
+                    "height": .int(600),
+                    "status": .string("complete"),
+                ]),
+            ]),
+            phase: .complete,
+            duration: 1.3),
+        snapshotToolPresentation(
+            id: "fallback-extension",
+            name: "extension_future",
+            arguments: .object([
+                "mode": .string("preview"),
+                "payload": nestedFallback,
+            ]),
+            result: .object([
+                "unexpected": .array([.null, .int(2), .bool(true)]),
+            ]),
+            phase: .complete,
+            duration: 0.4),
+        snapshotToolPresentation(
+            id: "fallback-empty",
+            name: "unknown_empty",
+            arguments: .null,
+            result: nil,
+            phase: .complete,
+            duration: 0.1),
+        snapshotToolPresentation(
+            id: "fallback-error",
+            name: "extension_failed",
+            arguments: .object(["operation": .string("import")]),
+            result: .object(["error": .string("Extension returned malformed content")]),
+            phase: .failed,
+            duration: 0.9),
+    ]
+
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
+        name: "tool-cards-mcp-fallback-dark", appearance: .dark,
+        size: CGSize(width: 600, height: 1_600))
+}
+@MainActor
+@Test func activityFileReferencesSnapshotDark() throws {
+    let suiteName = "TenXAppTests.ActivityFileReferencesDark.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let registry = IDERegistry.testing(applications: [
+        "com.todesktop.230313mzl4w4u92": URL(filePath: "/Applications/Cursor.app"),
+    ])
+    let store = IDEPreferenceStore(defaults: defaults, registry: registry)
+    try store.select(#require(registry.installedApplications().first))
+    let timestamp = Date(timeIntervalSince1970: 1)
+
+    let read = ToolPresentation(
+        id: "reference-read",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: snapshotTextResult("struct TranscriptView: View { … }"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.3))
+    let edit = ToolPresentation(
+        id: "reference-edit",
+        name: "edit",
+        arguments: .object(["path": .string("App/Sessions/ActiveSessionView.swift")]),
+        result: .object(["details": .object(["diff": .string("-old\n+new")])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.7))
+    let write = ToolPresentation(
+        id: "reference-write",
+        name: "write",
+        arguments: .object([
+            "path": .string("App/FileReferences/FileReferenceLabel.swift"),
+            "content": .string("import SwiftUI"),
+        ]),
+        result: snapshotTextResult("Wrote file"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.5))
+    let disclosureState = ToolDisclosureState()
+    for id in [read.id, edit.id, write.id] { disclosureState.setExpanded(false, id: id) }
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ToolCardView(presentation: read)
+            ToolCardView(presentation: edit)
+            ToolCardView(presentation: write)
+            ToolCardView(presentation: read)
+                .frame(width: 360, alignment: .leading)
+        }
+        .environment(\.toolDisclosureState, disclosureState)
+        .environment(store)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 720, alignment: .leading),
+        name: "activity-file-references-dark", appearance: .dark,
+        size: CGSize(width: 800, height: 520))
+}
+@MainActor
+@Test func subagentActivitySnapshotDark() throws {
+    let presentation = SubagentPresentation(
+        id: "subagent",
+        index: 0,
+        agent: "reviewer",
+        task: "Review transcript behavior",
+        assignment: "Check disclosure and attribution",
+        description: "Review the completed implementation against the product direction.",
+        status: .running,
+        sessionFile: "/tmp/reviewer.jsonl",
+        parentToolCallID: "task-1",
+        actualModel: "gpt-5.6-sol",
+        thinkingLevel: "high",
+        modelRole: "review",
+        isFallback: false,
+        currentTool: "read",
+        recentTools: [],
+        recentOutput: ["Checked transcript mapping", "Reviewing compact activity"],
+        toolCount: 6,
+        requests: 2,
+        tokens: 1_840,
+        cost: 0.03,
+        durationMilliseconds: 4_200,
+        result: nil)
+    try assertSnapshot(
+        SubagentCardView(presentation: presentation).frame(width: 720),
+        name: "activity-subagent-dark", appearance: .dark,
+        size: CGSize(width: 800, height: 330))
+}
+@MainActor
+@Test func activityDisclosureSnapshotDark() throws {
+    let running = ToolPresentation(
+        id: "running-tool",
+        name: "bash",
+        arguments: .object(["command": .string("swift test --filter Transcript")]),
+        result: .object(["content": .array([
+            .object([
+                "type": .string("text"),
+                "text": .string((1...14).map { "Test step \($0) passed" }.joined(separator: "\n")),
+            ]),
+        ])]),
+        phase: .running,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 5.6))
+    let failed = ToolPresentation(
+        id: "failed-tool",
+        name: "bash",
+        arguments: .object(["command": .string("swift build")]),
+        result: .object(["content": .array([
+            .object(["type": .string("text"), "text": .string("Compilation failed at TranscriptView.swift:42")]),
+        ])]),
+        phase: .failed,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 1.8))
+    try assertSnapshot(
+        VStack(spacing: 18) {
+            ToolCardView(presentation: running)
+            ToolCardView(presentation: failed)
+        }
+        .frame(width: 720),
+        name: "activity-running-error-dark", appearance: .dark,
+        size: CGSize(width: 800, height: 520))
+}
+@MainActor
+@Test func developerToolFlowSnapshotDark() throws {
+    let timestamp = Date(timeIntervalSince1970: 1)
+    let read = ToolPresentation(
+        id: "developer-read",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptEventProcessor.swift")]),
+        result: snapshotTextResult("actor TranscriptEventProcessor { }"),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.2))
+    let patch = """
+    diff --git a/App/Sessions/TranscriptView.swift b/App/Sessions/TranscriptView.swift
+    --- a/App/Sessions/TranscriptView.swift
+    +++ b/App/Sessions/TranscriptView.swift
+    @@ -157,3 +157,5 @@
+    -            .frame(maxWidth: 720, alignment: .leading)
+    +            .frame(
+    +                maxWidth: TranscriptView.contentMaxWidth,
+    +                alignment: .leading)
+     }
+    """
+    let edit = ToolPresentation(
+        id: "developer-edit",
+        name: "edit",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: .object(["details": .object(["diff": .string(patch)])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.7))
+    let grep = ToolPresentation(
+        id: "developer-grep",
+        name: "grep",
+        arguments: .object(["pattern": .string("ToolCardView")]),
+        result: .object(["details": .object(["matches": .array([
+            .object([
+                "path": .string("App/Sessions/TranscriptView.swift"),
+                "line": .int(158),
+                "text": .string("ToolCardView(presentation: presentation)"),
+            ]),
+            .object([
+                "path": .string("App/Tools/ToolCardView.swift"),
+                "line": .int(3),
+                "text": .string("struct ToolCardView: View"),
+            ]),
+            .object([
+                "path": .string("Tests/TenXAppTests/ViewSnapshotTests.swift"),
+                "line": .int(20),
+                "text": .string("ToolCardView(presentation: presentation)"),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.4))
+    let bash = ToolPresentation(
+        id: "developer-bash",
+        name: "bash",
+        arguments: .object(["command": .string("xcodebuild test -scheme 10x")]),
+        result: snapshotTextResult((1...14).map { "Test group \($0) passed" }.joined(separator: "\n")),
+        phase: .running,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(4.6))
+    let web = ToolPresentation(
+        id: "developer-web",
+        name: "web_search",
+        arguments: .object(["query": .string("SwiftUI attributed text wrapping")]),
+        result: .object(["details": .object(["results": .array([
+            .object([
+                "title": .string("Text | Apple Developer Documentation"),
+                "url": .string("https://developer.apple.com/documentation/swiftui/text"),
+                "snippet": .string("Display read-only text that can wrap across available width."),
+            ]),
+            .object([
+                "title": .string("Layout fundamentals"),
+                "url": .string("https://developer.apple.com/documentation/swiftui/layout-fundamentals"),
+                "snippet": .string("Compose flexible layouts without nested vertical scrolling."),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.9))
+    let disclosure = ToolDisclosureState()
+    for id in [edit.id, grep.id, bash.id, web.id] { disclosure.setExpanded(true, id: id) }
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ToolCardView(presentation: read)
+            ToolCardView(presentation: edit)
+            ToolCardView(presentation: grep)
+            ToolCardView(presentation: bash)
+            ToolCardView(presentation: web)
+        }
+        .environment(\.toolDisclosureState, disclosure)
+        .environment(snapshotEmptyIDEStore)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 720, alignment: .leading),
+        name: "developer-tool-flow-dark", appearance: .dark,
+        size: CGSize(width: 800, height: 1_700))
+}
+@MainActor
+@Test func wrappedSourceSurfaceSnapshotDark() throws {
+    let source = SourcePresentation(language: "swift", text: """
+    struct TranscriptRow: View {
+        let count = 12 // preserve indentation and explain the line
+
+        var body: some View {
+            Text("A deliberately long source line that wraps inside the transcript instead of escaping underneath the activity card")
+        }
+    }
+    """)
+
+    try assertSnapshot(
+        SourceSurface(presentation: source)
+            .frame(width: 430),
+        name: "source-wrapped-dark", appearance: .dark,
+        size: CGSize(width: 500, height: 340))
+}
+@MainActor
+@Test func composerWithStagedAttachmentsSnapshotDark() throws {
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant("Why does this row wrap?"),
+            attachments: .constant([
+                snapshotAttachment(name: "sidebar-overflow.png", width: 1_200, height: 800),
+                snapshotAttachment(name: "footer-clipping.png", width: 640, height: 640),
+            ]),
+            presentation: .newSession(
+                projectURL: URL(filePath: "/tmp/10x-dark", directoryHint: .isDirectory),
+                projectURLs: [],
+                onChooseProject: { _ in },
+                onAddExistingFolder: {}),
+            controlsMode: .newSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-with-attachments-dark", appearance: .dark,
+        size: CGSize(width: 700, height: 260))
+}
+@MainActor
+@Test func composerStopsARunWithNothingToSendSnapshotDark() throws {
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant(""),
+            presentation: .active(controller: awaitingOutputController()),
+            controlsMode: .activeSession,
+            onSend: {})
+            .frame(width: 620)
+            .padding(24),
+        name: "composer-stop-control-dark", appearance: .dark,
+        size: CGSize(width: 700, height: 180))
+}
+@MainActor
+@Test func composerFooterFastPresentSnapshotDark() async throws {
+    let anthropic = ComposerModelInfo(
+        modelID: "claude-opus-4-8",
+        name: "Claude Opus 4.8",
+        provider: "anthropic",
+        api: "anthropic-messages",
+        thinkingEfforts: ["low", "high"],
+        requiresEffort: false)
+    let controls = await snapshotComposerControls(
+        models: [anthropic],
+        selected: anthropic,
+        thinkingLevel: "high",
+        fastModeEnabled: true)
+
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant("Ship the Bauhaus composer footer."),
+            presentation: .newSession(
+                projectURL: URL(filePath: "/tmp/10x-dark", directoryHint: .isDirectory),
+                projectURLs: [URL(filePath: "/tmp/10x-dark", directoryHint: .isDirectory)],
+                onChooseProject: { _ in },
+                onAddExistingFolder: {}),
+            controls: controls,
+            controlsMode: .newSession,
+            onSend: {}),
+        name: "composer-footer-fast-present-dark", appearance: .dark,
+        size: CGSize(width: 780, height: 140))
+}
+@MainActor
+@Test func modelPickerDefaultSnapshotDark() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [modelPickerAnthropicOpus, modelPickerOpenRouterOpus],
+        recents: [modelPickerAnthropicOpus],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: modelPickerAnthropicOpus,
+            thinkingOptions: ["auto", "low", "high"],
+            thinkingLevel: "auto",
+            isFastModeVisible: true,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: modelPickerAnthropicOpus),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-default-dark", appearance: .dark,
+        size: CGSize(width: 340, height: 420))
+}
+@MainActor
+@Test func modelPickerEmptySnapshotDark() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [],
+        recents: [],
+        query: "")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: nil,
+            thinkingOptions: [],
+            thinkingLevel: "auto",
+            isFastModeVisible: false,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: false,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: nil),
+            query: .constant(""),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-empty-dark", appearance: .dark,
+        size: CGSize(width: 340, height: 420))
+}
+@MainActor
+@Test func providerSetupRequiredSnapshotDark() async throws {
+    let model = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "openai-codex", name: "ChatGPT", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "anthropic", name: "Claude", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+        ProviderLoginProvider(
+            id: "google-gemini-cli", name: "Gemini CLI", isAvailable: true, isAuthenticated: false),
+    ])
+    let appModel = await onboardingProviderAppModel(model, path: "/tmp/10x-onboarding-provider-required")
+    await model.load()
+
+    try assertSnapshot(
+        OnboardingView(model: appModel, step: .connectProvider),
+        name: "provider-setup-required-dark", appearance: .dark,
+        size: CGSize(width: 760, height: 560))
+}
+@MainActor
+@Test func providerConnectionsSnapshotDark() async throws {
+    let model = try providerWorkspaceModel()
+    await model.load()
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-connections-dark", appearance: .dark,
+        size: CGSize(width: 1180, height: 760))
+}
+@MainActor
+@Test func providerUsageDetailSnapshotDark() async throws {
+    let model = try providerWorkspaceModel()
+    await model.load()
+    model.selectedSection = .usage
+
+    try assertSnapshot(
+        ProvidersView(model: model),
+        name: "provider-usage-detail-dark", appearance: .dark,
+        size: CGSize(width: 1180, height: 760))
+}
+@MainActor
+@Test func providerUsageDockIdleSnapshotDark() throws {
+    try assertSnapshot(
+        ProviderUsageDockView(
+            providers: providerUsageDockProviders(),
+            activeCounts: ["anthropic": 2],
+            generatingCounts: [:],
+            isForegroundGenerating: false)
+            // macOS exposes the public Reduce Motion key as read-only.
+            .environment(\._accessibilityReduceMotion, true)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing),
+        name: "provider-usage-dock-idle-dark", appearance: .dark,
+        size: CGSize(width: 430, height: 460))
+}
+@MainActor
+@Test func providerAccountRemovalConfirmationSnapshotDark() throws {
+    try assertSnapshot(
+        ProviderAccountRemovalConfirmationView(
+            providerName: "ChatGPT",
+            accountLabel: "same@example.com",
+            accountDetailLabel: "Work",
+            hasDuplicateAccountLabel: true,
+            affectedSessionCount: 2,
+            isLastAccount: false,
+            isRemoving: false,
+            onCancel: { _ in },
+            onRemove: {}),
+        name: "provider-account-removal-confirmation-dark", appearance: .dark,
+        size: CGSize(width: 880, height: 680))
+}
+@MainActor
+@Test func providerSetupInputSheetSnapshotDuringActiveLoginDark() async throws {
+    let loginGate = LoginGate()
+    let service = FakeProviderService(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: false),
+    ], loginGate: loginGate)
+    let model = ProviderManagementViewModel(
+        providerService: service,
+        usageService: FakeUsageService(snapshot: .empty),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    await model.load()
+    let provider = try #require(model.providers.first)
+    let login = Task { await model.login(provider) }
+    await loginGate.waitForStart()
+    await service.emit(ExtensionUIRequest(
+        id: "paste-code",
+        method: "input",
+        payload: .object([
+            "title": .string("Paste the code"),
+            "placeholder": .string("Authorization code"),
+        ])))
+    await waitForModelState { model.sheetRequest?.id == "paste-code" }
+    let request = try #require(model.sheetRequest)
+
+    try assertSnapshot(
+        ExtensionInputSheet(request: request, onSubmit: { _ in }, onCancel: {}),
+        name: "provider-setup-input-sheet-dark", appearance: .dark,
+        size: CGSize(width: 576, height: 280))
+
+    await model.cancelLogin()
+    await loginGate.release()
+    await login.value
+}
+@MainActor
+@Test func onboardingInstallStepSnapshotDark() throws {
+    try assertSnapshot(
+        OnboardingView(model: AppModel(), step: .installOmp),
+        name: "onboarding-install-dark", appearance: .dark)
+}
+@MainActor
+@Test func onboardingProjectStepPopulatedSnapshotDark() throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-onboarding-project-populated-dark")
+    model.installation = OmpInstallation(
+        executableURL: URL(filePath: "/Users/example/.local/bin/omp"),
+        version: "18.0.4")
+    model.sessions = [
+        snapshotSession(
+            path: "/sessions/onboarding-populated-1.jsonl",
+            cwd: "/tmp/10x",
+            title: "Session",
+            modified: 3),
+        snapshotSession(
+            path: "/sessions/onboarding-populated-2.jsonl",
+            cwd: "/tmp/omp-cli",
+            title: "Session",
+            modified: 2),
+        // Deliberately long and nested, so the third (still-visible, above
+        // the scroll fold) row exercises OnboardingRowView's
+        // `.lineLimit(1)`/`.truncationMode(.head)` on the detail line.
+        snapshotSession(
+            path: "/sessions/onboarding-populated-3.jsonl",
+            cwd: "/tmp/workspace/a-genuinely-long-directory-name-used-to-exercise-the-truncated-detail-line",
+            title: "Session",
+            modified: 1),
+    ]
+    try assertSnapshot(
+        OnboardingView(model: model, step: .chooseProject),
+        name: "onboarding-project-populated-dark", appearance: .dark,
+        size: CGSize(width: 760, height: 560))
+}
+@MainActor
+@Test func runtimeRecoverySnapshotDark() throws {
+    try assertSnapshot(
+        RuntimeRecoveryView(
+            exitCode: 143,
+            onRestart: {},
+            onOpenLog: {},
+            onDismiss: {})
+            .frame(width: 720),
+        name: "runtime-recovery-dark", appearance: .dark)
+}
+@MainActor
+@Test func fileReferenceStatesSnapshotDark() throws {
+    let suiteName = "TenXAppTests.FileReferenceStatesDark.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let cursorURL = URL(filePath: "/Applications/Cursor.app")
+    let registry = IDERegistry.testing(applications: [
+        "com.todesktop.230313mzl4w4u92": cursorURL,
+    ])
+    let selectedStore = IDEPreferenceStore(defaults: defaults, registry: registry)
+    try selectedStore.select(#require(registry.installedApplications().first))
+
+    let emptySuiteName = "TenXAppTests.FileReferenceStatesDark.Empty.\(UUID().uuidString)"
+    let emptyDefaults = try #require(UserDefaults(suiteName: emptySuiteName))
+    defer { emptyDefaults.removePersistentDomain(forName: emptySuiteName) }
+    let emptyStore = IDEPreferenceStore(defaults: emptyDefaults, registry: registry)
+
+    let fullReference = ResolvedFileReference(
+        originalPath: "App/FileReferences/FileReferenceLabel.swift",
+        line: 42,
+        url: URL(filePath: "/Users/example/Projects/10x/App/FileReferences/FileReferenceLabel.swift"),
+        exists: true)
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Selected IDE")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                TranscriptReferenceView(reference: .file(
+                    path: "App/Sessions/TranscriptView.swift",
+                    line: 42))
+                    .environment(selectedStore)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("No IDE")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                TranscriptReferenceView(reference: .file(
+                    path: "App/Sessions/TranscriptView.swift",
+                    line: nil))
+                    .environment(emptyStore)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Missing file · disabled actions")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                TranscriptReferenceView(reference: .file(
+                    path: "App/Sessions/RemovedView.swift",
+                    line: 8))
+                    .environment(selectedStore)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Full path")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                FlowLayout(spacing: 2) {
+                    FileReferenceLabel(reference: fullReference, showsFullPath: true)
+                }
+                .frame(width: 430, alignment: .leading)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Compact width")
+                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                TranscriptReferenceView(reference: .file(
+                    path: "App/FileReferences/FileReferenceLabel.swift",
+                    line: 42))
+                    .environment(selectedStore)
+                    .frame(width: 250, alignment: .leading)
+            }
+        }
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 560, alignment: .leading),
+        name: "file-reference-states-dark", appearance: .dark,
+        size: CGSize(width: 640, height: 520))
+}
+@MainActor
+@Test func fileTypeIconCatalogSnapshotDark() throws {
+    try assertSnapshot(
+        HStack(spacing: 24) {
+            VStack(spacing: 7) {
+                FileTypeIcon(path: "Feature.swift", isAvailable: true)
+                Text("Feature.swift")
+            }
+            VStack(spacing: 7) {
+                FileTypeIcon(path: "client.ts", isAvailable: true)
+                Text("client.ts")
+            }
+            VStack(spacing: 7) {
+                FileTypeIcon(path: "Component.tsx", isAvailable: true)
+                Text("Component.tsx")
+            }
+        }
+        .font(TenXTypography.body(size: 11))
+        .padding(18),
+        name: "file-type-icon-catalog-dark", appearance: .dark,
+        size: CGSize(width: 300, height: 90))
+}
+
+// MARK: - Surfaces the suite never covered
+//
+// The search modal and the project shelf had no reference at either appearance.
+// Both are raised panels over a canvas-tinted scrim, which is exactly the pair
+// of tokens that cannot be checked by contrast math alone.
+
+private struct SnapshotSearchService: SessionSearching {
+    let results: [SearchResult]
+
+    func search(query: String, sessions: [SessionMetadata]) async -> [SearchResult] {
+        query.isEmpty ? [] : results
+    }
+}
+
+private let snapshotSearchResults = [
+    SearchResult(
+        sessionPath: "/sessions/transcript-order.jsonl",
+        entryID: nil,
+        projectPath: "/tmp/10x",
+        title: "Streaming transcript order",
+        excerpt: "Keep streaming frames off the main actor.",
+        kind: .session),
+    SearchResult(
+        sessionPath: "/sessions/palette.jsonl",
+        entryID: "entry-4",
+        projectPath: "/tmp/10x",
+        title: "Palette tokens",
+        excerpt: "Resolve every token against the drawing appearance.",
+        kind: .message),
+]
+
+private let snapshotSearchSessions = [
+    snapshotSession(
+        path: "/sessions/transcript-order.jsonl",
+        cwd: "/tmp/10x",
+        title: "Streaming transcript order",
+        modified: 1_787_601_600),
+    snapshotSession(
+        path: "/sessions/palette.jsonl",
+        cwd: "/tmp/10x",
+        title: "Palette tokens",
+        modified: 1_787_501_600),
+]
+
+@MainActor
+@Test func searchModalSnapshot() throws {
+    try assertSnapshot(
+        SearchModalView(
+            sessions: snapshotSearchSessions,
+            service: SnapshotSearchService(results: snapshotSearchResults),
+            onOpen: { _ in },
+            onClose: {}),
+        name: "search-modal",
+        size: CGSize(width: 900, height: 620))
+}
+
+@MainActor
+@Test func searchModalDarkSnapshot() throws {
+    try assertSnapshot(
+        SearchModalView(
+            sessions: snapshotSearchSessions,
+            service: SnapshotSearchService(results: snapshotSearchResults),
+            onOpen: { _ in },
+            onClose: {}),
+        name: "search-modal-dark",
+        appearance: .dark,
+        size: CGSize(width: 900, height: 620))
+}
+
+private var snapshotShelfProjectURLs: [URL] {
+    ["/tmp/10x", "/tmp/nextstep-web", "/tmp/omp"]
+        .map { URL(filePath: $0, directoryHint: .isDirectory) }
+}
+
+@MainActor
+@Test func chooseProjectShelfSnapshot() throws {
+    try assertSnapshot(
+        ChooseProjectShelf(
+            projectURLs: snapshotShelfProjectURLs,
+            selectedProjectURL: snapshotShelfProjectURLs.first,
+            triggerTitle: "10x",
+            onChoose: { _ in },
+            onAddExistingFolder: {},
+            onToggle: {})
+            .padding(40),
+        name: "choose-project-shelf",
+        size: CGSize(width: 380, height: 320))
+}
+
+@MainActor
+@Test func chooseProjectShelfDarkSnapshot() throws {
+    try assertSnapshot(
+        ChooseProjectShelf(
+            projectURLs: snapshotShelfProjectURLs,
+            selectedProjectURL: snapshotShelfProjectURLs.first,
+            triggerTitle: "10x",
+            onChoose: { _ in },
+            onAddExistingFolder: {},
+            onToggle: {})
+            .padding(40),
+        name: "choose-project-shelf-dark",
+        appearance: .dark,
+        size: CGSize(width: 380, height: 320))
 }

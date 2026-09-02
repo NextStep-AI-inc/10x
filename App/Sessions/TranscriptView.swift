@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum TranscriptScrollIntent: Equatable {
+    case automatic
+    case explicit
+}
+
 struct TranscriptView: View {
     static let contentMaxWidth: CGFloat = 860
 
@@ -12,6 +17,11 @@ struct TranscriptView: View {
         ToolDetailPreferenceStore?
 
     var body: some View {
+        let allPresentationRows = Self.followObservation(for: controller.items)
+        let presentationRows = TranscriptPresentationRow.visibleRows(
+            from: allPresentationRows,
+            isGroupExpanded: disclosureState.isGroupExpanded)
+
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 22) {
@@ -22,9 +32,10 @@ struct TranscriptView: View {
                         Spacer()
                         ToolDetailModeControl(mode: disclosureState.mode, onSelect: select)
                     }
-                    ForEach(controller.items) { item in
-                        itemView(item)
-                            .id(item.id)
+                    ForEach(presentationRows, id: \.id) { row in
+                        rowView(row)
+                            .padding(.top, row.isGroupedTool ? -12 : 0)
+                            .id(row.id)
                     }
                     if isAwaitingOutput {
                         TurnActivityView(startedAt: controller.turnStartedAt)
@@ -46,35 +57,40 @@ struct TranscriptView: View {
             } action: { _, value in
                 isNearBottom = value
             }
-            .onChange(of: controller.items.last) { _, item in
-                guard let item else { return }
+            .onChange(of: allPresentationRows) { _, _ in
+                guard let lastID = presentationRows.last?.id else { return }
                 let shouldFollow = !hasPositionedInitialContent || isNearBottom
                 hasPositionedInitialContent = true
                 guard shouldFollow else { return }
-                scroll(proxy, to: item.id)
+                scroll(proxy, to: lastID, intent: .automatic)
             }
             // The indicator is not an item, so its arrival needs its own follow
             // or it appears below the fold on the send that created it.
             .onChange(of: isAwaitingOutput) { _, isAwaiting in
                 guard isAwaiting, isNearBottom else { return }
-                scroll(proxy, to: TurnActivityView.transcriptID)
+                scroll(proxy, to: TurnActivityView.transcriptID, intent: .automatic)
             }
             // Picks up the stored mode on open, and any change made from
             // another window while this transcript is on screen.
             .onChange(of: detailPreference?.mode ?? .auto, initial: true) { _, mode in
                 disclosureState.setMode(mode)
             }
-            .overlay(alignment: .bottom) { scrollToBottomButton(proxy) }
+            .overlay(alignment: .bottom) {
+                scrollToBottomButton(proxy, lastID: presentationRows.last?.id)
+            }
         }
     }
 
     /// Only offered once following has actually been broken, so it never sits
     /// over a transcript that is already tracking the bottom.
     @ViewBuilder
-    private func scrollToBottomButton(_ proxy: ScrollViewProxy) -> some View {
-        if hasPositionedInitialContent, !isNearBottom, let lastID = controller.items.last?.id {
+    private func scrollToBottomButton(_ proxy: ScrollViewProxy, lastID: String?) -> some View {
+        if hasPositionedInitialContent, !isNearBottom, let lastID {
             Button {
-                scroll(proxy, to: isAwaitingOutput ? TurnActivityView.transcriptID : lastID)
+                scroll(
+                    proxy,
+                    to: isAwaitingOutput ? TurnActivityView.transcriptID : lastID,
+                    intent: .explicit)
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down")
@@ -82,7 +98,7 @@ struct TranscriptView: View {
                     Text("Jump to latest")
                         .font(TenXTypography.body(size: 11, weight: .medium))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(TenXPalette.onEmphasis)
                 .padding(.horizontal, 12)
                 .frame(height: 26)
                 .background(TenXPalette.color(TenXPalette.nearBlackHex))
@@ -95,20 +111,39 @@ struct TranscriptView: View {
         }
     }
 
-    private func scroll(_ proxy: ScrollViewProxy, to id: String) {
-        if isReduceMotionEnabled {
-            proxy.scrollTo(id, anchor: .bottom)
-        } else {
+    private func scroll(
+        _ proxy: ScrollViewProxy,
+        to id: String,
+        intent: TranscriptScrollIntent
+    ) {
+        if Self.shouldAnimateScroll(
+            intent: intent,
+            isReduceMotionEnabled: isReduceMotionEnabled) {
             withAnimation(.easeOut(duration: 0.15)) {
                 proxy.scrollTo(id, anchor: .bottom)
             }
+        } else {
+            proxy.scrollTo(id, anchor: .bottom)
         }
+    }
+
+    nonisolated static func shouldAnimateScroll(
+        intent: TranscriptScrollIntent,
+        isReduceMotionEnabled: Bool
+    ) -> Bool {
+        intent == .explicit && !isReduceMotionEnabled
     }
 
     private var isAwaitingOutput: Bool {
         TurnActivityView.isAwaitingOutput(
             runtimeState: controller.runtimeState,
             lastItem: controller.items.last)
+    }
+
+    nonisolated static func followObservation(
+        for items: [TranscriptItem]
+    ) -> [TranscriptPresentationRow] {
+        TranscriptPresentationRow.rows(from: items)
     }
 
     nonisolated static func shouldFollowBottom(
@@ -151,6 +186,19 @@ struct TranscriptView: View {
     }
 
     @ViewBuilder
+    private func rowView(_ row: TranscriptPresentationRow) -> some View {
+        switch row {
+        case .item(let item):
+            itemView(item)
+        case .toolGroup(let group):
+            ToolCallGroupView(group: group)
+        case .groupedTool(_, let tool):
+            ToolCardView(presentation: tool)
+                .equatable()
+        }
+    }
+
+    @ViewBuilder
     private func itemView(_ item: TranscriptItem) -> some View {
         switch item {
         case .threadStart(_, let date):
@@ -164,6 +212,7 @@ struct TranscriptView: View {
             .accessibilityLabel(threadStartAccessibilityLabel(date))
         case .message(let message):
             MessageBubbleView(message: message)
+                .equatable()
         case .annotation(let annotation):
             HStack(spacing: 8) {
                 Text(annotation.title)
@@ -196,6 +245,7 @@ struct TranscriptView: View {
             .accessibilityElement(children: .combine)
         case .tool(let presentation):
             ToolCardView(presentation: presentation)
+                .equatable()
         case .extensionUI(let state):
             ApprovalCardView(
                 state: state,

@@ -186,6 +186,39 @@ private func waitForReadyWaiter(_ client: RpcClient) async -> Bool {
     await c.shutdown()
 }
 
+@Test func responseEventFenceCountsEveryEarlierEventFrame() async throws {
+    let client = makeClient(mode: "noisy")
+    _ = try await client.start()
+
+    let receipt = try await client.sendWithEventFence(.getState())
+    #expect(receipt.response.data?["sessionId"]?.stringValue == "fake-session")
+    #expect(receipt.precedingEventCount == 4)
+
+    var iterator = client.events.makeAsyncIterator()
+    var precedingFrames: [RpcFrame] = []
+    for _ in 0..<receipt.precedingEventCount {
+        precedingFrames.append(try #require(await iterator.next()))
+    }
+    #expect(precedingFrames.count == 4)
+    #expect(precedingFrames.contains { frame in
+        if case .event("notice", _) = frame { return true }
+        return false
+    })
+    await client.shutdown()
+}
+
+@Test func responseEventFenceReturnsCommandFailureWithEarlierEventCount() async throws {
+    let client = makeClient(mode: "noisy")
+    _ = try await client.start()
+
+    let receipt = try await client.sendWithEventFence(RpcCommand(type: "bad_command_test"))
+
+    #expect(!receipt.response.success)
+    #expect(receipt.response.error == "nope")
+    #expect(receipt.precedingEventCount == 3)
+    await client.shutdown()
+}
+
 @Test func chunkedResponseReassembles() async throws {
     let c = makeClient(mode: "chunked")
     _ = try await c.start()
@@ -265,6 +298,34 @@ private func waitForReadyWaiter(_ client: RpcClient) async -> Bool {
     #expect(seen.contains("available_commands_update"))
     #expect(seen.contains("extension_ui_request"))
     #expect(seen.contains("notice"))
+    await c.shutdown()
+}
+
+@Test func providerAccountFailoverEventsFlowWithoutBreakingResponses() async throws {
+    let c = makeClient(mode: "provider-account-failover")
+    let stream = c.events
+    _ = try await c.start()
+
+    async let response = c.send(.getState())
+    let event = await withTimeout(.seconds(10)) { () -> ProviderAccountChangedEvent? in
+        for await frame in stream {
+            if case .providerAccountChanged(let event) = frame {
+                return event
+            }
+        }
+        return nil
+    } ?? nil
+
+    let state = try await response
+    #expect(state.success)
+    #expect(state.command == "get_state")
+    guard let failover = event else {
+        Issue.record("provider account failover event was not yielded"); return
+    }
+    #expect(failover.providerID == "openai-codex")
+    #expect(failover.accountRef == "acct_failover")
+    #expect(failover.reason == .automaticFailover)
+    #expect(failover.sequence == 4)
     await c.shutdown()
 }
 

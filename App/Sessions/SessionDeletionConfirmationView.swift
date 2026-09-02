@@ -10,7 +10,7 @@ struct SessionDeletionConfirmationView: View {
 
     var body: some View {
         ZStack {
-            Color.white.opacity(0.82)
+            TenXPalette.color(TenXPalette.canvasHex).opacity(0.82)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onCancel)
@@ -45,7 +45,7 @@ struct SessionDeletionConfirmationView: View {
                 }
             }
             .frame(width: 420)
-            .background(Color.white)
+            .background(TenXPalette.surfaceElevated)
             .contentShape(Rectangle())
             .onTapGesture {}
         }

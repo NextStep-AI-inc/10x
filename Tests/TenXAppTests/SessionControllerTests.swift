@@ -3,10 +3,74 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Suite @MainActor struct SessionControllerTests {
+
 @MainActor @Test func contextPercentageIsClampedToItsDisplayRange() {
     #expect(SessionController.contextPercent(.object(["percentage": .double(210)])) == 100)
     #expect(SessionController.contextPercent(.object(["percentage": .double(-0.2)])) == 0)
     #expect(SessionController.contextPercent(.object(["percentage": .double(0.63)])) == 63)
+}
+
+@Test func ompSessionTitleGeneratorUsesTheActiveModelAndParsesTaggedOutput() async throws {
+    let capture = TitleCommandCapture()
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { executableURL, arguments in
+            await capture.record(executableURL: executableURL, arguments: arguments)
+            return Data("Working...\n<title>Fix untitled session naming</title>\n".utf8)
+        })
+
+    let title = await generator.generate(
+        prompt: "The session still says Untitled session. Fix its name.",
+        provider: "openai-codex",
+        modelID: "gpt-5.6-sol")
+
+    #expect(title == "Fix untitled session naming")
+    let invocation = await capture.invocation
+    #expect(invocation?.executableURL.path == "/opt/omp")
+    #expect(invocation?.arguments.contains("openai-codex/gpt-5.6-sol") == true)
+    #expect(invocation?.arguments.contains("--no-session") == true)
+    #expect(invocation?.arguments.contains("--no-tools") == true)
+    #expect(invocation?.arguments.last?.contains("<user>") == true)
+}
+
+@Test func ompSessionTitleGeneratorRejectsNonTitleOutput() {
+    #expect(OmpSessionTitleGenerator.title(from: Data("<title/>".utf8)) == nil)
+    #expect(OmpSessionTitleGenerator.title(from: Data("<title>none</title>".utf8)) == nil)
+    #expect(OmpSessionTitleGenerator.title(from: Data("A helpful answer without title markers".utf8)) == nil)
+    #expect(OmpSessionTitleGenerator.title(from: Data(
+        "<title>one two three four five six seven eight nine ten eleven twelve thirteen</title>".utf8)) == nil)
+}
+
+@MainActor @Test func firstSuccessfulPromptPersistsGeneratedSessionTitleExactlyOnce() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLogURL = directory.appending(path: "commands.log")
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { _, _ in Data("<title>Fix untitled session naming</title>".utf8) })
+    let controller = SessionController(
+        processManager: manager,
+        titleGenerator: generator)
+
+    await controller.openNew(projectURL: directory)
+    controller.draft = "The session still says Untitled session. Fix its name."
+    await controller.sendPrompt()
+
+    #expect(await eventually { controller.title == "Fix untitled session naming" })
+    #expect(await eventually { controller.runtimeState == .idle })
+    controller.draft = "A follow-up that must not rename it"
+    await controller.sendPrompt()
+
+    let commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+        .split(separator: "\n")
+        .map(String.init)
+    #expect(commands.filter { $0 == "set_session_name" }.count == 1)
+    let promptIndex = try #require(commands.firstIndex(of: "prompt"))
+    let titleIndex = try #require(commands.firstIndex(of: "set_session_name"))
+    #expect(promptIndex < titleIndex)
+    await manager.closeAll()
 }
 
 @MainActor @Test func providerIDReadsOnlyANonemptyProviderFromAModelObject() {
@@ -16,6 +80,47 @@ import Testing
     ])) == "anthropic")
     #expect(SessionController.providerID(from: .string("claude-sonnet")) == nil)
     #expect(SessionController.providerID(from: nil) == nil)
+}
+
+@MainActor @Test func activeProviderAccountStateKeepsOnlyOpaqueStringReferences() {
+    #expect(SessionController.activeProviderAccountRefs(from: .object([
+        "activeProviderAccounts": .object([
+            "openai-codex": .string("acct_A"),
+            "anthropic": .string("acct_B"),
+            "invalid": .int(3),
+        ]),
+    ])) == [
+        "openai-codex": "acct_A",
+        "anthropic": "acct_B",
+    ])
+    #expect(SessionController.activeProviderAccountRefs(from: nil).isEmpty)
+}
+
+@MainActor @Test func controllerForwardsOnlyMonotonicallyNewerAccountChangesToTheCoordinator() {
+    let coordinator = ProviderAccountCoordinator()
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .streaming,
+        providerID: "openai-codex",
+        activityRegistry: coordinator)
+
+    controller.handleProviderAccountChange(ProviderAccountChangedEvent(
+        providerID: "openai-codex",
+        accountRef: "acct_B",
+        reason: .automaticFailover,
+        sequence: 2))
+    controller.handleProviderAccountChange(ProviderAccountChangedEvent(
+        providerID: "openai-codex",
+        accountRef: "acct_A",
+        reason: .manual,
+        sequence: 1))
+
+    let key = ProviderAccountKey(providerID: "openai-codex", accountRef: "acct_B")
+    #expect(controller.currentProviderAccountRef == "acct_B")
+    #expect(controller.providerAccountSequence == 2)
+    #expect(coordinator.activeAccountRefs[controller.id] == "acct_B")
+    #expect(coordinator.generatingCounts == [key: 1])
 }
 
 @MainActor @Test func unexpectedExitPreservesDraftAndOffersRecovery() {
@@ -123,13 +228,143 @@ import Testing
     await processManager.closeAll()
 }
 
+@MainActor @Test func markerFramesReachTheAccountChannelWhileOrdinaryInputStillReachesTheSheet() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = try makeProviderAccountChannelExecutable(in: directory)
+    let manager = SessionProcessManager(executable: executable.path)
+    let registry = ProviderAccountChannelRegistry()
+    let controller = SessionController(
+        processManager: manager,
+        accountChannelRegistry: registry)
+
+    await controller.openExisting(metadata(path: "/tmp/account-channel-session.jsonl", cwd: "/tmp"))
+
+    #expect(await eventually { registry.entry(for: controller.id) != nil })
+    let channel = try #require(registry.entry(for: controller.id)?.channel)
+
+    let reply = try await channel.send(ProviderAccountChannelCommand(
+        id: "cmd-1", command: "pin_account", params: [:]))
+
+    #expect(reply == .object(["applied": .bool(true)]))
+    #expect(await eventually {
+        controller.extensionSheetRequest == .input(
+            id: "sheet-1", title: "Pick a color", placeholder: nil, timeout: nil)
+    })
+    #expect(controller.runtimeState == .idle)
+    await manager.closeAll()
+}
+
+@MainActor @Test func sameProcessStateRefreshPreservesAccountEventSequence() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = try makeProviderAccountRefreshExecutable(in: directory)
+    let manager = SessionProcessManager(executable: executable.path)
+    let controller = SessionController(processManager: manager)
+
+    await controller.openExisting(metadata(path: "/tmp/account-refresh.jsonl", cwd: "/tmp"))
+
+    #expect(await eventually { controller.title == "Refresh complete" })
+    #expect(controller.currentProviderAccountRef == "acct_C")
+    #expect(controller.providerAccountSequence == 3)
+    await manager.closeAll()
+}
+
+}
+
 @MainActor
 private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
-    for _ in 0..<100 {
+    let deadline = ContinuousClock.now.advanced(by: .seconds(30))
+    while ContinuousClock.now < deadline {
         if predicate() { return true }
         try? await Task.sleep(for: .milliseconds(20))
     }
     return predicate()
+}
+
+@MainActor extension SessionControllerTests {
+
+@MainActor @Test func managedPromptAdmissionRejectsANewTurnDuringAccountRemoval() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = try makeProviderAccountExecutable(in: directory)
+    let manager = SessionProcessManager(executable: executable.path)
+    let coordinator = ProviderAccountCoordinator()
+    let controller = SessionController(processManager: manager, activityRegistry: coordinator)
+    await controller.openExisting(metadata(path: "/tmp/account-session.jsonl", cwd: "/tmp"))
+    #expect(await eventually {
+        controller.currentProviderAccountRef == "acct_B" && controller.runtimeState == .idle
+    })
+    let target = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "acct_A",
+        label: "Personal",
+        order: 0)
+    let remaining = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "acct_B",
+        label: "Work",
+        order: 1)
+    let rpcGate = LoadGate()
+    let removal = Task {
+        try await coordinator.removeAccount(
+            providerID: "openai-codex",
+            accountRef: "acct_A",
+            accounts: [target, remaining]
+        ) {
+            await rpcGate.started()
+            await rpcGate.waitForRelease()
+            return ProviderAccountRemovalResult(removed: true, accounts: [remaining])
+        }
+    }
+    await rpcGate.waitForStart()
+
+    controller.draft = "Keep this draft"
+    await controller.sendPrompt()
+
+    #expect(controller.draft == "Keep this draft")
+    #expect(controller.runtimeState == .idle)
+
+    await rpcGate.release()
+    _ = try await removal.value
+    await manager.closeAll()
+}
+
+@MainActor @Test func accountEventCapturedFromClosedPipelineIsIgnored() async throws {
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(metadata(path: "/tmp/stale-account-event.jsonl", cwd: "/tmp"))
+    let consumeStaleEvent = try #require(controller.testingCapturedControlConsumer(
+        .providerAccountChanged(ProviderAccountChangedEvent(
+            providerID: "openai-codex",
+            accountRef: "acct_stale",
+            reason: .automaticFailover,
+            sequence: 10))))
+
+    await controller.close()
+    await consumeStaleEvent()
+
+    #expect(controller.currentProviderAccountRef == nil)
+    #expect(controller.providerAccountSequence == 0)
+    await manager.closeAll()
+}
+
+@MainActor @Test func accountControlFromActivePipelineUpdatesController() async throws {
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(metadata(path: "/tmp/active-account-event.jsonl", cwd: "/tmp"))
+    let applyAccountChange = try #require(controller.testingCapturedControlConsumer(
+        .providerAccountChanged(ProviderAccountChangedEvent(
+            providerID: "test",
+            accountRef: "acct_active",
+            reason: .manual,
+            sequence: 4))))
+
+    await applyAccountChange()
+
+    #expect(controller.currentProviderAccountRef == "acct_active")
+    #expect(controller.providerAccountSequence == 4)
+    await manager.closeAll()
 }
 
 @MainActor @Test func controllerRejectsSnapshotFromReplacedProcessor() {
@@ -456,6 +691,8 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     await manager.closeAll()
 }
 
+}
+
 private func fakeManager(mode: String) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
@@ -470,6 +707,31 @@ private func fakeManager(mode: String) -> SessionProcessManager {
         fake.cwd = nil
         return RpcClient(configuration: fake)
     })
+}
+
+private func commandLoggingFakeManager(commandLogURL: URL) -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            repositoryRoot()
+                .appending(path: "OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py").path,
+            "command-log",
+            commandLogURL.path,
+        ]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+}
+
+private actor TitleCommandCapture {
+    private(set) var invocation: (executableURL: URL, arguments: [String])?
+
+    func record(executableURL: URL, arguments: [String]) {
+        invocation = (executableURL, arguments)
+    }
 }
 
 private func delayedFakeManager(mode: String, markerURL: URL) -> SessionProcessManager {
@@ -501,7 +763,43 @@ private func temporaryDirectory() throws -> URL {
     let url = FileManager.default.temporaryDirectory
         .appending(path: "tenx-controller-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    TemporaryDirectoryRegistry.shared.register(url)
     return url
+}
+
+/// Removes the directories `temporaryDirectory()` hands out when the test host
+/// exits.
+///
+/// The process owns this rather than each test, because most callers pass the
+/// directory straight into `openNew(projectURL:)` with no local to hang a
+/// `defer` on, and Swift Testing has no teardown hook for free `@Test`
+/// functions. Left unmanaged these never got deleted: thousands of
+/// `tenx-controller-*` directories pile up in the temp folder, and once that
+/// folder is large enough `mktemp` starts failing — which surfaces as
+/// resource-shaped failures in unrelated suites much later in a run.
+private final class TemporaryDirectoryRegistry: @unchecked Sendable {
+    static let shared = TemporaryDirectoryRegistry()
+
+    private let lock = NSLock()
+    private var urls: [URL] = []
+
+    private init() {
+        atexit { TemporaryDirectoryRegistry.shared.removeAll() }
+    }
+
+    func register(_ url: URL) {
+        lock.lock()
+        defer { lock.unlock() }
+        urls.append(url)
+    }
+
+    private func removeAll() {
+        lock.lock()
+        let pending = urls
+        urls.removeAll()
+        lock.unlock()
+        for url in pending { try? FileManager.default.removeItem(at: url) }
+    }
 }
 
 private func metadata(
@@ -525,6 +823,142 @@ private func writeHistoryMessage(_ text: String, to url: URL) throws {
     {"type":"session","version":3,"id":"s","timestamp":"2026-08-24T20:00:00.000Z","cwd":"/tmp"}
     {"type":"message","id":"hist-message","parentId":null,"timestamp":"2026-08-24T20:00:01.000Z","message":{"role":"assistant","content":[{"type":"text","text":"\(text)"}],"timestamp":1787601601000}}
     """.utf8).write(to: url)
+}
+
+/// Emits the marker `extension_ui_request` (`tenx.provider-accounts.v1`)
+/// alongside an ordinary, non-marker `input` request right after
+/// `set_subagent_subscription`, mirroring where `makeProviderAccountExecutable`
+/// above bundles its own extra frames. On receiving the client's
+/// `extension_ui_response` for the marker request, decodes the wire-encoded
+/// command from its `value` field and echoes a reply as the `placeholder`
+/// of the *next* marker request — exactly the wire contract
+/// `ProviderAccountExtensionChannel` implements (reply arrives on the next
+/// request, never as the response's own payload).
+private func makeProviderAccountChannelExecutable(in directory: URL) throws -> URL {
+    let executable = directory.appending(path: "provider-account-channel-server.py")
+    let source = #"""
+    #!/usr/bin/env python3
+    import json
+    import sys
+
+    def emit(value):
+        print(json.dumps(value, separators=(",", ":")), flush=True)
+
+    MARKER = "tenx.provider-accounts.v1"
+
+    emit({"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864})
+    for line in sys.stdin:
+        command = json.loads(line)
+        request_id = command.get("id")
+        command_type = command.get("type")
+        if command_type == "negotiate_protocol":
+            data = {"protocolVersion":2}
+        elif command_type == "get_state":
+            data = {"model":{"id":"gpt-test","provider":"openai-codex"},"isStreaming":False,"sessionFile":"/tmp/account-channel-session.jsonl"}
+        elif command_type == "get_messages_page":
+            data = {"messages":[],"nextCursor":None}
+        elif command_type == "set_subagent_subscription":
+            emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":{}})
+            emit({"type":"extension_ui_request","id":"acct-chan-1","method":"input","title":MARKER})
+            emit({"type":"extension_ui_request","id":"sheet-1","method":"input","title":"Pick a color"})
+            continue
+        elif command_type == "extension_ui_response" and request_id == "acct-chan-1":
+            sent = json.loads(command.get("value", "{}"))
+            reply = json.dumps({"id": sent.get("id"), "ok": True, "data": {"applied": True}})
+            emit({"type":"extension_ui_request","id":"acct-chan-2","method":"input","title":MARKER,"placeholder":reply})
+            continue
+        else:
+            data = {}
+        emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+    """#
+    try Data(source.utf8).write(to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    return executable
+}
+
+private func makeProviderAccountExecutable(in directory: URL) throws -> URL {
+    let executable = directory.appending(path: "provider-account-server.py")
+    let source = #"""
+    #!/usr/bin/env python3
+    import json
+    import sys
+
+    def emit(value):
+        print(json.dumps(value, separators=(",", ":")), flush=True)
+
+    emit({"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864})
+    for line in sys.stdin:
+        command = json.loads(line)
+        request_id = command.get("id")
+        command_type = command.get("type")
+        if command_type == "negotiate_protocol":
+            data = {"protocolVersion":2}
+        elif command_type == "get_state":
+            data = {"model":{"id":"gpt-test","provider":"openai-codex"},"isStreaming":True,"sessionFile":"/tmp/account-session.jsonl","activeProviderAccounts":{"openai-codex":"acct_A"}}
+        elif command_type == "get_messages_page":
+            data = {"messages":[],"nextCursor":None}
+        elif command_type == "set_subagent_subscription":
+            data = {}
+            emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_B","reason":"automaticFailover","sequence":2})
+            emit({"type":"agent_end","messages":[],"isTerminal":True})
+            continue
+        else:
+            data = {}
+        emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+    """#
+    try Data(source.utf8).write(to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    return executable
+}
+
+private func makeProviderAccountRefreshExecutable(in directory: URL) throws -> URL {
+    let executable = directory.appending(path: "provider-account-refresh-server.py")
+    let source = #"""
+    #!/usr/bin/env python3
+    import json
+    import sys
+    import time
+
+    def emit(value):
+        print(json.dumps(value, separators=(",", ":")), flush=True)
+
+    state_requests = 0
+    emit({"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864})
+    for line in sys.stdin:
+        command = json.loads(line)
+        request_id = command.get("id")
+        command_type = command.get("type")
+        if command_type == "negotiate_protocol":
+            data = {"protocolVersion":2}
+        elif command_type == "get_state":
+            state_requests += 1
+            account_ref = "acct_A" if state_requests == 1 else "acct_C"
+            data = {"sessionName":"Refresh","model":{"id":"gpt-test","provider":"openai-codex"},"isStreaming":False,"sessionFile":"/tmp/account-refresh.jsonl","activeProviderAccounts":{"openai-codex":account_ref}}
+        elif command_type == "get_messages_page":
+            data = {"messages":[],"nextCursor":None}
+        elif command_type == "set_subagent_subscription":
+            emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":{}})
+            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_C","reason":"automaticFailover","sequence":3})
+            emit({"type":"model_changed","model":{"id":"gpt-test","provider":"openai-codex"}})
+            continue
+        else:
+            data = {}
+        emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+        if command_type == "get_state" and state_requests == 2:
+            time.sleep(0.05)
+            emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_B","reason":"automaticFailover","sequence":2})
+            emit({"type":"session_info_update","title":"Refresh complete"})
+    """#
+    try Data(source.utf8).write(to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    return executable
 }
 
 @MainActor

@@ -316,3 +316,25 @@ private func fixturePID(at url: URL) -> pid_t? {
     #expect(!stderr.contains("late-stderr-marker"))
     #expect(stderr.utf8.count < 1_024)
 }
+
+@Test func providerAccountChangedLineDecodesTypedEventAndUnknownReason() throws {
+    let manual = Data("""
+    {"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_B","reason":"manual","sequence":7}
+    """.utf8)
+    guard case .providerAccountChanged(let event) = try RpcFrame.decode(line: manual) else {
+        Issue.record("not a provider account event"); return
+    }
+    #expect(event.providerID == "openai-codex")
+    #expect(event.accountRef == "acct_B")
+    #expect(event.reason == .manual)
+    #expect(event.sequence == 7)
+
+    let future = Data("""
+    {"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_future","reason":"serverSideMigration","sequence":8}
+    """.utf8)
+    guard case .providerAccountChanged(let unknown) = try RpcFrame.decode(line: future) else {
+        Issue.record("future provider account event was dropped"); return
+    }
+    #expect(unknown.accountRef == "acct_future")
+    #expect(unknown.reason == .unknown("serverSideMigration"))
+}

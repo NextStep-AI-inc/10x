@@ -15,14 +15,8 @@ struct AppShellView: View {
     var body: some View {
         ZStack {
             Group {
-                if model.route == .setup {
-                    SetupView(model: model)
-                } else if model.route == .providerSetup {
-                    if let providerModel = model.providerModel {
-                        ProviderSetupView(
-                            model: providerModel,
-                            onContinue: model.completeProviderSetup)
-                    }
+                if case .onboarding(let step) = model.route {
+                    OnboardingView(model: model, step: step)
                 } else {
                     ZStack(alignment: .leading) {
                         routeCanvas
@@ -38,7 +32,6 @@ struct AppShellView: View {
                             model: model,
                             expansion: railExpansion,
                             isBrandMenuPresented: $isBrandMenuPresented)
-                        BrandActionsKeyboardShortcuts(model: model)
                     }
                     .animation(railAnimation, value: railExpansion.isExpanded)
                     .overlay {
@@ -49,26 +42,7 @@ struct AppShellView: View {
                     .animation(brandMenuAnimation, value: isBrandMenuPresented)
                     .overlay {
                         GeometryReader { geometry in
-                            if let providerModel = model.providerModel,
-                               !providerModel.dockProviders.isEmpty {
-                                let dockProviders = providerModel.dockProviders
-                                let compactLayout = ProviderUsageDockLayout.compact(
-                                    shellWidth: geometry.size.width,
-                                    contentLeadingInset: railExpansion.contentLeadingInset,
-                                    providerCount: dockProviders.count,
-                                    hasComposer: hasComposer)
-
-                                ProviderUsageDockView(
-                                    providers: dockProviders,
-                                    activeCounts: model.providerActivityCounts,
-                                    compactLayout: compactLayout)
-                                    .padding(.trailing, 16)
-                                    .padding(.bottom, 16)
-                                    .frame(
-                                        maxWidth: .infinity,
-                                        maxHeight: .infinity,
-                                        alignment: .bottomTrailing)
-                            }
+                            usageDock(shellWidth: geometry.size.width)
                         }
                     }
                     .overlay {
@@ -178,9 +152,7 @@ struct AppShellView: View {
     @ViewBuilder
     private var routeCanvas: some View {
         switch model.route {
-        case .setup:
-            EmptyView()
-        case .providerSetup:
+        case .onboarding:
             EmptyView()
         case .newSession:
             NewSessionView(model: model)
@@ -188,7 +160,8 @@ struct AppShellView: View {
             if let activeSession = model.activeSession {
                 ActiveSessionView(
                     controller: activeSession,
-                    controls: model.composerControls)
+                    controls: model.composerControls,
+                    commands: model.composerCommands)
             } else {
                 Text("Session unavailable")
                     .font(TenXTypography.body(size: 13))
@@ -205,7 +178,8 @@ struct AppShellView: View {
                     focusTarget: model.settingsFocusTarget,
                     onFocusConsumed: model.consumeSettingsFocus,
                     onBack: { model.leaveSettings() },
-                    providerModel: model.providerModel)
+                    providerModel: model.providerModel,
+                    accountCoordinator: model.sessionActivityRegistry)
             } else {
                 Text("OMP settings unavailable")
                     .font(TenXTypography.body(size: 13))
@@ -213,12 +187,55 @@ struct AppShellView: View {
             }
         case .providers:
             if let providerModel = model.providerModel {
-                ProvidersView(model: providerModel)
+                ProvidersView(
+                    model: providerModel,
+                    accountCoordinator: model.sessionActivityRegistry)
             } else {
                 Text("Providers unavailable")
                     .font(TenXTypography.body(size: 13))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
+        }
+    }
+
+    @ViewBuilder
+    private func usageDock(shellWidth: CGFloat) -> some View {
+        if let providerModel = model.providerModel, !providerModel.dockProviders.isEmpty {
+            let dockProviders = providerModel.dockProviders
+            let compactLayout = ProviderUsageDockLayout.compact(
+                shellWidth: shellWidth,
+                contentLeadingInset: railExpansion.contentLeadingInset,
+                providerCount: dockProviders.count,
+                hasComposer: hasComposer)
+
+            ProviderUsageDockView(
+                providers: dockProviders,
+                activeCounts: model.providerActivityCounts,
+                generatingCounts: model.accountGeneratingCounts,
+                isForegroundGenerating: model.isForegroundSessionGenerating,
+                compactLayout: compactLayout,
+                accountScopeSatisfaction: model.accountScopeSatisfaction(
+                    openSessionID: model.activeSessionIdentityToken),
+                accountScopeAvailability: model.accountScopeAvailability(
+                    openSessionID: model.activeSessionIdentityToken),
+                pendingRemovalAccounts: model.pendingRemovalAccounts,
+                requiresRestartToSwitch: providerModel.accountTier.requiresRestartToSwitch,
+                activeSessionIdentityToken: model.activeSessionIdentityToken,
+                onUseAccount: { accountRef, scope in
+                    let openSessionID = model.activeSessionIdentityToken
+                    Task {
+                        await model.useProviderAccount(
+                            accountRef,
+                            scope: scope,
+                            openSessionID: openSessionID)
+                    }
+                },
+                onManageAccounts: { providerID in
+                    model.manageProviderAccounts(providerID: providerID)
+                })
+                .padding(.trailing, 16)
+                .padding(.bottom, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
     }
 }
@@ -231,4 +248,5 @@ private struct BrandMenuDrawerModifier: ViewModifier {
             .scaleEffect(x: 1, y: max(progress, 0.001), anchor: .topLeading)
             .offset(y: (1 - progress) * -8)
     }
+
 }

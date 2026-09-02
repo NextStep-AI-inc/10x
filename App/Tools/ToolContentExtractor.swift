@@ -45,6 +45,35 @@ struct ToolMediaItem: Equatable, Sendable, Identifiable {
     let mimeType: String?
     let data: String?
     let url: String?
+    /// Changes whenever extraction creates a new media payload, even when its display ID is reused.
+    let contentID: UUID
+
+    init(
+        id: String,
+        kind: Kind,
+        name: String?,
+        mimeType: String?,
+        data: String?,
+        url: String?,
+        contentID: UUID = UUID()
+    ) {
+        self.id = id
+        self.kind = kind
+        self.name = name
+        self.mimeType = mimeType
+        self.data = data
+        self.url = url
+        self.contentID = contentID
+    }
+
+    static func == (lhs: ToolMediaItem, rhs: ToolMediaItem) -> Bool {
+        lhs.id == rhs.id
+            && lhs.kind == rhs.kind
+            && lhs.name == rhs.name
+            && lhs.mimeType == rhs.mimeType
+            && lhs.data == rhs.data
+            && lhs.url == rhs.url
+    }
 }
 
 struct ToolResourceItem: Equatable, Sendable {

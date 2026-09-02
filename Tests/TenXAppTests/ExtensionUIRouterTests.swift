@@ -20,6 +20,24 @@ import Testing
     #expect(router.sheetRequest?.id == "input-1")
 }
 
+@Test func providerAccountChannelMarkerIsExcludedButOrdinaryInputRequestsStillReachTheSheet() throws {
+    var router = ExtensionUIRouter()
+
+    router.consume(try request("""
+        {"type":"extension_ui_request","id":"chan-1","method":"input","title":"\(ExtensionUIRouter.providerAccountChannelTitle)"}
+        """))
+    #expect(router.sheetRequest == nil)
+    #expect(router.inlineRequests.isEmpty)
+
+    // The real login flow answers this same path with an ordinary input
+    // dialog (e.g. an API key prompt) — the marker exclusion above must not
+    // also swallow this.
+    router.consume(try request("""
+        {"type":"extension_ui_request","id":"input-1","method":"input","title":"Branch name","placeholder":"codex/gui"}
+        """))
+    #expect(router.sheetRequest?.id == "input-1")
+}
+
 @Test func extensionCancelRemovesTheTargetRequest() throws {
     var router = ExtensionUIRouter()
     router.consume(try request("""

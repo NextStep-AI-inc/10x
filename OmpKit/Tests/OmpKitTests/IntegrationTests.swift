@@ -26,6 +26,34 @@ func realOmpReadyStateRoundTrip() async throws {
     await c.shutdown()
 }
 
+/// Proves the real OMP launch contract used by 10x creates two independently
+/// persisted session identities in one project even when autoResume is enabled.
+/// No model calls are made.
+@Test(.enabled(if: ProcessInfo.processInfo.environment["OMPKIT_INTEGRATION"] == "1"))
+func realManagerCreatesDistinctPersistentSessionsInOneProject() async throws {
+    let project = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ompkit-fresh-\(UUID().uuidString)", isDirectory: true)
+    let sessionDirectory = URL(
+        filePath: expectedFreshSessionDirectory(for: project.path),
+        directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: project) }
+    defer { try? FileManager.default.removeItem(at: sessionDirectory) }
+
+    let executable = ProcessInfo.processInfo.environment["OMPKIT_EXECUTABLE"] ?? "omp"
+    let manager = SessionProcessManager(executable: executable)
+    let first = try await manager.openNew(projectDirectory: project.path)
+    let second = try await manager.openNew(projectDirectory: project.path)
+
+    let expectedDirectory = sessionDirectory.path
+    #expect(first.sessionPath != second.sessionPath)
+    #expect(first.sessionPath.hasPrefix(expectedDirectory + "/"))
+    #expect(second.sessionPath.hasPrefix(expectedDirectory + "/"))
+    #expect(first.sessionPath.hasSuffix(".jsonl"))
+    #expect(second.sessionPath.hasSuffix(".jsonl"))
+    await manager.closeAll()
+}
+
 /// Reads the real session library on this machine: proves the on-disk contract
 /// against files omp actually wrote, not just fixtures.
 @Test(.enabled(if: ProcessInfo.processInfo.environment["OMPKIT_INTEGRATION"] == "1"))

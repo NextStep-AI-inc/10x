@@ -1,0 +1,33 @@
+Task 12, Step 1 (generator idempotence + OmpExtension suite) — 2026-08-27
+Branch tannerpham/resume-codex-implementation-833cbd @ 124fb9e
+
+$ ruby scripts/generate_xcodeproj.rb
+(exit 0, no output)
+$ git status --short
+(empty — no diff)
+
+$ ruby scripts/generate_xcodeproj.rb
+(exit 0, no output; run a second time)
+$ git status --short
+(empty — no diff)
+$ git diff --check
+(empty)
+
+Generator is idempotent: two consecutive runs produce zero diff.
+
+$ cd OmpExtension && bun test
+bun test v1.3.14 (0d9b296a)
+
+ 35 pass
+ 0 fail
+ 60 expect() calls
+Ran 35 tests across 3 files. [773.00ms]
+
+All OmpExtension suites green. This is the bun suite the parent agent's
+630/19 automated run at 124fb9e did not cover (that run was the Swift/XCTest
+side: 10x app tests + OmpKit). Combined, both halves of Step 1 are now done:
+  - 10x app suite: 630 tests / 19 suites, 1 failure (continuousSettingsSnapshot,
+    passes in isolation — load artifact, not a defect) [parent's run, cited
+    not re-run]
+  - OmpKit: 177/177 [parent's run, cited not re-run]
+  - OmpExtension (bun): 35/35 [this run]

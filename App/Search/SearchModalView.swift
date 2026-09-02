@@ -25,7 +25,7 @@ struct SearchModalView: View {
 
     var body: some View {
         ZStack {
-            Color.white.opacity(0.94)
+            TenXPalette.color(TenXPalette.canvasHex).opacity(0.94)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onClose)
@@ -36,7 +36,7 @@ struct SearchModalView: View {
                 resultBody
             }
             .frame(width: 780, height: 520)
-            .background(.white)
+            .background(TenXPalette.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay {
                 RoundedRectangle(cornerRadius: 6)

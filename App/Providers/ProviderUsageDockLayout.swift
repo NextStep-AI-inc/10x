@@ -17,6 +17,15 @@ enum ProviderUsageDockLayout {
     static let inComposer28: CGFloat = 28
     static let spacing8: CGFloat = 8
 
+    /// Decides whether the dock fits beside the composer at the regular
+    /// wheel size or must shrink and move above it.
+    ///
+    /// Each dock entry measures as exactly one wheel wide: `ProviderAccountStackView`
+    /// collapses to the active account at rest and fans upward on hover, so
+    /// an account-routing provider never spends extra horizontal width the
+    /// way the old rightward cascade did. `providerCount` is therefore
+    /// sufficient input — there is no per-provider width to derive from
+    /// account counts anymore.
     static func compact(
         shellWidth: CGFloat,
         contentLeadingInset: CGFloat,
@@ -30,7 +39,10 @@ enum ProviderUsageDockLayout {
         let routeWidth = max(0, shellWidth - contentLeadingInset)
         let composerWidth = min(780, max(0, routeWidth - 84))
         let trailingGutter = max(0, (routeWidth - composerWidth) / 2)
-        let groupWidth = wheelGroupWidth(providerCount: providerCount)
+        let normalizedCount = max(0, providerCount)
+        let groupWidth = normalizedCount > 0
+            ? CGFloat(normalizedCount) * regular54 + CGFloat(normalizedCount - 1) * spacing8
+            : 0
         let requiredGutter = groupWidth + 16 + 16
 
         if trailingGutter >= requiredGutter {
@@ -52,14 +64,5 @@ enum ProviderUsageDockLayout {
             wheelDiameter: inComposer28,
             trailingOffset: trailingGutter + 42 - 16,
             bottomOffset: 28 + 10 - 16)
-    }
-
-    private static func wheelGroupWidth(providerCount: Int) -> CGFloat {
-        let normalizedCount = max(0, providerCount)
-        guard normalizedCount > 0 else {
-            return 0
-        }
-
-        return CGFloat(normalizedCount) * regular54 + CGFloat(normalizedCount - 1) * spacing8
     }
 }

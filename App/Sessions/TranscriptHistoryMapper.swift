@@ -54,6 +54,9 @@ enum TranscriptHistoryMapper {
                     detail: branch.summary,
                     timestamp: TranscriptHistoryMapper.date(from: base.timestamp),
                     tone: .neutral))
+            case .unknown("custom_message", let base, .object(var message)):
+                message["role"] = .string("custom")
+                consumeMessage(base: base, message: .object(message))
             case .labelEntry, .resetBoundary, .unknown:
                 break
             }
@@ -67,27 +70,30 @@ enum TranscriptHistoryMapper {
                 return
             }
 
-            let transcriptMessage = TranscriptMessage(
+            let fallbackDate = TranscriptHistoryMapper.date(from: base.timestamp) ?? Date()
+            let existingTools = Dictionary(items.compactMap { item -> (String, ToolPresentation)? in
+                guard case .tool(let tool) = item else { return nil }
+                return (tool.id, tool)
+            }, uniquingKeysWith: { existing, _ in existing })
+            let normalized = TranscriptMessageNormalizer.items(
                 id: base.id,
                 raw: message,
                 timestamp: TranscriptHistoryMapper.date(from: base.timestamp),
                 attribution: attribution,
-                isFinal: true)
-            let isTerminalFailure = transcriptMessage.role == .assistant
-                && ["error", "aborted"].contains(message["stopReason"]?.stringValue?.lowercased())
-            // Tool calls on the entry are still collected below: only the
-            // message body is withheld.
-            if TranscriptMessage.isDisplayable(message),
-               transcriptMessage.role == .user
-                || !transcriptMessage.visibleText.isEmpty
-                || isTerminalFailure {
-                items.append(.message(transcriptMessage))
+                isFinal: true,
+                existingTools: existingTools,
+                fallbackDate: fallbackDate)
+            if normalized.contains(where: { item in
+                switch item {
+                case .message, .tool:
+                    return true
+                default:
+                    return false
+                }
+            }) {
                 hasConversation = true
             }
-            items.append(contentsOf: toolCallPresentations(
-                message,
-                fallbackDate: TranscriptHistoryMapper.date(from: base.timestamp))
-                .map(TranscriptItem.tool))
+            items.append(contentsOf: normalized)
         }
 
         var attribution: TranscriptResponseAttribution {
@@ -100,7 +106,10 @@ enum TranscriptHistoryMapper {
         }
 
         mutating func mergeToolResult(_ result: ToolPresentation, message: JSONValue) {
-            if let index = items.firstIndex(where: { $0.id == result.id }),
+            if let index = items.firstIndex(where: { item in
+                guard case .tool(let tool) = item else { return false }
+                return tool.id == result.id
+            }),
                case .tool(var existing) = items[index] {
                 existing.result = message
                 existing.phase = result.phase
@@ -123,27 +132,6 @@ enum TranscriptHistoryMapper {
             }
             items.append(.annotation(annotation))
         }
-    }
-
-    private static func toolCallPresentations(
-        _ message: JSONValue,
-        fallbackDate: Date?
-    ) -> [ToolPresentation] {
-        let timestamp = TranscriptMessage.messageDate(message) ?? fallbackDate ?? Date()
-        return message["content"]?.arrayValue?.compactMap { block in
-            guard block["type"]?.stringValue == "toolCall",
-                  let id = block["id"]?.stringValue ?? block["toolCallId"]?.stringValue,
-                  let name = block["name"]?.stringValue ?? block["toolName"]?.stringValue
-            else { return nil }
-            return ToolPresentation(
-                id: id,
-                name: name,
-                arguments: block["arguments"] ?? block["args"] ?? .object([:]),
-                result: nil,
-                phase: .running,
-                startDate: timestamp,
-                endDate: nil)
-        } ?? []
     }
 
     private static func toolResultPresentation(

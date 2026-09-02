@@ -1,7 +1,80 @@
+import Foundation
+import OmpKit
 import Testing
 @testable import TenXApp
 
 @Suite struct AccessibilityLabelTests {
+@Test func commandBrowserAccessibilityNamesRowsAndQueueState() {
+    #expect(CommandBrowserAccessibility.rowLabel(
+        name: "compact",
+        description: "Compact the current session",
+        source: "Commands",
+        position: 4,
+        count: 12,
+        executionNote: "Runs after the current response"
+    ) == "compact, Compact the current session, Commands, 4 of 12, Runs after the current response")
+}
+
+@Test func commandBrowserAccessibilityCompletesLeafSkillsWithoutQueueingThem() {
+    let skill = AvailableSlashCommand(
+        name: "skill:using-superpowers",
+        description: "Plan the work",
+        inputHint: "arguments",
+        source: .skill)
+    let command = AvailableSlashCommand(
+        name: "compact",
+        description: "Compact the current session",
+        source: .builtin)
+    let rows = CommandBrowserPresentation.rows(
+        commands: [skill, command],
+        mode: .activeStreaming)
+    guard let skillRow = rows.first(where: { $0.canonicalName == skill.name }),
+          let commandRow = rows.first(where: { $0.canonicalName == command.name })
+    else {
+        Issue.record("Expected streaming command rows.")
+        return
+    }
+
+    #expect(CommandBrowserAccessibility.rowLabel(for: skillRow, position: 1, count: 2)
+        == "skill:using-superpowers, Plan the work, Skills, 1 of 2")
+    #expect(CommandBrowserAccessibility.rowHint(for: skillRow) == "Complete in prompt")
+    #expect(CommandBrowserAccessibility.rowLabel(for: commandRow, position: 2, count: 2)
+        == "compact, Compact the current session, Commands, 2 of 2, Runs after the current response")
+    #expect(CommandBrowserAccessibility.rowHint(for: commandRow)
+        == CommandBrowserAccessibility.helpText())
+}
+
+@Test func commandBrowserAccessibilityPluralizesSourceCounts() {
+    #expect(CommandBrowserAccessibility.sourceValue(count: 1) == "1 command")
+    #expect(CommandBrowserAccessibility.sourceValue(count: 2) == "2 commands")
+}
+
+@Test func commandBrowserAccessibilityNamesSourceChanges() {
+    #expect(CommandBrowserAccessibility.sourceSelectionAnnouncement(
+        source: .commands,
+        count: 0,
+        message: "Start a session to use OMP commands."
+    ) == "Commands, 0 commands, Start a session to use OMP commands.")
+}
+
+@Test func commandBrowserAccessibilityAnnouncesLoadedCommandCount() {
+    #expect(CommandBrowserAccessibility.catalogLoadedAnnouncement(count: 1) == "1 command loaded")
+    #expect(CommandBrowserAccessibility.catalogLoadedAnnouncement(count: 5) == "5 commands loaded")
+}
+
+@Test func commandBrowserAccessibilityMapsRootSourceActions() {
+    let actions = CommandBrowserAccessibility.rootSourceActions(
+        [
+            CommandBrowserSourceItem(id: .all, count: 4, message: nil),
+            CommandBrowserSourceItem(id: .app, count: 3, message: nil),
+            CommandBrowserSourceItem(id: .commands, count: 1, message: nil),
+        ]
+    )
+
+    #expect(actions.map(\.name) == ["All", "App", "Commands"])
+    #expect(!actions.contains { $0.source == .prompts })
+}
+
 @Test func railSessionLabelsIncludeHierarchyAndState() {
     #expect(RailAccessibility.sessionLabel(
         title: "Bauhaus macOS interface",
@@ -110,5 +183,165 @@ import Testing
         .contains("2 active sessions"))
     #expect(ProviderUsageAccessibility.wheelValue(provider: provider, activeCount: 2)
         .contains("5 hour, 20 percent remaining"))
+}
+
+@Test func providerAccountWheelAccessibilityNamesSafeIdentityActivityAndLimits() {
+    let account = ProviderUsageAccount(
+        id: "anthropic:work",
+        label: "work@example.com",
+        identity: .empty,
+        limits: [ProviderUsageLimit(
+            id: "five-hour",
+            label: "5 hour",
+            percentage: 82,
+            resetWindow: "in 2 hours")],
+        amounts: [],
+        notes: [],
+        isUsageAvailable: true,
+        accountRef: "acct_work")
+
+    #expect(ProviderUsageAccessibility.accountWheelLabel(
+        provider: "Anthropic",
+        account: account) == "Anthropic, work@example.com")
+    #expect(ProviderUsageAccessibility.accountWheelValue(
+        account: account,
+        activeCount: 2
+    ) == "work@example.com, 2 active sessions, 5 hour, 82 percent remaining, resets in 2 hours")
+}
+
+@Test func providerAccountSwitchConfirmationUsesExactCopyAndStableRadioOrder() {
+    let presentation = ProviderAccountSwitchConfirmationPresentation(accountLabel: "work@example.com")
+
+    #expect(presentation.title == "Use work@example.com?")
+    #expect(presentation.message == "Choose where this account should be used.")
+    #expect(presentation.options.map(\.title) == [
+        "This session",
+        "All current sessions",
+        "All new sessions",
+    ])
+    #expect(presentation.options.map(\.message) == [
+        "Switch the open session. If it is generating, switch after the current turn.",
+        "Switch every 10x-managed session using this provider. Generating sessions finish their current turn first.",
+        "Set this as the provider's primary account. Existing sessions stay unchanged.",
+    ])
+    #expect(presentation.cancelActionLabel == "Cancel")
+    #expect(presentation.confirmActionLabel == "Switch account")
+    #expect(presentation.usesRadioGroupSemantics)
+}
+
+@MainActor
+@Test func updateRowsAnnounceTheirTitleAndStatus() {
+    let state = UpdateState()
+    state.beginDownload()
+
+    #expect(state.rows.map(\.accessibilityLabel) == [
+        "Downloading update, Loading",
+        "Verifying download, Queued",
+        "Installing update, Queued",
+        "Relaunching 10x, Queued",
+    ])
+}
+
+@MainActor
+@Test func updateModeRelabelsTheWindowForVoiceOver() {
+    let state = UpdateState()
+    state.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+
+    let presentation = SplashPresentation.update(
+        state: state, onInstall: {}, onDismiss: {}, onRetry: {})
+
+    #expect(presentation.accessibilityLabel == "Update available")
+}
+
+@MainActor
+@Test func theInstallActionIsFirstInFocusOrder() {
+    let state = UpdateState()
+    state.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+
+    let presentation = SplashPresentation.update(
+        state: state, onInstall: {}, onDismiss: {}, onRetry: {})
+
+    #expect(presentation.actions.first?.kind == .primary)
+    #expect(presentation.actions.first?.title == "Install and relaunch")
+}
+
+@MainActor
+private func startupPresentation(_ state: StartupState) -> SplashPresentation {
+    SplashPresentation.startup(state: state, onRetry: {}, onContinue: {})
+}
+
+@MainActor
+private func updatePresentation(_ state: UpdateState) -> SplashPresentation {
+    SplashPresentation.update(state: state, onInstall: {}, onDismiss: {}, onRetry: {})
+}
+
+/// `SplashView` focuses the primary action and speaks a summary when this changes.
+/// It previously did so only on appearance and on the footer turning red, so an update
+/// offered during startup, which is neither, never took focus at all.
+@MainActor
+@Test func anUpdateOfferedDuringStartupIsANewScreen() {
+    let startup = StartupState()
+    startup.beginAttempt(id: UUID())
+    let offered = UpdateState()
+    offered.beginCheck(isUserInitiated: false)
+    offered.showAvailable(newVersion: "0.2.0", currentVersion: "0.1.0")
+
+    #expect(
+        startupPresentation(startup).screenSignature
+            != updatePresentation(offered).screenSignature)
+}
+
+/// Progress within one run is not a new screen. Re-announcing and re-grabbing focus on
+/// every download tick would talk over the user.
+@MainActor
+@Test func downloadProgressIsNotANewScreen() {
+    let state = UpdateState()
+    state.beginDownload()
+    state.setExpectedBytes(1_000)
+    let atStart = updatePresentation(state).screenSignature
+    state.addReceivedBytes(400)
+
+    #expect(updatePresentation(state).screenSignature == atStart)
+}
+
+/// A failure inside a run is a new screen even though the umbrella heading does not
+/// change, because the actions and the tone do.
+@MainActor
+@Test func aFailureInsideARunIsANewScreen() {
+    let state = UpdateState()
+    state.beginDownload()
+    let downloading = updatePresentation(state).screenSignature
+    state.fail(.download)
+
+    #expect(updatePresentation(state).screenSignature != downloading)
+}
+
+/// The row announcer diffs by id against the previous composition. Startup rows and
+/// update rows share no ids, so a diff across that boundary reports every update step as
+/// newly `Queued`. `SplashView` suppresses the diff when the id set changes; this pins
+/// that the two ledgers really are disjoint, which is what makes the check work.
+@MainActor
+@Test func theStartupAndUpdateLedgersShareNoRowIDs() {
+    let startup = StartupState()
+    let update = UpdateState()
+    update.beginDownload()
+
+    let startupIDs = Set(startup.rows.map(\.id))
+    let updateIDs = Set(update.rows.map(\.id))
+
+    #expect(!updateIDs.isEmpty)
+    #expect(startupIDs.isDisjoint(with: updateIDs))
+}
+
+/// The two presentations share `StartupLedgerView`, whose container label was hardcoded
+/// to "Startup preparation" and so described the update steps as startup steps.
+@MainActor
+@Test func eachLedgerNamesWhatItIsAListOf() {
+    let startup = StartupState()
+    let update = UpdateState()
+    update.beginDownload()
+
+    #expect(startupPresentation(startup).ledgerAccessibilityLabel == "Startup preparation")
+    #expect(updatePresentation(update).ledgerAccessibilityLabel == "Update steps")
 }
 }

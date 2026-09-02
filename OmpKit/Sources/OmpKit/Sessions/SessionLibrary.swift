@@ -117,6 +117,14 @@ public actor SessionLibrary {
         return changeStream
     }
 
+    /// Installs the directory watchers before a caller begins relying on
+    /// `changes`. Reading `changes` also starts them lazily, but callers that
+    /// load state and then hand off to live updates need an awaitable barrier
+    /// so a write cannot land between those two steps.
+    public func startWatching() {
+        startWatchingIfNeeded()
+    }
+
     /// Every session, newest modification first.
     ///
     /// Scans exactly `<root>/<bucket>/*.jsonl`. Subagent transcripts live one
@@ -427,7 +435,14 @@ public actor SessionLibrary {
             fileDescriptor: descriptor, eventMask: [.write, .rename, .delete],
             queue: DispatchQueue.global())
         source.setEventHandler { [weak self] in
-            Task { await self?.handleWatchEvent() }
+            // Resolve the weak reference before creating the Task rather than
+            // optional-chaining inside it. `self?` in the Task body keeps the weak
+            // binding inside the region the isolation checker is tracking, which
+            // Swift 6.2 rejects as a sending violation; a resolved actor reference is
+            // plainly Sendable. Also means a live event cannot spawn a Task that finds
+            // the library already gone.
+            guard let self else { return }
+            Task { await self.handleWatchEvent() }
         }
         source.setCancelHandler { close(descriptor) }
         source.resume()

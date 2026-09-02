@@ -28,7 +28,7 @@ import OmpKit
 @MainActor
 @Test func leaveSettingsFallsBackToNewSessionFromSetup() {
     let model = AppModel()
-    model.route = .setup
+    model.route = .onboarding(.installOmp)
 
     model.openSettings()
     model.leaveSettings()
@@ -175,7 +175,7 @@ import OmpKit
     let session = try #require(model.sessions.first)
     model.route = .session(session.path)
 
-    await model.archiveSession(session)
+    await model.archiveCurrentSession()
 
     #expect(model.route == .newSession)
     #expect(model.activeSession == nil)
@@ -242,9 +242,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let manager = try #require(model.processManager)
     #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
     #expect(await manager.handle(for: "/tmp/fake.jsonl") != nil)
@@ -253,8 +251,256 @@ import OmpKit
 
     #expect(model.route == .newSession)
     #expect(model.activeSession == nil)
+    #expect(model.sessionActivityRegistry.managedSessions.isEmpty)
     #expect(await manager.handle(for: "/tmp/fake.jsonl") == nil)
     await manager.closeAll()
+}
+
+@Suite @MainActor struct AppModelNavigationTests {
+@Test func newSessionPinsPrimaryAfterStateAndBeforeFirstPrompt() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-primary-order-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let commandLog = container.appendingPathComponent("commands.log")
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: commandLog)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let defaults = appModelTestDefaults()
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+    model.chooseProject(project)
+
+    model.startNewSession(prompt: "Start")
+
+    #expect(await navigationLog(commandLog, eventuallyContains: "prompt"))
+    let lifecycle = try navigationCommands(in: commandLog).filter {
+        $0 == "open"
+            || $0 == "get_state"
+            || $0.hasPrefix("pin_account:")
+            || $0 == "prompt"
+    }
+    #expect(lifecycle == [
+        "open",
+        "get_state",
+        "get_state",
+        "pin_account:acct_A",
+        "prompt",
+    ])
+    let controller = try #require(model.activeSession)
+    #expect(coordinator.activeAccountRefs[controller.id] == "acct_A")
+    let identity = try #require(model.activeSessionIdentityToken)
+    #expect(identity == model.activeSession?.id)
+
+    model.openNewSession()
+
+    #expect(model.activeSessionIdentityToken == nil)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Suite @MainActor struct AppModelRemovalBarrierTests {
+@Test func blocksNewAndResumedSessionControllerCreation() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-removal-barrier-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let coordinator = ProviderAccountCoordinator()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+    model.chooseProject(project)
+    let target = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "acct_A",
+        label: "Personal",
+        order: 0)
+    let remaining = providerAccountFixture(
+        providerID: "openai-codex",
+        ref: "acct_B",
+        label: "Work",
+        order: 1)
+    let rpcGate = LoadGate()
+    let removal = Task {
+        try await coordinator.removeAccount(
+            providerID: "openai-codex",
+            accountRef: "acct_A",
+            accounts: [target, remaining]
+        ) {
+            await rpcGate.started()
+            await rpcGate.waitForRelease()
+            return ProviderAccountRemovalResult(removed: true, accounts: [remaining])
+        }
+    }
+    await rpcGate.waitForStart()
+
+    model.startNewSession(prompt: "Blocked draft")
+    model.openSession(navigationMetadata("/tmp/resumed.jsonl", cwd: project.path))
+
+    #expect(model.activeSession == nil)
+    #expect(coordinator.managedSessions.isEmpty)
+
+    await rpcGate.release()
+    _ = try await removal.value
+    if let manager = model.processManager { await manager.closeAll() }
+}
+}
+
+@MainActor
+
+@Test func resumedSessionKeepsReportedAccountInsteadOfCurrentPrimary() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-resumed-primary-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let commandLog = container.appendingPathComponent("commands.log")
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: commandLog,
+        activeAccountRef: "acct_B")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let defaults = appModelTestDefaults()
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+
+    #expect(await navigationLog(commandLog, eventuallyContains: "set_subagent_subscription"))
+    let controller = try #require(model.activeSession)
+    #expect(controller.currentProviderAccountRef == "acct_B")
+    #expect(coordinator.activeAccountRefs[controller.id] == "acct_B")
+    #expect(coordinator.managedSessions.count == 1)
+    #expect(coordinator.primaryAccountRef(providerID: "openai-codex") == "acct_A")
+    #expect(try navigationCommands(in: commandLog).contains {
+        $0.hasPrefix("set_session_provider_account:")
+    } == false)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func unexpectedExitUnregistersTheRetainedControllerFromAccountRouting() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-account-exit-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: container.appendingPathComponent("commands.log"),
+        activeAccountRef: "acct_A",
+        exitsAfterSubscription: true)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let coordinator = ProviderAccountCoordinator()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+
+    await waitUntil("the exited session to present recovery and unregister") {
+        model.activeSession?.isRecoveryPresented == true && coordinator.managedSessions.isEmpty
+    }
+    #expect(model.activeSession?.isRecoveryPresented == true)
+    #expect(coordinator.managedSessions.isEmpty)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func newSessionUsesThePrimaryCapturedWhenCreationStarted() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-primary-snapshot-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let commandLog = container.appendingPathComponent("commands.log")
+    let executable = try makeProviderRoutingExecutable(in: container, commandLog: commandLog)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let defaults = appModelTestDefaults()
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    await coordinator.useAccount(
+        "acct_A",
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+    model.chooseProject(project)
+
+    model.startNewSession(prompt: "Start")
+    await coordinator.useAccount(
+        "acct_B",
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+
+    #expect(await navigationLog(commandLog, eventuallyContains: "prompt"))
+    #expect(try navigationCommands(in: commandLog).filter {
+        $0.hasPrefix("pin_account:")
+    } == ["pin_account:acct_A"])
+    #expect(coordinator.primaryAccountRef(providerID: "openai-codex") == "acct_B")
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func newSessionExitBeforePathIndexingUnregistersItsRetainedController() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-new-account-exit-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: container.appendingPathComponent("commands.log"),
+        activeAccountRef: "acct_A",
+        exitsAfterSubscription: true)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let coordinator = ProviderAccountCoordinator()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator }))
+    await model.bootstrap()
+    model.chooseProject(project)
+
+    model.startNewSession(prompt: "Start")
+
+    await waitUntil("the exited session to present recovery and unregister") {
+        model.activeSession?.isRecoveryPresented == true && coordinator.managedSessions.isEmpty
+    }
+    #expect(model.activeSession?.isRecoveryPresented == true)
+    #expect(coordinator.managedSessions.isEmpty)
+    if let manager = model.processManager { await manager.closeAll() }
+}
 }
 
 @MainActor
@@ -272,8 +518,8 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.providerActivityCounts["test"] != 1 {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the background turn to start") {
+        model.providerActivityCounts["test"] == 1
     }
 
     #expect(model.providerActivityCounts["test"] == 1)
@@ -282,8 +528,8 @@ import OmpKit
     #expect(model.route == .newSession)
     #expect(model.providerActivityCounts["test"] == 1)
 
-    for _ in 0..<150 where model.providerActivityCounts["test"] != nil {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the background turn to finish") {
+        model.providerActivityCounts["test"] == nil
     }
     #expect(model.providerActivityCounts["test"] == nil)
     if let manager = model.processManager {
@@ -306,9 +552,7 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<500 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     #expect(model.activeSession?.sessionPath == "/tmp/fake.jsonl")
     let original = try #require(model.activeSession)
 
@@ -404,8 +648,8 @@ import OmpKit
 
     model.openSession(metadata)
     let failed = try #require(model.activeSession)
-    for _ in 0..<100 where failed.sessionPath != nil || !isFailed(failed.runtimeState) {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the session to report its failure") {
+        failed.sessionPath == nil && isFailed(failed.runtimeState)
     }
     #expect(failed.sessionPath == nil)
     #expect(isFailed(failed.runtimeState))
@@ -434,21 +678,17 @@ import OmpKit
         sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
     await model.bootstrap()
     model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
-    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let original = try #require(model.activeSession)
     let manager = try #require(model.processManager)
-    for _ in 0..<100 where original.runtimeState != .streaming {
-        try await Task.sleep(for: .milliseconds(20))
+    await waitUntil("the session to start streaming") {
+        original.runtimeState == .streaming
     }
 
     #expect(original.runtimeState == .streaming)
 
     model.openNewSession()
-    for _ in 0..<100 where !original.isRecoveryPresented {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitUntil("recovery to be presented") { original.isRecoveryPresented }
     let isStopped = switch original.runtimeState {
     case .stopped:
         true
@@ -504,20 +744,20 @@ import OmpKit
     await model.bootstrap()
     model.chooseProject(project)
     model.startNewSession(prompt: "Start")
-    for _ in 0..<100 where model.activeSession?.sessionPath != "/tmp/fake.jsonl" {
-        try await Task.sleep(for: .milliseconds(20))
-    }
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let manager = try #require(model.processManager)
     let metadata = navigationMetadata("/tmp/fake.jsonl")
-    let started = ContinuousClock.now
 
     let mutation = Task { await model.archiveSession(metadata) }
-    for _ in 0..<100 where !model.isSessionMutationInFlight {
-        try await Task.sleep(for: .milliseconds(5))
+    await waitUntil("the mutation to take the session lock") {
+        model.isSessionMutationInFlight
     }
 
+    // The detach has to land before the close, and this pair proves exactly
+    // that without timing the machine: archiveSession only returns once the
+    // child is closed, so a mutation still in flight cannot have finished
+    // closing — yet the session is already detached.
     #expect(model.isSessionMutationInFlight)
-    #expect(started.duration(to: .now) < .milliseconds(500))
     #expect(model.activeSession == nil)
     #expect(model.route == .newSession)
     model.openSession(navigationMetadata("/tmp/other.jsonl"))
@@ -537,11 +777,33 @@ import OmpKit
     await manager.closeAll()
 }
 
+/// Waits until the model would hand back the *same* controller for `path`.
+///
+/// Deliberately not `activeSession?.sessionPath`: SessionController sets that
+/// partway through `openNew` and then keeps awaiting (state, history, messages,
+/// subscription), while AppModel indexes the path for reuse only once `openNew`
+/// returns. A test that waits on the path alone can act inside that window and
+/// get a second controller — and a second child — for one session.
+@MainActor
+private func waitForManagedSession(_ path: String, in model: AppModel) async {
+    await waitUntil("session \(path) to be registered for reuse") {
+        model.managedController(for: path) != nil
+    }
+}
+
 @MainActor
 private func navigationDependencies<Locator: OmpLocating>(
     ompLocator: Locator,
     sessionLibrary: SessionLibrary,
-    sessionSearch: SessionSearchService = SessionSearchService()
+    sessionSearch: SessionSearchService = SessionSearchService(),
+    makeProviderAccountCoordinator: @escaping @MainActor @Sendable () -> ProviderAccountCoordinator = {
+        ProviderAccountCoordinator()
+    },
+    makeProviderModel: (
+        @MainActor @Sendable (URL) -> ProviderManagementViewModel
+    )? = nil,
+    makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel =
+        stubAppComposerControlsFactory
 ) -> AppDependencies {
     let defaults = appModelTestDefaults()
     return AppDependencies(
@@ -557,7 +819,7 @@ private func navigationDependencies<Locator: OmpLocating>(
             SettingsViewModel(service: OmpConfigService(
                 runner: AppModelTestConfigRunner()))
         },
-        makeProviderModel: { _ in
+        makeProviderModel: makeProviderModel ?? { _ in
             providerTestModel(providers: [
                 ProviderLoginProvider(
                     id: "cursor",
@@ -566,7 +828,9 @@ private func navigationDependencies<Locator: OmpLocating>(
                     isAuthenticated: true),
             ])
         },
-        makeComposerControls: stubAppComposerControlsFactory)
+        makeComposerControls: makeComposerControls,
+        makeProviderAccountCoordinator: makeProviderAccountCoordinator,
+        makeUpdateChecker: stubUpdateCheckerFactory)
 }
 
 private func navigationMetadata(_ path: String, cwd: String = "/tmp/Project") -> SessionMetadata {
@@ -621,6 +885,139 @@ func makeNavigationExecutable(
     return executable
 }
 
+/// Models a session under the now-installed `ProviderAccountTieredRoutingBackend`
+/// (`AppModel.init` → `ProviderAccountCoordinator.install`, wired in this
+/// fix round): account changes arrive as `pin_account` commands over the
+/// `tenx.provider-accounts.v1` extension channel, not as a direct
+/// `set_session_provider_account` RPC command — the pre-Task-9 shape only
+/// the abandoned fork's `omp` ever understood (see
+/// `ProviderAccountExtensionBackend.swift`'s `ProviderAccountTieredRoutingBackend`
+/// doc comment). Task 10 deleted that RPC command from `RpcCommand` entirely,
+/// so this fixture no longer has a handler for it either — there is nothing
+/// left that could send it.
+///
+/// The marker channel opens the same way `makeProviderAccountChannelExecutable`
+/// (`SessionControllerTests.swift`) proved out: an `extension_ui_request`
+/// right after `set_subagent_subscription` is answered, and each
+/// `extension_ui_response` is answered by a *new* marker request whose
+/// `placeholder` carries the reply, matched by the inner command `id` —
+/// never the outer RPC frame `id`, which only identifies the open request
+/// slot. `provider_account_changed` is emitted before that reply, on the
+/// same frame-ordering guarantee the existing `makeProviderAccountExecutable`
+/// fixture already relies on: `SessionController.consume` applies frames in
+/// the order they arrive on the one `client.events` reader, so the session's
+/// own `currentProviderAccountRef` is already updated by the time the
+/// reply's continuation resumes `route()` and `applyThroughBackend` reads it
+/// back via `synchronizeState`.
+private func makeProviderRoutingExecutable(
+    in directory: URL,
+    commandLog: URL,
+    activeAccountRef: String? = nil,
+    exitsAfterSubscription: Bool = false
+) throws -> URL {
+    let executable = directory.appendingPathComponent("provider-routing-server.py")
+    let logPath = String(reflecting: commandLog.path)
+    let initialAccount = activeAccountRef.map(String.init(reflecting:)) ?? "None"
+    let source = #"""
+    #!/usr/bin/env python3
+    import json
+    import sys
+
+    command_log = \#(logPath)
+    initial_account = \#(initialAccount)
+
+    MARKER = "tenx.provider-accounts.v1"
+    channel_requests = 0
+
+    def emit(value):
+        print(json.dumps(value, separators=(",", ":")), flush=True)
+
+    with open(command_log, "a", encoding="utf-8") as log:
+        log.write("open\n")
+
+    emit({"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864})
+    for line in sys.stdin:
+        command = json.loads(line)
+        request_id = command.get("id")
+        command_type = command.get("type")
+        if command_type == "extension_ui_response":
+            sent = json.loads(command.get("value", "{}"))
+            inner_command = sent.get("command")
+            if inner_command == "hello":
+                # Task 10b fix round 1 added an unsolicited hello probe sent
+                # over this same channel before any real command. The real
+                # extension's hello handler is a pure query with no side
+                # effect (OmpExtension/index.ts: case "hello": return
+                # {contractVersion: 1} -- no log, no event, no sequence).
+                # This fixture used to answer every extension_ui_response as
+                # if it were pin_account regardless of which command was
+                # actually sent, extracting accountRef blindly -- an empty
+                # default for hello's empty params -- which logged a bogus
+                # "pin_account:" line and emitted a provider_account_changed
+                # event with an empty accountRef at sequence 1. Since events
+                # below are also hardcoded to sequence 1, that bogus event
+                # permanently blocked SessionController's monotonic-sequence
+                # guard from ever accepting the real pin_account event that
+                # followed (fix round 2 -- see task-10b-report.md).
+                reply = json.dumps({"id": sent.get("id"), "ok": True, "data": {"contractVersion": 1}})
+            else:
+                account_ref = sent.get("params", {}).get("accountRef", "")
+                with open(command_log, "a", encoding="utf-8") as log:
+                    log.write("pin_account:" + account_ref + "\n")
+                emit({"type":"provider_account_changed","providerId":"openai-codex","accountRef":account_ref,"reason":"manual","sequence":1})
+                reply = json.dumps({"id": sent.get("id"), "ok": True, "data": {"applied": True}})
+            channel_requests += 1
+            emit({"type":"extension_ui_request","id":"acct-chan-" + str(channel_requests),"method":"input","title":MARKER,"placeholder":reply})
+            continue
+        logged = command_type
+        with open(command_log, "a", encoding="utf-8") as log:
+            log.write(logged + "\n")
+        if command_type == "negotiate_protocol":
+            data = {"protocolVersion":2}
+        elif command_type == "get_state":
+            data = {"model":{"id":"gpt-test","provider":"openai-codex"},"isStreaming":False,"sessionFile":"/tmp/fake.jsonl"}
+            if initial_account is not None:
+                data["activeProviderAccounts"] = {"openai-codex":initial_account}
+        elif command_type == "get_messages_page":
+            data = {"messages":[],"nextCursor":None}
+        else:
+            data = {}
+        emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+        if command_type == "set_subagent_subscription":
+            channel_requests += 1
+            emit({"type":"extension_ui_request","id":"acct-chan-" + str(channel_requests),"method":"input","title":MARKER})
+            if \#(exitsAfterSubscription ? "True" : "False"):
+                raise SystemExit(7)
+        if command_type == "prompt":
+            emit({"type":"agent_start"})
+            emit({"type":"agent_end","messages":[],"isTerminal":True})
+    """#
+    try Data(source.utf8).write(to: executable)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+    return executable
+}
+
+private func navigationCommands(in url: URL) throws -> [String] {
+    try String(contentsOf: url, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map(String.init)
+}
+
+@MainActor
+private func navigationLog(_ url: URL, eventuallyContains expected: String) async -> Bool {
+    await waitUntil("\(expected) in the navigation command log") {
+        (try? navigationCommands(in: url).contains(expected)) == true
+    }
+}
+
+private struct StubbedOmpLocator: OmpLocating {
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test"))
+    }
+}
+
 private struct MissingOmpLocator: OmpLocating {
     func locate(preferredURL: URL?) async -> OmpLocation { .notFound }
 }
@@ -643,7 +1040,7 @@ private struct FixedOmpLocator: OmpLocating {
 
     await model.bootstrap()
 
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
 }
 
 @MainActor
@@ -653,6 +1050,9 @@ private struct FixedOmpLocator: OmpLocating {
             id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
     ])
     let model = AppModel(dependencies: testDependencies(providerModel: providerModel))
+    // A project is already selected, so this scenario is meant to reach the
+    // workspace rather than the new project step onboarding also gates on.
+    model.selectedProjectURL = URL(filePath: "/tmp/existing-project", directoryHint: .isDirectory)
 
     await model.bootstrap()
 
@@ -707,6 +1107,153 @@ private struct FixedOmpLocator: OmpLocating {
 
     await model.refreshProvidersIfNeeded()
     #expect(await catalog.loadCount == loadsAfterBootstrap + 1)
+}
+
+@MainActor
+@Test func appModelSharesOneCatalogBetweenControlsAndCommands() async throws {
+    let catalog = ControllableAppComposerCatalog()
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        providerModel: providerModel,
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+
+    await model.bootstrap()
+
+    let controls = try #require(model.composerControls)
+    let commands = try #require(model.composerCommands)
+    #expect(commands.testingCatalogIdentity == ObjectIdentifier(controls.catalog))
+}
+
+@MainActor
+@Test func openingAndLeavingASessionSwitchesCommandSources() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-command-source-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let catalog = ControllableAppComposerCatalog()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+    await model.bootstrap()
+    model.chooseProject(project)
+
+    model.startNewSession(prompt: "Start")
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
+    await waitUntil("command model to attach to active session") {
+        model.composerCommands?.isAttachedToActiveSession == true
+    }
+
+    #expect(model.composerCommands?.isAttachedToActiveSession == true)
+    model.openNewSession()
+    #expect(model.composerCommands?.isAttachedToActiveSession == false)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@MainActor
+@Test func choosingProjectRefreshesTheSharedCommandCatalog() async throws {
+    let catalog = ControllableAppComposerCatalog()
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        providerModel: providerModel,
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+    await model.bootstrap()
+    let project = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-command-project-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: project) }
+
+    model.chooseProject(project)
+    await waitUntil("project refresh to hit shared command catalog") {
+        await catalog.hasLoaded(projectPath: project.path, minimumCount: 2)
+    }
+
+    #expect(await catalog.loadCount >= 2)
+    #expect(await catalog.hasLoaded(projectPath: project.path, minimumCount: 2))
+}
+
+@MainActor
+@Test func onboardingProjectSelectionRefreshesTheSharedCommandCatalog() async throws {
+    let catalog = ControllableAppComposerCatalog()
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        providerModel: providerModel,
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+    await model.bootstrap()
+    let project = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-onboarding-command-project-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: project) }
+
+    model.recordOnboardingProject(project)
+    model.gateRoute()
+    await waitUntil("onboarding project refresh to hit shared command catalog") {
+        await catalog.hasLoaded(projectPath: project.path, minimumCount: 2)
+    }
+
+    #expect(model.route == .newSession)
+    #expect(await catalog.hasLoaded(projectPath: project.path, minimumCount: 2))
+}
+
+@MainActor
+@Test func startupAutoSelectionRefreshesTheSharedCommandCatalogBeforeNewSession() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let project = try fixture.project("Auto Selected")
+    try fixture.writeSession(cwd: project, modified: Date(timeIntervalSince1970: 100))
+    let catalog = ControllableAppComposerCatalog()
+    let model = fixture.model(makeComposerControls: { _ in
+        ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+    })
+
+    await model.bootstrap()
+
+    #expect(model.route == .newSession)
+    #expect(model.selectedProjectURL?.path == project.path)
+    #expect(await catalog.hasLoaded(projectPath: project.path, minimumCount: 1))
+}
+
+@MainActor
+@Test func shutdownStopsCommandObservationBeforeCatalogShutdown() async throws {
+    let catalog = ControllableAppComposerCatalog()
+    let providerModel = providerTestModel(providers: [
+        ProviderLoginProvider(
+            id: "cursor", name: "Cursor", isAvailable: true, isAuthenticated: true),
+    ])
+    let model = AppModel(dependencies: testDependencies(
+        providerModel: providerModel,
+        makeComposerControls: { _ in
+            ComposerControlsModel(catalog: catalog, defaults: StubAppComposerDefaults())
+        }))
+    await model.bootstrap()
+    let commands = try #require(model.composerCommands)
+
+    await model.shutdown()
+    await catalog.publish(.available([AvailableSlashCommand(name: "after", source: .builtin)]))
+
+    #expect(commands.catalogState == .available([]))
+    #expect(await catalog.shutdownCount == 1)
+    #expect(commands.testingIsObservingCatalog == false)
 }
 
 @MainActor
@@ -775,7 +1322,7 @@ private struct FixedOmpLocator: OmpLocating {
 
     await model.bootstrap()
 
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
 }
 
 @MainActor
@@ -797,7 +1344,7 @@ private struct FixedOmpLocator: OmpLocating {
     await usageGate.waitForStart()
     for _ in 0..<20 { await Task.yield() }
 
-    #expect(model.route == .providerSetup)
+    #expect(model.route == .onboarding(.connectProvider))
     await usageGate.release()
     await bootstrap.value
 }
@@ -859,7 +1406,7 @@ private struct FixedOmpLocator: OmpLocating {
     await shutdownGate.release()
     await failedInstall.value
     #expect(model.providerModel == nil)
-    #expect(model.route == .setup)
+    #expect(model.route == .onboarding(.installOmp))
 }
 
 @MainActor
@@ -891,7 +1438,6 @@ private struct FixedOmpLocator: OmpLocating {
     #expect(model.settingsModel === settingsModel)
     #expect(model.providerModel === providerModel)
     #expect(model.route == route)
-    #expect(model.setupError == nil)
 
     await processManager.closeAll()
 }
@@ -985,12 +1531,14 @@ private func testDependencies<Locator: OmpLocating>(
                 runner: AppModelTestConfigRunner()))
         },
         makeProviderModel: makeProviderModel,
-        makeComposerControls: makeComposerControls)
+        makeComposerControls: makeComposerControls,
+        makeUpdateChecker: stubUpdateCheckerFactory)
 }
 
 private let appModelTestTiming = StartupTiming(
     minimumVisibility: .zero,
     timeout: .seconds(10),
+    updateCheckDeadline: .milliseconds(50),
     sleep: { duration in
         guard duration == .seconds(10) else { return }
         try await ContinuousClock().sleep(for: .seconds(60))
@@ -1042,8 +1590,25 @@ let stubAppComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerContro
         defaults: StubAppComposerDefaults())
 }
 
+/// These navigation and shell-snapshot fixtures build `AppDependencies` directly rather
+/// than through `StartupFixture`/`makeStartupDependencies`, so without this they would
+/// fall back to `AppDependencies`'s own default `makeUpdateChecker`, which stands up a
+/// real Sparkle-backed `UpdateController` against `Bundle.main` and asks it to check for
+/// updates on every `bootstrap()` call. A stub answering "nothing new" keeps these tests
+/// from touching Sparkle or the network at all.
+let stubUpdateCheckerFactory: @MainActor @Sendable (
+    @escaping @MainActor () async -> Void) -> any UpdateChecking = { _ in
+    stubUpdateCheckerReportingNoUpdate()
+}
+
 private actor StubAppComposerCatalog: ComposerCatalogLoading {
-    func load() async throws -> ComposerCatalogSnapshot {
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
+
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
         ComposerCatalogSnapshot(
             models: [],
             selected: nil,
@@ -1057,8 +1622,13 @@ private actor StubAppComposerCatalog: ComposerCatalogLoading {
 
 private actor CountingAppComposerCatalog: ComposerCatalogLoading {
     private(set) var loadCount = 0
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
 
-    func load() async throws -> ComposerCatalogSnapshot {
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
         loadCount += 1
         return ComposerCatalogSnapshot(
             models: [],
@@ -1069,6 +1639,47 @@ private actor CountingAppComposerCatalog: ComposerCatalogLoading {
     }
 
     func shutdown() async {}
+}
+
+private actor ControllableAppComposerCatalog: ComposerCatalogLoading {
+    private let continuation: AsyncStream<ComposerCommandCatalogState>.Continuation
+    nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
+    private(set) var loadCount = 0
+    private(set) var loadedProjectPaths: [String?] = []
+    private(set) var shutdownCount = 0
+
+    init() {
+        var captured: AsyncStream<ComposerCommandCatalogState>.Continuation?
+        commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+            bufferingPolicy: .bufferingNewest(10)) { continuation in
+                captured = continuation
+            }
+        continuation = captured!
+        continuation.yield(.available([]))
+    }
+
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
+        loadCount += 1
+        loadedProjectPaths.append(projectURL?.path)
+        return ComposerCatalogSnapshot(
+            models: [],
+            selected: nil,
+            thinkingLevel: nil,
+            fastModeEnabled: false,
+            fastModeActive: false)
+    }
+
+    func hasLoaded(projectPath: String, minimumCount: Int) -> Bool {
+        loadCount >= minimumCount && loadedProjectPaths.last == projectPath
+    }
+
+    func publish(_ state: ComposerCommandCatalogState) {
+        continuation.yield(state)
+    }
+
+    func shutdown() async {
+        shutdownCount += 1
+    }
 }
 
 private actor StubAppComposerDefaults: ComposerDefaultPersisting {
@@ -1098,10 +1709,266 @@ private actor StubAppComposerDefaults: ComposerDefaultPersisting {
             databaseURL: directory.appending(path: "SearchIndex-v1.sqlite"))))
 
     model.openSearch()
-    for _ in 0..<40 where model.sessions.isEmpty {
-        try await Task.sleep(for: .milliseconds(10))
-    }
+    await waitUntil("the session list to load") { !model.sessions.isEmpty }
 
     #expect(model.isSearchPresented)
     #expect(model.sessions.map(\.title) == ["Open search refresh"])
+}
+
+@Suite @MainActor struct AppModelAccountDockTests {
+/// Fix round 2 (task-9b): `capabilities:` below is a pre-Task-5 relic —
+/// `ProviderManagementViewModel.refreshAccountUsage` no longer calls
+/// `providerService.accountCapability(providerID:)` at all, so it can no
+/// longer make a provider route. Capability now comes solely from
+/// `ProviderAccountTier.detect(snapshot:extensionHello:)`
+/// (`App/Providers/ProviderAccountTier.swift`), which needs a usage
+/// snapshot carrying per-account identity — `.empty` always detects
+/// `.providerOnly` (`snapshot.reports` is `[]`, so `hasPerAccountIdentity`
+/// is always `false`), which silently disables every scope-satisfaction and
+/// `useProviderAccount` assertion that depends on `.accountRouting`. Uses
+/// `multiAccountUsageSnapshotFixture`, the same style of fixture
+/// `ProviderManagementViewModelTests` uses for exactly this reason — this
+/// suite just never got migrated when that one did.
+///
+/// Task 10b: accounts now derive from the snapshot
+/// (`ProviderAccountUsageBackend`), not a per-account RPC a fake can hand
+/// back arbitrary refs for, so `"acct_A"`/`"acct_B"` are no longer literal
+/// strings a test can choose — they're `ProviderAccountRef.make`'s SHA256
+/// output. Returns them alongside the model so call sites that cross-check
+/// against `providerModel.dockProviders` (`accountScopeSatisfaction`,
+/// `useProviderAccount`) compare against what the real read path actually
+/// produces.
+private func accountProviderModel() throws -> (
+    model: ProviderManagementViewModel,
+    accountARef: String,
+    accountBRef: String
+) {
+    let accountA = AccountSnapshotEntry(accountID: "a1", email: "personal@example.com")
+    let accountB = AccountSnapshotEntry(accountID: "a2", email: "work@example.com")
+    let model = ProviderManagementViewModel(
+        providerService: FakeProviderService(providers: [
+            ProviderLoginProvider(
+                id: "openai-codex",
+                name: "ChatGPT",
+                isAvailable: true,
+                isAuthenticated: true),
+        ]),
+        usageService: FakeUsageService(snapshot: multiAccountUsageSnapshotFixture(
+            providerID: "openai-codex",
+            accounts: [accountA, accountB])),
+        openURL: { _ in },
+        now: { Date(timeIntervalSince1970: 100) })
+    return (
+        model,
+        accountA.accountRef(providerID: "openai-codex"),
+        accountB.accountRef(providerID: "openai-codex"))
+}
+
+private func emptyNavigationSessionLibrary() -> SessionLibrary {
+    SessionLibrary(root: FileManager.default.temporaryDirectory
+        .appendingPathComponent("navigation-sessions-\(UUID().uuidString)"))
+}
+
+@Test func dockAccountStateMirrorsTheCoordinator() async throws {
+    let coordinator = ProviderAccountCoordinator()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: MissingOmpLocator(),
+        sessionLibrary: emptyNavigationSessionLibrary(),
+        makeProviderAccountCoordinator: { coordinator }))
+    let session = DockAccountSession(providerID: "openai-codex", accountRef: "acct_A")
+    coordinator.register(session)
+    coordinator.update(sessionID: session.id, providerID: "openai-codex", isGenerating: true)
+
+    #expect(model.accountGeneratingCounts == [
+        ProviderAccountKey(providerID: "openai-codex", accountRef: "acct_A"): 1,
+    ])
+    #expect(model.pendingRemovalAccounts.isEmpty)
+}
+
+@Test func accountScopeSatisfactionReflectsSessionsAndPrimary() async throws {
+    let suiteName = "tenx-dock-satisfaction-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let coordinator = ProviderAccountCoordinator(
+        primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+    let (providerModel, accountARef, accountBRef) = try accountProviderModel()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: emptyNavigationSessionLibrary(),
+        makeProviderAccountCoordinator: { coordinator },
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+    await providerModel.load()
+    let session = DockAccountSession(providerID: "openai-codex", accountRef: accountARef)
+    coordinator.register(session)
+    coordinator.update(sessionID: session.id, providerID: "openai-codex", isGenerating: false)
+    await coordinator.useAccount(
+        accountARef,
+        providerID: "openai-codex",
+        scope: .allNewSessions,
+        openSessionID: nil)
+
+    let satisfaction = model.accountScopeSatisfaction(openSessionID: session.id)
+    let onAccountA = try #require(satisfaction[ProviderAccountKey(
+        providerID: "openai-codex",
+        accountRef: accountARef)])
+    let onAccountB = try #require(satisfaction[ProviderAccountKey(
+        providerID: "openai-codex",
+        accountRef: accountBRef)])
+
+    #expect(onAccountA.areAllScopesSatisfied)
+    #expect(onAccountB == .none)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func manageAccountsOpensConnectionsFocusedOnTheProvider() async throws {
+    let (providerModel, _, _) = try accountProviderModel()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: emptyNavigationSessionLibrary(),
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+
+    model.manageProviderAccounts(providerID: "openai-codex")
+
+    #expect(model.route == .providers(.connections))
+    #expect(providerModel.selectedSection == .connections)
+    #expect(providerModel.focusedConnectionsProviderID == "openai-codex")
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+/// Fix round 2 (task-9b): rewritten to route a *real* `SessionController`
+/// rather than the bare `DockAccountSession` fake used elsewhere in this
+/// suite. Since fix round 1, `AppModel.init` always installs a live
+/// `ProviderAccountTieredRoutingBackend` on whatever coordinator it's
+/// handed (`ProviderAccountCoordinator.install`'s doc comment: idempotent,
+/// and the only writer for a coordinator's routing backend) — so
+/// `applyDirectly`, the direct-RPC path `DockAccountSession.setProviderAccount`
+/// exists to model, is no longer reachable through any `AppModel`. Routing
+/// now always resolves a session's channel-registry entry
+/// (`ProviderAccountChannelRegistry`, populated only by
+/// `SessionController.attachAccountChannel`) or its session file for the
+/// pin-and-restart fallback (`ProviderAccountPinBackend`) — both of which a
+/// bare in-memory fake structurally cannot have, and
+/// `ProviderAccountPinBackendError.sessionFileUnavailable`'s doc comment is
+/// explicit that hitting that gap is "a caller bug, not an expected
+/// outcome" for any session the coordinator actually manages. So the old
+/// assertion could never pass again after fix round 1 without either
+/// faking out `restartSession` (impossible now that `install` is the sole,
+/// AppModel-owned entry point — any coordinator handed to `AppModel` has
+/// its restart closure overwritten regardless of what the test supplies)
+/// or routing a session real enough to survive an actual pin+restart, which
+/// is what this does, reusing the same marker-channel fixture
+/// (`makeProviderRoutingExecutable`) the sibling `AppModelNavigationTests`
+/// suite's tests already use for the identical reason.
+@Test func useProviderAccountRoutesThroughTheCoordinator() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-dock-use-account-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let commandLog = container.appendingPathComponent("commands.log")
+    let executable = try makeProviderRoutingExecutable(
+        in: container,
+        commandLog: commandLog,
+        activeAccountRef: "acct_A")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let coordinator = ProviderAccountCoordinator()
+    let (providerModel, _, accountBRef) = try accountProviderModel()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions")),
+        makeProviderAccountCoordinator: { coordinator },
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+    model.openSession(navigationMetadata("/tmp/fake.jsonl", cwd: project.path))
+    #expect(await navigationLog(commandLog, eventuallyContains: "set_subagent_subscription"))
+    let controller = try #require(model.activeSession)
+    #expect(controller.currentProviderAccountRef == "acct_A")
+    await providerModel.load()
+
+    await model.useProviderAccount(accountBRef, scope: .thisSession, openSessionID: controller.id)
+
+    #expect(await navigationLog(commandLog, eventuallyContains: "pin_account:\(accountBRef)"))
+    #expect(controller.currentProviderAccountRef == accountBRef)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@Test func useProviderAccountIgnoresUnknownRefs() async throws {
+    let coordinator = ProviderAccountCoordinator()
+    let (providerModel, accountARef, _) = try accountProviderModel()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: emptyNavigationSessionLibrary(),
+        makeProviderAccountCoordinator: { coordinator },
+        makeProviderModel: { _ in providerModel }))
+    await model.bootstrap()
+    await providerModel.load()
+    let session = DockAccountSession(providerID: "openai-codex", accountRef: accountARef)
+    coordinator.register(session)
+
+    await model.useProviderAccount("acct_missing", scope: .thisSession, openSessionID: session.id)
+
+    #expect(session.currentProviderAccountRef == accountARef)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+/// Fix round 1 (task-9b): the tiered routing backend and the live
+/// `restartSession` closure were built but never actually installed on the
+/// coordinator the running app uses, so the coordinator kept taking the
+/// pre-existing direct-RPC path regardless of tier — exactly how the gap
+/// this test guards against got there unnoticed in the first place.
+/// `makeProviderAccountCoordinator: { coordinator }` hands `AppModel` this
+/// test's own coordinator instance, so `coordinator.hasLiveRoutingBackend`
+/// observes exactly what `AppModel.init` installed on it — the same
+/// instance every session in this test would route through.
+@Test func bootstrapInstallsALiveRoutingBackendOnTheCoordinator() async throws {
+    let coordinator = ProviderAccountCoordinator()
+    #expect(!coordinator.hasLiveRoutingBackend)
+
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: emptyNavigationSessionLibrary(),
+        makeProviderAccountCoordinator: { coordinator }))
+
+    // Installed synchronously in `AppModel.init`, not deferred to
+    // `bootstrap()` — true immediately, before bootstrap ever runs.
+    #expect(coordinator.hasLiveRoutingBackend)
+
+    await model.bootstrap()
+
+    // Survives bootstrap unchanged — nothing in that path resets it.
+    #expect(coordinator.hasLiveRoutingBackend)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+}
+
+@MainActor
+private final class DockAccountSession: ProviderAccountSession {
+    let id = UUID()
+    let providerID: String?
+    var runtimeState: SessionRuntimeState = .idle
+    private(set) var currentProviderAccountRef: String?
+    private(set) var providerAccountSequence = 0
+
+    init(providerID: String, accountRef: String) {
+        self.providerID = providerID
+        currentProviderAccountRef = accountRef
+    }
+
+    func setProviderAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> SetSessionProviderAccountResult {
+        currentProviderAccountRef = accountRef
+        providerAccountSequence += 1
+        return SetSessionProviderAccountResult(
+            account: ProviderAccountSummary(
+                providerID: providerID,
+                accountRef: accountRef,
+                displayLabel: accountRef,
+                connectionOrder: 0,
+                availability: .available),
+            sequence: providerAccountSequence)
+    }
 }

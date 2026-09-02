@@ -1,0 +1,80 @@
+Task 12, Step 3 — extension spawn-argument evidence, captured at the
+process level (ps aux) rather than through the GUI. Background: computer-use
+click/keyboard interaction against this session's ad-hoc-signed, unnotarized
+Release build was blocked by the environment for this whole task (every
+click, on every coordinate including the menu bar and bare desktop, failed
+with "would land on axAuditService, which is not in the allowed
+applications"; a raw AXUIElement probe confirmed AXIsProcessTrusted() ==
+false for this session's process, and osascript/System Events reported
+"not allowed assistive access" (-1719); a second request_access call for a
+second bundle id was auto-denied as "user_denied", consistent with a
+non-interactive session that cannot service a live permission dialog).
+This is an environment limitation, not a defect in the app. The evidence
+below substitutes precise, scriptable proof of the same underlying
+mechanism (ProviderExtensionBundle.spawnArguments) for the GUI screenshots
+Step 3 originally asked for.
+
+=== t2 (normal Release build, extension resource present) ===
+Launched: `open -n --env PI_CODING_AGENT_DIR=/tmp/tenx-t12/agent-t2 -a
+/tmp/tenx-rel/Build/Products/Release/10x.app` (PID 39516)
+
+$ ps aux | grep -E "bin/omp" | grep -v grep
+tannerpham 39552 ... bun /Users/tannerpham/.bun/bin/omp --mode rpc --no-title --no-session -e /private/tmp/tenx-rel/Build/Products/Release/10x.app/Contents/Resources/omp-extensions/provider-accounts/index.ts
+tannerpham 39553 ... (same, -e present)
+tannerpham 39532 ... (same, -e present)
+tannerpham 39521 ... (same, -e present)
+
+$ ps eww 39552 | tr ' ' '\n' | grep ^PI_CODING_AGENT_DIR=
+PI_CODING_AGENT_DIR=/tmp/tenx-t12/agent-t2
+(same confirmed for 39553, 39532, 39521 — every spawned omp process is
+isolated to the scratch agent dir, never the real ~/.omp)
+
+Four concurrent `--no-session` RPC clients, each carrying `-e <bundled
+extension path>`, confirms 10x passes -e on the "dedicated no-session
+client used for provider operations" exactly as
+App/Providers/ProviderExtensionBundle.swift promises, and confirms the path
+used is the ACTUAL bundled resource inside the Release .app (not a
+source-tree path) — i.e. this is proof against the shipped artifact, not
+just the source.
+
+=== t1 (extension resource removed from a copy of the bundle) ===
+Setup: `cp -R` the Release .app to /tmp/tenx-t12/10x-noext.app, `rm -rf
+Contents/Resources/omp-extensions`, CFBundleIdentifier changed to
+com.tannerpham.tenx.noext-test (distinct from the real app, to avoid
+LaunchServices collisions), re-signed `codesign --force --deep -s -`.
+Launched: `open -n --env PI_CODING_AGENT_DIR=/tmp/tenx-t12/agent-t1 -a
+/tmp/tenx-t12/10x-noext.app` (PID 40500)
+
+$ ps aux | grep -E "bin/omp" | grep -v grep
+tannerpham 40585 ... bun /Users/tannerpham/.bun/bin/omp --mode rpc --no-title --no-session
+tannerpham 40586 ... (same, no -e)
+tannerpham 40556 ... (same, no -e)
+tannerpham 40539 ... (same, no -e)
+
+$ ps eww 40556 | tr ' ' '\n' | grep ^PI_CODING_AGENT_DIR=
+PI_CODING_AGENT_DIR=/tmp/tenx-t12/agent-t1
+(same confirmed for 40539)
+
+Four `--no-session` RPC clients, NONE carrying -e — confirms
+ProviderExtensionBundle.spawnArguments correctly returns [] when
+Bundle.main.url(forResource:withExtension:subdirectory:) finds nothing,
+exactly matching the source: `guard let indexURL else { return [] }`. This
+is the mechanism Step 4 (t1 verification) depends on: with no -e flag, OMP
+never loads the extension, so tier detection can only ever see a hello
+timeout and degrade to stockOMP (once per-account identity exists in
+`omp usage --json`, confirmed separately — see tier-stockOMP-usage-snapshot.json).
+
+=== t0 (per-account identity absent from usage --json) ===
+Launched against a freshly seeded agent dir carrying one OAuth credential
+whose usage-report metadata omits accountId/email (see
+tier-providerOnly-usage-snapshot.json). Same normal Release build as t2 (PID
+41624); extension IS loaded (four `-e ...index.ts` RPC clients spawned,
+consistent with t2), which is expected and correct: t0 is decided entirely
+by ProviderAccountTier.detect's `hasPerAccountIdentity` check on
+snapshot.reports, checked BEFORE the extension hello is even consulted — an
+extension can be present and healthy and the tier is still providerOnly
+when the usage snapshot itself carries no per-account identity.
+
+All process-level PIDs above were killed and their PI_CODING_AGENT_DIR
+scratch trees removed at the end of this task; `ps aux | grep bin/omp`
+returns nothing at the end of the session.

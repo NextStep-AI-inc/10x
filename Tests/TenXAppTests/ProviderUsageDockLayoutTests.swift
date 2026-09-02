@@ -28,6 +28,22 @@ import Testing
         bottomOffset: 22))
 }
 
+/// Regression guard for the account-stack redesign: `ProviderAccountStackView`
+/// now collapses to one wheel at rest and fans upward on hover instead of
+/// spending horizontal space on a rightward cascade, so a multi-account
+/// provider measures exactly like a single-account one. 1180 is the exact
+/// width the design doc names as where the old cascade used to force the
+/// dock above the composer — it must not do that anymore.
+@Test func multiAccountProvidersNoLongerWidenTheGutterRequirementAtTheOldConstrainedBoundary() {
+    let layout = ProviderUsageDockLayout.compact(
+        shellWidth: 1180,
+        contentLeadingInset: 64,
+        providerCount: 2,
+        hasComposer: true)
+
+    #expect(layout.wheelDiameter == ProviderUsageDockLayout.regular54)
+}
+
 @Test func usageDockProviderCountControlsWidePlacementDecision() {
     let twoProviderLayout = ProviderUsageDockLayout.compact(
         shellWidth: 1180,
