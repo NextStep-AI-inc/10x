@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TenXApp
 
@@ -23,6 +24,21 @@ import Testing
         #expect(await loader.cachedLineCount == 200)
     }
 
+    @Test func initialDiffCacheTokenizesOnlyTheFirstVisiblePage() async throws {
+        let source = DiffRenderPresentation(diff: try #require(
+            largeDiff(fileCount: 1, changedLinesPerFile: 1_000)))
+        let initialRows = source.slice(limit: 1_000).rows
+        let recorder = TokenizationRecorder()
+        let loader = await DiffPageLoader(initialRows: initialRows, tokenize: { text, _ in
+            recorder.record(text)
+            return [SourceSpan(text: text, role: .plain)]
+        })
+
+        #expect(await loader.cachedLineCount == 200)
+        #expect(recorder.count == 200)
+        #expect(!recorder.contains("let value999 = 999"))
+    }
+
     @Test func expandingCollapsedContextUsesOnlyOneFinitePage() throws {
         let context = (0..<500).map { " context\($0)" }.joined(separator: "\n")
         let diff = try #require(UnifiedDiffParser.parse("""
@@ -37,6 +53,23 @@ import Testing
 
         #expect(rows.filter(\.isLine).count == 206)
         #expect(rows.first { $0.id == collapsed.id }?.collapsedContext?.count == 294)
+    }
+}
+
+private final class TokenizationRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var texts: [String] = []
+
+    var count: Int {
+        lock.withLock { texts.count }
+    }
+
+    func contains(_ text: String) -> Bool {
+        lock.withLock { texts.contains(text) }
+    }
+
+    func record(_ text: String) {
+        lock.withLock { texts.append(text) }
     }
 }
 

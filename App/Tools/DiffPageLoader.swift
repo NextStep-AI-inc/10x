@@ -9,10 +9,17 @@ import Foundation
     private var tokenizationTask: Task<[DiffRenderRow.ID: [SourceSpan]], Never>?
     private var activeTokenizationID: UUID?
 
-    init(tokenize: @escaping Tokenizer = { text, language in
-        SourceTokenizer.spans(text, language: language)
-    }) {
+    init(
+        initialRows: [DiffRenderRow] = [],
+        tokenize: @escaping Tokenizer = { text, language in
+            SourceTokenizer.spans(text, language: language)
+        }
+    ) {
         self.tokenize = tokenize
+        for row in initialRows.lazy.filter(\.isLine).prefix(200) {
+            guard let line = row.line else { continue }
+            cachedSpans[row.id] = tokenize(line.line.text, line.language)
+        }
     }
 
     var cachedLineCount: Int { cachedSpans.count }

@@ -4,12 +4,20 @@ import SwiftUI
 struct DiffView: View {
     let diff: UnifiedDiff
     let fallbackPath: String?
+    private let presentation: DiffRenderPresentation
     @State private var isWrapped = true
     @State private var reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
     @State private var contextReveals: [DiffRenderRow.ID: ProgressiveReveal] = [:]
-    @StateObject private var pageLoader = DiffPageLoader()
+    @StateObject private var pageLoader: DiffPageLoader
 
-    private var presentation: DiffRenderPresentation { DiffRenderPresentation(diff: diff) }
+    init(diff: UnifiedDiff, fallbackPath: String?) {
+        self.diff = diff
+        self.fallbackPath = fallbackPath
+        let presentation = DiffRenderPresentation(diff: diff)
+        self.presentation = presentation
+        _pageLoader = StateObject(wrappedValue: DiffPageLoader(
+            initialRows: presentation.slice(limit: 200).rows))
+    }
 
     private var expandedRows: [DiffRenderRow] {
         presentation.rows(revealing: contextReveals.mapValues(\.limit))
