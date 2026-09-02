@@ -40,13 +40,13 @@ newest pending frame ── replaces older pending frame
         └── boundary ─────► reduce pending ──► reduce boundary ──► publish now
 ```
 
-The actor will hold at most one pending `message_update`. A newer update replaces it because every frame is a canonical cumulative snapshot, not a required standalone delta. The existing publication timer will wake the processor, drain the newest pending frame through the reducer, and publish the resulting snapshot once.
+The actor will hold at most one pending `message_update`. A newer update for the same explicit message identity replaces it because those frames are canonical cumulative snapshots, not required standalone deltas. An update for a different message identity first drains the pending frame so distinct custom, skill, and assistant messages cannot replace one another. Updates without an explicit identity continue through the reducer directly. The existing publication timer will wake the processor, drain the newest pending frame through the reducer, and publish the resulting snapshot once.
 
 This approach is preferred over reducer-level caching because comparing or hashing each complete payload still performs work proportional to payload size for every chunk. It is preferred over incremental parsing because tool boundaries and canonical provider snapshots make that substantially more complex and error-prone.
 
 ## Ordering and Snapshot Semantics
 
-- `message_update`: store it as the newest pending update and ensure the 50 ms timer is scheduled. Do not call the reducer immediately.
+- `message_update`: when it has the same explicit message identity as the pending update, store it as the newest pending update and ensure the 50 ms timer is scheduled. Do not call the reducer immediately. Drain before accepting a different identity; reduce unidentified updates directly.
 - Any subsequent transcript event that must retain event order: drain the pending update into the reducer first, then reduce the new event. Combine their mutations so an immediate boundary publishes both changes once.
 - `message_end`, `turn_end`, terminal `agent_end`, and `prompt_result`: pending content is applied before the boundary is published or forwarded.
 - `flush()`: drain pending content before deciding whether a snapshot is dirty.
