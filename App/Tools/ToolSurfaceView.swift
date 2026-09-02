@@ -214,14 +214,19 @@ private struct MediaSurfaceView: View {
     }
 }
 
-private struct MediaItemView: View {
+struct MediaItemView: View {
     let item: ToolMediaItem
     @State private var errorMessage: String?
-    @StateObject private var loader = ToolMediaLoader()
+    @StateObject private var loader: ToolMediaLoader
 
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.tannerpham.tenx",
         category: "ToolMedia")
+
+    init(item: ToolMediaItem, loader: ToolMediaLoader? = nil) {
+        self.item = item
+        _loader = StateObject(wrappedValue: loader ?? ToolMediaLoader())
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -242,7 +247,7 @@ private struct MediaItemView: View {
                     Button("Open", action: open)
                         .buttonStyle(GhostActionStyle())
                 }
-                if loader.decodedData != nil {
+                if item.data != nil, loader.decodedData != nil {
                     Button("Save", action: save)
                         .buttonStyle(GhostActionStyle())
                 }
@@ -254,7 +259,7 @@ private struct MediaItemView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
             }
         }
-        .task(id: item.id) {
+        .task(id: item.contentID) {
             guard remoteURL == nil else {
                 loader.cancel()
                 return
@@ -284,18 +289,20 @@ private struct MediaItemView: View {
             switch loader.state {
             case .loaded(let media):
                 if let image = media.image {
-                    Image(decorative: image, scale: 1)
+                    Image(image, scale: 1, label: Text(item.name ?? "Tool image"))
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: .infinity)
                         .frame(height: 200, alignment: .leading)
-                        .accessibilityLabel(item.name ?? "Tool image")
                 } else {
                     unavailablePreview
                     DataTreeSurfaceView(label: "Media data", value: fallbackValue)
                 }
             case .loading:
-                ProgressView().controlSize(.small)
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 200, alignment: .leading)
             case .idle, .unavailable, .failed:
                 unavailablePreview
                 DataTreeSurfaceView(label: "Media data", value: fallbackValue)

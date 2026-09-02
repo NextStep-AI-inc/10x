@@ -1810,7 +1810,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
-@Test func semanticToolSurfacesSnapshot() throws {
+@Test func semanticToolSurfacesSnapshot() async throws {
     let timestamp = Date(timeIntervalSince1970: 1)
     let source = ToolPresentation(
         id: "semantic-source",
@@ -1879,7 +1879,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     let disclosure = ToolDisclosureState()
     disclosure.expand(ids: [source.id, collection.id, mcp.id])
 
-    try assertSnapshot(
+    try await assertSettledSnapshot(
         VStack(alignment: .leading, spacing: 18) {
             ToolCardView(presentation: source)
             ToolCardView(presentation: collection)
@@ -2130,7 +2130,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
-@Test func mediaToolCardsSnapshot() throws {
+@Test func mediaToolCardsSnapshot() async throws {
     let previewPath = snapshotProjectURL
         .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
         .path
@@ -2205,14 +2205,42 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             duration: 3.4),
     ]
 
-    try assertSnapshot(
+    try await assertSettledSnapshot(
         snapshotToolCardStack(cards, width: 520),
         name: "tool-cards-media",
         size: CGSize(width: 600, height: 1_300))
 }
 
 @MainActor
-@Test func mcpFallbackToolCardsSnapshot() throws {
+@Test func toolMediaLoadingSnapshot() async throws {
+    let gate = SnapshotMediaGate()
+    let item = ToolMediaItem(
+        id: "loading-media",
+        kind: .image,
+        name: "Transcript preview",
+        mimeType: "image/png",
+        data: snapshotImageData(width: 500, height: 340).base64EncodedString(),
+        url: nil)
+    let loader = ToolMediaLoader(decode: { _ in
+        await gate.wait()
+        return .unavailable
+    })
+    let loadTask = Task { await loader.load(item) }
+    await gate.waitForStart()
+
+    try assertSnapshot(
+        MediaItemView(item: item, loader: loader)
+            .frame(width: 520, alignment: .leading),
+        name: "tool-media-loading",
+        size: CGSize(width: 600, height: 300))
+
+    loadTask.cancel()
+    await gate.open()
+    await loadTask.value
+}
+
+@MainActor
+@Test func mcpFallbackToolCardsSnapshot() async throws {
     let previewPath = snapshotProjectURL
         .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
         .path
@@ -2276,7 +2304,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             duration: 0.9),
     ]
 
-    try assertSnapshot(
+    try await assertSettledSnapshot(
         snapshotToolCardStack(cards, width: 520),
         name: "tool-cards-mcp-fallback",
         size: CGSize(width: 600, height: 1_600))
@@ -3949,6 +3977,32 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
     return representation.representation(using: .png, properties: [:])!
 }
 
+private actor SnapshotMediaGate {
+    private var isStarted = false
+    private var isOpen = false
+    private var waitContinuation: CheckedContinuation<Void, Never>?
+    private var startContinuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        isStarted = true
+        startContinuation?.resume()
+        startContinuation = nil
+        guard !isOpen else { return }
+        await withCheckedContinuation { waitContinuation = $0 }
+    }
+
+    func waitForStart() async {
+        guard !isStarted else { return }
+        await withCheckedContinuation { startContinuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        waitContinuation?.resume()
+        waitContinuation = nil
+    }
+}
+
 // MARK: - Dark appearance
 //
 // The palette resolves per-appearance, so these render the same views the light
@@ -4356,7 +4410,7 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
         size: CGSize(width: 600, height: 420))
 }
 @MainActor
-@Test func semanticToolSurfacesSnapshotDark() throws {
+@Test func semanticToolSurfacesSnapshotDark() async throws {
     let timestamp = Date(timeIntervalSince1970: 1)
     let source = ToolPresentation(
         id: "semantic-source",
@@ -4425,7 +4479,7 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
     let disclosure = ToolDisclosureState()
     disclosure.expand(ids: [source.id, collection.id, mcp.id])
 
-    try assertSnapshot(
+    try await assertSettledSnapshot(
         VStack(alignment: .leading, spacing: 18) {
             ToolCardView(presentation: source)
             ToolCardView(presentation: collection)
@@ -4510,7 +4564,7 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
         size: CGSize(width: 600, height: 1_150))
 }
 @MainActor
-@Test func mediaToolCardsSnapshotDark() throws {
+@Test func mediaToolCardsSnapshotDark() async throws {
     let previewPath = snapshotProjectURL
         .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
         .path
@@ -4585,7 +4639,7 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
             duration: 3.4),
     ]
 
-    try assertSnapshot(
+    try await assertSettledSnapshot(
         snapshotToolCardStack(cards, width: 520),
         name: "tool-cards-media-dark", appearance: .dark,
         size: CGSize(width: 600, height: 1_300))
@@ -4653,7 +4707,7 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
         size: CGSize(width: 600, height: 1_100))
 }
 @MainActor
-@Test func mcpFallbackToolCardsSnapshotDark() throws {
+@Test func mcpFallbackToolCardsSnapshotDark() async throws {
     let previewPath = snapshotProjectURL
         .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
         .path
@@ -4717,7 +4771,7 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
             duration: 0.9),
     ]
 
-    try assertSnapshot(
+    try await assertSettledSnapshot(
         snapshotToolCardStack(cards, width: 520),
         name: "tool-cards-mcp-fallback-dark", appearance: .dark,
         size: CGSize(width: 600, height: 1_600))

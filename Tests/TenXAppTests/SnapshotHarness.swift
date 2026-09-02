@@ -66,6 +66,35 @@ func assertSnapshot<Content: View>(
     try captureAndCompare(attempts: attempts, name: name, sourceFile: sourceFile)
 }
 
+/// Keeps one mounted host alive long enough for deterministic local media loads.
+@MainActor
+func assertSettledSnapshot<Content: View>(
+    _ content: Content,
+    name: String,
+    appearance: SnapshotAppearance = .light,
+    size: CGSize = CGSize(width: 900, height: 600),
+    sourceFile: String = #filePath
+) async throws {
+    let host = makeSnapshotHost(content, size: size, appearance: appearance)
+    host.layoutSubtreeIfNeeded()
+    host.displayIfNeeded()
+    for _ in 0..<4 {
+        await Task.yield()
+    }
+    try? await Task.sleep(nanoseconds: 100_000_000)
+    host.layoutSubtreeIfNeeded()
+    host.displayIfNeeded()
+    try captureAndCompare(
+        attempts: [
+            { renderSnapshot(host) },
+            { renderSnapshot(host) },
+            { renderSnapshot(host) },
+            { renderSnapshot(host) },
+        ],
+        name: name,
+        sourceFile: sourceFile)
+}
+
 @MainActor
 private func renderSnapshot<Content: View>(
     _ content: Content,
@@ -74,6 +103,17 @@ private func renderSnapshot<Content: View>(
 ) -> Data? {
     renderSnapshotBitmap(content, size: size, appearance: appearance)?
         .representation(using: .png, properties: [:])
+}
+
+@MainActor
+private func renderSnapshot<Content: View>(_ host: NSHostingView<Content>) -> Data? {
+    host.layoutSubtreeIfNeeded()
+    host.displayIfNeeded()
+    guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+        return nil
+    }
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    return bitmap.representation(using: .png, properties: [:])
 }
 
 @MainActor

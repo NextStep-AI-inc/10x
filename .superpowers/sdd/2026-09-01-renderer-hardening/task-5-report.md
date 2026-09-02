@@ -64,3 +64,88 @@ After updating the six direct snapshot references, both runs reached 1,166 tests
 - Same completed IDs return without another decode; local and inline data keep their full bytes in the loaded result, and unsupported data is loaded with no image rather than discarded.
 - `MediaItemView` renders state only. Save reads `loader.decodedData`; no base64 or AppKit raw-data image construction remains in the view path.
 - `CGImage` crosses the detached boundary via the narrow `@unchecked Sendable` decoded-result wrapper because CoreGraphics does not provide static Sendable conformance; all mutable loader state remains main-actor isolated.
+
+## Fix Round 1
+
+### RED
+
+Added the new generation, cancellation, and default-decoder tests first. The
+focused test build failed as expected because `ToolMediaItem` had no
+`contentID` initializer argument:
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
+  '-only-testing:TenXAppTests/ToolMediaLoaderTests'
+```
+
+### Review findings resolved
+
+1. Detached ImageIO decoding now passes `kCGImageSourceShouldCacheImmediately:
+   true` to `CGImageSourceCreateImageAtIndex`. The default inline-PNG test
+   proves it returns a 1×1 `CGImage`, rather than relying only on injected
+   decoding.
+2. `decodeMedia` awaits its detached task through a cancellation handler that
+   cancels that task, with cancellation checks retained before decoding and
+   publishing.
+3. A cancelled caller clears only its matching active generation after its
+   await returns. `cancelledCallerCanReloadTheSameItem` proves a later same-item
+   load starts and publishes a second decode.
+4. Each extracted `ToolMediaItem` now stores a fresh UUID `contentID` outside
+   `body`. The view task, loader active state, completed cache, and stale-result
+   guard use it. Semantic `Equatable` deliberately excludes this token, so
+   re-extracting unchanged bytes remains a reducer no-op; changed bytes produce
+   a new item/token and reload. Tests cover both cases.
+5. Loading reserves the successful preview's 200-point height. A mounted,
+   settled snapshot harness restores all six affected light/dark references to
+   decoded-preview coverage, and `tool-media-loading.png` independently covers
+   the spinner geometry. Loaded light/dark and loading fixtures were inspected.
+6. Loaded local previews use `Image(image, scale: 1, label: Text(...))`, so the
+   image itself carries the accessibility label.
+7. Default-decoder tests cover valid inline PNG, valid local temporary PNG,
+   invalid inline data (`.unavailable`), and missing local files (`.failed`).
+8. Save is gated to inline `item.data` and uses the loader-retained bytes.
+   Local file cards retain Open without gaining Save.
+
+### Verification
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
+  '-only-testing:TenXAppTests/ToolMediaLoaderTests'
+```
+
+Passed: 12 tests, including eager default decoding, same-generation caching,
+same-visible-ID replacement, stale/cancelled publication, caller cancellation
+and reload, invalid/unavailable data, local file failure, and retained bytes.
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
+```
+
+One clean full run passed: 1,173 tests in 26 suites. A second parallel full run
+reproduced only the existing unrelated
+`DiffRenderPresentationTests.cancelledOldTokenizationCannotPublishIntoReplacementContent()`
+flake. The isolated `DiffRenderPresentationTests` suite then passed all 12
+tests, including that race. The media loader has no dependency on the diff
+tokenization surface; this is documented for the planned diff-test gate fix.
+
+```bash
+xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release \
+  -destination 'platform=macOS'
+bundle exec ruby scripts/generate_xcodeproj.rb
+git diff --check
+! rg -n 'Data\(base64Encoded|CGImageSource|NSImage\(data:' App/Tools/ToolSurfaceView.swift
+```
+
+Passed: Release build, reproducible generator, whitespace check, and no body/
+computed media decode in `ToolSurfaceView`.
+
+### Fix-round self-review
+
+- `ToolMediaLoadState` is ordinary `Sendable`; only immutable
+  `DecodedToolMedia`, whose `CGImage` must cross the detached boundary, remains
+  `@unchecked Sendable`.
+- Cache reuse requires the immutable content generation rather than a mutable
+  display/index ID, and cancellation cannot clear a replacement generation.
+- The seven snapshot changes are intentional: six now show decoded previews
+  instead of first-frame spinners, and one is the explicit loading-state
+  reference.

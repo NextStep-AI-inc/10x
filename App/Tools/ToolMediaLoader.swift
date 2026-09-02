@@ -3,7 +3,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-enum ToolMediaLoadState: @unchecked Sendable {
+enum ToolMediaLoadState: Sendable {
     case idle
     case loading
     case loaded(DecodedToolMedia)
@@ -23,8 +23,8 @@ struct DecodedToolMedia: @unchecked Sendable {
 
     private let decode: Decoder
     private var decodeTask: Task<Void, Never>?
-    private var activeItemID: String?
-    private var completedResult: (itemID: String, state: ToolMediaLoadState)?
+    private var activeContentID: UUID?
+    private var completedResult: (contentID: UUID, itemID: String, state: ToolMediaLoadState)?
 
     init() {
         decode = Self.decodeMedia
@@ -45,41 +45,53 @@ struct DecodedToolMedia: @unchecked Sendable {
     }
 
     func load(_ item: ToolMediaItem) async {
-        if completedResult?.itemID == item.id { return }
-        guard activeItemID != item.id else { return }
+        if completedResult?.contentID == item.contentID { return }
+        guard activeContentID != item.contentID else { return }
 
         cancel()
-        activeItemID = item.id
+        activeContentID = item.contentID
         state = .loading
 
-        let itemID = item.id
+        let contentID = item.contentID
         let decode = decode
         let work = Task { [weak self] in
             let result = await decode(item)
             guard !Task.isCancelled else { return }
-            self?.publish(result, for: itemID)
+            self?.publish(result, for: item, contentID: contentID)
         }
         decodeTask = work
         await withTaskCancellationHandler(
             operation: { await work.value },
             onCancel: { work.cancel() })
+        if Task.isCancelled {
+            cancelLoad(for: contentID)
+        }
     }
 
     func cancel() {
+        cancelLoad(for: activeContentID)
+    }
+
+    private func cancelLoad(for contentID: UUID?) {
+        guard let contentID, activeContentID == contentID else { return }
         decodeTask?.cancel()
         decodeTask = nil
-        activeItemID = nil
+        activeContentID = nil
         if case .loading = state {
             state = .idle
         }
     }
 
-    private func publish(_ result: ToolMediaLoadState, for itemID: String) {
-        guard activeItemID == itemID else { return }
-        activeItemID = nil
+    private func publish(
+        _ result: ToolMediaLoadState,
+        for item: ToolMediaItem,
+        contentID: UUID
+    ) {
+        guard activeContentID == contentID else { return }
+        activeContentID = nil
         decodeTask = nil
         state = result
-        completedResult = (itemID, result)
+        completedResult = (contentID, item.id, result)
     }
 
     private static func decodeMedia(_ item: ToolMediaItem) async -> ToolMediaLoadState {
@@ -105,13 +117,18 @@ struct DecodedToolMedia: @unchecked Sendable {
             let image: CGImage?
             if let source = CGImageSourceCreateWithData(data as CFData, nil),
                CGImageSourceGetType(source) != nil {
-                image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+                image = CGImageSourceCreateImageAtIndex(
+                    source,
+                    0,
+                    [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
             } else {
                 image = nil
             }
             return .loaded(DecodedToolMedia(data: data, image: image))
         }
-        return await work.value
+        return await withTaskCancellationHandler(
+            operation: { await work.value },
+            onCancel: { work.cancel() })
     }
 
     nonisolated private static func fileURL(for item: ToolMediaItem) -> URL? {
