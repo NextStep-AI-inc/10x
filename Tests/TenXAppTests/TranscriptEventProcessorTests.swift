@@ -157,7 +157,7 @@ import Testing
 
     let snapshot = await processor.currentSnapshot()
     #expect(await processor.testingMessageUpdateReductionCount() == 1)
-    #expect(snapshot.items.map(\.id) == ["m1", "notice-1"])
+    #expect(snapshot.items.map(\.id) == ["thread-start-fallback", "m1", "notice-1"])
     await processor.stop()
 }
 
