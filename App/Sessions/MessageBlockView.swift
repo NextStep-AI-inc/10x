@@ -34,7 +34,7 @@ struct ContentDocumentView: View {
                     accessibilityNoun: "message content")
             }
         }
-        .task(id: document.renderIdentity) {
+        .task(id: document.renderVersion) {
             renderState = renderState.effective(for: document)
         }
     }

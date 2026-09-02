@@ -478,6 +478,7 @@ struct SourceCard: View {
                     spans: pageLoader.spans(for: line, contentID: contentID) ?? line.spans,
                     showsNumber: presentation.lines.count > 1,
                     isWrapped: isWrapped)
+                    .id(SourceLineID(contentID: contentID, number: line.number))
             }
         }
         .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
@@ -494,27 +495,75 @@ private struct SourceLoadID: Hashable {
     let lineNumbers: [Int]
 }
 
-private struct SourceLineView: View {
+private struct SourceLineID: Hashable {
+    let contentID: UUID
+    let number: Int
+}
+
+struct SourceLineRenderPresentation: Equatable, Sendable {
+    let spans: [SourceSpan]
+    let visibleText: String
+    let accessibilityText: String
+    let hasMore: Bool
+    let progressiveTotal: Int
+
+    init(line: SourceLine, spans: [SourceSpan], characterLimit: Int, pageSize: Int = 2_048) {
+        let limit = max(0, characterLimit)
+        self.spans = Self.prefix(spans, characterLimit: limit)
+        visibleText = self.spans.map(\.text).joined()
+        accessibilityText = visibleText
+        hasMore = line.characterCount(cappedAt: limit + 1) > limit
+        progressiveTotal = hasMore ? limit + pageSize : limit
+    }
+
+    private static func prefix(_ spans: [SourceSpan], characterLimit: Int) -> [SourceSpan] {
+        var remaining = characterLimit
+        var result: [SourceSpan] = []
+        for span in spans where remaining > 0 {
+            let text = String(span.text.prefix(remaining))
+            guard !text.isEmpty else { continue }
+            result.append(SourceSpan(text: text, role: span.role))
+            remaining -= text.count
+        }
+        return result
+    }
+}
+
+struct SourceLineView: View {
     let line: SourceLine
     let spans: [SourceSpan]
     let showsNumber: Bool
     let isWrapped: Bool
+    @State private var reveal = ProgressiveReveal(initialLimit: 2_048, pageSize: 2_048)
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if showsNumber {
-                Text(String(line.number))
-                    .font(TenXTypography.mono(size: 10))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    .frame(width: 28, alignment: .trailing)
-                    .accessibilityHidden(true)
+        let presentation = SourceLineRenderPresentation(
+            line: line,
+            spans: spans,
+            characterLimit: reveal.limit)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
+                if showsNumber {
+                    Text(String(line.number))
+                        .font(TenXTypography.mono(size: 10))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                        .frame(width: 28, alignment: .trailing)
+                        .accessibilityHidden(true)
+                }
+                SourceTextView(spans: presentation.spans, isWrapped: isWrapped)
+                    .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
             }
-            SourceTextView(spans: spans, isWrapped: isWrapped)
-                .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: presentation.progressiveTotal,
+                noun: "characters",
+                accessibilityNoun: "source line characters")
         }
         .frame(minHeight: 16, alignment: .topLeading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Line \(line.number), \(line.plainText)")
+        .accessibilityLabel(
+            "Line \(line.number), \(presentation.accessibilityText)"
+                + (presentation.hasMore ? ". Truncated. Show more characters to continue." : ""))
     }
 }
 

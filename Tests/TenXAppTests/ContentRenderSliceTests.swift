@@ -58,6 +58,7 @@ import Testing
         }
         #expect(source.lines == Array(original.lines.prefix(30)))
         #expect(source.contentID == original.contentID)
+        #expect(slice.document.renderVersion == document.renderVersion)
     }
 
     @Test func sourceAppendKeepsTheExistingDocumentRevealLimit() {
@@ -73,6 +74,30 @@ import Testing
         #expect(ContentRenderSlicer.slice(
             appended,
             limit: continued.reveal.limit).consumedUnits == 320)
+    }
+
+    @Test func sameDocumentVersionKeepsTheExistingRevealLimit() {
+        let document = largeDocument(prefix: "same")
+        var state = ContentDocumentRenderState()
+        state = state.effective(for: document)
+        state.reveal.revealNextPage(total: ContentRenderSlicer.unitCount(document))
+
+        let continued = state.effective(for: document)
+
+        #expect(continued.reveal.limit == 320)
+    }
+
+    @Test func reconstructedSameSourceResetsTheRevealLimit() {
+        let original = largeDocument(prefix: "same")
+        let reconstructed = ContentDocument(source: original.source, blocks: original.blocks)
+        var state = ContentDocumentRenderState()
+        state = state.effective(for: original)
+        state.reveal.revealNextPage(total: ContentRenderSlicer.unitCount(original))
+
+        let replacement = state.effective(for: reconstructed)
+
+        #expect(original.renderVersion != reconstructed.renderVersion)
+        #expect(replacement.reveal.limit == 160)
     }
 
     @Test func sourceReplacementDerivesAnInitialSliceBeforeStateMutation() {

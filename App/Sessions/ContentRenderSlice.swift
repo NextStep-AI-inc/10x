@@ -1,3 +1,5 @@
+import Foundation
+
 struct ContentRenderSlice: Equatable, Sendable {
     let document: ContentDocument
     let consumedUnits: Int
@@ -6,23 +8,23 @@ struct ContentRenderSlice: Equatable, Sendable {
 
 struct ContentDocumentRenderState: Equatable {
     private(set) var source: String?
-    private(set) var identity: Int?
+    private(set) var version: UUID?
     var reveal = ProgressiveReveal(initialLimit: 160, pageSize: 160)
 
     init(document: ContentDocument? = nil) {
         source = document?.source
-        identity = document?.renderIdentity
+        version = document?.renderVersion
     }
 
     func effective(for document: ContentDocument) -> Self {
-        guard let source, let identity else { return Self(document: document) }
-        if identity == document.renderIdentity { return self }
+        guard let source, let version else { return Self(document: document) }
+        if version == document.renderVersion { return self }
         guard document.source.count > source.count,
               document.source.hasPrefix(source)
         else { return Self(document: document) }
         var continued = self
         continued.source = document.source
-        continued.identity = document.renderIdentity
+        continued.version = document.renderVersion
         return continued
     }
 }
@@ -32,7 +34,10 @@ enum ContentRenderSlicer {
         var budget = Budget(limit: max(0, limit))
         let blocks = document.blocks.compactMap { slice($0, budget: &budget) }
         return ContentRenderSlice(
-            document: ContentDocument(source: document.source, blocks: blocks),
+            document: ContentDocument(
+                source: document.source,
+                blocks: blocks,
+                renderVersion: document.renderVersion),
             consumedUnits: budget.consumed,
             hasMore: budget.consumed < unitCount(document))
     }

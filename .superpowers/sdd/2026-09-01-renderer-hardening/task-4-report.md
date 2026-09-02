@@ -213,3 +213,52 @@ generator/diff checks passed after the final implementation change.
   and task UUID.
 - The bounded probe walks no more than its supplied cap. Sync tokenization
   happens only after a line is known to be at most 2,048 characters.
+
+## Fix Round 3
+
+### Findings addressed
+
+1. ContentDocument now carries a stored UUID renderVersion, rather than a
+   payload hash. It is ignored by semantic Equatable comparison, preserved by
+   every document slice, and used for state/task identity. Only the same
+   version or a strict longer source prefix retains an existing document
+   reveal.
+2. SourceLineView now owns a 2,048/2,048 line-local ProgressiveReveal. Its
+   production SourceLineRenderPresentation prefixes span values without
+   materializing the whole line, makes a finite accessibility string with a
+   truncation cue, and gives the next action a finite 2,048-character page.
+   SourceCard keys every line view by source UUID plus line number.
+
+### RED
+
+Added document-version propagation/state tests, span-boundary rendering,
+4,000,000-character pure page tests, and a 100,000-character mounted
+SourceCard regression before production changes. The initial focused run at
+/tmp/10x-task4-fix3-red.log failed as expected because
+SourceLineRenderPresentation did not exist.
+
+### GREEN and verification
+
+ContentRenderSliceTests and SourceSurfaceTests passed 12 tests in 2 suites at
+/tmp/10x-task4-fix3-focused.log. The expanded focused state/source/loader run
+passed 19 tests in 3 suites at /tmp/10x-task4-fix3-focused-all.log. Relevant
+ViewSnapshotTests and RendererPaginationTests passed 19 tests in 2 suites at
+/tmp/10x-task4-fix3-snapshots.log, with no reference or asset changes. The
+full suite passed 1,151 tests in 25 suites at
+/tmp/10x-task4-fix3-full-suite.log.
+
+The final Release build passed at /tmp/10x-task4-fix3-release-build.log.
+After that build, ruby scripts/generate_xcodeproj.rb and git diff --check
+passed; the generator added only SourceSurfaceTests.swift entries.
+
+### Self-review
+
+- Version equality is collision-safe UUID equality. Reconstructed identical
+  documents are allowed to reset instead of accidentally retaining expansion.
+- The 4,000,000-character source test verifies an initial representation no
+  larger than 2,048 characters and a one-page representation no larger than
+  4,096; the mounted SourceCard test renders a production card with a
+  100,000-character line without creating a large snapshot asset.
+- SourceLineRenderPresentation only joins its already prefix-bounded spans;
+  accessibility never reads SourceLine.plainText. The existing full source
+  payload remains bound to Copy.
