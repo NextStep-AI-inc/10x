@@ -6,6 +6,58 @@ import Testing
 @Suite(.serialized)
 struct RendererSaturationFixtureTests {
     @Test
+    func multiMegabyteCumulativeMessageNormalizesOnlyNewestPayload() async throws {
+        let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+        _ = await processor.load(
+            .messages([]),
+            threadStartDate: nil,
+            hasReconciliationWarning: false,
+            runtimeState: .idle)
+        let segment = String(repeating: "s", count: 65_536)
+        var payload = "BEGIN-SKILL|"
+
+        for index in 0..<32 {
+            payload += "segment-\(index)|"
+            payload += segment
+            if index == 31 {
+                payload += "|END-SKILL"
+            }
+            await processor.consume(.event(
+                type: "message_update",
+                payload: .object([
+                    "message": .object([
+                        "id": .string("oversized-skill"),
+                        "role": .string("assistant"),
+                        "content": .array([
+                            .object([
+                                "type": .string("text"),
+                                "text": .string(payload),
+                            ]),
+                        ]),
+                    ]),
+                ])))
+        }
+
+        #expect(payload.utf8.count >= 2 * 1_024 * 1_024)
+        #expect(await processor.testingMessageUpdateReductionCount() == 0)
+
+        let snapshot = try #require(await processor.flush())
+        let messages = snapshot.items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item else { return nil }
+            return message
+        }
+        let visibleText = try #require(messages.first?.visibleText)
+        let isComplete = visibleText == payload
+        #expect(await processor.testingMessageUpdateReductionCount() == 1)
+        #expect(messages.count == 1)
+        #expect(visibleText.utf8.count == payload.utf8.count)
+        #expect(visibleText.hasPrefix("BEGIN-SKILL|segment-0|"))
+        #expect(visibleText.hasSuffix("|END-SKILL"))
+        #expect(isComplete)
+        await processor.stop()
+    }
+
+    @Test
     func tenThousandLineDiffKeepsSlicesAndTokenizationFinite() async throws {
         let raw = oversizedDiff(fileCount: 10, linesPerFile: 1_000)
         let diff = try #require(UnifiedDiffParser.parse(raw))
