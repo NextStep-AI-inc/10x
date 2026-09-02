@@ -1,5 +1,11 @@
+import Foundation
+
+import Foundation
+
+import Foundation
+
 struct DiffRenderPresentation: Equatable, Sendable {
-    let contentID: String
+    let contentID: UUID
     let rows: [DiffRenderRow]
     private let fileHeaders: [Int: DiffRenderFileHeader]
     private let hunkHeaders: [DiffRenderRow.HunkID: DiffRenderHunkHeader]
@@ -23,7 +29,7 @@ struct DiffRenderPresentation: Equatable, Sendable {
                 }
             }
         }
-        self.contentID = diff.raw
+        self.contentID = diff.renderID
         self.rows = rows
         self.fileHeaders = fileHeaders
         self.hunkHeaders = hunkHeaders
@@ -111,20 +117,20 @@ struct DiffRenderSlice: Equatable, Sendable {
 }
 
 struct DiffRenderState: Equatable {
-    private(set) var contentID: String?
+    private(set) var contentID: UUID?
     var reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
     var contextReveals: [DiffRenderRow.ID: ProgressiveReveal] = [:]
 
-    init(contentID: String? = nil) {
+    init(contentID: UUID? = nil) {
         self.contentID = contentID
     }
 
-    func effective(for contentID: String) -> Self {
+    func effective(for contentID: UUID) -> Self {
         guard self.contentID == contentID else { return Self(contentID: contentID) }
         return self
     }
 
-    mutating func reset(contentID: String) {
+    mutating func reset(contentID: UUID) {
         guard self.contentID != contentID else { return }
         self.contentID = contentID
         reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
