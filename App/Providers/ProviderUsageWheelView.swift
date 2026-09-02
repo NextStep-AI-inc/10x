@@ -169,6 +169,9 @@ struct ProviderUsageWheelView: View {
         .onAppear {
             updatePulseAnimation()
         }
+        .onDisappear {
+            stopPulseAnimation()
+        }
         .onChange(of: activeCount) { _, _ in
             updatePulseAnimation()
         }
@@ -232,6 +235,12 @@ struct ProviderUsageWheelView: View {
             withAnimation(nil) {
                 isPulseExpanded = false
             }
+        }
+    }
+
+    private func stopPulseAnimation() {
+        withAnimation(nil) {
+            isPulseExpanded = false
         }
     }
 
