@@ -2396,6 +2396,41 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
+@Test func contentDocumentBudgetSnapshot() throws {
+    let paragraphs = (1...4).map { "Paragraph \($0) stays visible before the bounded source." }
+        .joined(separator: "\n\n")
+    let tableRows = (1...4).map { "| Row \($0) | Ready |" }.joined(separator: "\n")
+    let quote = (1...3).map { "> Quoted block \($0)\n>" }.joined(separator: "\n")
+    let list = (1...4).map { parent in
+        (["- Parent \(parent)"] + (1...4).map { "  - Child \(parent).\($0)" })
+            .joined(separator: "\n")
+    }.joined(separator: "\n")
+    let source = (1...500).map { "let renderedLine\($0) = \($0)" }
+        .joined(separator: "\n")
+    let document = MessageContentParser.parse("""
+    \(paragraphs)
+
+    | Name | State |
+    | --- | --- |
+    \(tableRows)
+
+    \(quote)
+
+    \(list)
+
+    ```swift
+    \(source)
+    ```
+    """)
+
+    try assertSnapshot(
+        ContentDocumentView(document: document)
+            .frame(width: 720, alignment: .leading),
+        name: "content-document-budget-initial",
+        size: CGSize(width: 800, height: 3_500))
+}
+
+@MainActor
 @Test func activeSessionHeaderSnapshot() throws {
     let controller = SessionController(
         processManager: SessionProcessManager(),

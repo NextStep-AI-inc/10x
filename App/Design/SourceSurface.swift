@@ -11,6 +11,12 @@ struct SourcePresentation: Equatable, Sendable {
         self.text = text
         lines = SourceTokenizer.lines(text, language: language)
     }
+
+    init(language: String?, text: String, lines: [SourceLine]) {
+        self.language = language
+        self.text = text
+        self.lines = lines
+    }
 }
 
 struct SourceLine: Equatable, Sendable, Identifiable {
@@ -312,6 +318,7 @@ enum SourceTokenizer {
 struct SourceSurface: View {
     let presentation: SourcePresentation
     let previewLineLimit: Int?
+    let showsRevealControl: Bool
 
     @State private var isWrapped: Bool
     @State private var reveal: ProgressiveReveal
@@ -319,10 +326,12 @@ struct SourceSurface: View {
     init(
         presentation: SourcePresentation,
         previewLineLimit: Int? = nil,
-        isInitiallyWrapped: Bool = true
+        isInitiallyWrapped: Bool = true,
+        showsRevealControl: Bool = true
     ) {
         self.presentation = presentation
         self.previewLineLimit = previewLineLimit
+        self.showsRevealControl = showsRevealControl
         _isWrapped = State(initialValue: isInitiallyWrapped)
         _reveal = State(initialValue: ProgressiveReveal(
             initialLimit: previewLineLimit ?? 200,
@@ -339,11 +348,13 @@ struct SourceSurface: View {
                     rows.fixedSize(horizontal: true, vertical: false)
                 }
             }
-            ProgressiveRevealButton(
-                reveal: $reveal,
-                total: presentation.lines.count,
-                noun: "lines",
-                accessibilityNoun: "source lines")
+            if showsRevealControl {
+                ProgressiveRevealButton(
+                    reveal: $reveal,
+                    total: presentation.lines.count,
+                    noun: "lines",
+                    accessibilityNoun: "source lines")
+            }
         }
         .padding(10)
         .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
@@ -382,7 +393,8 @@ struct SourceSurface: View {
     }
 
     private var visibleLines: ArraySlice<SourceLine> {
-        presentation.lines.prefix(Self.visibleLineCount(
+        guard showsRevealControl else { return presentation.lines[...] }
+        return presentation.lines.prefix(Self.visibleLineCount(
             total: presentation.lines.count,
             previewLineLimit: previewLineLimit,
             reveal: reveal))
