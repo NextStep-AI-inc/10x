@@ -158,7 +158,7 @@ struct ToolCardScaffold<Content: View>: View {
     private var isExpanded: Bool {
         disclosureState?.isExpanded(for: presentation)
             ?? localChoice
-            ?? ToolDisclosureState.defaultExpanded(for: presentation)
+            ?? ToolDetailMode.auto.isExpandedByDefault(presentation.disclosureTraits)
     }
 
     private func toggle() {

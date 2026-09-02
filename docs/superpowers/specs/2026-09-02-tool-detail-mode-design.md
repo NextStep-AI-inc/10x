@@ -70,9 +70,9 @@ and replaces the current `Collapse all` and `Expand active` buttons:
   model picker and by the provider section headers.
 - Each mode is a chip. The selected chip is white on near-black; the rest are
   muted on clear. This is the existing `EFFORT` chip, extracted and shared.
-- The control appears once the transcript has at least one tool or subagent
-  row. It is not gated on a row count, so the mode is reachable as soon as
-  there is anything to apply it to.
+- The control is always present, including on a transcript that has no
+  activity yet, so the mode can be set before the first tool arrives. The
+  current four-row gate on the buttons it replaces is removed.
 - Selecting a mode applies immediately to every card on screen and to every
   card that arrives afterwards.
 

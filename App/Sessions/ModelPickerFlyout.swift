@@ -340,26 +340,10 @@ struct ModelPickerFlyout: View {
     }
 
     private func effortChip(_ level: String) -> some View {
-        let isSelected = level == thinkingLevel
-        return Button {
+        SelectionChip(title: level, isSelected: level == thinkingLevel) {
             onSelectThinking(level)
-        } label: {
-            Text(level)
-                .font(TenXTypography.body(size: 11))
-                .foregroundStyle(isSelected
-                    ? Color.white
-                    : TenXPalette.color(TenXPalette.mutedTextHex))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(isSelected
-                    ? TenXPalette.color(TenXPalette.nearBlackHex)
-                    : .clear)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .disabled(isMutating)
-        .accessibilityLabel(level)
-        .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 
     private var triggerPiece: some View {

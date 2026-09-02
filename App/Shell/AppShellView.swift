@@ -29,6 +29,7 @@ struct AppShellView: View {
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding(.leading, railExpansion.contentLeadingInset)
                             .environment(model.idePreferenceStore)
+                            .environment(model.toolDetailPreferenceStore)
                             .environment(\.fileOpenService, model.fileOpenService)
                             .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
                                 model.openSettings(focus: .preferredIDE)

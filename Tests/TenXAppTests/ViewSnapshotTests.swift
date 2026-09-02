@@ -462,8 +462,7 @@ import Testing
         phase: .complete,
         startDate: timestamp,
         endDate: timestamp.addingTimeInterval(0.5))
-    let disclosureState = ToolDisclosureState()
-    disclosureState.collapseAll(ids: [read.id, edit.id, write.id])
+    let disclosureState = ToolDisclosureState(mode: .compact)
 
     try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
@@ -1129,8 +1128,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         phase: .complete,
         startDate: timestamp,
         endDate: timestamp.addingTimeInterval(1.2))
-    let disclosure = ToolDisclosureState()
-    disclosure.expand(ids: [source.id, collection.id, mcp.id])
+    let disclosure = ToolDisclosureState(mode: .expanded)
 
     try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
@@ -1228,8 +1226,10 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         phase: .complete,
         startDate: timestamp,
         endDate: timestamp.addingTimeInterval(0.9))
-    let disclosure = ToolDisclosureState()
-    disclosure.expand(ids: [edit.id, grep.id, bash.id, web.id])
+    // Auto, with the four cards this flow is about opened by hand: the read
+    // stays closed, which is the contrast the reference documents.
+    let disclosure = ToolDisclosureState(mode: .auto)
+    for card in [edit, grep, bash, web] { disclosure.setExpanded(true, for: card) }
 
     try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
@@ -1646,6 +1646,19 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             .environment(\.fileOpenService, snapshotFileOpenService),
         name: "rich-transcript-wide",
         size: CGSize(width: 1_180, height: 2_000))
+}
+
+@MainActor
+@Test func toolDetailModeControlSnapshot() throws {
+    try assertSnapshot(
+        VStack(alignment: .trailing, spacing: 14) {
+            ForEach(ToolDetailMode.allCases) { mode in
+                ToolDetailModeControl(mode: mode, onSelect: { _ in })
+            }
+        }
+        .frame(width: 260, alignment: .trailing),
+        name: "tool-detail-mode-control",
+        size: CGSize(width: 300, height: 110))
 }
 
 @MainActor
@@ -2333,8 +2346,7 @@ private func snapshotToolCardStack(
     _ presentations: [ToolPresentation],
     width: CGFloat
 ) -> some View {
-    let disclosure = ToolDisclosureState()
-    disclosure.expand(ids: presentations.map(\.id))
+    let disclosure = ToolDisclosureState(mode: .expanded)
     return VStack(alignment: .leading, spacing: 18) {
         ForEach(presentations) { presentation in
             ToolCardView(presentation: presentation)
