@@ -158,3 +158,58 @@ a semantic/layout regression.
   or SwiftUI body tokenizes source.
 - The only reference update is the visually inspected standalone pagination
   raster described above.
+
+## Fix Round 2
+
+### Findings addressed
+
+1. ContentDocument now stores a construction-time structural render identity.
+   ContentDocumentRenderState retains reveal only for the same identity or a
+   strict longer source-prefix append; image-only and same-source structural
+   replacements derive a fresh 160-unit first slice. The view task is keyed by
+   this stored identity.
+2. SourcePresentation has a stored immutable UUID content key, excluded from
+   semantic Equatable comparison. Slicing explicitly preserves that key.
+   SourceCard captures it once for its body, task, and row cache lookups.
+3. SourceLine retains raw text and offers a capped character probe.
+   SourcePageLoader probes at most 2,049 characters on the main actor before
+   sync priming a safe line; detached page work alone reads raw overflow lines.
+   The 200-row, 16,384-total-character, and 2,048-per-line ceilings remain
+   exact.
+
+### RED
+
+Added image-only and same-source structural replacement tests, source-key
+preservation, a 4,000,000-character first-line test, and an exact 201-line
+sync-prime cap test before implementation. The first focused RED run failed at
+/tmp/10x-task4-fix2-red.log because the new test lacked Foundation for Data;
+after correcting that test import, the production contract RED at
+/tmp/10x-task4-fix2-red-structure.log failed because
+SourceLine.characterCount(cappedAt:) did not yet exist.
+
+### GREEN and verification
+
+Focused state/loader/slicer run passed 14 tests. Relevant snapshot run passed
+1 document snapshot, 4 renderer pagination snapshots, and 15 ViewSnapshot
+tests. The full suite passed 1,146 tests in 24 suites. The multi-megabyte test
+proves zero sync tokenizer calls/cache entries, an exact 2,049-character
+bounded probe, and one later detached tokenizer call. The 201-row test proves
+exactly 200 sync cache/tokenizer entries and no row-201 tokenization. No
+snapshot reference changed.
+
+Exact commands: xcodebuild test -project 10x.xcodeproj -scheme 10x -destination platform=macOS;
+xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination platform=macOS;
+ruby scripts/generate_xcodeproj.rb; git diff --check. The Release build and
+generator/diff checks passed after the final implementation change.
+
+### Self-review
+
+- The structural fingerprint combines block tags, content, and collection
+  counts, including image data/mime type and nested list/table/quote shape.
+  View-path comparisons are O(1); the only source scan is the strict
+  append-prefix check.
+- UUID cache keys never concatenate or hash hidden source text in SwiftUI
+  body. Source replacement cancels and rejects stale loader publication by key
+  and task UUID.
+- The bounded probe walks no more than its supplied cap. Sync tokenization
+  happens only after a line is known to be at most 2,048 characters.

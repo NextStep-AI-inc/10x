@@ -3,6 +3,13 @@ import Foundation
 struct ContentDocument: Equatable, Sendable {
     let source: String
     let blocks: [ContentBlock]
+    let renderIdentity: Int
+
+    init(source: String, blocks: [ContentBlock]) {
+        self.source = source
+        self.blocks = blocks
+        renderIdentity = Self.makeRenderIdentity(source: source, blocks: blocks)
+    }
 
     static let empty = ContentDocument(source: "", blocks: [])
 
@@ -14,6 +21,61 @@ struct ContentDocument: Equatable, Sendable {
         blocks.compactMap { block in
             guard case .image(let image) = block else { return nil }
             return image
+        }
+    }
+
+    private static func makeRenderIdentity(source: String, blocks: [ContentBlock]) -> Int {
+        var hasher = Hasher()
+        hasher.combine(source)
+        hasher.combine(blocks.count)
+        blocks.forEach { combine($0, into: &hasher) }
+        return hasher.finalize()
+    }
+
+    private static func combine(_ block: ContentBlock, into hasher: inout Hasher) {
+        switch block {
+        case .paragraph(let content):
+            hasher.combine(0); hasher.combine(content.source)
+        case .heading(let level, let content):
+            hasher.combine(1); hasher.combine(level); hasher.combine(content.source)
+        case .list(let list):
+            hasher.combine(2); combine(list, into: &hasher)
+        case .quote(let blocks):
+            hasher.combine(3)
+            hasher.combine(blocks.count)
+            blocks.forEach { combine($0, into: &hasher) }
+        case .table(let table):
+            hasher.combine(4)
+            hasher.combine(table.headers.count)
+            table.headers.forEach { hasher.combine($0.source) }
+            hasher.combine(table.rows.count)
+            table.rows.forEach { row in
+                hasher.combine(row.count)
+                row.forEach { hasher.combine($0.source) }
+            }
+        case .divider:
+            hasher.combine(5)
+        case .source(let source):
+            hasher.combine(6); hasher.combine(source.language); hasher.combine(source.text)
+        case .image(let image):
+            hasher.combine(7); hasher.combine(image.data); hasher.combine(image.mimeType)
+        case .unsupported(let label):
+            hasher.combine(8); hasher.combine(label)
+        }
+    }
+
+    private static func combine(_ list: ContentList, into hasher: inout Hasher) {
+        switch list.style {
+        case .unordered: hasher.combine(0)
+        case .ordered(let start): hasher.combine(1); hasher.combine(start)
+        case .task: hasher.combine(2)
+        }
+        hasher.combine(list.items.count)
+        for item in list.items {
+            hasher.combine(item.content.source)
+            hasher.combine(item.isChecked)
+            hasher.combine(item.children.count)
+            item.children.forEach { combine($0, into: &hasher) }
         }
     }
 }

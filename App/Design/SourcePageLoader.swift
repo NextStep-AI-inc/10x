@@ -10,12 +10,12 @@ import Foundation
 
     @Published private(set) var cachedSpans: [Int: [SourceSpan]] = [:]
     private let tokenize: Tokenizer
-    private var contentID: String
+    private var contentID: UUID?
     private var tokenizationTask: Task<[Int: [SourceSpan]], Never>?
     private var activeTokenizationID: UUID?
 
     init(
-        contentID: String = "",
+        contentID: UUID? = nil,
         initialLines: [SourceLine] = [],
         language: String? = nil,
         tokenize: @escaping Tokenizer = { text, language in
@@ -27,7 +27,7 @@ import Foundation
         cache(initialLines, language: language)
     }
 
-    func reset(contentID: String, initialLines: [SourceLine], language: String?) {
+    func reset(contentID: UUID, initialLines: [SourceLine], language: String?) {
         guard self.contentID != contentID else { return }
         tokenizationTask?.cancel()
         activeTokenizationID = nil
@@ -38,13 +38,13 @@ import Foundation
 
     var cachedLineCount: Int { cachedSpans.count }
 
-    func spans(for line: SourceLine, contentID: String) -> [SourceSpan]? {
+    func spans(for line: SourceLine, contentID: UUID) -> [SourceSpan]? {
         guard self.contentID == contentID else { return nil }
         return cachedSpans[line.number]
     }
 
-    func load(lines: [SourceLine], language: String?, contentID: String = "") async {
-        let requestedContentID = contentID.isEmpty ? self.contentID : contentID
+    func load(lines: [SourceLine], language: String?, contentID: UUID? = nil) async {
+        let requestedContentID = contentID ?? self.contentID
         guard requestedContentID == self.contentID else { return }
         let missingLines = lines.filter { cachedSpans[$0.number] == nil }
         guard !missingLines.isEmpty else { return }
@@ -56,7 +56,7 @@ import Foundation
             var spans: [Int: [SourceSpan]] = [:]
             for line in missingLines {
                 guard !Task.isCancelled else { return [:] }
-                spans[line.number] = tokenize(line.plainText, language)
+                spans[line.number] = tokenize(line.rawText, language)
             }
             return spans
         }
@@ -75,11 +75,12 @@ import Foundation
     private func cache(_ lines: [SourceLine], language: String?) {
         var characterCount = 0
         for line in lines.prefix(Self.initialRowLimit) {
-            let text = line.plainText
-            guard text.count <= Self.initialLineCharacterLimit else { return }
-            guard text.count <= Self.initialCharacterLimit - characterCount else { return }
-            cachedSpans[line.number] = tokenize(text, language)
-            characterCount += text.count
+            let lineCharacterCount = line.characterCount(
+                cappedAt: Self.initialLineCharacterLimit + 1)
+            guard lineCharacterCount <= Self.initialLineCharacterLimit else { return }
+            guard lineCharacterCount <= Self.initialCharacterLimit - characterCount else { return }
+            cachedSpans[line.number] = tokenize(line.rawText, language)
+            characterCount += lineCharacterCount
         }
     }
 }

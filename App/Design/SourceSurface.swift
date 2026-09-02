@@ -5,34 +5,60 @@ struct SourcePresentation: Equatable, Sendable {
     let language: String?
     let text: String
     let lines: [SourceLine]
+    let contentID: UUID
 
     init(language: String?, text: String) {
         self.language = language
         self.text = text
+        contentID = UUID()
         lines = text.split(separator: "\n", omittingEmptySubsequences: false)
             .enumerated()
             .map { offset, line in
-                SourceLine(
-                    number: offset + 1,
-                    spans: [SourceSpan(text: String(line), role: .plain)])
+                SourceLine(number: offset + 1, text: String(line))
             }
     }
 
-    init(language: String?, text: String, lines: [SourceLine]) {
+    init(language: String?, text: String, lines: [SourceLine], contentID: UUID = UUID()) {
         self.language = language
         self.text = text
         self.lines = lines
+        self.contentID = contentID
     }
 
-    var contentID: String { "\(language ?? "")\u{0}\(text)" }
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.language == rhs.language && lhs.text == rhs.text && lhs.lines == rhs.lines
+    }
 }
 
 struct SourceLine: Equatable, Sendable, Identifiable {
     let number: Int
     let spans: [SourceSpan]
+    let rawText: String
+
+    init(number: Int, spans: [SourceSpan]) {
+        self.number = number
+        self.spans = spans
+        rawText = spans.count == 1 ? spans[0].text : spans.map(\.text).joined()
+    }
+
+    init(number: Int, text: String) {
+        self.number = number
+        rawText = text
+        spans = [SourceSpan(text: text, role: .plain)]
+    }
 
     var id: Int { number }
-    var plainText: String { spans.map(\.text).joined() }
+    var plainText: String { rawText }
+
+    func characterCount(cappedAt limit: Int) -> Int {
+        var count = 0
+        var index = rawText.startIndex
+        while index < rawText.endIndex, count < limit {
+            rawText.formIndex(after: &index)
+            count += 1
+        }
+        return count
+    }
 }
 
 struct SourceSpan: Equatable, Sendable {
@@ -399,13 +425,14 @@ struct SourceCard: View {
     }
 
     var body: some View {
+        let contentID = presentation.contentID
         VStack(alignment: .leading, spacing: 8) {
             header
             if isWrapped {
-                rows
+                rows(contentID: contentID)
             } else {
                 ScrollView(.horizontal) {
-                    rows.fixedSize(horizontal: true, vertical: false)
+                    rows(contentID: contentID).fixedSize(horizontal: true, vertical: false)
                 }
             }
         }
@@ -413,16 +440,16 @@ struct SourceCard: View {
         .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
         .clipShape(RoundedRectangle(cornerRadius: 4))
         .task(id: SourceLoadID(
-            contentID: presentation.contentID,
+            contentID: contentID,
             lineNumbers: lines.map(\.number))) {
             pageLoader.reset(
-                contentID: presentation.contentID,
+                contentID: contentID,
                 initialLines: lines,
                 language: presentation.language)
             await pageLoader.load(
                 lines: lines,
                 language: presentation.language,
-                contentID: presentation.contentID)
+                contentID: contentID)
         }
     }
 
@@ -443,12 +470,12 @@ struct SourceCard: View {
         }
     }
 
-    private var rows: some View {
+    private func rows(contentID: UUID) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             ForEach(lines) { line in
                 SourceLineView(
                     line: line,
-                    spans: pageLoader.spans(for: line, contentID: presentation.contentID) ?? line.spans,
+                    spans: pageLoader.spans(for: line, contentID: contentID) ?? line.spans,
                     showsNumber: presentation.lines.count > 1,
                     isWrapped: isWrapped)
             }
@@ -463,7 +490,7 @@ struct SourceCard: View {
 }
 
 private struct SourceLoadID: Hashable {
-    let contentID: String
+    let contentID: UUID
     let lineNumbers: [Int]
 }
 

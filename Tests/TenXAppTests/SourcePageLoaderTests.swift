@@ -86,6 +86,41 @@ import Testing
         #expect(!recorder.contains("deferred"))
     }
 
+    @Test func multiMegabyteFirstLineDefersTokenizationWithoutSynchronousMaterialization() async {
+        let recorder = SourceTokenizationRecorder()
+        let source = SourcePresentation(language: "swift", text: String(repeating: "x", count: 4_000_000))
+        let loader = await SourcePageLoader(
+            initialLines: source.lines,
+            language: source.language,
+            tokenize: { _, _ in
+                recorder.record("tokenized")
+                return [SourceSpan(text: "tokenized", role: .plain)]
+            })
+
+        #expect(await loader.cachedLineCount == 0)
+        #expect(recorder.count == 0)
+        #expect(source.lines[0].characterCount(cappedAt: 2_049) == 2_049)
+
+        await loader.load(lines: source.lines, language: source.language)
+        #expect(recorder.count == 1)
+    }
+
+    @Test func synchronousPrimeStopsAtExactlyTwoHundredRows() async {
+        let recorder = SourceTokenizationRecorder()
+        let source = SourcePresentation(language: "swift", text: sourceText(count: 201))
+        let loader = await SourcePageLoader(
+            initialLines: source.lines,
+            language: source.language,
+            tokenize: { text, _ in
+                recorder.record(text)
+                return [SourceSpan(text: text, role: .plain)]
+            })
+
+        #expect(await loader.cachedLineCount == 200)
+        #expect(recorder.count == 200)
+        #expect(!recorder.contains("let value201 = 201"))
+    }
+
     @Test func staleTokenizationCannotPublishAfterSourceReplacement() async {
         let original = SourcePresentation(language: "swift", text: "original")
         let replacement = SourcePresentation(language: "swift", text: "replacement")

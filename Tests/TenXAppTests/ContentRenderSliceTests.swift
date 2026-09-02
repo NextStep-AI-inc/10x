@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import TenXApp
 
@@ -56,6 +57,7 @@ import Testing
             return
         }
         #expect(source.lines == Array(original.lines.prefix(30)))
+        #expect(source.contentID == original.contentID)
     }
 
     @Test func sourceAppendKeepsTheExistingDocumentRevealLimit() {
@@ -89,6 +91,40 @@ import Testing
         #expect(replacementState.reveal.limit == 160)
         #expect(replacementSlice.consumedUnits == 160)
         #expect(replacementSlice.hasMore)
+    }
+
+    @Test func imageOnlyReplacementResetsTheRevealLimit() {
+        let original = ContentDocument(
+            source: "",
+            blocks: Array(repeating: .image(ContentImage(data: Data([1]), mimeType: "image/png")), count: 500))
+        let replacement = ContentDocument(
+            source: "",
+            blocks: Array(repeating: .image(ContentImage(data: Data([2]), mimeType: "image/png")), count: 500))
+        var state = ContentDocumentRenderState()
+        state = state.effective(for: original)
+        state.reveal.revealNextPage(total: ContentRenderSlicer.unitCount(original))
+
+        let replacementState = state.effective(for: replacement)
+
+        #expect(replacementState.reveal.limit == 160)
+        #expect(ContentRenderSlicer.slice(replacement, limit: replacementState.reveal.limit).consumedUnits == 160)
+    }
+
+    @Test func sameSourceStructuralReplacementResetsTheRevealLimit() {
+        let original = ContentDocument(
+            source: "shared",
+            blocks: Array(repeating: .unsupported(label: "old"), count: 500))
+        let replacement = ContentDocument(
+            source: "shared",
+            blocks: Array(repeating: .unsupported(label: "new"), count: 500))
+        var state = ContentDocumentRenderState()
+        state = state.effective(for: original)
+        state.reveal.revealNextPage(total: ContentRenderSlicer.unitCount(original))
+
+        let replacementState = state.effective(for: replacement)
+
+        #expect(replacementState.reveal.limit == 160)
+        #expect(ContentRenderSlicer.slice(replacement, limit: replacementState.reveal.limit).consumedUnits == 160)
     }
 }
 

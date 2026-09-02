@@ -6,17 +6,23 @@ struct ContentRenderSlice: Equatable, Sendable {
 
 struct ContentDocumentRenderState: Equatable {
     private(set) var source: String?
+    private(set) var identity: Int?
     var reveal = ProgressiveReveal(initialLimit: 160, pageSize: 160)
 
-    init(source: String? = nil) {
-        self.source = source
+    init(document: ContentDocument? = nil) {
+        source = document?.source
+        identity = document?.renderIdentity
     }
 
     func effective(for document: ContentDocument) -> Self {
-        guard let source else { return Self(source: document.source) }
-        guard document.source.hasPrefix(source) else { return Self(source: document.source) }
+        guard let source, let identity else { return Self(document: document) }
+        if identity == document.renderIdentity { return self }
+        guard document.source.count > source.count,
+              document.source.hasPrefix(source)
+        else { return Self(document: document) }
         var continued = self
         continued.source = document.source
+        continued.identity = document.renderIdentity
         return continued
     }
 }
@@ -85,7 +91,8 @@ enum ContentRenderSlicer {
             return .source(SourcePresentation(
                 language: source.language,
                 text: source.text,
-                lines: Array(source.lines.prefix(count))))
+                lines: Array(source.lines.prefix(count)),
+                contentID: source.contentID))
         }
     }
 
