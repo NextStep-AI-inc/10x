@@ -53,6 +53,12 @@ struct DiffRenderPresentation: Equatable, Sendable {
         slice(rows: rows, limit: limit)
     }
 
+    func slice(using state: DiffRenderState) -> DiffRenderSlice {
+        let effectiveState = state.effective(for: contentID)
+        let expandedRows = rows(revealing: effectiveState.contextReveals.mapValues(\.limit))
+        return slice(rows: expandedRows, limit: effectiveState.reveal.limit)
+    }
+
     func slice(rows: [DiffRenderRow], limit: Int) -> DiffRenderSlice {
         let lineRows = rows.filter(\.isLine)
         let visibleLineCount = min(max(0, limit), lineRows.count)
@@ -108,6 +114,15 @@ struct DiffRenderState: Equatable {
     private(set) var contentID: String?
     var reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
     var contextReveals: [DiffRenderRow.ID: ProgressiveReveal] = [:]
+
+    init(contentID: String? = nil) {
+        self.contentID = contentID
+    }
+
+    func effective(for contentID: String) -> Self {
+        guard self.contentID == contentID else { return Self(contentID: contentID) }
+        return self
+    }
 
     mutating func reset(contentID: String) {
         guard self.contentID != contentID else { return }

@@ -185,6 +185,36 @@ import Testing
         #expect(state.contextReveals.isEmpty)
     }
 
+    @Test func replacementDerivesItsInitialPageBeforeStateReset() throws {
+        let original = DiffRenderPresentation(diff: try #require(additionsAndContextDiff(
+            context: (0..<500).map { "context\($0)" },
+            additions: (0..<1_000).map { "original\($0)" })))
+        let replacement = DiffRenderPresentation(diff: try #require(additionsAndContextDiff(
+            context: (0..<500).map { "context\($0)" },
+            additions: (0..<1_000).map { "replacement\($0)" })))
+        let collapsed = try #require(original.rows.first { $0.collapsedContext != nil })
+        let contextCount = try #require(collapsed.collapsedContext?.totalCount)
+        var state = DiffRenderState()
+        state.reset(contentID: original.contentID)
+        var contextReveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+        while contextReveal.canRevealMore(total: contextCount) {
+            contextReveal.revealNextPage(total: contextCount)
+        }
+        state.contextReveals[collapsed.id] = contextReveal
+        let expandedRows = original.rows(revealing: state.contextReveals.mapValues(\.limit))
+        while state.reveal.canRevealMore(total: expandedRows.filter(\.isLine).count) {
+            state.reveal.revealNextPage(total: expandedRows.filter(\.isLine).count)
+        }
+
+        let firstReplacementSlice = replacement.slice(using: state)
+
+        #expect(state.contentID == original.contentID)
+        #expect(firstReplacementSlice.lines.count == 200)
+        #expect(firstReplacementSlice.hasMore)
+        #expect(firstReplacementSlice.rows.first { $0.collapsedContext != nil }?.collapsedContext?.visibleCount == 0)
+        #expect(!firstReplacementSlice.lines.contains { $0.line.text == "replacement194" })
+    }
+
     @Test func cancelledOldTokenizationCannotPublishIntoReplacementContent() async throws {
         let original = DiffRenderPresentation(diff: try #require(singleLineDiff(text: "original")))
         let replacement = DiffRenderPresentation(diff: try #require(singleLineDiff(text: "replacement")))

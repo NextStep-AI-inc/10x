@@ -20,11 +20,15 @@ struct DiffView: View {
     }
 
     private var expandedRows: [DiffRenderRow] {
-        presentation.rows(revealing: renderState.contextReveals.mapValues(\.limit))
+        presentation.rows(revealing: effectiveRenderState.contextReveals.mapValues(\.limit))
     }
 
     private var visibleRows: [DiffRenderRow] {
-        presentation.slice(rows: expandedRows, limit: renderState.reveal.limit).rows
+        presentation.slice(using: renderState).rows
+    }
+
+    private var effectiveRenderState: DiffRenderState {
+        renderState.effective(for: presentation.contentID)
     }
 
     private var visibleLineIDs: [DiffRenderRow.ID] {
@@ -55,17 +59,18 @@ struct DiffView: View {
             fileViews
             ProgressiveRevealButton(
                 reveal: Binding(
-                    get: { renderState.reveal },
-                    set: { renderState.reveal = $0 }),
+                    get: { effectiveRenderState.reveal },
+                    set: {
+                        renderState.reset(contentID: presentation.contentID)
+                        renderState.reveal = $0
+                    }),
                 total: expandedRows.filter(\.isLine).count,
                 noun: "lines",
                 accessibilityNoun: "diff lines")
         }
         .task(id: DiffRenderLoadID(contentID: presentation.contentID, lineIDs: visibleLineIDs)) {
             renderState.reset(contentID: presentation.contentID)
-            let rows = presentation.slice(
-                rows: presentation.rows(revealing: renderState.contextReveals.mapValues(\.limit)),
-                limit: renderState.reveal.limit).rows
+            let rows = presentation.slice(using: renderState).rows
             pageLoader.reset(contentID: presentation.contentID, initialRows: presentation.slice(limit: 200).rows)
             await pageLoader.load(rows: rows, contentID: presentation.contentID)
         }
@@ -146,6 +151,7 @@ struct DiffView: View {
 
     private func collapsedContextView(_ context: DiffRenderCollapsedContext, rowID: DiffRenderRow.ID) -> some View {
         Button(context.visibleCount == 0 ? "Show \(context.count) unchanged lines" : "Show \(min(200, context.count)) more unchanged lines") {
+            renderState.reset(contentID: presentation.contentID)
             var next = renderState.contextReveals[rowID] ?? ProgressiveReveal(initialLimit: 200, pageSize: 200)
             if context.visibleCount > 0 {
                 next.revealNextPage(total: context.totalCount)
