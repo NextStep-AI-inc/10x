@@ -33,6 +33,28 @@ import Testing
     #expect(items.compactMap(message(from:)).first?.document.images.count == 1)
 }
 
+@Test func renderLineageKeyDoesNotChangeMessageSemanticEquality() throws {
+    let raw = try decodeJSON(#"{"role":"assistant","content":"Same"}"#)
+    let beforeTool = TranscriptMessage(
+        id: "assistant-1",
+        raw: raw,
+        isFinal: false,
+        renderLineageKey: TranscriptRenderLineageKey(
+            baseMessageID: "assistant-1",
+            precedingToolCallID: nil,
+            followingToolCallID: "read-1"))
+    let afterTool = TranscriptMessage(
+        id: "assistant-1",
+        raw: raw,
+        isFinal: false,
+        renderLineageKey: TranscriptRenderLineageKey(
+            baseMessageID: "assistant-1",
+            precedingToolCallID: "read-1",
+            followingToolCallID: nil))
+
+    #expect(beforeTool == afterTool)
+}
+
 @Test func normalizerReusesInlineToolExecutionState() throws {
     let completed = ToolPresentation(
         id: "bash-1",

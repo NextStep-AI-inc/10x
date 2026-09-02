@@ -48,12 +48,22 @@ struct TranscriptReducer {
             if Self.isMalformedToolResult(message) { return .none }
             if let mutation = consumeToolResult(message) { return mutation }
             let id = messageID(message)
+            if Self.isCompleteAtStart(message) {
+                return appendCompleteMessage(id: id, raw: message)
+                    ? .immediate
+                    : .none
+            }
             inflightMessageID = id
             _ = replaceInflightMessage(id: id, raw: message, isFinal: false)
             return .immediate
         case "message_update":
             guard let message = payload["message"] else { return .none }
             guard TranscriptMessage.isDisplayable(message) else { return .none }
+            if Self.isCompleteAtStart(message) {
+                return appendCompleteMessage(id: messageID(message), raw: message)
+                    ? .immediate
+                    : .none
+            }
             let id = inflightMessageID ?? messageID(message)
             inflightMessageID = id
             return replaceInflightMessage(id: id, raw: message, isFinal: false) ? .coalesced : .none
@@ -62,6 +72,11 @@ struct TranscriptReducer {
             guard TranscriptMessage.isDisplayable(message) else { return .none }
             if Self.isMalformedToolResult(message) { return .none }
             if let mutation = consumeToolResult(message) { return mutation }
+            if Self.isCompleteAtStart(message) {
+                return appendCompleteMessage(id: messageID(message), raw: message)
+                    ? .immediate
+                    : .none
+            }
             let id = inflightMessageID ?? messageID(message)
             _ = replaceInflightMessage(id: id, raw: message, isFinal: true)
             for item in items {
@@ -371,6 +386,13 @@ struct TranscriptReducer {
             && message["toolCallId"]?.stringValue == nil
     }
 
+    private static func isCompleteAtStart(_ message: JSONValue) -> Bool {
+        switch message["role"]?.stringValue {
+        case "custom", "hookMessage": true
+        default: false
+        }
+    }
+
     private static func toolResultPresentation(
         _ message: JSONValue,
         existingTool: ToolPresentation? = nil,
@@ -522,11 +544,16 @@ struct TranscriptReducer {
             guard case .tool(let tool) = item else { return nil }
             return (tool.id, tool)
         }, uniquingKeysWith: { existing, _ in existing })
+        let previousDocuments = Dictionary(items.compactMap { item -> (TranscriptRenderLineageKey, ContentDocument)? in
+            guard case .message(let message) = item else { return nil }
+            return (message.renderLineageKey, message.document)
+        }, uniquingKeysWith: { existing, _ in existing })
         let normalized = TranscriptMessageNormalizer.items(
             id: id,
             raw: raw,
             isFinal: isFinal,
-            existingTools: existingTools)
+            existingTools: existingTools,
+            previousDocuments: previousDocuments)
         let normalizedIDs = Set(normalized.compactMap(Self.inflightIdentity))
         let insertionIndex = items.firstIndex { item in
             guard let identity = Self.inflightIdentity(for: item) else { return false }
@@ -540,6 +567,21 @@ struct TranscriptReducer {
         items.insert(contentsOf: normalized, at: min(insertionIndex, items.endIndex))
         inflightItemIDs = normalized.compactMap(Self.inflightIdentity)
         return previous != items
+    }
+
+    private mutating func appendCompleteMessage(id: String, raw: JSONValue) -> Bool {
+        let normalized = TranscriptMessageNormalizer.items(
+            id: id,
+            raw: raw,
+            isFinal: true)
+        var changed = false
+        for item in normalized {
+            changed = replaceOrAppend(item) || changed
+            guard case .message(let message) = item else { continue }
+            pendingPersistenceIDs.insert(.message(message.id))
+            pendingMessageFingerprints[message.id] = Self.fingerprint(message)
+        }
+        return changed
     }
 
     private mutating func syntheticID(prefix: String) -> String {

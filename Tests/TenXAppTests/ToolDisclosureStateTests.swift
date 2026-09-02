@@ -85,6 +85,16 @@ import Testing
     #expect(ToolCardScaffoldLayout.minimumDisclosureHitHeight >= 32)
 }
 
+@MainActor @Test func toolCardEqualityTracksOnlyItsPresentation() {
+    let original = tool(id: "read", name: "read", phase: .running)
+    var updated = original
+    updated.result = .string("Complete output")
+    updated.phase = .complete
+
+    #expect(ToolCardView(presentation: original) == ToolCardView(presentation: original))
+    #expect(ToolCardView(presentation: original) != ToolCardView(presentation: updated))
+}
+
 @Test func collapsedToolGroupStaysCollapsedAsToolsUpdateAndAppend() {
     let state = ToolDisclosureState()
     let initialRows = TranscriptPresentationRow.rows(from: [

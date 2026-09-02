@@ -2,6 +2,24 @@ import Testing
 @testable import TenXApp
 
 @Suite struct ProviderUsageRingGeometryTests {
+@Test(arguments: [
+    (3, false, true, true),
+    (0, false, true, false),
+    (3, true, true, false),
+    (3, false, false, false),
+])
+func providerPulseRunsOnlyWhenUseful(
+    activeCount: Int,
+    reduceMotion: Bool,
+    isSceneActive: Bool,
+    expected: Bool
+) {
+    #expect(ProviderActivityAnimation.shouldPulse(
+        activeCount: activeCount,
+        reduceMotion: reduceMotion,
+        isSceneActive: isSceneActive) == expected)
+}
+
 @Test(arguments: [0, 1, 2, 3, 12])
 func providerUsageRingMetricsScaleWithoutDroppingRings(limitCount: Int) {
     let metrics = ProviderUsageRingGeometry.metrics(limitCount: limitCount)

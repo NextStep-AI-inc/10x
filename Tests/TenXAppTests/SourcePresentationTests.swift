@@ -1,16 +1,16 @@
 import Testing
 @testable import TenXApp
 
-@Test func sourcePresentationPreservesIndentationAndSemanticTokens() {
+@Test func sourcePresentationPreservesIndentationAsUntokenizedSource() {
     let source = SourcePresentation(
         language: "swift",
         text: "  let count = 12 // rows")
 
     #expect(source.lines.count == 1)
     #expect(source.lines[0].plainText == "  let count = 12 // rows")
-    #expect(source.lines[0].spans.map(\.role).contains(.keyword))
-    #expect(source.lines[0].spans.map(\.role).contains(.number))
-    #expect(source.lines[0].spans.map(\.role).contains(.comment))
+    #expect(source.lines[0].spans == [
+        SourceSpan(text: "  let count = 12 // rows", role: .plain),
+    ])
 }
 
 @Test func unknownLanguageKeepsReadablePlainSource() {

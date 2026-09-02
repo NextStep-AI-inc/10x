@@ -4,6 +4,7 @@ import SwiftUI
 struct ContentDocumentView: View {
     let document: ContentDocument
     let spacing: CGFloat
+    @State private var renderState = ContentDocumentRenderState()
 
     init(document: ContentDocument, spacing: CGFloat = 10) {
         self.document = document
@@ -11,10 +12,30 @@ struct ContentDocumentView: View {
     }
 
     var body: some View {
+        let effectiveState = renderState.effective(for: document)
+        let total = ContentRenderSlicer.unitCount(document)
+        let slice = ContentRenderSlicer.slice(
+            document,
+            limit: effectiveState.reveal.visibleCount(total: total))
         VStack(alignment: .leading, spacing: spacing) {
-            ForEach(Array(document.blocks.enumerated()), id: \.offset) { _, block in
+            ForEach(Array(slice.document.blocks.enumerated()), id: \.offset) { _, block in
                 MessageBlockView(block: block)
             }
+            if effectiveState.showsRevealControl(total: total) {
+                ProgressiveRevealButton(
+                    reveal: Binding(
+                        get: { effectiveState.reveal },
+                        set: {
+                            renderState = renderState.effective(for: document)
+                            renderState.reveal = $0
+                        }),
+                    total: total,
+                    noun: "items",
+                    accessibilityNoun: "message content")
+            }
+        }
+        .task(id: document.renderVersion) {
+            renderState = renderState.effective(for: document)
         }
     }
 }

@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum TranscriptScrollIntent: Equatable {
+    case automatic
+    case explicit
+}
+
 struct TranscriptView: View {
     static let contentMaxWidth: CGFloat = 860
 
@@ -65,13 +70,13 @@ struct TranscriptView: View {
                 let shouldFollow = !hasPositionedInitialContent || isNearBottom
                 hasPositionedInitialContent = true
                 guard shouldFollow else { return }
-                scroll(proxy, to: lastID)
+                scroll(proxy, to: lastID, intent: .automatic)
             }
             // The indicator is not an item, so its arrival needs its own follow
             // or it appears below the fold on the send that created it.
             .onChange(of: isAwaitingOutput) { _, isAwaiting in
                 guard isAwaiting, isNearBottom else { return }
-                scroll(proxy, to: TurnActivityView.transcriptID)
+                scroll(proxy, to: TurnActivityView.transcriptID, intent: .automatic)
             }
             .overlay(alignment: .bottom) {
                 scrollToBottomButton(proxy, lastID: presentationRows.last?.id)
@@ -85,7 +90,10 @@ struct TranscriptView: View {
     private func scrollToBottomButton(_ proxy: ScrollViewProxy, lastID: String?) -> some View {
         if hasPositionedInitialContent, !isNearBottom, let lastID {
             Button {
-                scroll(proxy, to: isAwaitingOutput ? TurnActivityView.transcriptID : lastID)
+                scroll(
+                    proxy,
+                    to: isAwaitingOutput ? TurnActivityView.transcriptID : lastID,
+                    intent: .explicit)
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down")
@@ -106,14 +114,27 @@ struct TranscriptView: View {
         }
     }
 
-    private func scroll(_ proxy: ScrollViewProxy, to id: String) {
-        if isReduceMotionEnabled {
-            proxy.scrollTo(id, anchor: .bottom)
-        } else {
+    private func scroll(
+        _ proxy: ScrollViewProxy,
+        to id: String,
+        intent: TranscriptScrollIntent
+    ) {
+        if Self.shouldAnimateScroll(
+            intent: intent,
+            isReduceMotionEnabled: isReduceMotionEnabled) {
             withAnimation(.easeOut(duration: 0.15)) {
                 proxy.scrollTo(id, anchor: .bottom)
             }
+        } else {
+            proxy.scrollTo(id, anchor: .bottom)
         }
+    }
+
+    nonisolated static func shouldAnimateScroll(
+        intent: TranscriptScrollIntent,
+        isReduceMotionEnabled: Bool
+    ) -> Bool {
+        intent == .explicit && !isReduceMotionEnabled
     }
 
     private var isAwaitingOutput: Bool {
@@ -192,6 +213,7 @@ struct TranscriptView: View {
             ToolCallGroupView(group: group)
         case .groupedTool(_, let tool):
             ToolCardView(presentation: tool)
+                .equatable()
         }
     }
 
@@ -209,6 +231,7 @@ struct TranscriptView: View {
             .accessibilityLabel(threadStartAccessibilityLabel(date))
         case .message(let message):
             MessageBubbleView(message: message)
+                .equatable()
         case .annotation(let annotation):
             HStack(spacing: 8) {
                 Text(annotation.title)
@@ -241,6 +264,7 @@ struct TranscriptView: View {
             .accessibilityElement(children: .combine)
         case .tool(let presentation):
             ToolCardView(presentation: presentation)
+                .equatable()
         case .extensionUI(let state):
             ApprovalCardView(
                 state: state,

@@ -36,10 +36,12 @@ struct ToolSurfaceView: View {
                 }
             }
         case .empty(let message):
-            Text(message)
-                .font(TenXTypography.body(size: 11))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                .fixedSize(horizontal: false, vertical: true)
+            ProgressiveTextView(text: message, accessibilityNoun: "message characters") { text in
+                Text(text)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         case .privateActivity:
             EmptyView()
         }
@@ -51,27 +53,119 @@ struct ToolSurfaceView: View {
     }
 }
 
+enum ToolSurfacePagination {
+    static let console = ProgressiveReveal(initialLimit: 10, pageSize: 100)
+    static let collection = ProgressiveReveal(initialLimit: 8, pageSize: 50)
+    static let progressHistory = ProgressiveReveal(initialLimit: 8, pageSize: 50)
+    static let jsonChildren = ProgressiveReveal(initialLimit: 12, pageSize: 50)
+    static let jsonScalar = ProgressiveReveal(initialLimit: 2_000, pageSize: 4_000)
+}
+
+typealias ToolMediaLoaderFactory = @MainActor (ToolMediaItem) -> ToolMediaLoader
+
+private struct ToolMediaLoaderFactoryKey: EnvironmentKey {
+    static let defaultValue: ToolMediaLoaderFactory = { _ in ToolMediaLoader() }
+}
+
+extension EnvironmentValues {
+    var toolMediaLoaderFactory: ToolMediaLoaderFactory {
+        get { self[ToolMediaLoaderFactoryKey.self] }
+        set { self[ToolMediaLoaderFactoryKey.self] = newValue }
+    }
+}
+
+struct ConsoleRenderPresentation: Equatable, Sendable {
+    let copyText: String
+    let visibleText: String
+    let accessibilityText: String
+    let lineProgressiveTotal: Int
+    let characterProgressiveTotal: Int
+    let inspectedCharacterCount: Int
+    let inspectedLineCount: Int
+    let materializedCharacterCount: Int
+
+    init(output: String, lineLimit: Int, characterLimit: Int) {
+        copyText = output
+        guard !output.isEmpty else {
+            visibleText = ""
+            accessibilityText = ""
+            lineProgressiveTotal = 0
+            characterProgressiveTotal = 0
+            inspectedCharacterCount = 0
+            inspectedLineCount = 0
+            materializedCharacterCount = 0
+            return
+        }
+
+        let lineLimit = max(0, lineLimit)
+        let characterLimit = max(0, characterLimit)
+        let characterProbeLimit = characterLimit
+            + ProgressiveTextPresentation.initialReveal.pageSize
+            + 1
+        let lineProbeLimit = lineLimit + ToolSurfacePagination.console.pageSize + 1
+        let characterProbe = output.prefix(characterProbeLimit)
+        var observedLineCount = 1
+        var visibleLineEnd: String.Index?
+
+        if lineLimit == 0 {
+            visibleLineEnd = characterProbe.startIndex
+        } else {
+            for index in characterProbe.indices where characterProbe[index] == "\n" {
+                if observedLineCount == lineLimit {
+                    visibleLineEnd = index
+                }
+                observedLineCount += 1
+                if observedLineCount >= lineProbeLimit {
+                    break
+                }
+            }
+        }
+
+        let boundedLineText = String(characterProbe[..<(visibleLineEnd ?? characterProbe.endIndex)])
+        let textPresentation = ProgressiveTextPresentation(
+            text: boundedLineText,
+            characterLimit: characterLimit)
+        let maximumNextLinePage = lineLimit + ToolSurfacePagination.console.pageSize
+
+        visibleText = textPresentation.visibleText
+        accessibilityText = textPresentation.accessibilityText
+        lineProgressiveTotal = min(observedLineCount, maximumNextLinePage)
+        characterProgressiveTotal = textPresentation.progressiveTotal
+        inspectedCharacterCount = characterProbe.count
+        inspectedLineCount = observedLineCount
+        materializedCharacterCount = boundedLineText.count
+    }
+}
+
 private struct ConsoleSurfaceView: View {
     let command: String?
     let output: String
     let exitCode: Int?
 
     @State private var isWrapped = true
-    @State private var isShowingAll = false
-
-    private static let previewLineLimit = 10
+    @State private var lineReveal = ToolSurfacePagination.console
+    @State private var characterReveal = ProgressiveTextPresentation.initialReveal
 
     var body: some View {
+        let presentation = ConsoleRenderPresentation(
+            output: output,
+            lineLimit: lineReveal.limit,
+            characterLimit: characterReveal.limit)
         VStack(alignment: .leading, spacing: 8) {
             if let command, !command.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("COMMAND")
                         .font(TenXTypography.mono(size: 9, weight: .medium))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    Text(command)
-                        .font(TenXTypography.mono(size: 11, weight: .semibold))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ProgressiveTextView(
+                        text: command,
+                        accessibilityNoun: "command characters"
+                    ) { text in
+                        Text(text)
+                            .font(TenXTypography.mono(size: 11, weight: .semibold))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -95,25 +189,29 @@ private struct ConsoleSurfaceView: View {
                         isWrapped.toggle()
                     }
                     .buttonStyle(GhostActionStyle())
-                    Button("Copy") { copy(output) }
+                    Button("Copy") { copy(presentation.copyText) }
                         .buttonStyle(GhostActionStyle())
                 }
                 .font(TenXTypography.mono(size: 10, weight: .medium))
 
-                outputText
-                if hasHiddenLines {
-                    Button(isShowingAll ? "Show less" : "Show all \(lines.count) lines") {
-                        isShowingAll.toggle()
-                    }
-                    .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-                }
+                outputText(presentation.visibleText)
+                    .accessibilityLabel(presentation.accessibilityText)
+                ProgressiveRevealButton(
+                    reveal: $characterReveal,
+                    total: presentation.characterProgressiveTotal,
+                    noun: "characters",
+                    accessibilityNoun: "output characters")
+                ProgressiveRevealButton(
+                    reveal: $lineReveal,
+                    total: presentation.lineProgressiveTotal,
+                    noun: "lines",
+                    accessibilityNoun: "output lines")
             }
         }
     }
 
     @ViewBuilder
-    private var outputText: some View {
-        let text = visibleLines.joined(separator: "\n")
+    private func outputText(_ text: String) -> some View {
         if isWrapped {
             consoleText(text)
         } else {
@@ -132,18 +230,6 @@ private struct ConsoleSurfaceView: View {
             .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
     }
 
-    private var lines: [String] {
-        output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    }
-
-    private var visibleLines: ArraySlice<String> {
-        isShowingAll ? lines[...] : lines.prefix(Self.previewLineLimit)
-    }
-
-    private var hasHiddenLines: Bool {
-        lines.count > Self.previewLineLimit
-    }
-
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
@@ -152,9 +238,7 @@ private struct ConsoleSurfaceView: View {
 
 private struct CollectionSurfaceView: View {
     let items: [ToolCollectionItem]
-    @State private var isShowingAll = false
-
-    private static let previewLimit = 8
+    @State private var reveal = ToolSurfacePagination.collection
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -164,51 +248,66 @@ private struct CollectionSurfaceView: View {
                         if let reference = item.reference {
                             TranscriptReferenceView(reference: reference)
                         } else {
-                            Text(item.label)
-                                .font(TenXTypography.body(size: 11, weight: .semibold))
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
+                            ProgressiveTextView(
+                                text: item.label,
+                                accessibilityNoun: "item label characters"
+                            ) { text in
+                                Text(text)
+                                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         Spacer(minLength: 8)
                         if let state = item.state {
-                            Text(state.replacingOccurrences(of: "_", with: " ").capitalized)
-                                .font(TenXTypography.body(size: 9, weight: .medium))
-                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                            ProgressiveTextView(
+                                text: state,
+                                accessibilityNoun: "item state characters"
+                            ) { text in
+                                Text(text.replacingOccurrences(of: "_", with: " ").capitalized)
+                                    .font(TenXTypography.body(size: 9, weight: .medium))
+                                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                            }
                         }
                     }
                     if let detail = item.detail, !detail.isEmpty {
-                        Text(detail)
-                            .font(TenXTypography.body(size: 10))
-                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
+                        ProgressiveTextView(
+                            text: detail,
+                            accessibilityNoun: "item detail characters"
+                        ) { text in
+                            Text(text)
+                                .font(TenXTypography.body(size: 10))
+                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 .padding(.vertical, 2)
             }
 
-            if items.count > Self.previewLimit {
-                Button(isShowingAll ? "Show fewer" : "Show all \(items.count) items") {
-                    isShowingAll.toggle()
-                }
-                .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-            }
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: items.count,
+                noun: "items",
+                accessibilityNoun: "collection items")
         }
     }
 
     private var visibleItems: [ToolCollectionItem] {
-        isShowingAll ? items : Array(items.prefix(Self.previewLimit))
+        Array(items.prefix(reveal.visibleCount(total: items.count)))
     }
 }
 
 private struct MediaSurfaceView: View {
     let items: [ToolMediaItem]
     let caption: ContentDocument?
+    @Environment(\.toolMediaLoaderFactory) private var makeLoader
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(items) { item in
-                MediaItemView(item: item)
+                MediaItemView(item: item, loader: makeLoader(item))
             }
             if let caption, !caption.blocks.isEmpty {
                 ContentDocumentView(document: caption)
@@ -217,59 +316,50 @@ private struct MediaSurfaceView: View {
     }
 }
 
-private struct MediaItemView: View {
+struct MediaItemView: View {
     let item: ToolMediaItem
     @State private var errorMessage: String?
+    @StateObject private var loader: ToolMediaLoader
 
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.tannerpham.tenx",
         category: "ToolMedia")
 
+    init(item: ToolMediaItem, loader: ToolMediaLoader? = nil) {
+        self.item = item
+        _loader = StateObject(wrappedValue: loader ?? ToolMediaLoader())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let image = localImage {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 200, alignment: .leading)
-                    .accessibilityLabel(item.name ?? "Tool image")
-            } else if let remoteURL {
-                AsyncImage(url: remoteURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView().controlSize(.small)
-                    case .success(let image):
-                        image.resizable().scaledToFit()
-                    case .failure:
-                        unavailablePreview
-                    @unknown default:
-                        unavailablePreview
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 200, alignment: .leading)
-            } else {
-                unavailablePreview
-                DataTreeSurfaceView(label: "Media data", value: fallbackValue)
-            }
+            mediaPreview
 
             HStack(spacing: 8) {
                 if let name = item.name {
-                    Text(name)
-                        .font(TenXTypography.body(size: 10, weight: .semibold))
+                    ProgressiveTextView(
+                        text: name,
+                        accessibilityNoun: "media name characters"
+                    ) { text in
+                        Text(text)
+                            .font(TenXTypography.body(size: 10, weight: .semibold))
+                    }
                 }
                 if let mimeType = item.mimeType {
-                    Text(mimeType)
-                        .font(TenXTypography.mono(size: 9))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    ProgressiveTextView(
+                        text: mimeType,
+                        accessibilityNoun: "media type characters"
+                    ) { text in
+                        Text(text)
+                            .font(TenXTypography.mono(size: 9))
+                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    }
                 }
                 Spacer(minLength: 8)
                 if openURL != nil {
                     Button("Open", action: open)
                         .buttonStyle(GhostActionStyle())
                 }
-                if decodedData != nil {
+                if item.data != nil, loader.decodedData != nil {
                     Button("Save", action: save)
                         .buttonStyle(GhostActionStyle())
                 }
@@ -281,6 +371,58 @@ private struct MediaItemView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
             }
         }
+        .task(id: item.contentID) {
+            guard remoteURL == nil else {
+                loader.cancel()
+                return
+            }
+            await loader.load(item)
+        }
+    }
+
+    @ViewBuilder
+    private var mediaPreview: some View {
+        if let remoteURL {
+            AsyncImage(url: remoteURL) { phase in
+                switch phase {
+                case .empty:
+                    ProgressView().controlSize(.small)
+                case .success(let image):
+                    image.resizable().scaledToFit()
+                case .failure:
+                    unavailablePreview
+                @unknown default:
+                    unavailablePreview
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 200, alignment: .leading)
+        } else {
+            switch loader.state {
+            case .loaded(let media):
+                if let image = media.image {
+                    Image(
+                        image,
+                        scale: 1,
+                        label: Text(boundedAccessibilityText(item.name ?? "Tool image")))
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 200, alignment: .leading)
+                } else {
+                    unavailablePreview
+                    DataTreeSurfaceView(label: "Media data", value: fallbackValue)
+                }
+            case .loading:
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 200, alignment: .leading)
+            case .idle, .unavailable, .failed:
+                unavailablePreview
+                DataTreeSurfaceView(label: "Media data", value: fallbackValue)
+            }
+        }
     }
 
     private var unavailablePreview: some View {
@@ -288,18 +430,6 @@ private struct MediaItemView: View {
             .font(TenXTypography.body(size: 11, weight: .medium))
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             .frame(minHeight: 72)
-    }
-
-    private var decodedData: Data? {
-        guard let value = item.data else { return nil }
-        let payload = value.split(separator: ",", maxSplits: 1).last.map(String.init) ?? value
-        return Data(base64Encoded: payload)
-    }
-
-    private var localImage: NSImage? {
-        if let decodedData, let image = NSImage(data: decodedData) { return image }
-        guard let url = openURL, url.isFileURL else { return nil }
-        return NSImage(contentsOf: url)
     }
 
     private var remoteURL: URL? {
@@ -322,13 +452,19 @@ private struct MediaItemView: View {
         return .object(values)
     }
 
+    private func boundedAccessibilityText(_ text: String) -> String {
+        ProgressiveTextPresentation(
+            text: text,
+            characterLimit: ProgressiveTextPresentation.initialReveal.limit).accessibilityText
+    }
+
     private func open() {
         guard let openURL else { return }
         NSWorkspace.shared.open(openURL)
     }
 
     private func save() {
-        guard let decodedData else { return }
+        guard let decodedData = loader.decodedData else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = item.name ?? "tool-media"
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -345,19 +481,30 @@ private struct MediaItemView: View {
 
 private struct ProgressSurfaceView: View {
     let progress: ToolProgress
+    @State private var historyReveal = ToolSurfacePagination.progressHistory
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(progress.title)
-                    .font(TenXTypography.body(size: 11, weight: .semibold))
-                    .fixedSize(horizontal: false, vertical: true)
+                ProgressiveTextView(
+                    text: progress.title,
+                    accessibilityNoun: "progress title characters"
+                ) { text in
+                    Text(text)
+                        .font(TenXTypography.body(size: 11, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Spacer(minLength: 8)
-                Text(progress.status.replacingOccurrences(of: "_", with: " ").capitalized)
-                    .font(TenXTypography.body(size: 10, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(progress.isFailure
-                        ? TenXPalette.signalRedHex
-                        : TenXPalette.cyanHex))
+                ProgressiveTextView(
+                    text: progress.status,
+                    accessibilityNoun: "progress status characters"
+                ) { text in
+                    Text(text.replacingOccurrences(of: "_", with: " ").capitalized)
+                        .font(TenXTypography.body(size: 10, weight: .medium))
+                        .foregroundStyle(TenXPalette.color(progress.isFailure
+                            ? TenXPalette.signalRedHex
+                            : TenXPalette.cyanHex))
+                }
             }
             if let completed = progress.completed, let total = progress.total {
                 Text("\(completed) of \(total)")
@@ -367,20 +514,39 @@ private struct ProgressSurfaceView: View {
             if let document = progress.document, !document.blocks.isEmpty {
                 ContentDocumentView(document: document, spacing: 8)
             } else if let detail = progress.detail, !detail.isEmpty {
-                Text(detail)
-                    .font(TenXTypography.body(size: 11))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                ProgressiveTextView(
+                    text: detail,
+                    accessibilityNoun: "progress detail characters"
+                ) { text in
+                    Text(text)
+                        .font(TenXTypography.body(size: 11))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if !progress.history.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
-                    ForEach(Array(progress.history.enumerated()), id: \.offset) { _, entry in
-                        Text(entry)
-                            .font(TenXTypography.body(size: 10))
-                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
+                    ForEach(
+                        Array(progress.history.prefix(
+                            historyReveal.visibleCount(total: progress.history.count)).enumerated()),
+                        id: \.offset
+                    ) { _, entry in
+                        ProgressiveTextView(
+                            text: entry,
+                            accessibilityNoun: "progress history characters"
+                        ) { text in
+                            Text(text)
+                                .font(TenXTypography.body(size: 10))
+                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
+                    ProgressiveRevealButton(
+                        reveal: $historyReveal,
+                        total: progress.history.count,
+                        noun: "entries",
+                        accessibilityNoun: "progress history entries")
                 }
             }
         }
@@ -394,9 +560,14 @@ private struct DataTreeSurfaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(label.uppercased())
-                    .font(TenXTypography.mono(size: 9, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                ProgressiveTextView(
+                    text: label,
+                    accessibilityNoun: "data label characters"
+                ) { text in
+                    Text(text.uppercased())
+                        .font(TenXTypography.mono(size: 9, weight: .medium))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                }
                 Spacer(minLength: 8)
                 Button("Copy raw") { copy(prettyJSON(value)) }
                     .buttonStyle(GhostActionStyle())
@@ -411,12 +582,6 @@ private struct DataTreeSurfaceView: View {
 
 enum DataTreeSurfaceLayout {
     static let maximumDepth = 6
-    static let previewChildLimit = 12
-
-    static func visibleChildCount(total: Int, isShowingAll: Bool) -> Int {
-        let boundedTotal = max(0, total)
-        return isShowingAll ? boundedTotal : min(boundedTotal, previewChildLimit)
-    }
 }
 
 private struct JSONValueNode: View {
@@ -425,7 +590,7 @@ private struct JSONValueNode: View {
     let depth: Int
 
     @State private var isExpanded: Bool
-    @State private var isShowingAllChildren = false
+    @State private var childrenReveal = ToolSurfacePagination.jsonChildren
 
     init(label: String?, value: JSONValue, depth: Int) {
         self.label = label
@@ -480,26 +645,28 @@ private struct JSONValueNode: View {
     }
 
     private func visibleChildCount(total: Int) -> Int {
-        DataTreeSurfaceLayout.visibleChildCount(
-            total: total,
-            isShowingAll: isShowingAllChildren)
+        childrenReveal.visibleCount(total: total)
     }
 
     @ViewBuilder
     private func childDisclosure(total: Int, noun: String) -> some View {
-        if total > DataTreeSurfaceLayout.previewChildLimit {
-            Button(isShowingAllChildren ? "Show fewer" : "Show all \(total) \(noun)") {
-                isShowingAllChildren.toggle()
-            }
-            .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-        }
+        ProgressiveRevealButton(
+            reveal: $childrenReveal,
+            total: total,
+            noun: noun,
+            accessibilityNoun: "JSON \(noun)")
     }
 
     private func nodeLabel(_ detail: String) -> some View {
         HStack(spacing: 6) {
             if let label {
-                Text(label)
-                    .font(TenXTypography.mono(size: 10, weight: .semibold))
+                ProgressiveTextView(
+                    text: label,
+                    accessibilityNoun: "JSON label characters"
+                ) { text in
+                    Text(text)
+                        .font(TenXTypography.mono(size: 10, weight: .semibold))
+                }
             }
             Text(detail)
                 .font(TenXTypography.mono(size: 9))
@@ -531,35 +698,57 @@ private struct JSONValueNode: View {
     }
 }
 
+struct DataScalarRenderPresentation: Equatable, Sendable {
+    let visibleText: String
+    let accessibilityText: String
+    let progressiveTotal: Int
+
+    init(text: String, characterLimit: Int) {
+        let textPresentation = ProgressiveTextPresentation(
+            text: text,
+            characterLimit: characterLimit)
+        visibleText = textPresentation.visibleText
+        accessibilityText = textPresentation.accessibilityText
+        progressiveTotal = textPresentation.progressiveTotal
+    }
+}
+
 private struct DataScalarRow: View {
     let label: String?
     let text: String
-    @State private var isExpanded = false
+    @State private var reveal = ToolSurfacePagination.jsonScalar
 
     var body: some View {
+        let presentation = DataScalarRenderPresentation(
+            text: text,
+            characterLimit: reveal.limit)
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let label {
-                    Text(label)
-                        .font(TenXTypography.mono(size: 10, weight: .semibold))
+                    ProgressiveTextView(
+                        text: label,
+                        accessibilityNoun: "JSON label characters"
+                    ) { text in
+                        Text(text)
+                            .font(TenXTypography.mono(size: 10, weight: .semibold))
+                    }
                 }
-                Text(text)
+                Text(presentation.visibleText)
                     .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                    .lineLimit(isExpanded ? nil : 4)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .contextMenu {
                         Button("Copy value") { copy(text) }
                     }
                     .accessibilityAction(named: "Copy value") { copy(text) }
+                    .accessibilityLabel(presentation.accessibilityText)
             }
-            if text.count > 320 {
-                Button(isExpanded ? "Show less" : "Show all") {
-                    isExpanded.toggle()
-                }
-                .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-            }
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: presentation.progressiveTotal,
+                noun: "characters",
+                accessibilityNoun: "JSON characters")
         }
     }
 }
