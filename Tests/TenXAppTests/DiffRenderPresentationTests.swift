@@ -72,6 +72,38 @@ import Testing
         #expect(presentation.lineCount(revealing: [collapsed.id: 1_000]) == 500)
     }
 
+    @Test func revealingMultipleCollapsedContextsPreservesEarlierLinesAndChangedTail() throws {
+        let firstContext = (0..<300).map { " first\($0)" }.joined(separator: "\n")
+        let secondContext = (0..<300).map { " second\($0)" }.joined(separator: "\n")
+        let diff = try #require(UnifiedDiffParser.parse("""
+        --- a/App.swift
+        +++ b/App.swift
+        @@ -1,600 +1,602 @@
+        \(firstContext)
+        +first change
+        \(secondContext)
+        +second change
+        """))
+        let presentation = DiffRenderPresentation(diff: diff)
+        let collapsed = presentation.rows.filter { $0.collapsedContext != nil }
+        let first = try #require(collapsed.first)
+        let second = try #require(collapsed.last)
+        var state = DiffRenderState(contentID: presentation.contentID)
+
+        state = try #require(presentation.revealingNextContext(first.id, from: state))
+        let firstSlice = presentation.slice(using: state)
+        state = try #require(presentation.revealingNextContext(second.id, from: state))
+        let secondSlice = presentation.slice(using: state)
+
+        #expect(collapsed.count == 2)
+        #expect(firstSlice.lines.contains { $0.line.text == "first change" })
+        #expect(firstSlice.lines.contains { $0.line.text == "second change" })
+        #expect(secondSlice.lines.contains { $0.line.text == "first change" })
+        #expect(secondSlice.lines.contains { $0.line.text == "second change" })
+        #expect(secondSlice.rows.first { $0.id == first.id }?.collapsedContext?.visibleCount == 200)
+        #expect(secondSlice.rows.first { $0.id == second.id }?.collapsedContext?.visibleCount == 200)
+    }
+
     @Test func contextPageKeepsItsContinuationInTheFinalGlobalSlice() throws {
         let context = (0..<500).map { " context\($0)" }.joined(separator: "\n")
         let diff = try #require(UnifiedDiffParser.parse("""
@@ -176,19 +208,20 @@ import Testing
         #expect(await loader.cachedLineCount == 8)
     }
 
-    @Test func finalContextPageDoesNotRevealOrTokenizeTheChangedTail() async throws {
+    @Test func finalContextPageDoesNotRevealAdditionalChangedTail() async throws {
         let context = (0..<500).map { " context\($0)" }
         let tail = (0..<1_000).map { "tail\($0)" }
         let presentation = DiffRenderPresentation(diff: try #require(additionsAndContextDiff(
             context: context,
             additions: tail)))
         let collapsed = try #require(presentation.rows.first { $0.collapsedContext != nil })
-        let visibleCount = try #require(collapsed.collapsedContext?.totalCount)
-        let lineLimit = try #require(presentation.lineLimit(
-            throughContext: collapsed.id,
-            visibleCount: visibleCount))
-        let rows = presentation.rows(revealing: [collapsed.id: visibleCount])
-        let slice = presentation.slice(rows: rows, limit: lineLimit)
+        let contextCount = try #require(collapsed.collapsedContext?.totalCount)
+        var state = DiffRenderState(contentID: presentation.contentID)
+        let initialSlice = presentation.slice(using: state)
+        while state.contextReveals[collapsed.id]?.visibleCount(total: contextCount) ?? 0 < contextCount {
+            state = try #require(presentation.revealingNextContext(collapsed.id, from: state))
+        }
+        let slice = presentation.slice(using: state)
         let recorder = TokenizationRecorder()
         let loader = await DiffPageLoader(tokenize: { text, _ in
             recorder.record(text)
@@ -197,10 +230,11 @@ import Testing
 
         await loader.load(rows: slice.rows)
 
-        #expect(lineLimit == 497)
-        #expect(slice.lines.count == 497)
-        #expect(!slice.lines.contains { $0.line.text == "tail0" })
-        #expect(!recorder.contains("tail0"))
+        #expect(initialSlice.lines.contains { $0.line.text == "tail193" })
+        #expect(slice.lines.count == 694)
+        #expect(slice.lines.contains { $0.line.text == "tail193" })
+        #expect(!slice.lines.contains { $0.line.text == "tail194" })
+        #expect(!recorder.contains("tail194"))
     }
 
     @Test func replacementAfterFullExpansionReturnsToTheInitialPage() throws {

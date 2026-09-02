@@ -23,6 +23,11 @@ struct ContentDocumentRenderState: Equatable {
         continued.version = document.renderVersion
         return continued
     }
+
+    func showsRevealControl(total: Int) -> Bool {
+        reveal.canRevealMore(total: total)
+            || reveal.visibleCount(total: total) > reveal.initialLimit
+    }
 }
 
 enum ContentRenderSlicer {

@@ -158,22 +158,9 @@ struct DiffView: View {
 
     private func collapsedContextView(_ context: DiffRenderCollapsedContext, rowID: DiffRenderRow.ID) -> some View {
         Button("Show \(min(200, context.count)) more unchanged lines") {
-            renderState.reset(contentID: presentation.contentID)
-            var next = renderState.contextReveals[rowID] ?? ProgressiveReveal(initialLimit: 200, pageSize: 200)
-            if context.visibleCount > 0 {
-                next.revealNextPage(total: context.totalCount)
+            if let nextState = presentation.revealingNextContext(rowID, from: renderState) {
+                renderState = nextState
             }
-            var nextContextReveals = renderState.contextReveals
-            nextContextReveals[rowID] = next
-            if let requiredLineCount = presentation.lineLimit(
-                throughContext: rowID,
-                visibleCount: next.limit
-            ) {
-                while renderState.reveal.limit < requiredLineCount {
-                    renderState.reveal.revealNextPage(total: requiredLineCount)
-                }
-            }
-            renderState.contextReveals = nextContextReveals
         }
         .font(TenXTypography.mono(size: 10))
         .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))

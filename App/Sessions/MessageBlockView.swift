@@ -21,7 +21,7 @@ struct ContentDocumentView: View {
             ForEach(Array(slice.document.blocks.enumerated()), id: \.offset) { _, block in
                 MessageBlockView(block: block)
             }
-            if slice.hasMore {
+            if effectiveState.showsRevealControl(total: total) {
                 ProgressiveRevealButton(
                     reveal: Binding(
                         get: { effectiveState.reveal },

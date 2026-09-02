@@ -24,4 +24,11 @@ import Testing
         #expect(reveal.visibleCount(total: -5) == 0)
         #expect(reveal.remainingCount(total: -5) == 0)
     }
+
+    @Test func revealCopyUsesSingularNounsForTheFinalItem() {
+        #expect(ProgressiveRevealCopy.label(count: 1, noun: "characters") == "Show 1 more character")
+        #expect(ProgressiveRevealCopy.label(count: 1, noun: "diff line characters") == "Show 1 more diff line character")
+        #expect(ProgressiveRevealCopy.label(count: 2, noun: "characters") == "Show 2 more characters")
+        #expect(ProgressiveRevealCopy.label(count: 4_000, noun: "characters") == "Show 4,000 more characters")
+    }
 }

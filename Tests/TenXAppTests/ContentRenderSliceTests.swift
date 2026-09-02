@@ -108,6 +108,18 @@ import Testing
         #expect(continued.reveal.limit == 320)
     }
 
+    @Test func fullyExpandedDocumentKeepsItsCollapseControl() {
+        let document = largeDocument(prefix: "expanded")
+        let total = ContentRenderSlicer.unitCount(document)
+        var state = ContentDocumentRenderState(document: document)
+        while state.reveal.canRevealMore(total: total) {
+            state.reveal.revealNextPage(total: total)
+        }
+
+        #expect(state.showsRevealControl(total: total))
+        #expect(!state.reveal.canRevealMore(total: total))
+    }
+
     @Test func reconstructedSameSourceResetsTheRevealLimit() {
         let original = largeDocument(prefix: "same")
         let reconstructed = ContentDocument(source: original.source, blocks: original.blocks)

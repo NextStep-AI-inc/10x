@@ -30,6 +30,10 @@ struct ProgressiveReveal: Equatable, Sendable {
         limit = visibleCount(total: total) + nextPageCount(total: total)
     }
 
+    mutating func revealAdditional(_ count: Int, total: Int) {
+        limit = min(max(0, total), visibleCount(total: total) + max(0, count))
+    }
+
     mutating func collapse() {
         limit = initialLimit
     }

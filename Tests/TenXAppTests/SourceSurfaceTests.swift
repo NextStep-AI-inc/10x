@@ -101,11 +101,13 @@ import Testing
             spans: line.spans,
             characterLimit: 2_048)
         let reveal = ProgressiveReveal(initialLimit: 2_048, pageSize: 2_048)
-        let disclosureLabel = "Show \(reveal.nextPageCount(total: presentation.progressiveTotal)) more \(SourceLineRenderPresentation.disclosureAccessibilityNoun)"
+        let disclosureLabel = ProgressiveRevealCopy.label(
+            count: reveal.nextPageCount(total: presentation.progressiveTotal),
+            noun: SourceLineRenderPresentation.disclosureAccessibilityNoun)
 
         #expect(presentation.accessibilityLabel(lineNumber: 7)
             == "Line 7, \(String(repeating: "x", count: 2_048)). Truncated. Show more characters to continue.")
-        #expect(disclosureLabel == "Show 1 more source line characters")
+        #expect(disclosureLabel == "Show 1 more source line character")
     }
 
     @MainActor @Test func sourceCardMountsHugeLineWithFiniteRowAndDisclosure() throws {

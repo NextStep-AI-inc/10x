@@ -49,12 +49,26 @@ struct DiffRenderPresentation: Equatable, Sendable {
         }
     }
 
-    func lineLimit(throughContext rowID: DiffRenderRow.ID, visibleCount: Int) -> Int? {
-        guard let contextIndex = rows.firstIndex(where: { $0.id == rowID }),
-              let context = rows[contextIndex].collapsedContext
-        else { return nil }
-        let leadingLineCount = rows[..<contextIndex].filter(\.isLine).count
-        return leadingLineCount + min(max(0, visibleCount), context.totalCount)
+    func revealingNextContext(
+        _ rowID: DiffRenderRow.ID,
+        from state: DiffRenderState
+    ) -> DiffRenderState? {
+        guard let context = rows.first(where: { $0.id == rowID })?.collapsedContext else {
+            return nil
+        }
+        var nextState = state.effective(for: contentID)
+        let currentLimits = nextState.contextReveals.mapValues(\.limit)
+        let currentCount = min(max(0, currentLimits[rowID] ?? 0), context.totalCount)
+        var contextReveal = nextState.contextReveals[rowID]
+            ?? ProgressiveReveal(initialLimit: 200, pageSize: 200)
+        if nextState.contextReveals[rowID] != nil {
+            contextReveal.revealNextPage(total: context.totalCount)
+        }
+        let nextCount = contextReveal.visibleCount(total: context.totalCount)
+        nextState.contextReveals[rowID] = contextReveal
+        let nextTotal = lineCount(revealing: nextState.contextReveals.mapValues(\.limit))
+        nextState.reveal.revealAdditional(nextCount - currentCount, total: nextTotal)
+        return nextState
     }
 
     func slice(limit: Int) -> DiffRenderSlice {
