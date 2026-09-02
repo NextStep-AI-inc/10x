@@ -217,6 +217,7 @@ private struct MediaSurfaceView: View {
 private struct MediaItemView: View {
     let item: ToolMediaItem
     @State private var errorMessage: String?
+    @StateObject private var loader = ToolMediaLoader()
 
     private static let logger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.tannerpham.tenx",
@@ -224,32 +225,7 @@ private struct MediaItemView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let image = localImage {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 200, alignment: .leading)
-                    .accessibilityLabel(item.name ?? "Tool image")
-            } else if let remoteURL {
-                AsyncImage(url: remoteURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView().controlSize(.small)
-                    case .success(let image):
-                        image.resizable().scaledToFit()
-                    case .failure:
-                        unavailablePreview
-                    @unknown default:
-                        unavailablePreview
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 200, alignment: .leading)
-            } else {
-                unavailablePreview
-                DataTreeSurfaceView(label: "Media data", value: fallbackValue)
-            }
+            mediaPreview
 
             HStack(spacing: 8) {
                 if let name = item.name {
@@ -266,7 +242,7 @@ private struct MediaItemView: View {
                     Button("Open", action: open)
                         .buttonStyle(GhostActionStyle())
                 }
-                if decodedData != nil {
+                if loader.decodedData != nil {
                     Button("Save", action: save)
                         .buttonStyle(GhostActionStyle())
                 }
@@ -278,6 +254,53 @@ private struct MediaItemView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
             }
         }
+        .task(id: item.id) {
+            guard remoteURL == nil else {
+                loader.cancel()
+                return
+            }
+            await loader.load(item)
+        }
+    }
+
+    @ViewBuilder
+    private var mediaPreview: some View {
+        if let remoteURL {
+            AsyncImage(url: remoteURL) { phase in
+                switch phase {
+                case .empty:
+                    ProgressView().controlSize(.small)
+                case .success(let image):
+                    image.resizable().scaledToFit()
+                case .failure:
+                    unavailablePreview
+                @unknown default:
+                    unavailablePreview
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 200, alignment: .leading)
+        } else {
+            switch loader.state {
+            case .loaded(let media):
+                if let image = media.image {
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 200, alignment: .leading)
+                        .accessibilityLabel(item.name ?? "Tool image")
+                } else {
+                    unavailablePreview
+                    DataTreeSurfaceView(label: "Media data", value: fallbackValue)
+                }
+            case .loading:
+                ProgressView().controlSize(.small)
+            case .idle, .unavailable, .failed:
+                unavailablePreview
+                DataTreeSurfaceView(label: "Media data", value: fallbackValue)
+            }
+        }
     }
 
     private var unavailablePreview: some View {
@@ -285,18 +308,6 @@ private struct MediaItemView: View {
             .font(TenXTypography.body(size: 11, weight: .medium))
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             .frame(minHeight: 72)
-    }
-
-    private var decodedData: Data? {
-        guard let value = item.data else { return nil }
-        let payload = value.split(separator: ",", maxSplits: 1).last.map(String.init) ?? value
-        return Data(base64Encoded: payload)
-    }
-
-    private var localImage: NSImage? {
-        if let decodedData, let image = NSImage(data: decodedData) { return image }
-        guard let url = openURL, url.isFileURL else { return nil }
-        return NSImage(contentsOf: url)
     }
 
     private var remoteURL: URL? {
@@ -325,7 +336,7 @@ private struct MediaItemView: View {
     }
 
     private func save() {
-        guard let decodedData else { return }
+        guard let decodedData = loader.decodedData else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = item.name ?? "tool-media"
         guard panel.runModal() == .OK, let url = panel.url else { return }
