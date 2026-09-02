@@ -71,7 +71,10 @@ struct TranscriptView: View {
                 scroll(proxy, to: TurnActivityView.transcriptID, intent: .automatic)
             }
             // Picks up the stored mode on open, and any change made from
-            // another window while this transcript is on screen.
+            // another window while this transcript is on screen. Unanimated on
+            // purpose: `initial: true` fires on open, and animating there would
+            // play every card opening as the transcript appears. Only an
+            // explicit selection animates, in `select(_:)`.
             .onChange(of: detailPreference?.mode ?? .auto, initial: true) { _, mode in
                 disclosureState.setMode(mode)
             }
