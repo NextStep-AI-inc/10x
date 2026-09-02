@@ -71,6 +71,17 @@ import Testing
 }
 
 @MainActor
+@Test func onboardingInstallStepPagedLogSnapshot() throws {
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: (0..<400).map { "Installer line \($0)" })
+            .padding(56),
+        name: "onboarding-install-paged-log",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
 @Test func onboardingProjectStepEmptySnapshot() throws {
     // A genuine first-run user: no sessions, so no suggestions. No disk
     // scan runs, so this settles synchronously.

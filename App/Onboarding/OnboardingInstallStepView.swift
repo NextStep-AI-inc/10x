@@ -27,7 +27,10 @@ enum OnboardingInstallPhase: Equatable, Sendable {
 struct OnboardingInstallStepView: View {
     let model: AppModel
 
-    @State private var log: [String]
+    @State private var logBuffer: OnboardingInstallLogBuffer
+    @State private var logReveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+    @State private var isAtLiveTail = true
+    @State private var hasPositionedLog = false
     @State private var phase: OnboardingInstallPhase
     @State private var didFail = false
     @State private var installTask: Task<Void, Never>?
@@ -38,7 +41,12 @@ struct OnboardingInstallStepView: View {
         initialPhase: OnboardingInstallPhase = .idle
     ) {
         self.model = model
-        _log = State(initialValue: initialLog)
+        let buffer = OnboardingInstallLogBuffer()
+        for line in initialLog {
+            buffer.append(line)
+        }
+        buffer.flush()
+        _logBuffer = State(initialValue: buffer)
         _phase = State(initialValue: initialPhase)
     }
 
@@ -48,7 +56,7 @@ struct OnboardingInstallStepView: View {
                 installedCard
             } else {
                 commandCard
-                if !log.isEmpty { logView }
+                if logBuffer.totalCount > 0 { logView }
                 if phase == .verifying {
                     Text("Installed. Checking that OMP runs, then continuing.")
                         .font(TenXTypography.body(size: 13))
@@ -131,42 +139,92 @@ struct OnboardingInstallStepView: View {
     }
 
     private var logView: some View {
-        ScrollViewReader { proxy in
+        let lines = logBuffer.visibleTail(limit: logReveal.visibleCount(total: logBuffer.totalCount))
+        return ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(log.enumerated()), id: \.offset) { entry in
-                        Text(entry.element)
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 12) {
+                        if logReveal.canRevealMore(total: logBuffer.totalCount) {
+                            Button("Show \(logReveal.nextPageCount(total: logBuffer.totalCount)) older lines") {
+                                logReveal.revealNextPage(total: logBuffer.totalCount)
+                            }
+                            .buttonStyle(GhostActionStyle(horizontalPadding: 0))
+                        }
+                        Button("Copy") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(logBuffer.completeText, forType: .string)
+                        }
+                        .buttonStyle(GhostActionStyle(horizontalPadding: 0))
+                    }
+                    ForEach(lines) { line in
+                        Text(line.text)
                             .font(TenXTypography.mono())
                             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(entry.offset)
+                            .id(line.id)
                     }
                 }
             }
             .frame(height: 126)
-            .onChange(of: log.count) { _, count in
-                proxy.scrollTo(count - 1, anchor: .bottom)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                TranscriptView.shouldFollowBottom(
+                    contentOffset: geometry.contentOffset.y,
+                    containerHeight: geometry.containerSize.height,
+                    contentHeight: geometry.contentSize.height)
+            } action: { _, isNearBottom in
+                isAtLiveTail = isNearBottom
+            }
+            .onAppear {
+                guard !hasPositionedLog, let lastLine = lines.last else { return }
+                hasPositionedLog = true
+                proxy.scrollTo(lastLine.id, anchor: .bottom)
+            }
+            .onChange(of: logBuffer.flushRevision) { _, _ in
+                guard isAtLiveTail, let lastLine = lines.last else { return }
+                hasPositionedLog = true
+                proxy.scrollTo(lastLine.id, anchor: .bottom)
             }
         }
     }
 
     private func install() {
-        log = []
+        logBuffer.reset()
+        logReveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+        isAtLiveTail = true
+        hasPositionedLog = false
         didFail = false
         phase = .installing
         installTask = Task {
-            var succeeded = true
             do {
-                for try await line in OmpInstallRunner().run() { log.append(line) }
+                for try await line in OmpInstallRunner().run() {
+                    guard !Task.isCancelled else {
+                        logBuffer.flush()
+                        phase = .idle
+                        return
+                    }
+                    logBuffer.append(line)
+                }
+                guard !Task.isCancelled else {
+                    logBuffer.flush()
+                    phase = .idle
+                    return
+                }
+                logBuffer.flush()
+                phase = OnboardingInstallPhase.afterScript(succeeded: true)
             } catch {
+                logBuffer.flush()
+                guard !Task.isCancelled else {
+                    phase = .idle
+                    return
+                }
                 didFail = true
-                succeeded = false
+                phase = OnboardingInstallPhase.afterScript(succeeded: false)
             }
-            phase = OnboardingInstallPhase.afterScript(succeeded: succeeded)
             // Advance only once discovery finds a runnable executable, never on
             // the script's own success line.
             await model.useOmp()
+            guard !Task.isCancelled else { return }
             phase = phase.afterDiscovery()
         }
     }

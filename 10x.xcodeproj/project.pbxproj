@@ -33,6 +33,7 @@
 		12E40621ED0C51BCF102D670A7E8B023 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13E32214A370E0E3329B1786F2A08B4 /* AppModel.swift */; };
 		16227F7A3F65DE75B91ABF6F77D31CFF /* FileReferenceResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */; };
 		175942C869C877CD39AA31473861FA1B /* ProviderManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C62FABF4DCE1A61B0AF5B1A62E89D4A /* ProviderManaging.swift */; };
+		17E4CC50D2CBB20C3ACC2D8EB9E721BA /* OnboardingInstallLogBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DBC57C8FAC7040E884E8E191B76538 /* OnboardingInstallLogBuffer.swift */; };
 		1954B339DE6721B7C932C909D4274CF5 /* ExtensionUIRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA28DA0E2B373FCE0E1CCB026D76B4C0 /* ExtensionUIRouter.swift */; };
 		1BC473F161411225EFE82C5325A20CC3 /* DiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02AC7D19DF24FEC5EB46B95DA8E9833 /* DiffView.swift */; };
 		1C537CAEC7398A7946038A0217946A49 /* SessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FCE005EDE56CD93F1447FFBE253CC50 /* SessionControllerTests.swift */; };
@@ -104,6 +105,7 @@
 		52A780991B123C29F5E7B88B165F0D88 /* FileReferenceLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69EC4224D86689BF1A5D2D37996F7381 /* FileReferenceLabel.swift */; };
 		535A5C281EB24D42B6F4FDE0A55198AD /* TranscriptItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0256F4BEBCCEA41B65D70F361AB00E82 /* TranscriptItem.swift */; };
 		5488E1F2CF78CB353AF4BCA945D477F4 /* SubagentCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4189572ADC0A7941A0F0EEE6AA2F4A5B /* SubagentCardView.swift */; };
+		54F23E423C8EE2A917F16DD1E718B046 /* OnboardingInstallLogBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBF342A3273EB8D374E590F316C7160 /* OnboardingInstallLogBufferTests.swift */; };
 		554B3302515CD1DAA8102A70B4040F30 /* ProviderAccountExtensionBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B0322E1325F18FCF109B4220397D11F /* ProviderAccountExtensionBackend.swift */; };
 		566CFAF9B3FC51F49F17828D614F1CD5 /* NewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10501AD41B3A5052F923723AA964D9BA /* NewSessionView.swift */; };
 		586B36675B07BC04D1669E266E80ECD7 /* AppMenuStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5365A56E06B384ED01F176781B986C50 /* AppMenuStateTests.swift */; };
@@ -380,6 +382,7 @@
 		2C022EA303C797FAFC9B23070ABC372A /* ToolSurfaceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolSurfaceView.swift; path = App/Tools/ToolSurfaceView.swift; sourceTree = "<group>"; };
 		2C740EB3BFFB8C4981F658850367095A /* AccessibilityAnnouncerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AccessibilityAnnouncerTests.swift; path = Tests/TenXAppTests/AccessibilityAnnouncerTests.swift; sourceTree = "<group>"; };
 		2D00098D3C78890E281C7F7E302E1ECC /* Fixtures */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = Fixtures; path = Tests/TenXAppTests/Fixtures; sourceTree = "<group>"; };
+		2DBF342A3273EB8D374E590F316C7160 /* OnboardingInstallLogBufferTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingInstallLogBufferTests.swift; path = Tests/TenXAppTests/OnboardingInstallLogBufferTests.swift; sourceTree = "<group>"; };
 		2DFBA50E93FE68B650E3DA47C2736F1D /* SearchResult.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SearchResult.swift; path = App/Search/SearchResult.swift; sourceTree = "<group>"; };
 		2E403B13EEC1C85CBA3FA9C86C96BB9E /* TenXTypography.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TenXTypography.swift; path = App/Design/TenXTypography.swift; sourceTree = "<group>"; };
 		30792BD1DA4BEEB76B9E4309B28E6E30 /* ToolContentExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolContentExtractor.swift; path = App/Tools/ToolContentExtractor.swift; sourceTree = "<group>"; };
@@ -564,6 +567,7 @@
 		B8616EC88E0EB73D54822BD51EEFFBFB /* SessionTimelineLoaderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionTimelineLoaderTests.swift; path = Tests/TenXAppTests/SessionTimelineLoaderTests.swift; sourceTree = "<group>"; };
 		B90820BF93AB26DD47FB66B51F4406A7 /* SettingRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingRowView.swift; path = App/Settings/SettingRowView.swift; sourceTree = "<group>"; };
 		B9319E4E7CCAD5F4188FC30AB93456D7 /* ProviderUsageDockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageDockView.swift; path = App/Providers/ProviderUsageDockView.swift; sourceTree = "<group>"; };
+		B9DBC57C8FAC7040E884E8E191B76538 /* OnboardingInstallLogBuffer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingInstallLogBuffer.swift; path = App/Onboarding/OnboardingInstallLogBuffer.swift; sourceTree = "<group>"; };
 		BB43F424A6A27983B5BB253D4CE75AC4 /* RailPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailPresentation.swift; path = App/Shell/RailPresentation.swift; sourceTree = "<group>"; };
 		BC82A22B2AB1B4AF8D75C32BD1574437 /* BrandWordmark.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BrandWordmark.swift; path = App/Design/BrandWordmark.swift; sourceTree = "<group>"; };
 		BC831AF3F8003EF46E92EFAC4B8FB7B7 /* OnboardingProjectStepView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingProjectStepView.swift; path = App/Onboarding/OnboardingProjectStepView.swift; sourceTree = "<group>"; };
@@ -691,6 +695,7 @@
 				70480B74480456F9EB012E088B3F9F93 /* IDERegistry.swift */,
 				057AE3CA7D4C2D4EFA57DC366AF00A4C /* ResolvedFileReference.swift */,
 				6A5EFE24321255DEC8BA5A09321DED2A /* OmpInstallRunner.swift */,
+				B9DBC57C8FAC7040E884E8E191B76538 /* OnboardingInstallLogBuffer.swift */,
 				E3ECECFABB6616F750627C367980EFB9 /* OnboardingInstallStepView.swift */,
 				BC831AF3F8003EF46E92EFAC4B8FB7B7 /* OnboardingProjectStepView.swift */,
 				4F284392DF7E6DF2AD2E527E583F3AF1 /* OnboardingRowView.swift */,
@@ -892,6 +897,7 @@
 				389574CB72DFAC381539C82CD3C76C48 /* OmpInstallRunnerTests.swift */,
 				AAFBBED38B16D04D458AE4051169E7E7 /* OmpProcessEnvironmentTests.swift */,
 				FFDF2B4BFB3C0920EC62965FF97FD1E2 /* OmpUsageServiceTests.swift */,
+				2DBF342A3273EB8D374E590F316C7160 /* OnboardingInstallLogBufferTests.swift */,
 				1EF69D68CDAC979D339A885DB18E85B2 /* OnboardingRoutingTests.swift */,
 				984CBA3F4504C89EBB8D2BBF6710E709 /* OnboardingStepTests.swift */,
 				EDFF67A9D90589ECD9B4DBF77A72E1D3 /* PreferredIDESettingRowTests.swift */,
@@ -1143,6 +1149,7 @@
 				39AF91ADA09EAC0132F6EC7C1F794C9B /* IDERegistry.swift in Sources */,
 				E79A8E9DA355A3C39496EED749EC2D66 /* ResolvedFileReference.swift in Sources */,
 				B10D96A5A4B1DC8F58D7E1F1733FD1DB /* OmpInstallRunner.swift in Sources */,
+				17E4CC50D2CBB20C3ACC2D8EB9E721BA /* OnboardingInstallLogBuffer.swift in Sources */,
 				760FE41B795ED04BBD48D5ECD85AF164 /* OnboardingInstallStepView.swift in Sources */,
 				3E962389C87ADF7942BE2F90BF9034EC /* OnboardingProjectStepView.swift in Sources */,
 				AF0F0A8C1DDFF0EB5E5FE11D566B9453 /* OnboardingRowView.swift in Sources */,
@@ -1331,6 +1338,7 @@
 				9A259655895AFF86AECBCBEBDF2B6719 /* OmpInstallRunnerTests.swift in Sources */,
 				7BECCB08079C63A9C43A2F2B87F53AC9 /* OmpProcessEnvironmentTests.swift in Sources */,
 				AE83F5D331201C1E5D98FF0455A78609 /* OmpUsageServiceTests.swift in Sources */,
+				54F23E423C8EE2A917F16DD1E718B046 /* OnboardingInstallLogBufferTests.swift in Sources */,
 				E41203435B01C45D9A52D8EBB1D1F10B /* OnboardingRoutingTests.swift in Sources */,
 				98267A87836F5D958C782955A673A3C7 /* OnboardingStepTests.swift in Sources */,
 				A5C7CC305635633BBA38B8B7F0C82938 /* PreferredIDESettingRowTests.swift in Sources */,
