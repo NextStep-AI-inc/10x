@@ -196,6 +196,40 @@ import Testing
     #expect(messages.map(\.visibleText) == ["Provider unavailable", "Response aborted."])
 }
 
+@Test func historyMapperRestoresDisplayedCustomMessagesInTimelineOrder() throws {
+    let header = SessionHeader(
+        id: "session-skill",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let skillBase = historyBase("skill-1", nil, 1)
+    let entries: [SessionEntry] = [
+        .unknown(
+            type: "custom_message",
+            base: skillBase,
+            raw: try historyJSON(##"{"type":"custom_message","id":"skill-1","parentId":null,"timestamp":"2026-08-24T20:00:01.000Z","customType":"skill-prompt","display":true,"attribution":"user","content":"# Skill\n\nFollow these instructions."}"##)),
+        .message(
+            base: historyBase("assistant-1", "skill-1", 2),
+            message: try historyJSON(#"{"role":"assistant","content":"Starting work."}"#)),
+    ]
+
+    let messages = TranscriptHistoryMapper.map(
+        header: header,
+        path: entries).items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item else { return nil }
+            return message
+        }
+
+    #expect(messages.map(\.id) == ["skill-1", "assistant-1"])
+    #expect(messages[0].role == .other)
+    #expect(messages[0].visibleText == "# Skill\n\nFollow these instructions.")
+    #expect(messages[0].isFinal)
+    #expect(messages[0].timestamp == historyDate(1))
+}
+
 private func historyBase(_ id: String, _ parentID: String?, _ second: Int) -> SessionEntryBase {
     SessionEntryBase(
         id: id,

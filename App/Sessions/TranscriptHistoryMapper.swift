@@ -54,6 +54,9 @@ enum TranscriptHistoryMapper {
                     detail: branch.summary,
                     timestamp: TranscriptHistoryMapper.date(from: base.timestamp),
                     tone: .neutral))
+            case .unknown("custom_message", let base, .object(var message)):
+                message["role"] = .string("custom")
+                consumeMessage(base: base, message: .object(message))
             case .labelEntry, .resetBoundary, .unknown:
                 break
             }
