@@ -16,6 +16,7 @@ struct DiffView: View {
         let presentation = DiffRenderPresentation(diff: diff)
         self.presentation = presentation
         _pageLoader = StateObject(wrappedValue: DiffPageLoader(
+            contentID: presentation.contentID,
             initialRows: presentation.slice(limit: 200).rows))
     }
 
@@ -59,8 +60,9 @@ struct DiffView: View {
                 noun: "lines",
                 accessibilityNoun: "diff lines")
         }
-        .task(id: visibleLineIDs) {
-            await pageLoader.load(rows: visibleRows)
+        .task(id: DiffRenderLoadID(contentID: presentation.contentID, lineIDs: visibleLineIDs)) {
+            pageLoader.reset(contentID: presentation.contentID, initialRows: presentation.slice(limit: 200).rows)
+            await pageLoader.load(rows: visibleRows, contentID: presentation.contentID)
         }
     }
 
@@ -143,7 +145,14 @@ struct DiffView: View {
             if context.visibleCount > 0 {
                 next.revealNextPage(total: context.totalCount)
             }
-            contextReveals[rowID] = next
+            var nextContextReveals = contextReveals
+            nextContextReveals[rowID] = next
+            let expandedRows = presentation.rows(revealing: nextContextReveals.mapValues(\.limit))
+            let requiredLineCount = expandedRows.prefix { $0.id != rowID }.filter(\.isLine).count
+            while reveal.limit < requiredLineCount {
+                reveal.revealNextPage(total: requiredLineCount)
+            }
+            contextReveals = nextContextReveals
         }
         .font(TenXTypography.mono(size: 10))
         .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
@@ -162,7 +171,7 @@ struct DiffView: View {
                 .frame(width: 10)
                 .foregroundStyle(color(for: line.kind))
             SourceTextView(
-                spans: pageLoader.spans(for: rowID) ?? [SourceSpan(text: line.text, role: .plain)],
+                spans: pageLoader.spans(for: rowID, contentID: presentation.contentID) ?? [SourceSpan(text: line.text, role: .plain)],
                 isWrapped: isWrapped)
                 .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
         }
@@ -236,4 +245,9 @@ private struct DiffRenderHunkSection: Identifiable {
     let id: DiffRenderRow.ID
     let header: DiffRenderHunkHeader
     var rows: [DiffRenderRow]
+}
+
+private struct DiffRenderLoadID: Equatable {
+    let contentID: String
+    let lineIDs: [DiffRenderRow.ID]
 }

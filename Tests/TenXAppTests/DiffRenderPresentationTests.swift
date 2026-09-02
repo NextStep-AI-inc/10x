@@ -54,6 +54,77 @@ import Testing
         #expect(rows.filter(\.isLine).count == 206)
         #expect(rows.first { $0.id == collapsed.id }?.collapsedContext?.count == 294)
     }
+
+    @Test func contextPageKeepsItsContinuationInTheFinalGlobalSlice() throws {
+        let context = (0..<500).map { " context\($0)" }.joined(separator: "\n")
+        let diff = try #require(UnifiedDiffParser.parse("""
+        --- a/App.swift
+        +++ b/App.swift
+        @@ -1,500 +1,500 @@
+        \(context)
+        """))
+        let presentation = DiffRenderPresentation(diff: diff)
+        let collapsed = try #require(presentation.rows.first { $0.collapsedContext != nil })
+        let expandedRows = presentation.rows(revealing: [collapsed.id: 200])
+        let finalSlice = presentation.slice(rows: expandedRows, limit: 203)
+
+        #expect(finalSlice.lines.count == 203)
+        #expect(finalSlice.rows.first { $0.id == collapsed.id }?.collapsedContext?.visibleCount == 200)
+        #expect(finalSlice.rows.first { $0.id == collapsed.id }?.collapsedContext?.count == 294)
+    }
+
+    @Test func contentReplacementResetsAndReprimesSameShapedRows() async throws {
+        let original = DiffRenderPresentation(diff: try #require(singleLineDiff(text: "original")))
+        let replacement = DiffRenderPresentation(diff: try #require(singleLineDiff(text: "replacement")))
+        let originalRows = original.slice(limit: 200).rows
+        let replacementRows = replacement.slice(limit: 200).rows
+        let loader = await DiffPageLoader(
+            contentID: original.contentID,
+            initialRows: originalRows,
+            tokenize: { text, _ in [SourceSpan(text: text, role: .plain)] })
+
+        await loader.reset(contentID: replacement.contentID, initialRows: replacementRows)
+
+        guard let replacementLine = replacementRows.first(where: { $0.isLine }) else {
+            Issue.record("Expected replacement line")
+            return
+        }
+        #expect(original.contentID != replacement.contentID)
+        #expect(await loader.spans(for: replacementLine.id, contentID: replacement.contentID) == [
+            SourceSpan(text: "replacement", role: .plain),
+        ])
+    }
+
+    @Test func initialCacheDefersEveryRowAfterAnOversizedFirstLine() async throws {
+        let source = DiffRenderPresentation(diff: try #require(additionsDiff(lines: [
+            String(repeating: "a", count: 2_049),
+            "deferred",
+        ])))
+        let recorder = TokenizationRecorder()
+        let loader = await DiffPageLoader(initialRows: source.slice(limit: 200).rows, tokenize: { text, _ in
+            recorder.record(text)
+            return [SourceSpan(text: text, role: .plain)]
+        })
+
+        #expect(await loader.cachedLineCount == 0)
+        #expect(recorder.count == 0)
+    }
+
+    @Test func initialCacheStopsAtTheTotalCharacterCeiling() async throws {
+        let ceilingLine = String(repeating: "b", count: 2_048)
+        let source = DiffRenderPresentation(diff: try #require(additionsDiff(lines: Array(
+            repeating: ceilingLine,
+            count: 8) + ["deferred"])))
+        let recorder = TokenizationRecorder()
+        let loader = await DiffPageLoader(initialRows: source.slice(limit: 200).rows, tokenize: { text, _ in
+            recorder.record(text)
+            return [SourceSpan(text: text, role: .plain)]
+        })
+
+        #expect(await loader.cachedLineCount == 8)
+        #expect(recorder.count == 8)
+        #expect(!recorder.contains("deferred"))
+    }
 }
 
 private final class TokenizationRecorder: @unchecked Sendable {
@@ -87,4 +158,22 @@ private func largeDiff(fileCount: Int, changedLinesPerFile: Int) -> UnifiedDiff?
         """
     }.joined(separator: "\n")
     return UnifiedDiffParser.parse(raw)
+}
+
+private func singleLineDiff(text: String) -> UnifiedDiff? {
+    UnifiedDiffParser.parse("""
+    --- a/App.swift
+    +++ b/App.swift
+    @@ -0,0 +1 @@
+    +\(text)
+    """)
+}
+
+private func additionsDiff(lines: [String]) -> UnifiedDiff? {
+    UnifiedDiffParser.parse("""
+    --- a/App.swift
+    +++ b/App.swift
+    @@ -0,0 +1,\(lines.count) @@
+    \(lines.map { "+\($0)" }.joined(separator: "\n"))
+    """)
 }

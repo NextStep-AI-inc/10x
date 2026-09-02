@@ -3,32 +3,64 @@ import Foundation
 
 @MainActor final class DiffPageLoader: ObservableObject {
     typealias Tokenizer = @Sendable (String, String?) -> [SourceSpan]
+    private static let initialRowLimit = 200
+    private static let initialCharacterLimit = 16_384
+    private static let initialLineCharacterLimit = 2_048
 
     @Published private(set) var cachedSpans: [DiffRenderRow.ID: [SourceSpan]] = [:]
     private let tokenize: Tokenizer
+    private var contentID: String
     private var tokenizationTask: Task<[DiffRenderRow.ID: [SourceSpan]], Never>?
     private var activeTokenizationID: UUID?
 
     init(
+        contentID: String = "",
         initialRows: [DiffRenderRow] = [],
         tokenize: @escaping Tokenizer = { text, language in
             SourceTokenizer.spans(text, language: language)
         }
     ) {
+        self.contentID = contentID
         self.tokenize = tokenize
-        for row in initialRows.lazy.filter(\.isLine).prefix(200) {
+        cache(initialRows)
+    }
+
+    func reset(contentID: String, initialRows: [DiffRenderRow]) {
+        guard self.contentID != contentID else { return }
+        tokenizationTask?.cancel()
+        activeTokenizationID = nil
+        cachedSpans = [:]
+        self.contentID = contentID
+        cache(initialRows)
+    }
+
+    private func cache(_ rows: [DiffRenderRow]) {
+        var cachedCharacterCount = 0
+        for row in rows.lazy.filter(\.isLine).prefix(Self.initialRowLimit) {
             guard let line = row.line else { continue }
-            cachedSpans[row.id] = tokenize(line.line.text, line.language)
+            let text = line.line.text
+            let lineLimitIndex = text.index(
+                text.startIndex,
+                offsetBy: Self.initialLineCharacterLimit,
+                limitedBy: text.endIndex
+            )
+            guard lineLimitIndex == nil || lineLimitIndex == text.endIndex else { return }
+            let characterCount = text.count
+            guard characterCount <= Self.initialCharacterLimit - cachedCharacterCount else { return }
+            cachedSpans[row.id] = tokenize(text, line.language)
+            cachedCharacterCount += characterCount
         }
     }
 
     var cachedLineCount: Int { cachedSpans.count }
 
-    func spans(for rowID: DiffRenderRow.ID) -> [SourceSpan]? {
-        cachedSpans[rowID]
+    func spans(for rowID: DiffRenderRow.ID, contentID: String) -> [SourceSpan]? {
+        guard self.contentID == contentID else { return nil }
+        return cachedSpans[rowID]
     }
 
-    func load(rows: [DiffRenderRow]) async {
+    func load(rows: [DiffRenderRow], contentID: String = "") async {
+        guard contentID.isEmpty || contentID == self.contentID else { return }
         let missingRows = rows.compactMap { row -> (DiffRenderRow.ID, DiffRenderLine)? in
             guard let line = row.line, cachedSpans[row.id] == nil else { return nil }
             return (row.id, line)

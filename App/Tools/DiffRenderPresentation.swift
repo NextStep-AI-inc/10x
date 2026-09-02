@@ -1,4 +1,5 @@
 struct DiffRenderPresentation: Equatable, Sendable {
+    let contentID: String
     let rows: [DiffRenderRow]
     private let fileHeaders: [Int: DiffRenderFileHeader]
     private let hunkHeaders: [DiffRenderRow.HunkID: DiffRenderHunkHeader]
@@ -22,6 +23,7 @@ struct DiffRenderPresentation: Equatable, Sendable {
                 }
             }
         }
+        self.contentID = diff.raw
         self.rows = rows
         self.fileHeaders = fileHeaders
         self.hunkHeaders = hunkHeaders
@@ -48,9 +50,16 @@ struct DiffRenderPresentation: Equatable, Sendable {
         let visibleLineCount = min(max(0, limit), lineRows.count)
         guard visibleLineCount > 0,
               let finalLine = lineRows.indices.dropFirst(visibleLineCount - 1).first,
-              let finalIndex = rows.firstIndex(where: { $0.id == lineRows[finalLine].id })
+              let finalLineIndex = rows.firstIndex(where: { $0.id == lineRows[finalLine].id })
         else {
             return DiffRenderSlice(rows: [], hasMore: !lineRows.isEmpty)
+        }
+        let finalIndex: Int
+        let nextIndex = rows.index(after: finalLineIndex)
+        if nextIndex < rows.endIndex, rows[nextIndex].collapsedContext != nil {
+            finalIndex = nextIndex
+        } else {
+            finalIndex = finalLineIndex
         }
         return DiffRenderSlice(
             rows: sectionedRows(Array(rows[...finalIndex])), 
