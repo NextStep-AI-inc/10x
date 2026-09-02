@@ -43,7 +43,8 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         timestamp: Date? = nil,
         attribution: TranscriptResponseAttribution = .none,
         isFinal: Bool,
-        showsResponseMetadata: Bool = true
+        showsResponseMetadata: Bool = true,
+        previousDocument: ContentDocument? = nil
     ) {
         self.id = id
         let rawRole = raw["role"]?.stringValue
@@ -79,9 +80,11 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         }
         // Keyed on blocks, not source: an image-only message has parsed content
         // and no text, and re-parsing would throw the image away.
-        document = normalizedDocument.blocks.isEmpty
+        let candidateDocument = normalizedDocument.blocks.isEmpty
             ? MessageContentParser.parse(displayText)
             : normalizedDocument
+        document = previousDocument.map(candidateDocument.assigningRenderLineage(after:))
+            ?? candidateDocument
     }
 
     /// omp injects steering text into the run as `custom` / `hookMessage`

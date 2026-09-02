@@ -52,6 +52,44 @@ import Testing
         #expect(reveal.nextPageCount(total: next.progressiveTotal) == 2_048)
     }
 
+    @Test func finalSourceLinePageAdvertisesItsExactSingleCharacter() {
+        let line = SourceLine(number: 1, text: String(repeating: "x", count: 2_049))
+        let presentation = SourceLineRenderPresentation(
+            line: line,
+            spans: line.spans,
+            characterLimit: 2_048)
+        let reveal = ProgressiveReveal(initialLimit: 2_048, pageSize: 2_048)
+
+        #expect(presentation.progressiveTotal == 2_049)
+        #expect(reveal.nextPageCount(total: presentation.progressiveTotal) == 1)
+    }
+
+    @Test func sourceLineLookaheadNeverAdvertisesBeyondTheNextPage() {
+        let line = SourceLine(number: 1, text: String(repeating: "x", count: 100_000))
+        let presentation = SourceLineRenderPresentation(
+            line: line,
+            spans: line.spans,
+            characterLimit: 2_048)
+        let reveal = ProgressiveReveal(initialLimit: 2_048, pageSize: 2_048)
+
+        #expect(presentation.progressiveTotal == 4_096)
+        #expect(reveal.nextPageCount(total: presentation.progressiveTotal) == 2_048)
+    }
+
+    @Test func sourceLineAccessibilityPresentationIsFiniteAndQuantitySpecific() {
+        let line = SourceLine(number: 7, text: String(repeating: "x", count: 2_049))
+        let presentation = SourceLineRenderPresentation(
+            line: line,
+            spans: line.spans,
+            characterLimit: 2_048)
+        let reveal = ProgressiveReveal(initialLimit: 2_048, pageSize: 2_048)
+        let disclosureLabel = "Show \(reveal.nextPageCount(total: presentation.progressiveTotal)) more \(SourceLineRenderPresentation.disclosureAccessibilityNoun)"
+
+        #expect(presentation.accessibilityLabel(lineNumber: 7)
+            == "Line 7, \(String(repeating: "x", count: 2_048)). Truncated. Show more characters to continue.")
+        #expect(disclosureLabel == "Show 1 more source line characters")
+    }
+
     @MainActor @Test func sourceCardMountsHugeLineWithFiniteRowAndDisclosure() throws {
         let source = SourcePresentation(
             language: "swift",

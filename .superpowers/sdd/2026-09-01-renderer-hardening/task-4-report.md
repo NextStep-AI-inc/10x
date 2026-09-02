@@ -262,3 +262,66 @@ passed; the generator added only SourceSurfaceTests.swift entries.
 - SourceLineRenderPresentation only joins its already prefix-bounded spans;
   accessibility never reads SourceLine.plainText. The existing full source
   payload remains bound to Copy.
+
+## Fix Round 4
+
+### Findings addressed
+
+1. ContentDocument now carries collision-safe immediate-predecessor lineage in
+   addition to its render UUID. TranscriptReducer snapshots the document for
+   each stable message/segment ID before normalizing an inflight replacement.
+   Identical semantic documents reuse the previous version, strict appends name
+   exactly that previous version, and replacements start a lineage with no
+   predecessor. ContentDocumentRenderState therefore decides in O(1): retain
+   for the same version or its recorded immediate predecessor, otherwise reset
+   to 160 units.
+2. Source-line disclosure now probes only through current limit plus one page
+   plus one character. A 2,049-character line advertises exactly one remaining
+   character, while longer lines advertise at most the 2,048-character next
+   page. The finite row label is applied to the row HStack only; the progressive
+   reveal button remains its separately focusable, quantity-specific sibling.
+
+### RED
+
+The focused RED run at /tmp/10x-task4-fix4-red.log failed with the new lineage
+regressions because ContentDocument had neither predecessorRenderVersion nor
+assigningRenderLineage(after:). The tests were written before the production
+implementation and cover skipped versus persisted immediate predecessors,
+rapid inflight suffix replacement, exact stable segment identities, identical
+finalization, exact 2,049-character disclosure, and bounded longer-line totals.
+
+### GREEN and verification
+
+ContentRenderSliceTests and SourceSurfaceTests passed 19 tests in 2 suites at
+/tmp/10x-task4-fix4-focused.log. Relevant ViewSnapshotTests and
+RendererPaginationTests passed 19 tests in 2 suites at
+/tmp/10x-task4-fix4-snapshots.log, with no reference or asset changes. The full
+suite passed 1,158 tests in 25 suites at
+/tmp/10x-task4-fix4-full-suite.log. The Release build passed at
+/tmp/10x-task4-fix4-release-build.log. After the build,
+bundle exec ruby scripts/generate_xcodeproj.rb, a byte-diff check of
+project.pbxproj, and git diff --check all passed; the generated project was
+unchanged.
+
+The mounted production SourceCard regression remains green for a
+100,000-character line. A bounded AppKit fallback using both
+accessibilityChildren and accessibilityChildrenInNavigationOrder exposed no
+mounted descendants from NSHostingView, including after attaching it to an
+NSWindow. Per the review stop condition, the hierarchy contract is additionally
+covered by the pure finite row-label and quantity-specific button-label/count
+assertion; no unreliable host-introspection assertion remains.
+
+### Self-review
+
+- Semantic Equatable behavior is unchanged: render UUID and predecessor UUID
+  do not participate. Slices explicitly preserve both values.
+- Full semantic and source-prefix comparisons occur only while constructing a
+  replacement document. SwiftUI reconciliation performs UUID comparisons only
+  and cannot infer lineage from task ordering.
+- Segment lineage is keyed by the normalizer's existing stable message IDs, so
+  each visible segment can only inherit from the same prior segment. A topology
+  change that changes segment ordinal intentionally starts fresh rather than
+  inheriting unrelated reveal state.
+- The Release build still emits existing Swift concurrency warnings in
+  MessageBlockView and ModelPickerFlyout; this round introduced no new build
+  warnings.

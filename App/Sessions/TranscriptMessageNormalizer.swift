@@ -9,6 +9,7 @@ enum TranscriptMessageNormalizer {
         attribution: TranscriptResponseAttribution = .none,
         isFinal: Bool,
         existingTools: [String: ToolPresentation] = [:],
+        previousDocuments: [String: ContentDocument] = [:],
         fallbackDate: Date = Date()
     ) -> [TranscriptItem] {
         guard raw["role"]?.stringValue == "assistant",
@@ -19,7 +20,8 @@ enum TranscriptMessageNormalizer {
                 raw: raw,
                 timestamp: timestamp,
                 attribution: attribution,
-                isFinal: isFinal)
+                isFinal: isFinal,
+                previousDocument: previousDocuments[id])
             let retainsPlaceholder = message.role == .assistant && !isFinal
             return shouldEmit(message, raw: raw) || retainsPlaceholder
                 ? [.message(message)]
@@ -49,7 +51,8 @@ enum TranscriptMessageNormalizer {
                     raw: raw,
                     timestamp: timestamp,
                     attribution: attribution,
-                    isFinal: isFinal)
+                    isFinal: isFinal,
+                    previousDocuments: previousDocuments)
                 blockRun.removeAll(keepingCapacity: true)
                 result.append(.tool(tool))
             } else {
@@ -65,7 +68,8 @@ enum TranscriptMessageNormalizer {
             raw: raw,
             timestamp: timestamp,
             attribution: attribution,
-            isFinal: isFinal)
+            isFinal: isFinal,
+            previousDocuments: previousDocuments)
 
         let terminalFailure = isTerminalFailure(raw)
         if !hasVisibleMessage, terminalFailure {
@@ -75,7 +79,10 @@ enum TranscriptMessageNormalizer {
                 timestamp: timestamp,
                 attribution: attribution,
                 isFinal: isFinal,
-                showsResponseMetadata: true)
+                showsResponseMetadata: true,
+                previousDocument: previousDocuments[segmentID(
+                    base: id,
+                    ordinal: visibleSegment)])
             result.append(.message(failure))
         } else if result.isEmpty, content.isEmpty, !isFinal {
             let placeholder = TranscriptMessage(
@@ -84,7 +91,8 @@ enum TranscriptMessageNormalizer {
                 timestamp: timestamp,
                 attribution: attribution,
                 isFinal: isFinal,
-                showsResponseMetadata: true)
+                showsResponseMetadata: true,
+                previousDocument: previousDocuments[id])
             result.append(.message(placeholder))
         }
         return result
@@ -99,19 +107,22 @@ enum TranscriptMessageNormalizer {
         raw: JSONValue,
         timestamp: Date?,
         attribution: TranscriptResponseAttribution,
-        isFinal: Bool
+        isFinal: Bool,
+        previousDocuments: [String: ContentDocument]
     ) {
         guard !blocks.isEmpty else { return }
         guard case .object(var messageObject) = raw else { return }
         messageObject["content"] = .array(blocks)
         let messageRaw = JSONValue.object(messageObject)
+        let messageID = segmentID(base: id, ordinal: visibleSegment)
         let candidate = TranscriptMessage(
-            id: segmentID(base: id, ordinal: visibleSegment),
+            id: messageID,
             raw: messageRaw,
             timestamp: timestamp,
             attribution: attribution,
             isFinal: isFinal,
-            showsResponseMetadata: !hasVisibleMessage)
+            showsResponseMetadata: !hasVisibleMessage,
+            previousDocument: previousDocuments[messageID])
         guard shouldEmitVisible(candidate, raw: messageRaw) else { return }
         result.append(.message(candidate))
         hasVisibleMessage = true

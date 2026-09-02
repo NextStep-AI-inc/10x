@@ -187,6 +187,63 @@ import Testing
     #expect(!message.isFinal)
 }
 
+@Test func rapidInflightReplacementUsesOnlyItsImmediateSemanticPredecessor() throws {
+    var reducer = TranscriptReducer()
+
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Prefix"}]}}
+        """))
+    let original = try #require(message(withID: "m1", in: reducer.items))
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Prefix draft"}]}}
+        """))
+    let intermediate = try #require(message(withID: "m1", in: reducer.items))
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Prefix final"}]}}
+        """))
+    let replacement = try #require(message(withID: "m1", in: reducer.items))
+
+    #expect(intermediate.document.predecessorRenderVersion == original.document.renderVersion)
+    #expect(replacement.document.predecessorRenderVersion == nil)
+    #expect(replacement.document.renderVersion != intermediate.document.renderVersion)
+}
+
+@Test func inflightSegmentsAssignLineageByStableSegmentID() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Before"},{"type":"toolCall","id":"read-1","name":"read","arguments":{}},{"type":"text","text":"After"}]}}
+        """))
+    let firstBefore = try #require(message(withID: "assistant-1", in: reducer.items))
+    let firstAfter = try #require(message(withID: "assistant-1-segment-1", in: reducer.items))
+
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Before appended"},{"type":"toolCall","id":"read-1","name":"read","arguments":{}},{"type":"text","text":"After appended"}]}}
+        """))
+    let secondBefore = try #require(message(withID: "assistant-1", in: reducer.items))
+    let secondAfter = try #require(message(withID: "assistant-1-segment-1", in: reducer.items))
+
+    #expect(secondBefore.document.predecessorRenderVersion == firstBefore.document.renderVersion)
+    #expect(secondAfter.document.predecessorRenderVersion == firstAfter.document.renderVersion)
+    #expect(secondBefore.document.predecessorRenderVersion != firstAfter.document.renderVersion)
+    #expect(secondAfter.document.predecessorRenderVersion != firstBefore.document.renderVersion)
+}
+
+@Test func identicalInflightFinalizationReusesTheDocumentVersion() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Complete"}]}}
+        """))
+    let inflight = try #require(message(withID: "m1", in: reducer.items))
+
+    reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Complete"}],"stopReason":"stop"}}
+        """))
+    let final = try #require(message(withID: "m1", in: reducer.items))
+
+    #expect(final.document.renderVersion == inflight.document.renderVersion)
+    #expect(final.document.predecessorRenderVersion == inflight.document.predecessorRenderVersion)
+}
+
 @Test func liveAssistantToolSegmentsStayInSourceOrderAndUpdateInPlace() throws {
     var reducer = TranscriptReducer()
     let assistant = """
@@ -699,6 +756,13 @@ private func eventFrame(_ json: String) throws -> RpcFrame {
 
 private func message(_ json: String) throws -> JSONValue {
     try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))
+}
+
+private func message(withID id: String, in items: [TranscriptItem]) -> TranscriptMessage? {
+    items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item, message.id == id else { return nil }
+        return message
+    }.first
 }
 
 @Test func steeringMessagesOmpHidesNeverReachTheTranscript() {

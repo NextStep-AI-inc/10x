@@ -59,11 +59,13 @@ import Testing
         #expect(source.lines == Array(original.lines.prefix(30)))
         #expect(source.contentID == original.contentID)
         #expect(slice.document.renderVersion == document.renderVersion)
+        #expect(slice.document.predecessorRenderVersion == document.predecessorRenderVersion)
     }
 
-    @Test func sourceAppendKeepsTheExistingDocumentRevealLimit() {
+    @Test func directPredecessorAppendKeepsTheExistingDocumentRevealLimit() {
         let original = largeDocument(prefix: "original")
         let appended = MessageContentParser.parse(original.source + "\n\nappended")
+            .assigningRenderLineage(after: original)
         var state = ContentDocumentRenderState()
         state = state.effective(for: original)
         state.reveal.revealNextPage(total: ContentRenderSlicer.unitCount(original))
@@ -74,6 +76,25 @@ import Testing
         #expect(ContentRenderSlicer.slice(
             appended,
             limit: continued.reveal.limit).consumedUnits == 320)
+    }
+
+    @Test func skippedImmediatePredecessorResetsUntilItIsPersisted() {
+        let original = largeDocument(prefix: "original")
+        let intermediate = MessageContentParser.parse(original.source + "\n\nintermediate")
+            .assigningRenderLineage(after: original)
+        let latest = MessageContentParser.parse(intermediate.source + "\n\nlatest")
+            .assigningRenderLineage(after: intermediate)
+        var originalState = ContentDocumentRenderState(document: original)
+        originalState.reveal.revealNextPage(total: ContentRenderSlicer.unitCount(original))
+
+        let skippedIntermediate = originalState.effective(for: latest)
+        let persistedIntermediate = originalState.effective(for: intermediate)
+            .effective(for: latest)
+
+        #expect(intermediate.predecessorRenderVersion == original.renderVersion)
+        #expect(latest.predecessorRenderVersion == intermediate.renderVersion)
+        #expect(skippedIntermediate.reveal.limit == 160)
+        #expect(persistedIntermediate.reveal.limit == 320)
     }
 
     @Test func sameDocumentVersionKeepsTheExistingRevealLimit() {

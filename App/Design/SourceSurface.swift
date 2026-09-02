@@ -501,6 +501,8 @@ private struct SourceLineID: Hashable {
 }
 
 struct SourceLineRenderPresentation: Equatable, Sendable {
+    static let disclosureAccessibilityNoun = "source line characters"
+
     let spans: [SourceSpan]
     let visibleText: String
     let accessibilityText: String
@@ -512,8 +514,14 @@ struct SourceLineRenderPresentation: Equatable, Sendable {
         self.spans = Self.prefix(spans, characterLimit: limit)
         visibleText = self.spans.map(\.text).joined()
         accessibilityText = visibleText
-        hasMore = line.characterCount(cappedAt: limit + 1) > limit
-        progressiveTotal = hasMore ? limit + pageSize : limit
+        let boundedCount = line.characterCount(cappedAt: limit + pageSize + 1)
+        hasMore = boundedCount > limit
+        progressiveTotal = hasMore ? min(boundedCount, limit + pageSize) : limit
+    }
+
+    func accessibilityLabel(lineNumber: Int) -> String {
+        "Line \(lineNumber), \(accessibilityText)"
+            + (hasMore ? ". Truncated. Show more characters to continue." : "")
     }
 
     private static func prefix(_ spans: [SourceSpan], characterLimit: Int) -> [SourceSpan] {
@@ -553,17 +561,15 @@ struct SourceLineView: View {
                 SourceTextView(spans: presentation.spans, isWrapped: isWrapped)
                     .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(presentation.accessibilityLabel(lineNumber: line.number))
             ProgressiveRevealButton(
                 reveal: $reveal,
                 total: presentation.progressiveTotal,
                 noun: "characters",
-                accessibilityNoun: "source line characters")
+                accessibilityNoun: SourceLineRenderPresentation.disclosureAccessibilityNoun)
         }
         .frame(minHeight: 16, alignment: .topLeading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "Line \(line.number), \(presentation.accessibilityText)"
-                + (presentation.hasMore ? ". Truncated. Show more characters to continue." : ""))
     }
 }
 

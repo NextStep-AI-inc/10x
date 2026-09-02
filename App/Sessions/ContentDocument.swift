@@ -4,11 +4,18 @@ struct ContentDocument: Equatable, Sendable {
     let source: String
     let blocks: [ContentBlock]
     let renderVersion: UUID
+    let predecessorRenderVersion: UUID?
 
-    init(source: String, blocks: [ContentBlock], renderVersion: UUID = UUID()) {
+    init(
+        source: String,
+        blocks: [ContentBlock],
+        renderVersion: UUID = UUID(),
+        predecessorRenderVersion: UUID? = nil
+    ) {
         self.source = source
         self.blocks = blocks
         self.renderVersion = renderVersion
+        self.predecessorRenderVersion = predecessorRenderVersion
     }
 
     static let empty = ContentDocument(source: "", blocks: [])
@@ -26,6 +33,24 @@ struct ContentDocument: Equatable, Sendable {
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.source == rhs.source && lhs.blocks == rhs.blocks
+    }
+
+    func assigningRenderLineage(after previous: Self) -> Self {
+        if self == previous {
+            return Self(
+                source: source,
+                blocks: blocks,
+                renderVersion: previous.renderVersion,
+                predecessorRenderVersion: previous.predecessorRenderVersion)
+        }
+        guard source.count > previous.source.count,
+              source.hasPrefix(previous.source)
+        else { return self }
+        return Self(
+            source: source,
+            blocks: blocks,
+            renderVersion: renderVersion,
+            predecessorRenderVersion: previous.renderVersion)
     }
 }
 
