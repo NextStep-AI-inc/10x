@@ -108,24 +108,34 @@ actor TranscriptEventProcessor {
     }
 
     func setRuntimeState(_ state: SessionRuntimeState) {
-        guard !isStopped, reducer.runtimeState != state else { return }
+        guard !isStopped else { return }
+        let pending = drainPendingMessageUpdate()
+        guard reducer.runtimeState != state else {
+            publish(pending)
+            return
+        }
         reducer.runtimeState = state
-        publishNow()
+        publish(combinedMutation(pending, .immediate))
     }
 
     func upsertExtensionUI(_ state: ExtensionUIState) {
         guard !isStopped else { return }
-        publish(reducer.upsertExtensionUI(state))
+        let pending = drainPendingMessageUpdate()
+        publish(combinedMutation(pending, reducer.upsertExtensionUI(state)))
     }
 
     func removeExtensionUI(id: String) {
         guard !isStopped else { return }
-        publish(reducer.removeExtensionUI(id: id))
+        let pending = drainPendingMessageUpdate()
+        publish(combinedMutation(pending, reducer.removeExtensionUI(id: id)))
     }
 
     func appendNotice(level: String, message: String) {
         guard !isStopped else { return }
-        publish(reducer.appendNotice(level: level, message: message))
+        let pending = drainPendingMessageUpdate()
+        publish(combinedMutation(
+            pending,
+            reducer.appendNotice(level: level, message: message)))
     }
 
     func reconcile(

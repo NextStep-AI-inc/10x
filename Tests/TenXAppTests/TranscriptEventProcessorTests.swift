@@ -68,6 +68,99 @@ import Testing
     await processor.stop()
 }
 
+@Test func currentSnapshotDrainsPendingUpdateWithoutAdvancingRevision() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    let initial = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
+
+    await processor.consume(try event("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Current"}]}}
+        """))
+    let timerToken = await processor.testingTimerGeneration()
+    #expect(await processor.testingMessageUpdateReductionCount() == 0)
+
+    let current = await processor.currentSnapshot()
+    #expect(current.revision == initial.revision)
+    #expect(current.visibleText(for: "m1") == "Current")
+    #expect(await processor.testingMessageUpdateReductionCount() == 1)
+
+    let published = try #require(await processor.flush())
+    #expect(published.revision == initial.revision + 1)
+    #expect(published.visibleText(for: "m1") == "Current")
+    await processor.testingPublishScheduled(token: timerToken)
+    #expect(await processor.flush() == nil)
+    await processor.stop()
+}
+
+@Test func reconciliationDrainsPendingUpdateBeforeApplyingHistory() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
+
+    await processor.consume(try event("""
+        {"type":"message_update","message":{"id":"live","role":"assistant","content":[{"type":"text","text":"Live draft"}]}}
+        """))
+    await processor.reconcile(
+        TranscriptHistory(items: [messageItem(id: "persisted", text: "Persisted")]),
+        hasWarning: false,
+        generation: 1)
+
+    let snapshot = await processor.currentSnapshot()
+    #expect(await processor.testingMessageUpdateReductionCount() == 1)
+    #expect(snapshot.items.map(\.id) == ["persisted", "live"])
+    #expect(snapshot.visibleText(for: "live") == "Live draft")
+    await processor.stop()
+}
+
+@Test func stoppingProcessorPublishesNewestPendingUpdateBeforeFinishing() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
+    var snapshots = processor.snapshots.makeAsyncIterator()
+
+    await processor.consume(try event("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Newest before stop"}]}}
+        """))
+    #expect(await processor.testingMessageUpdateReductionCount() == 0)
+    await processor.stop()
+
+    let final = try #require(await snapshots.next())
+    #expect(await processor.testingMessageUpdateReductionCount() == 1)
+    #expect(final.visibleText(for: "m1") == "Newest before stop")
+    #expect(await snapshots.next() == nil)
+}
+
+@Test func authoritativeLoadDiscardsPreloadPendingUpdate() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
+    await processor.consume(try event("""
+        {"type":"message_update","message":{"id":"stale","role":"assistant","content":[{"type":"text","text":"Stale"}]}}
+        """))
+
+    let loaded = await processor.load(
+        .history(TranscriptHistory(items: [messageItem(id: "authoritative", text: "Loaded")])),
+        threadStartDate: nil,
+        hasReconciliationWarning: false,
+        runtimeState: .idle)
+
+    #expect(await processor.testingMessageUpdateReductionCount() == 0)
+    #expect(loaded.items.map(\.id) == ["authoritative"])
+    #expect(loaded.visibleText(for: "stale") == nil)
+    await processor.stop()
+}
+
+@Test func directTranscriptMutationCannotOvertakePendingUpdate() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
+    await processor.consume(try event("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Earlier"}]}}
+        """))
+
+    await processor.appendNotice(level: "info", message: "Later")
+
+    let snapshot = await processor.currentSnapshot()
+    #expect(await processor.testingMessageUpdateReductionCount() == 1)
+    #expect(snapshot.items.map(\.id) == ["m1", "notice-1"])
+    await processor.stop()
+}
+
 @Test func coalescedPublicationNeverExceedsTwentyPerSecond() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .milliseconds(50))
     _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
@@ -120,6 +213,7 @@ import Testing
         """))
 
     let snapshot = try #require(await snapshots.next())
+    #expect(await processor.testingMessageUpdateReductionCount() == 1)
     #expect(snapshot.visibleText(for: "m1") == "Final")
     guard case .event(let type, _) = try #require(await controls.next()) else {
         Issue.record("Expected message_end control event")
@@ -143,6 +237,7 @@ import Testing
         """))
 
     let snapshot = try #require(await snapshots.next())
+    #expect(await processor.testingMessageUpdateReductionCount() == 1)
     #expect(snapshot.revision > initial.revision)
     #expect(snapshot.visibleText(for: "m1") == "Draft")
     #expect(await processor.currentSnapshot() == snapshot)
