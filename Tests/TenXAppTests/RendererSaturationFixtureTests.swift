@@ -31,8 +31,8 @@ struct RendererSaturationFixtureTests {
 
         await loader.load(rows: initialSlice.rows, contentID: presentation.contentID)
 
-        #expect(await loader.cachedLineCount == 200)
-        #expect(work.count == 200)
+        #expect(await loader.cachedLineCount == 199)
+        #expect(work.count == 199)
         #expect(work.mainThreadCount == 0)
         #expect(!work.contains("let file0Value200"))
 
@@ -42,8 +42,8 @@ struct RendererSaturationFixtureTests {
 
         #expect(expandedSlice.lines.count == 400)
         #expect(expandedSlice.hasMore)
-        #expect(await loader.cachedLineCount == 400)
-        #expect(work.count == 400)
+        #expect(await loader.cachedLineCount == 399)
+        #expect(work.count == 399)
         #expect(work.mainThreadCount == 0)
         #expect(!work.contains("let file0Value400"))
         #expect(!work.contains("let file9Value999"))
@@ -281,8 +281,8 @@ struct RendererSaturationFixtureTests {
             lines: initialSource.lines,
             language: source.language,
             contentID: source.contentID)
-        #expect(await loader.cachedLineCount == 160)
-        #expect(work.count == 160)
+        #expect(await loader.cachedLineCount == 159)
+        #expect(work.count == 159)
         #expect(work.mainThreadCount == 0)
         #expect(!work.contains("let sourceLine160"))
 
@@ -297,8 +297,8 @@ struct RendererSaturationFixtureTests {
         #expect(expandedSlice.consumedUnits == 320)
         #expect(expandedSlice.hasMore)
         #expect(expandedSource.lines.count == 320)
-        #expect(await loader.cachedLineCount == 320)
-        #expect(work.count == 320)
+        #expect(await loader.cachedLineCount == 319)
+        #expect(work.count == 319)
         #expect(work.mainThreadCount == 0)
         #expect(!work.contains("let sourceLine320"))
     }

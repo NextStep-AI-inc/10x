@@ -62,9 +62,17 @@ import Foundation
     func load(rows: [DiffRenderRow], contentID: UUID? = nil) async {
         let requestedContentID = contentID ?? self.contentID
         guard requestedContentID == self.contentID else { return }
-        let missingRows = rows.compactMap { row -> (DiffRenderRow.ID, DiffRenderLine)? in
-            guard let line = row.line, cachedSpans[row.id] == nil else { return nil }
-            return (row.id, line)
+        var characterCount = 0
+        var missingRows: [(DiffRenderRow.ID, DiffRenderLine)] = []
+        for row in rows where cachedSpans[row.id] == nil {
+            guard missingRows.count < Self.initialRowLimit else { break }
+            guard let line = row.line else { continue }
+            let lineCharacterCount = line.line.text.prefix(
+                Self.initialLineCharacterLimit + 1).count
+            guard lineCharacterCount <= Self.initialLineCharacterLimit else { continue }
+            guard lineCharacterCount <= Self.initialCharacterLimit - characterCount else { break }
+            missingRows.append((row.id, line))
+            characterCount += lineCharacterCount
         }
         guard !missingRows.isEmpty else { return }
 

@@ -5,6 +5,8 @@ struct DiffRenderPresentation: Equatable, Sendable {
     let rows: [DiffRenderRow]
     private let fileHeaders: [Int: DiffRenderFileHeader]
     private let hunkHeaders: [DiffRenderRow.HunkID: DiffRenderHunkHeader]
+    private let baseLineCount: Int
+    private let collapsedLineCounts: [DiffRenderRow.ID: Int]
 
     init(diff: UnifiedDiff) {
         var rows: [DiffRenderRow] = []
@@ -29,6 +31,10 @@ struct DiffRenderPresentation: Equatable, Sendable {
         self.rows = rows
         self.fileHeaders = fileHeaders
         self.hunkHeaders = hunkHeaders
+        baseLineCount = rows.lazy.filter(\.isLine).count
+        collapsedLineCounts = Dictionary(uniqueKeysWithValues: rows.compactMap { row in
+            row.collapsedContext.map { (row.id, $0.totalCount) }
+        })
     }
 
     func rows(revealing limits: [DiffRenderRow.ID: Int]) -> [DiffRenderRow] {
@@ -52,34 +58,89 @@ struct DiffRenderPresentation: Equatable, Sendable {
     }
 
     func slice(limit: Int) -> DiffRenderSlice {
-        slice(rows: rows, limit: limit)
+        slice(revealing: [:], limit: limit)
     }
 
     func slice(using state: DiffRenderState) -> DiffRenderSlice {
         let effectiveState = state.effective(for: contentID)
-        let expandedRows = rows(revealing: effectiveState.contextReveals.mapValues(\.limit))
-        return slice(rows: expandedRows, limit: effectiveState.reveal.limit)
+        return slice(
+            revealing: effectiveState.contextReveals.mapValues(\.limit),
+            limit: effectiveState.reveal.limit)
+    }
+
+    func lineCount(revealing limits: [DiffRenderRow.ID: Int]) -> Int {
+        limits.reduce(into: baseLineCount) { count, entry in
+            guard let total = collapsedLineCounts[entry.key] else { return }
+            count += min(max(0, entry.value), total)
+        }
     }
 
     func slice(rows: [DiffRenderRow], limit: Int) -> DiffRenderSlice {
-        let lineRows = rows.filter(\.isLine)
-        let visibleLineCount = min(max(0, limit), lineRows.count)
-        guard visibleLineCount > 0,
-              let finalLine = lineRows.indices.dropFirst(visibleLineCount - 1).first,
-              let finalLineIndex = rows.firstIndex(where: { $0.id == lineRows[finalLine].id })
-        else {
-            return DiffRenderSlice(rows: [], hasMore: !lineRows.isEmpty)
-        }
-        let finalIndex: Int
-        let nextIndex = rows.index(after: finalLineIndex)
-        if nextIndex < rows.endIndex, rows[nextIndex].collapsedContext != nil {
-            finalIndex = nextIndex
-        } else {
-            finalIndex = finalLineIndex
+        let boundedLimit = max(0, limit)
+        var visibleRows: [DiffRenderRow] = []
+        var visibleLineCount = 0
+        var hasMore = false
+        for row in rows {
+            if row.isLine {
+                guard visibleLineCount < boundedLimit else {
+                    hasMore = true
+                    break
+                }
+                visibleRows.append(row)
+                visibleLineCount += 1
+            } else if visibleLineCount < boundedLimit || row.collapsedContext != nil {
+                visibleRows.append(row)
+            }
         }
         return DiffRenderSlice(
-            rows: sectionedRows(Array(rows[...finalIndex])),
-            hasMore: visibleLineCount < lineRows.count)
+            rows: sectionedRows(visibleRows),
+            hasMore: hasMore)
+    }
+
+    private func slice(
+        revealing limits: [DiffRenderRow.ID: Int],
+        limit: Int
+    ) -> DiffRenderSlice {
+        let total = lineCount(revealing: limits)
+        let boundedLimit = min(max(0, limit), total)
+        var visibleRows: [DiffRenderRow] = []
+        var visibleLineCount = 0
+
+        for row in rows {
+            if row.isLine {
+                guard visibleLineCount < boundedLimit else { break }
+                visibleRows.append(row)
+                visibleLineCount += 1
+                continue
+            }
+            guard let context = row.collapsedContext else { continue }
+            let requestedCount = min(
+                max(0, limits[row.id] ?? 0),
+                context.totalCount)
+            let visibleCount = min(
+                requestedCount,
+                boundedLimit - visibleLineCount)
+            visibleRows.append(contentsOf: context.lines.prefix(visibleCount)
+                .enumerated()
+                .map { offset, line in
+                    DiffRenderRow.line(
+                        fileIndex: context.fileID,
+                        hunkIndex: context.hunkID,
+                        lineIndex: context.lineIndices[offset],
+                        line: line,
+                        language: context.language)
+                })
+            visibleLineCount += visibleCount
+            if visibleCount < context.totalCount {
+                visibleRows.append(row.replacingCollapsedContext(
+                    context.revealing(visibleCount)))
+            }
+            if visibleLineCount == boundedLimit { break }
+        }
+
+        return DiffRenderSlice(
+            rows: sectionedRows(visibleRows),
+            hasMore: visibleLineCount < total)
     }
 
     private func sectionedRows(_ rows: [DiffRenderRow]) -> [DiffRenderRow] {

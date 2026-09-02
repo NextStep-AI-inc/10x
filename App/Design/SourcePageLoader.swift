@@ -46,7 +46,17 @@ import Foundation
     func load(lines: [SourceLine], language: String?, contentID: UUID? = nil) async {
         let requestedContentID = contentID ?? self.contentID
         guard requestedContentID == self.contentID else { return }
-        let missingLines = lines.filter { cachedSpans[$0.number] == nil }
+        var characterCount = 0
+        var missingLines: [SourceLine] = []
+        for line in lines where cachedSpans[line.number] == nil {
+            guard missingLines.count < Self.initialRowLimit else { break }
+            let lineCharacterCount = line.characterCount(
+                cappedAt: Self.initialLineCharacterLimit + 1)
+            guard lineCharacterCount <= Self.initialLineCharacterLimit else { continue }
+            guard lineCharacterCount <= Self.initialCharacterLimit - characterCount else { break }
+            missingLines.append(line)
+            characterCount += lineCharacterCount
+        }
         guard !missingLines.isEmpty else { return }
 
         tokenizationTask?.cancel()

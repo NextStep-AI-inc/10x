@@ -349,11 +349,33 @@ enum SourceTokenizer {
     }
 }
 
+struct SourceRenderState: Equatable {
+    private(set) var contentID: UUID?
+    var reveal: ProgressiveReveal
+
+    init(contentID: UUID? = nil, initialLimit: Int) {
+        self.contentID = contentID
+        reveal = ProgressiveReveal(initialLimit: initialLimit, pageSize: 200)
+    }
+
+    func effective(for contentID: UUID, initialLimit: Int) -> Self {
+        guard self.contentID == contentID else {
+            return Self(contentID: contentID, initialLimit: initialLimit)
+        }
+        return self
+    }
+
+    mutating func reset(contentID: UUID, initialLimit: Int) {
+        guard self.contentID != contentID else { return }
+        self = Self(contentID: contentID, initialLimit: initialLimit)
+    }
+}
+
 struct SourceSurface: View {
     let presentation: SourcePresentation
     let previewLineLimit: Int?
     let isInitiallyWrapped: Bool
-    @State private var reveal: ProgressiveReveal
+    @State private var renderState: SourceRenderState
 
     init(
         presentation: SourcePresentation,
@@ -363,9 +385,9 @@ struct SourceSurface: View {
         self.presentation = presentation
         self.previewLineLimit = previewLineLimit
         self.isInitiallyWrapped = isInitiallyWrapped
-        _reveal = State(initialValue: ProgressiveReveal(
-            initialLimit: previewLineLimit ?? 200,
-            pageSize: 200))
+        _renderState = State(initialValue: SourceRenderState(
+            contentID: presentation.contentID,
+            initialLimit: previewLineLimit ?? 200))
     }
 
     var body: some View {
@@ -375,10 +397,22 @@ struct SourceSurface: View {
                 lines: Array(visibleLines),
                 isInitiallyWrapped: isInitiallyWrapped)
             ProgressiveRevealButton(
-                reveal: $reveal,
+                reveal: Binding(
+                    get: { effectiveRenderState.reveal },
+                    set: {
+                        renderState.reset(
+                            contentID: presentation.contentID,
+                            initialLimit: initialLimit)
+                        renderState.reveal = $0
+                    }),
                 total: presentation.lines.count,
                 noun: "lines",
                 accessibilityNoun: "source lines")
+        }
+        .task(id: presentation.contentID) {
+            renderState.reset(
+                contentID: presentation.contentID,
+                initialLimit: initialLimit)
         }
     }
 
@@ -386,7 +420,15 @@ struct SourceSurface: View {
         return presentation.lines.prefix(Self.visibleLineCount(
             total: presentation.lines.count,
             previewLineLimit: previewLineLimit,
-            reveal: reveal))
+            reveal: effectiveRenderState.reveal))
+    }
+
+    private var initialLimit: Int { previewLineLimit ?? 200 }
+
+    private var effectiveRenderState: SourceRenderState {
+        renderState.effective(
+            for: presentation.contentID,
+            initialLimit: initialLimit)
     }
 
     nonisolated static func visibleLineCount(

@@ -86,7 +86,7 @@ import Testing
         #expect(!recorder.contains("deferred"))
     }
 
-    @Test func multiMegabyteFirstLineDefersTokenizationWithoutSynchronousMaterialization() async {
+    @Test func multiMegabyteFirstLineNeverReachesTheTokenizer() async {
         let recorder = SourceTokenizationRecorder()
         let source = SourcePresentation(language: "swift", text: String(repeating: "x", count: 4_000_000))
         let loader = await SourcePageLoader(
@@ -102,7 +102,25 @@ import Testing
         #expect(source.lines[0].characterCount(cappedAt: 2_049) == 2_049)
 
         await loader.load(lines: source.lines, language: source.language)
-        #expect(recorder.count == 1)
+        #expect(recorder.count == 0)
+        #expect(await loader.cachedLineCount == 0)
+    }
+
+    @Test func asynchronousSourcePageStopsAtTheTotalCharacterCeiling() async {
+        let recorder = SourceTokenizationRecorder()
+        let ceilingLine = String(repeating: "b", count: 2_048)
+        let source = SourcePresentation(
+            language: "swift",
+            text: Array(repeating: ceilingLine, count: 9).joined(separator: "\n"))
+        let loader = await SourcePageLoader(tokenize: { text, _ in
+            recorder.record(text)
+            return [SourceSpan(text: text, role: .plain)]
+        })
+
+        await loader.load(lines: source.lines, language: source.language)
+
+        #expect(recorder.count == 8)
+        #expect(await loader.cachedLineCount == 8)
     }
 
     @Test func synchronousPrimeStopsAtExactlyTwoHundredRows() async {

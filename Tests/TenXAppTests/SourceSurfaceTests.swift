@@ -4,6 +4,24 @@ import Testing
 @testable import TenXApp
 
 @Suite struct SourceSurfaceTests {
+    @Test func sourceReplacementReturnsToItsInitialVisiblePage() {
+        let original = SourcePresentation(language: "swift", text: sourceLines(prefix: "original"))
+        let replacement = SourcePresentation(language: "swift", text: sourceLines(prefix: "replacement"))
+        var state = SourceRenderState(contentID: original.contentID, initialLimit: 200)
+        state.reveal.revealNextPage(total: original.lines.count)
+
+        let effective = state.effective(
+            for: replacement.contentID,
+            initialLimit: 200)
+
+        #expect(state.reveal.limit == 400)
+        #expect(effective.reveal.limit == 200)
+        #expect(SourceSurface.visibleLineCount(
+            total: replacement.lines.count,
+            previewLineLimit: nil,
+            reveal: effective.reveal) == 200)
+    }
+
     @Test func sourceLinePresentationSlicesAtSpanBoundaries() {
         let line = SourceLine(number: 7, spans: [
             SourceSpan(text: "let", role: .keyword),
@@ -108,4 +126,8 @@ import Testing
         #expect(presentation.accessibilityText.count == 2_048)
         #expect(presentation.progressiveTotal == 4_096)
     }
+}
+
+private func sourceLines(prefix: String) -> String {
+    (1...500).map { "let \(prefix)\($0) = \($0)" }.joined(separator: "\n")
 }

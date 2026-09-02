@@ -19,10 +19,6 @@ struct DiffView: View {
             initialRows: presentation.slice(limit: 200).rows))
     }
 
-    private var expandedRows: [DiffRenderRow] {
-        presentation.rows(revealing: effectiveRenderState.contextReveals.mapValues(\.limit))
-    }
-
     private var visibleRows: [DiffRenderRow] {
         presentation.slice(using: renderState).rows
     }
@@ -64,7 +60,8 @@ struct DiffView: View {
                         renderState.reset(contentID: presentation.contentID)
                         renderState.reveal = $0
                     }),
-                total: expandedRows.filter(\.isLine).count,
+                total: presentation.lineCount(
+                    revealing: effectiveRenderState.contextReveals.mapValues(\.limit)),
                 noun: "lines",
                 accessibilityNoun: "diff lines")
         }
@@ -160,7 +157,7 @@ struct DiffView: View {
     }
 
     private func collapsedContextView(_ context: DiffRenderCollapsedContext, rowID: DiffRenderRow.ID) -> some View {
-        Button(context.visibleCount == 0 ? "Show \(context.count) unchanged lines" : "Show \(min(200, context.count)) more unchanged lines") {
+        Button("Show \(min(200, context.count)) more unchanged lines") {
             renderState.reset(contentID: presentation.contentID)
             var next = renderState.contextReveals[rowID] ?? ProgressiveReveal(initialLimit: 200, pageSize: 200)
             if context.visibleCount > 0 {

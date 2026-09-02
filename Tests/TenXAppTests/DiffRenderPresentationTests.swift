@@ -56,6 +56,22 @@ import Testing
         #expect(rows.first { $0.id == collapsed.id }?.collapsedContext?.count == 294)
     }
 
+    @Test func expandedDiffLineCountIncludesOnlyRevealedContextLines() throws {
+        let context = (0..<500).map { " context\($0)" }.joined(separator: "\n")
+        let diff = try #require(UnifiedDiffParser.parse("""
+        --- a/App.swift
+        +++ b/App.swift
+        @@ -1,500 +1,500 @@
+        \(context)
+        """))
+        let presentation = DiffRenderPresentation(diff: diff)
+        let collapsed = try #require(presentation.rows.first { $0.collapsedContext != nil })
+
+        #expect(presentation.lineCount(revealing: [:]) == 6)
+        #expect(presentation.lineCount(revealing: [collapsed.id: 200]) == 206)
+        #expect(presentation.lineCount(revealing: [collapsed.id: 1_000]) == 500)
+    }
+
     @Test func contextPageKeepsItsContinuationInTheFinalGlobalSlice() throws {
         let context = (0..<500).map { " context\($0)" }.joined(separator: "\n")
         let diff = try #require(UnifiedDiffParser.parse("""
@@ -125,6 +141,39 @@ import Testing
         #expect(await loader.cachedLineCount == 8)
         #expect(recorder.count == 8)
         #expect(!recorder.contains("deferred"))
+    }
+
+    @Test func asynchronousDiffPageSkipsAnOversizedVisibleLine() async throws {
+        let source = DiffRenderPresentation(diff: try #require(additionsDiff(lines: [
+            String(repeating: "x", count: 4_000_000),
+        ])))
+        let recorder = TokenizationRecorder()
+        let loader = await DiffPageLoader(tokenize: { text, _ in
+            recorder.record(text)
+            return [SourceSpan(text: text, role: .plain)]
+        })
+
+        await loader.load(rows: source.slice(limit: 200).rows)
+
+        #expect(recorder.count == 0)
+        #expect(await loader.cachedLineCount == 0)
+    }
+
+    @Test func asynchronousDiffPageStopsAtTheTotalCharacterCeiling() async throws {
+        let ceilingLine = String(repeating: "b", count: 2_048)
+        let source = DiffRenderPresentation(diff: try #require(additionsDiff(lines: Array(
+            repeating: ceilingLine,
+            count: 9))))
+        let recorder = TokenizationRecorder()
+        let loader = await DiffPageLoader(tokenize: { text, _ in
+            recorder.record(text)
+            return [SourceSpan(text: text, role: .plain)]
+        })
+
+        await loader.load(rows: source.slice(limit: 200).rows)
+
+        #expect(recorder.count == 8)
+        #expect(await loader.cachedLineCount == 8)
     }
 
     @Test func finalContextPageDoesNotRevealOrTokenizeTheChangedTail() async throws {
@@ -237,7 +286,10 @@ import Testing
         }
         defer { gate.resume() }
 
-        await waitUntil("old diff tokenization to start") { gate.hasStarted }
+        guard gate.waitForStart() else {
+            Issue.record("Old diff tokenization did not start")
+            return
+        }
         await loader.reset(
             contentID: replacement.contentID,
             initialRows: [replacementRow])
@@ -268,15 +320,16 @@ private final class TokenizationRecorder: @unchecked Sendable {
 }
 
 private final class TokenizationGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var isStarted = false
+    private let started = DispatchSemaphore(value: 0)
     private let continuation = DispatchSemaphore(value: 0)
 
-    var hasStarted: Bool { lock.withLock { isStarted } }
-
     func block() {
-        lock.withLock { isStarted = true }
+        started.signal()
         continuation.wait()
+    }
+
+    func waitForStart() -> Bool {
+        started.wait(timeout: .now() + 30) == .success
     }
 
     func resume() {
