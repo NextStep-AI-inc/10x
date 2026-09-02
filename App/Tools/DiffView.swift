@@ -6,8 +6,7 @@ struct DiffView: View {
     let fallbackPath: String?
     private let presentation: DiffRenderPresentation
     @State private var isWrapped = true
-    @State private var reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
-    @State private var contextReveals: [DiffRenderRow.ID: ProgressiveReveal] = [:]
+    @State private var renderState = DiffRenderState()
     @StateObject private var pageLoader: DiffPageLoader
 
     init(diff: UnifiedDiff, fallbackPath: String?) {
@@ -21,11 +20,11 @@ struct DiffView: View {
     }
 
     private var expandedRows: [DiffRenderRow] {
-        presentation.rows(revealing: contextReveals.mapValues(\.limit))
+        presentation.rows(revealing: renderState.contextReveals.mapValues(\.limit))
     }
 
     private var visibleRows: [DiffRenderRow] {
-        presentation.slice(rows: expandedRows, limit: reveal.limit).rows
+        presentation.slice(rows: expandedRows, limit: renderState.reveal.limit).rows
     }
 
     private var visibleLineIDs: [DiffRenderRow.ID] {
@@ -55,14 +54,20 @@ struct DiffView: View {
             toolbar
             fileViews
             ProgressiveRevealButton(
-                reveal: $reveal,
+                reveal: Binding(
+                    get: { renderState.reveal },
+                    set: { renderState.reveal = $0 }),
                 total: expandedRows.filter(\.isLine).count,
                 noun: "lines",
                 accessibilityNoun: "diff lines")
         }
         .task(id: DiffRenderLoadID(contentID: presentation.contentID, lineIDs: visibleLineIDs)) {
+            renderState.reset(contentID: presentation.contentID)
+            let rows = presentation.slice(
+                rows: presentation.rows(revealing: renderState.contextReveals.mapValues(\.limit)),
+                limit: renderState.reveal.limit).rows
             pageLoader.reset(contentID: presentation.contentID, initialRows: presentation.slice(limit: 200).rows)
-            await pageLoader.load(rows: visibleRows, contentID: presentation.contentID)
+            await pageLoader.load(rows: rows, contentID: presentation.contentID)
         }
     }
 
@@ -141,18 +146,21 @@ struct DiffView: View {
 
     private func collapsedContextView(_ context: DiffRenderCollapsedContext, rowID: DiffRenderRow.ID) -> some View {
         Button(context.visibleCount == 0 ? "Show \(context.count) unchanged lines" : "Show \(min(200, context.count)) more unchanged lines") {
-            var next = contextReveals[rowID] ?? ProgressiveReveal(initialLimit: 200, pageSize: 200)
+            var next = renderState.contextReveals[rowID] ?? ProgressiveReveal(initialLimit: 200, pageSize: 200)
             if context.visibleCount > 0 {
                 next.revealNextPage(total: context.totalCount)
             }
-            var nextContextReveals = contextReveals
+            var nextContextReveals = renderState.contextReveals
             nextContextReveals[rowID] = next
-            let expandedRows = presentation.rows(revealing: nextContextReveals.mapValues(\.limit))
-            let requiredLineCount = expandedRows.prefix { $0.id != rowID }.filter(\.isLine).count
-            while reveal.limit < requiredLineCount {
-                reveal.revealNextPage(total: requiredLineCount)
+            if let requiredLineCount = presentation.lineLimit(
+                throughContext: rowID,
+                visibleCount: next.limit
+            ) {
+                while renderState.reveal.limit < requiredLineCount {
+                    renderState.reveal.revealNextPage(total: requiredLineCount)
+                }
             }
-            contextReveals = nextContextReveals
+            renderState.contextReveals = nextContextReveals
         }
         .font(TenXTypography.mono(size: 10))
         .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))

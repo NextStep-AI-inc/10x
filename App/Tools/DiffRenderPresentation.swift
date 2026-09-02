@@ -41,6 +41,14 @@ struct DiffRenderPresentation: Equatable, Sendable {
         }
     }
 
+    func lineLimit(throughContext rowID: DiffRenderRow.ID, visibleCount: Int) -> Int? {
+        guard let contextIndex = rows.firstIndex(where: { $0.id == rowID }),
+              let context = rows[contextIndex].collapsedContext
+        else { return nil }
+        let leadingLineCount = rows[..<contextIndex].filter(\.isLine).count
+        return leadingLineCount + min(max(0, visibleCount), context.totalCount)
+    }
+
     func slice(limit: Int) -> DiffRenderSlice {
         slice(rows: rows, limit: limit)
     }
@@ -94,6 +102,19 @@ struct DiffRenderSlice: Equatable, Sendable {
     let hasMore: Bool
 
     var lines: [DiffRenderLine] { rows.compactMap(\.line) }
+}
+
+struct DiffRenderState: Equatable {
+    private(set) var contentID: String?
+    var reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+    var contextReveals: [DiffRenderRow.ID: ProgressiveReveal] = [:]
+
+    mutating func reset(contentID: String) {
+        guard self.contentID != contentID else { return }
+        self.contentID = contentID
+        reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+        contextReveals = [:]
+    }
 }
 
 struct DiffRenderRow: Equatable, Identifiable, Sendable {
