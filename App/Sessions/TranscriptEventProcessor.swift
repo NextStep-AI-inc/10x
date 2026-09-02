@@ -17,6 +17,9 @@ actor TranscriptEventProcessor {
     private var timerGeneration: UInt64 = 0
     private var reconciliationGeneration: UInt64 = 0
     private var isStopped = false
+    #if DEBUG
+    private var messageUpdateReductionCount = 0
+    #endif
 
     init(
         id: UUID = UUID(),
@@ -79,6 +82,11 @@ actor TranscriptEventProcessor {
             break
         }
 
+        #if DEBUG
+        if case .event("message_update", _) = frame {
+            messageUpdateReductionCount += 1
+        }
+        #endif
         let mutation = reducer.consume(frame)
         switch mutation {
         case .none:
@@ -209,6 +217,10 @@ actor TranscriptEventProcessor {
 
     func testingPublishScheduled(token: UInt64) {
         publishScheduled(token: token)
+    }
+
+    func testingMessageUpdateReductionCount() -> Int {
+        messageUpdateReductionCount
     }
     #endif
 

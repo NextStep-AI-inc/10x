@@ -3,7 +3,7 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
-@Test func burstUpdatesCoalesceIntoOneManualFlush() async throws {
+@Test func burstUpdatesNormalizeOnlyNewestPayloadOnManualFlush() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
     _ = await processor.load(
         .history(TranscriptHistory(items: [])),
@@ -17,10 +17,54 @@ import Testing
             """))
     }
 
+    #expect(await processor.testingMessageUpdateReductionCount() == 0)
     let snapshot = try #require(await processor.flush())
+    #expect(await processor.testingMessageUpdateReductionCount() == 1)
     #expect(snapshot.revision == 2)
     #expect(snapshot.items.count == 1)
     #expect(snapshot.visibleText(for: "burst-message") == "token-1000")
+    await processor.stop()
+}
+
+@Test func replacementUpdateReusesPendingSlotAndTimer() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
+
+    await processor.consume(try event("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"First"}]}}
+        """))
+    let originalTimer = await processor.testingTimerGeneration()
+    await processor.consume(try event("""
+        {"type":"message_update","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Second"}]}}
+        """))
+
+    #expect(await processor.testingMessageUpdateReductionCount() == 0)
+    #expect(await processor.testingTimerGeneration() == originalTimer)
+    let snapshot = try #require(await processor.flush())
+    #expect(await processor.testingMessageUpdateReductionCount() == 1)
+    #expect(snapshot.visibleText(for: "m1") == "Second")
+    await processor.stop()
+}
+
+@Test func differentMessageIdentitiesRemainLossless() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
+
+    await processor.consume(try event("""
+        {"type":"message_update","message":{"id":"skill-1","role":"custom","customType":"skill-prompt","display":true,"content":"# Skill\\n\\nComplete instructions."}}
+        """))
+    await processor.consume(try event("""
+        {"type":"message_update","message":{"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Starting work."}]}}
+        """))
+
+    let snapshot = try #require(await processor.flush())
+    let messages = snapshot.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(await processor.testingMessageUpdateReductionCount() == 2)
+    #expect(messages.map(\.id) == ["skill-1", "assistant-1"])
+    #expect(messages.map(\.visibleText) == ["# Skill\n\nComplete instructions.", "Starting work."])
     await processor.stop()
 }
 
