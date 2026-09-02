@@ -325,3 +325,82 @@ assertion; no unreliable host-introspection assertion remains.
 - The Release build still emits existing Swift concurrency warnings in
   MessageBlockView and ModelPickerFlyout; this round introduced no new build
   warnings.
+
+## Fix Round 5
+
+### Finding addressed
+
+Normalized visible text runs now carry a collision-safe
+`TranscriptRenderLineageKey` containing the base message ID and the typed
+optional IDs of their immediate preceding and following tool-call boundaries.
+The no-tool case uses the stable `(base message, nil, nil)` key. Ordinal message
+IDs remain the UI identity only. `TranscriptReducer` snapshots prior documents
+by the separate lineage key, and the normalizer can assign a predecessor only
+after an exact key lookup. Adjacent tool insertion, removal, reordering, or ID
+replacement therefore resets conservatively instead of transferring expansion
+to an unrelated ordinal segment.
+
+The lineage key is stored on `TranscriptMessage` but excluded from semantic
+message equality, matching the existing treatment of document render UUIDs.
+Stable surrounding boundaries retain immediate predecessor lineage during a
+streaming append, and the existing UI segment IDs remain unchanged.
+
+### RED
+
+The regression was added before production changes. This command failed at
+`/tmp/10x-task4-fix5-red.log`:
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' '-only-testing:TenXAppTests/toolTopologyInsertionDoesNotTransferLineageToReusedOrdinalSegmentID()'
+```
+
+The reused `assistant-1-segment-1` incorrectly received the prior occupant's
+render UUID and retained a 320-unit reveal limit instead of having no
+predecessor and resetting to 160. The result bundle is
+`~/Library/Developer/Xcode/DerivedData/10x-bxbthukntyhepwdxepxgagdrmozo/Logs/Test/Test-10x-2026.09.01_20-16-27--0700.xcresult`.
+
+### GREEN and verification
+
+The final focused normalizer, reducer, semantic-equality, and content-state run
+passed 16 tests at `/tmp/10x-task4-fix5-focused-final.log`:
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' '-only-testing:TenXAppTests/toolTopologyInsertionDoesNotTransferLineageToReusedOrdinalSegmentID()' '-only-testing:TenXAppTests/inflightSegmentsAssignLineageByStableToolBoundaries()' '-only-testing:TenXAppTests/rapidInflightReplacementUsesOnlyItsImmediateSemanticPredecessor()' '-only-testing:TenXAppTests/identicalInflightFinalizationReusesTheDocumentVersion()' '-only-testing:TenXAppTests/renderLineageKeyDoesNotChangeMessageSemanticEquality()' '-only-testing:TenXAppTests/normalizerPreservesTextToolTextOrder()' '-only-testing:TenXAppTests/ContentRenderSliceTests'
+```
+
+The relevant renderer and document snapshot suites passed 19 tests with no
+reference or asset changes at `/tmp/10x-task4-fix5-snapshots.log`:
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' '-only-testing:TenXAppTests/ViewSnapshotTests' '-only-testing:TenXAppTests/RendererPaginationTests'
+```
+
+The full suite passed 1,160 tests in 25 suites at
+`/tmp/10x-task4-fix5-full-suite.log`, and the universal Release build passed at
+`/tmp/10x-task4-fix5-release-build.log`:
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
+xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS'
+```
+
+Finally, `bundle exec ruby scripts/generate_xcodeproj.rb`, a byte-hash check of
+`10x.xcodeproj/project.pbxproj`, and `git diff --check` passed. The generated
+project remained unchanged at SHA-1
+`cc03cf8cd6586bb37efafe8786bb81e9476fd78f`.
+
+### Self-review
+
+- The lineage key is a typed three-field value, not a concatenated string or
+  payload hash. Nil boundaries cannot alias tool IDs, and dictionary hash
+  collisions still require exact structural equality.
+- The normalizer advances the preceding boundary only for tool calls it
+  actually emits, so duplicate or malformed tool blocks do not create phantom
+  render boundaries.
+- The topology-shift regression uses a strict source-prefix append and proves
+  both nil predecessor assignment and the 320-to-160 render-state reset. The
+  stable-boundary regression proves both adjacent runs retain their immediate
+  predecessors while their ordinal UI IDs stay fixed.
+- No source-line code or snapshot reference was changed. The Release build
+  still reports the previously documented MessageBlockView and
+  ModelPickerFlyout concurrency warnings; this round added no warnings.

@@ -203,18 +203,26 @@ import Testing
         """))
     let replacement = try #require(message(withID: "m1", in: reducer.items))
 
+    #expect(original.renderLineageKey == .base(messageID: "m1"))
+    #expect(intermediate.renderLineageKey == original.renderLineageKey)
+    #expect(replacement.renderLineageKey == original.renderLineageKey)
     #expect(intermediate.document.predecessorRenderVersion == original.document.renderVersion)
     #expect(replacement.document.predecessorRenderVersion == nil)
     #expect(replacement.document.renderVersion != intermediate.document.renderVersion)
 }
 
-@Test func inflightSegmentsAssignLineageByStableSegmentID() throws {
+@Test func inflightSegmentsAssignLineageByStableToolBoundaries() throws {
     var reducer = TranscriptReducer()
     reducer.consume(try eventFrame("""
         {"type":"message_update","message":{"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Before"},{"type":"toolCall","id":"read-1","name":"read","arguments":{}},{"type":"text","text":"After"}]}}
         """))
     let firstBefore = try #require(message(withID: "assistant-1", in: reducer.items))
     let firstAfter = try #require(message(withID: "assistant-1-segment-1", in: reducer.items))
+    #expect(reducer.items.map(\.id) == [
+        "assistant-1",
+        "read-1",
+        "assistant-1-segment-1",
+    ])
 
     reducer.consume(try eventFrame("""
         {"type":"message_update","message":{"id":"assistant-1","role":"assistant","content":[{"type":"text","text":"Before appended"},{"type":"toolCall","id":"read-1","name":"read","arguments":{}},{"type":"text","text":"After appended"}]}}
@@ -222,10 +230,102 @@ import Testing
     let secondBefore = try #require(message(withID: "assistant-1", in: reducer.items))
     let secondAfter = try #require(message(withID: "assistant-1-segment-1", in: reducer.items))
 
+    #expect(reducer.items.map(\.id) == [
+        "assistant-1",
+        "read-1",
+        "assistant-1-segment-1",
+    ])
+    #expect(firstBefore.renderLineageKey == TranscriptRenderLineageKey(
+        baseMessageID: "assistant-1",
+        precedingToolCallID: nil,
+        followingToolCallID: "read-1"))
+    #expect(firstAfter.renderLineageKey == TranscriptRenderLineageKey(
+        baseMessageID: "assistant-1",
+        precedingToolCallID: "read-1",
+        followingToolCallID: nil))
+    #expect(secondBefore.renderLineageKey == firstBefore.renderLineageKey)
+    #expect(secondAfter.renderLineageKey == firstAfter.renderLineageKey)
     #expect(secondBefore.document.predecessorRenderVersion == firstBefore.document.renderVersion)
     #expect(secondAfter.document.predecessorRenderVersion == firstAfter.document.renderVersion)
     #expect(secondBefore.document.predecessorRenderVersion != firstAfter.document.renderVersion)
     #expect(secondAfter.document.predecessorRenderVersion != firstBefore.document.renderVersion)
+}
+
+@Test func toolTopologyInsertionDoesNotTransferLineageToReusedOrdinalSegmentID() throws {
+    var reducer = TranscriptReducer()
+    let priorText = (0..<500).map { "Prior occupant paragraph \($0)" }
+        .joined(separator: "\n\n")
+    let original = JSONValue.object([
+        "id": .string("assistant-1"),
+        "role": .string("assistant"),
+        "content": .array([
+            .object(["type": .string("text"), "text": .string("Opening")]),
+            .object([
+                "type": .string("toolCall"),
+                "id": .string("read-1"),
+                "name": .string("read"),
+                "arguments": .object([:]),
+            ]),
+            .object(["type": .string("text"), "text": .string(priorText)]),
+        ]),
+    ])
+    _ = reducer.consume(.event(
+        type: "message_update",
+        payload: .object(["message": original])))
+    let priorOccupant = try #require(message(
+        withID: "assistant-1-segment-1",
+        in: reducer.items))
+    var priorState = ContentDocumentRenderState(document: priorOccupant.document)
+    priorState.reveal.revealNextPage(
+        total: ContentRenderSlicer.unitCount(priorOccupant.document))
+
+    let insertedText = priorText + "\n\nStreamed append"
+    let changedTopology = JSONValue.object([
+        "id": .string("assistant-1"),
+        "role": .string("assistant"),
+        "content": .array([
+            .object(["type": .string("text"), "text": .string("Opening")]),
+            .object([
+                "type": .string("toolCall"),
+                "id": .string("search-1"),
+                "name": .string("search"),
+                "arguments": .object([:]),
+            ]),
+            .object(["type": .string("text"), "text": .string(insertedText)]),
+            .object([
+                "type": .string("toolCall"),
+                "id": .string("read-1"),
+                "name": .string("read"),
+                "arguments": .object([:]),
+            ]),
+            .object(["type": .string("text"), "text": .string("After read")]),
+        ]),
+    ])
+    _ = reducer.consume(.event(
+        type: "message_update",
+        payload: .object(["message": changedTopology])))
+    let reusedOrdinal = try #require(message(
+        withID: "assistant-1-segment-1",
+        in: reducer.items))
+
+    #expect(reducer.items.map(\.id) == [
+        "assistant-1",
+        "search-1",
+        "assistant-1-segment-1",
+        "read-1",
+        "assistant-1-segment-2",
+    ])
+    #expect(reusedOrdinal.visibleText == insertedText)
+    #expect(priorOccupant.renderLineageKey == TranscriptRenderLineageKey(
+        baseMessageID: "assistant-1",
+        precedingToolCallID: "read-1",
+        followingToolCallID: nil))
+    #expect(reusedOrdinal.renderLineageKey == TranscriptRenderLineageKey(
+        baseMessageID: "assistant-1",
+        precedingToolCallID: "search-1",
+        followingToolCallID: "read-1"))
+    #expect(reusedOrdinal.document.predecessorRenderVersion == nil)
+    #expect(priorState.effective(for: reusedOrdinal.document).reveal.limit == 160)
 }
 
 @Test func identicalInflightFinalizationReusesTheDocumentVersion() throws {

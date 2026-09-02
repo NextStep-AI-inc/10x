@@ -9,9 +9,10 @@ enum TranscriptMessageNormalizer {
         attribution: TranscriptResponseAttribution = .none,
         isFinal: Bool,
         existingTools: [String: ToolPresentation] = [:],
-        previousDocuments: [String: ContentDocument] = [:],
+        previousDocuments: [TranscriptRenderLineageKey: ContentDocument] = [:],
         fallbackDate: Date = Date()
     ) -> [TranscriptItem] {
+        let baseLineageKey = TranscriptRenderLineageKey.base(messageID: id)
         guard raw["role"]?.stringValue == "assistant",
               let content = raw["content"]?.arrayValue
         else {
@@ -21,7 +22,8 @@ enum TranscriptMessageNormalizer {
                 timestamp: timestamp,
                 attribution: attribution,
                 isFinal: isFinal,
-                previousDocument: previousDocuments[id])
+                renderLineageKey: baseLineageKey,
+                previousDocument: previousDocuments[baseLineageKey])
             let retainsPlaceholder = message.role == .assistant && !isFinal
             return shouldEmit(message, raw: raw) || retainsPlaceholder
                 ? [.message(message)]
@@ -33,6 +35,7 @@ enum TranscriptMessageNormalizer {
         var hasVisibleMessage = false
         var blockRun: [JSONValue] = []
         var emittedToolIDs: Set<String> = []
+        var precedingToolCallID: String?
 
         for block in content {
             if let tool = toolPresentation(
@@ -52,9 +55,12 @@ enum TranscriptMessageNormalizer {
                     timestamp: timestamp,
                     attribution: attribution,
                     isFinal: isFinal,
+                    precedingToolCallID: precedingToolCallID,
+                    followingToolCallID: tool.id,
                     previousDocuments: previousDocuments)
                 blockRun.removeAll(keepingCapacity: true)
                 result.append(.tool(tool))
+                precedingToolCallID = tool.id
             } else {
                 blockRun.append(block)
             }
@@ -69,10 +75,16 @@ enum TranscriptMessageNormalizer {
             timestamp: timestamp,
             attribution: attribution,
             isFinal: isFinal,
+            precedingToolCallID: precedingToolCallID,
+            followingToolCallID: nil,
             previousDocuments: previousDocuments)
 
         let terminalFailure = isTerminalFailure(raw)
         if !hasVisibleMessage, terminalFailure {
+            let lineageKey = TranscriptRenderLineageKey(
+                baseMessageID: id,
+                precedingToolCallID: precedingToolCallID,
+                followingToolCallID: nil)
             let failure = TranscriptMessage(
                 id: segmentID(base: id, ordinal: visibleSegment),
                 raw: raw,
@@ -80,9 +92,8 @@ enum TranscriptMessageNormalizer {
                 attribution: attribution,
                 isFinal: isFinal,
                 showsResponseMetadata: true,
-                previousDocument: previousDocuments[segmentID(
-                    base: id,
-                    ordinal: visibleSegment)])
+                renderLineageKey: lineageKey,
+                previousDocument: previousDocuments[lineageKey])
             result.append(.message(failure))
         } else if result.isEmpty, content.isEmpty, !isFinal {
             let placeholder = TranscriptMessage(
@@ -92,7 +103,8 @@ enum TranscriptMessageNormalizer {
                 attribution: attribution,
                 isFinal: isFinal,
                 showsResponseMetadata: true,
-                previousDocument: previousDocuments[id])
+                renderLineageKey: baseLineageKey,
+                previousDocument: previousDocuments[baseLineageKey])
             result.append(.message(placeholder))
         }
         return result
@@ -108,13 +120,19 @@ enum TranscriptMessageNormalizer {
         timestamp: Date?,
         attribution: TranscriptResponseAttribution,
         isFinal: Bool,
-        previousDocuments: [String: ContentDocument]
+        precedingToolCallID: String?,
+        followingToolCallID: String?,
+        previousDocuments: [TranscriptRenderLineageKey: ContentDocument]
     ) {
         guard !blocks.isEmpty else { return }
         guard case .object(var messageObject) = raw else { return }
         messageObject["content"] = .array(blocks)
         let messageRaw = JSONValue.object(messageObject)
         let messageID = segmentID(base: id, ordinal: visibleSegment)
+        let lineageKey = TranscriptRenderLineageKey(
+            baseMessageID: id,
+            precedingToolCallID: precedingToolCallID,
+            followingToolCallID: followingToolCallID)
         let candidate = TranscriptMessage(
             id: messageID,
             raw: messageRaw,
@@ -122,7 +140,8 @@ enum TranscriptMessageNormalizer {
             attribution: attribution,
             isFinal: isFinal,
             showsResponseMetadata: !hasVisibleMessage,
-            previousDocument: previousDocuments[messageID])
+            renderLineageKey: lineageKey,
+            previousDocument: previousDocuments[lineageKey])
         guard shouldEmitVisible(candidate, raw: messageRaw) else { return }
         result.append(.message(candidate))
         hasVisibleMessage = true

@@ -22,6 +22,19 @@ struct TranscriptResponseAttribution: Equatable, Sendable {
         modelRole: nil)
 }
 
+struct TranscriptRenderLineageKey: Hashable, Sendable {
+    let baseMessageID: String
+    let precedingToolCallID: String?
+    let followingToolCallID: String?
+
+    static func base(messageID: String) -> Self {
+        Self(
+            baseMessageID: messageID,
+            precedingToolCallID: nil,
+            followingToolCallID: nil)
+    }
+}
+
 struct TranscriptMessage: Identifiable, Equatable, Sendable {
     let id: String
     let role: TranscriptMessageRole
@@ -32,6 +45,8 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
     let showsResponseMetadata: Bool
     let stopReason: String?
     let document: ContentDocument
+    /// Renderer continuity metadata, deliberately excluded from semantic equality.
+    let renderLineageKey: TranscriptRenderLineageKey
 
     var visibleText: String {
         document.source
@@ -44,9 +59,11 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         attribution: TranscriptResponseAttribution = .none,
         isFinal: Bool,
         showsResponseMetadata: Bool = true,
+        renderLineageKey: TranscriptRenderLineageKey? = nil,
         previousDocument: ContentDocument? = nil
     ) {
         self.id = id
+        self.renderLineageKey = renderLineageKey ?? .base(messageID: id)
         let rawRole = raw["role"]?.stringValue
         role = switch rawRole {
         case "user": .user
@@ -85,6 +102,18 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             : normalizedDocument
         document = previousDocument.map(candidateDocument.assigningRenderLineage(after:))
             ?? candidateDocument
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id
+            && lhs.role == rhs.role
+            && lhs.raw == rhs.raw
+            && lhs.timestamp == rhs.timestamp
+            && lhs.attribution == rhs.attribution
+            && lhs.isFinal == rhs.isFinal
+            && lhs.showsResponseMetadata == rhs.showsResponseMetadata
+            && lhs.stopReason == rhs.stopReason
+            && lhs.document == rhs.document
     }
 
     /// omp injects steering text into the run as `custom` / `hookMessage`
