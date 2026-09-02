@@ -34,6 +34,16 @@ struct DecodedToolMedia: @unchecked Sendable {
         self.decode = decode
     }
 
+    convenience init(preloaded item: ToolMediaItem, media: DecodedToolMedia) {
+        self.init(preloaded: item, state: .loaded(media))
+    }
+
+    init(preloaded item: ToolMediaItem, state: ToolMediaLoadState) {
+        decode = Self.decodeMedia
+        self.state = state
+        completedResult = (item.contentID, item.id, state)
+    }
+
     var decodedData: Data? {
         guard case .loaded(let media) = state else { return nil }
         return media.data

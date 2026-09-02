@@ -60,6 +60,37 @@ import Testing
     #expect(presentation.content.outcome == "1 match")
 }
 
+@Test func completedMediaResultKeepsItsGenerationWhenPayloadIsUnchanged() throws {
+    var reducer = ToolEventReducer()
+    let image = #"{"content":[{"type":"image","data":"AQ==","mimeType":"image/png","name":"preview.png"}]}"#
+
+    reducer.consume(type: "tool_execution_update", payload: try payload("""
+        {"type":"tool_execution_update","toolCallId":"media","toolName":"inspect_image","partialResult":\(image)}
+        """))
+    let runningGeneration = try #require(onlyMedia(in: reducer.presentations[0]).contentID)
+
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"media","toolName":"inspect_image","result":\(image),"isError":false}
+        """))
+
+    #expect(onlyMedia(in: reducer.presentations[0]).contentID == runningGeneration)
+}
+
+@Test func changedMediaPayloadReplacesItsGenerationInTheSameSlot() throws {
+    var reducer = ToolEventReducer()
+
+    reducer.consume(type: "tool_execution_update", payload: try payload("""
+        {"type":"tool_execution_update","toolCallId":"media","toolName":"inspect_image","partialResult":{"content":[{"type":"image","data":"AQ==","mimeType":"image/png","name":"preview.png"}]}}
+        """))
+    let runningGeneration = try #require(onlyMedia(in: reducer.presentations[0]).contentID)
+
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"media","toolName":"inspect_image","result":{"content":[{"type":"image","data":"Ag==","mimeType":"image/png","name":"preview.png"}]},"isError":false}
+        """))
+
+    #expect(onlyMedia(in: reducer.presentations[0]).contentID != runningGeneration)
+}
+
 @Test func unknownToolsAlwaysUseTheCustomCard() {
     #expect(ToolCardRegistry.kind(for: "future_mcp_tool") == .custom(name: "future_mcp_tool"))
 }
@@ -82,6 +113,21 @@ private func payload(_ json: String) throws -> JSONValue {
         throw TestPayloadError.notAnEvent
     }
     return payload
+}
+
+private func onlyMedia(in presentation: ToolPresentation) -> ToolMediaItem {
+    guard case .media(let media, _) = presentation.content.body,
+          let item = media.first else {
+        Issue.record("Expected exactly one media item")
+        return ToolMediaItem(
+            id: "missing",
+            kind: .other,
+            name: nil,
+            mimeType: nil,
+            data: nil,
+            url: nil)
+    }
+    return item
 }
 
 private enum TestPayloadError: Error {

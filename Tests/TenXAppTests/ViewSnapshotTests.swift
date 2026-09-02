@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 import OmpKit
 import SwiftUI
 import Testing
@@ -1810,7 +1811,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
-@Test func semanticToolSurfacesSnapshot() async throws {
+@Test func semanticToolSurfacesSnapshot() throws {
     let timestamp = Date(timeIntervalSince1970: 1)
     let source = ToolPresentation(
         id: "semantic-source",
@@ -1879,7 +1880,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     let disclosure = ToolDisclosureState()
     disclosure.expand(ids: [source.id, collection.id, mcp.id])
 
-    try await assertSettledSnapshot(
+    try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
             ToolCardView(presentation: source)
             ToolCardView(presentation: collection)
@@ -1889,6 +1890,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         .environment(snapshotEmptyIDEStore)
         .environment(\.fileReferenceBaseURL, snapshotProjectURL)
         .environment(\.fileOpenService, snapshotFileOpenService)
+        .environment(\.toolMediaLoaderFactory, snapshotMediaLoader)
         .frame(width: 720, alignment: .leading),
         name: "semantic-tool-surfaces",
         size: CGSize(width: 800, height: 1_500))
@@ -2130,7 +2132,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
-@Test func mediaToolCardsSnapshot() async throws {
+@Test func mediaToolCardsSnapshot() throws {
     let previewPath = snapshotProjectURL
         .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
         .path
@@ -2205,8 +2207,9 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             duration: 3.4),
     ]
 
-    try await assertSettledSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-media",
         size: CGSize(width: 600, height: 1_300))
 }
@@ -2228,19 +2231,25 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     let loadTask = Task { await loader.load(item) }
     await gate.waitForStart()
 
-    try assertSnapshot(
-        MediaItemView(item: item, loader: loader)
-            .frame(width: 520, alignment: .leading),
-        name: "tool-media-loading",
-        size: CGSize(width: 600, height: 300))
-
+    do {
+        try assertSnapshot(
+            MediaItemView(item: item, loader: loader)
+                .frame(width: 520, alignment: .leading),
+            name: "tool-media-loading",
+            size: CGSize(width: 600, height: 300))
+    } catch {
+        loadTask.cancel()
+        await gate.open()
+        await loadTask.value
+        throw error
+    }
     loadTask.cancel()
     await gate.open()
     await loadTask.value
 }
 
 @MainActor
-@Test func mcpFallbackToolCardsSnapshot() async throws {
+@Test func mcpFallbackToolCardsSnapshot() throws {
     let previewPath = snapshotProjectURL
         .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
         .path
@@ -2304,8 +2313,9 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             duration: 0.9),
     ]
 
-    try await assertSettledSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-mcp-fallback",
         size: CGSize(width: 600, height: 1_600))
 }
@@ -3977,6 +3987,21 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
     return representation.representation(using: .png, properties: [:])!
 }
 
+@MainActor
+private func snapshotMediaLoader(for item: ToolMediaItem) -> ToolMediaLoader {
+    guard let path = item.url,
+          let data = try? Data(contentsOf: URL(filePath: path)),
+          let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let image = CGImageSourceCreateImageAtIndex(
+            source,
+            0,
+            [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+    else {
+        return ToolMediaLoader(preloaded: item, state: .unavailable)
+    }
+    return ToolMediaLoader(preloaded: item, media: DecodedToolMedia(data: data, image: image))
+}
+
 private actor SnapshotMediaGate {
     private var isStarted = false
     private var isOpen = false
@@ -4410,7 +4435,7 @@ private actor SnapshotMediaGate {
         size: CGSize(width: 600, height: 420))
 }
 @MainActor
-@Test func semanticToolSurfacesSnapshotDark() async throws {
+@Test func semanticToolSurfacesSnapshotDark() throws {
     let timestamp = Date(timeIntervalSince1970: 1)
     let source = ToolPresentation(
         id: "semantic-source",
@@ -4479,7 +4504,7 @@ private actor SnapshotMediaGate {
     let disclosure = ToolDisclosureState()
     disclosure.expand(ids: [source.id, collection.id, mcp.id])
 
-    try await assertSettledSnapshot(
+    try assertSnapshot(
         VStack(alignment: .leading, spacing: 18) {
             ToolCardView(presentation: source)
             ToolCardView(presentation: collection)
@@ -4489,6 +4514,7 @@ private actor SnapshotMediaGate {
         .environment(snapshotEmptyIDEStore)
         .environment(\.fileReferenceBaseURL, snapshotProjectURL)
         .environment(\.fileOpenService, snapshotFileOpenService)
+        .environment(\.toolMediaLoaderFactory, snapshotMediaLoader)
         .frame(width: 720, alignment: .leading),
         name: "semantic-tool-surfaces-dark", appearance: .dark,
         size: CGSize(width: 800, height: 1_500))
@@ -4564,7 +4590,7 @@ private actor SnapshotMediaGate {
         size: CGSize(width: 600, height: 1_150))
 }
 @MainActor
-@Test func mediaToolCardsSnapshotDark() async throws {
+@Test func mediaToolCardsSnapshotDark() throws {
     let previewPath = snapshotProjectURL
         .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
         .path
@@ -4639,8 +4665,9 @@ private actor SnapshotMediaGate {
             duration: 3.4),
     ]
 
-    try await assertSettledSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-media-dark", appearance: .dark,
         size: CGSize(width: 600, height: 1_300))
 }
@@ -4707,7 +4734,7 @@ private actor SnapshotMediaGate {
         size: CGSize(width: 600, height: 1_100))
 }
 @MainActor
-@Test func mcpFallbackToolCardsSnapshotDark() async throws {
+@Test func mcpFallbackToolCardsSnapshotDark() throws {
     let previewPath = snapshotProjectURL
         .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
         .path
@@ -4771,8 +4798,9 @@ private actor SnapshotMediaGate {
             duration: 0.9),
     ]
 
-    try await assertSettledSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+    try assertSnapshot(
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-mcp-fallback-dark", appearance: .dark,
         size: CGSize(width: 600, height: 1_600))
 }

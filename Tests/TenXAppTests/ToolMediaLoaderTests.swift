@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OmpKit
 import Testing
 @testable import TenXApp
 
@@ -30,6 +31,60 @@ import Testing
         await loader.load(replacement)
 
         #expect(loader.decodedData == Data("original.png".utf8))
+    }
+
+    @MainActor @Test func preloadedMediaLoaderKeepsItsMatchingGenerationLoaded() async {
+        let item = mediaItem(id: "preloaded")
+        let media = DecodedToolMedia(data: Data("preview".utf8), image: nil)
+        let loader = ToolMediaLoader(preloaded: item, media: media)
+
+        await loader.load(item)
+
+        #expect(loader.decodedData == media.data)
+        #expect(loader.loadedItemID == item.id)
+    }
+
+    @MainActor @Test func preloadedMediaLoaderCanExposeUnavailableState() async {
+        let item = mediaItem(id: "unavailable")
+        let loader = ToolMediaLoader(preloaded: item, state: .unavailable)
+
+        guard case .unavailable = loader.state else {
+            Issue.record("Preloaded unavailable media should not enter loading")
+            return
+        }
+    }
+
+    @MainActor @Test func presentationUpdatesKeepAnUnchangedMediaLoaderGenerationCached() async throws {
+        let result: JSONValue = .object(["content": .array([.object([
+            "type": .string("image"),
+            "data": .string("AQ=="),
+            "mimeType": .string("image/png"),
+            "name": .string("preview.png"),
+        ])])])
+        var presentation = ToolPresentation(
+            id: "media",
+            name: "inspect_image",
+            arguments: .object(["path": .string("preview.png")]),
+            result: result,
+            phase: .running,
+            startDate: .distantPast,
+            endDate: nil)
+        let original = try #require(presentationMediaItem(in: presentation))
+        let calls = MediaDecodeCounter()
+        let loader = ToolMediaLoader(decode: { item in
+            calls.increment()
+            return .loaded(DecodedToolMedia(data: Data(item.id.utf8), image: nil))
+        })
+
+        await loader.load(original)
+        presentation.name = "computer"
+        presentation.arguments = .object(["action": .string("inspect")])
+        presentation.phase = .complete
+        let refreshed = try #require(presentationMediaItem(in: presentation))
+        await loader.load(refreshed)
+
+        #expect(refreshed.contentID == original.contentID)
+        #expect(calls.value == 1)
     }
 
     @Test func mediaItemSemanticEqualityIgnoresItsGenerationToken() {
@@ -279,4 +334,9 @@ private func testPNGData() -> Data? {
         bitsPerPixel: 0)
     bitmap?.setColor(.systemCyan, atX: 0, y: 0)
     return bitmap?.representation(using: .png, properties: [:])
+}
+
+private func presentationMediaItem(in presentation: ToolPresentation) -> ToolMediaItem? {
+    guard case .media(let items, _) = presentation.content.body else { return nil }
+    return items.first
 }

@@ -149,3 +149,57 @@ computed media decode in `ToolSurfaceView`.
 - The seven snapshot changes are intentional: six now show decoded previews
   instead of first-frame spinners, and one is the explicit loading-state
   reference.
+
+## Fix Round 2
+
+### RED
+
+Added reducer regressions before reconciliation. A running image result followed
+by a complete result with identical media payload failed because extraction
+created a different UUID; a changed payload already produced a different UUID,
+as required. Added preloaded-loader tests before the new snapshot injection
+initializer; they failed to compile until that initializer existed.
+
+### Review findings resolved
+
+1. `ToolPresentation.refreshContent()` is now the sole reconciliation boundary.
+   It walks freshly extracted media and reuses an old generation only for a
+   complete semantic `ToolMediaItem` match, consuming each prior match once.
+   This preserves duplicate equal items one-for-one without relying on display
+   IDs, while changed bytes, URL, MIME type, name, kind, or ID retain their new
+   UUID. Reducer tests cover running→complete identity retention and changed
+   same-slot payload replacement.
+2. Removed the settled snapshot host's fixed yields, sleep, and ignored
+   cancellation. The six loaded snapshots inject a deterministic loader factory:
+   local fixture bytes and eager `CGImage` are preloaded, while the known
+   malformed inline fixture is preloaded unavailable. The production default
+   factory remains asynchronous.
+3. The loading snapshot now cleans up in `do`/`catch`: if snapshot I/O throws,
+   it cancels the blocked task, opens its actor gate, awaits task completion,
+   then rethrows. The success path performs the same release.
+
+### Verification
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
+  '-only-testing:TenXAppTests/ToolMediaLoaderTests'
+```
+
+Passed: 15 focused loader tests, including both preloaded loaded/unavailable
+states. The presentation/reducer regressions passed during all full-suite runs.
+
+The seven media snapshots (six loaded light/dark cards plus the loading fixture)
+were run three times through the normal test runner. Every run passed all seven
+and the full suite: 1,177 tests in 26 suites. A final full run after adding the
+presentation-to-loader cache regression passed 1,178 tests in 26 suites.
+
+```bash
+xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release \
+  -destination 'platform=macOS'
+bundle exec ruby scripts/generate_xcodeproj.rb
+git diff --check
+! rg -n 'Data\(base64Encoded|CGImageSource|NSImage\(data:' App/Tools/ToolSurfaceView.swift
+```
+
+Passed: Release build, reproducible project generator, whitespace check, and
+the no-body-decode guard. No snapshots changed in this round.

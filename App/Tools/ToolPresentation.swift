@@ -58,10 +58,56 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
     }
 
     private mutating func refreshContent() {
-        content = ToolContentExtractor.card(
+        let refreshed = ToolContentExtractor.card(
             name: name,
             arguments: arguments,
             result: result,
             phase: phase)
+        content = refreshed.reusingMediaContentIDs(from: content)
+    }
+}
+
+private extension ToolCardContent {
+    func reusingMediaContentIDs(from previous: ToolCardContent) -> ToolCardContent {
+        var previousMedia = previous.body.mediaItems
+        return ToolCardContent(
+            title: title,
+            verb: verb,
+            primary: primary,
+            outcome: outcome,
+            reference: reference,
+            body: body.reusingMediaContentIDs(from: &previousMedia))
+    }
+}
+
+private extension ToolBody {
+    var mediaItems: [ToolMediaItem] {
+        switch self {
+        case .media(let items, _): items
+        case .stack(let bodies): bodies.flatMap(\.mediaItems)
+        default: []
+        }
+    }
+
+    func reusingMediaContentIDs(from previousMedia: inout [ToolMediaItem]) -> ToolBody {
+        switch self {
+        case .media(let items, let caption):
+            return .media(items.map { item in
+                guard let index = previousMedia.firstIndex(of: item) else { return item }
+                let previous = previousMedia.remove(at: index)
+                return ToolMediaItem(
+                    id: item.id,
+                    kind: item.kind,
+                    name: item.name,
+                    mimeType: item.mimeType,
+                    data: item.data,
+                    url: item.url,
+                    contentID: previous.contentID)
+            }, caption: caption)
+        case .stack(let bodies):
+            return .stack(bodies.map { $0.reusingMediaContentIDs(from: &previousMedia) })
+        default:
+            return self
+        }
     }
 }

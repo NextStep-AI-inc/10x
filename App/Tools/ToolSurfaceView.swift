@@ -58,6 +58,19 @@ enum ToolSurfacePagination {
     static let jsonScalar = ProgressiveReveal(initialLimit: 2_000, pageSize: 4_000)
 }
 
+typealias ToolMediaLoaderFactory = @MainActor (ToolMediaItem) -> ToolMediaLoader
+
+private struct ToolMediaLoaderFactoryKey: EnvironmentKey {
+    static let defaultValue: ToolMediaLoaderFactory = { _ in ToolMediaLoader() }
+}
+
+extension EnvironmentValues {
+    var toolMediaLoaderFactory: ToolMediaLoaderFactory {
+        get { self[ToolMediaLoaderFactoryKey.self] }
+        set { self[ToolMediaLoaderFactoryKey.self] = newValue }
+    }
+}
+
 private struct ConsoleSurfaceView: View {
     let command: String?
     let output: String
@@ -201,11 +214,12 @@ private struct CollectionSurfaceView: View {
 private struct MediaSurfaceView: View {
     let items: [ToolMediaItem]
     let caption: ContentDocument?
+    @Environment(\.toolMediaLoaderFactory) private var makeLoader
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(items) { item in
-                MediaItemView(item: item)
+                MediaItemView(item: item, loader: makeLoader(item))
             }
             if let caption, !caption.blocks.isEmpty {
                 ContentDocumentView(document: caption)
