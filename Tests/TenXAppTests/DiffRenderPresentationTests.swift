@@ -237,7 +237,7 @@ import Testing
         }
         defer { gate.resume() }
 
-        #expect(gate.waitForStart())
+        await waitUntil("old diff tokenization to start") { gate.hasStarted }
         await loader.reset(
             contentID: replacement.contentID,
             initialRows: [replacementRow])
@@ -268,16 +268,15 @@ private final class TokenizationRecorder: @unchecked Sendable {
 }
 
 private final class TokenizationGate: @unchecked Sendable {
-    private let started = DispatchSemaphore(value: 0)
+    private let lock = NSLock()
+    private var isStarted = false
     private let continuation = DispatchSemaphore(value: 0)
 
-    func block() {
-        started.signal()
-        continuation.wait()
-    }
+    var hasStarted: Bool { lock.withLock { isStarted } }
 
-    func waitForStart() -> Bool {
-        started.wait(timeout: .now() + 1) == .success
+    func block() {
+        lock.withLock { isStarted = true }
+        continuation.wait()
     }
 
     func resume() {
