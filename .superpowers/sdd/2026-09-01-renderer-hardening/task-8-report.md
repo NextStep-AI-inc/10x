@@ -2,7 +2,7 @@
 
 ## Status
 
-DONE for the automated gate. Exact-app visible launch and CPU/main-thread sampling remain pending the controller.
+DONE for the automated gate and exact-app launch/idle verification. The original oversized skill block was unavailable in persisted content, so that exact manual shape remains fixture-covered rather than reproduced in the standalone process.
 
 ## Implementation
 
@@ -67,14 +67,24 @@ The clean standalone build succeeded without testability, DEBUG, or signing over
 - The largest fixture holds one 5 MiB decoded buffer plus its base64 representation; the suite avoids view snapshots and passed in roughly one tenth of a second when focused.
 - The only production diff is the explicitly authorized removal of trailing whitespace.
 
+## Exact-app launch evidence
+
+- Launched artifact: `/private/tmp/tenx-renderer-hardening-release/Build/Products/Release/10x.app` from product commit `059d578823cba504a139fbdff29dbb08973c68fe`.
+- Process: PID 29413 survived, and its executable path matched the exact artifact whose SHA-256 is `d5527bdbb9678cfc7c03128a222a248f3fc7c7a47dc7adbafa5515c763c91f30`.
+- Visible surfaces: Computer Use confirmed the rendered update prompt, then after **Not now** a rendered workspace window and a persisted session with expanded and collapsed tool blocks.
+- Before session load: five two-second samples were each 0.0% CPU; RSS was approximately 106,240–106,320 KB.
+- After persisted tool-history load: five two-second samples were each 0.0% CPU; RSS was approximately 147,856–148,320 KB.
+- No persistent hot main thread appeared, so the conditional one-second stack sample was not triggered.
+
 ## Not verified
 
-- The exact standalone app was not launched, and CPU/main-thread samples were not captured. Those checks belong to the controller under `launching-local-builds`.
-- Artificial oversized fixtures were not routed into the shipping app process, per the preflight ruling against adding a production fixture mode.
+- The persisted session did not contain the original oversized superpowers skill block, so its exact appearance, selectable raw text, and concurrent streaming interaction were not manually reproduced in the standalone process.
+- No main-thread stack sample was captured because all ten CPU samples remained at 0.0%; there was no persistent hot interval to sample.
+- Artificial oversized fixtures were not routed into the shipping app process, per the preflight ruling against adding a production fixture mode. Their exact work ceilings are covered in the optimized fixture host.
 
 ## For you to test
 
-- Launch the exact app at `/private/tmp/tenx-renderer-hardening-release/Build/Products/Release/10x.app`, confirm it is the visible process, exercise persisted oversized content, and capture idle/streaming CPU plus a main-thread sample.
+- If the original oversized skill payload becomes available again, confirm its raw monospace/selectable appearance and interactivity during live streaming in the exact packaged app. No further launch check is required for the persisted tool-history surface exercised here.
 
 ## Concerns
 
