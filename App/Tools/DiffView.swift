@@ -261,7 +261,7 @@ private struct DiffRenderHunkSection: Identifiable {
 }
 
 private struct DiffRenderLoadID: Equatable {
-    let contentID: String
+    let contentID: UUID
     let lineIDs: [DiffRenderRow.ID]
 }
 

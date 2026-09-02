@@ -698,12 +698,30 @@ private struct JSONValueNode: View {
     }
 }
 
+struct DataScalarRenderPresentation: Equatable, Sendable {
+    let visibleText: String
+    let accessibilityText: String
+    let progressiveTotal: Int
+
+    init(text: String, characterLimit: Int) {
+        let textPresentation = ProgressiveTextPresentation(
+            text: text,
+            characterLimit: characterLimit)
+        visibleText = textPresentation.visibleText
+        accessibilityText = textPresentation.accessibilityText
+        progressiveTotal = textPresentation.progressiveTotal
+    }
+}
+
 private struct DataScalarRow: View {
     let label: String?
     let text: String
     @State private var reveal = ToolSurfacePagination.jsonScalar
 
     var body: some View {
+        let presentation = DataScalarRenderPresentation(
+            text: text,
+            characterLimit: reveal.limit)
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let label {
@@ -715,7 +733,7 @@ private struct DataScalarRow: View {
                             .font(TenXTypography.mono(size: 10, weight: .semibold))
                     }
                 }
-                Text(visibleText)
+                Text(presentation.visibleText)
                     .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                     .textSelection(.enabled)
@@ -724,17 +742,14 @@ private struct DataScalarRow: View {
                         Button("Copy value") { copy(text) }
                     }
                     .accessibilityAction(named: "Copy value") { copy(text) }
+                    .accessibilityLabel(presentation.accessibilityText)
             }
             ProgressiveRevealButton(
                 reveal: $reveal,
-                total: text.count,
+                total: presentation.progressiveTotal,
                 noun: "characters",
                 accessibilityNoun: "JSON characters")
         }
-    }
-
-    private var visibleText: String {
-        String(text.prefix(reveal.visibleCount(total: text.count)))
     }
 }
 

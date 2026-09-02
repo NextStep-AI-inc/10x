@@ -9,12 +9,12 @@ import Foundation
 
     @Published private(set) var cachedSpans: [DiffRenderRow.ID: [SourceSpan]] = [:]
     private let tokenize: Tokenizer
-    private var contentID: String
+    private var contentID: UUID?
     private var tokenizationTask: Task<[DiffRenderRow.ID: [SourceSpan]], Never>?
     private var activeTokenizationID: UUID?
 
     init(
-        contentID: String = "",
+        contentID: UUID? = nil,
         initialRows: [DiffRenderRow] = [],
         tokenize: @escaping Tokenizer = { text, language in
             SourceTokenizer.spans(text, language: language)
@@ -25,7 +25,7 @@ import Foundation
         cache(initialRows)
     }
 
-    func reset(contentID: String, initialRows: [DiffRenderRow]) {
+    func reset(contentID: UUID, initialRows: [DiffRenderRow]) {
         guard self.contentID != contentID else { return }
         tokenizationTask?.cancel()
         activeTokenizationID = nil
@@ -54,13 +54,14 @@ import Foundation
 
     var cachedLineCount: Int { cachedSpans.count }
 
-    func spans(for rowID: DiffRenderRow.ID, contentID: String) -> [SourceSpan]? {
+    func spans(for rowID: DiffRenderRow.ID, contentID: UUID) -> [SourceSpan]? {
         guard self.contentID == contentID else { return nil }
         return cachedSpans[rowID]
     }
 
-    func load(rows: [DiffRenderRow], contentID: String = "") async {
-        guard contentID.isEmpty || contentID == self.contentID else { return }
+    func load(rows: [DiffRenderRow], contentID: UUID? = nil) async {
+        let requestedContentID = contentID ?? self.contentID
+        guard requestedContentID == self.contentID else { return }
         let missingRows = rows.compactMap { row -> (DiffRenderRow.ID, DiffRenderLine)? in
             guard let line = row.line, cachedSpans[row.id] == nil else { return nil }
             return (row.id, line)
@@ -81,7 +82,10 @@ import Foundation
         tokenizationTask = work
         activeTokenizationID = id
         let spans = await withTaskCancellationHandler(operation: { await work.value }, onCancel: { work.cancel() })
-        guard !Task.isCancelled, activeTokenizationID == id else { return }
+        guard !Task.isCancelled,
+              activeTokenizationID == id,
+              self.contentID == requestedContentID
+        else { return }
         cachedSpans.merge(spans) { _, latest in latest }
     }
 }

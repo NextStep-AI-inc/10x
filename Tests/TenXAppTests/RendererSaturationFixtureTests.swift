@@ -50,6 +50,17 @@ struct RendererSaturationFixtureTests {
     }
 
     @Test
+    func diffRenderIdentityStaysSeparateFromRawPatchPayload() throws {
+        let raw = oversizedDiff(fileCount: 2, linesPerFile: 500)
+        let diff = try #require(UnifiedDiffParser.parse(raw))
+        let presentation = DiffRenderPresentation(diff: diff)
+
+        #expect(diff.raw == raw)
+        #expect(presentation.contentID.description != raw)
+        #expect(presentation.contentID.description.count <= 36)
+    }
+
+    @Test
     func tenThousandLineConsoleKeepsOneFinitePageAndFullCopyPayload() {
         let output = (0..<10_000).map { "console line \($0)" }.joined(separator: "\n")
         var lineReveal = ToolSurfacePagination.console
@@ -208,6 +219,27 @@ struct RendererSaturationFixtureTests {
         #expect(value["field-4999"]?.intValue == 4_999)
         #expect(scalar.last == "s")
         #expect(DataTreeSurfaceLayout.maximumDepth == 6)
+    }
+
+    @Test
+    func hugeJSONScalarDoesNotUseFullTextCountForDisclosureTotal() {
+        let scalar = String(repeating: "s", count: 4_000_000)
+        var reveal = ToolSurfacePagination.jsonScalar
+
+        let initial = DataScalarRenderPresentation(
+            text: scalar,
+            characterLimit: reveal.limit)
+
+        #expect(initial.visibleText.count == 2_000)
+        #expect(initial.progressiveTotal == 6_000)
+
+        reveal.revealNextPage(total: initial.progressiveTotal)
+        let expanded = DataScalarRenderPresentation(
+            text: scalar,
+            characterLimit: reveal.limit)
+
+        #expect(expanded.visibleText.count == 6_000)
+        #expect(expanded.progressiveTotal == 10_000)
     }
 
     @Test
