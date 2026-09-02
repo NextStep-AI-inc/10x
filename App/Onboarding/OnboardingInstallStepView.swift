@@ -24,11 +24,45 @@ enum OnboardingInstallPhase: Equatable, Sendable {
     }
 }
 
+enum OnboardingInstallLogDisclosure {
+    static func label(reveal: ProgressiveReveal, total: Int) -> String {
+        if reveal.canRevealMore(total: total) {
+            return "Show \(reveal.nextPageCount(total: total)) older lines"
+        }
+        return "Show newest \(reveal.initialLimit) lines"
+    }
+
+    static func accessibilityLabel(reveal: ProgressiveReveal, total: Int) -> String {
+        if reveal.canRevealMore(total: total) {
+            return "Show \(reveal.nextPageCount(total: total)) older installer log lines"
+        }
+        return "Show newest \(reveal.initialLimit) installer log lines"
+    }
+}
+
+@MainActor
+func consumeInstallerOutput<Lines: AsyncSequence>(
+    _ lines: Lines,
+    into logBuffer: OnboardingInstallLogBuffer,
+    isCancelled: () -> Bool,
+    onCancellation: () -> Void
+) async throws -> Bool where Lines.Element == String {
+    for try await line in lines {
+        logBuffer.append(line)
+        guard !isCancelled() else {
+            logBuffer.flush()
+            onCancellation()
+            return true
+        }
+    }
+    return false
+}
+
 struct OnboardingInstallStepView: View {
     let model: AppModel
 
     @State private var logBuffer: OnboardingInstallLogBuffer
-    @State private var logReveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+    @State private var logReveal: ProgressiveReveal
     @State private var isAtLiveTail = true
     @State private var hasPositionedLog = false
     @State private var phase: OnboardingInstallPhase
@@ -38,7 +72,8 @@ struct OnboardingInstallStepView: View {
     init(
         model: AppModel,
         initialLog: [String] = [],
-        initialPhase: OnboardingInstallPhase = .idle
+        initialPhase: OnboardingInstallPhase = .idle,
+        initialLogReveal: ProgressiveReveal? = nil
     ) {
         self.model = model
         let buffer = OnboardingInstallLogBuffer()
@@ -47,6 +82,7 @@ struct OnboardingInstallStepView: View {
         }
         buffer.flush()
         _logBuffer = State(initialValue: buffer)
+        _logReveal = State(initialValue: initialLogReveal ?? ProgressiveReveal(initialLimit: 200, pageSize: 200))
         _phase = State(initialValue: initialPhase)
     }
 
@@ -144,10 +180,19 @@ struct OnboardingInstallStepView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 12) {
-                        if logReveal.canRevealMore(total: logBuffer.totalCount) {
-                            Button("Show \(logReveal.nextPageCount(total: logBuffer.totalCount)) older lines") {
-                                logReveal.revealNextPage(total: logBuffer.totalCount)
+                        if logBuffer.totalCount > logReveal.initialLimit {
+                            Button(OnboardingInstallLogDisclosure.label(
+                                reveal: logReveal,
+                                total: logBuffer.totalCount)) {
+                                if logReveal.canRevealMore(total: logBuffer.totalCount) {
+                                    logReveal.revealNextPage(total: logBuffer.totalCount)
+                                } else {
+                                    logReveal.collapse()
+                                }
                             }
+                            .accessibilityLabel(OnboardingInstallLogDisclosure.accessibilityLabel(
+                                reveal: logReveal,
+                                total: logBuffer.totalCount))
                             .buttonStyle(GhostActionStyle(horizontalPadding: 0))
                         }
                         Button("Copy") {
@@ -197,14 +242,12 @@ struct OnboardingInstallStepView: View {
         phase = .installing
         installTask = Task {
             do {
-                for try await line in OmpInstallRunner().run() {
-                    guard !Task.isCancelled else {
-                        logBuffer.flush()
-                        phase = .idle
-                        return
-                    }
-                    logBuffer.append(line)
-                }
+                let didStop = try await consumeInstallerOutput(
+                    OmpInstallRunner().run(),
+                    into: logBuffer,
+                    isCancelled: { Task.isCancelled },
+                    onCancellation: { phase = .idle })
+                guard !didStop else { return }
                 guard !Task.isCancelled else {
                     logBuffer.flush()
                     phase = .idle

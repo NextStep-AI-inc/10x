@@ -59,3 +59,49 @@ Passed: Release build and task diff whitespace validation. The broader `origin/c
 ## Commit
 
 `perf(onboarding): batch and paginate install logs`
+
+---
+
+## Fix Round 1 (2026-09-02)
+
+### Status
+
+DONE
+
+### Fixes
+
+- The production installer-line consumer now appends a yielded line before checking cancellation. A cancellation immediately after a yield flushes that line, requests the idle phase, and stops the loop.
+- The older-log disclosure remains one `Button` whenever the log exceeds the initial 200-line budget. It advances by one 200-line page while more history exists, then becomes `Show newest 200 lines` and collapses to the bounded tail. Its accessibility labels explicitly name installer log lines.
+- Added the activated 400-line snapshot. The 126-point viewport remains bounded, Copy remains its sibling, and the snapshot shows the persistent collapse action.
+
+### TDD evidence
+
+The first focused test run failed as expected because `consumeInstallerOutput` and `OnboardingInstallLogDisclosure` did not exist. After the minimal implementation, the focused buffer suite passed with 8 tests. The cancellation regression proves the yielded line reaches `totalCount` and `completeText` before the stop path is requested. The disclosure regression proves 200-to-400 expansion, stable absolute IDs for the newer tail, exact visible and accessibility labels, and the collapse state.
+
+### Verification
+
+```bash
+bundle exec ruby scripts/generate_xcodeproj.rb
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
+  '-only-testing:TenXAppTests/onboardingInstallStepExpandedPagedLogSnapshot()' \
+  '-only-testing:TenXAppTests/onboardingInstallStepPagedLogSnapshot()' \
+  '-only-testing:TenXAppTests/OnboardingInstallLogBufferTests'
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
+xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release \
+  -destination 'platform=macOS' \
+  -derivedDataPath /private/tmp/tenx-task7-fix1-release build
+git diff --check
+```
+
+Passed: generator produced no project-file changes; focused coverage passed 10 tests; the expanded snapshot was visually inspected; the final full suite passed 1,189 tests in 27 suites; the fresh Release build succeeded; and the task diff was whitespace-clean.
+
+The first full-suite attempt had the existing nondeterministic `archivingAPendingStreamingSessionClosesAndRemovesActivity()` failure. Its isolated rerun passed, and the immediately following complete suite passed without changes outside Task 7.
+
+### Not verified
+
+- A human-driven cancellation of a real installer process was not run. The deterministic production-helper test covers the line-yield/cancellation ordering.
+
+### For you to test
+
+- During a real long install, cancel immediately after output arrives and confirm the final received line remains visible and copyable.
+- Expand a 400-line installer transcript, verify `Show newest 200 lines` retains keyboard focus, then collapse it without a scroll-to-bottom jump.

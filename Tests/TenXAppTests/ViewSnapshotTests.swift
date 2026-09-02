@@ -82,6 +82,20 @@ import Testing
 }
 
 @MainActor
+@Test func onboardingInstallStepExpandedPagedLogSnapshot() throws {
+    var reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+    reveal.revealNextPage(total: 400)
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: (0..<400).map { "Installer line \($0)" },
+            initialLogReveal: reveal)
+            .padding(56),
+        name: "onboarding-install-expanded-paged-log",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
 @Test func onboardingProjectStepEmptySnapshot() throws {
     // A genuine first-run user: no sessions, so no suggestions. No disk
     // scan runs, so this settles synchronously.

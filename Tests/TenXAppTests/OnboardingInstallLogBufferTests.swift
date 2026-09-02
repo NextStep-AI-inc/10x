@@ -101,6 +101,53 @@ struct OnboardingInstallLogBufferTests {
         reveal.revealNextPage(total: 1_000)
         #expect(reveal.visibleCount(total: 1_000) == 400)
     }
+
+    @MainActor
+    @Test
+    func installerConsumptionRetainsTheYieldedLineBeforeRequestingStop() async throws {
+        let scheduler = ManualLogFlushScheduler()
+        let buffer = OnboardingInstallLogBuffer(scheduleFlush: scheduler.schedule)
+        var didRequestStop = false
+
+        let didStop = try await consumeInstallerOutput(
+            AsyncStream { continuation in
+                continuation.yield("received before cancellation")
+                continuation.finish()
+            },
+            into: buffer,
+            isCancelled: { true },
+            onCancellation: { didRequestStop = true })
+
+        #expect(didStop)
+        #expect(didRequestStop)
+        #expect(buffer.totalCount == 1)
+        #expect(buffer.completeText == "received before cancellation")
+    }
+
+    @MainActor
+    @Test
+    func installerDisclosureKeepsOneBoundedViewportAndBecomesACollapseAction() {
+        let scheduler = ManualLogFlushScheduler()
+        let buffer = OnboardingInstallLogBuffer(scheduleFlush: scheduler.schedule)
+        for index in 0..<400 {
+            buffer.append("line \(index)")
+        }
+        scheduler.fireLatest()
+        var reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+
+        let initialLines = buffer.visibleTail(limit: reveal.visibleCount(total: buffer.totalCount))
+        #expect(initialLines.count == 200)
+        #expect(OnboardingInstallLogDisclosure.label(reveal: reveal, total: buffer.totalCount) == "Show 200 older lines")
+        #expect(OnboardingInstallLogDisclosure.accessibilityLabel(reveal: reveal, total: buffer.totalCount) == "Show 200 older installer log lines")
+
+        reveal.revealNextPage(total: buffer.totalCount)
+        let expandedLines = buffer.visibleTail(limit: reveal.visibleCount(total: buffer.totalCount))
+
+        #expect(expandedLines.count == 400)
+        #expect(expandedLines.suffix(200).map(\.id) == initialLines.map(\.id))
+        #expect(OnboardingInstallLogDisclosure.label(reveal: reveal, total: buffer.totalCount) == "Show newest 200 lines")
+        #expect(OnboardingInstallLogDisclosure.accessibilityLabel(reveal: reveal, total: buffer.totalCount) == "Show newest 200 installer log lines")
+    }
 }
 
 @MainActor
