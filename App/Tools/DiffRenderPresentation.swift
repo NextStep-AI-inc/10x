@@ -76,7 +76,7 @@ struct DiffRenderPresentation: Equatable, Sendable {
             finalIndex = finalLineIndex
         }
         return DiffRenderSlice(
-            rows: sectionedRows(Array(rows[...finalIndex])), 
+            rows: sectionedRows(Array(rows[...finalIndex])),
             hasMore: visibleLineCount < lineRows.count)
     }
 

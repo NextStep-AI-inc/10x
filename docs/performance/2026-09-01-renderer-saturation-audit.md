@@ -89,3 +89,38 @@ The fix is not considered verified until a fresh Release artifact demonstrates a
 3. Streaming output remains interactive while the skill block is on screen.
 4. CPU falls back toward idle after publications stop.
 5. The main-thread sample no longer spends the entire interval in recursive transcript layout.
+
+## Task 8 automated saturation gate
+
+Run on 2026-09-02 from Task 7 HEAD `ee58292` plus the Task 8 fixture and audit changes. The fixtures use production presentations, pagination policies, page loaders, the media loader, and the installer buffer. They make no wall-clock assertions and do not construct giant SwiftUI snapshot trees.
+
+| Fixture | Exact automated boundary proved |
+| --- | --- |
+| Diff | 10 files and 10,000 changed lines; 200 initial and 400 after one reveal; synchronous token cache/calls stay at zero for the oversized first line; detached cache/calls are exactly 200 then 400, stay off-main, exclude hidden rows, and retain the exact raw diff. |
+| Console | 10,000 lines; 10 initial and 110 after one reveal; the complete copy payload remains exact. |
+| Collection | 1,000 entries; 8 initial and 58 after one reveal; the final retained item remains available. |
+| JSON | 5,000 object children and a 100,000-character scalar; children reveal 12 then 62, scalar characters reveal 2,000 then 6,000, maximum depth remains 6, and full retained values remain available. |
+| Mixed document | Exactly 5,000 combined source/list/quote/table units; the global slice is 160 then 320. Source highlighting has zero synchronous calls for the oversized first line, then exactly 160 and 320 detached off-main calls with hidden lines excluded; the 10,000-character source row reveals 2,048 then 4,096 characters while full source text remains retained. |
+| Inline media | One immutable 5 MiB media item; zero decode calls before load, one detached decode across two loads, one stable loaded item ID, and the complete encoded and decoded payloads remain retained. |
+| Installer | 10,000 appended lines schedule one batch and publish no state before flush; the visible tail is exactly 200 then 400 with stable absolute IDs, and all 10,000 lines remain in `completeText`. |
+
+### Automated evidence
+
+| Check | Result |
+| --- | --- |
+| TDD missing-suite RED | One intentional failing placeholder test recorded `Task 8 oversized renderer fixtures are missing`; `/tmp/tenx-task8-red.log`. |
+| Final Debug fixture suite | 7 tests in 1 suite passed in 0.108 seconds; `/tmp/tenx-task8-debug-fixtures-postreview.log`. |
+| Release-configured fixture suite | 7 tests in 1 suite passed in 0.075 seconds under Release `-O -whole-module-optimization`; `/tmp/tenx-task8-release-fixtures-postreview.log`. |
+| Complete Debug suite | 1,197 tests in 28 suites passed in 8.493 seconds on the third normal run; `/tmp/tenx-task8-full-suite-rerun-2.log`. A post-review normal run and the requested serial diagnostic are recorded below. |
+| Universal Release build | Clean build succeeded at `/private/tmp/tenx-renderer-hardening-release/Build/Products/Release/10x.app`; executable architectures are `x86_64 arm64`; `/tmp/tenx-task8-universal-release-build.log`. |
+| Artifact SHA-256 | `d5527bdbb9678cfc7c03128a222a248f3fc7c7a47dc7adbafa5515c763c91f30` for `10x.app/Contents/MacOS/10x`. |
+| Signing | `codesign --verify --deep --strict` passed for the exact app. Identity is `Developer ID Application: NextStep AI Inc. (345S42BKPY)`, Team ID `345S42BKPY`, hardened runtime 26.5.0. |
+| Project generation | Two consecutive generator runs produced project SHA-1 `4ba0d09933a23cc361f1936f38a68cf2a48d6803`; the new test adds the expected four generated project lines. |
+
+The first two normal full-suite attempts each reported one different existing concurrency-sensitive failure: `cancelledOldTokenizationCannotPublishIntoReplacementContent()` could not start its gate under the fully parallel load, then `controllerReportsProviderAndRuntimeTransitionsFromRPCLifecycle()` missed an async retained-provider expectation. The complete diff presentation suite passed 12 tests in isolation, the Task 8 suite passed in both failed runs, and the third unchanged complete run passed all 1,197 tests. After self-review added only the explicit zero-before-media-load assertion, focused Debug and optimized Release fixtures passed again; a fourth normal full run repeated the existing diff gate timeout (`/tmp/tenx-task8-full-suite-final.log`). The requested `-parallel-testing-enabled NO` diagnostic ran all 1,197 tests serially and found one unrelated snapshot mismatch (`/tmp/tenx-task8-full-suite-serial.log`); that exact snapshot then passed alone as 1 test in 0 suites (`/tmp/tenx-task8-serial-snapshot-isolated.log`). No unrelated code or reference asset was changed.
+
+The unmodified Release test command failed because the shipping module correctly disables testability (`/tmp/tenx-task8-release-fixtures.log`). `ENABLE_TESTABILITY=YES` alone then exposed existing tests that reference DEBUG-only Composer hooks (`/tmp/tenx-task8-release-fixtures-testable.log`). Adding the ledger-approved command-line-only DEBUG compilation condition compiled optimized code but initially left the host and test bundle with different Team IDs (`/tmp/tenx-task8-release-fixtures-optimized.log`). An ad-hoc signing probe aligned those two but conflicted with Sparkle library validation (`/tmp/tenx-task8-release-fixtures-optimized-adhoc.log`). The final optimized test host used the ledger-approved existing Developer ID identity for every copied test component. The exact standalone app was then clean-built without `ENABLE_TESTABILITY`, `DEBUG`, or a signing override.
+
+### Pending exact-app evidence
+
+The controller still owns the visible launch and CPU/main-thread sample of the exact artifact under the local-build workflow. Until that evidence is appended, verification-gate items 1–5 above remain pending for the standalone process. No app was launched during the automated gate.
