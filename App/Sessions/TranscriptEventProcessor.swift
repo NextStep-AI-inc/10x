@@ -2,6 +2,11 @@ import Foundation
 import OmpKit
 
 actor TranscriptEventProcessor {
+    private struct PendingMessageUpdate {
+        let messageID: String
+        let frame: RpcFrame
+    }
+
     nonisolated let id: UUID
     nonisolated let snapshots: AsyncStream<TranscriptSnapshot>
     nonisolated let controlEvents: AsyncStream<RpcFrame>
@@ -17,6 +22,7 @@ actor TranscriptEventProcessor {
     private var timerGeneration: UInt64 = 0
     private var reconciliationGeneration: UInt64 = 0
     private var isStopped = false
+    private var pendingMessageUpdate: PendingMessageUpdate?
     #if DEBUG
     private var messageUpdateReductionCount = 0
     #endif
@@ -49,6 +55,7 @@ actor TranscriptEventProcessor {
     ) -> TranscriptSnapshot {
         guard !isStopped else { return currentSnapshot() }
         cancelScheduledPublication()
+        pendingMessageUpdate = nil
         isDirty = false
 
         switch content {
@@ -82,21 +89,15 @@ actor TranscriptEventProcessor {
             break
         }
 
-        #if DEBUG
-        if case .event("message_update", _) = frame {
-            messageUpdateReductionCount += 1
+        if let messageID = messageUpdateIdentity(frame) {
+            enqueueMessageUpdate(frame, messageID: messageID)
+            return
         }
-        #endif
-        let mutation = reducer.consume(frame)
-        switch mutation {
-        case .none:
-            break
-        case .coalesced:
-            isDirty = true
-            schedulePublication()
-        case .immediate:
-            publishNow()
-        }
+
+        let mutation = combinedMutation(
+            drainPendingMessageUpdate(),
+            reduce(frame))
+        publish(mutation)
 
         if shouldForwardControl(frame) {
             if shouldFlushBeforeControl(frame) {
@@ -135,12 +136,37 @@ actor TranscriptEventProcessor {
         guard !isStopped else { return }
         guard generation >= reconciliationGeneration else { return }
         reconciliationGeneration = generation
+        let pending = drainPendingMessageUpdate()
         let reconciliation = reducer.reconcile(history: history)
         let warning = reducer.setReconciliationWarning(isPresented: hasWarning)
-        publish(reconciliation == .immediate || warning == .immediate ? .immediate : .none)
+        publish(combinedMutation(
+            pending,
+            combinedMutation(reconciliation, warning)))
     }
 
     func currentSnapshot() -> TranscriptSnapshot {
+        markDirty(drainPendingMessageUpdate())
+        return makeSnapshot()
+    }
+
+    func flush() -> TranscriptSnapshot? {
+        guard !isStopped else { return nil }
+        markDirty(drainPendingMessageUpdate())
+        guard isDirty else { return nil }
+        return publishNow()
+    }
+
+    func stop() {
+        guard !isStopped else { return }
+        _ = flush()
+        isStopped = true
+        cancelScheduledPublication()
+        isDirty = false
+        snapshotContinuation.finish()
+        controlContinuation.finish()
+    }
+
+    private func makeSnapshot() -> TranscriptSnapshot {
         TranscriptSnapshot(
             processorID: id,
             revision: revision,
@@ -148,18 +174,53 @@ actor TranscriptEventProcessor {
             runtimeState: reducer.runtimeState)
     }
 
-    func flush() -> TranscriptSnapshot? {
-        guard !isStopped, isDirty else { return nil }
-        return publishNow()
+    private func messageUpdateIdentity(_ frame: RpcFrame) -> String? {
+        guard case .event("message_update", let payload) = frame,
+              let messageID = payload["message"]?["id"]?.stringValue,
+              !messageID.isEmpty
+        else { return nil }
+        return messageID
     }
 
-    func stop() {
-        guard !isStopped else { return }
-        isStopped = true
-        cancelScheduledPublication()
-        isDirty = false
-        snapshotContinuation.finish()
-        controlContinuation.finish()
+    private func enqueueMessageUpdate(_ frame: RpcFrame, messageID: String) {
+        if let pendingMessageUpdate,
+           pendingMessageUpdate.messageID != messageID {
+            publish(drainPendingMessageUpdate())
+        }
+        pendingMessageUpdate = PendingMessageUpdate(
+            messageID: messageID,
+            frame: frame)
+        schedulePublication()
+    }
+
+    private func drainPendingMessageUpdate() -> TranscriptMutation {
+        guard let pendingMessageUpdate else { return .none }
+        self.pendingMessageUpdate = nil
+        return reduce(pendingMessageUpdate.frame)
+    }
+
+    private func reduce(_ frame: RpcFrame) -> TranscriptMutation {
+        #if DEBUG
+        if case .event("message_update", _) = frame {
+            messageUpdateReductionCount += 1
+        }
+        #endif
+        return reducer.consume(frame)
+    }
+
+    private func combinedMutation(
+        _ first: TranscriptMutation,
+        _ second: TranscriptMutation
+    ) -> TranscriptMutation {
+        if first == .immediate || second == .immediate { return .immediate }
+        if first == .coalesced || second == .coalesced { return .coalesced }
+        return .none
+    }
+
+    private func markDirty(_ mutation: TranscriptMutation) {
+        guard mutation != .none else { return }
+        isDirty = true
+        schedulePublication()
     }
 
     private func publish(_ mutation: TranscriptMutation) {
@@ -176,10 +237,11 @@ actor TranscriptEventProcessor {
 
     @discardableResult
     private func publishNow() -> TranscriptSnapshot {
+        _ = drainPendingMessageUpdate()
         cancelScheduledPublication()
         isDirty = false
         revision += 1
-        let snapshot = currentSnapshot()
+        let snapshot = makeSnapshot()
         snapshotContinuation.yield(snapshot)
         return snapshot
     }

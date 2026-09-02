@@ -88,8 +88,8 @@ import Testing
     }
     // Wait for the publisher rather than assuming it got scheduled. Its timer
     // ticks every 50ms, but on a loaded machine it can be starved past the
-    // sampling window, and stop() does not flush — which left this test
-    // asserting a rate over zero publications.
+    // sampling window, which can leave this test asserting a rate over zero
+    // publications without observing the scheduled tick.
     await observed.waitForFirstPublication()
     await processor.stop()
 
