@@ -52,44 +52,71 @@ struct RendererSaturationFixtureTests {
     @Test
     func tenThousandLineConsoleKeepsOneFinitePageAndFullCopyPayload() {
         let output = (0..<10_000).map { "console line \($0)" }.joined(separator: "\n")
-        let lines = output.split(separator: "\n", omittingEmptySubsequences: false)
-        var reveal = ToolSurfacePagination.console
+        var lineReveal = ToolSurfacePagination.console
+        let characterReveal = ProgressiveTextPresentation.initialReveal
+        let initial = ConsoleRenderPresentation(
+            output: output,
+            lineLimit: lineReveal.limit,
+            characterLimit: characterReveal.limit)
 
-        #expect(lines.count == 10_000)
-        #expect(reveal.visibleCount(total: lines.count) == 10)
-        #expect(lines.prefix(10).last == "console line 9")
+        #expect(initial.visibleText.hasSuffix("console line 9"))
+        #expect(!initial.visibleText.contains("console line 10"))
+        #expect(initial.accessibilityText == initial.visibleText)
+        #expect(initial.lineProgressiveTotal == 110)
+        #expect(initial.inspectedCharacterCount <= 6_049)
+        #expect(initial.inspectedLineCount <= 111)
+        #expect(initial.materializedCharacterCount <= 6_049)
+        #expect(initial.copyText == output)
 
-        reveal.revealNextPage(total: lines.count)
+        lineReveal.revealNextPage(total: initial.lineProgressiveTotal)
+        let expanded = ConsoleRenderPresentation(
+            output: output,
+            lineLimit: lineReveal.limit,
+            characterLimit: characterReveal.limit)
 
-        #expect(reveal.visibleCount(total: lines.count) == 110)
-        #expect(lines.prefix(110).last == "console line 109")
-        #expect(lines.joined(separator: "\n") == output)
+        #expect(lineReveal.limit == 110)
+        #expect(expanded.visibleText.hasSuffix("console line 109"))
+        #expect(!expanded.visibleText.contains("console line 110"))
+        #expect(expanded.lineProgressiveTotal == 210)
+        #expect(expanded.inspectedCharacterCount <= 6_049)
+        #expect(expanded.inspectedLineCount <= 211)
+        #expect(output.hasPrefix("console line 0\n"))
+        #expect(output.hasSuffix("console line 9999"))
     }
 
     @Test
-    func hundredThousandCharacterToolStringRevealsOneFinitePageAndRetainsFullPayload() {
-        let payload = String(repeating: "x", count: 100_000)
-        var reveal = ProgressiveTextPresentation.initialReveal
-        let initial = ProgressiveTextPresentation(
-            text: payload,
-            characterLimit: reveal.limit)
+    func hundredThousandCharacterConsoleLineScansAndRevealsFinitePrefixes() {
+        let output = String(repeating: "x", count: 100_000)
+        let lineReveal = ToolSurfacePagination.console
+        var characterReveal = ProgressiveTextPresentation.initialReveal
+        let initial = ConsoleRenderPresentation(
+            output: output,
+            lineLimit: lineReveal.limit,
+            characterLimit: characterReveal.limit)
 
         #expect(initial.visibleText.count == 2_048)
         #expect(initial.accessibilityText.count == 2_048)
-        #expect(initial.hasMore)
-        #expect(initial.progressiveTotal == 6_048)
+        #expect(initial.characterProgressiveTotal == 6_048)
+        #expect(initial.lineProgressiveTotal == 1)
+        #expect(initial.inspectedCharacterCount == 6_049)
+        #expect(initial.inspectedLineCount == 1)
+        #expect(initial.materializedCharacterCount == 6_049)
 
-        reveal.revealNextPage(total: initial.progressiveTotal)
-        let expanded = ProgressiveTextPresentation(
-            text: payload,
-            characterLimit: reveal.limit)
+        characterReveal.revealNextPage(total: initial.characterProgressiveTotal)
+        let expanded = ConsoleRenderPresentation(
+            output: output,
+            lineLimit: lineReveal.limit,
+            characterLimit: characterReveal.limit)
 
         #expect(expanded.visibleText.count == 6_048)
         #expect(expanded.accessibilityText.count == 6_048)
-        #expect(expanded.hasMore)
-        #expect(expanded.progressiveTotal == 10_048)
-        #expect(payload.count == 100_000)
-        #expect(payload.last == "x")
+        #expect(expanded.characterProgressiveTotal == 10_048)
+        #expect(expanded.inspectedCharacterCount == 10_049)
+        #expect(expanded.inspectedLineCount == 1)
+        #expect(expanded.materializedCharacterCount == 10_049)
+        #expect(expanded.copyText == output)
+        #expect(output.count == 100_000)
+        #expect(output.last == "x")
     }
 
     @Test

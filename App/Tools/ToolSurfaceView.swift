@@ -74,15 +74,83 @@ extension EnvironmentValues {
     }
 }
 
+struct ConsoleRenderPresentation: Equatable, Sendable {
+    let copyText: String
+    let visibleText: String
+    let accessibilityText: String
+    let lineProgressiveTotal: Int
+    let characterProgressiveTotal: Int
+    let inspectedCharacterCount: Int
+    let inspectedLineCount: Int
+    let materializedCharacterCount: Int
+
+    init(output: String, lineLimit: Int, characterLimit: Int) {
+        copyText = output
+        guard !output.isEmpty else {
+            visibleText = ""
+            accessibilityText = ""
+            lineProgressiveTotal = 0
+            characterProgressiveTotal = 0
+            inspectedCharacterCount = 0
+            inspectedLineCount = 0
+            materializedCharacterCount = 0
+            return
+        }
+
+        let lineLimit = max(0, lineLimit)
+        let characterLimit = max(0, characterLimit)
+        let characterProbeLimit = characterLimit
+            + ProgressiveTextPresentation.initialReveal.pageSize
+            + 1
+        let lineProbeLimit = lineLimit + ToolSurfacePagination.console.pageSize + 1
+        let characterProbe = output.prefix(characterProbeLimit)
+        var observedLineCount = 1
+        var visibleLineEnd: String.Index?
+
+        if lineLimit == 0 {
+            visibleLineEnd = characterProbe.startIndex
+        } else {
+            for index in characterProbe.indices where characterProbe[index] == "\n" {
+                if observedLineCount == lineLimit {
+                    visibleLineEnd = index
+                }
+                observedLineCount += 1
+                if observedLineCount >= lineProbeLimit {
+                    break
+                }
+            }
+        }
+
+        let boundedLineText = String(characterProbe[..<(visibleLineEnd ?? characterProbe.endIndex)])
+        let textPresentation = ProgressiveTextPresentation(
+            text: boundedLineText,
+            characterLimit: characterLimit)
+        let maximumNextLinePage = lineLimit + ToolSurfacePagination.console.pageSize
+
+        visibleText = textPresentation.visibleText
+        accessibilityText = textPresentation.accessibilityText
+        lineProgressiveTotal = min(observedLineCount, maximumNextLinePage)
+        characterProgressiveTotal = textPresentation.progressiveTotal
+        inspectedCharacterCount = characterProbe.count
+        inspectedLineCount = observedLineCount
+        materializedCharacterCount = boundedLineText.count
+    }
+}
+
 private struct ConsoleSurfaceView: View {
     let command: String?
     let output: String
     let exitCode: Int?
 
     @State private var isWrapped = true
-    @State private var reveal = ToolSurfacePagination.console
+    @State private var lineReveal = ToolSurfacePagination.console
+    @State private var characterReveal = ProgressiveTextPresentation.initialReveal
 
     var body: some View {
+        let presentation = ConsoleRenderPresentation(
+            output: output,
+            lineLimit: lineReveal.limit,
+            characterLimit: characterReveal.limit)
         VStack(alignment: .leading, spacing: 8) {
             if let command, !command.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
@@ -121,18 +189,21 @@ private struct ConsoleSurfaceView: View {
                         isWrapped.toggle()
                     }
                     .buttonStyle(GhostActionStyle())
-                    Button("Copy") { copy(output) }
+                    Button("Copy") { copy(presentation.copyText) }
                         .buttonStyle(GhostActionStyle())
                 }
                 .font(TenXTypography.mono(size: 10, weight: .medium))
 
-                ProgressiveTextView(
-                    text: visibleLines.joined(separator: "\n"),
-                    accessibilityNoun: "output characters",
-                    content: outputText)
+                outputText(presentation.visibleText)
+                    .accessibilityLabel(presentation.accessibilityText)
                 ProgressiveRevealButton(
-                    reveal: $reveal,
-                    total: lines.count,
+                    reveal: $characterReveal,
+                    total: presentation.characterProgressiveTotal,
+                    noun: "characters",
+                    accessibilityNoun: "output characters")
+                ProgressiveRevealButton(
+                    reveal: $lineReveal,
+                    total: presentation.lineProgressiveTotal,
                     noun: "lines",
                     accessibilityNoun: "output lines")
             }
@@ -157,14 +228,6 @@ private struct ConsoleSurfaceView: View {
             .textSelection(.enabled)
             .fixedSize(horizontal: !isWrapped, vertical: true)
             .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
-    }
-
-    private var lines: [String] {
-        output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-    }
-
-    private var visibleLines: ArraySlice<String> {
-        lines.prefix(reveal.visibleCount(total: lines.count))
     }
 
     private func copy(_ value: String) {
