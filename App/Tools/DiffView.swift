@@ -102,9 +102,14 @@ struct DiffView: View {
     private func fileView(_ file: DiffRenderFileSection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Text(file.header.path)
-                    .font(TenXTypography.mono(size: 10, weight: .semibold))
-                    .lineLimit(1)
+                ProgressiveTextView(
+                    text: file.header.path,
+                    accessibilityNoun: "diff path characters"
+                ) { text in
+                    Text(text)
+                        .font(TenXTypography.mono(size: 10, weight: .semibold))
+                        .lineLimit(1)
+                }
                 Text("+\(file.header.additions) −\(file.header.removals)")
                     .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
@@ -123,9 +128,14 @@ struct DiffView: View {
 
     private func hunkView(_ hunk: DiffRenderHunkSection) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(hunk.header.header)
-                .font(TenXTypography.mono(size: 10, weight: .medium))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            ProgressiveTextView(
+                text: hunk.header.header,
+                accessibilityNoun: "diff hunk characters"
+            ) { text in
+                Text(text)
+                    .font(TenXTypography.mono(size: 10, weight: .medium))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
             if isWrapped {
                 hunkRows(hunk)
             } else {
@@ -175,26 +185,15 @@ struct DiffView: View {
     }
 
     private func lineView(_ renderLine: DiffRenderLine, rowID: DiffRenderRow.ID) -> some View {
-        let line = renderLine.line
-        return HStack(alignment: .top, spacing: 6) {
-            Text(line.oldLine.map(String.init) ?? "")
-                .frame(width: 30, alignment: .trailing)
-            Text(line.newLine.map(String.init) ?? "")
-                .frame(width: 30, alignment: .trailing)
-            Text(marker(for: line.kind))
-                .frame(width: 10)
-                .foregroundStyle(color(for: line.kind))
-            SourceTextView(
-                spans: pageLoader.spans(for: rowID, contentID: presentation.contentID) ?? [SourceSpan(text: line.text, role: .plain)],
-                isWrapped: isWrapped)
-                .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
-        }
-        .font(TenXTypography.mono(size: 10))
-        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-        .padding(.vertical, 2)
-        .background(backgroundColor(for: line.kind))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label(for: line.kind)), \(line.text)")
+        DiffLineView(
+            renderLine: renderLine,
+            spans: pageLoader.spans(for: rowID, contentID: presentation.contentID)
+                ?? [SourceSpan(text: renderLine.line.text, role: .plain)],
+            isWrapped: isWrapped,
+            marker: marker(for: renderLine.line.kind),
+            markerColor: color(for: renderLine.line.kind),
+            backgroundColor: backgroundColor(for: renderLine.line.kind),
+            accessibilityPrefix: label(for: renderLine.line.kind))
     }
 
     private var additions: Int { diff.files.reduce(0) { $0 + $1.additions } }
@@ -264,4 +263,47 @@ private struct DiffRenderHunkSection: Identifiable {
 private struct DiffRenderLoadID: Equatable {
     let contentID: String
     let lineIDs: [DiffRenderRow.ID]
+}
+
+private struct DiffLineView: View {
+    let renderLine: DiffRenderLine
+    let spans: [SourceSpan]
+    let isWrapped: Bool
+    let marker: String
+    let markerColor: Color
+    let backgroundColor: Color
+    let accessibilityPrefix: String
+    @State private var reveal = ProgressiveTextPresentation.initialReveal
+
+    var body: some View {
+        let line = renderLine.line
+        let text = ProgressiveTextPresentation(
+            text: line.text,
+            spans: spans,
+            characterLimit: reveal.limit)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 6) {
+                Text(line.oldLine.map(String.init) ?? "")
+                    .frame(width: 30, alignment: .trailing)
+                Text(line.newLine.map(String.init) ?? "")
+                    .frame(width: 30, alignment: .trailing)
+                Text(marker)
+                    .frame(width: 10)
+                    .foregroundStyle(markerColor)
+                SourceTextView(spans: text.spans, isWrapped: isWrapped)
+                    .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
+            }
+            .font(TenXTypography.mono(size: 10))
+            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            .padding(.vertical, 2)
+            .background(backgroundColor)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(accessibilityPrefix), \(text.accessibilityText)")
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: text.progressiveTotal,
+                noun: "characters",
+                accessibilityNoun: "diff line characters")
+        }
+    }
 }

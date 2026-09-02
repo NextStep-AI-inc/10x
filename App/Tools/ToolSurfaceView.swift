@@ -36,10 +36,12 @@ struct ToolSurfaceView: View {
                 }
             }
         case .empty(let message):
-            Text(message)
-                .font(TenXTypography.body(size: 11))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                .fixedSize(horizontal: false, vertical: true)
+            ProgressiveTextView(text: message, accessibilityNoun: "message characters") { text in
+                Text(text)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         case .privateActivity:
             EmptyView()
         }
@@ -54,6 +56,7 @@ struct ToolSurfaceView: View {
 enum ToolSurfacePagination {
     static let console = ProgressiveReveal(initialLimit: 10, pageSize: 100)
     static let collection = ProgressiveReveal(initialLimit: 8, pageSize: 50)
+    static let progressHistory = ProgressiveReveal(initialLimit: 8, pageSize: 50)
     static let jsonChildren = ProgressiveReveal(initialLimit: 12, pageSize: 50)
     static let jsonScalar = ProgressiveReveal(initialLimit: 2_000, pageSize: 4_000)
 }
@@ -86,10 +89,15 @@ private struct ConsoleSurfaceView: View {
                     Text("COMMAND")
                         .font(TenXTypography.mono(size: 9, weight: .medium))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    Text(command)
-                        .font(TenXTypography.mono(size: 11, weight: .semibold))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
+                    ProgressiveTextView(
+                        text: command,
+                        accessibilityNoun: "command characters"
+                    ) { text in
+                        Text(text)
+                            .font(TenXTypography.mono(size: 11, weight: .semibold))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -118,7 +126,10 @@ private struct ConsoleSurfaceView: View {
                 }
                 .font(TenXTypography.mono(size: 10, weight: .medium))
 
-                outputText
+                ProgressiveTextView(
+                    text: visibleLines.joined(separator: "\n"),
+                    accessibilityNoun: "output characters",
+                    content: outputText)
                 ProgressiveRevealButton(
                     reveal: $reveal,
                     total: lines.count,
@@ -129,8 +140,7 @@ private struct ConsoleSurfaceView: View {
     }
 
     @ViewBuilder
-    private var outputText: some View {
-        let text = visibleLines.joined(separator: "\n")
+    private func outputText(_ text: String) -> some View {
         if isWrapped {
             consoleText(text)
         } else {
@@ -175,24 +185,39 @@ private struct CollectionSurfaceView: View {
                         if let reference = item.reference {
                             TranscriptReferenceView(reference: reference)
                         } else {
-                            Text(item.label)
-                                .font(TenXTypography.body(size: 11, weight: .semibold))
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
+                            ProgressiveTextView(
+                                text: item.label,
+                                accessibilityNoun: "item label characters"
+                            ) { text in
+                                Text(text)
+                                    .font(TenXTypography.body(size: 11, weight: .semibold))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         Spacer(minLength: 8)
                         if let state = item.state {
-                            Text(state.replacingOccurrences(of: "_", with: " ").capitalized)
-                                .font(TenXTypography.body(size: 9, weight: .medium))
-                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                            ProgressiveTextView(
+                                text: state,
+                                accessibilityNoun: "item state characters"
+                            ) { text in
+                                Text(text.replacingOccurrences(of: "_", with: " ").capitalized)
+                                    .font(TenXTypography.body(size: 9, weight: .medium))
+                                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                            }
                         }
                     }
                     if let detail = item.detail, !detail.isEmpty {
-                        Text(detail)
-                            .font(TenXTypography.body(size: 10))
-                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
+                        ProgressiveTextView(
+                            text: detail,
+                            accessibilityNoun: "item detail characters"
+                        ) { text in
+                            Text(text)
+                                .font(TenXTypography.body(size: 10))
+                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 .padding(.vertical, 2)
@@ -248,13 +273,23 @@ struct MediaItemView: View {
 
             HStack(spacing: 8) {
                 if let name = item.name {
-                    Text(name)
-                        .font(TenXTypography.body(size: 10, weight: .semibold))
+                    ProgressiveTextView(
+                        text: name,
+                        accessibilityNoun: "media name characters"
+                    ) { text in
+                        Text(text)
+                            .font(TenXTypography.body(size: 10, weight: .semibold))
+                    }
                 }
                 if let mimeType = item.mimeType {
-                    Text(mimeType)
-                        .font(TenXTypography.mono(size: 9))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    ProgressiveTextView(
+                        text: mimeType,
+                        accessibilityNoun: "media type characters"
+                    ) { text in
+                        Text(text)
+                            .font(TenXTypography.mono(size: 9))
+                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    }
                 }
                 Spacer(minLength: 8)
                 if openURL != nil {
@@ -303,7 +338,10 @@ struct MediaItemView: View {
             switch loader.state {
             case .loaded(let media):
                 if let image = media.image {
-                    Image(image, scale: 1, label: Text(item.name ?? "Tool image"))
+                    Image(
+                        image,
+                        scale: 1,
+                        label: Text(boundedAccessibilityText(item.name ?? "Tool image")))
                         .resizable()
                         .scaledToFit()
                         .frame(maxWidth: .infinity)
@@ -351,6 +389,12 @@ struct MediaItemView: View {
         return .object(values)
     }
 
+    private func boundedAccessibilityText(_ text: String) -> String {
+        ProgressiveTextPresentation(
+            text: text,
+            characterLimit: ProgressiveTextPresentation.initialReveal.limit).accessibilityText
+    }
+
     private func open() {
         guard let openURL else { return }
         NSWorkspace.shared.open(openURL)
@@ -374,19 +418,30 @@ struct MediaItemView: View {
 
 private struct ProgressSurfaceView: View {
     let progress: ToolProgress
+    @State private var historyReveal = ToolSurfacePagination.progressHistory
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(progress.title)
-                    .font(TenXTypography.body(size: 11, weight: .semibold))
-                    .fixedSize(horizontal: false, vertical: true)
+                ProgressiveTextView(
+                    text: progress.title,
+                    accessibilityNoun: "progress title characters"
+                ) { text in
+                    Text(text)
+                        .font(TenXTypography.body(size: 11, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Spacer(minLength: 8)
-                Text(progress.status.replacingOccurrences(of: "_", with: " ").capitalized)
-                    .font(TenXTypography.body(size: 10, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(progress.isFailure
-                        ? TenXPalette.signalRedHex
-                        : TenXPalette.cyanHex))
+                ProgressiveTextView(
+                    text: progress.status,
+                    accessibilityNoun: "progress status characters"
+                ) { text in
+                    Text(text.replacingOccurrences(of: "_", with: " ").capitalized)
+                        .font(TenXTypography.body(size: 10, weight: .medium))
+                        .foregroundStyle(TenXPalette.color(progress.isFailure
+                            ? TenXPalette.signalRedHex
+                            : TenXPalette.cyanHex))
+                }
             }
             if let completed = progress.completed, let total = progress.total {
                 Text("\(completed) of \(total)")
@@ -396,20 +451,39 @@ private struct ProgressSurfaceView: View {
             if let document = progress.document, !document.blocks.isEmpty {
                 ContentDocumentView(document: document, spacing: 8)
             } else if let detail = progress.detail, !detail.isEmpty {
-                Text(detail)
-                    .font(TenXTypography.body(size: 11))
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                ProgressiveTextView(
+                    text: detail,
+                    accessibilityNoun: "progress detail characters"
+                ) { text in
+                    Text(text)
+                        .font(TenXTypography.body(size: 11))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             if !progress.history.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
-                    ForEach(Array(progress.history.enumerated()), id: \.offset) { _, entry in
-                        Text(entry)
-                            .font(TenXTypography.body(size: 10))
-                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
+                    ForEach(
+                        Array(progress.history.prefix(
+                            historyReveal.visibleCount(total: progress.history.count)).enumerated()),
+                        id: \.offset
+                    ) { _, entry in
+                        ProgressiveTextView(
+                            text: entry,
+                            accessibilityNoun: "progress history characters"
+                        ) { text in
+                            Text(text)
+                                .font(TenXTypography.body(size: 10))
+                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
+                    ProgressiveRevealButton(
+                        reveal: $historyReveal,
+                        total: progress.history.count,
+                        noun: "entries",
+                        accessibilityNoun: "progress history entries")
                 }
             }
         }
@@ -423,9 +497,14 @@ private struct DataTreeSurfaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(label.uppercased())
-                    .font(TenXTypography.mono(size: 9, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                ProgressiveTextView(
+                    text: label,
+                    accessibilityNoun: "data label characters"
+                ) { text in
+                    Text(text.uppercased())
+                        .font(TenXTypography.mono(size: 9, weight: .medium))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                }
                 Spacer(minLength: 8)
                 Button("Copy raw") { copy(prettyJSON(value)) }
                     .buttonStyle(GhostActionStyle())
@@ -518,8 +597,13 @@ private struct JSONValueNode: View {
     private func nodeLabel(_ detail: String) -> some View {
         HStack(spacing: 6) {
             if let label {
-                Text(label)
-                    .font(TenXTypography.mono(size: 10, weight: .semibold))
+                ProgressiveTextView(
+                    text: label,
+                    accessibilityNoun: "JSON label characters"
+                ) { text in
+                    Text(text)
+                        .font(TenXTypography.mono(size: 10, weight: .semibold))
+                }
             }
             Text(detail)
                 .font(TenXTypography.mono(size: 9))
@@ -560,8 +644,13 @@ private struct DataScalarRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if let label {
-                    Text(label)
-                        .font(TenXTypography.mono(size: 10, weight: .semibold))
+                    ProgressiveTextView(
+                        text: label,
+                        accessibilityNoun: "JSON label characters"
+                    ) { text in
+                        Text(text)
+                            .font(TenXTypography.mono(size: 10, weight: .semibold))
+                    }
                 }
                 Text(visibleText)
                     .font(TenXTypography.mono(size: 10))

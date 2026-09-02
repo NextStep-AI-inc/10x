@@ -67,6 +67,59 @@ struct RendererSaturationFixtureTests {
     }
 
     @Test
+    func hundredThousandCharacterToolStringRevealsOneFinitePageAndRetainsFullPayload() {
+        let payload = String(repeating: "x", count: 100_000)
+        var reveal = ProgressiveTextPresentation.initialReveal
+        let initial = ProgressiveTextPresentation(
+            text: payload,
+            characterLimit: reveal.limit)
+
+        #expect(initial.visibleText.count == 2_048)
+        #expect(initial.accessibilityText.count == 2_048)
+        #expect(initial.hasMore)
+        #expect(initial.progressiveTotal == 6_048)
+
+        reveal.revealNextPage(total: initial.progressiveTotal)
+        let expanded = ProgressiveTextPresentation(
+            text: payload,
+            characterLimit: reveal.limit)
+
+        #expect(expanded.visibleText.count == 6_048)
+        #expect(expanded.accessibilityText.count == 6_048)
+        #expect(expanded.hasMore)
+        #expect(expanded.progressiveTotal == 10_048)
+        #expect(payload.count == 100_000)
+        #expect(payload.last == "x")
+    }
+
+    @Test
+    func hundredThousandCharacterDiffSpanBoundsVisibleAndAccessibilityText() {
+        let payload = String(repeating: "d", count: 100_000)
+        let presentation = ProgressiveTextPresentation(
+            text: payload,
+            spans: [SourceSpan(text: payload, role: .plain)],
+            characterLimit: ProgressiveTextPresentation.initialReveal.limit)
+
+        #expect(presentation.spans.map(\.text).joined().count == 2_048)
+        #expect(presentation.visibleText.count == 2_048)
+        #expect(presentation.accessibilityText.count == 2_048)
+        #expect(presentation.hasMore)
+        #expect(payload.count == 100_000)
+    }
+
+    @Test
+    func finalTextPageAdvertisesOnlyItsRemainingCharacters() {
+        let payload = String(repeating: "f", count: 3_000)
+        let presentation = ProgressiveTextPresentation(
+            text: payload,
+            characterLimit: ProgressiveTextPresentation.initialReveal.limit)
+
+        #expect(presentation.visibleText.count == 2_048)
+        #expect(presentation.progressiveTotal == 3_000)
+        #expect(presentation.hasMore)
+    }
+
+    @Test
     func thousandItemCollectionKeepsOneFinitePageAndAllItems() {
         let items = (0..<1_000).map { index in
             ToolCollectionItem(
@@ -87,6 +140,21 @@ struct RendererSaturationFixtureTests {
         #expect(reveal.visibleCount(total: items.count) == 58)
         #expect(items.prefix(58).last?.id == "item-57")
         #expect(items.last?.id == "item-999")
+    }
+
+    @Test
+    func thousandEntryProgressHistoryKeepsOneFinitePageAndAllEntries() {
+        let history = (0..<1_000).map { "Progress entry \($0)" }
+        var reveal = ToolSurfacePagination.progressHistory
+
+        #expect(reveal.visibleCount(total: history.count) == 8)
+        #expect(history.prefix(8).last == "Progress entry 7")
+
+        reveal.revealNextPage(total: history.count)
+
+        #expect(reveal.visibleCount(total: history.count) == 58)
+        #expect(history.prefix(58).last == "Progress entry 57")
+        #expect(history.last == "Progress entry 999")
     }
 
     @Test
