@@ -67,6 +67,12 @@ The clean standalone build succeeded without testability, DEBUG, or signing over
 - The largest fixture holds one 5 MiB decoded buffer plus its base64 representation; the suite avoids view snapshots and passed in roughly one tenth of a second when focused.
 - The only production diff is the explicitly authorized removal of trailing whitespace.
 
+## Post-review audit correction
+
+The audit's original R1–R6 inventory is now explicitly labeled as historical pre-follow-up context. Its post-hardening resolution matrix maps R1 to Task 3, R2 to Task 5, R3 to Task 6, R4 to Task 7, R5 to Task 4, and R6 to Task 2 plus the specialized Task 3, 4, and 7 policies.
+
+The matrix does not mark every visible-string case closed. The diff fixture proves changed-row and tokenization ceilings, but a single oversized visible diff line is not yet display-character-paged. The console fixture proves line-count paging, but a single oversized visible console string likewise has no display-character ceiling. Those production gaps remain open for a separate follow-up; Task 8 added no shipping hook or broader product change for them.
+
 ## Exact-app launch evidence
 
 - Launched artifact: `/private/tmp/tenx-renderer-hardening-release/Build/Products/Release/10x.app` from product commit `059d578823cba504a139fbdff29dbb08973c68fe`.
@@ -89,3 +95,4 @@ The clean standalone build succeeded without testability, DEBUG, or signing over
 ## Concerns
 
 - The full suite has existing load-sensitive async and snapshot tests: normal attempts included one clean run and repeated nondeterministic failures, while the serial diagnostic found a snapshot mismatch that passed immediately alone. None implicated the Task 8 suite, and none was expanded into Task 8 scope.
+- A single oversized visible diff line and a single oversized visible console string remain outside the current character-paging safeguards. The current fixtures cover record counts, hidden work, tokenization ceilings, and retained payloads, not those two display-string cases.

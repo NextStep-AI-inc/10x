@@ -47,11 +47,13 @@ one unbounded selectable Text ----> laid out again for later stream snapshots
 
 These are shared transcript fixes. They cover a large skill block, a large pasted user message, stable completed tool cards above a streaming answer, and any other raw custom/hook message.
 
-## Surface inventory
+## Historical pre-follow-up surface inventory
 
-### Protected now or already bounded
+The inventory and R1–R6 findings below record the state immediately after the shared PR #18 transcript fix and before renderer-hardening Tasks 2–7. They are retained as incident context, not as claims about the current product. The post-hardening disposition for every finding follows this historical section.
 
-| Surface | Existing or new guardrail | Residual risk |
+### Baseline protections recorded before Tasks 2–7
+
+| Surface | Guardrail at that point | Residual risk at that point |
 | --- | --- | --- |
 | Transcript container | Top-level `LazyVStack`; event snapshots coalesced to a 50 ms publication interval. | The row array is still normalized for each accepted snapshot, but expensive stable row bodies are isolated. |
 | Raw user/custom messages | New 1,024-character text-node budget and equatable message boundary. | An intentionally unbroken token may gain a visual wrap at a segment boundary; source text remains exact and selectable. |
@@ -65,9 +67,9 @@ These are shared transcript fixes. They cover a large skill block, a large paste
 | Session search | Results capped at 200, shown in a `LazyVStack`; excerpts capped at 180 characters. | No renderer saturation path found. |
 | Active/archived session lists | Lazy stacks and one-line labels; the rail collapses older sessions behind disclosure rows. | No unbounded text surface found. |
 
-### Remaining independent risks
+### Risks recorded before Tasks 2–7
 
-| ID | Risk | Evidence in code | Severity | Recommendation |
+| ID | Risk at that point | Historical code evidence | Severity | Historical recommendation |
 | --- | --- | --- | --- | --- |
 | R1 | Large expanded diffs can build and syntax-tokenize every visible changed line. Completed edit/AST-edit cards start expanded. | `DiffView.lineView` calls `SourceTokenizer.spans` from `body`; unchanged lines collapse, changed lines do not. | Medium | Add a changed-line preview budget and pre-tokenize into the presentation model in a focused diff-performance PR. The new tool-card equality boundary already prevents unrelated stream updates from repeating this work. |
 | R2 | Tool media decodes base64 and constructs `NSImage` from computed view properties. Multiple property reads can repeat decode work on body evaluation. | `MediaItemView.decodedData` and `localImage` are computed under `body`. | Medium | Decode once when the immutable media item changes and hold the result in a small presentation value. Verify with a multi-megabyte image fixture before changing. |
@@ -76,9 +78,22 @@ These are shared transcript fixes. They cover a large skill block, a large paste
 | R5 | Rich Markdown lists, tables, quotes, and assistant code fences have no initial child-count preview. | `ContentListView`, `ContentTableView`, nested quote blocks, and `CodeBlockView` enumerate all parsed children. | Medium | Add block-specific preview disclosure only after reproducing a slow real payload. Do not globally truncate assistant responses. |
 | R6 | Expanding Show all for console, collections, source, or JSON explicitly removes the preview bound. | Each surface switches from prefix/depth preview to the full collection after user action. | Low | Treat this as an explicit escape hatch. Add staged expansion only if an actual large payload remains unresponsive after user-triggered expansion. |
 
-## Why the other risks are not folded into this fix
+## Historical reason these risks were not folded into the shared transcript fix
 
-R1–R6 are not on the captured hot stack at a distinguishable application symbol, and each has a different correct ceiling. Changing all of them without a fixture would risk truncating useful output, weakening copy behavior, or degrading intentional animations. PR #18 removes the shared transcript invalidation loop first, then the Release verification determines whether any independent surface is still hot.
+R1–R6 were not on the captured hot stack at a distinguishable application symbol, and each required a different correct ceiling. Folding them into PR #18 without dedicated fixtures would have risked truncating useful output, weakening copy behavior, or degrading intentional animations. Tasks 2–7 subsequently added the focused safeguards and fixtures summarized below.
+
+## Post-hardening resolution of R1–R6
+
+| ID | Follow-up | Current safeguard | Status and residual |
+| --- | --- | --- | --- |
+| R1 | Task 3 | Diff presentation reveals changed lines globally in stages of 200. Visible-line tokenization uses a detached, cancellable cache; synchronous work is capped at 200 rows, 16,384 total characters, and 2,048 characters per line. Hidden rows perform no tokenization, and the exact raw diff remains retained. | Resolved for changed-row count and tokenization saturation. **Open:** one oversized visible diff line is not yet character-paged for display; the fixture's token cap does not prove that visible-string case fixed. |
+| R2 | Task 5 | `ToolMediaLoader` performs one detached eager ImageIO decode per immutable content identity, cancels obsolete work, caches the stable result, and reconciles media generations semantically. | Resolved. The 5 MiB fixture proves one decode across two loads while retaining the complete encoded and decoded payloads. |
+| R3 | Task 6 | The 30 FPS `TimelineView` was removed. Provider-wheel animation now runs at a one-second cadence only with active providers, an active scene, and reduced motion disabled, and stops on disappearance. | Resolved for continuous idle redraw. The exact packaged app also returned 0.0% CPU in all ten exercised samples; that launch did not separately force an active-provider animation state. |
+| R4 | Task 7 | Installer output is retained in an observable buffer outside published view state, published in 100 ms batches, rendered in a `LazyVStack`, and exposed through a staged 200-line tail while preserving stable IDs and complete copy text. | Resolved for per-line publication, unbounded eager rendering, and scroll churn. Retaining the full copyable log is intentional. |
+| R5 | Task 4 | Mixed Markdown and source share a global 160-unit initial/page budget. Source highlighting loads only visible lines through a detached, cancellable cache with the same synchronous token caps as diffs; source lines reveal characters in 2,048-character stages while raw content and streaming lineage remain intact. | Resolved for unbounded document-child and source-line work. The 5,000-unit fixture proves the global budget, hidden-work exclusion, and full retention. |
+| R6 | Task 2, with Tasks 3, 4, and 7 for specialized surfaces | One-shot **Show all** expansion was replaced with staged policies: console 10/100, collections 8/50, JSON children 12/50, JSON scalars 2,000/4,000, source 200/200, diffs 200/200, documents 160/160, and installer tails 200/200. | Resolved for collection-, child-, scalar-, line-, and unit-count expansion. **Open:** one oversized visible console string is not character-paged; the console fixture proves line-count paging, not a per-line character ceiling. The diff single-line exception is recorded under R1. |
+
+The open diff and console cases are deliberately not marked fixed by this audit. Their current paging controls bound the number of visible records, but not the display cost of one exceptionally large visible string.
 
 ## Verification gate
 
@@ -96,8 +111,8 @@ Run on 2026-09-02 from Task 7 HEAD `ee58292` plus the Task 8 fixture and audit c
 
 | Fixture | Exact automated boundary proved |
 | --- | --- |
-| Diff | 10 files and 10,000 changed lines; 200 initial and 400 after one reveal; synchronous token cache/calls stay at zero for the oversized first line; detached cache/calls are exactly 200 then 400, stay off-main, exclude hidden rows, and retain the exact raw diff. |
-| Console | 10,000 lines; 10 initial and 110 after one reveal; the complete copy payload remains exact. |
+| Diff | 10 files and 10,000 changed lines; 200 initial and 400 after one reveal; synchronous token cache/calls stay at zero for the oversized first line; detached cache/calls are exactly 200 then 400, stay off-main, exclude hidden rows, and retain the exact raw diff. This proves the tokenization ceiling, not display-character paging for one oversized visible diff line. |
+| Console | 10,000 lines; 10 initial and 110 after one reveal; the complete copy payload remains exact. This proves line-count paging, not a character ceiling for one oversized visible console line. |
 | Collection | 1,000 entries; 8 initial and 58 after one reveal; the final retained item remains available. |
 | JSON | 5,000 object children and a 100,000-character scalar; children reveal 12 then 62, scalar characters reveal 2,000 then 6,000, maximum depth remains 6, and full retained values remain available. |
 | Mixed document | Exactly 5,000 combined source/list/quote/table units; the global slice is 160 then 320. Source highlighting has zero synchronous calls for the oversized first line, then exactly 160 and 320 detached off-main calls with hidden lines excluded; the 10,000-character source row reveals 2,048 then 4,096 characters while full source text remains retained. |
