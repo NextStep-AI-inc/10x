@@ -4,6 +4,6 @@ struct CodeBlockView: View {
     let source: SourcePresentation
 
     var body: some View {
-        SourceSurface(presentation: source, showsRevealControl: false)
+        SourceCard(presentation: source, lines: source.lines)
     }
 }

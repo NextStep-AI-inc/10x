@@ -78,3 +78,83 @@ one `Show 160 more items` control after the bounded document prefix.
 - The default standalone `SourceSurface` 200-line policy remains unchanged for
   tool surfaces; only `CodeBlockView` disables it for the already-sliced
   assistant-document path.
+
+## Fix Round 1
+
+### Findings addressed
+
+1. `ContentDocumentRenderState` is a pure source-identity-aware value. A strict
+   prefix append carries the existing 160/160 reveal limit forward; a
+   non-prefix replacement derives a fresh 160 limit before asynchronous state
+   synchronization. The view does not mutate state while deriving its body.
+2. `SourcePresentation(language:text:)` now retains raw numbered plain spans.
+   `SourcePageLoader` is the shared `@MainActor` cache/cancellation boundary:
+   it sync-primes at most 200 rows, 16,384 characters, and 2,048 characters per
+   row, then tokenizes only newly visible overflow in a detached task. Its
+   injectable `@Sendable` tokenizer and content ID plus task UUID prevent hidden
+   work and stale publication. Copy text and original line numbers remain on
+   `SourcePresentation`.
+3. `SourceCard` is pagination-free. `CodeBlockView` uses it directly; only the
+   standalone `SourceSurface` owns its 200/200 reveal state.
+
+### RED
+
+After first adding the document-state and source-loader tests and regenerating
+the project, this focused test command failed as expected because
+`ContentDocumentRenderState` was not yet in scope in the append/replacement
+tests:
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' '-only-testing:TenXAppTests/ContentRenderSliceTests' '-only-testing:TenXAppTests/SourcePageLoaderTests'
+```
+
+Output: `/tmp/10x-task4-fix1-red.log`; result bundle:
+`~/Library/Developer/Xcode/DerivedData/10x-bxbthukntyhepwdxepxgagdrmozo/Logs/Test/Test-10x-2026.09.01_19-01-51--0700.xcresult`.
+
+### GREEN and verification
+
+Focused parser, slicer, and loader run passed 11 tests in 2 suites. It covers
+append retention, first replacement slice reset, raw parser lines, zero calls
+for hidden lines, one finite 160→320 visible page, all sync ceilings, and
+stale async replacement. Commands/results:
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' '-only-testing:TenXAppTests/sourcePresentationPreservesIndentationAsUntokenizedSource()' '-only-testing:TenXAppTests/MessageContentParserTests' '-only-testing:TenXAppTests/ContentRenderSliceTests' '-only-testing:TenXAppTests/SourcePageLoaderTests'
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' '-only-testing:TenXAppTests/contentDocumentBudgetSnapshot()'
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' '-only-testing:TenXAppTests/ViewSnapshotTests'
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' '-only-testing:TenXAppTests/RendererPaginationTests'
+```
+
+Passed: 11 focused tests, 1 document snapshot, 15 ViewSnapshot tests, and 4
+RendererPagination tests.
+
+```bash
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
+xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'platform=macOS'
+ruby scripts/generate_xcodeproj.rb
+git diff --check
+```
+
+Passed: 1,142 tests in 24 suites, Release build, reproducible project
+generation, and whitespace validation.
+
+### Snapshot evidence
+
+`content-document-budget-initial.png` stayed green. The extracted source card
+changed the existing `renderer-pagination-initial.png` raster only in the
+lower-source-card strip: 103,706 pixels bounded to x=0…1439 and y=2091…2171
+(81 pixels tall). I visually inspected both 1600×4800 images before promoting
+the actual: syntax colors, line numbers, card geometry, controls, and the
+`Show 200 more lines` pagination label are equivalent. The reference change is
+deterministic source-card extraction rasterization, not asynchronous loading or
+a semantic/layout regression.
+
+### Self-review
+
+- `SourcePageLoader` is `@MainActor`; its detached task captures only raw
+  `Sendable` lines and tokenizer. Publication checks cancellation, task UUID,
+  and captured content ID.
+- No production caller remains of `SourceTokenizer.lines`; no document slicer
+  or SwiftUI body tokenizes source.
+- The only reference update is the visually inspected standalone pagination
+  raster described above.

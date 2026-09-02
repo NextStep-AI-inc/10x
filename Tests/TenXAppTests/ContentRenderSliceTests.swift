@@ -57,4 +57,42 @@ import Testing
         }
         #expect(source.lines == Array(original.lines.prefix(30)))
     }
+
+    @Test func sourceAppendKeepsTheExistingDocumentRevealLimit() {
+        let original = largeDocument(prefix: "original")
+        let appended = MessageContentParser.parse(original.source + "\n\nappended")
+        var state = ContentDocumentRenderState()
+        state = state.effective(for: original)
+        state.reveal.revealNextPage(total: ContentRenderSlicer.unitCount(original))
+
+        let continued = state.effective(for: appended)
+
+        #expect(continued.reveal.limit == 320)
+        #expect(ContentRenderSlicer.slice(
+            appended,
+            limit: continued.reveal.limit).consumedUnits == 320)
+    }
+
+    @Test func sourceReplacementDerivesAnInitialSliceBeforeStateMutation() {
+        let original = largeDocument(prefix: "original")
+        let replacement = largeDocument(prefix: "replacement")
+        var state = ContentDocumentRenderState()
+        state = state.effective(for: original)
+        state.reveal.revealNextPage(total: ContentRenderSlicer.unitCount(original))
+
+        let replacementState = state.effective(for: replacement)
+        let replacementSlice = ContentRenderSlicer.slice(
+            replacement,
+            limit: replacementState.reveal.limit)
+
+        #expect(state.reveal.limit == 320)
+        #expect(replacementState.reveal.limit == 160)
+        #expect(replacementSlice.consumedUnits == 160)
+        #expect(replacementSlice.hasMore)
+    }
+}
+
+private func largeDocument(prefix: String) -> ContentDocument {
+    MessageContentParser.parse((0..<500).map { "\(prefix) paragraph \($0)" }
+        .joined(separator: "\n\n"))
 }

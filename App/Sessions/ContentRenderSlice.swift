@@ -4,6 +4,23 @@ struct ContentRenderSlice: Equatable, Sendable {
     let hasMore: Bool
 }
 
+struct ContentDocumentRenderState: Equatable {
+    private(set) var source: String?
+    var reveal = ProgressiveReveal(initialLimit: 160, pageSize: 160)
+
+    init(source: String? = nil) {
+        self.source = source
+    }
+
+    func effective(for document: ContentDocument) -> Self {
+        guard let source else { return Self(source: document.source) }
+        guard document.source.hasPrefix(source) else { return Self(source: document.source) }
+        var continued = self
+        continued.source = document.source
+        return continued
+    }
+}
+
 enum ContentRenderSlicer {
     static func slice(_ document: ContentDocument, limit: Int) -> ContentRenderSlice {
         var budget = Budget(limit: max(0, limit))

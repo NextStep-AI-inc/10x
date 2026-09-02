@@ -15,6 +15,7 @@
 		04AA57B7C73A14F53C85C5926CFE34FF /* SessionTimelineLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9139523FF7D8FFEB9D40538B255181F2 /* SessionTimelineLoader.swift */; };
 		04F60BB5EE5754248AD8BBF44F7CF519 /* FileReferenceActivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B38E50D7808478EE8222F8C7A8A976 /* FileReferenceActivation.swift */; };
 		06320066BDA69CC5942317043A672F6D /* AppModelStartupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4076C1DABB039E7A6E9337D8499EF73 /* AppModelStartupTests.swift */; };
+		06C32C1FE1293EFFA04ED105C1142F2D /* SourcePageLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBCA1730CCC11291EB162EB605D22111 /* SourcePageLoaderTests.swift */; };
 		087F375E2A88E65D30A90635360986BE /* CornerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88D6DC39FEEF22CEAB21C2A6A6FEFFF1 /* CornerCard.swift */; };
 		0B110410F106BCEE20EADE3BE3E68620 /* ComposerControlsModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8682EE2CABA7CA682ADFC2A8CA21B4F /* ComposerControlsModelTests.swift */; };
 		0C82D7820FF11DAAFD04E81077443F90 /* ToolPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D35CC722BF764BECABED8F77C2DC92A /* ToolPresentation.swift */; };
@@ -291,6 +292,7 @@
 		F850BFA95403E93F71BFB3DC48DCD8A5 /* ModelPickerFlyout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51EFD581EEFD45A453F1875E53AC1AF /* ModelPickerFlyout.swift */; };
 		F89E1617459F3DAC55E5EA02C4E34AE5 /* AccessibilityAnnouncerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C740EB3BFFB8C4981F658850367095A /* AccessibilityAnnouncerTests.swift */; };
 		F8B515929F282BD9333D5C1137D72662 /* MessageContentParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21953D8D17C2A107E43258CBB3E6E4E /* MessageContentParser.swift */; };
+		F9253FFA0BCAA96C951F0C51668C60A1 /* SourcePageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E60A4911740BC178097CC2676209BE /* SourcePageLoader.swift */; };
 		F9CED5BCC51213FE16D5697F66757D21 /* AppModelUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B359C25C1853CA0C9D8303FB93D8799 /* AppModelUpdateTests.swift */; };
 		FC445FF5B31ADC77D666D4BFAACAC69F /* ProviderAccountPinBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8922FB4A926B45E3305E495958A097 /* ProviderAccountPinBackendTests.swift */; };
 		FC69131EA12B6064C063E3548105E6F6 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = BD7C0E944F514B6C9FF3C58480C88D4F /* Fonts */; };
@@ -481,6 +483,7 @@
 		7B018E6582189677BC342D92DC1A14C5 /* ComposerControlsPresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerControlsPresentationTests.swift; path = Tests/TenXAppTests/ComposerControlsPresentationTests.swift; sourceTree = "<group>"; };
 		7BE2386BE3F48EE843454A4E3526B773 /* SessionControllerCommandTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionControllerCommandTests.swift; path = Tests/TenXAppTests/SessionControllerCommandTests.swift; sourceTree = "<group>"; };
 		7DC5DB3892AA492B5E6EA8BC0A9B2CA7 /* ComposerDefaultPersisting.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerDefaultPersisting.swift; path = App/Sessions/ComposerDefaultPersisting.swift; sourceTree = "<group>"; };
+		80E60A4911740BC178097CC2676209BE /* SourcePageLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourcePageLoader.swift; path = App/Design/SourcePageLoader.swift; sourceTree = "<group>"; };
 		819BDD93255C127E9E60F23828548A76 /* RecentProjectStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecentProjectStore.swift; path = App/Startup/RecentProjectStore.swift; sourceTree = "<group>"; };
 		820616B4ADC325CD37B2DD16742382D2 /* SessionSearchDocumentBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionSearchDocumentBuilder.swift; path = App/Search/SessionSearchDocumentBuilder.swift; sourceTree = "<group>"; };
 		82A9E71E8FAAD3DB09E8B5D80EC6D3C8 /* ProviderManagementServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderManagementServiceTests.swift; path = Tests/TenXAppTests/ProviderManagementServiceTests.swift; sourceTree = "<group>"; };
@@ -616,6 +619,7 @@
 		F832078FCA06EAA16415025A84C752D5 /* SubagentPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubagentPresentation.swift; path = App/Sessions/SubagentPresentation.swift; sourceTree = "<group>"; };
 		F8682EE2CABA7CA682ADFC2A8CA21B4F /* ComposerControlsModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerControlsModelTests.swift; path = Tests/TenXAppTests/ComposerControlsModelTests.swift; sourceTree = "<group>"; };
 		FB25640479B6D09E54E09FACD0C16006 /* ProviderAccountStackTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountStackTests.swift; path = Tests/TenXAppTests/ProviderAccountStackTests.swift; sourceTree = "<group>"; };
+		FBCA1730CCC11291EB162EB605D22111 /* SourcePageLoaderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourcePageLoaderTests.swift; path = Tests/TenXAppTests/SourcePageLoaderTests.swift; sourceTree = "<group>"; };
 		FC401EACACBD59AF101F4168D6767F18 /* ComposerCatalogService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerCatalogService.swift; path = App/Sessions/ComposerCatalogService.swift; sourceTree = "<group>"; };
 		FFDF2B4BFB3C0920EC62965FF97FD1E2 /* OmpUsageServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpUsageServiceTests.swift; path = Tests/TenXAppTests/OmpUsageServiceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -661,6 +665,7 @@
 				A331113A1950AEA534E20052C95F1087 /* OutsideInteractionDismissal.swift */,
 				4CC1AB249190EC264C4FEB172080EC0F /* ProgressiveReveal.swift */,
 				9E587E284C2E5C055AD1BB5E6654E60F /* ProgressiveRevealButton.swift */,
+				80E60A4911740BC178097CC2676209BE /* SourcePageLoader.swift */,
 				1358E8B1E1F95D30DD0AE9DB03D31DE2 /* SourceSurface.swift */,
 				E95317FE231AEB99B29458EDDBC99FFD /* TenXPalette.swift */,
 				2E403B13EEC1C85CBA3FA9C86C96BB9E /* TenXTypography.swift */,
@@ -920,6 +925,7 @@
 				B8616EC88E0EB73D54822BD51EEFFBFB /* SessionTimelineLoaderTests.swift */,
 				0AFDCCE445DD5D7268D9CB0D20120496 /* SettingsCatalogTests.swift */,
 				8F18E50BB3B08F5F5E72126459122025 /* SnapshotHarness.swift */,
+				FBCA1730CCC11291EB162EB605D22111 /* SourcePageLoaderTests.swift */,
 				EA3544CF04A50DB1F740F0BA2EE1ADEA /* SourcePresentationTests.swift */,
 				9C78BC29AE63CA58C65564A0EF8D607A /* SparkleLinkageTests.swift */,
 				31044C28FED174AFD0FB14452ADC8C73 /* SplashUpdateDriverTests.swift */,
@@ -1108,6 +1114,7 @@
 				4A7A88741764A2428D2C415267A69556 /* OutsideInteractionDismissal.swift in Sources */,
 				7F507DB8643FCAFD6CAA0F9E9C3FF44B /* ProgressiveReveal.swift in Sources */,
 				52942D72C7B66BC6E47E0901FD9F6387 /* ProgressiveRevealButton.swift in Sources */,
+				F9253FFA0BCAA96C951F0C51668C60A1 /* SourcePageLoader.swift in Sources */,
 				6A1671902307CC6EF5797F52A945C02A /* SourceSurface.swift in Sources */,
 				9FD5CADCA1E5A1A6DF50C3CC3670B190 /* TenXPalette.swift in Sources */,
 				3D1F563CB908156E5D93E1E7E93206C7 /* TenXTypography.swift in Sources */,
@@ -1354,6 +1361,7 @@
 				8D26ABA123B4D2C7185B138916501665 /* SessionTimelineLoaderTests.swift in Sources */,
 				7049282BFAB398ABA9978F90609A8E64 /* SettingsCatalogTests.swift in Sources */,
 				2B06CF734E7DE94B36118C292B9E1DBC /* SnapshotHarness.swift in Sources */,
+				06C32C1FE1293EFFA04ED105C1142F2D /* SourcePageLoaderTests.swift in Sources */,
 				CA2ADD7A9EFFE5974368206D7A830C9B /* SourcePresentationTests.swift in Sources */,
 				D22C39D2212A85DBB67A809DB51F99BB /* SparkleLinkageTests.swift in Sources */,
 				32AB7620DAA31EB21914CA5C98086A8C /* SplashUpdateDriverTests.swift in Sources */,

@@ -9,7 +9,13 @@ struct SourcePresentation: Equatable, Sendable {
     init(language: String?, text: String) {
         self.language = language
         self.text = text
-        lines = SourceTokenizer.lines(text, language: language)
+        lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .enumerated()
+            .map { offset, line in
+                SourceLine(
+                    number: offset + 1,
+                    spans: [SourceSpan(text: String(line), role: .plain)])
+            }
     }
 
     init(language: String?, text: String, lines: [SourceLine]) {
@@ -17,6 +23,8 @@ struct SourcePresentation: Equatable, Sendable {
         self.text = text
         self.lines = lines
     }
+
+    var contentID: String { "\(language ?? "")\u{0}\(text)" }
 }
 
 struct SourceLine: Equatable, Sendable, Identifiable {
@@ -318,21 +326,17 @@ enum SourceTokenizer {
 struct SourceSurface: View {
     let presentation: SourcePresentation
     let previewLineLimit: Int?
-    let showsRevealControl: Bool
-
-    @State private var isWrapped: Bool
+    let isInitiallyWrapped: Bool
     @State private var reveal: ProgressiveReveal
 
     init(
         presentation: SourcePresentation,
         previewLineLimit: Int? = nil,
-        isInitiallyWrapped: Bool = true,
-        showsRevealControl: Bool = true
+        isInitiallyWrapped: Bool = true
     ) {
         self.presentation = presentation
         self.previewLineLimit = previewLineLimit
-        self.showsRevealControl = showsRevealControl
-        _isWrapped = State(initialValue: isInitiallyWrapped)
+        self.isInitiallyWrapped = isInitiallyWrapped
         _reveal = State(initialValue: ProgressiveReveal(
             initialLimit: previewLineLimit ?? 200,
             pageSize: 200))
@@ -340,60 +344,19 @@ struct SourceSurface: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            header
-            if isWrapped {
-                rows
-            } else {
-                ScrollView(.horizontal) {
-                    rows.fixedSize(horizontal: true, vertical: false)
-                }
-            }
-            if showsRevealControl {
-                ProgressiveRevealButton(
-                    reveal: $reveal,
-                    total: presentation.lines.count,
-                    noun: "lines",
-                    accessibilityNoun: "source lines")
-            }
+            SourceCard(
+                presentation: presentation,
+                lines: Array(visibleLines),
+                isInitiallyWrapped: isInitiallyWrapped)
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: presentation.lines.count,
+                noun: "lines",
+                accessibilityNoun: "source lines")
         }
-        .padding(10)
-        .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-    }
-
-    private var header: some View {
-        HStack(spacing: 4) {
-            Text(presentation.language?.uppercased() ?? "SOURCE")
-                .font(TenXTypography.mono(size: 10, weight: .medium))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-            Spacer(minLength: 12)
-            Button(isWrapped ? "Scroll" : "Wrap") {
-                isWrapped.toggle()
-            }
-            .buttonStyle(GhostActionStyle())
-            .accessibilityLabel(isWrapped
-                ? "Use horizontal scrolling for source"
-                : "Wrap source lines")
-            Button("Copy") { copy() }
-                .buttonStyle(GhostActionStyle())
-                .accessibilityLabel("Copy source")
-        }
-    }
-
-    private var rows: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            ForEach(visibleLines) { line in
-                SourceLineView(
-                    line: line,
-                    showsNumber: presentation.lines.count > 1,
-                    isWrapped: isWrapped)
-            }
-        }
-        .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
     }
 
     private var visibleLines: ArraySlice<SourceLine> {
-        guard showsRevealControl else { return presentation.lines[...] }
         return presentation.lines.prefix(Self.visibleLineCount(
             total: presentation.lines.count,
             previewLineLimit: previewLineLimit,
@@ -410,14 +373,103 @@ struct SourceSurface: View {
         return max(previewCount, reveal.visibleCount(total: boundedTotal))
     }
 
+}
+
+struct SourceCard: View {
+    let presentation: SourcePresentation
+    let lines: [SourceLine]
+    let isInitiallyWrapped: Bool
+
+    @State private var isWrapped: Bool
+    @StateObject private var pageLoader: SourcePageLoader
+
+    init(
+        presentation: SourcePresentation,
+        lines: [SourceLine],
+        isInitiallyWrapped: Bool = true
+    ) {
+        self.presentation = presentation
+        self.lines = lines
+        self.isInitiallyWrapped = isInitiallyWrapped
+        _isWrapped = State(initialValue: isInitiallyWrapped)
+        _pageLoader = StateObject(wrappedValue: SourcePageLoader(
+            contentID: presentation.contentID,
+            initialLines: lines,
+            language: presentation.language))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            header
+            if isWrapped {
+                rows
+            } else {
+                ScrollView(.horizontal) {
+                    rows.fixedSize(horizontal: true, vertical: false)
+                }
+            }
+        }
+        .padding(10)
+        .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .task(id: SourceLoadID(
+            contentID: presentation.contentID,
+            lineNumbers: lines.map(\.number))) {
+            pageLoader.reset(
+                contentID: presentation.contentID,
+                initialLines: lines,
+                language: presentation.language)
+            await pageLoader.load(
+                lines: lines,
+                language: presentation.language,
+                contentID: presentation.contentID)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 4) {
+            Text(presentation.language?.uppercased() ?? "SOURCE")
+                .font(TenXTypography.mono(size: 10, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            Spacer(minLength: 12)
+            Button(isWrapped ? "Scroll" : "Wrap") { isWrapped.toggle() }
+                .buttonStyle(GhostActionStyle())
+                .accessibilityLabel(isWrapped
+                    ? "Use horizontal scrolling for source"
+                    : "Wrap source lines")
+            Button("Copy") { copy() }
+                .buttonStyle(GhostActionStyle())
+                .accessibilityLabel("Copy source")
+        }
+    }
+
+    private var rows: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(lines) { line in
+                SourceLineView(
+                    line: line,
+                    spans: pageLoader.spans(for: line, contentID: presentation.contentID) ?? line.spans,
+                    showsNumber: presentation.lines.count > 1,
+                    isWrapped: isWrapped)
+            }
+        }
+        .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
+    }
+
     private func copy() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(presentation.text, forType: .string)
     }
 }
 
+private struct SourceLoadID: Hashable {
+    let contentID: String
+    let lineNumbers: [Int]
+}
+
 private struct SourceLineView: View {
     let line: SourceLine
+    let spans: [SourceSpan]
     let showsNumber: Bool
     let isWrapped: Bool
 
@@ -430,7 +482,7 @@ private struct SourceLineView: View {
                     .frame(width: 28, alignment: .trailing)
                     .accessibilityHidden(true)
             }
-            SourceTextView(spans: line.spans, isWrapped: isWrapped)
+            SourceTextView(spans: spans, isWrapped: isWrapped)
                 .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
         }
         .frame(minHeight: 16, alignment: .topLeading)
