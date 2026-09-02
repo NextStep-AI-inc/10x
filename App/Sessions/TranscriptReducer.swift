@@ -544,11 +544,16 @@ struct TranscriptReducer {
             guard case .tool(let tool) = item else { return nil }
             return (tool.id, tool)
         }, uniquingKeysWith: { existing, _ in existing })
+        let previousDocuments = Dictionary(items.compactMap { item -> (TranscriptRenderLineageKey, ContentDocument)? in
+            guard case .message(let message) = item else { return nil }
+            return (message.renderLineageKey, message.document)
+        }, uniquingKeysWith: { existing, _ in existing })
         let normalized = TranscriptMessageNormalizer.items(
             id: id,
             raw: raw,
             isFinal: isFinal,
-            existingTools: existingTools)
+            existingTools: existingTools,
+            previousDocuments: previousDocuments)
         let normalizedIDs = Set(normalized.compactMap(Self.inflightIdentity))
         let insertionIndex = items.firstIndex { item in
             guard let identity = Self.inflightIdentity(for: item) else { return false }

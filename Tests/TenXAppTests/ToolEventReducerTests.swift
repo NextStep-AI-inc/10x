@@ -60,6 +60,73 @@ import Testing
     #expect(presentation.content.outcome == "1 match")
 }
 
+@Test func completedMediaResultKeepsItsGenerationWhenPayloadIsUnchanged() throws {
+    var reducer = ToolEventReducer()
+    let image = #"{"content":[{"type":"image","data":"AQ==","mimeType":"image/png","name":"preview.png"}]}"#
+
+    reducer.consume(type: "tool_execution_update", payload: try payload("""
+        {"type":"tool_execution_update","toolCallId":"media","toolName":"inspect_image","partialResult":\(image)}
+        """))
+    let runningGeneration = try #require(onlyMedia(in: reducer.presentations[0]).contentID)
+
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"media","toolName":"inspect_image","result":\(image),"isError":false}
+        """))
+
+    #expect(onlyMedia(in: reducer.presentations[0]).contentID == runningGeneration)
+}
+
+@Test func changedMediaPayloadReplacesItsGenerationInTheSameSlot() throws {
+    var reducer = ToolEventReducer()
+
+    reducer.consume(type: "tool_execution_update", payload: try payload("""
+        {"type":"tool_execution_update","toolCallId":"media","toolName":"inspect_image","partialResult":{"content":[{"type":"image","data":"AQ==","mimeType":"image/png","name":"preview.png"}]}}
+        """))
+    let runningGeneration = try #require(onlyMedia(in: reducer.presentations[0]).contentID)
+
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"media","toolName":"inspect_image","result":{"content":[{"type":"image","data":"Ag==","mimeType":"image/png","name":"preview.png"}]},"isError":false}
+        """))
+
+    #expect(onlyMedia(in: reducer.presentations[0]).contentID != runningGeneration)
+}
+
+@Test func unchangedSourceRefreshKeepsItsRenderGeneration() throws {
+    var presentation = ToolPresentation(
+        id: "source",
+        name: "read",
+        arguments: .object(["path": .string("App.swift")]),
+        result: .object(["content": .array([.object([
+            "type": .string("text"),
+            "text": .string("let value = 1"),
+        ])])]),
+        phase: .running,
+        startDate: .distantPast,
+        endDate: nil)
+    let runningGeneration = try #require(onlySource(in: presentation)?.contentID)
+
+    presentation.phase = .complete
+
+    #expect(onlySource(in: presentation)?.contentID == runningGeneration)
+}
+
+@Test func unchangedDiffRefreshKeepsItsRenderGeneration() throws {
+    let diff = "@@ -1 +1 @@\n-old\n+new"
+    var presentation = ToolPresentation(
+        id: "diff",
+        name: "edit",
+        arguments: .object(["path": .string("App.swift")]),
+        result: .object(["details": .object(["diff": .string(diff)])]),
+        phase: .running,
+        startDate: .distantPast,
+        endDate: nil)
+    let runningGeneration = try #require(onlyDiff(in: presentation)?.renderID)
+
+    presentation.phase = .complete
+
+    #expect(onlyDiff(in: presentation)?.renderID == runningGeneration)
+}
+
 @Test func unknownToolsAlwaysUseTheCustomCard() {
     #expect(ToolCardRegistry.kind(for: "future_mcp_tool") == .custom(name: "future_mcp_tool"))
 }
@@ -82,6 +149,31 @@ private func payload(_ json: String) throws -> JSONValue {
         throw TestPayloadError.notAnEvent
     }
     return payload
+}
+
+private func onlyMedia(in presentation: ToolPresentation) -> ToolMediaItem {
+    guard case .media(let media, _) = presentation.content.body,
+          let item = media.first else {
+        Issue.record("Expected exactly one media item")
+        return ToolMediaItem(
+            id: "missing",
+            kind: .other,
+            name: nil,
+            mimeType: nil,
+            data: nil,
+            url: nil)
+    }
+    return item
+}
+
+private func onlySource(in presentation: ToolPresentation) -> SourcePresentation? {
+    guard case .source(let source, _) = presentation.content.body else { return nil }
+    return source
+}
+
+private func onlyDiff(in presentation: ToolPresentation) -> UnifiedDiff? {
+    guard case .diff(let diff, _) = presentation.content.body else { return nil }
+    return diff
 }
 
 private enum TestPayloadError: Error {

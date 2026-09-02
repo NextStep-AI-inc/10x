@@ -75,6 +75,16 @@ enum ProviderUsageWheelPresentationMode: Equatable, Sendable {
     }
 }
 
+enum ProviderActivityAnimation {
+    static func shouldPulse(
+        activeCount: Int,
+        reduceMotion: Bool,
+        isSceneActive: Bool
+    ) -> Bool {
+        activeCount > 0 && !reduceMotion && isSceneActive
+    }
+}
+
 struct ProviderUsageWheelView: View {
     let provider: ProviderUsageProvider
     let activeCount: Int
@@ -83,6 +93,8 @@ struct ProviderUsageWheelView: View {
     let presentationMode: ProviderUsageWheelPresentationMode
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isPulseExpanded = false
 
     init(
         provider: ProviderUsageProvider,
@@ -154,6 +166,21 @@ struct ProviderUsageWheelView: View {
             }
         }
         .accessibilityElement(children: .ignore)
+        .onAppear {
+            updatePulseAnimation()
+        }
+        .onDisappear {
+            stopPulseAnimation()
+        }
+        .onChange(of: activeCount) { _, _ in
+            updatePulseAnimation()
+        }
+        .onChange(of: reduceMotion) { _, _ in
+            updatePulseAnimation()
+        }
+        .onChange(of: scenePhase) { _, _ in
+            updatePulseAnimation()
+        }
     }
 
     private func ring(limit: ProviderUsageLimit, metric: ProviderUsageRingMetric) -> some View {
@@ -183,13 +210,37 @@ struct ProviderUsageWheelView: View {
             if reduceMotion {
                 pulseOutline
             } else {
-                TimelineView(.animation(minimumInterval: 1 / 30, paused: false)) { context in
-                    let phase = (sin(context.date.timeIntervalSinceReferenceDate * 3) + 1) / 2
-                    pulseOutline
-                        .scaleEffect(1 + 0.3 * phase)
-                        .opacity(0.25 + 0.3 * phase)
-                }
+                pulseOutline
+                    .scaleEffect(isPulseExpanded ? 1.3 : 1)
+                    .opacity(isPulseExpanded ? 0.55 : 0.25)
             }
+        }
+    }
+
+    private var shouldPulse: Bool {
+        ProviderActivityAnimation.shouldPulse(
+            activeCount: activeCount,
+            reduceMotion: reduceMotion,
+            isSceneActive: scenePhase == .active)
+    }
+
+    private func updatePulseAnimation() {
+        guard shouldPulse != isPulseExpanded else { return }
+
+        if shouldPulse {
+            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
+                isPulseExpanded = true
+            }
+        } else {
+            withAnimation(nil) {
+                isPulseExpanded = false
+            }
+        }
+    }
+
+    private func stopPulseAnimation() {
+        withAnimation(nil) {
+            isPulseExpanded = false
         }
     }
 

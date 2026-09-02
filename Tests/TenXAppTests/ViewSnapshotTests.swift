@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import ImageIO
 import OmpKit
 import SwiftUI
 import Testing
@@ -66,6 +67,31 @@ import Testing
             initialPhase: .verifying)
             .padding(56),
         name: "onboarding-install-verifying",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
+@Test func onboardingInstallStepPagedLogSnapshot() throws {
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: (0..<400).map { "Installer line \($0)" })
+            .padding(56),
+        name: "onboarding-install-paged-log",
+        size: CGSize(width: 760, height: 460))
+}
+
+@MainActor
+@Test func onboardingInstallStepExpandedPagedLogSnapshot() throws {
+    var reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+    reveal.revealNextPage(total: 400)
+    try assertSnapshot(
+        OnboardingInstallStepView(
+            model: AppModel(),
+            initialLog: (0..<400).map { "Installer line \($0)" },
+            initialLogReveal: reveal)
+            .padding(56),
+        name: "onboarding-install-expanded-paged-log",
         size: CGSize(width: 760, height: 460))
 }
 
@@ -1889,6 +1915,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         .environment(snapshotEmptyIDEStore)
         .environment(\.fileReferenceBaseURL, snapshotProjectURL)
         .environment(\.fileOpenService, snapshotFileOpenService)
+        .environment(\.toolMediaLoaderFactory, snapshotMediaLoader)
         .frame(width: 720, alignment: .leading),
         name: "semantic-tool-surfaces",
         size: CGSize(width: 800, height: 1_500))
@@ -2206,9 +2233,44 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     ]
 
     try assertSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-media",
         size: CGSize(width: 600, height: 1_300))
+}
+
+@MainActor
+@Test func toolMediaLoadingSnapshot() async throws {
+    let gate = SnapshotMediaGate()
+    let item = ToolMediaItem(
+        id: "loading-media",
+        kind: .image,
+        name: "Transcript preview",
+        mimeType: "image/png",
+        data: snapshotImageData(width: 500, height: 340).base64EncodedString(),
+        url: nil)
+    let loader = ToolMediaLoader(decode: { _ in
+        await gate.wait()
+        return .unavailable
+    })
+    let loadTask = Task { await loader.load(item) }
+    await gate.waitForStart()
+
+    do {
+        try assertSnapshot(
+            MediaItemView(item: item, loader: loader)
+                .frame(width: 520, alignment: .leading),
+            name: "tool-media-loading",
+            size: CGSize(width: 600, height: 300))
+    } catch {
+        loadTask.cancel()
+        await gate.open()
+        await loadTask.value
+        throw error
+    }
+    loadTask.cancel()
+    await gate.open()
+    await loadTask.value
 }
 
 @MainActor
@@ -2277,7 +2339,8 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     ]
 
     try assertSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-mcp-fallback",
         size: CGSize(width: 600, height: 1_600))
 }
@@ -2393,6 +2456,41 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             .environment(\.fileOpenService, snapshotFileOpenService),
         name: "rich-transcript-wide",
         size: CGSize(width: 1_180, height: 2_000))
+}
+
+@MainActor
+@Test func contentDocumentBudgetSnapshot() throws {
+    let paragraphs = (1...4).map { "Paragraph \($0) stays visible before the bounded source." }
+        .joined(separator: "\n\n")
+    let tableRows = (1...4).map { "| Row \($0) | Ready |" }.joined(separator: "\n")
+    let quote = (1...3).map { "> Quoted block \($0)\n>" }.joined(separator: "\n")
+    let list = (1...4).map { parent in
+        (["- Parent \(parent)"] + (1...4).map { "  - Child \(parent).\($0)" })
+            .joined(separator: "\n")
+    }.joined(separator: "\n")
+    let source = (1...500).map { "let renderedLine\($0) = \($0)" }
+        .joined(separator: "\n")
+    let document = MessageContentParser.parse("""
+    \(paragraphs)
+
+    | Name | State |
+    | --- | --- |
+    \(tableRows)
+
+    \(quote)
+
+    \(list)
+
+    ```swift
+    \(source)
+    ```
+    """)
+
+    try assertSnapshot(
+        ContentDocumentView(document: document)
+            .frame(width: 720, alignment: .leading),
+        name: "content-document-budget-initial",
+        size: CGSize(width: 800, height: 3_500))
 }
 
 @MainActor
@@ -3914,6 +4012,47 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
     return representation.representation(using: .png, properties: [:])!
 }
 
+@MainActor
+private func snapshotMediaLoader(for item: ToolMediaItem) -> ToolMediaLoader {
+    guard let path = item.url,
+          let data = try? Data(contentsOf: URL(filePath: path)),
+          let source = CGImageSourceCreateWithData(data as CFData, nil),
+          let image = CGImageSourceCreateImageAtIndex(
+            source,
+            0,
+            [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
+    else {
+        return ToolMediaLoader(preloaded: item, state: .unavailable)
+    }
+    return ToolMediaLoader(preloaded: item, media: DecodedToolMedia(data: data, image: image))
+}
+
+private actor SnapshotMediaGate {
+    private var isStarted = false
+    private var isOpen = false
+    private var waitContinuation: CheckedContinuation<Void, Never>?
+    private var startContinuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        isStarted = true
+        startContinuation?.resume()
+        startContinuation = nil
+        guard !isOpen else { return }
+        await withCheckedContinuation { waitContinuation = $0 }
+    }
+
+    func waitForStart() async {
+        guard !isStarted else { return }
+        await withCheckedContinuation { startContinuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        waitContinuation?.resume()
+        waitContinuation = nil
+    }
+}
+
 // MARK: - Dark appearance
 //
 // The palette resolves per-appearance, so these render the same views the light
@@ -4400,6 +4539,7 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
         .environment(snapshotEmptyIDEStore)
         .environment(\.fileReferenceBaseURL, snapshotProjectURL)
         .environment(\.fileOpenService, snapshotFileOpenService)
+        .environment(\.toolMediaLoaderFactory, snapshotMediaLoader)
         .frame(width: 720, alignment: .leading),
         name: "semantic-tool-surfaces-dark", appearance: .dark,
         size: CGSize(width: 800, height: 1_500))
@@ -4551,7 +4691,8 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
     ]
 
     try assertSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-media-dark", appearance: .dark,
         size: CGSize(width: 600, height: 1_300))
 }
@@ -4683,7 +4824,8 @@ private func snapshotImageData(width: Int, height: Int) -> Data {
     ]
 
     try assertSnapshot(
-        snapshotToolCardStack(cards, width: 520),
+        snapshotToolCardStack(cards, width: 520)
+            .environment(\.toolMediaLoaderFactory, snapshotMediaLoader),
         name: "tool-cards-mcp-fallback-dark", appearance: .dark,
         size: CGSize(width: 600, height: 1_600))
 }
