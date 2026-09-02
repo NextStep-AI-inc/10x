@@ -27,16 +27,22 @@ enum OnboardingInstallPhase: Equatable, Sendable {
 enum OnboardingInstallLogDisclosure {
     static func label(reveal: ProgressiveReveal, total: Int) -> String {
         if reveal.canRevealMore(total: total) {
-            return "Show \(reveal.nextPageCount(total: total)) older lines"
+            let count = reveal.nextPageCount(total: total)
+            return "Show \(count) older \(lineNoun(count: count))"
         }
         return "Show newest \(reveal.initialLimit) lines"
     }
 
     static func accessibilityLabel(reveal: ProgressiveReveal, total: Int) -> String {
         if reveal.canRevealMore(total: total) {
-            return "Show \(reveal.nextPageCount(total: total)) older installer log lines"
+            let count = reveal.nextPageCount(total: total)
+            return "Show \(count) older installer log \(lineNoun(count: count))"
         }
         return "Show newest \(reveal.initialLimit) installer log lines"
+    }
+
+    private static func lineNoun(count: Int) -> String {
+        count == 1 ? "line" : "lines"
     }
 }
 

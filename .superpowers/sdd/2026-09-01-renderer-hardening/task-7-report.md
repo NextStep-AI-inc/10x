@@ -105,3 +105,44 @@ The first full-suite attempt had the existing nondeterministic `archivingAPendin
 
 - During a real long install, cancel immediately after output arrives and confirm the final received line remains visible and copyable.
 - Expand a 400-line installer transcript, verify `Show newest 200 lines` retains keyboard focus, then collapse it without a scroll-to-bottom jump.
+
+---
+
+## Fix Round 2 (2026-09-02)
+
+### Status
+
+DONE
+
+### Fix
+
+- The stable older-log disclosure now derives `line` or `lines` from its next-page count in both its visible and accessibility labels. Its existing collapse label remains `Show newest 200 lines`.
+
+### TDD evidence
+
+The new 201-line assertion first failed with `Show 1 older lines` and `Show 1 older installer log lines`. The minimal shared noun helper made both exact singular assertions pass.
+
+### Verification
+
+```bash
+bundle exec ruby scripts/generate_xcodeproj.rb
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
+  '-only-testing:TenXAppTests/OnboardingInstallLogBufferTests' \
+  '-only-testing:TenXAppTests/onboardingInstallStepPagedLogSnapshot()' \
+  '-only-testing:TenXAppTests/onboardingInstallStepExpandedPagedLogSnapshot()'
+xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
+xcodebuild -project 10x.xcodeproj -scheme 10x -configuration Release \
+  -destination 'platform=macOS' \
+  -derivedDataPath /private/tmp/tenx-task7-fix2-release -quiet build
+git diff --check
+```
+
+Passed: generator made no project-file changes; focused coverage passed 11 tests; both existing log snapshots passed without asset changes; the full suite passed 1,190 tests in 27 suites; and the fresh Release build succeeded.
+
+### Not verified
+
+- No 201-line snapshot was added because the exact visible and accessibility strings are covered by deterministic assertions, while the existing 400-line snapshots already cover the disclosure’s two rendered control states.
+
+### For you to test
+
+- With exactly 201 installer log lines, confirm the control reads `Show 1 older line` and VoiceOver announces `Show 1 older installer log line`.

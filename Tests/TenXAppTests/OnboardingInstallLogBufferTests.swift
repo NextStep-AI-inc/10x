@@ -148,6 +148,14 @@ struct OnboardingInstallLogBufferTests {
         #expect(OnboardingInstallLogDisclosure.label(reveal: reveal, total: buffer.totalCount) == "Show newest 200 lines")
         #expect(OnboardingInstallLogDisclosure.accessibilityLabel(reveal: reveal, total: buffer.totalCount) == "Show newest 200 installer log lines")
     }
+
+    @Test
+    func installerDisclosureUsesSingularNounsForOneOlderLine() {
+        let reveal = ProgressiveReveal(initialLimit: 200, pageSize: 200)
+
+        #expect(OnboardingInstallLogDisclosure.label(reveal: reveal, total: 201) == "Show 1 older line")
+        #expect(OnboardingInstallLogDisclosure.accessibilityLabel(reveal: reveal, total: 201) == "Show 1 older installer log line")
+    }
 }
 
 @MainActor
