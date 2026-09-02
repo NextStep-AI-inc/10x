@@ -950,6 +950,57 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
     #expect(messages.first?.isFinal == true)
 }
 
+@Test func aDisplayedSkillMessageKeepsItsPlaceWhenHistoryCatchesUp() throws {
+    var reducer = TranscriptReducer()
+    let skill = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string("# Skill\n\nFollow these instructions."),
+    ])
+    _ = reducer.consume(.event(
+        type: "message_start",
+        payload: .object(["message": skill])))
+
+    let header = SessionHeader(
+        id: "session-skill",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let skillBase = SessionEntryBase(
+        id: "skill-1",
+        parentId: nil,
+        timestamp: "2026-08-24T20:00:01.000Z")
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .unknown(
+            type: "custom_message",
+            base: skillBase,
+            raw: try message(##"{"type":"custom_message","id":"skill-1","parentId":null,"timestamp":"2026-08-24T20:00:01.000Z","customType":"skill-prompt","display":true,"attribution":"user","content":"# Skill\n\nFollow these instructions."}"##)),
+        .message(
+            base: SessionEntryBase(
+                id: "assistant-1",
+                parentId: "skill-1",
+                timestamp: "2026-08-24T20:00:02.000Z"),
+            message: try message(#"{"role":"assistant","content":"Starting work."}"#)),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let messages = reducer.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    #expect(messages.map(\.id) == ["skill-1", "assistant-1"])
+    #expect(messages.map(\.visibleText) == [
+        "# Skill\n\nFollow these instructions.",
+        "Starting work.",
+    ])
+}
+
 @Test func aLateSkillSnapshotDoesNotReplaceTheStreamingAssistant() {
     var reducer = TranscriptReducer()
     let skillStart = JSONValue.object([
