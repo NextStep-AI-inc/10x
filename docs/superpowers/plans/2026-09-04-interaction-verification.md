@@ -37,9 +37,14 @@ Debug is required for test-only hooks; the user-facing app is Release.
 - Only one real account per provider was exercised. Multi-account stack motion and Reduce Motion need a human feel check; geometry/state tests and snapshots cover their intended layout.
 - Dark appearance was reviewed through rendered snapshots, not a live OS appearance switch. Stop with content was visibly checked; interruption, cancellation, duplicate-response and failed-write paths use deterministic tests.
 - Advisory payloads, repeated identical submissions and attachment races use fixtures rather than every provider/failure combination. The prior main-thread hang did not recur during the realistic tasks; arbitrary larger histories are not a universal performance claim.
-- Separate follow-ups: line-suffixed file references and regex false positives; repeated runtime notices/skipped-read output; occasional first-filter picker dismissal; provider dock overlap in short windows; local-build folder access recovery; a transient duplicate restored rail row; repeated/terminal-style question prompt content.
+- Separate follow-ups: line-suffixed file references and regex false positives; repeated runtime notices/skipped-read output; occasional first-filter picker dismissal; local-build folder access recovery; a transient duplicate restored rail row; repeated/terminal-style question prompt content.
 - Changes panel, task terminal and file-context picker were explicitly deferred. No migrations, dependency changes, merge or deployment were performed.
 
 ## For Tanner to test
 
 Start in the completed QA session. Scroll upward during a real response and Jump back, hover provider/account stacks, try the right-side send controls and configured keyboard alternatives, then compare the model selector with the approved preview. Use the follow-up ledger to choose the next interaction slice.
+
+
+## Approved follow-up refinement
+
+Question hierarchy, wrapping explanations, footer reservation, and session-only provider dock visibility were subsequently verified at `fec3cba`. See `2026-09-04-question-footer-refinement.md` for current evidence and checks.
