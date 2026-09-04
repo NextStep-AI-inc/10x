@@ -97,12 +97,16 @@ import Testing
     let directory = try makeSearchTestDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let sessionURL = directory.appending(path: "searchable-session-path.jsonl")
+    // The temporary path is searchable too; keep it from matching the numeric tool query.
+    var lineLimit = 80
+    while directory.path.contains(String(lineLimit)) { lineLimit += 1 }
     let fixture = completeSearchFixture(
         sessionID: "shape-session",
         title: "Migration work",
         messageID: "shape-message",
         messageText: "Summarize the release notes",
-        toolID: "shape-tool")
+        toolID: "shape-tool",
+        lineLimit: lineLimit)
     let metadata = try writeSession(fixture, to: sessionURL, title: "Migration work")
     let service = SessionSearchService(
         databaseURL: directory.appending(path: "SearchIndex-v1.sqlite"))
@@ -113,7 +117,7 @@ import Testing
         ("release notes", .message, "shape-message"),
         ("lease not", .message, "shape-message"),
         ("read", .tool, "shape-tool"),
-        ("80", .tool, "shape-tool"),
+        (String(lineLimit), .tool, "shape-tool"),
         ("README.md", .tool, "shape-tool"),
     ]
 
@@ -383,11 +387,12 @@ private func completeSearchFixture(
     title: String,
     messageID: String,
     messageText: String,
-    toolID: String
+    toolID: String,
+    lineLimit: Int = 80
 ) -> String {
     """
     {"type":"session","id":"\(sessionID)","cwd":"/tmp/Prime Radiant","timestamp":"2026-08-24T12:00:00Z","version":3,"title":"\(title)"}
     {"type":"message","id":"\(messageID)","parentId":null,"timestamp":"2026-08-24T12:01:00Z","message":{"role":"user","content":[{"type":"text","text":"\(messageText)"}]}}
-    {"type":"message","id":"tool-source-entry","parentId":"\(messageID)","timestamp":"2026-08-24T12:02:00Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"\(toolID)","name":"read","arguments":{"absolutePath":"/tmp/README.md","lineLimit":80}}]}}
+    {"type":"message","id":"tool-source-entry","parentId":"\(messageID)","timestamp":"2026-08-24T12:02:00Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"\(toolID)","name":"read","arguments":{"absolutePath":"/tmp/README.md","lineLimit":\(lineLimit)}}]}}
     """
 }

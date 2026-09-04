@@ -3668,7 +3668,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
 
 @MainActor
 private func isolatedSnapshotFavorites(_ name: String = #function) -> FavoriteModelStore {
-    let suiteName = "snapshot-favorites.\(name)"
+    let suiteName = "snapshot-favorites.\(name).\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defaults.removePersistentDomain(forName: suiteName)
     return FavoriteModelStore(defaults: defaults)
