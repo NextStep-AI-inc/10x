@@ -26,14 +26,22 @@ enum TranscriptTextSegments {
                 start,
                 offsetBy: maximumCharacters,
                 limitedBy: source.endIndex) ?? source.endIndex
-            if let crossingMatch = protectedRanges.first(where: {
+            let crossingMatch = protectedRanges.first(where: {
                    $0.lowerBound < hardEnd && $0.upperBound > hardEnd
-               }) {
+               })
+            if let crossingMatch {
                 hardEnd = crossingMatch.upperBound
             }
-            let end = hardEnd == source.endIndex
+            var end = hardEnd == source.endIndex
                 ? hardEnd
                 : preferredEnd(in: source, from: start, through: hardEnd)
+            if let splitMatch = protectedRanges.first(where: {
+                $0.lowerBound < end && $0.upperBound > end
+            }) {
+                end = splitMatch.lowerBound > start
+                    ? splitMatch.lowerBound
+                    : splitMatch.upperBound
+            }
             let text = String(source[start..<end])
             segments.append(TranscriptTextSegment(id: offset, text: text))
             offset += text.count

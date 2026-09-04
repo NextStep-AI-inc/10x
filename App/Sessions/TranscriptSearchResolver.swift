@@ -66,7 +66,10 @@ enum TranscriptSearchResolver {
         case .string(let text): [text]
         case .array(let values): values.flatMap(strings)
         case .object(let values): values.keys.sorted().flatMap { key in values[key].map(strings) ?? [] }
-        default: []
+        case .bool(let value): [value ? "true" : "false"]
+        case .int(let value): [String(value)]
+        case .double(let value): [String(value)]
+        case .null: []
         }
     }
 }

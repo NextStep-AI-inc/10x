@@ -54,6 +54,28 @@ import Testing
     #expect(resolution?.messageID == nil)
 }
 
+@Test func transcriptSearchResolvesNumericAndBooleanToolArgumentsIndexedBySearch() throws {
+    let rows = TranscriptPresentationRow.rows(from: [
+        .tool(ToolPresentation(
+            id: "read-call",
+            name: "read",
+            arguments: .object([
+                "lineLimit": .int(80),
+                "includeHidden": .bool(true),
+                "threshold": .double(0.75),
+            ]),
+            result: nil,
+            phase: .complete,
+            startDate: .distantPast,
+            endDate: .distantPast)),
+    ])
+
+    for query in ["80", "true", "0.75"] {
+        let request = try #require(TranscriptSearchRequest(entryID: "read-call", query: query))
+        #expect(TranscriptSearchResolver.resolve(request, in: rows)?.rowID == "tool:read-call")
+    }
+}
+
 @Test func transcriptSearchDoesNotFallbackFromMissingTarget() throws {
     let rows = TranscriptPresentationRow.rows(from: [
         .message(message(id: "other", baseID: "other", text: "same needle")),

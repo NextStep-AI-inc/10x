@@ -132,6 +132,20 @@ import Testing
     #expect(segments.map(\.text).joined() == source)
 }
 
+@Test func transcriptSegmentsDoNotSplitMultiwordHighlightAtInternalWhitespace() {
+    let source = String(repeating: "x", count: 1_018) + " release notes remain"
+
+    let segments = TranscriptTextSegments.make(
+        source,
+        maximumCharacters: 1_024,
+        avoidingSplit: "release notes")
+
+    #expect(segments.reduce(0) {
+        $0 + TranscriptTextSegments.matchRanges(in: $1.text, query: "release notes").count
+    } == 1)
+    #expect(segments.map(\.text).joined() == source)
+}
+
 private func assistantMessage(
     id: String,
     text: String,
