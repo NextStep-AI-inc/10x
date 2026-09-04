@@ -16,6 +16,12 @@ enum CommandBrowserSourceSelectionNavigation: Equatable, Sendable {
     case backToRoot
 }
 
+struct CommandBrowserColumnLayout: Equatable {
+    let showsDetail: Bool
+    let resultWidth: CGFloat
+    let detailWidth: CGFloat
+}
+
 struct CommandBrowserView: View {
     let model: ComposerCommandModel
     let controls: ComposerControlsModel
@@ -37,12 +43,7 @@ struct CommandBrowserView: View {
             let panelSize = Self.panelSize(for: geometry.size)
             let width = panelSize.width
             let height = panelSize.height
-            let showsDetail = width >= CommandBrowserMetrics.sourceWidth
-                + CommandBrowserMetrics.resultWidth
-                + CommandBrowserMetrics.minimumDetailWidth
-            let resultWidth = showsDetail
-                ? CommandBrowserMetrics.resultWidth
-                : max(0, width - CommandBrowserMetrics.sourceWidth - 1)
+            let columns = Self.columnLayout(for: width)
             VStack(spacing: 0) {
                 header(width: width)
                 separator(width: width)
@@ -50,15 +51,12 @@ struct CommandBrowserView: View {
                     sourceRail
                         .frame(width: CommandBrowserMetrics.sourceWidth, alignment: .topLeading)
                     verticalSeparator
-                    resultList(width: resultWidth)
-                        .frame(width: resultWidth, alignment: .topLeading)
-                    if showsDetail {
+                    resultList(width: columns.resultWidth)
+                        .frame(width: columns.resultWidth, alignment: .topLeading)
+                    if columns.showsDetail {
                         verticalSeparator
-                        detailOrChild
-                            .frame(
-                                width: width - CommandBrowserMetrics.sourceWidth
-                                    - CommandBrowserMetrics.resultWidth - 2,
-                                alignment: .topLeading)
+                        detailOrChild(width: columns.detailWidth)
+                            .frame(width: columns.detailWidth, alignment: .topLeading)
                     }
                 }
             }
@@ -182,7 +180,7 @@ struct CommandBrowserView: View {
     }
 
     @ViewBuilder
-    private var detailOrChild: some View {
+    private func detailOrChild(width: CGFloat) -> some View {
         switch model.route {
         case .native:
             CommandBrowserNativeControlsView(
@@ -190,7 +188,8 @@ struct CommandBrowserView: View {
                 controls: controls,
                 query: $query,
                 onEffect: onEffect,
-                restoreEditorFocus: restoreEditorFocus)
+                restoreEditorFocus: restoreEditorFocus,
+                availableWidth: width)
         case .subcommands(let rowID):
             if let row = model.visibleRows.first(where: { $0.id == rowID }) ?? model.highlightedRow {
                 subcommandPane(row)
@@ -459,6 +458,22 @@ struct CommandBrowserView: View {
             height: min(
                 max(available.height, CommandBrowserMetrics.minimumHeight),
                 CommandBrowserMetrics.maximumHeight))
+    }
+
+    static func columnLayout(for width: CGFloat) -> CommandBrowserColumnLayout {
+        let showsDetail = width >= CommandBrowserMetrics.sourceWidth
+            + CommandBrowserMetrics.resultWidth
+            + CommandBrowserMetrics.minimumDetailWidth
+        let resultWidth = showsDetail
+            ? CommandBrowserMetrics.resultWidth
+            : max(0, width - CommandBrowserMetrics.sourceWidth - 1)
+        let detailWidth = showsDetail
+            ? max(0, width - CommandBrowserMetrics.sourceWidth - resultWidth - 2)
+            : 0
+        return CommandBrowserColumnLayout(
+            showsDetail: showsDetail,
+            resultWidth: resultWidth,
+            detailWidth: detailWidth)
     }
 
     static func sourceSelectionNavigation(for route: CommandBrowserRoute) -> CommandBrowserSourceSelectionNavigation {

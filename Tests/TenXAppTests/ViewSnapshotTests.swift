@@ -2686,7 +2686,6 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         selected: modelPickerAnthropicOpus,
         thinkingLevel: "auto",
         fastModeEnabled: false)
-
     try assertSnapshot(
         VStack(spacing: 0) {
             Spacer(minLength: 0)
@@ -2757,6 +2756,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
         selected: modelPickerAnthropicOpus,
         thinkingLevel: "auto",
         fastModeEnabled: false)
+    controls.toggleFavorite(modelPickerOpenRouterOpus)
     let commandModel = ComposerCommandModel(
         catalog: controls.catalog,
         controls: controls,
@@ -3052,6 +3052,16 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
         == CGSize(width: 780, height: CommandBrowserMetrics.maximumHeight))
     #expect(CommandBrowserView.panelSize(for: CGSize(width: 616, height: 120))
         == CGSize(width: 616, height: CommandBrowserMetrics.minimumHeight))
+}
+
+@Test func commandBrowserColumnsFitInsideThePanel() {
+    let layout = CommandBrowserView.columnLayout(for: 780)
+
+    #expect(layout.showsDetail)
+    #expect(layout.resultWidth == CommandBrowserMetrics.resultWidth)
+    #expect(layout.detailWidth == 360)
+    #expect(CommandBrowserMetrics.sourceWidth + layout.resultWidth + layout.detailWidth + 2 == 780)
+    #expect(ModelPickerMetrics.resolvedPanelWidth(availableWidth: layout.detailWidth) == 360)
 }
 
 @Test func commandBrowserSourceSelectionFromChildRoutesBacksToRoot() {
@@ -3657,6 +3667,14 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
 }
 
 @MainActor
+private func isolatedSnapshotFavorites(_ name: String = #function) -> FavoriteModelStore {
+    let suiteName = "snapshot-favorites.\(name)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    return FavoriteModelStore(defaults: defaults)
+}
+
+@MainActor
 private func snapshotComposerControls(
     models: [ComposerModelInfo],
     selected: ComposerModelInfo,
@@ -3672,7 +3690,8 @@ private func snapshotComposerControls(
     let model = ComposerControlsModel(
         catalog: catalog,
         defaults: SnapshotComposerDefaults(),
-        recents: isolatedRecents())
+        recents: isolatedRecents(),
+        favorites: isolatedSnapshotFavorites())
     await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)), projectURL: nil)
     return model
 }
