@@ -30,8 +30,9 @@ public enum SessionFileParser {
     public static let listPrefixBytes = 4096
 
     public static func parse(data: Data) throws -> ParsedSessionFile {
+        try Task.checkCancellation()
         guard !data.isEmpty else { throw SessionFileError.empty }
-        let lines = splitLines(data)
+        let lines = try splitLines(data)
         guard !lines.isEmpty else { throw SessionFileError.empty }
 
         var index = 0
@@ -55,7 +56,8 @@ public enum SessionFileParser {
         let needsSyntheticIds = header.version == nil
         var previousId: String?
 
-        for line in lines[index...] {
+        for (offset, line) in lines[index...].enumerated() {
+            if offset.isMultiple(of: 64) { try Task.checkCancellation() }
             guard let object = decodeObject(line), let type = object["type"]?.stringValue else {
                 malformed += 1
                 continue
@@ -102,6 +104,8 @@ public enum SessionFileParser {
             entries.append(parsedEntry)
         }
 
+        try Task.checkCancellation()
+
         return ParsedSessionFile(
             header: header, entries: entries, malformedLineCount: malformed)
     }
@@ -112,7 +116,7 @@ public enum SessionFileParser {
         prefix: Data
     ) throws -> (slot: SessionTitleSlot?, header: SessionHeader) {
         guard !prefix.isEmpty else { throw SessionFileError.empty }
-        let lines = splitLines(prefix)
+        let lines = try splitLines(prefix)
         guard !lines.isEmpty else { throw SessionFileError.empty }
 
         var index = 0
@@ -293,12 +297,18 @@ public enum SessionFileParser {
         return Int(digits)
     }
 
-    private static func splitLines(_ data: Data) -> [Data] {
-        data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: false)
-            .map { slice -> Data in
-                slice.last == UInt8(ascii: "\r") ? Data(slice.dropLast()) : Data(slice)
-            }
-            .filter { !$0.isEmpty }
+    private static func splitLines(_ data: Data) throws -> [Data] {
+        var lines: [Data] = []
+        for (index, slice) in data.split(
+            separator: UInt8(ascii: "\n"),
+            omittingEmptySubsequences: false
+        ).enumerated() {
+            if index.isMultiple(of: 64) { try Task.checkCancellation() }
+            let line = slice.last == UInt8(ascii: "\r") ? Data(slice.dropLast()) : Data(slice)
+            if !line.isEmpty { lines.append(line) }
+        }
+        try Task.checkCancellation()
+        return lines
     }
 
     private static func decodeObject(_ line: Data) -> [String: JSONValue]? {

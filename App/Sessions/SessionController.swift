@@ -115,14 +115,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         activityRegistry: SessionActivityRegistry? = nil,
         accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
-        historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
+        historyLoader: HistoryLoader? = nil
     ) {
         self.processManager = processManager
         self.id = id
         self.accountCoordinator = activityRegistry
         self.accountChannelRegistry = accountChannelRegistry
         self.titleGenerator = titleGenerator
-        self.historyLoader = historyLoader
+        self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
         self.commandUpdates = commandUpdates.stream
@@ -145,10 +145,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         providerID: String? = nil,
         activityRegistry: SessionActivityRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
-        historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
+        historyLoader: HistoryLoader? = nil
     ) {
         self.processManager = processManager
-        self.historyLoader = historyLoader
+        self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
         self.items = previewItems
         self.runtimeState = runtimeState
         self.title = title
@@ -1020,6 +1020,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         reconciliationTask = Task { [weak self, historyLoader, processor, processorID, generation] in
             guard self != nil, !Task.isCancelled else { return }
             do {
+                try await Task.sleep(for: .milliseconds(50))
                 guard let history = try await historyLoader(sessionPath),
                       !Task.isCancelled,
                       self?.canApplyReconciliation(
@@ -1392,8 +1393,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         Int(min(100, max(0, percentage)).rounded())
     }
 
-    private static func loadHistory(path: String) async throws -> TranscriptHistory? {
-        try await SessionTimelineLoader().load(path: path)
+    private static func makeHistoryLoader() -> HistoryLoader {
+        let loader = SessionTimelineLoader()
+        return { path in try await loader.load(path: path) }
     }
 }
 
