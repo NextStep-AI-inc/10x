@@ -13,3 +13,7 @@ Implemented at `fec3cba`. All 1,293 app tests and four XCTest checks passed, wit
 The session-page scope includes both new and active session composers. The reserved 60pt footer height deliberately contains provider hit targets and labels; the prior 28pt action row did not reserve their visual footprint. Live narrow-window checks confirmed both Steer and Follow up fit clearly before the rings.
 
 Private screenshots and `refinement-report.md` live in the existing Downloads evidence bundle. Multiple real accounts and live dark appearance were not repeated; the existing test/snapshot coverage remains. The duplicated Ask summary and terminal-style Other prompt are separate follow-ups. No merge or deployment.
+
+## Compact alignment follow-up
+
+The compact account stacks now omit provider abbreviations, matching compact legacy wheels. The footer reserves the existing 44pt hit target instead of 60pt, so ring centers align with the other controls. Full-size account selectors retain labels and compact accessibility names remain intact. Seven affected light/dark, narrow/wide, single/multiple-account shell snapshots were reviewed and passed; the Release build and signature verification passed.

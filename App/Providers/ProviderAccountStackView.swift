@@ -336,10 +336,12 @@ struct ProviderAccountStackView: View {
                 isGroupRegionHovered = isHovered
             }
 
-            Text(provider.abbreviation)
-                .font(TenXTypography.mono(size: 9, weight: .semibold))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                .accessibilityHidden(true)
+            if diameter >= 40 {
+                Text(provider.abbreviation)
+                    .font(TenXTypography.mono(size: 9, weight: .semibold))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .accessibilityHidden(true)
+            }
         }
     }
 

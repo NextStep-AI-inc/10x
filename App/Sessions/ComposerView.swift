@@ -816,7 +816,7 @@ struct ComposerView: View {
     private var providerDockSlot: some View {
         if providerDockWidth > 0 {
             Color.clear
-                .frame(width: providerDockWidth, height: 60)
+                .frame(width: providerDockWidth, height: ProviderAccountStackGeometry.minimumHitTarget)
                 .anchorPreference(key: ComposerProviderDockAnchorKey.self, value: .bounds) { $0 }
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
