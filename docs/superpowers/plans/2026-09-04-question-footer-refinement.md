@@ -17,3 +17,5 @@ Private screenshots and `refinement-report.md` live in the existing Downloads ev
 ## Compact alignment follow-up
 
 The compact account stacks now omit provider abbreviations, matching compact legacy wheels. The footer reserves the existing 44pt hit target instead of 60pt, so ring centers align with the other controls. Full-size account selectors retain labels and compact accessibility names remain intact. Seven affected light/dark, narrow/wide, single/multiple-account shell snapshots were reviewed and passed; the Release build and signature verification passed.
+
+Live verification of `6e81767` is blocked by two Preparing runtime startup timeouts. Continue to workspace showed empty provider onboarding. No third launch was attempted. Private evidence includes the actual timeout and a clearly labeled test render; preceding live screenshots are from `fec3cba`.
