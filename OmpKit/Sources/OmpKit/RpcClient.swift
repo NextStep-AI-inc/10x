@@ -48,6 +48,8 @@ public struct RpcClientConfiguration: Sendable {
     public var environment: [String: String]?
     public var startupTimeout: Duration = .seconds(30)
     public var requestTimeout: Duration = .seconds(30)
+    /// Enables OMP tools that can pause for host-provided user input.
+    public var supportsUserInteraction: Bool = false
     /// Test-only: when true, spawn arguments are `extraArguments` verbatim
     /// (no `--mode rpc` / `--no-title` / session flags prepended).
     public var rawArgv: Bool = false
@@ -56,7 +58,8 @@ public struct RpcClientConfiguration: Sendable {
 
     var resolvedArguments: [String] {
         if rawArgv { return extraArguments }
-        var args = ["--mode", "rpc", "--no-title"]
+        let mode = supportsUserInteraction ? "rpc-ui" : "rpc"
+        var args = ["--mode", mode, "--no-title"]
         if let provider { args += ["--provider", provider] }
         if let model { args += ["--model", model] }
         if let thinking { args += ["--thinking", thinking] }

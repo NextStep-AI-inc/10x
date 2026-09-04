@@ -1,6 +1,6 @@
 import Foundation
 
-/// Owns one `omp --mode rpc` child per open session.
+/// Owns one OMP RPC child per open session.
 ///
 /// One process per session is the lifecycle omp's RPC server is built around:
 /// it holds a single session and disposes of it when stdin closes. Each child
@@ -112,6 +112,7 @@ public actor SessionProcessManager {
     /// Appended to every `RpcClientConfiguration` this actor builds — e.g. an
     /// App-layer `-e <extension path>` that must load on every `omp` spawn.
     private let extraArguments: [String]
+    private let supportsUserInteraction: Bool
     private let warmGracePeriod: Duration
     private let sleep: Sleep
     private let clientFactory: ClientFactory
@@ -134,6 +135,7 @@ public actor SessionProcessManager {
     public init(
         executable: String = "omp",
         extraArguments: [String] = [],
+        supportsUserInteraction: Bool = false,
         warmGracePeriod: Duration = .seconds(300),
         sleep: @escaping Sleep = { duration in
             try await ContinuousClock().sleep(for: duration)
@@ -143,6 +145,7 @@ public actor SessionProcessManager {
         self.init(
             executable: executable,
             extraArguments: extraArguments,
+            supportsUserInteraction: supportsUserInteraction,
             warmGracePeriod: warmGracePeriod,
             sleep: sleep,
             clientFactory: clientFactory,
@@ -153,6 +156,7 @@ public actor SessionProcessManager {
     init(
         executable: String = "omp",
         extraArguments: [String] = [],
+        supportsUserInteraction: Bool = false,
         warmGracePeriod: Duration = .seconds(300),
         sleep: @escaping Sleep = { duration in
             try await ContinuousClock().sleep(for: duration)
@@ -163,6 +167,7 @@ public actor SessionProcessManager {
     ) {
         self.executable = executable
         self.extraArguments = extraArguments
+        self.supportsUserInteraction = supportsUserInteraction
         self.warmGracePeriod = warmGracePeriod
         self.sleep = sleep
         self.clientFactory = clientFactory
@@ -237,11 +242,13 @@ public actor SessionProcessManager {
         let factory = clientFactory
         let executable = executable
         let extraArguments = extraArguments
+        let supportsUserInteraction = supportsUserInteraction
         let openingID = UUID()
         let task = Task { () throws -> ManagedHandle in
             var configuration = RpcClientConfiguration()
             configuration.executable = executable
             configuration.extraArguments = extraArguments
+            configuration.supportsUserInteraction = supportsUserInteraction
             configuration.cwd = URL(fileURLWithPath: cwd)
             configuration.resumeSessionPath = sessionPath
             let client = factory(configuration)
@@ -319,6 +326,7 @@ public actor SessionProcessManager {
             configuration.provider = provider
             configuration.model = model
             configuration.thinking = thinking
+            configuration.supportsUserInteraction = supportsUserInteraction
             configuration.extraArguments = ["--session-dir", sessionDirectory]
             let client = clientFactory(configuration)
             managed = ManagedClient(id: UUID(), client: client)
@@ -376,11 +384,13 @@ public actor SessionProcessManager {
         let factory = clientFactory
         let executable = executable
         let extraArguments = extraArguments
+        let supportsUserInteraction = supportsUserInteraction
         let sessionDirectory = freshSessionDirectory(for: project)
         let task = Task { () throws -> ManagedWarmHandle in
             var configuration = RpcClientConfiguration()
             configuration.executable = executable
             configuration.extraArguments = extraArguments
+            configuration.supportsUserInteraction = supportsUserInteraction
             configuration.cwd = URL(filePath: project, directoryHint: .isDirectory)
             configuration.extraArguments = ["--session-dir", sessionDirectory]
             let client = factory(configuration)
