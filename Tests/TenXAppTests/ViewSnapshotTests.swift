@@ -2772,7 +2772,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onEffect: { _ in },
             restoreEditorFocus: {}),
         name: "command-browser-model-child",
-        size: CGSize(width: 340, height: 320))
+        size: CGSize(width: 440, height: 320))
 }
 
 @MainActor
