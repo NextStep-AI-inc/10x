@@ -5580,3 +5580,28 @@ private var snapshotShelfProjectURLs: [URL] {
         name: "extension-question-card",
         size: CGSize(width: 580, height: 380))
 }
+
+
+@MainActor
+@Test func contextUsagePopoverSnapshots() throws {
+    let usage = try #require(SessionContextUsage(value: .object([
+        "tokens": .int(84_000), "contextWindow": .int(200_000), "percent": .int(42)
+    ]), updatedAt: Date(timeIntervalSince1970: 1_800_000_000)))
+    let breakdown = try #require(SessionContextBreakdown(report: """
+    Context window: 200000 tokens (42% used)
+      Messages         [██░░] 31%  62000 tokens
+      System prompt    [█░░░] 4%  8000 tokens
+      System tools     [█░░░] 3%  6000 tokens
+      System context   [█░░░] 3%  5000 tokens
+      Skills           [█░░░] 2%  3000 tokens
+      Auto-compact buf [██░░] 10%  20000 tokens
+      Free             [████] 48%  96000 tokens
+    """, updatedAt: usage.updatedAt))
+    for appearance in [SnapshotAppearance.light, .dark] {
+        try assertSnapshot(
+            ContextUsagePopover(summary: ContextUsageSummary(usage: usage, breakdown: breakdown),
+                breakdown: breakdown, isLoading: false, errorMessage: nil, onClose: {}, onRefresh: {}),
+            name: "context-usage-popover-\(appearance == .light ? "light" : "dark")",
+            appearance: appearance, size: CGSize(width: 360, height: 440))
+    }
+}

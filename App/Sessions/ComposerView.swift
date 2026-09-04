@@ -799,8 +799,8 @@ struct ComposerView: View {
     @ViewBuilder
     private var actionControls: some View {
         if let controller = streamingController {
-            behaviorMenu(controller)
             providerDockSlot
+            behaviorMenu(controller)
             sendButton
             stopButton(controller)
         } else {
@@ -931,6 +931,12 @@ struct ComposerView: View {
                 Text(controller.thinkingLevel)
                     .font(TenXTypography.body(size: 10, weight: .medium))
             }
+            ContextUsageControl(
+                usage: controller.contextUsage,
+                breakdown: controller.contextBreakdown,
+                isLoading: controller.isContextLoading,
+                errorMessage: controller.contextErrorMessage,
+                onRefresh: { await controller.refreshContextDetails() })
             if controller.queuedMessageCount > 0 {
                 Text("\(controller.queuedMessageCount) queued")
                     .font(TenXTypography.body(size: 10, weight: .medium))

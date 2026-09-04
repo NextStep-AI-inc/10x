@@ -41,6 +41,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         thinkingLevel: nil,
         fastModeEnabled: false)
     private(set) var contextPercentage: Int?
+    private(set) var contextUsage: SessionContextUsage?
+    private(set) var contextBreakdown: SessionContextBreakdown?
+    private(set) var isContextLoading = false
+    private(set) var contextErrorMessage: String?
+    private var contextRefreshTask: Task<Void, Never>?
+    private var contextEventFence: RpcEventConsumptionFence?
+    private var contextReportText: String?
+    private var contextRevision: UInt64 = 0
     private(set) var queuedMessageCount = 0
     private(set) var sessionPath: String?
     private(set) var extensionSheetRequest: ExtensionUIState?
@@ -940,10 +948,13 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     ) {
         guard currentPipelineContext(for: processor) != nil else { return }
         attachAccountChannel(client: client)
+        contextEventFence = eventFence
         eventTask = Task.detached { [weak self, processor, events = client.events, eventFence] in
             for await frame in events {
                 guard !Task.isCancelled else { break }
-                await processor.consume(frame)
+                if await self?.consumeContextReport(frame, processor: processor) != true {
+                    await processor.consume(frame)
+                }
                 if case .event("available_commands_update", _) = frame {
                     await self?.consumeCommandCatalogUpdate(frame, processor: processor)
                 }
@@ -1024,6 +1035,16 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let hadActivePipeline = handle != nil || detachedProcessor != nil || openingTask != nil
         let openingTaskToClose = openingTask
         let previousOpeningCloseTask = openingCloseTask
+        contextRefreshTask?.cancel()
+        contextRefreshTask = nil
+        contextEventFence = nil
+        contextRevision &+= 1
+        contextUsage = nil
+        contextPercentage = nil
+        contextBreakdown = nil
+        contextReportText = nil
+        contextErrorMessage = nil
+        isContextLoading = false
         eventTask?.cancel()
         snapshotTask?.cancel()
         controlTask?.cancel()
@@ -1266,7 +1287,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         {
             liveComposerSelection.fastModeEnabled = fastEnabled
         }
-        contextPercentage = Self.contextPercent(data["contextUsage"])
+        applyContextUsage(data["contextUsage"])
         queuedMessageCount = data["queuedMessageCount"]?.intValue ?? 0
         runtimeState = data["isStreaming"]?.boolValue == true ? .streaming : .idle
         activeProviderAccounts = Self.activeProviderAccountRefs(from: data)
@@ -1280,6 +1301,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private func applyEventMetadata(_ frame: RpcFrame) {
         guard case .event(let type, let payload) = frame else { return }
+        if ["agent_start", "message_end", "turn_end", "agent_end", "auto_compaction_start",
+            "auto_compaction_end", "model_changed", "config_update"].contains(type) {
+            contextRevision &+= 1
+            contextBreakdown = nil
+            scheduleContextRefresh()
+        }
         switch type {
         case "session_info_update":
             if let name = payload["title"]?.stringValue, !name.isEmpty {
@@ -1333,6 +1360,99 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private func publishCommandCatalog(_ state: ComposerCommandCatalogState) {
         commandCatalogState = state
         commandContinuation.yield(state)
+    }
+
+    private func applyContextUsage(_ value: JSONValue?) {
+        let updated = SessionContextUsage(value: value)
+        if contextUsage?.tokens != updated?.tokens || contextUsage?.contextWindow != updated?.contextWindow {
+            contextBreakdown = nil
+        }
+        contextUsage = updated
+        contextPercentage = Self.contextPercent(value)
+    }
+
+    private func scheduleContextRefresh() {
+        contextRefreshTask?.cancel()
+        contextRefreshTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(150)) }
+            catch { return }
+            await self?.refreshContextUsage()
+        }
+    }
+
+    private func refreshContextUsage() async {
+        guard let handle else { return }
+        let context = currentPipelineContext()
+        let revision = contextRevision
+        do {
+            let response = try await handle.client.send(.getState(), timeout: .seconds(5))
+            guard isCurrent(context), revision == contextRevision, !Task.isCancelled else { return }
+            if !isContextLoading { contextErrorMessage = nil }
+            applyContextUsage(response.data?["contextUsage"])
+        } catch {
+            // A usage read must not interrupt the session or its working indicator.
+            guard isCurrent(context), !Task.isCancelled else { return }
+            contextErrorMessage = "Couldn’t refresh context usage."
+        }
+    }
+
+    func refreshContextDetails() async {
+        guard !isContextLoading else { return }
+        guard let handle, let eventFence = contextEventFence else {
+            contextErrorMessage = "Context usage is unavailable while the session is disconnected."
+            return
+        }
+        let context = currentPipelineContext()
+        isContextLoading = true
+        contextErrorMessage = nil
+        contextBreakdown = nil
+        contextReportText = nil
+        defer {
+            if isCurrent(context) {
+                isContextLoading = false
+                contextReportText = nil
+            }
+        }
+        await refreshContextUsage()
+        guard isCurrent(context), !Task.isCancelled else { return }
+        guard availableCommands.contains(where: { $0.name == "context" && $0.source == .builtin }) else {
+            contextErrorMessage = "Detailed context usage is unavailable in this runtime."
+            return
+        }
+        let revision = contextRevision
+        do {
+            // The advertised builtin is local and never invokes a model. Keep this
+            // read outside sendPrompt so drafts, receipts and activity stay intact.
+            let receipt = try await handle.client.sendWithEventFence(
+                .prompt(message: "/context", streamingBehavior: nil), timeout: .seconds(5))
+            guard await eventFence.wait(through: receipt.precedingEventCount),
+                  isCurrent(context), !Task.isCancelled else { return }
+            guard revision == contextRevision else {
+                contextErrorMessage = "Context changed while loading. Try again."
+                return
+            }
+            guard receipt.response.success,
+                  receipt.response.data?["agentInvoked"]?.boolValue == false,
+                  let report = contextReportText,
+                  let breakdown = SessionContextBreakdown(report: report)
+            else {
+                contextErrorMessage = "The context breakdown is unavailable."
+                return
+            }
+            contextBreakdown = breakdown
+        } catch {
+            guard isCurrent(context), !Task.isCancelled else { return }
+            contextErrorMessage = "Couldn’t load the context breakdown."
+        }
+    }
+
+    private func consumeContextReport(_ frame: RpcFrame, processor: TranscriptEventProcessor) -> Bool {
+        guard self.processor?.id == processor.id, isContextLoading,
+              case .event("command_output", let payload) = frame,
+              let text = payload["text"]?.stringValue,
+              text.hasPrefix("Context") else { return false }
+        contextReportText = text
+        return true
     }
 
     private func refreshState() async {
@@ -1561,12 +1681,15 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     static func contextPercent(_ value: JSONValue?) -> Int? {
-        if let percentage = value?["percentage"]?.doubleValue ?? value?["percent"]?.doubleValue {
+        if let percent = value?["percent"]?.doubleValue, percent.isFinite {
+            return clampedPercent(percent)
+        }
+        if let percentage = value?["percentage"]?.doubleValue, percentage.isFinite {
             return clampedPercent(percentage <= 1 ? percentage * 100 : percentage)
         }
         guard let used = value?["tokens"]?.doubleValue ?? value?["used"]?.doubleValue,
               let limit = value?["contextWindow"]?.doubleValue ?? value?["limit"]?.doubleValue,
-              limit > 0
+              used.isFinite, limit.isFinite, limit > 0
         else { return nil }
         return clampedPercent(used / limit * 100)
     }

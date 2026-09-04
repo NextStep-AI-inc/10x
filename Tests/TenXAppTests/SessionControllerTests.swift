@@ -11,6 +11,70 @@ import Testing
     #expect(SessionController.contextPercent(.object(["percentage": .double(0.63)])) == 63)
 }
 
+@Test func ompContextPercentUsesPercentagePoints() {
+    #expect(SessionController.contextPercent(.object(["percent": .double(1)])) == 1)
+    #expect(SessionController.contextPercent(.object(["percent": .double(0.63)])) == 1)
+}
+
+@Test func contextDetailsDoNotSubmitOrAlterTheConversation() async throws {
+    let manager = contextFakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: try temporaryDirectory())
+    #expect(controller.contextUsage?.tokens == 85_000)
+    controller.draft = "Keep this draft"
+    let before = controller.items
+    await controller.refreshContextDetails()
+    #expect(controller.contextBreakdown?.usedTokens == 84_000)
+    #expect(controller.contextBreakdown?.categories.count == 5)
+    #expect(controller.contextErrorMessage == nil)
+    #expect(controller.draft == "Keep this draft")
+    #expect(controller.pendingSubmissions.isEmpty)
+    #expect(controller.items == before)
+    #expect(controller.runtimeState == .idle)
+    #expect(!controller.isContextLoading)
+    await manager.closeAll()
+}
+
+@Test func unavailableContextDetailsDoNotFailTheSession() async throws {
+    for mode in ["malformed", "unsupported"] {
+        let manager = contextFakeManager(mode: mode)
+        let controller = SessionController(processManager: manager)
+        await controller.openNew(projectURL: try temporaryDirectory())
+        await controller.refreshContextDetails()
+        #expect(controller.contextBreakdown == nil)
+        #expect(controller.contextErrorMessage != nil)
+        #expect(controller.contextUsage != nil)
+        #expect(controller.runtimeState == .idle)
+        await manager.closeAll()
+    }
+}
+
+@Test func contextRefreshRecoversFromATransientReadFailure() async throws {
+    let manager = contextFakeManager(mode: "transient")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: try temporaryDirectory())
+    let boundary = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_end", payload: .object([:]))))
+    await boundary()
+    #expect(await eventually { controller.contextErrorMessage != nil })
+    await boundary()
+    #expect(await eventually { controller.contextUsage?.tokens == 87_000 })
+    #expect(controller.contextErrorMessage == nil)
+    await manager.closeAll()
+}
+
+@Test func contextRefreshesAfterCompactionBoundary() async throws {
+    let manager = contextFakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: try temporaryDirectory())
+    let boundary = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_end", payload: .object([:]))))
+    await boundary()
+    #expect(await eventually { controller.contextUsage?.tokens == 86_000 })
+    #expect(controller.runtimeState == .idle)
+    await manager.closeAll()
+}
+
 @Test func ompSessionTitleGeneratorUsesTheActiveModelAndParsesTaggedOutput() async throws {
     let capture = TitleCommandCapture()
     let generator = OmpSessionTitleGenerator(
@@ -689,6 +753,18 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     await manager.closeAll()
 }
 
+}
+
+private func contextFakeManager(mode: String) -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = ["python3", repositoryRoot().appending(path:
+            "Tests/TenXAppTests/Fixtures/context_fake_server.py").path, mode]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
 }
 
 private func fakeManager(mode: String) -> SessionProcessManager {

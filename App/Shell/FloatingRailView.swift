@@ -10,6 +10,7 @@ struct FloatingRailView: View {
     @State private var expandedProjectIDs: Set<String> = []
     @State private var scrollPosition = ScrollPosition()
     @State private var scrollNavigation = RailScrollNavigation.zero
+    @State private var sessionReadState = RailSessionReadState()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var groups: [ProjectSessionGroup] {
@@ -21,6 +22,14 @@ struct FloatingRailView: View {
             groups: groups,
             selectedSessionPath: selectedSessionPath,
             expandedProjectIDs: expansion.isExpanded ? expandedProjectIDs : [])
+    }
+
+    private var activityByPath: [String: RailSessionActivity] {
+        model.railSessions.reduce(into: [:]) { activities, metadata in
+            activities[metadata.path] = railActivity(
+                liveState: model.liveController(for: metadata.path)?.activityState,
+                metadataStatus: metadata.status)
+        }
     }
 
     var body: some View {
@@ -80,6 +89,12 @@ struct FloatingRailView: View {
             } else {
                 expansion.pointerExited()
             }
+        }
+        .onChange(of: activityByPath, initial: true) { _, activities in
+            observeActivities(activities, selectedPath: selectedSessionPath)
+        }
+        .onChange(of: selectedSessionPath) { _, selectedPath in
+            observeActivities(activityByPath, selectedPath: selectedPath)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Application navigation")
@@ -191,8 +206,13 @@ struct FloatingRailView: View {
                 ?? metadata.title.flatMap { $0.isEmpty ? nil : $0 }
                 ?? "Untitled session"
             let isTitleLoading = controller?.isTitleLoading ?? false
-            let activityState = controller?.activityState
-                ?? metadataActivityState(metadata.status)
+            let observedActivity = railActivity(
+                liveState: controller?.activityState,
+                metadataStatus: metadata.status)
+            let indicator = sessionReadState.indicator(
+                for: metadata.path,
+                activity: observedActivity)
+            let activityState = sessionActivityState(for: indicator)
             Button {
                 expansion.pointerEntered()
                 model.openSession(metadata)
@@ -202,14 +222,13 @@ struct FloatingRailView: View {
                         label: item.markerLabel,
                         position: item.treePosition,
                         isSelected: item.isSelected,
-                        activityState: activityState)
+                        activityState: activityState,
+                        usesForegroundNeutral: true)
                         .frame(width: 34, height: 28)
                     if expansion.isExpanded {
                         SessionTitleView(title: title, isLoading: isTitleLoading)
                             .font(TenXTypography.body(size: 12))
-                            .foregroundStyle(item.isSelected
-                                ? TenXPalette.color(TenXPalette.cyanHex)
-                                : TenXPalette.color(TenXPalette.mutedTextHex))
+                            .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                             .lineLimit(1)
                             .transition(.opacity)
                     }
@@ -226,7 +245,10 @@ struct FloatingRailView: View {
             .accessibilityLabel(RailAccessibility.sessionLabel(
                 title: isTitleLoading ? "Naming session" : title,
                 project: groupName(for: metadata),
-                state: activityState?.rawValue ?? metadata.status.rawValue.capitalized))
+                state: accessibilityState(
+                    activity: observedActivity,
+                    indicator: indicator,
+                    metadataStatus: metadata.status)))
             .contextMenu {
                 Button("Rename Session...", systemImage: "pencil") {
                     model.requestRenameSession(metadata)
@@ -332,14 +354,68 @@ struct FloatingRailView: View {
         })?.displayName ?? "Unknown Project"
     }
 
-    private func metadataActivityState(_ status: SessionStatus) -> SessionActivityState? {
-        switch status {
-        case .complete: .ready
+    private func railActivity(
+        liveState: SessionActivityState?,
+        metadataStatus: SessionStatus
+    ) -> RailSessionActivity {
+        if let liveState {
+            return switch liveState {
+            case .working: .working
+            case .ready: .completed
+            case .needsInput: .needsInput
+            case .failed: .failed
+            case .stopped: .stopped
+            }
+        }
+
+        return switch metadataStatus {
+        case .complete: .completed
         case .error, .interrupted: .failed
         case .aborted: .stopped
-        case .pending, .unknown: nil
+        case .pending, .unknown: .neutral
         }
     }
+
+    private func observeActivities(
+        _ activities: [String: RailSessionActivity],
+        selectedPath: String?
+    ) {
+        for (path, activity) in activities {
+            sessionReadState.observe(
+                path: path,
+                activity: activity,
+                isSelected: path == selectedPath)
+        }
+    }
+
+    private func sessionActivityState(
+        for indicator: RailSessionIndicator
+    ) -> SessionActivityState? {
+        switch indicator {
+        case .neutral: nil
+        case .working: .working
+        case .completed: .ready
+        case .needsInput: .needsInput
+        case .failed: .failed
+        }
+    }
+
+    private func accessibilityState(
+        activity: RailSessionActivity,
+        indicator: RailSessionIndicator,
+        metadataStatus: SessionStatus
+    ) -> String {
+        switch activity {
+        case .working: "Working"
+        case .completed where indicator == .completed: "Ready, unread"
+        case .completed: "Ready"
+        case .needsInput: "Needs your response"
+        case .failed: "Failed"
+        case .stopped: "Stopped"
+        case .neutral: metadataStatus.rawValue.capitalized
+        }
+    }
+
 }
 
 private enum RailFocus: Hashable {
@@ -379,6 +455,7 @@ private struct RailTreeMarker: View {
     let position: RailPresentationItem.TreePosition
     let isSelected: Bool
     let activityState: SessionActivityState?
+    var usesForegroundNeutral = false
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -420,12 +497,13 @@ private struct RailTreeMarker: View {
     }
 
     private var treeColor: Color {
-        if isSelected { return TenXPalette.color(TenXPalette.cyanHex) }
         return neutralColor
     }
 
     private var neutralColor: Color {
-        if position == .root { return TenXPalette.color(TenXPalette.nearBlackHex) }
+        if position == .root || usesForegroundNeutral {
+            return TenXPalette.color(TenXPalette.nearBlackHex)
+        }
         return TenXPalette.color(TenXPalette.mutedTextHex)
     }
 }

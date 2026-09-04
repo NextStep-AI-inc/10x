@@ -149,18 +149,11 @@ struct ExtensionQuestionCardView: View {
     }
 
     private func questionHeader(_ title: String) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("RESPONSE NEEDED")
-                .font(TenXTypography.mono(size: 9, weight: .semibold))
-                .tracking(0.7)
-                .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
-                .accessibilityHidden(true)
-            Text(title)
-                .font(TenXTypography.body(size: 16, weight: .semibold))
-                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-        }
+        Text(title)
+            .font(TenXTypography.body(size: 16, weight: .semibold))
+            .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
     }
 
     private var actions: some View {
