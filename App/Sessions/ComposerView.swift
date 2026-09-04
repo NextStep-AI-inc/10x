@@ -243,6 +243,7 @@ struct ComposerView: View {
     let interactionPreferences: ComposerInteractionPreferences
     let onSend: () -> Void
 
+    @Environment(\.composerProviderDockWidth) private var providerDockWidth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isEditorFocused: Bool
     @State private var attachmentMessage: String?
@@ -348,14 +349,24 @@ struct ComposerView: View {
                 ComposerAttachmentsView(attachments: attachments, onRemove: remove)
             }
 
-            HStack(spacing: 4) {
-                attachButton
-
-                footerControls
-
-                Spacer()
-
-                actionControls
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) {
+                    attachButton
+                    footerControls.fixedSize()
+                    Spacer(minLength: 8)
+                    actionControls
+                }
+                VStack(spacing: 6) {
+                    HStack(spacing: 4) {
+                        attachButton
+                        footerControls
+                        Spacer(minLength: 0)
+                    }
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        actionControls
+                    }
+                }
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
@@ -789,13 +800,26 @@ struct ComposerView: View {
     private var actionControls: some View {
         if let controller = streamingController {
             behaviorMenu(controller)
+            providerDockSlot
             sendButton
             stopButton(controller)
         } else {
+            providerDockSlot
             sendButton
             if case .active(let controller) = presentation, controller.runtimeState == .loading {
                 stopButton(controller)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var providerDockSlot: some View {
+        if providerDockWidth > 0 {
+            Color.clear
+                .frame(width: providerDockWidth, height: 60)
+                .anchorPreference(key: ComposerProviderDockAnchorKey.self, value: .bounds) { $0 }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
 

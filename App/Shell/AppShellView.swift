@@ -20,6 +20,9 @@ struct AppShellView: View {
                 } else {
                     ZStack(alignment: .leading) {
                         routeCanvas
+                            .environment(\.composerProviderDockWidth, hasComposer
+                                ? ProviderUsageDockLayout.footerWidth(providers: model.providerModel?.dockProviders ?? [])
+                                : 0)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding(.leading, railExpansion.contentLeadingInset)
                             .environment(model.idePreferenceStore)
@@ -39,9 +42,11 @@ struct AppShellView: View {
                         }
                     }
                     .animation(brandMenuAnimation, value: isBrandMenuPresented)
-                    .overlay {
-                        GeometryReader { geometry in
-                            usageDock(shellWidth: geometry.size.width)
+                    .overlayPreferenceValue(ComposerProviderDockAnchorKey.self) { anchor in
+                        if hasComposer, let anchor {
+                            GeometryReader { geometry in
+                                usageDock(shellSize: geometry.size, footerFrame: geometry[anchor])
+                            }
                         }
                     }
                     .overlay {
@@ -213,14 +218,12 @@ struct AppShellView: View {
     }
 
     @ViewBuilder
-    private func usageDock(shellWidth: CGFloat) -> some View {
+    private func usageDock(shellSize: CGSize, footerFrame: CGRect) -> some View {
         if let providerModel = model.providerModel, !providerModel.dockProviders.isEmpty {
             let dockProviders = providerModel.dockProviders
             let compactLayout = ProviderUsageDockLayout.compact(
-                shellWidth: shellWidth,
-                contentLeadingInset: railExpansion.contentLeadingInset,
-                providerCount: dockProviders.count,
-                hasComposer: hasComposer)
+                shellSize: shellSize,
+                footerFrame: footerFrame)
 
             ProviderUsageDockView(
                 providers: dockProviders,

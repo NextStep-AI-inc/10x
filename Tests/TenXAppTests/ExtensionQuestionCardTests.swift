@@ -16,3 +16,27 @@ import Testing
     let attemptAfterSuccess = state.begin()
     #expect(!attemptAfterSuccess)
 }
+
+@Test func multilineOptionUsesItsFirstLineAsTitleWithoutChangingTheResponseValue() {
+    let option = ExtensionSelectOption(
+        label: "Use the existing parser\nKeeps behavior consistent with imported sessions.",
+        detail: nil)
+
+    let presentation = ExtensionQuestionOptionPresentation(option: option)
+
+    #expect(presentation.title == "Use the existing parser")
+    #expect(presentation.detail == "Keeps behavior consistent with imported sessions.")
+    #expect(presentation.responseValue == option.label)
+}
+
+@Test func structuredOptionDetailTakesPriorityOverAnEmbeddedExplanation() {
+    let option = ExtensionSelectOption(
+        label: "Use the existing parser\nEmbedded explanation",
+        detail: "The server-provided justification")
+
+    let presentation = ExtensionQuestionOptionPresentation(option: option)
+
+    #expect(presentation.title == "Use the existing parser")
+    #expect(presentation.detail == "The server-provided justification")
+    #expect(presentation.responseValue == option.label)
+}

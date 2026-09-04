@@ -5563,3 +5563,20 @@ private var snapshotShelfProjectURLs: [URL] {
         appearance: .dark,
         size: CGSize(width: 380, height: 320))
 }
+
+@MainActor
+@Test func extensionQuestionCardSnapshot() throws {
+    try assertSnapshot(
+        ExtensionQuestionCardView(
+            state: .select(
+                id: "question",
+                title: "How should the CLI handle an existing output file?",
+                options: [
+                    ExtensionSelectOption(label: "A. Require explicit overwrite", detail: "Preserves previous release notes. Add --force when you want to replace them."),
+                    ExtensionSelectOption(label: "B. Write a numbered copy\nKeeps every generated file, but adds cleanup when you iterate frequently.", detail: nil),
+                ], timeout: nil),
+            onRespond: { _ in true })
+            .frame(width: 520),
+        name: "extension-question-card",
+        size: CGSize(width: 580, height: 380))
+}
