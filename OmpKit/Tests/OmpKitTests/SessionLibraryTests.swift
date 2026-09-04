@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import Darwin
+import Synchronization
 @testable import OmpKit
 
 /// Writes a minimal session file whose LAST message line drives the classifier.
@@ -22,6 +23,27 @@ let toolCallLast = #"{"type":"message","id":"m1","parentId":null,"timestamp":"t"
 private func makeTempRoot(_ label: String) -> URL {
     URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("\(label)-\(UUID().uuidString)")
+}
+
+private final class DirectoryEnumerationRecorder: Sendable {
+    private let enumerationCount = Mutex(0)
+
+    func contents(
+        at url: URL,
+        includingPropertiesForKeys keys: [URLResourceKey]
+    ) throws -> [URL] {
+        enumerationCount.withLock { $0 += 1 }
+        return try FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: keys, options: [])
+    }
+
+    func reset() {
+        enumerationCount.withLock { $0 = 0 }
+    }
+
+    var count: Int {
+        enumerationCount.withLock { $0 }
+    }
 }
 
 @Test func listsSortsAndClassifies() async throws {
@@ -163,6 +185,89 @@ private func makeTempRoot(_ label: String) -> URL {
         return false
     } ?? false
     #expect(fired)
+    #expect(await library.listAll().first?.status == .complete)
+}
+
+@Test func repeatedSessionWritesDoNotReenumerateWatcherTopology() async throws {
+    let root = makeTempRoot("bounded-watch-enumeration")
+    let file = root.appendingPathComponent("-x/session.jsonl")
+    try writeSession(at: file, id: "session", cwd: "/x", lastMessage: userLast)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recorder = DirectoryEnumerationRecorder()
+    let library = SessionLibrary(
+        root: root,
+        archiveRoot: nil,
+        unlinkItem: { unlink($0) },
+        watcherContentsOfDirectory: recorder.contents)
+    await library.startWatching()
+    recorder.reset()
+    let stream = library.changes
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let handle = try? FileHandle(forWritingTo: file) else { return }
+        _ = try? handle.seekToEnd()
+        for _ in 0..<20 {
+            try? handle.write(contentsOf: Data("\n".utf8))
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        try? handle.close()
+    }
+    defer { writer.cancel() }
+
+    let fired = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+
+    #expect(fired)
+    #expect(recorder.count == 0)
+}
+
+@Test func watcherTracksCreatedRenamedAndDeletedSessions() async throws {
+    let root = makeTempRoot("structural-watch")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let library = SessionLibrary(root: root)
+    let stream = library.changes
+    await library.startWatching()
+    let original = root.appendingPathComponent("-x/original.jsonl")
+    let renamed = root.appendingPathComponent("-x/renamed.jsonl")
+
+    let creator = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        try? writeSession(at: original, id: "created", cwd: "/x", lastMessage: userLast)
+    }
+    defer { creator.cancel() }
+    let createSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(createSignal)
+    #expect(await library.listAll().map(\.path) == [original.path])
+
+    let renamer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        try? FileManager.default.moveItem(at: original, to: renamed)
+    }
+    defer { renamer.cancel() }
+    let renameSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(renameSignal)
+    #expect(await library.listAll().map(\.path) == [renamed.path])
+
+    let deleter = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        try? FileManager.default.removeItem(at: renamed)
+    }
+    defer { deleter.cancel() }
+    let deleteSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(deleteSignal)
+    #expect(await library.listAll().isEmpty)
 }
 
 @Test func watcherSignalsOnNewArchivedFile() async throws {

@@ -34,6 +34,8 @@ public struct SessionMutationReport: Sendable, Equatable {
 /// memoizes on `(mtime, size)`. Both must match to reuse an entry: omp rewrites
 /// the title slot in place, which changes mtime while leaving size identical.
 public actor SessionLibrary {
+    typealias DirectoryContents = @Sendable (URL, [URLResourceKey]) throws -> [URL]
+
     public static let prefixBytes = 4096
     public static let suffixBytes = 32_768
 
@@ -41,6 +43,11 @@ public actor SessionLibrary {
         let path: String
         let mtime: TimeInterval
         let size: Int
+    }
+
+    private struct WatchedURL {
+        let url: URL
+        let isDirectory: Bool
     }
 
     private enum CacheValue {
@@ -68,9 +75,11 @@ public actor SessionLibrary {
     private let root: URL
     private let archiveRoot: URL
     private let unlinkItem: @Sendable (String) -> Int32
+    private let watcherContentsOfDirectory: DirectoryContents
     private var cache: [CacheKey: CacheValue] = [:]
     private var watchers: [String: DispatchSourceFileSystemObject] = [:]
     private var watching = false
+    private var topologyRefreshPending = false
     private var debounceTask: Task<Void, Never>?
 
     private let changeStream: AsyncStream<Void>
@@ -95,12 +104,17 @@ public actor SessionLibrary {
     init(
         root: URL,
         archiveRoot: URL?,
-        unlinkItem: @escaping @Sendable (String) -> Int32
+        unlinkItem: @escaping @Sendable (String) -> Int32,
+        watcherContentsOfDirectory: @escaping DirectoryContents = { url, keys in
+            try FileManager.default.contentsOfDirectory(
+                at: url, includingPropertiesForKeys: keys, options: [])
+        }
     ) {
         self.root = root.standardizedFileURL
         self.archiveRoot = (archiveRoot ?? root.deletingLastPathComponent()
             .appendingPathComponent("archived-sessions")).standardizedFileURL
         self.unlinkItem = unlinkItem
+        self.watcherContentsOfDirectory = watcherContentsOfDirectory
         (changeStream, changeContinuation) = AsyncStream<Void>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
     }
@@ -401,35 +415,37 @@ public actor SessionLibrary {
 
     private func refreshWatchers() {
         let desired = [root, archiveRoot].flatMap(watchedURLs)
-        let desiredPaths = Set(desired.map(\.path))
+        let desiredPaths = Set(desired.map(\.url.path))
         for path in watchers.keys where !desiredPaths.contains(path) {
             watchers.removeValue(forKey: path)?.cancel()
         }
-        for url in desired where watchers[url.path] == nil { watch(url) }
+        for target in desired where watchers[target.url.path] == nil { watch(target) }
     }
 
-    private func watchedURLs(in collectionRoot: URL) -> [URL] {
+    private func watchedURLs(in collectionRoot: URL) -> [WatchedURL] {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: collectionRoot.path) else { return [] }
-        var desired = [collectionRoot]
-        guard let buckets = try? fileManager.contentsOfDirectory(
-            at: collectionRoot, includingPropertiesForKeys: [.isDirectoryKey], options: [])
+        var desired = [WatchedURL(url: collectionRoot, isDirectory: true)]
+        guard let buckets = try? watcherContentsOfDirectory(
+            collectionRoot, [.isDirectoryKey])
         else { return desired }
         for bucket in buckets where
             (try? bucket.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true {
-            desired.append(bucket)
-            if let files = try? fileManager.contentsOfDirectory(
-                at: bucket, includingPropertiesForKeys: [.isRegularFileKey], options: []) {
-                desired += files.compactMap {
-                    listableTranscriptURL($0, under: collectionRoot)
+            desired.append(WatchedURL(url: bucket, isDirectory: true))
+            if let files = try? watcherContentsOfDirectory(
+                bucket, [.isRegularFileKey]) {
+                desired += files.compactMap { file in
+                    listableTranscriptURL(file, under: collectionRoot).map {
+                        WatchedURL(url: $0, isDirectory: false)
+                    }
                 }
             }
         }
         return desired
     }
 
-    private func watch(_ url: URL) {
-        let descriptor = open(url.path, O_EVTONLY)
+    private func watch(_ target: WatchedURL) {
+        let descriptor = open(target.url.path, O_EVTONLY)
         guard descriptor >= 0 else { return }
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor, eventMask: [.write, .rename, .delete],
@@ -442,21 +458,33 @@ public actor SessionLibrary {
             // plainly Sendable. Also means a live event cannot spawn a Task that finds
             // the library already gone.
             guard let self else { return }
-            Task { await self.handleWatchEvent() }
+            let event = source.data
+            let requiresTopologyRefresh = target.isDirectory
+                || !event.intersection([.rename, .delete]).isEmpty
+            Task { await self.handleWatchEvent(
+                requiresTopologyRefresh: requiresTopologyRefresh) }
         }
         source.setCancelHandler { close(descriptor) }
         source.resume()
-        watchers[url.path] = source
+        watchers[target.url.path] = source
     }
 
-    private func handleWatchEvent() {
-        refreshWatchers()
+    private func handleWatchEvent(requiresTopologyRefresh: Bool) {
+        topologyRefreshPending = topologyRefreshPending || requiresTopologyRefresh
         debounceTask?.cancel()
         debounceTask = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(100)) }
             catch { return }
-            await self?.emitChange()
+            await self?.flushWatchEvents()
         }
+    }
+
+    private func flushWatchEvents() {
+        if topologyRefreshPending {
+            topologyRefreshPending = false
+            refreshWatchers()
+        }
+        emitChange()
     }
 
     private func emitChange() {

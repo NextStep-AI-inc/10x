@@ -100,3 +100,28 @@ let noticeLine = #"{"type":"notice","level":"info","message":"xd://: mounted","s
     }
     #expect(literalPayload["message"]?.stringValue == #"\uD800"#)
 }
+
+@Test func invalidUTF8AndLoneSurrogatesUseTheFinalRepairCandidate() throws {
+    var line = Data(#"{"type":"notice","message":"before "#.utf8)
+    line.append(0xFF)
+    line.append(contentsOf: Data(#" \uD800 after"}"#.utf8))
+
+    guard case .event(_, let payload) = try RpcFrame.decode(line: line) else {
+        Issue.record("not an event"); return
+    }
+
+    #expect(payload["message"]?.stringValue == "before � � after")
+}
+
+@Test func irreparableJSONReportsTheOriginalDecodeError() {
+    let line = Data(#"{"type":"notice","message":"unterminated"#.utf8)
+    var directError: String?
+    var repairedError: String?
+
+    do { _ = try JSONDecoder().decode(JSONValue.self, from: line) }
+    catch { directError = String(describing: error) }
+    do { _ = try JSONValue.decode(from: line) }
+    catch { repairedError = String(describing: error) }
+
+    #expect(repairedError == directError)
+}
