@@ -927,6 +927,41 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     #expect(model.isSessionMutationInFlight == false)
 }
 
+@MainActor
+@Test func currentSessionRenamePrefersTheLiveFallbackTitle() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-rename-live-title-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Bounded prompt fallback")
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
+    await waitUntil("the fallback title to finish") {
+        model.activeSession?.title == "Bounded prompt fallback"
+    }
+    model.sessions = [SessionMetadata(
+        path: "/tmp/fake.jsonl",
+        sessionId: "fake-session",
+        cwd: project.path,
+        title: "Untitled session",
+        created: .distantPast,
+        modified: .distantPast,
+        sizeBytes: 10,
+        status: .complete)]
+
+    model.requestRenameCurrentSession()
+
+    #expect(model.pendingRename?.draft == "Bounded prompt fallback")
+    await model.shutdown()
+}
+
 func makeNavigationExecutable(
     in directory: URL,
     mode: String = "basic",

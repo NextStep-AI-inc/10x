@@ -16,8 +16,28 @@ import Testing
         {"type":"extension_ui_request","id":"input-1","method":"input","title":"Branch name","placeholder":"codex/gui"}
         """))
 
-    #expect(router.inlineRequests.map(\.id) == ["confirm-1", "select-1"])
+    #expect(router.inlineRequests.map(\.id) == ["confirm-1", "select-1", "input-1"])
     #expect(router.sheetRequest?.id == "input-1")
+}
+
+@Test func concurrentInputAndEditorRequestsRemainIndependentlyAddressable() throws {
+    var router = ExtensionUIRouter()
+
+    router.consume(try request("""
+        {"type":"extension_ui_request","id":"input-1","method":"input","title":"Branch name"}
+        """))
+    router.consume(try request("""
+        {"type":"extension_ui_request","id":"editor-1","method":"editor","title":"Explain the choice","prefill":""}
+        """))
+
+    #expect(router.inlineRequests.map(\.id) == ["input-1", "editor-1"])
+    #expect(router.containsRequest(id: "input-1"))
+    #expect(router.containsRequest(id: "editor-1"))
+
+    router.removeRequest(id: "editor-1")
+
+    #expect(router.containsRequest(id: "input-1"))
+    #expect(!router.containsRequest(id: "editor-1"))
 }
 
 @Test func providerAccountChannelMarkerIsExcludedButOrdinaryInputRequestsStillReachTheSheet() throws {

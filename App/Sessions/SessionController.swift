@@ -415,10 +415,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     func sendPrompt(behaviorOverride: StreamingBehavior? = nil) async {
         if let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
-            await send(text: initial.message.visibleText, behavior: nil,
+            let accepted = await send(text: initial.message.visibleText, behavior: nil,
                 attachmentDisposition: .clearImmediately, failureFunction: "sendPrompt",
                 suppliedAttachments: initialAttachments)
-            initialAttachments = []
+            if accepted {
+                initialAttachments = []
+            } else {
+                markInitialSubmissionFailed()
+            }
             return
         }
         await send(
@@ -441,9 +445,17 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func markInitialSubmissionFailed() {
-        if draft.isEmpty, let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
-            draft = initial.message.visibleText
-            attachments = initialAttachments
+        if let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
+            let initialText = initial.message.visibleText
+            if draft.isEmpty {
+                draft = initialText
+            } else if draft != initialText {
+                draft = [initialText, draft].joined(separator: "\n\n")
+            }
+            let initialAttachmentIDs = Set(initialAttachments.map(\.id))
+            attachments = initialAttachments + attachments.filter {
+                !initialAttachmentIDs.contains($0.id)
+            }
         }
         for index in pendingSubmissions.indices where pendingSubmissions[index].state == .starting {
             pendingSubmissions[index].state = .unconfirmed
@@ -466,25 +478,26 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             failureFunction: "sendSlashCommand")
     }
 
+    @discardableResult
     private func send(
         text: String,
         behavior requestedBehavior: StreamingBehavior?,
         attachmentDisposition: AttachmentDisposition,
         failureFunction: String,
         suppliedAttachments: [ComposerAttachment]? = nil
-    ) async {
+    ) async -> Bool {
         let staged = suppliedAttachments ?? attachments
         let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !staged.isEmpty
-        guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return }
+        guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return false }
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {
-            guard let requestedBehavior else { return }
+            guard let requestedBehavior else { return false }
             behavior = requestedBehavior
         } else {
             behavior = nil
         }
-        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return }
+        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return false }
         defer { accountCoordinator?.endManagedTurn(sessionID: id) }
 
         wasStoppedByUser = false
@@ -524,14 +537,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         runtimeState = .streaming
         reportActivity()
         await context.processor?.setRuntimeState(.streaming)
-        guard isCurrent(context) else { return }
+        guard isCurrent(context) else { return true }
 
         do {
             let response = try await handle.client.send(.prompt(
                 message: text,
                 images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
-            guard isCurrent(context) else { return }
+            guard isCurrent(context) else { return true }
             if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }),
                let behavior {
                 pendingSubmissions[index].state = .queued(behavior)
@@ -559,7 +572,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 }
                 guard draft.isEmpty else {
                     fail(error, function: failureFunction, context: context)
-                    return
+                    return true
                 }
                 draft = text
                 if attachmentDisposition == .clearImmediately {
@@ -568,6 +581,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             }
             fail(error, function: failureFunction, context: context)
         }
+        return true
     }
 
     private func applyAttachmentDisposition(

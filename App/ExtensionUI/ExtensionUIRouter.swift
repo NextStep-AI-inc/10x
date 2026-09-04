@@ -41,6 +41,7 @@ struct ExtensionUIRouter {
         case .confirm, .select:
             replaceOrAppend(state, in: &inlineRequests)
         case .input, .editor:
+            replaceOrAppend(state, in: &inlineRequests)
             sheetRequest = state
         case .cancel(_, let targetID):
             inlineRequests.removeAll { $0.id == targetID }

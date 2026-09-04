@@ -833,10 +833,6 @@ final class AppModel {
               let controller = activeSession,
               let path = controller.sessionPath
         else { return }
-        if let metadata = sessions.first(where: { $0.path == path }) {
-            pendingRename = SessionRenameRequest(metadata: metadata)
-            return
-        }
         pendingRename = SessionRenameRequest(
             path: path,
             cwd: controller.projectURL?.path ?? selectedProjectURL?.path ?? "",

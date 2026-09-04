@@ -49,6 +49,34 @@ import OmpKit
     #expect(controller.title == "Repair scoped release notes")
 }
 
+@Test @MainActor func rejectedInitialSendPreservesInitialAndNewerComposerContent() async {
+    let initialAttachment = ComposerAttachment(
+        name: "evidence.png",
+        data: Data([1, 2, 3]),
+        mimeType: "image/png",
+        pixelWidth: 1,
+        pixelHeight: 1)
+    let newerAttachment = ComposerAttachment(
+        name: "follow-up.png",
+        data: Data([4, 5, 6]),
+        mimeType: "image/png",
+        pixelWidth: 1,
+        pixelHeight: 1)
+    let controller = SessionController(processManager: SessionProcessManager(),
+        previewItems: [], runtimeState: .idle, title: "New session")
+    controller.prepareInitialSubmission(
+        text: "Review the evidence",
+        attachments: [initialAttachment])
+    controller.draft = "Also check the follow-up"
+    controller.attachments = [newerAttachment]
+
+    await controller.sendPrompt()
+
+    #expect(controller.draft == "Review the evidence\n\nAlso check the follow-up")
+    #expect(controller.attachments == [initialAttachment, newerAttachment])
+    #expect(controller.pendingSubmissions.first?.state == .unconfirmed)
+}
+
 @Test @MainActor func stoppingStartupPreservesPromptAndShowsNeutralStatus() async {
     let controller = SessionController(processManager: SessionProcessManager(),
         previewItems: [], runtimeState: .loading, title: "New session")
