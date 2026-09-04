@@ -219,12 +219,18 @@ struct FloatingRailView: View {
                 project: groupName(for: metadata),
                 state: metadata.status.rawValue.capitalized))
             .contextMenu {
+                Button("Rename Session...", systemImage: "pencil") {
+                    model.requestRenameSession(metadata)
+                }
                 Button("Archive Session", systemImage: "archivebox") {
                     Task { await model.archiveSession(metadata) }
                 }
                 Button("Delete Session...", systemImage: "trash", role: .destructive) {
                     model.requestDeleteSession(metadata)
                 }
+            }
+            .accessibilityAction(named: Text("Rename Session")) {
+                model.requestRenameSession(metadata)
             }
 
         case .disclosure(let disclosure):

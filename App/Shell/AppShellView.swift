@@ -66,6 +66,17 @@ struct AppShellView: View {
                         Task { await model.confirmDeletion() }
                     })
             }
+
+            if let request = model.pendingRename {
+                SessionRenameView(
+                    request: request,
+                    isSaving: model.isSessionMutationInFlight,
+                    onDraftChange: model.updateRenameDraft,
+                    onCancel: model.cancelRename,
+                    onSave: {
+                        Task { await model.confirmRename() }
+                    })
+            }
         }
         .background(TenXPalette.color(TenXPalette.canvasHex))
         .alert(
@@ -131,7 +142,9 @@ struct AppShellView: View {
     }
 
     private var isSessionInteractionBlocked: Bool {
-        model.pendingDeletion != nil || model.isSessionMutationInFlight
+        model.pendingDeletion != nil
+            || model.pendingRename != nil
+            || model.isSessionMutationInFlight
     }
 
     private var railAnimation: Animation? {
@@ -161,6 +174,7 @@ struct AppShellView: View {
                     controller: activeSession,
                     controls: model.composerControls,
                     commands: model.composerCommands)
+                    .environment(\.renameCurrentSession, model.requestRenameCurrentSession)
             } else {
                 Text("Session unavailable")
                     .font(TenXTypography.body(size: 13))

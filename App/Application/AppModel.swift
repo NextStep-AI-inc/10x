@@ -30,6 +30,10 @@ final class AppModel {
         case settingsUnavailable
     }
 
+    private enum SessionRenameError: Error {
+        case runtimeUnavailable
+    }
+
     private enum StartupPreparation: Sendable {
         case ready
         case missingOmp
@@ -44,6 +48,7 @@ final class AppModel {
     var sessions: [SessionMetadata] = []
     var archivedSessions: [SessionMetadata] = []
     var pendingDeletion: SessionDeletionRequest?
+    var pendingRename: SessionRenameRequest?
     var sessionActionError: String?
     var providerUsages: [ProviderUsageProvider] = []
     var isSearchPresented = false
@@ -775,6 +780,87 @@ final class AppModel {
 
     func requestDeleteSession(_ metadata: SessionMetadata) {
         pendingDeletion = .session(metadata)
+    }
+
+    func requestRenameSession(_ metadata: SessionMetadata) {
+        guard !isSessionMutationInFlight else { return }
+        pendingRename = SessionRenameRequest(metadata: metadata)
+    }
+
+    func requestRenameCurrentSession() {
+        guard !isSessionMutationInFlight,
+              let controller = activeSession,
+              let path = controller.sessionPath
+        else { return }
+        if let metadata = sessions.first(where: { $0.path == path }) {
+            pendingRename = SessionRenameRequest(metadata: metadata)
+            return
+        }
+        pendingRename = SessionRenameRequest(
+            path: path,
+            cwd: controller.projectURL?.path ?? selectedProjectURL?.path ?? "",
+            title: controller.title)
+    }
+
+    func updateRenameDraft(_ draft: String) {
+        guard var request = pendingRename, !isSessionMutationInFlight else { return }
+        request.draft = draft
+        request.errorMessage = nil
+        pendingRename = request
+    }
+
+    func cancelRename() {
+        guard !isSessionMutationInFlight else { return }
+        pendingRename = nil
+    }
+
+    func confirmRename() async {
+        guard var request = pendingRename else { return }
+        guard let title = request.normalizedTitle else {
+            request.errorMessage = "Enter a session name."
+            pendingRename = request
+            return
+        }
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
+
+        request.errorMessage = nil
+        pendingRename = request
+        do {
+            if let controller = managedController(for: request.path) {
+                try await controller.rename(to: title)
+            } else {
+                try await renameColdSession(request, to: title)
+            }
+            await reloadSessions()
+            await reloadArchivedSessions()
+            guard pendingRename?.id == request.id else { return }
+            pendingRename = nil
+        } catch {
+            guard var current = pendingRename, current.id == request.id else { return }
+            current.errorMessage = "Could not rename this session."
+            pendingRename = current
+        }
+    }
+
+    private func renameColdSession(
+        _ request: SessionRenameRequest,
+        to title: String
+    ) async throws {
+        guard let processManager else { throw SessionRenameError.runtimeUnavailable }
+        if let handle = await processManager.handle(for: request.path) {
+            _ = try await handle.client.send(.setSessionName(title))
+            return
+        }
+
+        let handle = try await processManager.open(sessionPath: request.path, cwd: request.cwd)
+        do {
+            _ = try await handle.client.send(.setSessionName(title))
+            await processManager.close(sessionPath: request.path)
+        } catch {
+            await processManager.close(sessionPath: request.path)
+            throw error
+        }
     }
 
     func requestDeleteProject(_ group: ProjectSessionGroup) {
