@@ -2,6 +2,28 @@ import Testing
 @testable import TenXApp
 
 @Suite struct ProviderUsageDockLayoutTests {
+@Test func hoveredProviderWheelEnlargesInsideAStableSemanticTarget() {
+    let geometry = ProviderUsageDockWheelHoverGeometry(restingDiameter: 54)
+
+    #expect(geometry.visualScale(isHovered: false) == 1)
+    #expect(geometry.visualScale(isHovered: true) > 1)
+    #expect(geometry.hitTargetDiameter == 54)
+}
+
+@Test func constrainedProviderWheelKeepsItsFortyFourPointHitTargetWhileHovering() {
+    let geometry = ProviderUsageDockWheelHoverGeometry(restingDiameter: 28)
+
+    #expect(geometry.hitTargetDiameter == 44)
+    #expect(geometry.visualScale(isHovered: true) > geometry.visualScale(isHovered: false))
+}
+
+@Test func providerWheelHoverDoesNotAnimateWithReduceMotion() {
+    let geometry = ProviderUsageDockWheelHoverGeometry(restingDiameter: 54)
+
+    #expect(geometry.animationDuration(reduceMotion: false) == 0.16)
+    #expect(geometry.animationDuration(reduceMotion: true) == nil)
+}
+
 @Test func usageDockUsesRegularWheelsBesideComposerWhenGutterFitsThreeProviders() {
     let layout = ProviderUsageDockLayout.compact(
         shellWidth: 1280,

@@ -778,9 +778,7 @@ enum ToolContentExtractor {
     }
 
     static func todos(_ presentation: ToolPresentation) -> [TodoToolItem] {
-        let values = presentation.arguments["todos"]?.arrayValue
-            ?? nestedValue(in: presentation.result, path: ["details", "todos"])?.arrayValue
-            ?? []
+        let values = todoValues(arguments: presentation.arguments, result: presentation.result)
         return values.enumerated().compactMap { index, value in
             guard let text = firstString(
                 in: value,
@@ -1188,13 +1186,12 @@ enum ToolContentExtractor {
         result: JSONValue?,
         phase: ToolPhase
     ) -> ToolCardContent {
-        let values = arguments["todos"]?.arrayValue
-            ?? firstArray(in: result, paths: [["details", "todos"], ["todos"]])
-        let items = values?.enumerated().map(collectionItem) ?? []
-        let completed = values?.filter { value in
+        let values = todoValues(arguments: arguments, result: result)
+        let items = values.enumerated().map(collectionItem)
+        let completed = values.filter { value in
             let status = firstString(in: value, keys: ["status", "state"])
             return status.map(isCompletedState) == true
-        }.count ?? 0
+        }.count
         let outcome = items.isEmpty
             ? (result == nil && phase == .running ? "Waiting for tasks" : "No tasks")
             : "\(completed) of \(items.count) complete"
@@ -1214,6 +1211,41 @@ enum ToolContentExtractor {
             outcome: outcome,
             reference: nil,
             body: body)
+    }
+
+    private static func todoValues(arguments: JSONValue, result: JSONValue?) -> [JSONValue] {
+        // A returned snapshot is authoritative, including an empty plan after
+        // removing its last task. OMP 18 stores the tasks inside named phases.
+        if let phases = firstArray(in: result, paths: [["details", "phases"], ["phases"]]) {
+            return phases.flatMap { phase -> [JSONValue] in
+                let phaseName = phase["name"]?.stringValue
+                return (phase["tasks"]?.arrayValue ?? []).compactMap { task -> JSONValue? in
+                    guard case .object(var fields) = task,
+                          firstString(in: task, keys: ["content", "text", "title"]) != nil
+                    else { return nil }
+                    let context = [phaseName, task["blocker"]?.stringValue]
+                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ": ")
+                    if !context.isEmpty { fields["detail"] = .string(context) }
+                    return .object(fields)
+                }
+            }
+        }
+        if let values = firstArray(in: result, paths: [["details", "todos"], ["todos"]]) {
+            return values
+        }
+        if let values = arguments["todos"]?.arrayValue { return values }
+        guard result == nil else { return [] }
+        let phases = arguments["list"]?.arrayValue ?? [arguments]
+        return phases.flatMap { phase -> [JSONValue] in
+            (phase["items"]?.arrayValue ?? []).compactMap { item -> JSONValue? in
+                guard let content = item.stringValue else { return nil }
+                var fields: [String: JSONValue] = [
+                    "content": .string(content), "status": .string("pending"),
+                ]
+                if let name = phase["phase"]?.stringValue { fields["detail"] = .string(name) }
+                return .object(fields)
+            }
+        }
     }
 
     private static func collectionItem(

@@ -228,7 +228,7 @@ import Testing
     await processManager.closeAll()
 }
 
-@MainActor @Test func markerFramesReachTheAccountChannelWhileOrdinaryInputStillReachesTheSheet() async throws {
+@MainActor @Test func markerFramesReachTheAccountChannelWhileOrdinaryInputReachesTheTranscript() async throws {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let executable = try makeProviderAccountChannelExecutable(in: directory)
@@ -247,10 +247,8 @@ import Testing
         id: "cmd-1", command: "pin_account", params: [:]))
 
     #expect(reply == .object(["applied": .bool(true)]))
-    #expect(await eventually {
-        controller.extensionSheetRequest == .input(
-            id: "sheet-1", title: "Pick a color", placeholder: nil, timeout: nil)
-    })
+    #expect(await eventually { controller.extensionUIIDs.contains("sheet-1") })
+    #expect(controller.hasPendingUserInput)
     #expect(controller.runtimeState == .idle)
     await manager.closeAll()
 }

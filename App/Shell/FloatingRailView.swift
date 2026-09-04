@@ -13,7 +13,7 @@ struct FloatingRailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var groups: [ProjectSessionGroup] {
-        ProjectSessionGrouper.groups(model.sessions, knownProjectURLs: model.knownProjectURLs)
+        ProjectSessionGrouper.groups(model.railSessions, knownProjectURLs: model.knownProjectURLs)
     }
 
     private var items: [RailPresentationItem] {
@@ -154,7 +154,8 @@ struct FloatingRailView: View {
                     RailTreeMarker(
                         label: item.markerLabel,
                         position: item.treePosition,
-                        isSelected: false)
+                        isSelected: false,
+                        activityState: nil)
                         .frame(width: 34, height: 28)
                     if expansion.isExpanded {
                         Text(group.displayName)
@@ -185,6 +186,13 @@ struct FloatingRailView: View {
             }
 
         case .session(let metadata):
+            let controller = model.liveController(for: metadata.path)
+            let title = controller?.title
+                ?? metadata.title.flatMap { $0.isEmpty ? nil : $0 }
+                ?? "Untitled session"
+            let isTitleLoading = controller?.isTitleLoading ?? false
+            let activityState = controller?.activityState
+                ?? metadataActivityState(metadata.status)
             Button {
                 expansion.pointerEntered()
                 model.openSession(metadata)
@@ -193,10 +201,11 @@ struct FloatingRailView: View {
                     RailTreeMarker(
                         label: item.markerLabel,
                         position: item.treePosition,
-                        isSelected: item.isSelected)
+                        isSelected: item.isSelected,
+                        activityState: activityState)
                         .frame(width: 34, height: 28)
                     if expansion.isExpanded {
-                        Text(metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session")
+                        SessionTitleView(title: title, isLoading: isTitleLoading)
                             .font(TenXTypography.body(size: 12))
                             .foregroundStyle(item.isSelected
                                 ? TenXPalette.color(TenXPalette.cyanHex)
@@ -213,11 +222,11 @@ struct FloatingRailView: View {
             .focused($focusedItem, equals: .session(metadata.path))
             .padding(.leading, 18)
             .frame(height: 32)
-            .help(metadata.title ?? "Untitled session")
+            .help(title)
             .accessibilityLabel(RailAccessibility.sessionLabel(
-                title: metadata.title ?? "Untitled session",
+                title: isTitleLoading ? "Naming session" : title,
                 project: groupName(for: metadata),
-                state: metadata.status.rawValue.capitalized))
+                state: activityState?.rawValue ?? metadata.status.rawValue.capitalized))
             .contextMenu {
                 Button("Rename Session...", systemImage: "pencil") {
                     model.requestRenameSession(metadata)
@@ -242,7 +251,8 @@ struct FloatingRailView: View {
                         RailTreeMarker(
                             label: "...",
                             position: .terminalChild,
-                            isSelected: false)
+                            isSelected: false,
+                            activityState: nil)
                             .frame(width: 34, height: 28)
                         Text(disclosure.isExpanded
                             ? "Show recent 5"
@@ -270,7 +280,8 @@ struct FloatingRailView: View {
                 RailTreeMarker(
                     label: "...",
                     position: .terminalChild,
-                    isSelected: false)
+                    isSelected: false,
+                    activityState: nil)
                     .frame(width: 34, height: 28)
                     .padding(.leading, 18)
                     .frame(height: 32)
@@ -320,6 +331,15 @@ struct FloatingRailView: View {
             group.sessions.contains(where: { $0.path == metadata.path })
         })?.displayName ?? "Unknown Project"
     }
+
+    private func metadataActivityState(_ status: SessionStatus) -> SessionActivityState? {
+        switch status {
+        case .complete: .ready
+        case .error, .interrupted: .failed
+        case .aborted: .stopped
+        case .pending, .unknown: nil
+        }
+    }
 }
 
 private enum RailFocus: Hashable {
@@ -358,6 +378,7 @@ private struct RailTreeMarker: View {
     let label: String
     let position: RailPresentationItem.TreePosition
     let isSelected: Bool
+    let activityState: SessionActivityState?
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -376,15 +397,20 @@ private struct RailTreeMarker: View {
 
                     context.stroke(
                         path,
-                        with: .color(markerColor.opacity(isSelected ? 1 : 0.5)),
+                        with: .color(treeColor.opacity(isSelected ? 1 : 0.5)),
                         lineWidth: 1)
                 }
                 .frame(width: 11)
+
+                if case .working? = activityState {
+                    RailWorkingIndicator()
+                        .frame(width: 11, height: 28, alignment: .leading)
+                }
             }
 
             Text(label)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(markerColor)
+                .foregroundStyle(activityState?.color ?? neutralColor)
                 .frame(
                     width: position == .root ? 34 : 18,
                     alignment: position == .root ? .leading : .center)
@@ -393,9 +419,38 @@ private struct RailTreeMarker: View {
         .accessibilityHidden(true)
     }
 
-    private var markerColor: Color {
+    private var treeColor: Color {
         if isSelected { return TenXPalette.color(TenXPalette.cyanHex) }
+        return neutralColor
+    }
+
+    private var neutralColor: Color {
         if position == .root { return TenXPalette.color(TenXPalette.nearBlackHex) }
         return TenXPalette.color(TenXPalette.mutedTextHex)
+    }
+}
+
+private struct RailWorkingIndicator: View {
+    @State private var isFalling = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Capsule()
+            .fill(TenXPalette.color(TenXPalette.cyanHex))
+            .frame(width: 6, height: 1)
+            .offset(x: reduceMotion ? 4 : (isFalling ? 5 : 0))
+            .opacity(reduceMotion ? 1 : (isFalling ? 1 : 0.35))
+            .animation(
+                reduceMotion
+                    ? nil
+                    : .easeInOut(duration: 0.7).repeatForever(autoreverses: true),
+                value: isFalling)
+            .onAppear {
+                isFalling = !reduceMotion
+            }
+            .onChange(of: reduceMotion) { _, isReduced in
+                isFalling = !isReduced
+            }
+            .accessibilityHidden(true)
     }
 }

@@ -4,6 +4,40 @@ import Testing
 
 @Suite struct ProviderUsageDockFocusTests {
 @MainActor
+@Test func providerHoverTracksOneTransientProviderAndClearsOnMouseLeave() {
+    var hover = ProviderUsageDockHoverState()
+    let interaction = ProviderUsageDockInteraction { _, _ in }
+    interaction.inspectProvider(providerID: "anthropic")
+
+    hover.update(providerID: "openai", isHovered: true)
+    #expect(hover.providerID == "openai")
+
+    hover.update(providerID: "cursor", isHovered: true)
+    #expect(hover.providerID == "cursor")
+
+    hover.update(providerID: "openai", isHovered: false)
+    #expect(hover.providerID == "cursor")
+
+    hover.update(providerID: "cursor", isHovered: false)
+    #expect(hover.providerID == nil)
+    #expect(interaction.inspectedProviderID == "anthropic")
+}
+
+@Test func pinnedSelectorKeepsEveryProviderInConnectionOrder() {
+    let providers = [
+        ProviderUsageProvider(id: "anthropic", name: "Anthropic", accounts: []),
+        ProviderUsageProvider(id: "openai", name: "OpenAI", accounts: []),
+        ProviderUsageProvider(id: "cursor", name: "Cursor", accounts: []),
+    ]
+
+    #expect(ProviderUsageDockPresentation.selectorProviders(providers).map(\.id) == [
+        "anthropic",
+        "openai",
+        "cursor",
+    ])
+}
+
+@MainActor
 @Test func providerUsageDockFocusReturnWaitsForCompactMountAndRestoresTheOpeningAccountOnce() async {
     var routedAccounts: [String] = []
     let interaction = ProviderUsageDockInteraction { accountRef, _ in

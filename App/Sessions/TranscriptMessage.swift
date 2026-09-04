@@ -134,10 +134,24 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         contentDocument(from: message).source
     }
 
+    static func advisoryContent(from message: JSONValue) -> AdvisoryContentParser.Result? {
+        guard let content = message["content"] else { return nil }
+        if let source = content.stringValue {
+            return AdvisoryContentParser.parseSuffix(in: source)
+        }
+        guard let contentBlocks = content.arrayValue else { return nil }
+        let source = contentBlocks.compactMap { block -> String? in
+            if let source = block.stringValue { return source }
+            guard block["type"]?.stringValue?.lowercased() == "text" else { return nil }
+            return block["text"]?.stringValue
+        }.joined(separator: "\n")
+        return AdvisoryContentParser.parseSuffix(in: source)
+    }
+
     private static func contentDocument(from message: JSONValue) -> ContentDocument {
         guard let content = message["content"] else { return .empty }
         if let source = content.stringValue {
-            return MessageContentParser.parse(source)
+            return displayDocument(for: source)
         }
         guard let contentBlocks = content.arrayValue else { return .empty }
 
@@ -145,17 +159,17 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         var sourceParts: [String] = []
         for contentBlock in contentBlocks {
             if let source = contentBlock.stringValue {
-                let document = MessageContentParser.parse(source)
+                let document = displayDocument(for: source)
                 blocks.append(contentsOf: document.blocks)
-                sourceParts.append(source)
+                sourceParts.append(document.source)
                 continue
             }
 
             let type = contentBlock["type"]?.stringValue?.lowercased()
             if type == "text", let source = contentBlock["text"]?.stringValue {
-                let document = MessageContentParser.parse(source)
+                let document = displayDocument(for: source)
                 blocks.append(contentsOf: document.blocks)
-                sourceParts.append(source)
+                sourceParts.append(document.source)
             } else if type == "image", let image = imageContent(contentBlock) {
                 // Deliberately not added to `sourceParts`: the label is a
                 // stand-in for a picture, not text the user wrote, and it would
@@ -172,6 +186,14 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         return ContentDocument(
             source: sourceParts.joined(separator: "\n"),
             blocks: blocks)
+    }
+
+    private static func displayDocument(for source: String) -> ContentDocument {
+        guard let advisory = AdvisoryContentParser.parseSuffix(in: source) else {
+            return MessageContentParser.parse(source)
+        }
+        let display = MessageContentParser.parse(advisory.displaySource)
+        return display
     }
 
     private static func imageContent(_ block: JSONValue) -> ContentImage? {

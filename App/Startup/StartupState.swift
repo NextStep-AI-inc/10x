@@ -91,6 +91,7 @@ final class StartupState {
     private(set) var phase: StartupPhase = .preparing
     private(set) var handoffGeneration = 0
     private(set) var attemptID: UUID?
+    private(set) var recoveryDetail: String?
     private var statuses: [StartupStageID: StartupStageStatus] = Dictionary(
         uniqueKeysWithValues: StartupStageID.allCases.map { ($0, .queued) })
     private var openedWorkspaceGeneration = 0
@@ -110,7 +111,7 @@ final class StartupState {
 
     var footerDetail: String {
         phase == .recovery
-            ? "Retry the stopped work or continue with what is ready."
+            ? recoveryDetail ?? "Retry the stopped work or continue with what is ready."
             : currentStage.detail
     }
 
@@ -126,6 +127,7 @@ final class StartupState {
         guard phase != .handoff else { return }
         attemptID = id
         phase = .preparing
+        recoveryDetail = nil
         statuses = Dictionary(
             uniqueKeysWithValues: StartupStageID.allCases.map { ($0, .queued) })
     }
@@ -134,6 +136,7 @@ final class StartupState {
         let stages = Set(StartupStageID.gatingCases.filter { status(of: $0) != .ready })
         attemptID = id
         phase = .preparing
+        recoveryDetail = nil
         for stage in stages { statuses[stage] = .queued }
         return stages
     }
@@ -168,8 +171,10 @@ final class StartupState {
         statuses[.updates] = .ready
     }
 
-    func enterRecovery(attemptID: UUID) {
+    func enterRecovery(attemptID: UUID, reason: String? = nil) {
         guard self.attemptID == attemptID, phase != .handoff else { return }
+        let stoppedStage = (StartupStageID.gatingCases.first { status(of: $0) == .stopped } ?? currentStage).title
+        recoveryDetail = reason.map { stoppedStage + ": " + $0 }
         for stage in StartupStageID.gatingCases where status(of: stage) != .ready {
             statuses[stage] = .stopped
         }

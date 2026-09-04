@@ -10,6 +10,14 @@ import UserNotifications
 final class SessionController: ComposerSessionControlling, ComposerCommandSession, ProviderAccountSession {
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
     private(set) var items: [TranscriptItem] = []
+    let viewport = TranscriptViewportState()
+    private(set) var pendingSubmissions: [PendingUserSubmission] = []
+    private var consumedSubmissionEchoIndices: Set<Int> = []
+    private(set) var isTitleLoading = false
+    private var initialPromptTitle: String?
+    private var initialAttachments: [ComposerAttachment] = []
+    private var wasStoppedByUser = false
+    private(set) var transcriptSearchRequest: TranscriptSearchRequest?
     private(set) var runtimeState: SessionRuntimeState = .loading {
         didSet {
             guard runtimeState != oldValue else { return }
@@ -36,6 +44,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private(set) var queuedMessageCount = 0
     private(set) var sessionPath: String?
     private(set) var extensionSheetRequest: ExtensionUIState?
+    private(set) var hasPendingUserInput = false
     private(set) var isRecoveryPresented = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
@@ -46,7 +55,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private(set) var commandCatalogState: ComposerCommandCatalogState = .loading
     var draft = ""
     var attachments: [ComposerAttachment] = []
-    var streamingBehavior: StreamingBehavior? = .steer
+    var streamingBehavior: StreamingBehavior? = ComposerInteractionPreferences.shared.defaultSendAction == .steer ? .steer : .followUp
+    let createdAt = Date()
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
@@ -72,6 +82,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private var titleGenerationGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
+    private var extensionResponsesInFlight: Set<String> = []
     nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
     private let commandContinuation: AsyncStream<ComposerCommandCatalogState>.Continuation
     /// This controller's one write handle onto the marker-filtered frame
@@ -107,6 +118,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let generation: UInt64
         let handle: SessionProcessManager.Handle?
         let processor: TranscriptEventProcessor?
+    }
+
+    private enum ControllerError: Error {
+        case runtimeUnavailable
     }
 
     init(
@@ -191,6 +206,21 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     var availableCommands: [AvailableSlashCommand] {
         guard case .available(let commands) = commandCatalogState else { return [] }
         return commands
+    }
+
+    var activityState: SessionActivityState {
+        if hasPendingUserInput { return .needsInput }
+        switch runtimeState {
+        case .loading, .streaming: return .working
+        case .idle: return wasStoppedByUser ? .stopped : .ready
+        case .failed: return .failed
+        case .stopped: return wasStoppedByUser ? .stopped : .failed
+        }
+    }
+
+    func focusSearchResult(_ request: TranscriptSearchRequest?) {
+        transcriptSearchRequest = request
+        if request != nil { viewport.isFollowingLatest = false }
     }
 
     func openExisting(_ metadata: SessionMetadata) async {
@@ -383,12 +413,49 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         return true
     }
 
-    func sendPrompt() async {
+    func sendPrompt(behaviorOverride: StreamingBehavior? = nil) async {
+        if let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
+            await send(text: initial.message.visibleText, behavior: nil,
+                attachmentDisposition: .clearImmediately, failureFunction: "sendPrompt",
+                suppliedAttachments: initialAttachments)
+            initialAttachments = []
+            return
+        }
         await send(
             text: draft,
-            behavior: runtimeState == .streaming ? streamingBehavior : nil,
+            behavior: runtimeState == .streaming ? (behaviorOverride ?? streamingBehavior) : nil,
             attachmentDisposition: .clearImmediately,
             failureFunction: "sendPrompt")
+    }
+
+    func prepareInitialSubmission(text: String, attachments: [ComposerAttachment], projectURL: URL? = nil) {
+        draft = ""
+        self.attachments = []
+        initialAttachments = attachments
+        self.projectURL = projectURL
+        initialPromptTitle = text.split(whereSeparator: \.isNewline).first.map { String($0.prefix(80)) }
+            ?? "New session"
+        isTitleLoading = true
+        pendingSubmissions = [PendingUserSubmission(
+            text: text, attachments: attachments, minimumUserIndex: 0, state: .starting)]
+    }
+
+    func markInitialSubmissionFailed() {
+        if draft.isEmpty, let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
+            draft = initial.message.visibleText
+            attachments = initialAttachments
+        }
+        for index in pendingSubmissions.indices where pendingSubmissions[index].state == .starting {
+            pendingSubmissions[index].state = .unconfirmed
+        }
+        finishTitleLoading()
+    }
+
+    private var userMessages: [TranscriptMessage] {
+        items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item, message.role == .user else { return nil }
+            return message
+        }
     }
 
     func sendSlashCommand(_ text: String) async {
@@ -403,10 +470,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         text: String,
         behavior requestedBehavior: StreamingBehavior?,
         attachmentDisposition: AttachmentDisposition,
-        failureFunction: String
+        failureFunction: String,
+        suppliedAttachments: [ComposerAttachment]? = nil
     ) async {
+        let staged = suppliedAttachments ?? attachments
         let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !attachments.isEmpty
+            || !staged.isEmpty
         guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return }
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {
@@ -418,8 +487,22 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return }
         defer { accountCoordinator?.endManagedTurn(sessionID: id) }
 
-        let staged = attachments
+        wasStoppedByUser = false
         let stagedIDs = Set(staged.map(\.id))
+        let receiptID: String?
+        if attachmentDisposition == .clearImmediately {
+            if let index = pendingSubmissions.firstIndex(where: { $0.state == .starting }) {
+                pendingSubmissions[index].state = .sending
+                receiptID = pendingSubmissions[index].id
+            } else {
+                let receipt = PendingUserSubmission(
+                    text: text, attachments: staged, minimumUserIndex: userMessages.count, state: .sending)
+                pendingSubmissions.append(receipt)
+                receiptID = receipt.id
+            }
+        } else {
+            receiptID = nil
+        }
         let context = currentPipelineContext()
         isSendInFlight = true
         defer { isSendInFlight = false }
@@ -428,9 +511,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         // clears and the run reads as started before omp has replied. The
         // processor is moved first so a snapshot already in flight cannot
         // publish the old idle state back over this one.
-        draft = ""
+        if suppliedAttachments == nil { draft = "" }
         if attachmentDisposition == .clearImmediately {
-            attachments = []
+            if suppliedAttachments == nil { attachments = [] }
         } else {
             pendingSlashAttachments = PendingSlashAttachments(
                 ids: stagedIDs,
@@ -449,6 +532,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
             guard isCurrent(context) else { return }
+            if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }),
+               let behavior {
+                pendingSubmissions[index].state = .queued(behavior)
+            }
             await applyAttachmentDisposition(
                 attachmentDisposition,
                 response: response,
@@ -460,8 +547,13 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 handle: handle,
                 context: context)
         } catch {
-            // Nothing reached omp, so the text is still the user's to send.
+            // A failed acknowledgment can leave delivery uncertain. Preserve
+            // the receipt and draft without automatically retrying the prompt.
             if isCurrent(context) {
+                if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }) {
+                    pendingSubmissions[index].state = .unconfirmed
+                }
+                finishTitleLoading()
                 if attachmentDisposition == .waitForAgent {
                     pendingSlashAttachments = nil
                 }
@@ -519,13 +611,15 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         handle: SessionProcessManager.Handle,
         context: PipelineContext
     ) {
-        guard behavior == nil,
-              title == "New session" || title == "Untitled session",
-              titleGenerationTask == nil,
+        guard behavior == nil, titleGenerationTask == nil else { return }
+        guard title == "New session" || title == "Untitled session",
               let titleGenerator,
               let provider = liveComposerSelection.provider,
               let modelID = liveComposerSelection.modelID
-        else { return }
+        else {
+            finishTitleLoading()
+            return
+        }
 
         titleGenerationGeneration &+= 1
         let generation = titleGenerationGeneration
@@ -538,6 +632,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             defer {
                 if self.titleGenerationGeneration == generation {
                     self.titleGenerationTask = nil
+                    self.finishTitleLoading()
                 }
             }
             guard let generatedTitle,
@@ -555,10 +650,20 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func abort() async {
+        if runtimeState == .loading {
+            let path = stopAndDetachCurrentSession()
+            wasStoppedByUser = true
+            runtimeState = .stopped(code: nil, stderrTail: "")
+            markInitialSubmissionFailed()
+            reportActivity()
+            if let path { await processManager.close(sessionPath: path) }
+            return
+        }
         guard let handle, runtimeState == .streaming else { return }
         let context = currentPipelineContext()
         do {
             _ = try await handle.client.send(.abort())
+            wasStoppedByUser = true
         } catch {
             fail(error, function: "abort", context: context)
         }
@@ -602,25 +707,49 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         streamingBehavior = behavior
     }
 
-    func respond(to state: ExtensionUIState, with response: ExtensionUIResponse) async {
+    func respond(to state: ExtensionUIState, with response: ExtensionUIResponse) async -> Bool {
         let context = currentPipelineContext()
-        guard context.handle != nil else { return }
-        await respond(to: state, with: response, context: context)
+        guard context.handle != nil else { return false }
+        return await respond(to: state, with: response, context: context)
     }
 
     private func respond(
         to state: ExtensionUIState,
         with response: ExtensionUIResponse,
         context: PipelineContext
-    ) async {
-        guard let handle = context.handle, isCurrent(context) else { return }
+    ) async -> Bool {
+        guard let handle = context.handle,
+              isCurrent(context),
+              extensionRouter.containsRequest(id: state.id)
+        else { return false }
+        guard extensionResponsesInFlight.insert(state.id).inserted else { return false }
+        defer { extensionResponsesInFlight.remove(state.id) }
         do {
             try await handle.client.sendRaw(.extensionUIResponse(id: state.id, body: response.body))
-            guard isCurrent(context) else { return }
+            guard isCurrent(context) else { return false }
             await removeExtensionRequest(id: state.id)
+            return true
         } catch {
-            fail(error, function: "respondToExtensionUI", context: context)
+            os_log(
+                .error,
+                log: Self.transcriptLog,
+                "[SessionController:respondToExtensionUI] Response write failed")
+            return false
         }
+    }
+
+    func rename(to name: String) async throws {
+        titleGenerationGeneration &+= 1
+        titleGenerationTask?.cancel()
+        if let titleGenerationTask {
+            await titleGenerationTask.value
+        }
+        self.titleGenerationTask = nil
+
+        guard let handle else { throw ControllerError.runtimeUnavailable }
+        _ = try await handle.client.send(.setSessionName(name))
+        title = name
+        isTitleLoading = false
     }
 
     func openURL(_ url: URL, requestID: String) {
@@ -664,6 +793,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let openingCloseTask = openingCloseTask
         self.sessionPath = nil
         items = []
+        pendingSubmissions = []
+        consumedSubmissionEchoIndices = []
+        isTitleLoading = false
         runtimeState = .stopped(code: nil, stderrTail: "")
         accountCoordinator?.unregister(sessionID: id)
         guard let sessionPath else {
@@ -909,8 +1041,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         pipelineGeneration &+= 1
         extensionTimeoutTasks.values.forEach { $0.cancel() }
         extensionTimeoutTasks.removeAll()
+        extensionResponsesInFlight.removeAll()
         extensionRouter = ExtensionUIRouter()
         extensionSheetRequest = nil
+        hasPendingUserInput = false
         pendingSlashAttachments = nil
         // Ends the account channel's frame source — its listener loop sees
         // the stream finish and calls `handleStreamEnded()`, failing
@@ -1102,7 +1236,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             reportActivity()
             return
         }
-        title = data["sessionName"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
+        if let name = data["sessionName"]?.stringValue, !name.isEmpty {
+            title = name
+            if !Self.isPlaceholderTitle(name) { isTitleLoading = false }
+        }
         if let model = data["model"] {
             applyModelPayload(model)
         }
@@ -1131,7 +1268,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard case .event(let type, let payload) = frame else { return }
         switch type {
         case "session_info_update":
-            title = payload["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
+            if let name = payload["title"]?.stringValue, !name.isEmpty {
+                title = name
+                if !Self.isPlaceholderTitle(name) { isTitleLoading = false }
+            }
         case "config_update":
             if let model = payload["model"] {
                 applyModelPayload(model)
@@ -1158,6 +1298,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 publishCommandCatalog(.unavailable)
             }
         case "agent_start", "turn_start":
+            wasStoppedByUser = false
             guard var pendingSlashAttachments,
                   pendingSlashAttachments.generation == pipelineGeneration
             else { break }
@@ -1228,6 +1369,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             return
         }
         extensionRouter.consume(request)
+        refreshPendingUserInput()
 
         switch state {
         case .confirm, .select:
@@ -1235,7 +1377,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             guard isCurrent(context) else { return }
             scheduleTimeout(for: state, context: context)
         case .input, .editor:
-            extensionSheetRequest = state
+            await processor.upsertExtensionUI(state)
+            guard isCurrent(context) else { return }
             scheduleTimeout(for: state, context: context)
         case .cancel(_, let targetID):
             await removeExtensionRequest(id: targetID, context: context)
@@ -1275,7 +1418,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             do { try await Task.sleep(for: .milliseconds(timeout)) }
             catch { return }
             guard let self else { return }
-            await self.respond(to: state, with: .cancelled(timedOut: true), context: context)
+            _ = await self.respond(
+                to: state,
+                with: .cancelled(timedOut: true),
+                context: context)
         }
     }
 
@@ -1288,9 +1434,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard isCurrent(context) else { return }
         extensionTimeoutTasks.removeValue(forKey: id)?.cancel()
         extensionRouter.removeRequest(id: id)
+        refreshPendingUserInput()
         await context.processor?.removeExtensionUI(id: id)
         guard isCurrent(context) else { return }
         if extensionSheetRequest?.id == id { extensionSheetRequest = nil }
+    }
+
+    private func refreshPendingUserInput() {
+        hasPendingUserInput = extensionRouter.hasPendingUserInput
     }
 
     private func postNotification(message: String) {
@@ -1310,7 +1461,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         context: PipelineContext
     ) {
         guard isCurrent(context) else { return }
-        runtimeState = .failed("[Session:\(function)] Session command failed: \(error)")
+        let diagnostic = "[Session:\(function)] Session command failed: \(error)"
+        runtimeState = .failed(diagnostic)
+        logText = diagnostic
+        isRecoveryPresented = true
         publishCommandCatalog(.unavailable)
         reportActivity()
         let state = runtimeState
@@ -1331,6 +1485,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         else { return }
         installedSnapshotRevision = snapshot.revision
         items = snapshot.items
+        if !pendingSubmissions.isEmpty {
+            pendingSubmissions = PendingUserSubmission.reconcile(
+                pendingSubmissions, messages: userMessages, consumedIndices: &consumedSubmissionEchoIndices)
+        }
         runtimeState = snapshot.runtimeState
         os_signpost(
             .event,
@@ -1339,6 +1497,17 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             "revision %{public}llu",
             snapshot.revision)
         reportActivity()
+    }
+
+    private static func isPlaceholderTitle(_ title: String) -> Bool {
+        title == "New session" || title == "Untitled session"
+    }
+
+    private func finishTitleLoading() {
+        isTitleLoading = false
+        if title == "New session" || title == "Untitled session", let initialPromptTitle {
+            title = initialPromptTitle
+        }
     }
 
     private func reportActivity() {

@@ -173,7 +173,8 @@ struct AppShellView: View {
                 ActiveSessionView(
                     controller: activeSession,
                     controls: model.composerControls,
-                    commands: model.composerCommands)
+                    commands: model.composerCommands,
+                    onReviewPrompt: { model.reviewFailedPrompt(activeSession) })
                     .environment(\.renameCurrentSession, model.requestRenameCurrentSession)
             } else {
                 Text("Session unavailable")

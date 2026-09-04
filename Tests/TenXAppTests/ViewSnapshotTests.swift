@@ -2747,7 +2747,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-default",
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 
 @MainActor
@@ -3180,7 +3180,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-searching",
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 
 @MainActor
@@ -3208,7 +3208,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-empty",
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 
 /// A model with Fast mode and no thinking efforts still needs the rule above the
@@ -3245,7 +3245,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-fast-only",
-        size: CGSize(width: 340, height: 260))
+        size: CGSize(width: 440, height: 260))
 }
 
 @MainActor
@@ -5157,7 +5157,7 @@ private actor SnapshotMediaGate {
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-default-dark", appearance: .dark,
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 @MainActor
 @Test func modelPickerEmptySnapshotDark() throws {
@@ -5184,7 +5184,7 @@ private actor SnapshotMediaGate {
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-empty-dark", appearance: .dark,
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 @MainActor
 @Test func providerSetupRequiredSnapshotDark() async throws {

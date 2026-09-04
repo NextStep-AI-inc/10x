@@ -1,11 +1,11 @@
 import SwiftUI
 
 private struct RenameCurrentSessionKey: EnvironmentKey {
-    static let defaultValue: (() -> Void)? = nil
+    static let defaultValue: (@MainActor @Sendable () -> Void)? = nil
 }
 
 extension EnvironmentValues {
-    var renameCurrentSession: (() -> Void)? {
+    var renameCurrentSession: (@MainActor @Sendable () -> Void)? {
         get { self[RenameCurrentSessionKey.self] }
         set { self[RenameCurrentSessionKey.self] = newValue }
     }
@@ -17,7 +17,7 @@ struct SessionHeaderView: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            Text(controller.title)
+            SessionTitleView(title: controller.title, isLoading: controller.isTitleLoading)
                 .font(TenXTypography.body(size: 13, weight: .semibold))
                 .lineLimit(1)
                 .contentShape(Rectangle())

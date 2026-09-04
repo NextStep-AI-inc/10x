@@ -23,6 +23,18 @@ struct ExtensionUIRouter {
     private(set) var editorText: String?
     private(set) var openURLRequest: ExtensionUIState?
 
+    var hasPendingUserInput: Bool {
+        inlineRequests.contains(where: \.requiresUserInput)
+            || sheetRequest?.requiresUserInput == true
+            || openURLRequest?.requiresUserInput == true
+    }
+
+    func containsRequest(id: String) -> Bool {
+        inlineRequests.contains { $0.id == id }
+            || sheetRequest?.id == id
+            || openURLRequest?.id == id
+    }
+
     mutating func consume(_ request: ExtensionUIRequest) {
         guard let state = Self.parse(request) else { return }
         switch state {

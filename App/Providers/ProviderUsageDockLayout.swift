@@ -1,4 +1,24 @@
 import CoreGraphics
+import Foundation
+
+struct ProviderUsageDockWheelHoverGeometry: Equatable {
+    private static let hoveredScale: CGFloat = 1.16
+    private static let hoverAnimationDuration: TimeInterval = 0.16
+
+    let restingDiameter: CGFloat
+
+    var hitTargetDiameter: CGFloat {
+        max(ProviderAccountStackGeometry.minimumHitTarget, restingDiameter)
+    }
+
+    func visualScale(isHovered: Bool) -> CGFloat {
+        isHovered ? Self.hoveredScale : 1
+    }
+
+    func animationDuration(reduceMotion: Bool) -> TimeInterval? {
+        reduceMotion ? nil : Self.hoverAnimationDuration
+    }
+}
 
 struct ProviderUsageDockCompactLayout: Equatable {
     static let standalone = ProviderUsageDockCompactLayout(
