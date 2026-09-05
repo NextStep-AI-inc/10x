@@ -153,3 +153,20 @@ private func drain(_ queue: BoundedRecordQueue<Data>, count: Int) async -> [Data
         spillFileBytes: 0, peakMemoryBytes: 32, peakSpillFileBytes: 36, totalSpilledRecords: 1))
     #expect(await queue.next() == nil)
 }
+
+@Test func alreadyCancelledConsumerNeverParks() async throws {
+    let queue = makeQueue(memoryBytes: 64, spillBytes: 1_024)
+    let parked = Task {
+        // Cancelled before `next()` can observe it, so the cancellation handler
+        // fires before the wait is installed; `park` must still refuse.
+        await withTaskCancellationHandler {
+            await queue.next()
+        } onCancel: {}
+    }
+    parked.cancel()
+    guard let outcome = await withTimeout(.seconds(2), operation: { await parked.value }) else {
+        Issue.record("a pre-cancelled consumer must return instead of parking")
+        return
+    }
+    #expect(outcome == nil)
+}

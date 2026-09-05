@@ -237,12 +237,18 @@ final class BoundedRecordQueue<Payload: Sendable>: @unchecked Sendable {
 
     /// Installs the consumer's continuation unless something arrived since the
     /// last poll; then the caller resumes at once and polls again.
+    ///
+    /// Also refuses to park a task that is already cancelled: the cancellation
+    /// handler fires before the operation when cancellation predates it, so a
+    /// cancel landing between the caller's check and this call would otherwise
+    /// find no waiter to wake and leave the consumer parked.
     private func park(_ continuation: CheckedContinuation<Void, Never>) -> Bool {
         lock.lock()
         defer { lock.unlock() }
         let hasMemoryRecords = memoryHead < memory.count
         let hasSpilledRecords = (spill?.unreadRecords ?? 0) > 0
-        if hasMemoryRecords || hasSpilledRecords || isFinished || storedFailure != nil {
+        if hasMemoryRecords || hasSpilledRecords || isFinished || storedFailure != nil
+            || Task.isCancelled {
             return false
         }
         waiter = continuation
