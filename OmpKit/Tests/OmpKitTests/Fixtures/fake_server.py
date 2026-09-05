@@ -392,7 +392,9 @@ for line in sys.stdin:
                 "content": [{"type": "text", "text": "done"}],
                 "timestamp": 0,
             }})
-            time.sleep(0.1)
+            # Well clear of the controller's 50 ms reconciliation debounce, so
+            # the two boundaries stay two loads even when the suite is loaded.
+            time.sleep(0.5)
             emit({"type": "agent_end", "messages": [], "isTerminal": True})
         elif mode == "extension-timeout":
             emit({"type": "extension_ui_request", "id": "timeout-confirm", "method": "confirm",

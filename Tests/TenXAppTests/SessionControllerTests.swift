@@ -1096,9 +1096,13 @@ private func makeProviderAccountRefreshExecutable(in directory: URL) throws -> U
     return executable
 }
 
+/// Deadline-based with a ceiling far above any healthy wait: the suite runs in
+/// parallel and spawns fake servers, so a short budget turns load into
+/// failures. The ceiling exists to turn a hang into a failure, not to police
+/// latency.
 @MainActor
 private func eventually(
-    timeout: Duration = .seconds(5),
+    timeout: Duration = .seconds(30),
     _ predicate: @escaping @MainActor () -> Bool
 ) async -> Bool {
     let deadline = Date().addingTimeInterval(timeout.seconds)
@@ -1162,7 +1166,7 @@ private actor DelayedHistoryLoader {
 
     func waitForRequestCount(
         _ count: Int,
-        timeout: Duration = .seconds(5)
+        timeout: Duration = .seconds(30)
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout.seconds)
         while Date() < deadline {
@@ -1172,7 +1176,7 @@ private actor DelayedHistoryLoader {
         return requestCount >= count
     }
 
-    func waitForDelayedFailureCompletion(timeout: Duration = .seconds(5)) async -> Bool {
+    func waitForDelayedFailureCompletion(timeout: Duration = .seconds(30)) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout.seconds)
         while Date() < deadline {
             if didCompleteDelayedFailure { return true }
@@ -1192,7 +1196,7 @@ private actor CountingHistoryLoader {
 
     func waitForRequestCount(
         _ count: Int,
-        timeout: Duration = .seconds(5)
+        timeout: Duration = .seconds(30)
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout.seconds)
         while Date() < deadline {
@@ -1221,7 +1225,7 @@ private actor OpeningRaceHistoryLoader {
 
     func waitForRequestCount(
         _ count: Int,
-        timeout: Duration = .seconds(5)
+        timeout: Duration = .seconds(30)
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout.seconds)
         while Date() < deadline {
@@ -1244,7 +1248,7 @@ private actor CurrentReconciliationLoader {
 
     func waitForRequestCount(
         _ count: Int,
-        timeout: Duration = .seconds(5)
+        timeout: Duration = .seconds(30)
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout.seconds)
         while Date() < deadline {
