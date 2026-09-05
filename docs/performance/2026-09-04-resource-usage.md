@@ -39,7 +39,11 @@ Reclaiming disposes the controller, then records a close barrier for every path
 it was reachable under. Reopening or cold-renaming that path waits for the
 barrier, so a close scheduled for the old runtime cannot land on its
 replacement, and any exit observed while the old runtime closed is discarded
-rather than reported against the new controller. A reclaimed session reopens
+rather than reported against the new controller. `SessionProcessManager` adds
+the same guard at its level: an exit whose report was still being assembled
+when a fresh open registered for the path is dropped. Under memory pressure the
+warm clients go first, then the idle runtimes, which are the larger reclaim and
+the slower close. A reclaimed session reopens
 from persisted history like any other cold session; the cost is that reopen,
 not lost work.
 
@@ -52,7 +56,7 @@ each sit on a `BoundedRecordQueue`:
 | --- | --- | --- |
 | In-memory encoded bytes | 4 MiB | Newer records spill to a private temporary file |
 | In-memory records | 1,024 | Same |
-| Spill file, physical | 64 MiB | `enqueue` fails; the client stops the session with a diagnostic |
+| Spill file, physical | 65 MiB (64 MiB plus one physical frame of headroom) | `enqueue` fails; the client stops the session with a diagnostic |
 
 The producer never waits on the consumer: the stdout reader enqueues and returns,
 and the RPC reader keeps decoding responses while events queue behind a stalled
@@ -66,18 +70,34 @@ decoded again when read back; in-memory events keep the decoded frame.
 
 The one record at the head of an otherwise empty queue may exceed the memory
 budget transiently, so a large reassembled frame still reaches an idle consumer.
-Records queued behind others must fit the spill cap: because the protocol's
-maximum reassembled frame (64 MiB) equals that cap, a maximum-size frame that
-arrives while anything else is queued cannot be stored and fails the session
-explicitly, like any other overflow, rather than being truncated.
+Records queued behind others must fit the spill file; the cap carries one
+physical frame of headroom above the protocol's 64 MiB maximum reassembled frame
+so a single maximum-size frame always fits with its length prefix. Only a real
+backlog past that fails the session, explicitly, rather than being truncated. A
+failed queue releases its spill file immediately.
 
 Exhausting a budget is reported, not hidden: `RpcClient` records a protocol
-error, fails pending requests with `processExited`, and prefixes
+error, fails pending requests with `processExited`, prefixes
 `stderrSnapshot()` with `[OmpKit:RpcClient] The event backlog exceeded its
-64 MiB storage budget …`, which `SessionProcessManager` already forwards into
-the session's recovery text. `RpcClient.eventBacklogMetrics` and
+65 MiB storage budget …`, and answers any request issued after the teardown
+with the same `processExited` reason. `SessionProcessManager` forwards that
+text into the session's recovery message (`UnexpectedExit.stderrTail`). `RpcClient.eventBacklogMetrics` and
 `LineTransport.lineBacklogMetrics` expose queue depth, spilled bytes, and peaks
 for tests and future instrumentation.
+
+## Review-round fixes
+
+The consolidated review of the branch surfaced two defects in the earlier
+commits, both fixed here with regression tests that fail on the previous code:
+
+- The cancellable header split let a session listing run from a task that
+  was cancelled mid-scan cache every remaining file as "not a session" until
+  restart. The header parser now ignores the caller's cancellation, and the
+  scan never caches a verdict reached under cancellation.
+- Deferring watcher topology refresh behind the debounce let a transcript
+  deleted and recreated within one window keep its watcher on the dead inode.
+  A file watcher that sees a rename or delete is dropped at once and reopened
+  by the deferred refresh.
 
 ## Reproducing the synthetic probes
 
