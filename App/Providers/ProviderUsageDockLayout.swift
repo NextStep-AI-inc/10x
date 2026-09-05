@@ -21,11 +21,22 @@ struct ProviderUsageDockWheelHoverGeometry: Equatable {
     }
 }
 
+enum ProviderUsageDockPlacement: Equatable {
+    case standalone
+    case outsideComposer
+    case composerFooter
+}
+
 struct ProviderUsageDockCompactLayout: Equatable {
     static let standalone = ProviderUsageDockCompactLayout(
         wheelDiameter: ProviderUsageDockLayout.regular54,
         trailingOffset: 0,
         bottomOffset: 0)
+
+    static let outsideComposer = ProviderUsageDockCompactLayout(
+        wheelDiameter: ProviderUsageDockLayout.regular54,
+        trailingOffset: 0,
+        bottomOffset: 28 - 16)
 
     let wheelDiameter: CGFloat
     let trailingOffset: CGFloat
@@ -36,7 +47,31 @@ enum ProviderUsageDockLayout {
     static let regular54: CGFloat = 54
     /// Matches the composer's 28pt send button, which the inline row sits beside.
     static let inComposer28: CGFloat = 28
+
     static let spacing8: CGFloat = 8
+
+    static func placement(
+        shellWidth: CGFloat,
+        contentLeadingInset: CGFloat,
+        providerCount: Int,
+        hasComposer: Bool
+    ) -> ProviderUsageDockPlacement {
+        guard hasComposer else { return .standalone }
+
+        let routeWidth = max(0, shellWidth - contentLeadingInset)
+        let composerWidth = min(780, max(0, routeWidth - 84))
+        let trailingGutter = max(0, (routeWidth - composerWidth) / 2)
+        let normalizedCount = max(0, providerCount)
+        let groupWidth = normalizedCount > 0
+            ? CGFloat(normalizedCount) * regular54
+                + CGFloat(normalizedCount - 1) * spacing8
+            : 0
+        let requiredGutter = groupWidth + 16 + 16
+
+        return trailingGutter >= requiredGutter
+            ? .outsideComposer
+            : .composerFooter
+    }
 
     static func compact(shellSize: CGSize, footerFrame: CGRect) -> ProviderUsageDockCompactLayout {
         ProviderUsageDockCompactLayout(
