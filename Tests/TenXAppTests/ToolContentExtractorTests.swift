@@ -3,6 +3,44 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func taskCardsRenderOMPPhaseSnapshots() {
+    let arguments: JSONValue = .object(["op": .string("view")])
+    let snapshot: JSONValue = .object(["details": .object(["phases": .array([
+        .object(["name": .string("Implementation"), "tasks": .array([
+            .object(["content": .string("Repair CLI parsing"), "status": .string("completed")]),
+            .object(["content": .string("Verify output file"), "status": .string("blocked"),
+                     "blocker": .string("Waiting for fixture")]),
+        ])]),
+    ])])])
+    let card = ToolContentExtractor.card(name: "todo", arguments: arguments,
+                                         result: snapshot, phase: .complete)
+    #expect(card.outcome == "1 of 2 complete")
+    guard case .collection(let items) = card.body else {
+        Issue.record("Expected the actual phase tasks, not an empty card")
+        return
+    }
+    #expect(items.map(\.label) == ["Repair CLI parsing", "Verify output file"])
+    #expect(items.last?.detail?.contains("Waiting for fixture") == true)
+    let legacyView = ToolContentExtractor.todos(presentation(name: "todo", arguments: arguments, result: snapshot))
+    #expect(legacyView.map(\.isComplete) == [true, false])
+}
+
+@Test func taskCardsUseConfirmedEmptySnapshotInsteadOfStaleArguments() {
+    let card = ToolContentExtractor.card(name: "todo", arguments: .object([
+        "todos": .array([.object(["content": .string("Removed task")])]),
+    ]), result: .object(["details": .object(["phases": .array([])])]), phase: .complete)
+    #expect(card.outcome == "No tasks")
+}
+
+@Test func taskCardsShowPendingOMPInitializationBeforeResult() {
+    let card = ToolContentExtractor.card(name: "todo", arguments: .object([
+        "op": .string("init"), "list": .array([
+            .object(["phase": .string("Repair"), "items": .array([.string("Add regression test")])]),
+        ]),
+    ]), result: nil, phase: .running)
+    #expect(card.outcome == "0 of 1 complete")
+}
+
 @Test func extractsPriorityToolFamiliesFromOpaquePayloads() {
     let read = presentation(
         name: "read",

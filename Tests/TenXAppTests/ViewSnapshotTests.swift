@@ -2686,7 +2686,6 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         selected: modelPickerAnthropicOpus,
         thinkingLevel: "auto",
         fastModeEnabled: false)
-
     try assertSnapshot(
         VStack(spacing: 0) {
             Spacer(minLength: 0)
@@ -2747,7 +2746,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-default",
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 
 @MainActor
@@ -2757,6 +2756,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
         selected: modelPickerAnthropicOpus,
         thinkingLevel: "auto",
         fastModeEnabled: false)
+    controls.toggleFavorite(modelPickerOpenRouterOpus)
     let commandModel = ComposerCommandModel(
         catalog: controls.catalog,
         controls: controls,
@@ -2772,7 +2772,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onEffect: { _ in },
             restoreEditorFocus: {}),
         name: "command-browser-model-child",
-        size: CGSize(width: 340, height: 320))
+        size: CGSize(width: 440, height: 320))
 }
 
 @MainActor
@@ -3054,6 +3054,16 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
         == CGSize(width: 616, height: CommandBrowserMetrics.minimumHeight))
 }
 
+@Test func commandBrowserColumnsFitInsideThePanel() {
+    let layout = CommandBrowserView.columnLayout(for: 780)
+
+    #expect(layout.showsDetail)
+    #expect(layout.resultWidth == CommandBrowserMetrics.resultWidth)
+    #expect(layout.detailWidth == 360)
+    #expect(CommandBrowserMetrics.sourceWidth + layout.resultWidth + layout.detailWidth + 2 == 780)
+    #expect(ModelPickerMetrics.resolvedPanelWidth(availableWidth: layout.detailWidth) == 360)
+}
+
 @Test func commandBrowserSourceSelectionFromChildRoutesBacksToRoot() {
     #expect(CommandBrowserView.sourceSelectionNavigation(for: .root) == .stayRoot)
     #expect(CommandBrowserView.sourceSelectionNavigation(for: .arguments(CommandBrowserRowID(
@@ -3180,7 +3190,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-searching",
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 
 @MainActor
@@ -3208,7 +3218,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-empty",
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 
 /// A model with Fast mode and no thinking efforts still needs the rule above the
@@ -3245,7 +3255,7 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-fast-only",
-        size: CGSize(width: 340, height: 260))
+        size: CGSize(width: 440, height: 260))
 }
 
 @MainActor
@@ -3657,6 +3667,14 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
 }
 
 @MainActor
+private func isolatedSnapshotFavorites(_ name: String = #function) -> FavoriteModelStore {
+    let suiteName = "snapshot-favorites.\(name).\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    return FavoriteModelStore(defaults: defaults)
+}
+
+@MainActor
 private func snapshotComposerControls(
     models: [ComposerModelInfo],
     selected: ComposerModelInfo,
@@ -3672,7 +3690,8 @@ private func snapshotComposerControls(
     let model = ComposerControlsModel(
         catalog: catalog,
         defaults: SnapshotComposerDefaults(),
-        recents: isolatedRecents())
+        recents: isolatedRecents(),
+        favorites: isolatedSnapshotFavorites())
     await model.refresh(authenticatedProviderIDs: Set(models.map(\.provider)), projectURL: nil)
     return model
 }
@@ -5157,7 +5176,7 @@ private actor SnapshotMediaGate {
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-default-dark", appearance: .dark,
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 @MainActor
 @Test func modelPickerEmptySnapshotDark() throws {
@@ -5184,7 +5203,7 @@ private actor SnapshotMediaGate {
             onToggleFastMode: { _ in },
             onToggle: {}),
         name: "model-picker-empty-dark", appearance: .dark,
-        size: CGSize(width: 340, height: 420))
+        size: CGSize(width: 440, height: 420))
 }
 @MainActor
 @Test func providerSetupRequiredSnapshotDark() async throws {
@@ -5543,4 +5562,46 @@ private var snapshotShelfProjectURLs: [URL] {
         name: "choose-project-shelf-dark",
         appearance: .dark,
         size: CGSize(width: 380, height: 320))
+}
+
+@MainActor
+@Test func extensionQuestionCardSnapshot() throws {
+    try assertSnapshot(
+        ExtensionQuestionCardView(
+            state: .select(
+                id: "question",
+                title: "How should the CLI handle an existing output file?",
+                options: [
+                    ExtensionSelectOption(label: "A. Require explicit overwrite", detail: "Preserves previous release notes. Add --force when you want to replace them."),
+                    ExtensionSelectOption(label: "B. Write a numbered copy\nKeeps every generated file, but adds cleanup when you iterate frequently.", detail: nil),
+                ], timeout: nil),
+            onRespond: { _ in true })
+            .frame(width: 520),
+        name: "extension-question-card",
+        size: CGSize(width: 580, height: 380))
+}
+
+
+@MainActor
+@Test func contextUsagePopoverSnapshots() throws {
+    let usage = try #require(SessionContextUsage(value: .object([
+        "tokens": .int(84_000), "contextWindow": .int(200_000), "percent": .int(42)
+    ]), updatedAt: Date(timeIntervalSince1970: 1_800_000_000)))
+    let breakdown = try #require(SessionContextBreakdown(report: """
+    Context window: 200000 tokens (42% used)
+      Messages         [██░░] 31%  62000 tokens
+      System prompt    [█░░░] 4%  8000 tokens
+      System tools     [█░░░] 3%  6000 tokens
+      System context   [█░░░] 3%  5000 tokens
+      Skills           [█░░░] 2%  3000 tokens
+      Auto-compact buf [██░░] 10%  20000 tokens
+      Free             [████] 48%  96000 tokens
+    """, updatedAt: usage.updatedAt))
+    for appearance in [SnapshotAppearance.light, .dark] {
+        try assertSnapshot(
+            ContextUsagePopover(summary: ContextUsageSummary(usage: usage, breakdown: breakdown),
+                breakdown: breakdown, isLoading: false, errorMessage: nil, onClose: {}, onRefresh: {}),
+            name: "context-usage-popover-\(appearance == .light ? "light" : "dark")",
+            appearance: appearance, size: CGSize(width: 360, height: 440))
+    }
 }

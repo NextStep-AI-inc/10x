@@ -5,18 +5,27 @@ struct RuntimeRecoveryView: View {
     let onRestart: () -> Void
     let onOpenLog: () -> Void
     let onDismiss: () -> Void
+    var failureDescription: String? = nil
+    var canRestart = true
+    var onReviewPrompt: (() -> Void)? = nil
 
     var body: some View {
         CornerCard(color: TenXPalette.color(TenXPalette.signalRedHex)) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Session process stopped")
+                Text(failureDescription == nil ? "Session process stopped" : "Session needs attention")
                     .font(TenXTypography.body(size: 12, weight: .semibold))
-                Text(exitDescription)
+                Text(failureDescription ?? exitDescription)
                     .font(TenXTypography.body(size: 11))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 HStack(spacing: 4) {
-                    Button("Restart session", action: onRestart)
-                        .buttonStyle(GhostActionStyle())
+                    if canRestart {
+                        Button("Restart session", action: onRestart)
+                            .buttonStyle(GhostActionStyle())
+                    }
+                    if let onReviewPrompt {
+                        Button("Review prompt", action: onReviewPrompt)
+                            .buttonStyle(GhostActionStyle())
+                    }
                     Button("Open log", action: onOpenLog)
                         .buttonStyle(GhostActionStyle(
                             color: TenXPalette.color(TenXPalette.nearBlackHex)))

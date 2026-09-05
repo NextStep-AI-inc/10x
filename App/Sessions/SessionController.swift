@@ -10,6 +10,14 @@ import UserNotifications
 final class SessionController: ComposerSessionControlling, ComposerCommandSession, ProviderAccountSession {
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
     private(set) var items: [TranscriptItem] = []
+    let viewport = TranscriptViewportState()
+    private(set) var pendingSubmissions: [PendingUserSubmission] = []
+    private var consumedSubmissionEchoIndices: Set<Int> = []
+    private(set) var isTitleLoading = false
+    private var initialPromptTitle: String?
+    private var initialAttachments: [ComposerAttachment] = []
+    private var wasStoppedByUser = false
+    private(set) var transcriptSearchRequest: TranscriptSearchRequest?
     private(set) var runtimeState: SessionRuntimeState = .loading {
         didSet {
             guard runtimeState != oldValue else { return }
@@ -33,9 +41,18 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         thinkingLevel: nil,
         fastModeEnabled: false)
     private(set) var contextPercentage: Int?
+    private(set) var contextUsage: SessionContextUsage?
+    private(set) var contextBreakdown: SessionContextBreakdown?
+    private(set) var isContextLoading = false
+    private(set) var contextErrorMessage: String?
+    private var contextRefreshTask: Task<Void, Never>?
+    private var contextEventFence: RpcEventConsumptionFence?
+    private var contextReportText: String?
+    private var contextRevision: UInt64 = 0
     private(set) var queuedMessageCount = 0
     private(set) var sessionPath: String?
     private(set) var extensionSheetRequest: ExtensionUIState?
+    private(set) var hasPendingUserInput = false
     private(set) var isRecoveryPresented = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
@@ -46,7 +63,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private(set) var commandCatalogState: ComposerCommandCatalogState = .loading
     var draft = ""
     var attachments: [ComposerAttachment] = []
-    var streamingBehavior: StreamingBehavior? = .steer
+    var streamingBehavior: StreamingBehavior? = ComposerInteractionPreferences.shared.defaultSendAction == .steer ? .steer : .followUp
+    let createdAt = Date()
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
@@ -72,6 +90,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private var titleGenerationGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
+    private var extensionResponsesInFlight: Set<String> = []
     nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
     private let commandContinuation: AsyncStream<ComposerCommandCatalogState>.Continuation
     /// This controller's one write handle onto the marker-filtered frame
@@ -107,6 +126,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let generation: UInt64
         let handle: SessionProcessManager.Handle?
         let processor: TranscriptEventProcessor?
+    }
+
+    private enum ControllerError: Error {
+        case runtimeUnavailable
     }
 
     init(
@@ -191,6 +214,21 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     var availableCommands: [AvailableSlashCommand] {
         guard case .available(let commands) = commandCatalogState else { return [] }
         return commands
+    }
+
+    var activityState: SessionActivityState {
+        if hasPendingUserInput { return .needsInput }
+        switch runtimeState {
+        case .loading, .streaming: return .working
+        case .idle: return wasStoppedByUser ? .stopped : .ready
+        case .failed: return .failed
+        case .stopped: return wasStoppedByUser ? .stopped : .failed
+        }
+    }
+
+    func focusSearchResult(_ request: TranscriptSearchRequest?) {
+        transcriptSearchRequest = request
+        if request != nil { viewport.isFollowingLatest = false }
     }
 
     func openExisting(_ metadata: SessionMetadata) async {
@@ -383,12 +421,61 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         return true
     }
 
-    func sendPrompt() async {
+    func sendPrompt(behaviorOverride: StreamingBehavior? = nil) async {
+        if let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
+            let accepted = await send(text: initial.message.visibleText, behavior: nil,
+                attachmentDisposition: .clearImmediately, failureFunction: "sendPrompt",
+                suppliedAttachments: initialAttachments)
+            if accepted {
+                initialAttachments = []
+            } else {
+                markInitialSubmissionFailed()
+            }
+            return
+        }
         await send(
             text: draft,
-            behavior: runtimeState == .streaming ? streamingBehavior : nil,
+            behavior: runtimeState == .streaming ? (behaviorOverride ?? streamingBehavior) : nil,
             attachmentDisposition: .clearImmediately,
             failureFunction: "sendPrompt")
+    }
+
+    func prepareInitialSubmission(text: String, attachments: [ComposerAttachment], projectURL: URL? = nil) {
+        draft = ""
+        self.attachments = []
+        initialAttachments = attachments
+        self.projectURL = projectURL
+        initialPromptTitle = text.split(whereSeparator: \.isNewline).first.map { String($0.prefix(80)) }
+            ?? "New session"
+        isTitleLoading = true
+        pendingSubmissions = [PendingUserSubmission(
+            text: text, attachments: attachments, minimumUserIndex: 0, state: .starting)]
+    }
+
+    func markInitialSubmissionFailed() {
+        if let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
+            let initialText = initial.message.visibleText
+            if draft.isEmpty {
+                draft = initialText
+            } else if draft != initialText {
+                draft = [initialText, draft].joined(separator: "\n\n")
+            }
+            let initialAttachmentIDs = Set(initialAttachments.map(\.id))
+            attachments = initialAttachments + attachments.filter {
+                !initialAttachmentIDs.contains($0.id)
+            }
+        }
+        for index in pendingSubmissions.indices where pendingSubmissions[index].state == .starting {
+            pendingSubmissions[index].state = .unconfirmed
+        }
+        finishTitleLoading()
+    }
+
+    private var userMessages: [TranscriptMessage] {
+        items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item, message.role == .user else { return nil }
+            return message
+        }
     }
 
     func sendSlashCommand(_ text: String) async {
@@ -399,27 +486,44 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             failureFunction: "sendSlashCommand")
     }
 
+    @discardableResult
     private func send(
         text: String,
         behavior requestedBehavior: StreamingBehavior?,
         attachmentDisposition: AttachmentDisposition,
-        failureFunction: String
-    ) async {
+        failureFunction: String,
+        suppliedAttachments: [ComposerAttachment]? = nil
+    ) async -> Bool {
+        let staged = suppliedAttachments ?? attachments
         let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !attachments.isEmpty
-        guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return }
+            || !staged.isEmpty
+        guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return false }
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {
-            guard let requestedBehavior else { return }
+            guard let requestedBehavior else { return false }
             behavior = requestedBehavior
         } else {
             behavior = nil
         }
-        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return }
+        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return false }
         defer { accountCoordinator?.endManagedTurn(sessionID: id) }
 
-        let staged = attachments
+        wasStoppedByUser = false
         let stagedIDs = Set(staged.map(\.id))
+        let receiptID: String?
+        if attachmentDisposition == .clearImmediately {
+            if let index = pendingSubmissions.firstIndex(where: { $0.state == .starting }) {
+                pendingSubmissions[index].state = .sending
+                receiptID = pendingSubmissions[index].id
+            } else {
+                let receipt = PendingUserSubmission(
+                    text: text, attachments: staged, minimumUserIndex: userMessages.count, state: .sending)
+                pendingSubmissions.append(receipt)
+                receiptID = receipt.id
+            }
+        } else {
+            receiptID = nil
+        }
         let context = currentPipelineContext()
         isSendInFlight = true
         defer { isSendInFlight = false }
@@ -428,9 +532,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         // clears and the run reads as started before omp has replied. The
         // processor is moved first so a snapshot already in flight cannot
         // publish the old idle state back over this one.
-        draft = ""
+        if suppliedAttachments == nil { draft = "" }
         if attachmentDisposition == .clearImmediately {
-            attachments = []
+            if suppliedAttachments == nil { attachments = [] }
         } else {
             pendingSlashAttachments = PendingSlashAttachments(
                 ids: stagedIDs,
@@ -441,14 +545,18 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         runtimeState = .streaming
         reportActivity()
         await context.processor?.setRuntimeState(.streaming)
-        guard isCurrent(context) else { return }
+        guard isCurrent(context) else { return true }
 
         do {
             let response = try await handle.client.send(.prompt(
                 message: text,
                 images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
-            guard isCurrent(context) else { return }
+            guard isCurrent(context) else { return true }
+            if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }),
+               let behavior {
+                pendingSubmissions[index].state = .queued(behavior)
+            }
             await applyAttachmentDisposition(
                 attachmentDisposition,
                 response: response,
@@ -460,14 +568,19 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 handle: handle,
                 context: context)
         } catch {
-            // Nothing reached omp, so the text is still the user's to send.
+            // A failed acknowledgment can leave delivery uncertain. Preserve
+            // the receipt and draft without automatically retrying the prompt.
             if isCurrent(context) {
+                if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }) {
+                    pendingSubmissions[index].state = .unconfirmed
+                }
+                finishTitleLoading()
                 if attachmentDisposition == .waitForAgent {
                     pendingSlashAttachments = nil
                 }
                 guard draft.isEmpty else {
                     fail(error, function: failureFunction, context: context)
-                    return
+                    return true
                 }
                 draft = text
                 if attachmentDisposition == .clearImmediately {
@@ -476,6 +589,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             }
             fail(error, function: failureFunction, context: context)
         }
+        return true
     }
 
     private func applyAttachmentDisposition(
@@ -519,13 +633,15 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         handle: SessionProcessManager.Handle,
         context: PipelineContext
     ) {
-        guard behavior == nil,
-              title == "New session" || title == "Untitled session",
-              titleGenerationTask == nil,
+        guard behavior == nil, titleGenerationTask == nil else { return }
+        guard title == "New session" || title == "Untitled session",
               let titleGenerator,
               let provider = liveComposerSelection.provider,
               let modelID = liveComposerSelection.modelID
-        else { return }
+        else {
+            finishTitleLoading()
+            return
+        }
 
         titleGenerationGeneration &+= 1
         let generation = titleGenerationGeneration
@@ -538,6 +654,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             defer {
                 if self.titleGenerationGeneration == generation {
                     self.titleGenerationTask = nil
+                    self.finishTitleLoading()
                 }
             }
             guard let generatedTitle,
@@ -555,10 +672,20 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func abort() async {
+        if runtimeState == .loading {
+            let path = stopAndDetachCurrentSession()
+            wasStoppedByUser = true
+            runtimeState = .stopped(code: nil, stderrTail: "")
+            markInitialSubmissionFailed()
+            reportActivity()
+            if let path { await processManager.close(sessionPath: path) }
+            return
+        }
         guard let handle, runtimeState == .streaming else { return }
         let context = currentPipelineContext()
         do {
             _ = try await handle.client.send(.abort())
+            wasStoppedByUser = true
         } catch {
             fail(error, function: "abort", context: context)
         }
@@ -602,25 +729,49 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         streamingBehavior = behavior
     }
 
-    func respond(to state: ExtensionUIState, with response: ExtensionUIResponse) async {
+    func respond(to state: ExtensionUIState, with response: ExtensionUIResponse) async -> Bool {
         let context = currentPipelineContext()
-        guard context.handle != nil else { return }
-        await respond(to: state, with: response, context: context)
+        guard context.handle != nil else { return false }
+        return await respond(to: state, with: response, context: context)
     }
 
     private func respond(
         to state: ExtensionUIState,
         with response: ExtensionUIResponse,
         context: PipelineContext
-    ) async {
-        guard let handle = context.handle, isCurrent(context) else { return }
+    ) async -> Bool {
+        guard let handle = context.handle,
+              isCurrent(context),
+              extensionRouter.containsRequest(id: state.id)
+        else { return false }
+        guard extensionResponsesInFlight.insert(state.id).inserted else { return false }
+        defer { extensionResponsesInFlight.remove(state.id) }
         do {
             try await handle.client.sendRaw(.extensionUIResponse(id: state.id, body: response.body))
-            guard isCurrent(context) else { return }
+            guard isCurrent(context) else { return false }
             await removeExtensionRequest(id: state.id)
+            return true
         } catch {
-            fail(error, function: "respondToExtensionUI", context: context)
+            os_log(
+                .error,
+                log: Self.transcriptLog,
+                "[SessionController:respondToExtensionUI] Response write failed")
+            return false
         }
+    }
+
+    func rename(to name: String) async throws {
+        titleGenerationGeneration &+= 1
+        titleGenerationTask?.cancel()
+        if let titleGenerationTask {
+            await titleGenerationTask.value
+        }
+        self.titleGenerationTask = nil
+
+        guard let handle else { throw ControllerError.runtimeUnavailable }
+        _ = try await handle.client.send(.setSessionName(name))
+        title = name
+        isTitleLoading = false
     }
 
     func openURL(_ url: URL, requestID: String) {
@@ -664,6 +815,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let openingCloseTask = openingCloseTask
         self.sessionPath = nil
         items = []
+        pendingSubmissions = []
+        consumedSubmissionEchoIndices = []
+        isTitleLoading = false
         runtimeState = .stopped(code: nil, stderrTail: "")
         accountCoordinator?.unregister(sessionID: id)
         guard let sessionPath else {
@@ -794,10 +948,13 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     ) {
         guard currentPipelineContext(for: processor) != nil else { return }
         attachAccountChannel(client: client)
+        contextEventFence = eventFence
         eventTask = Task.detached { [weak self, processor, events = client.events, eventFence] in
             for await frame in events {
                 guard !Task.isCancelled else { break }
-                await processor.consume(frame)
+                if await self?.consumeContextReport(frame, processor: processor) != true {
+                    await processor.consume(frame)
+                }
                 if case .event("available_commands_update", _) = frame {
                     await self?.consumeCommandCatalogUpdate(frame, processor: processor)
                 }
@@ -878,6 +1035,16 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let hadActivePipeline = handle != nil || detachedProcessor != nil || openingTask != nil
         let openingTaskToClose = openingTask
         let previousOpeningCloseTask = openingCloseTask
+        contextRefreshTask?.cancel()
+        contextRefreshTask = nil
+        contextEventFence = nil
+        contextRevision &+= 1
+        contextUsage = nil
+        contextPercentage = nil
+        contextBreakdown = nil
+        contextReportText = nil
+        contextErrorMessage = nil
+        isContextLoading = false
         eventTask?.cancel()
         snapshotTask?.cancel()
         controlTask?.cancel()
@@ -909,8 +1076,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         pipelineGeneration &+= 1
         extensionTimeoutTasks.values.forEach { $0.cancel() }
         extensionTimeoutTasks.removeAll()
+        extensionResponsesInFlight.removeAll()
         extensionRouter = ExtensionUIRouter()
         extensionSheetRequest = nil
+        hasPendingUserInput = false
         pendingSlashAttachments = nil
         // Ends the account channel's frame source — its listener loop sees
         // the stream finish and calls `handleStreamEnded()`, failing
@@ -1103,7 +1272,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             reportActivity()
             return
         }
-        title = data["sessionName"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
+        if let name = data["sessionName"]?.stringValue, !name.isEmpty {
+            title = name
+            if !Self.isPlaceholderTitle(name) { isTitleLoading = false }
+        }
         if let model = data["model"] {
             applyModelPayload(model)
         }
@@ -1116,7 +1288,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         {
             liveComposerSelection.fastModeEnabled = fastEnabled
         }
-        contextPercentage = Self.contextPercent(data["contextUsage"])
+        applyContextUsage(data["contextUsage"])
         queuedMessageCount = data["queuedMessageCount"]?.intValue ?? 0
         runtimeState = data["isStreaming"]?.boolValue == true ? .streaming : .idle
         activeProviderAccounts = Self.activeProviderAccountRefs(from: data)
@@ -1130,9 +1302,18 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private func applyEventMetadata(_ frame: RpcFrame) {
         guard case .event(let type, let payload) = frame else { return }
+        if ["agent_start", "message_end", "turn_end", "agent_end", "auto_compaction_start",
+            "auto_compaction_end", "model_changed", "config_update"].contains(type) {
+            contextRevision &+= 1
+            contextBreakdown = nil
+            scheduleContextRefresh()
+        }
         switch type {
         case "session_info_update":
-            title = payload["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
+            if let name = payload["title"]?.stringValue, !name.isEmpty {
+                title = name
+                if !Self.isPlaceholderTitle(name) { isTitleLoading = false }
+            }
         case "config_update":
             if let model = payload["model"] {
                 applyModelPayload(model)
@@ -1159,6 +1340,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 publishCommandCatalog(.unavailable)
             }
         case "agent_start", "turn_start":
+            wasStoppedByUser = false
             guard var pendingSlashAttachments,
                   pendingSlashAttachments.generation == pipelineGeneration
             else { break }
@@ -1179,6 +1361,99 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private func publishCommandCatalog(_ state: ComposerCommandCatalogState) {
         commandCatalogState = state
         commandContinuation.yield(state)
+    }
+
+    private func applyContextUsage(_ value: JSONValue?) {
+        let updated = SessionContextUsage(value: value)
+        if contextUsage?.tokens != updated?.tokens || contextUsage?.contextWindow != updated?.contextWindow {
+            contextBreakdown = nil
+        }
+        contextUsage = updated
+        contextPercentage = Self.contextPercent(value)
+    }
+
+    private func scheduleContextRefresh() {
+        contextRefreshTask?.cancel()
+        contextRefreshTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(150)) }
+            catch { return }
+            await self?.refreshContextUsage()
+        }
+    }
+
+    private func refreshContextUsage() async {
+        guard let handle else { return }
+        let context = currentPipelineContext()
+        let revision = contextRevision
+        do {
+            let response = try await handle.client.send(.getState(), timeout: .seconds(5))
+            guard isCurrent(context), revision == contextRevision, !Task.isCancelled else { return }
+            if !isContextLoading { contextErrorMessage = nil }
+            applyContextUsage(response.data?["contextUsage"])
+        } catch {
+            // A usage read must not interrupt the session or its working indicator.
+            guard isCurrent(context), !Task.isCancelled else { return }
+            contextErrorMessage = "Couldn’t refresh context usage."
+        }
+    }
+
+    func refreshContextDetails() async {
+        guard !isContextLoading else { return }
+        guard let handle, let eventFence = contextEventFence else {
+            contextErrorMessage = "Context usage is unavailable while the session is disconnected."
+            return
+        }
+        let context = currentPipelineContext()
+        isContextLoading = true
+        contextErrorMessage = nil
+        contextBreakdown = nil
+        contextReportText = nil
+        defer {
+            if isCurrent(context) {
+                isContextLoading = false
+                contextReportText = nil
+            }
+        }
+        await refreshContextUsage()
+        guard isCurrent(context), !Task.isCancelled else { return }
+        guard availableCommands.contains(where: { $0.name == "context" && $0.source == .builtin }) else {
+            contextErrorMessage = "Detailed context usage is unavailable in this runtime."
+            return
+        }
+        let revision = contextRevision
+        do {
+            // The advertised builtin is local and never invokes a model. Keep this
+            // read outside sendPrompt so drafts, receipts and activity stay intact.
+            let receipt = try await handle.client.sendWithEventFence(
+                .prompt(message: "/context", streamingBehavior: nil), timeout: .seconds(5))
+            guard await eventFence.wait(through: receipt.precedingEventCount),
+                  isCurrent(context), !Task.isCancelled else { return }
+            guard revision == contextRevision else {
+                contextErrorMessage = "Context changed while loading. Try again."
+                return
+            }
+            guard receipt.response.success,
+                  receipt.response.data?["agentInvoked"]?.boolValue == false,
+                  let report = contextReportText,
+                  let breakdown = SessionContextBreakdown(report: report)
+            else {
+                contextErrorMessage = "The context breakdown is unavailable."
+                return
+            }
+            contextBreakdown = breakdown
+        } catch {
+            guard isCurrent(context), !Task.isCancelled else { return }
+            contextErrorMessage = "Couldn’t load the context breakdown."
+        }
+    }
+
+    private func consumeContextReport(_ frame: RpcFrame, processor: TranscriptEventProcessor) -> Bool {
+        guard self.processor?.id == processor.id, isContextLoading,
+              case .event("command_output", let payload) = frame,
+              let text = payload["text"]?.stringValue,
+              text.hasPrefix("Context") else { return false }
+        contextReportText = text
+        return true
     }
 
     private func refreshState() async {
@@ -1229,6 +1504,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             return
         }
         extensionRouter.consume(request)
+        refreshPendingUserInput()
 
         switch state {
         case .confirm, .select:
@@ -1236,7 +1512,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             guard isCurrent(context) else { return }
             scheduleTimeout(for: state, context: context)
         case .input, .editor:
-            extensionSheetRequest = state
+            await processor.upsertExtensionUI(state)
+            guard isCurrent(context) else { return }
             scheduleTimeout(for: state, context: context)
         case .cancel(_, let targetID):
             await removeExtensionRequest(id: targetID, context: context)
@@ -1276,7 +1553,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             do { try await Task.sleep(for: .milliseconds(timeout)) }
             catch { return }
             guard let self else { return }
-            await self.respond(to: state, with: .cancelled(timedOut: true), context: context)
+            _ = await self.respond(
+                to: state,
+                with: .cancelled(timedOut: true),
+                context: context)
         }
     }
 
@@ -1289,9 +1569,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard isCurrent(context) else { return }
         extensionTimeoutTasks.removeValue(forKey: id)?.cancel()
         extensionRouter.removeRequest(id: id)
+        refreshPendingUserInput()
         await context.processor?.removeExtensionUI(id: id)
         guard isCurrent(context) else { return }
         if extensionSheetRequest?.id == id { extensionSheetRequest = nil }
+    }
+
+    private func refreshPendingUserInput() {
+        hasPendingUserInput = extensionRouter.hasPendingUserInput
     }
 
     private func postNotification(message: String) {
@@ -1311,7 +1596,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         context: PipelineContext
     ) {
         guard isCurrent(context) else { return }
-        runtimeState = .failed("[Session:\(function)] Session command failed: \(error)")
+        let diagnostic = "[Session:\(function)] Session command failed: \(error)"
+        runtimeState = .failed(diagnostic)
+        logText = diagnostic
+        isRecoveryPresented = true
         publishCommandCatalog(.unavailable)
         reportActivity()
         let state = runtimeState
@@ -1332,6 +1620,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         else { return }
         installedSnapshotRevision = snapshot.revision
         items = snapshot.items
+        if !pendingSubmissions.isEmpty {
+            pendingSubmissions = PendingUserSubmission.reconcile(
+                pendingSubmissions, messages: userMessages, consumedIndices: &consumedSubmissionEchoIndices)
+        }
         runtimeState = snapshot.runtimeState
         os_signpost(
             .event,
@@ -1340,6 +1632,17 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             "revision %{public}llu",
             snapshot.revision)
         reportActivity()
+    }
+
+    private static func isPlaceholderTitle(_ title: String) -> Bool {
+        title == "New session" || title == "Untitled session"
+    }
+
+    private func finishTitleLoading() {
+        isTitleLoading = false
+        if title == "New session" || title == "Untitled session", let initialPromptTitle {
+            title = initialPromptTitle
+        }
     }
 
     private func reportActivity() {
@@ -1379,12 +1682,15 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     static func contextPercent(_ value: JSONValue?) -> Int? {
-        if let percentage = value?["percentage"]?.doubleValue ?? value?["percent"]?.doubleValue {
+        if let percent = value?["percent"]?.doubleValue, percent.isFinite {
+            return clampedPercent(percent)
+        }
+        if let percentage = value?["percentage"]?.doubleValue, percentage.isFinite {
             return clampedPercent(percentage <= 1 ? percentage * 100 : percentage)
         }
         guard let used = value?["tokens"]?.doubleValue ?? value?["used"]?.doubleValue,
               let limit = value?["contextWindow"]?.doubleValue ?? value?["limit"]?.doubleValue,
-              limit > 0
+              used.isFinite, limit.isFinite, limit > 0
         else { return nil }
         return clampedPercent(used / limit * 100)
     }

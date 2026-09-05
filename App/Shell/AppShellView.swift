@@ -20,6 +20,9 @@ struct AppShellView: View {
                 } else {
                     ZStack(alignment: .leading) {
                         routeCanvas
+                            .environment(\.composerProviderDockWidth, hasComposer
+                                ? ProviderUsageDockLayout.footerWidth(providers: model.providerModel?.dockProviders ?? [])
+                                : 0)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                             .padding(.leading, railExpansion.contentLeadingInset)
                             .environment(model.idePreferenceStore)
@@ -39,9 +42,11 @@ struct AppShellView: View {
                         }
                     }
                     .animation(brandMenuAnimation, value: isBrandMenuPresented)
-                    .overlay {
-                        GeometryReader { geometry in
-                            usageDock(shellWidth: geometry.size.width)
+                    .overlayPreferenceValue(ComposerProviderDockAnchorKey.self) { anchor in
+                        if hasComposer, let anchor {
+                            GeometryReader { geometry in
+                                usageDock(shellSize: geometry.size, footerFrame: geometry[anchor])
+                            }
                         }
                     }
                     .overlay {
@@ -64,6 +69,17 @@ struct AppShellView: View {
                     onCancel: model.cancelDeletion,
                     onDelete: {
                         Task { await model.confirmDeletion() }
+                    })
+            }
+
+            if let request = model.pendingRename {
+                SessionRenameView(
+                    request: request,
+                    isSaving: model.isSessionMutationInFlight,
+                    onDraftChange: model.updateRenameDraft,
+                    onCancel: model.cancelRename,
+                    onSave: {
+                        Task { await model.confirmRename() }
                     })
             }
         }
@@ -131,7 +147,9 @@ struct AppShellView: View {
     }
 
     private var isSessionInteractionBlocked: Bool {
-        model.pendingDeletion != nil || model.isSessionMutationInFlight
+        model.pendingDeletion != nil
+            || model.pendingRename != nil
+            || model.isSessionMutationInFlight
     }
 
     private var railAnimation: Animation? {
@@ -160,7 +178,9 @@ struct AppShellView: View {
                 ActiveSessionView(
                     controller: activeSession,
                     controls: model.composerControls,
-                    commands: model.composerCommands)
+                    commands: model.composerCommands,
+                    onReviewPrompt: { model.reviewFailedPrompt(activeSession) })
+                    .environment(\.renameCurrentSession, model.requestRenameCurrentSession)
             } else {
                 Text("Session unavailable")
                     .font(TenXTypography.body(size: 13))
@@ -198,14 +218,12 @@ struct AppShellView: View {
     }
 
     @ViewBuilder
-    private func usageDock(shellWidth: CGFloat) -> some View {
+    private func usageDock(shellSize: CGSize, footerFrame: CGRect) -> some View {
         if let providerModel = model.providerModel, !providerModel.dockProviders.isEmpty {
             let dockProviders = providerModel.dockProviders
             let compactLayout = ProviderUsageDockLayout.compact(
-                shellWidth: shellWidth,
-                contentLeadingInset: railExpansion.contentLeadingInset,
-                providerCount: dockProviders.count,
-                hasComposer: hasComposer)
+                shellSize: shellSize,
+                footerFrame: footerFrame)
 
             ProviderUsageDockView(
                 providers: dockProviders,

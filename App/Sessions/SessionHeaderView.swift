@@ -1,13 +1,39 @@
 import SwiftUI
 
+private struct RenameCurrentSessionKey: EnvironmentKey {
+    static let defaultValue: (@MainActor @Sendable () -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var renameCurrentSession: (@MainActor @Sendable () -> Void)? {
+        get { self[RenameCurrentSessionKey.self] }
+        set { self[RenameCurrentSessionKey.self] = newValue }
+    }
+}
+
 struct SessionHeaderView: View {
     let controller: SessionController
+    @Environment(\.renameCurrentSession) private var renameCurrentSession
 
     var body: some View {
         VStack(spacing: 4) {
-            Text(controller.title)
+            SessionTitleView(title: controller.title, isLoading: controller.isTitleLoading)
                 .font(TenXTypography.body(size: 13, weight: .semibold))
                 .lineLimit(1)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    renameCurrentSession?()
+                }
+                .contextMenu {
+                    if let renameCurrentSession {
+                        Button("Rename Session...", systemImage: "pencil") {
+                            renameCurrentSession()
+                        }
+                    }
+                }
+                .accessibilityAction(named: Text("Rename Session")) {
+                    renameCurrentSession?()
+                }
 
             if !controller.headerMetadata.presentationItems.isEmpty {
                 HStack(spacing: 14) {

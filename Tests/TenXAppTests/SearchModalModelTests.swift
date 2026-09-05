@@ -3,6 +3,22 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func searchResultCopiesOpeningQuery() {
+    let result = SearchResult(
+        sessionPath: "/tmp/session.jsonl",
+        entryID: "entry",
+        projectPath: "/tmp",
+        title: "You",
+        excerpt: "A result",
+        kind: .message)
+
+    let opened = result.withOpeningQuery("  Résumé  ")
+
+    #expect(result.query.isEmpty)
+    #expect(opened.query == "Résumé")
+    #expect(opened.id == result.id)
+}
+
 @MainActor
 @Test func rapidQueryChangesDispatchOnlyTheFinalSearch() async throws {
     let spy = SearchSpy()

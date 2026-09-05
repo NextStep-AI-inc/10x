@@ -92,24 +92,33 @@ struct ArchivedSessionsView: View {
     private func sessionRow(_ metadata: SessionMetadata) -> some View {
         let title = metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session"
 
-        return HStack(spacing: 14) {
-            Image(systemName: "archivebox")
-                .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-                .frame(width: 20)
-            Text(title)
-                .font(TenXTypography.body(size: 13, weight: .medium))
-                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                .lineLimit(1)
-            Spacer(minLength: 24)
-            Text(metadata.modified, format: .dateTime.month(.abbreviated).day().year())
-                .font(TenXTypography.mono(size: 10))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        return HStack(spacing: 16) {
+            HStack(spacing: 14) {
+                Image(systemName: "archivebox")
+                    .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+                    .frame(width: 20)
+                Text(title)
+                    .font(TenXTypography.body(size: 13, weight: .medium))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                    .lineLimit(1)
+                Spacer(minLength: 24)
+                Text(metadata.modified, format: .dateTime.month(.abbreviated).day().year())
+                    .font(TenXTypography.mono(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+
+            Button("Restore") {
+                Task { await model.restoreSession(metadata) }
+            }
+            .buttonStyle(GhostActionStyle())
+            .accessibilityLabel("Restore \(title)")
         }
         .padding(.vertical, 14)
         .contentShape(Rectangle())
         .focusable()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
+        .accessibilityElement(children: .contain)
         .contextMenu {
             Button("Restore Session", systemImage: "arrow.uturn.backward") {
                 Task { await model.restoreSession(metadata) }

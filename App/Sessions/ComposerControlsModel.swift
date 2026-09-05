@@ -48,21 +48,25 @@ final class ComposerControlsModel {
     private(set) var isMutating: Bool = false
     private(set) var errorMessage: String?
     private(set) var recentModels: [ComposerModelInfo] = []
+    private(set) var favoriteModels: [ComposerModelInfo] = []
 
     @ObservationIgnored let catalog: any ComposerCatalogLoading
     @ObservationIgnored private let defaults: any ComposerDefaultPersisting
     @ObservationIgnored private let recents: RecentModelStore
+    @ObservationIgnored private let favorites: FavoriteModelStore
     @ObservationIgnored private weak var activeSession: (any ComposerSessionControlling)?
     @ObservationIgnored private var refreshGeneration = 0
 
     init(
         catalog: any ComposerCatalogLoading,
         defaults: any ComposerDefaultPersisting,
-        recents: RecentModelStore = RecentModelStore()
+        recents: RecentModelStore = RecentModelStore(),
+        favorites: FavoriteModelStore = FavoriteModelStore()
     ) {
         self.catalog = catalog
         self.defaults = defaults
         self.recents = recents
+        self.favorites = favorites
     }
 
     var thinkingOptions: [String] {
@@ -94,6 +98,7 @@ final class ComposerControlsModel {
                 catalog: snapshot.models,
                 authenticatedProviderIDs: authenticatedProviderIDs)
             recentModels = recents.rankedModels(from: models)
+            favoriteModels = favorites.rankedModels(from: models)
             if let activeSession {
                 applyLiveSelection(activeSession.liveComposerSelection)
             } else {
@@ -308,6 +313,11 @@ final class ComposerControlsModel {
             session.bindComposerControls(nil)
         }
         activeSession = nil
+    }
+
+    func toggleFavorite(_ model: ComposerModelInfo) {
+        favorites.toggle(model)
+        favoriteModels = favorites.rankedModels(from: models)
     }
 
     func shutdown() async {

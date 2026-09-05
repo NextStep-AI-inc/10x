@@ -861,6 +861,107 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     try Data(content.utf8).write(to: url)
 }
 
+@MainActor
+@Test func renameCancelAndBlankValidationDoNotStartASessionMutation() async {
+    let model = AppModel()
+    let metadata = navigationMetadata("/tmp/Project/session.jsonl")
+
+    model.requestRenameSession(metadata)
+    model.updateRenameDraft("   \n")
+    await model.confirmRename()
+
+    #expect(model.pendingRename?.draft == "   \n")
+    #expect(model.pendingRename?.errorMessage == "Enter a session name.")
+    #expect(model.isSessionMutationInFlight == false)
+
+    model.cancelRename()
+    #expect(model.pendingRename == nil)
+}
+
+@MainActor
+@Test func coldRenameUsesOneTemporaryRuntimeAndClosesItAfterSave() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-rename-cold-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let commandLog = container.appendingPathComponent("commands.log")
+    let executable = try makeNavigationExecutable(
+        in: container,
+        mode: "command-log",
+        arguments: [commandLog.path])
+    let activeRoot = container.appendingPathComponent("sessions")
+    let file = activeRoot.appendingPathComponent("bucket/session.jsonl")
+    try writeNavigationSession(at: file, id: "session", cwd: container.path)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: activeRoot)))
+    await model.bootstrap()
+    await model.reloadSessions()
+    let metadata = try #require(model.sessions.first)
+
+    model.requestRenameSession(metadata)
+    model.updateRenameDraft("Renamed session")
+    await model.confirmRename()
+
+    #expect(model.pendingRename == nil)
+    #expect(model.isSessionMutationInFlight == false)
+    #expect(await model.processManager?.handle(for: metadata.path) == nil)
+    let commands = try String(contentsOf: commandLog, encoding: .utf8)
+        .split(separator: "\n")
+        .map(String.init)
+    #expect(commands.filter { $0 == "set_session_name" }.count == 1)
+    await model.shutdown()
+}
+
+@MainActor
+@Test func unavailableRenameRetainsDraftAndReportsTheSaveError() async {
+    let model = AppModel()
+    let metadata = navigationMetadata("/tmp/Project/session.jsonl")
+    model.requestRenameSession(metadata)
+    model.updateRenameDraft("Keep this draft")
+
+    await model.confirmRename()
+
+    #expect(model.pendingRename?.draft == "Keep this draft")
+    #expect(model.pendingRename?.errorMessage == "Could not rename this session.")
+    #expect(model.isSessionMutationInFlight == false)
+}
+
+@MainActor
+@Test func currentSessionRenamePrefersTheLiveFallbackTitle() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-rename-live-title-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Bounded prompt fallback")
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
+    await waitUntil("the fallback title to finish") {
+        model.activeSession?.title == "Bounded prompt fallback"
+    }
+    model.sessions = [SessionMetadata(
+        path: "/tmp/fake.jsonl",
+        sessionId: "fake-session",
+        cwd: project.path,
+        title: "Untitled session",
+        created: .distantPast,
+        modified: .distantPast,
+        sizeBytes: 10,
+        status: .complete)]
+
+    model.requestRenameCurrentSession()
+
+    #expect(model.pendingRename?.draft == "Bounded prompt fallback")
+    await model.shutdown()
+}
+
 func makeNavigationExecutable(
     in directory: URL,
     mode: String = "basic",
