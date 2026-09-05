@@ -60,7 +60,9 @@
 | `App/Sessions/NewSessionView.swift` (modify) | Host the overlay; close on focus-request / clear. |
 | `App/Sessions/ActiveSessionView.swift` (modify) | Host the overlay; close on session change / clear. |
 | `App/Sessions/SessionController.swift` (modify) | Composite before receipt and RPC; restore burned bytes; `attachmentMessage`. |
-| `App/Application/AppModel.swift` (modify) | Composite before `prepareInitialSubmission`; `newSessionAttachmentMessage`. |
+| `App/Application/AppModel.swift` (modify) | Composite before `makeSessionController`; `newSessionAttachmentMessage`. |
+| `Tests/TenXAppTests/SessionControllerTests.swift` (modify) | `sendPrompt` prepare-failure and RPC-restore integration. |
+| `Tests/TenXAppTests/AppModelNavigationTests.swift` (modify) | `startNewSession` prepare-failure integration. |
 | `Tests/TenXAppTests/ViewSnapshotTests.swift` (modify) | Four new references from the spec. |
 | `Tests/TenXAppTests/PendingUserSubmissionTests.swift` (modify) | Burned bytes land on the optimistic message. |
 
@@ -1330,19 +1332,32 @@ EOF
 - Modify: `App/Sessions/SessionController.swift`
 - Modify: `App/Application/AppModel.swift`
 - Modify: `App/Sessions/ComposerView.swift`
+- Modify: `App/Sessions/NewSessionView.swift`
+- Modify: `App/Sessions/ActiveSessionView.swift`
+- Modify: `Tests/TenXAppTests/SessionControllerTests.swift`
+- Modify: `Tests/TenXAppTests/AppModelNavigationTests.swift`
 
 **Interfaces:**
 - Consumes: `ImageMarkupSend.prepare(_:)`.
-- Produces: send/start-session blocked on prepare failure; RPC restore uses the prepared (burned) attachments; red line `Could not prepare marked images for send.`
+- Produces: `SessionController.attachmentMessage: String?`; `AppModel.newSessionAttachmentMessage: String?`; send and start-session blocked on prepare failure; RPC restore uses the prepared (burned) attachments; red line `Could not prepare marked images for send.`
 
-`SessionController.send` already restores `attachments = staged` on RPC failure. After this task `staged` is the prepared list, so restore is already burned. `PendingUserSubmission` is created from that same list.
+`ImageMarkupSend.prepare` is already tested in Task 6. That is not enough for this task. These tests call `SessionController.sendPrompt` and `AppModel.startNewSession`. If either entry point skips prepare, they stay red.
+
+Place prepare after the existing availability guards and before any mutation: no receipt, no draft clear, no `makeSessionController`, no `Task`. On RPC failure, restore `prepared`, not the pre-composite `staged` list. `PendingUserSubmission` is created from `prepared`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `Tests/TenXAppTests/ImageMarkupSendTests.swift`:
+Add `import AppKit` to `Tests/TenXAppTests/SessionControllerTests.swift` if it is missing. Append the two `@Test` methods inside `SessionControllerTests`. Put `markupSendSolidImage` next to the file-level `fakeManager` helpers, not inside the suite:
 
 ```swift
-@Test func prepareFailureKeepsTheOriginalStrokes() {
+@MainActor @Test func sendPromptDoesNothingWhenMarkedImagesCannotBePrepared() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLogURL = directory.appending(path: "commands.log")
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: directory)
+
     let broken = ComposerAttachment(
         name: "broken.png",
         data: Data([0x00, 0x01]),
@@ -1350,29 +1365,135 @@ Add to `Tests/TenXAppTests/ImageMarkupSendTests.swift`:
         pixelWidth: 1,
         pixelHeight: 1,
         markup: [.pen(points: [CGPoint(x: 0, y: 0)])])
-    let result = ImageMarkupSend.prepare([broken])
-    guard case .failure = result else {
-        Issue.record("expected prepare to fail on unreadable bytes")
-        return
-    }
-    #expect(broken.markup.isEmpty == false)
+    controller.draft = "keep this draft"
+    controller.attachments = [broken]
+
+    await controller.sendPrompt()
+
+    #expect(controller.draft == "keep this draft")
+    #expect(controller.attachments.count == 1)
+    #expect(controller.attachments[0].id == broken.id)
+    #expect(controller.attachments[0].data == broken.data)
+    #expect(controller.attachments[0].markup == broken.markup)
+    #expect(controller.attachmentMessage == "Could not prepare marked images for send.")
+    #expect(controller.pendingSubmissions.isEmpty)
+    #expect(controller.runtimeState == .idle)
+    let commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+        .split(separator: "\n")
+        .map(String.init)
+    #expect(!commands.contains("prompt"))
+    await manager.closeAll()
+}
+
+@MainActor @Test func sendPromptRestoresTheBurnedAttachmentWhenRPCFails() async throws {
+    let manager = fakeManager(mode: "delayed-prompt-failure")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: try temporaryDirectory())
+
+    let original = try #require(ComposerAttachmentEncoder.attachment(
+        from: markupSendSolidImage(width: 16, height: 12),
+        name: "marked.png"))
+    let marked = original.replacingMarkup([
+        .rectangle(origin: CGPoint(x: 1, y: 1), size: CGSize(width: 4, height: 4))
+    ])
+    let prepared = try ImageMarkupSend.prepare([marked]).get()
+    controller.draft = "look"
+    controller.attachments = [marked]
+
+    await controller.sendPrompt()
+
+    #expect(controller.draft == "look")
+    #expect(controller.attachments.count == 1)
+    #expect(controller.attachments[0].id == original.id)
+    #expect(controller.attachments[0].data == prepared[0].data)
+    #expect(controller.attachments[0].data != original.data)
+    #expect(controller.attachments[0].markup.isEmpty)
+    #expect(controller.attachmentMessage == nil)
+    #expect(controller.pendingSubmissions.count == 1)
+    #expect(controller.pendingSubmissions[0].state == .unconfirmed)
+    #expect(controller.pendingSubmissions[0].message.document.images.count == 1)
+    #expect(controller.pendingSubmissions[0].message.document.images[0].data == prepared[0].data)
+    await manager.closeAll()
+}
+
+@MainActor
+private func markupSendSolidImage(width: Int, height: Int) -> NSImage {
+    let image = NSImage(size: NSSize(width: width, height: height))
+    image.lockFocus()
+    NSColor.systemTeal.setFill()
+    NSRect(x: 0, y: 0, width: width, height: height).fill()
+    image.unlockFocus()
+    return image
 }
 ```
 
-This test should already pass if Task 6 is correct. It is the contract `send` relies on: failure does not mutate the input.
+Add `import AppKit` to `Tests/TenXAppTests/AppModelNavigationTests.swift` if it is missing. Add this as a free `@MainActor @Test` in that file (same style as `archivingANewSessionUsesTheControllerTranscriptPath`) so it can see `navigationDependencies` and so the `-only-testing` filter below matches:
 
-- [ ] **Step 2: Run the contract test**
+```swift
+@MainActor
+@Test func startNewSessionDoesNothingWhenMarkedImagesCannotBePrepared() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-markup-prepare-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    model.chooseProject(project)
+
+    let broken = ComposerAttachment(
+        name: "broken.png",
+        data: Data([0x00, 0x01]),
+        mimeType: "image/png",
+        pixelWidth: 1,
+        pixelHeight: 1,
+        markup: [.pen(points: [CGPoint(x: 0, y: 0)])])
+    model.newSessionDraft = "keep this draft"
+    model.newSessionAttachments = [broken]
+
+    model.startNewSession(
+        prompt: model.newSessionDraft,
+        attachments: model.newSessionAttachments)
+
+    #expect(model.route == .newSession)
+    #expect(model.activeSession == nil)
+    #expect(model.newSessionDraft == "keep this draft")
+    #expect(model.newSessionAttachments.count == 1)
+    #expect(model.newSessionAttachments[0].id == broken.id)
+    #expect(model.newSessionAttachments[0].data == broken.data)
+    #expect(model.newSessionAttachments[0].markup == broken.markup)
+    #expect(model.newSessionAttachmentMessage == "Could not prepare marked images for send.")
+    #expect(model.isSessionMutationInFlight == false)
+    await model.shutdown()
+}
+```
+
+These tests are red if `sendPrompt` or `startNewSession` never call `ImageMarkupSend.prepare`. Do not replace them with another `prepare(_:)` unit test.
+
+- [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
-  -only-testing:'TenXAppTests/prepareFailureKeepsTheOriginalStrokes()'
+  -only-testing:'TenXAppTests/SessionControllerTests/sendPromptDoesNothingWhenMarkedImagesCannotBePrepared()' \
+  -only-testing:'TenXAppTests/startNewSessionDoesNothingWhenMarkedImagesCannotBePrepared()' \
+  -only-testing:'TenXAppTests/SessionControllerTests/sendPromptRestoresTheBurnedAttachmentWhenRPCFails()'
 ```
 
-Expected: PASS.
+Expected first failure: compile error, `has no member 'attachmentMessage'` / `has no member 'newSessionAttachmentMessage'`.
+
+After the two properties exist but the entry points are still unwired, the same command stays red:
+
+- `sendPromptDoesNothingWhenMarkedImagesCannotBePrepared` sends a `prompt` and clears the draft
+- `startNewSessionDoesNothingWhenMarkedImagesCannotBePrepared` creates a controller and clears `newSessionDraft` / `newSessionAttachments`
+- `sendPromptRestoresTheBurnedAttachmentWhenRPCFails` restores the unmarked original, including its strokes
 
 - [ ] **Step 3: Call prepare at both send entries**
 
-In `SessionController`, add `var attachmentMessage: String?`. At the start of `send(...)`, after `let staged = suppliedAttachments ?? attachments` and the `hasContent` guard, replace `staged` with the prepared list:
+In `SessionController`, add `var attachmentMessage: String?` next to `attachments`. In `send(...)`, after `let staged = suppliedAttachments ?? attachments`, the `hasContent` guard, and the `handle` / `isComposerAvailable` / `isSendInFlight` guard, and before `beginManagedTurn`, the receipt, or any draft clear:
 
 ```swift
         let prepared: [ComposerAttachment]
@@ -1386,9 +1507,9 @@ In `SessionController`, add `var attachmentMessage: String?`. At the start of `s
         }
 ```
 
-Use `prepared` for the receipt, `promptImage` list, and the restore assignment (`attachments = prepared` on RPC failure). Do not clear draft or attachments when prepare fails.
+Use `prepared` for the receipt, `images: prepared.map(\.promptImage)`, and the restore assignment (`attachments = prepared` on RPC failure). Keep using `stagedIDs` from the pre-prepare ids (they are the same). Do not clear draft or attachments when prepare fails. `sendPrompt` already calls `markInitialSubmissionFailed()` when this returns false for a `.starting` receipt; that path does not run if `AppModel.startNewSession` refuses to create the controller.
 
-In `AppModel.startNewSession(prompt:attachments:)`:
+In `AppModel`, add `var newSessionAttachmentMessage: String?` next to `newSessionAttachments`. In `startNewSession(prompt:attachments:)`, after the existing `isSessionMutationInFlight` / `processManager` / `selectedProjectURL` / `canCreateManagedSession` guards and before `makeSessionController`:
 
 ```swift
         let prepared: [ComposerAttachment]
@@ -1400,27 +1521,24 @@ In `AppModel.startNewSession(prompt:attachments:)`:
             newSessionAttachmentMessage = "Could not prepare marked images for send."
             return
         }
+        let controller = makeSessionController(processManager: processManager)
         controller.prepareInitialSubmission(text: prompt, attachments: prepared, projectURL: selectedProjectURL)
 ```
 
-Add `var newSessionAttachmentMessage: String?` next to `newSessionAttachments`. Do not create the controller or clear the new-session draft when prepare fails.
+Do not create the controller, do not clear `newSessionDraft` / `newSessionAttachments`, and do not spawn the `openNew` task when prepare fails.
 
-In `ComposerView`, show `attachmentMessage ?? sessionAttachmentMessage ?? controls?.errorMessage` where `sessionAttachmentMessage` is:
+In `ComposerView`, show `attachmentMessage ?? externalAttachmentMessage ?? controls?.errorMessage`. Add `externalAttachmentMessage: String? = nil`. Keep the existing paperclip skip line as the local `attachmentMessage`. `NewSessionView` passes `model.newSessionAttachmentMessage`. `ActiveSessionView` passes `controller.attachmentMessage`.
 
-- new session: `model.newSessionAttachmentMessage` passed in, or read from a new optional `externalAttachmentMessage: String?` parameter defaulting to nil
-- active session: `controller.attachmentMessage`
-
-Keep the existing paperclip skip line as the local `attachmentMessage`. Prefer a single optional `externalAttachmentMessage` argument so the view does not need `AppModel`.
-
-`NewSessionView` passes `model.newSessionAttachmentMessage`. `ActiveSessionView` passes `controller.attachmentMessage`.
-
-- [ ] **Step 4: Run attachment and session tests that still compile**
+- [ ] **Step 4: Run the send-path tests**
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
-  -only-testing:'TenXAppTests/anAttachmentEncodesIntoThePromptContractShape()' \
-  -only-testing:'TenXAppTests/pendingSubmissionUsesThePreparedBytes()' \
-  -only-testing:'TenXAppTests/prepareFailureKeepsTheOriginalStrokes()'
+  -only-testing:'TenXAppTests/SessionControllerTests/sendPromptDoesNothingWhenMarkedImagesCannotBePrepared()' \
+  -only-testing:'TenXAppTests/startNewSessionDoesNothingWhenMarkedImagesCannotBePrepared()' \
+  -only-testing:'TenXAppTests/SessionControllerTests/sendPromptRestoresTheBurnedAttachmentWhenRPCFails()' \
+  -only-testing:'TenXAppTests/aStrokeLessAttachmentIsNotReencoded()' \
+  -only-testing:'TenXAppTests/aMarkedSendProducesDifferentPromptImageBytes()' \
+  -only-testing:'TenXAppTests/pendingSubmissionUsesThePreparedBytes()'
 ```
 
 Expected: PASS.
@@ -1433,7 +1551,8 @@ git add App/Sessions/SessionController.swift \
   App/Sessions/ComposerView.swift \
   App/Sessions/NewSessionView.swift \
   App/Sessions/ActiveSessionView.swift \
-  Tests/TenXAppTests/ImageMarkupSendTests.swift
+  Tests/TenXAppTests/SessionControllerTests.swift \
+  Tests/TenXAppTests/AppModelNavigationTests.swift
 git commit -m "$(cat <<'EOF'
 feat(composer): burn markup before prompt images leave the client
 
@@ -1443,7 +1562,6 @@ EOF
 )"
 ```
 
----
 
 ### Task 9: Overlay chrome, strip click, transcript click
 
@@ -1727,8 +1845,9 @@ EOF
 | Stroke-less send is byte-identical | Task 6 |
 | Marked send's `PromptImage` differs | Task 6 |
 | `PendingUserSubmission` uses burned bytes | Tasks 6, 8 |
-| Composite failure blocks send and keeps strokes | Task 8 |
-| RPC failure restores burned attachment | Task 8 |
+| Composite failure blocks send and keeps strokes | Task 8 (`sendPrompt` integration) |
+| Composite failure blocks new-session start | Task 8 (`startNewSession` integration) |
+| RPC failure restores burned attachment | Task 8 (`sendPrompt` + `delayed-prompt-failure`) |
 | In-app lightbox, no extra window, no Quick Look | Task 9 |
 | Edit from staged thumbnail; view from `MessageImageView` | Task 9 |
 | Done writes draft; Cancel / Esc / backdrop / open-another discard | Tasks 7, 9 |
