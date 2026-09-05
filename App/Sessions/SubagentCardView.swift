@@ -40,12 +40,9 @@ struct SubagentCardView: View {
     private var binding: Binding<Bool> {
         Binding(
             get: {
-                disclosureState?.isExpanded(
-                    id: presentation.id,
-                    defaultValue: presentation.status.isActive || presentation.status.isError)
+                disclosureState?.isExpanded(for: presentation)
                     ?? localChoice
-                    ?? presentation.status.isActive
-                    || presentation.status.isError
+                    ?? ToolDetailMode.auto.isExpandedByDefault(presentation.disclosureTraits)
             },
             set: { value in
                 if let disclosureState { disclosureState.setExpanded(value, id: presentation.id) }

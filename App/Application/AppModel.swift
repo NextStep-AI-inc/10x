@@ -62,6 +62,7 @@ final class AppModel {
     private(set) var settingsModel: SettingsViewModel?
     let ideRegistry: IDERegistry
     let idePreferenceStore: IDEPreferenceStore
+    let toolDetailPreferenceStore: ToolDetailPreferenceStore
     let fileOpenService: FileOpenService
     private(set) var providerModel: ProviderManagementViewModel?
     private(set) var composerControls: ComposerControlsModel?
@@ -214,6 +215,7 @@ final class AppModel {
         sessionActivityRegistry = dependencies.makeProviderAccountCoordinator()
         self.ideRegistry = ideRegistry
         idePreferenceStore = IDEPreferenceStore(defaults: preferenceDefaults, registry: ideRegistry)
+        toolDetailPreferenceStore = ToolDetailPreferenceStore(defaults: preferenceDefaults)
         self.fileOpenService = fileOpenService
         startMemoryPressureMonitoring()
         // Installed here, after every stored property has a value (`self`

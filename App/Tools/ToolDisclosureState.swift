@@ -3,17 +3,34 @@ import SwiftUI
 
 @Observable
 final class ToolDisclosureState: @unchecked Sendable {
+    private(set) var mode: ToolDetailMode
+    // Per-row boxes: toggling one card must not invalidate the whole transcript.
     @ObservationIgnored private var choices: [String: DisclosureChoice] = [:]
     @ObservationIgnored private var groupChoices: [String: DisclosureChoice] = [:]
 
-    func isExpanded(for presentation: ToolPresentation) -> Bool {
-        isExpanded(
-            id: presentation.id,
-            defaultValue: Self.defaultExpanded(for: presentation))
+    init(mode: ToolDetailMode = .auto) {
+        self.mode = mode
     }
 
-    func isExpanded(id: String, defaultValue: Bool) -> Bool {
-        choice(for: id, in: &choices).value ?? defaultValue
+    /// A new mode discards the per-card choices taken under the old one, so
+    /// switching to Expanded cannot leave hand-closed cards shut. Group
+    /// expansion is a separate axis and is left alone.
+    func setMode(_ mode: ToolDetailMode) {
+        guard mode != self.mode else { return }
+        self.mode = mode
+        for choice in choices.values { choice.value = nil }
+    }
+
+    func isExpanded(for presentation: ToolPresentation) -> Bool {
+        isExpanded(id: presentation.id, traits: presentation.disclosureTraits)
+    }
+
+    func isExpanded(for presentation: SubagentPresentation) -> Bool {
+        isExpanded(id: presentation.id, traits: presentation.disclosureTraits)
+    }
+
+    func isExpanded(id: String, traits: ToolDisclosureTraits) -> Bool {
+        choice(for: id, in: &choices).value ?? mode.isExpandedByDefault(traits)
     }
 
     func setExpanded(_ isExpanded: Bool, for presentation: ToolPresentation) {
@@ -30,19 +47,6 @@ final class ToolDisclosureState: @unchecked Sendable {
 
     func setGroupExpanded(_ isExpanded: Bool, id: String) {
         choice(for: id, in: &groupChoices).value = isExpanded
-    }
-
-    func collapseAll(ids: [String]) {
-        for id in ids { setExpanded(false, id: id) }
-    }
-
-    func expand(ids: [String]) {
-        for id in ids { setExpanded(true, id: id) }
-    }
-
-    nonisolated static func defaultExpanded(for presentation: ToolPresentation) -> Bool {
-        presentation.phase != .complete
-            || ToolCardRegistry.kind(for: presentation.name).startsExpandedWhenComplete
     }
 
     private func choice(

@@ -24,17 +24,19 @@ import Testing
     #expect(state.isExpanded(for: tool(id: "same", name: "bash", phase: .complete)))
 }
 
-@Test func transcriptDisclosureCommandsAffectOnlyTheirIntendedRows() {
+@Test func modeChangeReplacesEveryEarlierRowChoice() {
     let state = ToolDisclosureState()
     let complete = tool(id: "complete", name: "read", phase: .complete)
     let running = tool(id: "running", name: "bash", phase: .running)
     let failed = tool(id: "failed", name: "bash", phase: .failed)
 
-    state.collapseAll(ids: [complete.id, running.id, failed.id])
+    state.setMode(.compact)
+    #expect(!state.isExpanded(for: complete))
     #expect(!state.isExpanded(for: running))
     #expect(!state.isExpanded(for: failed))
 
-    state.expand(ids: [running.id, failed.id])
+    state.setExpanded(true, for: complete)
+    state.setMode(.auto)
     #expect(!state.isExpanded(for: complete))
     #expect(state.isExpanded(for: running))
     #expect(state.isExpanded(for: failed))
@@ -73,12 +75,10 @@ import Testing
 }
 
 @Test func attentionToolsDefaultExpandedAfterCompletion() {
-    #expect(ToolDisclosureState.defaultExpanded(
-        for: tool(id: "edit", name: "edit", phase: .complete)))
-    #expect(ToolDisclosureState.defaultExpanded(
-        for: tool(id: "proposal", name: "resolve", phase: .complete)))
-    #expect(!ToolDisclosureState.defaultExpanded(
-        for: tool(id: "read", name: "read", phase: .complete)))
+    let auto = ToolDisclosureState()
+    #expect(auto.isExpanded(for: tool(id: "edit", name: "edit", phase: .complete)))
+    #expect(auto.isExpanded(for: tool(id: "proposal", name: "resolve", phase: .complete)))
+    #expect(!auto.isExpanded(for: tool(id: "read", name: "read", phase: .complete)))
 }
 
 @Test func sharedToolDisclosureMeetsTheMinimumHitTarget() {
@@ -114,8 +114,8 @@ import Testing
     #expect(updatedGroupID == groupID)
     #expect(!state.isGroupExpanded(id: updatedGroupID))
 
-    state.collapseAll(ids: ["one", "two"])
-    state.expand(ids: ["one"])
+    for id in ["one", "two"] { state.setExpanded(false, id: id) }
+    state.setExpanded(true, id: "one")
     #expect(!state.isGroupExpanded(id: updatedGroupID))
 }
 
@@ -130,7 +130,9 @@ import Testing
         groupInvalidations.increment()
     }
     withObservationTracking {
-        _ = state.isExpanded(id: "observed-tool", defaultValue: true)
+        _ = state.isExpanded(
+            id: "observed-tool",
+            traits: tool(id: "observed-tool", name: "bash", phase: .running).disclosureTraits)
     } onChange: {
         toolInvalidations.increment()
     }
