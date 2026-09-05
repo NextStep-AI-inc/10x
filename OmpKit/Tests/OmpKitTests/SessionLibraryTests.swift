@@ -296,7 +296,7 @@ private final class DirectoryEnumerationRecorder: Sendable {
         return false
     } ?? false
     #expect(createSignal)
-    #expect(await library.listAll().map(\.path) == [original.path])
+    #expect(await eventuallyLists(library, [original.path]))
 
     let renamer = Task {
         try? await Task.sleep(for: .milliseconds(200))
@@ -308,7 +308,9 @@ private final class DirectoryEnumerationRecorder: Sendable {
         return false
     } ?? false
     #expect(renameSignal)
-    #expect(await library.listAll().map(\.path) == [renamed.path])
+    // A signal left over from the previous phase can satisfy the wait early,
+    // so the listing is polled rather than read once.
+    #expect(await eventuallyLists(library, [renamed.path]))
 
     let deleter = Task {
         try? await Task.sleep(for: .milliseconds(200))
@@ -320,7 +322,18 @@ private final class DirectoryEnumerationRecorder: Sendable {
         return false
     } ?? false
     #expect(deleteSignal)
-    #expect(await library.listAll().isEmpty)
+    #expect(await eventuallyLists(library, []))
+}
+
+/// Polls the library until it lists exactly `paths`, bounded so a missed
+/// structural event fails instead of hanging.
+private func eventuallyLists(_ library: SessionLibrary, _ paths: [String]) async -> Bool {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while ContinuousClock.now < deadline {
+        if await library.listAll().map(\.path) == paths { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return await library.listAll().map(\.path) == paths
 }
 
 @Test func watcherSignalsOnNewArchivedFile() async throws {
@@ -714,4 +727,62 @@ private final class DirectoryEnumerationRecorder: Sendable {
         reason: .fileOperationFailed)])
     #expect(FileManager.default.fileExists(
         atPath: transcript.appendingPathComponent("sentinel").path))
+}
+
+@Test func listingFromACancelledTaskDoesNotHideTheSessionAfterwards() async throws {
+    let root = makeTempRoot("cancelled-listing")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("-x/session.jsonl")
+    try writeSession(at: file, id: "cancelled", cwd: "/x", lastMessage: userLast)
+    let library = SessionLibrary(root: root)
+
+    // A cancelled caller must not poison the metadata cache for everyone else.
+    let cancelled = Task { () -> [SessionMetadata] in
+        withUnsafeCurrentTask { $0?.cancel() }
+        return await library.listAll()
+    }
+    _ = await cancelled.value
+
+    #expect(await library.listAll().map(\.path) == [file.path])
+}
+
+@Test func watcherFollowsAFileDeletedAndRecreatedWithinOneDebounce() async throws {
+    let root = makeTempRoot("recreate-watch")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("-x/session.jsonl")
+    try writeSession(at: file, id: "recreated", cwd: "/x", lastMessage: userLast)
+    let library = SessionLibrary(root: root)
+    let stream = library.changes
+    await library.startWatching()
+    #expect(await eventuallyLists(library, [file.path]))
+
+    // Delete and recreate faster than the 100 ms debounce, then let it settle.
+    try FileManager.default.removeItem(at: file)
+    try writeSession(at: file, id: "recreated", cwd: "/x", lastMessage: userLast)
+    try await Task.sleep(for: .milliseconds(400))
+
+    // Directory watchers never fire for in-file writes, so a signal after the
+    // second append can only come from a watcher on the recreated inode. Two
+    // appends and two waits, because the stream may still hold the signal
+    // from the recreate itself; the iterator is never cancelled, which would
+    // terminate the shared stream.
+    func append() throws {
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("\n".utf8))
+    }
+    try append()
+    let firstSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(firstSignal)
+    try append()
+    let secondSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(secondSignal)
 }

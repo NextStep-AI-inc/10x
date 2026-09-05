@@ -371,6 +371,9 @@ public actor SessionLibrary {
 
         let metadata = read(url, modified: modified, size: size)
         cache = cache.filter { $0.key.path != url.path }
+        // A cancelled caller learned nothing about the file; caching `.missing`
+        // for it would hide the session from every later listing.
+        guard metadata != nil || !Task.isCancelled else { return nil }
         cache[key] = metadata.map(CacheValue.metadata) ?? .missing
         if cache.count > 4096 {
             cache.removeValue(forKey: cache.keys.first!)
@@ -459,17 +462,25 @@ public actor SessionLibrary {
             // the library already gone.
             guard let self else { return }
             let event = source.data
-            let requiresTopologyRefresh = target.isDirectory
-                || !event.intersection([.rename, .delete]).isEmpty
+            let isStructural = !event.intersection([.rename, .delete]).isEmpty
+            let requiresTopologyRefresh = target.isDirectory || isStructural
+            let staleFilePath = !target.isDirectory && isStructural ? target.url.path : nil
             Task { await self.handleWatchEvent(
-                requiresTopologyRefresh: requiresTopologyRefresh) }
+                requiresTopologyRefresh: requiresTopologyRefresh,
+                staleFilePath: staleFilePath) }
         }
         source.setCancelHandler { close(descriptor) }
         source.resume()
         watchers[target.url.path] = source
     }
 
-    private func handleWatchEvent(requiresTopologyRefresh: Bool) {
+    private func handleWatchEvent(requiresTopologyRefresh: Bool, staleFilePath: String? = nil) {
+        if let staleFilePath {
+            // The descriptor follows the old inode. Drop it now, so a file
+            // recreated before the deferred refresh runs is reopened rather
+            // than watched through a descriptor that will never fire again.
+            watchers.removeValue(forKey: staleFilePath)?.cancel()
+        }
         topologyRefreshPending = topologyRefreshPending || requiresTopologyRefresh
         debounceTask?.cancel()
         debounceTask = Task { [weak self] in

@@ -116,7 +116,10 @@ public enum SessionFileParser {
         prefix: Data
     ) throws -> (slot: SessionTitleSlot?, header: SessionHeader) {
         guard !prefix.isEmpty else { throw SessionFileError.empty }
-        let lines = try splitLines(prefix)
+        // A bounded prefix is cheap enough to finish regardless of the
+        // caller's cancellation; failing here would let a cancelled listing
+        // be mistaken for a file that is not a session.
+        let lines = try splitLines(prefix, checkingCancellation: false)
         guard !lines.isEmpty else { throw SessionFileError.empty }
 
         var index = 0
@@ -297,17 +300,20 @@ public enum SessionFileParser {
         return Int(digits)
     }
 
-    private static func splitLines(_ data: Data) throws -> [Data] {
+    private static func splitLines(
+        _ data: Data,
+        checkingCancellation: Bool = true
+    ) throws -> [Data] {
         var lines: [Data] = []
         for (index, slice) in data.split(
             separator: UInt8(ascii: "\n"),
             omittingEmptySubsequences: false
         ).enumerated() {
-            if index.isMultiple(of: 64) { try Task.checkCancellation() }
+            if checkingCancellation, index.isMultiple(of: 64) { try Task.checkCancellation() }
             let line = slice.last == UInt8(ascii: "\r") ? Data(slice.dropLast()) : Data(slice)
             if !line.isEmpty { lines.append(line) }
         }
-        try Task.checkCancellation()
+        if checkingCancellation { try Task.checkCancellation() }
         return lines
     }
 
