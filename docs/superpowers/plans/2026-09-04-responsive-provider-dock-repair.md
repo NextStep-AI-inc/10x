@@ -33,7 +33,7 @@
 - Consumes: existing `ProviderUsageDockCompactLayout`, `ProviderUsageDockLayout.regular54`, `inComposer28`, `spacing8`, and `compact(shellSize:footerFrame:)`.
 - Produces: `ProviderUsageDockPlacement`, `ProviderUsageDockLayout.placement(shellWidth:contentLeadingInset:providerCount:hasComposer:)`, and `ProviderUsageDockCompactLayout.outsideComposer` for Task 2.
 
-- [ ] **Step 1: Add failing placement tests**
+- [x] **Step 1: Add failing placement tests**
 
 Replace the two layout tests at the bottom of `ProviderUsageDockLayoutTests.swift` with these tests, retaining the three hover tests unchanged:
 
@@ -120,7 +120,7 @@ Replace the two layout tests at the bottom of `ProviderUsageDockLayoutTests.swif
 }
 ```
 
-- [ ] **Step 2: Run one new test to verify RED**
+- [x] **Step 2: Run one new test to verify RED**
 
 Run:
 
@@ -129,12 +129,12 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x \
   -destination 'platform=macOS' \
   -derivedDataPath /tmp/tenx-responsive-dock-task1-red \
   -parallel-testing-enabled NO \
-  -only-testing:'TenXAppTests/usageDockUsesRegularWheelsBesideComposerWhenGutterFitsThreeProviders()'
+  -only-testing:'TenXAppTests/ProviderUsageDockLayoutTests/usageDockUsesRegularWheelsBesideComposerWhenGutterFitsThreeProviders()'
 ```
 
 Expected: build failure because `ProviderUsageDockPlacement`, `placement(...)`, and `ProviderUsageDockCompactLayout.outsideComposer` do not exist. A vacuous zero-test success is not acceptable.
 
-- [ ] **Step 3: Implement the minimum pure policy**
+- [x] **Step 3: Implement the minimum pure policy**
 
 Add this enum above `ProviderUsageDockCompactLayout`:
 
@@ -184,7 +184,7 @@ static func placement(
 
 Do not change `compact(shellSize:footerFrame:)` or `footerWidth(providers:)`; they remain the compact anchor resolver and provider-aware reservation calculator.
 
-- [ ] **Step 4: Run all placement tests to verify GREEN**
+- [x] **Step 4: Run all placement tests to verify GREEN**
 
 Run the six changed/new functions explicitly:
 
@@ -193,17 +193,17 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x \
   -destination 'platform=macOS' \
   -derivedDataPath /tmp/tenx-responsive-dock-task1-green \
   -parallel-testing-enabled NO \
-  -only-testing:'TenXAppTests/usageDockUsesRegularWheelsBesideComposerWhenGutterFitsThreeProviders()' \
-  -only-testing:'TenXAppTests/usageDockUsesReservedFooterSlotWhenGutterDoesNotFitThreeProviders()' \
-  -only-testing:'TenXAppTests/usageDockProviderCountControlsWidePlacementDecision()' \
-  -only-testing:'TenXAppTests/expandedRailCanConsumeTheOutsideDockGutter()' \
-  -only-testing:'TenXAppTests/usageDockStandaloneRoutesKeepRegularWheelsWithoutOffsets()' \
-  -only-testing:'TenXAppTests/noProvidersReserveNoFooterSpace()'
+  -only-testing:'TenXAppTests/ProviderUsageDockLayoutTests/usageDockUsesRegularWheelsBesideComposerWhenGutterFitsThreeProviders()' \
+  -only-testing:'TenXAppTests/ProviderUsageDockLayoutTests/usageDockUsesReservedFooterSlotWhenGutterDoesNotFitThreeProviders()' \
+  -only-testing:'TenXAppTests/ProviderUsageDockLayoutTests/usageDockProviderCountControlsWidePlacementDecision()' \
+  -only-testing:'TenXAppTests/ProviderUsageDockLayoutTests/expandedRailCanConsumeTheOutsideDockGutter()' \
+  -only-testing:'TenXAppTests/ProviderUsageDockLayoutTests/usageDockStandaloneRoutesKeepRegularWheelsWithoutOffsets()' \
+  -only-testing:'TenXAppTests/ProviderUsageDockLayoutTests/noProvidersReserveNoFooterSpace()'
 ```
 
 Expected: Swift Testing reports 6 tests passed and `** TEST SUCCEEDED **`.
 
-- [ ] **Step 5: Commit the pure policy**
+- [x] **Step 5: Commit the pure policy**
 
 ```bash
 git add App/Providers/ProviderUsageDockLayout.swift \
