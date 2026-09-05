@@ -34,6 +34,15 @@ final class AppModel {
         case runtimeUnavailable
     }
 
+    private struct PendingSessionClose {
+        let id: UUID
+        let task: Task<Void, Never>
+    }
+
+    /// Inactive idle sessions kept alive beyond the one in front of the user.
+    /// Older ones release their runtime and reopen from persisted history.
+    static let maxRetainedInactiveIdleSessions = 4
+
     private enum StartupPreparation: Sendable {
         case ready
         case missingOmp
@@ -193,6 +202,16 @@ final class AppModel {
     @ObservationIgnored private var hasStartedWarmRetention = false
     @ObservationIgnored private var managedSessions: [UUID: SessionController] = [:]
     @ObservationIgnored private var managedSessionPaths: [String: UUID] = [:]
+    /// Managed session ids in visit order, oldest first. Only sessions that
+    /// are inactive, idle and holding nothing unsaved are ever reclaimed from
+    /// it; see `reviewIdleSessionRetention()`.
+    @ObservationIgnored private var sessionVisitOrder: [UUID] = []
+    /// Runtime closes still in flight for reclaimed sessions, keyed by every
+    /// path the session was reachable under. Reopening one of those paths
+    /// waits here first, so a close scheduled for the old runtime can never
+    /// land on its replacement.
+    @ObservationIgnored private var pendingSessionCloses: [String: PendingSessionClose] = [:]
+    @ObservationIgnored private var isIdleRetentionReviewScheduled = false
     @ObservationIgnored private var pendingUnexpectedExits: [
         String: SessionProcessManager.UnexpectedExit
     ] = [:]
@@ -365,6 +384,7 @@ final class AppModel {
         clearActiveSession()
         detachComposerControlsAndRefresh()
         route = .newSession
+        reviewIdleSessionRetention()
     }
 
     /// Every project 10x remembers for listing (the rail, the composer's
@@ -470,6 +490,7 @@ final class AppModel {
         clearActiveSession()
         detachComposerControlsAndRefresh()
         route = .newSession
+        reviewIdleSessionRetention()
     }
 
     func openArchivedSessions() {
@@ -547,6 +568,8 @@ final class AppModel {
             activeSession = controller
             route = .session(metadata.path)
             attachComposerSources(to: controller)
+            markSessionVisited(controller)
+            reviewIdleSessionRetention()
             return
         }
         guard sessionActivityRegistry.canCreateManagedSession else { return }
@@ -556,8 +579,16 @@ final class AppModel {
         activeSession = controller
         route = .session(metadata.path)
         detachComposerSources()
+        reviewIdleSessionRetention()
+        let pendingClose = pendingSessionCloses[metadata.path]?.task
         Task { [weak self, controller] in
             guard let self else { return }
+            if let pendingClose {
+                // A reclaimed runtime for this path may still be closing; open
+                // only once that close has landed on the old process.
+                await pendingClose.value
+                guard self.managedSessions[controller.id] === controller else { return }
+            }
             await controller.openExisting(metadata)
             guard self.managedSessions[controller.id] === controller else {
                 controller.stopActivityTracking()
@@ -599,6 +630,7 @@ final class AppModel {
         route = placeholderRoute
         let selection = composerControls?.spawnSelection
         activeSession = controller
+        reviewIdleSessionRetention()
         Task { [weak self, controller, selectedProjectURL, selection, primarySnapshot] in
             guard let self else { return }
             let fastOutcome = await controller.openNew(
@@ -723,6 +755,10 @@ final class AppModel {
         let evicted = await processManager.evictWarmClients()
         guard !isShuttingDown, self.processManager === processManager else { return }
         let canceled = await processManager.cancelWarmings()
+        guard !isShuttingDown, self.processManager === processManager else { return }
+        // Idle runtimes are the largest reclaim and the slowest to close, so
+        // they go after the warm clients, which are cheap to drop.
+        await reclaimInactiveIdleSessions()
         guard !isShuttingDown,
               self.processManager === processManager,
               !evicted.isEmpty || !canceled.isEmpty,
@@ -887,6 +923,7 @@ final class AppModel {
         to title: String
     ) async throws {
         guard let processManager else { throw SessionRenameError.runtimeUnavailable }
+        await pendingSessionCloses[request.path]?.task.value
         if let handle = await processManager.handle(for: request.path) {
             _ = try await handle.client.send(.setSessionName(title))
             return
@@ -1133,6 +1170,10 @@ final class AppModel {
         if let intendedSessionPath {
             managedSessionPaths[intendedSessionPath] = controller.id
         }
+        markSessionVisited(controller)
+        controller.onActivityChange = { [weak self] in
+            self?.reviewIdleSessionRetention()
+        }
         return controller
     }
 
@@ -1185,6 +1226,7 @@ final class AppModel {
     private func removeManagedSession(_ controller: SessionController) {
         controller.stopActivityTracking()
         managedSessions.removeValue(forKey: controller.id)
+        sessionVisitOrder.removeAll { $0 == controller.id }
         let paths = managedSessionPaths.compactMap { entry in
             entry.value == controller.id ? entry.key : nil
         }
@@ -1201,7 +1243,93 @@ final class AppModel {
         managedSessions.removeAll()
         managedSessionPaths.removeAll()
         pendingUnexpectedExits.removeAll()
+        sessionVisitOrder.removeAll()
+        pendingSessionCloses.removeAll()
         activeSession = nil
+    }
+
+    // MARK: - Idle session retention
+
+    /// Schedules one budget review after the current main-actor turn, so a
+    /// controller reporting its own state change is never disposed from
+    /// inside that report, and a burst of navigation collapses into one pass.
+    private func reviewIdleSessionRetention() {
+        guard !isIdleRetentionReviewScheduled, !isShuttingDown else { return }
+        isIdleRetentionReviewScheduled = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.isIdleRetentionReviewScheduled = false
+            self.enforceIdleRetentionBudget()
+        }
+    }
+
+    private func markSessionVisited(_ controller: SessionController) {
+        sessionVisitOrder.removeAll { $0 == controller.id }
+        sessionVisitOrder.append(controller.id)
+    }
+
+    /// Inactive idle sessions holding nothing eviction would lose, least
+    /// recently visited first. Nothing is reclaimable while an account removal
+    /// is reassigning sessions, since that flow walks the managed set.
+    private func reclaimableInactiveIdleSessions() -> [SessionController] {
+        guard sessionActivityRegistry.canCreateManagedSession else { return [] }
+        sessionVisitOrder.removeAll { managedSessions[$0] == nil }
+        return sessionVisitOrder.compactMap { id in
+            guard let controller = managedSessions[id],
+                  controller !== activeSession,
+                  controller.isEligibleForIdleEviction,
+                  !sessionActivityRegistry.hasPendingWork(sessionID: id)
+            else { return nil }
+            return controller
+        }
+    }
+
+    private func enforceIdleRetentionBudget() {
+        guard !isShuttingDown else { return }
+        let reclaimable = reclaimableInactiveIdleSessions()
+        let excess = reclaimable.count - Self.maxRetainedInactiveIdleSessions
+        guard excess > 0 else { return }
+        for controller in reclaimable.prefix(excess) {
+            reclaimSession(controller)
+        }
+    }
+
+    /// Reclaims every inactive idle session and waits for their runtimes to
+    /// close, so the memory is actually released before the caller continues.
+    private func reclaimInactiveIdleSessions() async {
+        let closes = reclaimableInactiveIdleSessions().compactMap { reclaimSession($0) }
+        await withTaskGroup(of: Void.self) { group in
+            for close in closes {
+                group.addTask { await close.value }
+            }
+        }
+    }
+
+    /// Drops the controller synchronously and returns the task closing its
+    /// runtime. `dispose()` runs before the index is cleared because it reads
+    /// the live handle's path, which `stopActivityTracking` would discard.
+    @discardableResult
+    private func reclaimSession(_ controller: SessionController) -> Task<Void, Never>? {
+        var paths = Set(managedSessionPaths.filter { $0.value == controller.id }.keys)
+        if let sessionPath = controller.sessionPath { paths.insert(sessionPath) }
+        let close = controller.dispose()
+        removeManagedSession(controller)
+        guard let close, !paths.isEmpty else { return close }
+        let closeID = UUID()
+        let barrier = Task { @MainActor [weak self] in
+            await close.value
+            guard let self else { return }
+            for path in paths where self.pendingSessionCloses[path]?.id == closeID {
+                self.pendingSessionCloses.removeValue(forKey: path)
+                // An exit observed while the old runtime was closing belongs
+                // to it, never to the replacement that may open next.
+                self.pendingUnexpectedExits.removeValue(forKey: path)
+            }
+        }
+        for path in paths {
+            pendingSessionCloses[path] = PendingSessionClose(id: closeID, task: barrier)
+        }
+        return barrier
     }
 
     private func attachComposerSources(to controller: SessionController) {

@@ -19,13 +19,33 @@ extension ToolPhase {
 
 struct ToolPresentation: Identifiable, Equatable, Sendable {
     let id: String
-    var name: String { didSet { refreshContent() } }
-    var arguments: JSONValue { didSet { refreshContent() } }
-    var result: JSONValue? { didSet { refreshContent() } }
-    var phase: ToolPhase { didSet { refreshContent() } }
+    private var storedName: String
+    private var storedArguments: JSONValue
+    private var storedResult: JSONValue?
+    private var storedPhase: ToolPhase
     let startDate: Date
     var endDate: Date?
     private(set) var content: ToolCardContent
+
+    var name: String {
+        get { storedName }
+        set { update(name: newValue) }
+    }
+
+    var arguments: JSONValue {
+        get { storedArguments }
+        set { update(arguments: newValue) }
+    }
+
+    var result: JSONValue? {
+        get { storedResult }
+        set { update(result: .some(newValue)) }
+    }
+
+    var phase: ToolPhase {
+        get { storedPhase }
+        set { update(phase: newValue) }
+    }
 
     init(
         id: String,
@@ -37,10 +57,10 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
         endDate: Date?
     ) {
         self.id = id
-        self.name = name
-        self.arguments = arguments
-        self.result = result
-        self.phase = phase
+        self.storedName = name
+        self.storedArguments = arguments
+        self.storedResult = result
+        self.storedPhase = phase
         self.startDate = startDate
         self.endDate = endDate
         content = ToolContentExtractor.card(
@@ -55,6 +75,40 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
     var durationLabel: String {
         let end = endDate ?? Date()
         return String(format: "%.1fs", max(0, end.timeIntervalSince(startDate)))
+    }
+
+    /// Applies one event/history mutation and extracts card content from the final state once.
+    mutating func update(
+        name: String? = nil,
+        arguments: JSONValue? = nil,
+        result: JSONValue?? = nil,
+        phase: ToolPhase? = nil,
+        endDate: Date?? = nil,
+        normalizationObserver: (() -> Void)? = nil
+    ) {
+        var hasSemanticChange = false
+        if let name, name != storedName {
+            storedName = name
+            hasSemanticChange = true
+        }
+        if let arguments, arguments != storedArguments {
+            storedArguments = arguments
+            hasSemanticChange = true
+        }
+        if let result, result != storedResult {
+            storedResult = result
+            hasSemanticChange = true
+        }
+        if let phase, phase != storedPhase {
+            storedPhase = phase
+            hasSemanticChange = true
+        }
+        if let endDate, endDate != self.endDate {
+            self.endDate = endDate
+        }
+        guard hasSemanticChange else { return }
+        normalizationObserver?()
+        refreshContent()
     }
 
     private mutating func refreshContent() {

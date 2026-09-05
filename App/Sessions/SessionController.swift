@@ -65,6 +65,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     var attachments: [ComposerAttachment] = []
     var streamingBehavior: StreamingBehavior? = ComposerInteractionPreferences.shared.defaultSendAction == .steer ? .steer : .followUp
     let createdAt = Date()
+    /// Installed by `AppModel` so an idle-retention review runs whenever this
+    /// controller's runtime activity changes; see
+    /// `AppModel.reviewIdleSessionRetention()`.
+    @ObservationIgnored var onActivityChange: (@MainActor () -> Void)?
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
@@ -138,14 +142,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         activityRegistry: SessionActivityRegistry? = nil,
         accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
-        historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
+        historyLoader: HistoryLoader? = nil
     ) {
         self.processManager = processManager
         self.id = id
         self.accountCoordinator = activityRegistry
         self.accountChannelRegistry = accountChannelRegistry
         self.titleGenerator = titleGenerator
-        self.historyLoader = historyLoader
+        self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
         self.commandUpdates = commandUpdates.stream
@@ -168,10 +172,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         providerID: String? = nil,
         activityRegistry: SessionActivityRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
-        historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
+        historyLoader: HistoryLoader? = nil
     ) {
         self.processManager = processManager
-        self.historyLoader = historyLoader
+        self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
         self.items = previewItems
         self.runtimeState = runtimeState
         self.title = title
@@ -200,6 +204,33 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     var currentProviderAccountRef: String? {
         providerID.flatMap { activeProviderAccounts[$0] }
+    }
+
+    /// Whether closing this controller's runtime would lose nothing: the
+    /// session is idle with no turn starting, no unsent input or attachments,
+    /// no queued or unconfirmed prompts, no request from the runtime awaiting
+    /// an answer, and no in-flight work of its own. `AppModel` combines this
+    /// with recency and provider-account bookkeeping before reclaiming an
+    /// inactive session; a reclaimed session reopens from its persisted history.
+    var isEligibleForIdleEviction: Bool {
+        guard runtimeState == .idle,
+              openingTask == nil,
+              !isSendInFlight,
+              titleGenerationTask == nil,
+              draft.isEmpty,
+              attachments.isEmpty,
+              initialAttachments.isEmpty,
+              pendingSlashAttachments == nil,
+              pendingSubmissions.isEmpty,
+              queuedMessageCount == 0,
+              !hasPendingUserInput,
+              extensionSheetRequest == nil,
+              extensionRouter.inlineRequests.isEmpty,
+              extensionRouter.sheetRequest == nil,
+              extensionTimeoutTasks.isEmpty,
+              extensionResponsesInFlight.isEmpty
+        else { return false }
+        return true
     }
 
     var isComposerAvailable: Bool {
@@ -1189,6 +1220,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         reconciliationTask = Task { [weak self, historyLoader, processor, processorID, generation] in
             guard self != nil, !Task.isCancelled else { return }
             do {
+                try await Task.sleep(for: .milliseconds(50))
                 guard let history = try await historyLoader(sessionPath),
                       !Task.isCancelled,
                       self?.canApplyReconciliation(
@@ -1250,6 +1282,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 processor: capturedProcessor,
                 context: context)
         }
+    }
+
+    /// Waits for the reconciliation scheduled by the latest boundary, if any.
+    func testingAwaitReconciliation() async {
+        await reconciliationTask?.value
     }
 #endif
 
@@ -1654,6 +1691,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 await accountCoordinator?.sessionDidBecomeIdle(id)
             }
         }
+        onActivityChange?()
     }
 
     private static func modelLabel(_ value: JSONValue?) -> String? {
@@ -1698,8 +1736,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         Int(min(100, max(0, percentage)).rounded())
     }
 
-    private static func loadHistory(path: String) async throws -> TranscriptHistory? {
-        try await SessionTimelineLoader().load(path: path)
+    private static func makeHistoryLoader() -> HistoryLoader {
+        let loader = SessionTimelineLoader()
+        return { path in try await loader.load(path: path) }
     }
 }
 

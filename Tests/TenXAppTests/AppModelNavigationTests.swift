@@ -567,6 +567,162 @@ import OmpKit
 }
 
 @MainActor
+@Test func inactiveIdleSessionRetentionIsBoundedAndAnEvictedSessionReopensSafely() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-session-retention-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "slow-exit")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let paths = (1...6).map { "/tmp/retained-\($0).jsonl" }
+    var firstController: SessionController?
+
+    for path in paths {
+        model.openSession(navigationMetadata(path, cwd: project.path))
+        await waitUntil("\(path) to become idle") {
+            model.managedController(for: path)?.runtimeState == .idle
+        }
+        if path == paths[0] {
+            firstController = model.managedController(for: path)
+        }
+    }
+    let evictedController = try #require(firstController)
+    await waitUntil("the least-recent inactive session to be removed") {
+        model.managedController(for: paths[0]) == nil
+    }
+
+    #expect(model.managedController(for: paths[0]) == nil)
+    #expect(model.managedController(for: paths[1]) != nil)
+    #expect(model.managedController(for: paths[5]) === model.activeSession)
+
+    model.openSession(navigationMetadata(paths[0], cwd: project.path))
+    let reopenedController = try #require(model.activeSession)
+    #expect(reopenedController !== evictedController)
+    await waitUntil("the evicted session to reopen after its close barrier") {
+        reopenedController.runtimeState == .idle
+    }
+    let manager = try #require(model.processManager)
+    #expect(model.managedController(for: paths[0]) === reopenedController)
+    #expect(await manager.handle(for: paths[0]) != nil)
+    await manager.closeAll()
+}
+
+@MainActor
+@Test func idleSessionRetentionKeepsADraftedSessionAndReclaimsTheOldestCleanOne() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-retention-draft-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    // Seven sessions: the drafted one never counts against the budget of four,
+    // so the fifth clean inactive session is what pushes it over.
+    let paths = (1...7).map { "/tmp/drafted-\($0).jsonl" }
+
+    for path in paths {
+        model.openSession(navigationMetadata(path, cwd: project.path))
+        await waitUntil("\(path) to become idle") {
+            model.managedController(for: path)?.runtimeState == .idle
+        }
+        if path == paths[0] {
+            model.managedController(for: path)?.draft = "unsent draft"
+        }
+    }
+    await waitUntil("the oldest clean inactive session to be reclaimed") {
+        model.managedController(for: paths[1]) == nil
+    }
+
+    #expect(model.managedController(for: paths[0])?.draft == "unsent draft")
+    #expect(model.managedController(for: paths[1]) == nil)
+    #expect(model.managedController(for: paths[2]) != nil)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@MainActor
+@Test func revisitingASessionMovesItBehindTheOthersInEvictionOrder() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-retention-recency-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let paths = (1...6).map { "/tmp/revisited-\($0).jsonl" }
+
+    for path in paths.prefix(5) {
+        model.openSession(navigationMetadata(path, cwd: project.path))
+        await waitUntil("\(path) to become idle") {
+            model.managedController(for: path)?.runtimeState == .idle
+        }
+    }
+    // Revisiting the oldest session makes it the most recent one.
+    model.openSession(navigationMetadata(paths[0], cwd: project.path))
+    #expect(model.activeSession === model.managedController(for: paths[0]))
+
+    model.openSession(navigationMetadata(paths[5], cwd: project.path))
+    await waitUntil("\(paths[5]) to become idle") {
+        model.managedController(for: paths[5])?.runtimeState == .idle
+    }
+    await waitUntil("the least recently visited session to be reclaimed") {
+        model.managedController(for: paths[1]) == nil
+    }
+
+    #expect(model.managedController(for: paths[0]) != nil)
+    #expect(model.managedController(for: paths[1]) == nil)
+    #expect(model.managedController(for: paths[2]) != nil)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@MainActor
+@Test func memoryPressureEvictsInactiveIdleSessionsButPreservesTheForegroundSession() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-session-pressure-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let paths = (1...3).map { "/tmp/pressure-\($0).jsonl" }
+
+    for path in paths {
+        model.openSession(navigationMetadata(path, cwd: project.path))
+        await waitUntil("\(path) to become idle") {
+            model.managedController(for: path)?.runtimeState == .idle
+        }
+    }
+    let foreground = try #require(model.activeSession)
+    let manager = try #require(model.processManager)
+
+    await model.handleMemoryPressure()
+
+    #expect(model.managedController(for: paths[0]) == nil)
+    #expect(model.managedController(for: paths[1]) == nil)
+    #expect(model.managedController(for: paths[2]) === foreground)
+    #expect(await manager.handle(for: paths[0]) == nil)
+    #expect(await manager.handle(for: paths[1]) == nil)
+    #expect(await manager.handle(for: paths[2]) != nil)
+    await manager.closeAll()
+}
+
+@MainActor
 @Test func reopeningTheSameSessionBeforeItsInitialOpenStartsReusesItsController() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-rapid-reuse-\(UUID().uuidString)")

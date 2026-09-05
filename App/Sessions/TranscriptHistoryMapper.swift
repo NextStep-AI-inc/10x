@@ -7,13 +7,30 @@ struct TranscriptHistory: Equatable, Sendable {
 
 enum TranscriptHistoryMapper {
     static func map(header: SessionHeader, path: [SessionEntry]) -> TranscriptHistory {
+        map(header: header, path: path, checkCancellation: {})
+    }
+
+    static func mapCancellable(
+        header: SessionHeader,
+        path: [SessionEntry]
+    ) throws -> TranscriptHistory {
+        try map(header: header, path: path, checkCancellation: Task.checkCancellation)
+    }
+
+    private static func map(
+        header: SessionHeader,
+        path: [SessionEntry],
+        checkCancellation: () throws -> Void
+    ) rethrows -> TranscriptHistory {
         var mapper = Mapper()
         mapper.items.append(.threadStart(
             id: "thread-start-\(header.id)",
             date: date(from: header.timestamp)))
-        for entry in path {
+        for (index, entry) in path.enumerated() {
+            if index.isMultiple(of: 64) { try checkCancellation() }
             mapper.consume(entry)
         }
+        try checkCancellation()
         return TranscriptHistory(items: mapper.items)
     }
 
@@ -63,10 +80,21 @@ enum TranscriptHistoryMapper {
         }
 
         mutating func consumeMessage(base: SessionEntryBase, message: JSONValue) {
+            let existingToolIndex = message["toolCallId"]?.stringValue.flatMap { id in
+                items.firstIndex { item in
+                    guard case .tool(let tool) = item else { return false }
+                    return tool.id == id
+                }
+            }
+            let existingTool = existingToolIndex.flatMap { index -> ToolPresentation? in
+                guard case .tool(let tool) = items[index] else { return nil }
+                return tool
+            }
             if let toolResult = toolResultPresentation(
                 message,
-                fallbackDate: TranscriptHistoryMapper.date(from: base.timestamp)) {
-                mergeToolResult(toolResult, message: message)
+                fallbackDate: TranscriptHistoryMapper.date(from: base.timestamp),
+                existingTool: existingTool) {
+                mergeToolResult(toolResult, message: message, existingIndex: existingToolIndex)
                 return
             }
 
@@ -105,16 +133,13 @@ enum TranscriptHistoryMapper {
                 modelRole: sessionInit?.modelRole)
         }
 
-        mutating func mergeToolResult(_ result: ToolPresentation, message: JSONValue) {
-            if let index = items.firstIndex(where: { item in
-                guard case .tool(let tool) = item else { return false }
-                return tool.id == result.id
-            }),
-               case .tool(var existing) = items[index] {
-                existing.result = message
-                existing.phase = result.phase
-                existing.endDate = result.endDate
-                items[index] = .tool(existing)
+        mutating func mergeToolResult(
+            _ result: ToolPresentation,
+            message: JSONValue,
+            existingIndex: Int?
+        ) {
+            if let index = existingIndex {
+                items[index] = .tool(result)
             } else {
                 items.append(.tool(result))
             }
@@ -136,12 +161,20 @@ enum TranscriptHistoryMapper {
 
     private static func toolResultPresentation(
         _ message: JSONValue,
-        fallbackDate: Date?
+        fallbackDate: Date?,
+        existingTool: ToolPresentation?
     ) -> ToolPresentation? {
         guard message["role"]?.stringValue == "toolResult",
               let id = message["toolCallId"]?.stringValue
         else { return nil }
         let timestamp = TranscriptMessage.messageDate(message) ?? fallbackDate ?? Date()
+        if var existingTool {
+            existingTool.update(
+                result: .some(message),
+                phase: message["isError"]?.boolValue == true ? .failed : .complete,
+                endDate: .some(timestamp))
+            return existingTool
+        }
         return ToolPresentation(
             id: id,
             name: message["toolName"]?.stringValue ?? "Unknown tool",

@@ -30,6 +30,22 @@ import Testing
             openSessionID: session.id) == .newSessionsOnly)
     }
 
+    @Test func hasPendingWorkTracksManagedTurnsForASession() async throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let session = FakeProviderAccountSession(providerID: providerID, accountRef: "acct_A")
+        coordinator.register(session)
+
+        #expect(!coordinator.hasPendingWork(sessionID: session.id))
+        #expect(coordinator.beginManagedTurn(sessionID: session.id))
+        #expect(coordinator.hasPendingWork(sessionID: session.id))
+        coordinator.endManagedTurn(sessionID: session.id)
+        #expect(!coordinator.hasPendingWork(sessionID: session.id))
+
+        coordinator.unregister(sessionID: session.id)
+        #expect(!coordinator.hasPendingWork(sessionID: session.id))
+    }
+
     @Test func thisSessionPinsOnlyTheMatchingOpenSession() async throws {
         let (coordinator, defaults, suiteName) = try makeCoordinator()
         defer { defaults.removePersistentDomain(forName: suiteName) }

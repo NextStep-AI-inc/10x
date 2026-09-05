@@ -21,23 +21,23 @@ public enum JSONValue: Sendable, Equatable, Codable {
     /// `\\uXXXX` text intact. Invalid UTF-8 bytes follow the reference client
     /// and are decoded as replacement characters before the final attempt.
     static func decode(from data: Data) throws -> JSONValue {
-        let lossyUTF8 = Data(String(decoding: data, as: UTF8.self).utf8)
-        let candidates = [
-            data,
-            replacingLoneSurrogates(in: data),
-            replacingLoneSurrogates(in: lossyUTF8),
-        ]
-        var firstError: (any Error)?
-        var previous: Data?
-        for candidate in candidates where candidate != previous {
-            do { return try JSONDecoder().decode(JSONValue.self, from: candidate) }
-            catch {
-                if firstError == nil { firstError = error }
+        do { return try JSONDecoder().decode(JSONValue.self, from: data) }
+        catch {
+            let firstError = error
+
+            let lossyUTF8 = Data(String(decoding: data, as: UTF8.self).utf8)
+            let candidates = [
+                replacingLoneSurrogates(in: data),
+                replacingLoneSurrogates(in: lossyUTF8),
+            ]
+            var previous = data
+            for candidate in candidates where candidate != previous {
+                do { return try JSONDecoder().decode(JSONValue.self, from: candidate) }
+                catch {}
+                previous = candidate
             }
-            previous = candidate
+            throw firstError
         }
-        throw firstError ?? DecodingError.dataCorrupted(
-            .init(codingPath: [], debugDescription: "Invalid JSON"))
     }
 
     public init(from decoder: any Decoder) throws {

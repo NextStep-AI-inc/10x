@@ -201,19 +201,24 @@ struct TranscriptReducer {
         let fallbackDate = Date()
         items = []
         for (index, message) in messages.enumerated() {
+            let toolResultID = Self.toolResultID(message)
+            let currentToolIndex = toolResultID.flatMap { id in
+                items.firstIndex { item in
+                    guard case .tool(let tool) = item else { return false }
+                    return tool.id == id
+                }
+            }
+            let currentTool = currentToolIndex.flatMap { itemIndex -> ToolPresentation? in
+                guard case .tool(let tool) = items[itemIndex] else { return nil }
+                return tool
+            }
             if let result = Self.toolResultPresentation(
                 message,
-                existingTool: Self.toolResultID(message).flatMap { previousTools[$0] },
+                existingTool: currentTool
+                    ?? toolResultID.flatMap { previousTools[$0] },
                 fallbackDate: fallbackDate) {
-                if let itemIndex = items.firstIndex(where: { item in
-                    guard case .tool(let tool) = item else { return false }
-                    return tool.id == result.id
-                }),
-                   case .tool(var existing) = items[itemIndex] {
-                    existing.result = message
-                    existing.phase = result.phase
-                    existing.endDate = result.endDate
-                    items[itemIndex] = .tool(existing)
+                if let itemIndex = currentToolIndex {
+                    items[itemIndex] = .tool(result)
                 } else {
                     items.append(.tool(result))
                 }
@@ -346,26 +351,23 @@ struct TranscriptReducer {
     }
 
     private mutating func consumeToolResult(_ message: JSONValue) -> TranscriptMutation? {
-        let existingTool = Self.toolResultID(message).flatMap { id in
-            items.compactMap { item -> ToolPresentation? in
-                guard case .tool(let tool) = item, tool.id == id else { return nil }
-                return tool
-            }.first
+        let existingIndex = Self.toolResultID(message).flatMap { id in
+            items.firstIndex { item in
+                guard case .tool(let tool) = item else { return false }
+                return tool.id == id
+            }
+        }
+        let existingTool = existingIndex.flatMap { index -> ToolPresentation? in
+            guard case .tool(let tool) = items[index] else { return nil }
+            return tool
         }
         guard let incoming = Self.toolResultPresentation(message, existingTool: existingTool) else { return nil }
         pendingPersistenceIDs.insert(.tool(incoming.id))
         let changed: Bool
-        if let index = items.firstIndex(where: { item in
-            guard case .tool(let tool) = item else { return false }
-            return tool.id == incoming.id
-        }),
-           case .tool(var existing) = items[index] {
-            existing.result = message
-            existing.phase = incoming.phase
-            existing.endDate = incoming.endDate
-            changed = items[index] != .tool(existing)
+        if let index = existingIndex {
+            changed = items[index] != .tool(incoming)
             if changed {
-                items[index] = .tool(existing)
+                items[index] = .tool(incoming)
             }
         } else {
             items.append(.tool(incoming))
@@ -404,6 +406,13 @@ struct TranscriptReducer {
         }
         let startDate = timestamp ?? existingTool?.startDate ?? fallbackDate
         let endDate = timestamp ?? existingTool?.endDate ?? fallbackDate
+        if var existingTool {
+            existingTool.update(
+                result: .some(message),
+                phase: message["isError"]?.boolValue == true ? .failed : .complete,
+                endDate: .some(endDate))
+            return existingTool
+        }
         return ToolPresentation(
             id: id,
             name: message["toolName"]?.stringValue ?? "Unknown tool",

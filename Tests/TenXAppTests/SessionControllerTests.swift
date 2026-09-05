@@ -466,6 +466,25 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     await manager.closeAll()
 }
 
+@MainActor @Test func defaultControllerHistoryLoaderReusesUnchangedMappedHistory() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionURL = directory.appending(path: "history.jsonl")
+    try writeHistoryTool(to: sessionURL)
+    let manager = fakeManager(mode: "no-session-file")
+    let controller = SessionController(processManager: manager)
+
+    await controller.openExisting(metadata(path: sessionURL.path, cwd: directory.path))
+    let initialContentID = try #require(controller.toolSourceContentID(for: "tool-1"))
+    let boundary = try controllerEvent(#"{"type":"turn_end"}"#)
+    let reconcile = controller.testingCapturedBoundaryReconciler(frame: boundary)
+    reconcile()
+    await controller.testingAwaitReconciliation()
+
+    #expect(controller.toolSourceContentID(for: "tool-1") == initialContentID)
+    await manager.closeAll()
+}
+
 @MainActor @Test func finalSnapshotPrecedesReconciliation() async throws {
     let manager = fakeManager(mode: "transcript-burst")
     let controller = SessionController(processManager: manager)
@@ -522,6 +541,28 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     #expect(await eventually {
         controller.visibleText(for: "current-history") == "current"
     })
+    await manager.closeAll()
+}
+
+@MainActor @Test func adjacentReconciliationBoundariesPerformOneHistoryLoad() async throws {
+    let loader = CountingHistoryLoader()
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { path in try await loader.load(path: path) })
+    let boundary = try controllerEvent(#"{"type":"turn_end"}"#)
+
+    await controller.openNew(projectURL: try temporaryDirectory())
+    let loadsAfterOpen = await loader.requestCount
+    let first = controller.testingCapturedBoundaryReconciler(frame: boundary)
+    let second = controller.testingCapturedBoundaryReconciler(frame: boundary)
+    // Both boundaries land inside one debounce window; the second cancels the
+    // first's pending load before it can start.
+    first()
+    second()
+    await controller.testingAwaitReconciliation()
+
+    #expect(await loader.requestCount == loadsAfterOpen + 1)
     await manager.closeAll()
 }
 
@@ -899,6 +940,26 @@ private func writeHistoryMessage(_ text: String, to url: URL) throws {
     """.utf8).write(to: url)
 }
 
+private func writeHistoryTool(to url: URL) throws {
+    try Data("""
+    {"type":"session","version":3,"id":"s","timestamp":"2026-08-24T20:00:00.000Z","cwd":"/tmp"}
+    {"type":"message","id":"assistant","parentId":null,"timestamp":"2026-08-24T20:00:01.000Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool-1","name":"read","arguments":{"path":"App.swift"}}],"timestamp":1787601601000}}
+    {"type":"message","id":"result","parentId":"assistant","timestamp":"2026-08-24T20:00:02.000Z","message":{"role":"toolResult","toolCallId":"tool-1","toolName":"read","content":[{"type":"text","text":"let value = 1"}],"timestamp":1787601602000,"isError":false}}
+    """.utf8).write(to: url)
+}
+
+private extension SessionController {
+    func toolSourceContentID(for id: String) -> UUID? {
+        items.compactMap { item -> ToolPresentation? in
+            guard case .tool(let tool) = item, tool.id == id else { return nil }
+            return tool
+        }.first.flatMap { tool in
+            guard case .source(let source, _) = tool.content.body else { return nil }
+            return source.contentID
+        }
+    }
+}
+
 /// Emits the marker `extension_ui_request` (`tenx.provider-accounts.v1`)
 /// alongside an ordinary, non-marker `input` request right after
 /// `set_subagent_subscription`, mirroring where `makeProviderAccountExecutable`
@@ -1035,9 +1096,13 @@ private func makeProviderAccountRefreshExecutable(in directory: URL) throws -> U
     return executable
 }
 
+/// Deadline-based with a ceiling far above any healthy wait: the suite runs in
+/// parallel and spawns fake servers, so a short budget turns load into
+/// failures. The ceiling exists to turn a hang into a failure, not to police
+/// latency.
 @MainActor
 private func eventually(
-    timeout: Duration = .seconds(5),
+    timeout: Duration = .seconds(30),
     _ predicate: @escaping @MainActor () -> Bool
 ) async -> Bool {
     let deadline = Date().addingTimeInterval(timeout.seconds)
@@ -1101,7 +1166,7 @@ private actor DelayedHistoryLoader {
 
     func waitForRequestCount(
         _ count: Int,
-        timeout: Duration = .seconds(5)
+        timeout: Duration = .seconds(30)
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout.seconds)
         while Date() < deadline {
@@ -1111,13 +1176,34 @@ private actor DelayedHistoryLoader {
         return requestCount >= count
     }
 
-    func waitForDelayedFailureCompletion(timeout: Duration = .seconds(5)) async -> Bool {
+    func waitForDelayedFailureCompletion(timeout: Duration = .seconds(30)) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout.seconds)
         while Date() < deadline {
             if didCompleteDelayedFailure { return true }
             try? await Task.sleep(for: .milliseconds(20))
         }
         return didCompleteDelayedFailure
+    }
+}
+
+private actor CountingHistoryLoader {
+    private(set) var requestCount = 0
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        return TranscriptHistory(items: [])
+    }
+
+    func waitForRequestCount(
+        _ count: Int,
+        timeout: Duration = .seconds(30)
+    ) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout.seconds)
+        while Date() < deadline {
+            if requestCount >= count { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return requestCount >= count
     }
 }
 
@@ -1139,7 +1225,7 @@ private actor OpeningRaceHistoryLoader {
 
     func waitForRequestCount(
         _ count: Int,
-        timeout: Duration = .seconds(5)
+        timeout: Duration = .seconds(30)
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout.seconds)
         while Date() < deadline {
@@ -1162,7 +1248,7 @@ private actor CurrentReconciliationLoader {
 
     func waitForRequestCount(
         _ count: Int,
-        timeout: Duration = .seconds(5)
+        timeout: Duration = .seconds(30)
     ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout.seconds)
         while Date() < deadline {
@@ -1188,4 +1274,32 @@ private func messageItem(id: String, text: String) -> TranscriptItem {
             "timestamp": .double(0),
         ]),
         isFinal: true))
+}
+
+@MainActor @Test func idleEvictionEligibilityRequiresAnIdleSessionWithNothingUnsaved() async throws {
+    let manager = fakeManager(mode: "basic")
+    let clean = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
+    #expect(clean.isEligibleForIdleEviction)
+
+    let busyStates: [SessionRuntimeState] = [
+        .loading, .streaming, .stopped(code: nil, stderrTail: ""), .failed("x"),
+    ]
+    for state in busyStates {
+        let busy = SessionController(processManager: manager, previewItems: [], runtimeState: state)
+        #expect(!busy.isEligibleForIdleEviction, "\(state) must not be reclaimable")
+    }
+
+    let drafted = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
+    drafted.draft = "unsent"
+    #expect(!drafted.isEligibleForIdleEviction)
+
+    let attached = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
+    attached.attachments = [ComposerAttachment(
+        name: "shot.png", data: Data([0x89, 0x50]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)]
+    #expect(!attached.isEligibleForIdleEviction)
+
+    let submitting = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
+    submitting.prepareInitialSubmission(text: "Start", attachments: [])
+    #expect(!submitting.isEligibleForIdleEviction)
 }

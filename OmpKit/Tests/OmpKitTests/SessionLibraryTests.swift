@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import Darwin
+import Synchronization
 @testable import OmpKit
 
 /// Writes a minimal session file whose LAST message line drives the classifier.
@@ -22,6 +23,27 @@ let toolCallLast = #"{"type":"message","id":"m1","parentId":null,"timestamp":"t"
 private func makeTempRoot(_ label: String) -> URL {
     URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("\(label)-\(UUID().uuidString)")
+}
+
+private final class DirectoryEnumerationRecorder: Sendable {
+    private let enumerationCount = Mutex(0)
+
+    func contents(
+        at url: URL,
+        includingPropertiesForKeys keys: [URLResourceKey]
+    ) throws -> [URL] {
+        enumerationCount.withLock { $0 += 1 }
+        return try FileManager.default.contentsOfDirectory(
+            at: url, includingPropertiesForKeys: keys, options: [])
+    }
+
+    func reset() {
+        enumerationCount.withLock { $0 = 0 }
+    }
+
+    var count: Int {
+        enumerationCount.withLock { $0 }
+    }
 }
 
 @Test func listsSortsAndClassifies() async throws {
@@ -216,6 +238,102 @@ private func makeTempRoot(_ label: String) -> URL {
         return false
     } ?? false
     #expect(fired)
+    #expect(await library.listAll().first?.status == .complete)
+}
+
+@Test func repeatedSessionWritesDoNotReenumerateWatcherTopology() async throws {
+    let root = makeTempRoot("bounded-watch-enumeration")
+    let file = root.appendingPathComponent("-x/session.jsonl")
+    try writeSession(at: file, id: "session", cwd: "/x", lastMessage: userLast)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let recorder = DirectoryEnumerationRecorder()
+    let library = SessionLibrary(
+        root: root,
+        archiveRoot: nil,
+        unlinkItem: { unlink($0) },
+        watcherContentsOfDirectory: recorder.contents)
+    await library.startWatching()
+    recorder.reset()
+    let stream = library.changes
+    let writer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        guard let handle = try? FileHandle(forWritingTo: file) else { return }
+        _ = try? handle.seekToEnd()
+        for _ in 0..<20 {
+            try? handle.write(contentsOf: Data("\n".utf8))
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        try? handle.close()
+    }
+    defer { writer.cancel() }
+
+    let fired = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+
+    #expect(fired)
+    #expect(recorder.count == 0)
+}
+
+@Test func watcherTracksCreatedRenamedAndDeletedSessions() async throws {
+    let root = makeTempRoot("structural-watch")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let library = SessionLibrary(root: root)
+    let stream = library.changes
+    await library.startWatching()
+    let original = root.appendingPathComponent("-x/original.jsonl")
+    let renamed = root.appendingPathComponent("-x/renamed.jsonl")
+
+    let creator = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        try? writeSession(at: original, id: "created", cwd: "/x", lastMessage: userLast)
+    }
+    defer { creator.cancel() }
+    let createSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(createSignal)
+    #expect(await eventuallyLists(library, [original.path]))
+
+    let renamer = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        try? FileManager.default.moveItem(at: original, to: renamed)
+    }
+    defer { renamer.cancel() }
+    let renameSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(renameSignal)
+    // A signal left over from the previous phase can satisfy the wait early,
+    // so the listing is polled rather than read once.
+    #expect(await eventuallyLists(library, [renamed.path]))
+
+    let deleter = Task {
+        try? await Task.sleep(for: .milliseconds(200))
+        try? FileManager.default.removeItem(at: renamed)
+    }
+    defer { deleter.cancel() }
+    let deleteSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(deleteSignal)
+    #expect(await eventuallyLists(library, []))
+}
+
+/// Polls the library until it lists exactly `paths`, bounded so a missed
+/// structural event fails instead of hanging.
+private func eventuallyLists(_ library: SessionLibrary, _ paths: [String]) async -> Bool {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while ContinuousClock.now < deadline {
+        if await library.listAll().map(\.path) == paths { return true }
+        try? await Task.sleep(for: .milliseconds(20))
+    }
+    return await library.listAll().map(\.path) == paths
 }
 
 @Test func watcherSignalsOnNewArchivedFile() async throws {
@@ -609,4 +727,62 @@ private func makeTempRoot(_ label: String) -> URL {
         reason: .fileOperationFailed)])
     #expect(FileManager.default.fileExists(
         atPath: transcript.appendingPathComponent("sentinel").path))
+}
+
+@Test func listingFromACancelledTaskDoesNotHideTheSessionAfterwards() async throws {
+    let root = makeTempRoot("cancelled-listing")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("-x/session.jsonl")
+    try writeSession(at: file, id: "cancelled", cwd: "/x", lastMessage: userLast)
+    let library = SessionLibrary(root: root)
+
+    // A cancelled caller must not poison the metadata cache for everyone else.
+    let cancelled = Task { () -> [SessionMetadata] in
+        withUnsafeCurrentTask { $0?.cancel() }
+        return await library.listAll()
+    }
+    _ = await cancelled.value
+
+    #expect(await library.listAll().map(\.path) == [file.path])
+}
+
+@Test func watcherFollowsAFileDeletedAndRecreatedWithinOneDebounce() async throws {
+    let root = makeTempRoot("recreate-watch")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appendingPathComponent("-x/session.jsonl")
+    try writeSession(at: file, id: "recreated", cwd: "/x", lastMessage: userLast)
+    let library = SessionLibrary(root: root)
+    let stream = library.changes
+    await library.startWatching()
+    #expect(await eventuallyLists(library, [file.path]))
+
+    // Delete and recreate faster than the 100 ms debounce, then let it settle.
+    try FileManager.default.removeItem(at: file)
+    try writeSession(at: file, id: "recreated", cwd: "/x", lastMessage: userLast)
+    try await Task.sleep(for: .milliseconds(400))
+
+    // Directory watchers never fire for in-file writes, so a signal after the
+    // second append can only come from a watcher on the recreated inode. Two
+    // appends and two waits, because the stream may still hold the signal
+    // from the recreate itself; the iterator is never cancelled, which would
+    // terminate the shared stream.
+    func append() throws {
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("\n".utf8))
+    }
+    try append()
+    let firstSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(firstSignal)
+    try append()
+    let secondSignal = await withTimeout(.seconds(5)) {
+        for await _ in stream { return true }
+        return false
+    } ?? false
+    #expect(secondSignal)
 }

@@ -513,3 +513,76 @@ private func interactiveCapturingManager(
     } ?? nil
     #expect(path == nil)
 }
+
+@Test func eventBacklogOverflowIsReportedAsAnUnexpectedExitWithItsDiagnostic() async throws {
+    let hooks: RpcClientTestHooks = {
+        var hooks = RpcClientTestHooks()
+        hooks.eventQueueLimits = BoundedRecordQueueLimits(
+            memoryBytes: 8_192, memoryRecords: 4, spillBytes: 65_536)
+        return hooks
+    }()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3", fixtureURL("fake_server.py").path, "event-flood", "400", "4096",
+        ]
+        fake.rawArgv = true
+        return RpcClient(configuration: fake, testHooks: hooks)
+    })
+    let handle = try await manager.open(sessionPath: "/tmp/flood.jsonl", cwd: "/tmp")
+    let exits = manager.unexpectedExits
+
+    // Nobody reads `events`; the flood overflows the small budget and the
+    // client stops the session itself.
+    _ = try? await handle.client.send(.getState(), timeout: .seconds(30))
+
+    let exit = await withTimeout(.seconds(10)) { () -> SessionProcessManager.UnexpectedExit? in
+        for await exit in exits { return exit }
+        return nil
+    } ?? nil
+    #expect(exit?.sessionPath == "/tmp/flood.jsonl")
+    #expect(exit?.stderrTail.hasPrefix("[OmpKit:RpcClient] The event backlog exceeded its") == true)
+    #expect(await manager.handle(for: "/tmp/flood.jsonl") == nil)
+    await manager.closeAll()
+}
+
+private final class ManagerBox: @unchecked Sendable {
+    var manager: SessionProcessManager?
+}
+
+@Test func exitNoticedBeforeAReopenIsNotReportedAgainstTheReplacement() async throws {
+    // "background-exit" exits one second after `set_subagent_subscription`,
+    // which only the app sends, so the first child dies on request and the
+    // second one stays alive.
+    let box = ManagerBox()
+    let manager = SessionProcessManager(
+        clientFactory: { configuration in
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "background-exit"]
+            fake.rawArgv = true
+            return RpcClient(configuration: fake)
+        },
+        beforeWarmActivation: nil,
+        beforeWarmRegistration: nil,
+        beforeExitReport: {
+            _ = try? await box.manager?.open(sessionPath: "/tmp/reopened.jsonl", cwd: "/tmp")
+        })
+    box.manager = manager
+    let first = try await manager.open(sessionPath: "/tmp/reopened.jsonl", cwd: "/tmp")
+    let exits = manager.unexpectedExits
+    _ = try await first.client.send(.setSubagentSubscription(level: .progress))
+
+    let reported = await withTimeout(.seconds(6)) { () -> Bool in
+        for await _ in exits { return true }
+        return false
+    }
+    // nil: the wait timed out without a report, which is the required outcome.
+    #expect(reported == nil)
+    let replacement = await manager.handle(for: "/tmp/reopened.jsonl")
+    #expect(replacement != nil)
+    #expect(replacement?.client !== first.client)
+    #expect(await replacement?.client.exitCode == nil)
+    await manager.closeAll()
+}

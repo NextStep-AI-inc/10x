@@ -60,6 +60,66 @@ import Testing
     #expect(presentation.content.outcome == "1 match")
 }
 
+@Test func atomicPresentationUpdateNormalizesOneFinalState() {
+    var presentation = ToolPresentation(
+        id: "tool",
+        name: "read",
+        arguments: .object(["path": .string("Old.swift")]),
+        result: .string("old"),
+        phase: .running,
+        startDate: .distantPast,
+        endDate: nil)
+
+    var normalizationCount = 0
+    presentation.update(
+        name: "grep",
+        arguments: .object(["pattern": .string("Session")]),
+        result: .some(.object(["details": .object([
+            "matches": .array([.string("App/Session.swift:12")]),
+        ])])),
+        phase: .complete,
+        endDate: .some(.distantFuture),
+        normalizationObserver: { normalizationCount += 1 })
+
+    #expect(normalizationCount == 1)
+    #expect(presentation.content.title == "Search")
+    #expect(presentation.content.primary == "Session")
+    #expect(presentation.content.outcome == "1 match")
+    #expect(presentation.endDate == .distantFuture)
+}
+
+@Test func identicalAtomicPresentationUpdateSkipsNormalizationAndKeepsContentIdentity() throws {
+    let image = JSONValue.object([
+        "content": .array([.object([
+            "type": .string("image"),
+            "data": .string("AQ=="),
+            "mimeType": .string("image/png"),
+            "name": .string("preview.png"),
+        ])]),
+    ])
+    var presentation = ToolPresentation(
+        id: "media",
+        name: "inspect_image",
+        arguments: .object([:]),
+        result: image,
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantFuture)
+    let contentID = onlyMedia(in: presentation).contentID
+
+    var normalizationCount = 0
+    presentation.update(
+        name: presentation.name,
+        arguments: presentation.arguments,
+        result: .some(presentation.result),
+        phase: presentation.phase,
+        endDate: .some(presentation.endDate),
+        normalizationObserver: { normalizationCount += 1 })
+
+    #expect(normalizationCount == 0)
+    #expect(onlyMedia(in: presentation).contentID == contentID)
+}
+
 @Test func completedMediaResultKeepsItsGenerationWhenPayloadIsUnchanged() throws {
     var reducer = ToolEventReducer()
     let image = #"{"content":[{"type":"image","data":"AQ==","mimeType":"image/png","name":"preview.png"}]}"#
