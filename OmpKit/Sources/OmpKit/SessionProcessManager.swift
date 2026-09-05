@@ -38,6 +38,7 @@ public actor SessionProcessManager {
     public typealias Sleep = @Sendable (Duration) async throws -> Void
     typealias WarmActivationHook = @Sendable () async -> Void
     typealias WarmRegistrationHook = @Sendable () async -> Void
+    typealias ExitReportHook = @Sendable () async -> Void
 
     private struct ManagedClient: Sendable {
         let id: UUID
@@ -118,6 +119,9 @@ public actor SessionProcessManager {
     private let clientFactory: ClientFactory
     private let beforeWarmActivation: WarmActivationHook?
     private let beforeWarmRegistration: WarmRegistrationHook?
+    /// Test seam: runs inside `reportExit` after the exit details are read and
+    /// before the report is published, where a reopen can race it.
+    private let beforeExitReport: ExitReportHook?
     private var handles: [String: ManagedHandle] = [:]
     private var warmHandles: [String: ManagedWarmHandle] = [:]
     private var opening: [String: Opening] = [:]
@@ -163,7 +167,8 @@ public actor SessionProcessManager {
         },
         clientFactory: @escaping ClientFactory = { RpcClient(configuration: $0) },
         beforeWarmActivation: WarmActivationHook?,
-        beforeWarmRegistration: WarmRegistrationHook?
+        beforeWarmRegistration: WarmRegistrationHook?,
+        beforeExitReport: ExitReportHook? = nil
     ) {
         self.executable = executable
         self.extraArguments = extraArguments
@@ -173,6 +178,7 @@ public actor SessionProcessManager {
         self.clientFactory = clientFactory
         self.beforeWarmActivation = beforeWarmActivation
         self.beforeWarmRegistration = beforeWarmRegistration
+        self.beforeExitReport = beforeExitReport
         (exitStream, exitContinuation) = AsyncStream<UnexpectedExit>.makeStream(
             bufferingPolicy: .unbounded)
         (warmExitStream, warmExitContinuation) = AsyncStream<WarmExit>.makeStream(
@@ -632,10 +638,16 @@ public actor SessionProcessManager {
         }
         handles.removeValue(forKey: active.key)
         terminationWatchers.removeValue(forKey: managed.id)
-        exitContinuation.yield(UnexpectedExit(
+        let exit = UnexpectedExit(
             sessionPath: active.key,
             code: await managed.client.exitCode,
-            stderrTail: await managed.client.stderrSnapshot()))
+            stderrTail: await managed.client.stderrSnapshot())
+        await beforeExitReport?()
+        // The awaits above let `close` and a fresh `open` for the same path
+        // run first. The exit then belongs to a runtime nobody is attached to
+        // any more, so reporting it would stop the replacement instead.
+        guard handles[active.key] == nil, opening[active.key] == nil else { return }
+        exitContinuation.yield(exit)
     }
 
     private func canonicalProjectDirectory(_ projectDirectory: String) -> String {
