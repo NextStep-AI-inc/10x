@@ -18,45 +18,67 @@ struct AppShellView: View {
                 if case .onboarding(let step) = model.route {
                     OnboardingView(model: model, step: step)
                 } else {
-                    ZStack(alignment: .leading) {
-                        routeCanvas
-                            .environment(\.composerProviderDockWidth, hasComposer
-                                ? ProviderUsageDockLayout.footerWidth(providers: model.providerModel?.dockProviders ?? [])
-                                : 0)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(.leading, railExpansion.contentLeadingInset)
-                            .environment(model.idePreferenceStore)
-                            .environment(model.toolDetailPreferenceStore)
-                            .environment(\.fileOpenService, model.fileOpenService)
-                            .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
-                                model.openSettings(focus: .preferredIDE)
-                            })
-                        FloatingRailView(
-                            model: model,
-                            expansion: railExpansion,
-                            isBrandMenuPresented: $isBrandMenuPresented)
-                    }
-                    .animation(railAnimation, value: railExpansion.isExpanded)
-                    .overlay {
-                        if isBrandMenuPresented {
-                            brandMenuOverlay
+                    GeometryReader { shellGeometry in
+                        let dockProviders = model.providerModel?.dockProviders ?? []
+                        let dockPlacement = ProviderUsageDockLayout.placement(
+                            shellWidth: shellGeometry.size.width,
+                            contentLeadingInset: railExpansion.contentLeadingInset,
+                            providerCount: dockProviders.count,
+                            hasComposer: hasComposer)
+                        let composerDockWidth = dockPlacement == .composerFooter
+                            ? ProviderUsageDockLayout.footerWidth(providers: dockProviders)
+                            : 0
+
+                        ZStack(alignment: .leading) {
+                            routeCanvas
+                                .environment(\.composerProviderDockWidth, composerDockWidth)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .padding(.leading, railExpansion.contentLeadingInset)
+                                .environment(model.idePreferenceStore)
+                                .environment(model.toolDetailPreferenceStore)
+                                .environment(\.fileOpenService, model.fileOpenService)
+                                .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
+                                    model.openSettings(focus: .preferredIDE)
+                                })
+                            FloatingRailView(
+                                model: model,
+                                expansion: railExpansion,
+                                isBrandMenuPresented: $isBrandMenuPresented)
                         }
-                    }
-                    .animation(brandMenuAnimation, value: isBrandMenuPresented)
-                    .overlayPreferenceValue(ComposerProviderDockAnchorKey.self) { anchor in
-                        if hasComposer, let anchor {
-                            GeometryReader { geometry in
-                                usageDock(shellSize: geometry.size, footerFrame: geometry[anchor])
+                        .animation(railAnimation, value: railExpansion.isExpanded)
+                        .overlay {
+                            if isBrandMenuPresented {
+                                brandMenuOverlay
                             }
                         }
-                    }
-                    .overlay {
-                        if model.isSearchPresented {
-                            SearchModalView(
-                                sessions: model.sessions,
-                                service: model.sessionSearch,
-                                onOpen: model.openSearchResult,
-                                onClose: model.closeSearch)
+                        .animation(brandMenuAnimation, value: isBrandMenuPresented)
+                        .overlayPreferenceValue(ComposerProviderDockAnchorKey.self) { anchor in
+                            if dockPlacement == .composerFooter, let anchor {
+                                GeometryReader { geometry in
+                                    usageDock(compactLayout: ProviderUsageDockLayout.compact(
+                                        shellSize: geometry.size,
+                                        footerFrame: geometry[anchor]))
+                                }
+                            }
+                        }
+                        .overlay {
+                            switch dockPlacement {
+                            case .outsideComposer:
+                                usageDock(compactLayout: .outsideComposer)
+                            case .standalone:
+                                usageDock(compactLayout: .standalone)
+                            case .composerFooter:
+                                EmptyView()
+                            }
+                        }
+                        .overlay {
+                            if model.isSearchPresented {
+                                SearchModalView(
+                                    sessions: model.sessions,
+                                    service: model.sessionSearch,
+                                    onOpen: model.openSearchResult,
+                                    onClose: model.closeSearch)
+                            }
                         }
                     }
                 }
@@ -219,12 +241,9 @@ struct AppShellView: View {
     }
 
     @ViewBuilder
-    private func usageDock(shellSize: CGSize, footerFrame: CGRect) -> some View {
+    private func usageDock(compactLayout: ProviderUsageDockCompactLayout) -> some View {
         if let providerModel = model.providerModel, !providerModel.dockProviders.isEmpty {
             let dockProviders = providerModel.dockProviders
-            let compactLayout = ProviderUsageDockLayout.compact(
-                shellSize: shellSize,
-                footerFrame: footerFrame)
 
             ProviderUsageDockView(
                 providers: dockProviders,
