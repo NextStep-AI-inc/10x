@@ -262,7 +262,8 @@ public actor RpcClient {
         _ command: RpcCommand,
         timeout: Duration? = nil
     ) async throws -> RpcResponseEventFence {
-        guard started, !terminated else { throw RpcClientError.notStarted }
+        guard started else { throw RpcClientError.notStarted }
+        if terminated { throw terminationError() }
         let id = "req_\(nextRequestNumber)"
         nextRequestNumber += 1
         let line = try command.encodedLine(id: id)
@@ -297,8 +298,18 @@ public actor RpcClient {
 
     /// Writes a frame that receives no response (`extension_ui_response`).
     public func sendRaw(_ command: RpcCommand) async throws {
-        guard started, !terminated else { throw RpcClientError.notStarted }
+        guard started else { throw RpcClientError.notStarted }
+        if terminated { throw terminationError() }
         try await transport.write(try command.encodedLine(id: "unused"))
+    }
+
+    /// After this client ended the session itself (a backlog budget, a
+    /// corrupted frame), a late request must carry that reason rather than
+    /// `notStarted`; which one a caller sees otherwise depends on whether it
+    /// raced `poison`'s awaits. A child that simply exited keeps `notStarted`.
+    private func terminationError() -> RpcClientError {
+        guard let transportFailure else { return .notStarted }
+        return .processExited(code: authoritativeExitCode, stderrTail: transportFailure)
     }
 
     /// The child's recent stderr, prefixed with this client's own reason when

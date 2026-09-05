@@ -670,7 +670,8 @@ private func waitForReadyWaiter(_ client: RpcClient) async -> Bool {
         await client.shutdown()
         return
     }
-    #expect(stderr.contains("event backlog exceeded its 0 MiB storage budget"))
+    #expect(stderr.hasPrefix("[OmpKit:RpcClient] The event backlog exceeded its"))
+    #expect(stderr.contains("limitBytes: 65536"))
     #expect(await withTimeout(.seconds(5)) { await termination.value } != nil)
     #expect(await client.stderrSnapshot().hasPrefix("[OmpKit:RpcClient] The event backlog"))
     #expect(await client.protocolErrors.contains {
@@ -715,7 +716,8 @@ private func waitForReadyWaiter(_ client: RpcClient) async -> Bool {
         await client.shutdown()
         return
     }
-    #expect(stderr.contains("stdout backlog exceeded its 0 MiB storage budget"))
+    #expect(stderr.hasPrefix("[OmpKit:RpcClient] The stdout backlog exceeded its"))
+    #expect(stderr.contains("limitBytes: 65536"))
     #expect(await client.exitCode != nil)
     await client.shutdown()
 }
