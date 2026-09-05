@@ -616,3 +616,12 @@ private func waitForReadyWaiter(_ client: RpcClient) async -> Bool {
     raw.extraArguments = ["python3", "x.py"]
     #expect(raw.resolvedArguments == ["python3", "x.py"])
 }
+
+@Test func userInteractionUsesRpcUIModeOnlyWhenEnabled() {
+    let standard = RpcClientConfiguration()
+    #expect(standard.resolvedArguments == ["--mode", "rpc", "--no-title"])
+
+    var interactive = RpcClientConfiguration()
+    interactive.supportsUserInteraction = true
+    #expect(interactive.resolvedArguments == ["--mode", "rpc-ui", "--no-title"])
+}

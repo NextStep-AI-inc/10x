@@ -16,8 +16,28 @@ import Testing
         {"type":"extension_ui_request","id":"input-1","method":"input","title":"Branch name","placeholder":"codex/gui"}
         """))
 
-    #expect(router.inlineRequests.map(\.id) == ["confirm-1", "select-1"])
+    #expect(router.inlineRequests.map(\.id) == ["confirm-1", "select-1", "input-1"])
     #expect(router.sheetRequest?.id == "input-1")
+}
+
+@Test func concurrentInputAndEditorRequestsRemainIndependentlyAddressable() throws {
+    var router = ExtensionUIRouter()
+
+    router.consume(try request("""
+        {"type":"extension_ui_request","id":"input-1","method":"input","title":"Branch name"}
+        """))
+    router.consume(try request("""
+        {"type":"extension_ui_request","id":"editor-1","method":"editor","title":"Explain the choice","prefill":""}
+        """))
+
+    #expect(router.inlineRequests.map(\.id) == ["input-1", "editor-1"])
+    #expect(router.containsRequest(id: "input-1"))
+    #expect(router.containsRequest(id: "editor-1"))
+
+    router.removeRequest(id: "editor-1")
+
+    #expect(router.containsRequest(id: "input-1"))
+    #expect(!router.containsRequest(id: "editor-1"))
 }
 
 @Test func providerAccountChannelMarkerIsExcludedButOrdinaryInputRequestsStillReachTheSheet() throws {
@@ -58,6 +78,29 @@ import Testing
         "cancelled": .bool(true),
         "timedOut": .bool(true),
     ])
+}
+
+@Test func onlyExplicitBlockingExtensionRequestsRequireUserInput() {
+    let blocking: [ExtensionUIState] = [
+        .confirm(id: "confirm", title: "Allow?", message: "Run it", timeout: nil),
+        .select(id: "select", title: "Choose", options: [], timeout: nil),
+        .input(id: "input", title: "Value", placeholder: nil, timeout: nil),
+        .editor(id: "editor", title: "Response", prefill: nil, promptStyle: true),
+        .openURL(id: "open", target: URL(string: "https://example.com")!, instructions: nil),
+    ]
+    let nonblocking: [ExtensionUIState] = [
+        .cancel(id: "cancel", targetID: "confirm"),
+        .notification(id: "notify", message: "Waiting for input", level: "info"),
+        .status(id: "status", key: "copy", text: "Waiting for input"),
+        .widget(id: "widget", key: "tasks", lines: ["Waiting for input"], placement: nil),
+        .title(id: "title", title: "Waiting for input"),
+        .setEditorText(id: "text", text: "Waiting for input"),
+    ]
+
+    let allBlockingRequestsRequireInput = blocking.allSatisfy { $0.requiresUserInput }
+    #expect(allBlockingRequestsRequireInput)
+    #expect(nonblocking.allSatisfy { !$0.requiresUserInput })
+    #expect(blocking.filter(\.isQuestionInput).map(\.id) == ["select", "input", "editor"])
 }
 
 private func request(_ json: String) throws -> ExtensionUIRequest {

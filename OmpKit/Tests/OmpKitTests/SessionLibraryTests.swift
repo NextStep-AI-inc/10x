@@ -83,6 +83,59 @@ private func makeTempRoot(_ label: String) -> URL {
     #expect(SessionStatusClassifier.classify(tail: headerOnly) == .unknown)
 }
 
+@Test func classifierTreatsTerminalStopWithAllTrailingToolResultsAsComplete() {
+    let assistant = #"{"type":"message","id":"assistant","message":{"role":"assistant","stopReason":"stop","content":[{"type":"toolCall","id":"read-call"},{"type":"toolCall","id":"test-call"}]}}"#
+    let readResult = #"{"type":"message","id":"read-result","message":{"role":"toolResult","toolCallId":"read-call","isError":true,"content":"expected failure"}}"#
+    let testResult = #"{"type":"message","id":"test-result","message":{"role":"toolResult","toolCallId":"test-call","isError":false,"content":"passed"}}"#
+    let tail = Data(([assistant, readResult, testResult].joined(separator: "\n") + "\n").utf8)
+
+    #expect(SessionStatusClassifier.classify(tail: tail) == .complete)
+}
+
+@Test func classifierKeepsUnresolvedAndNonterminalToolTurnsInterrupted() {
+    let stoppedWithTwoCalls = #"{"type":"message","id":"assistant","message":{"role":"assistant","stopReason":"stop","content":[{"type":"toolCall","id":"one"},{"type":"toolCall","id":"two"}]}}"#
+    let toolUse = #"{"type":"message","id":"assistant","message":{"role":"assistant","stopReason":"toolUse","content":[{"type":"toolCall","id":"one"}]}}"#
+    let oneResult = #"{"type":"message","id":"result","message":{"role":"toolResult","toolCallId":"one","isError":false,"content":"done"}}"#
+
+    for assistant in [stoppedWithTwoCalls, toolUse] {
+        let tail = Data((assistant + "\n" + oneResult + "\n").utf8)
+        #expect(SessionStatusClassifier.classify(tail: tail) == .interrupted)
+    }
+}
+
+@Test func classifierRejectsUnidentifiedCallsAndResultOnlyTailWindows() {
+    let malformedStop = #"{"type":"message","id":"assistant","message":{"role":"assistant","stopReason":"stop","content":[{"type":"toolCall","id":"one"},{"type":"toolCall"}]}}"#
+    let oneResult = #"{"type":"message","id":"result","message":{"role":"toolResult","toolCallId":"one","isError":false,"content":"done"}}"#
+
+    #expect(SessionStatusClassifier.classify(
+        tail: Data((malformedStop + "\n" + oneResult + "\n").utf8)) == .interrupted)
+    #expect(SessionStatusClassifier.classify(
+        tail: Data((oneResult + "\n").utf8)) == .interrupted)
+}
+
+@Test func classifierUsesTerminalSessionOutcomeInsteadOfRecoveredToolError() {
+    let toolUse = #"{"type":"message","id":"tool-use","message":{"role":"assistant","stopReason":"toolUse","content":[{"type":"toolCall","id":"test-call"}]}}"#
+    let failedTest = #"{"type":"message","id":"failed-test","message":{"role":"toolResult","toolCallId":"test-call","isError":true,"content":"expected TDD failure"}}"#
+    let success = #"{"type":"message","id":"success","message":{"role":"assistant","stopReason":"stop","content":"Implemented and verified."}}"#
+    let tail = Data(([toolUse, failedTest, success].joined(separator: "\n") + "\n").utf8)
+
+    #expect(SessionStatusClassifier.classify(tail: tail) == .complete)
+}
+
+@Test func classifierPreservesExplicitTerminalFailureStatusesAfterToolActivity() {
+    let result = #"{"type":"message","id":"result","message":{"role":"toolResult","toolCallId":"call","isError":false,"content":"done"}}"#
+    let terminalMessages: [(String, SessionStatus)] = [
+        (#"{"type":"message","id":"error","message":{"role":"assistant","stopReason":"error","content":[{"type":"toolCall","id":"call"}]}}"#, .error),
+        (#"{"type":"message","id":"aborted","message":{"role":"assistant","stopReason":"aborted","content":[{"type":"toolCall","id":"call"}]}}"#, .aborted),
+        (#"{"type":"message","id":"length","message":{"role":"assistant","stopReason":"length","content":[{"type":"toolCall","id":"call"}]}}"#, .interrupted),
+    ]
+
+    for (terminal, expected) in terminalMessages {
+        let tail = Data((terminal + "\n" + result + "\n").utf8)
+        #expect(SessionStatusClassifier.classify(tail: tail) == expected)
+    }
+}
+
 @Test func cacheInvalidatesOnTitleSlotRewrite() async throws {
     let root = makeTempRoot("cache")
     defer { try? FileManager.default.removeItem(at: root) }

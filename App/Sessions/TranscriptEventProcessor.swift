@@ -306,6 +306,8 @@ actor TranscriptEventProcessor {
              "available_commands_update",
              "agent_start",
              "turn_start",
+             "auto_compaction_start",
+             "auto_compaction_end",
              "message_end",
              "turn_end",
              "prompt_result":

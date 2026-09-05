@@ -53,6 +53,37 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
 }
 
 @MainActor
+private func isolatedFavorites(_ name: String = #function) -> FavoriteModelStore {
+    let suiteName = "favorite-tests.\(name)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    return FavoriteModelStore(defaults: defaults)
+}
+
+@MainActor
+@Test func togglingAFavoriteUpdatesThePickerWithoutSelectingTheModel() async {
+    let session = FakeComposerSessionController()
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, anthropicSonnet],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents(),
+        favorites: isolatedFavorites())
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
+    model.attachActiveSession(session)
+
+    model.toggleFavorite(anthropicSonnet)
+
+    #expect(model.favoriteModels == [anthropicSonnet])
+    #expect(model.selectedModel == anthropicOpus)
+    #expect(session.setModelCalls.isEmpty)
+}
+
+@MainActor
 @Test func refreshFiltersToAuthenticatedProvidersAndSeedsSelection() async {
     let catalog = FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
         models: [anthropicOpus, anthropicSonnet, cursorModel],

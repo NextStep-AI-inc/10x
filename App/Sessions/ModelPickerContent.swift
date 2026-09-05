@@ -9,6 +9,9 @@ struct ModelPickerContent: View {
     @Binding var query: String
     let onSelectModel: (ComposerModelInfo) -> Void
     let onCancel: () -> Void
+    var favoriteModelIDs: Set<String> = []
+    var onToggleFavorite: (ComposerModelInfo) -> Void = { _ in }
+    var panelWidth: CGFloat = ModelPickerMetrics.panelWidth
 
     @State private var highlightedIndex = 0
     @FocusState private var isSearchFocused: Bool
@@ -72,7 +75,7 @@ struct ModelPickerContent: View {
     private var separator: some View {
         Rectangle()
             .fill(TenXPalette.color(TenXPalette.separatorHex))
-            .frame(width: ModelPickerMetrics.panelWidth, height: ModelPickerMetrics.separatorHeight)
+            .frame(width: panelWidth, height: ModelPickerMetrics.separatorHeight)
     }
 
     private var searchField: some View {
@@ -87,7 +90,7 @@ struct ModelPickerContent: View {
                 .onKeyPress(keys: [.upArrow, .downArrow, .return, .escape], phases: .down, action: handleKey)
         }
         .padding(.horizontal, 10)
-        .frame(width: ModelPickerMetrics.panelWidth, height: ModelPickerMetrics.searchHeight)
+        .frame(width: panelWidth, height: ModelPickerMetrics.searchHeight)
         .accessibilityLabel("Search models")
     }
 
@@ -139,14 +142,16 @@ struct ModelPickerContent: View {
                                         sections: sections,
                                         section: offset,
                                         row: index) == highlightedIndex,
-                                    action: { onSelectModel(model) })
-                                .disabled(isMutating)
+                                    isFavorite: favoriteModelIDs.contains(model.id),
+                                    isSelectionDisabled: isMutating,
+                                    onSelect: { onSelectModel(model) },
+                                    onToggleFavorite: { onToggleFavorite(model) })
                                 .id(Self.rowID(section: section.id, model: model.id))
                             }
                         }
                     }
                 }
-                .frame(width: ModelPickerMetrics.panelWidth)
+                .frame(width: panelWidth)
                 .onChange(of: highlightedIndex) { _, index in
                     guard flatRowIDs.indices.contains(index) else { return }
                     proxy.scrollTo(flatRowIDs[index], anchor: .center)
@@ -161,7 +166,7 @@ struct ModelPickerContent: View {
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             .padding(.horizontal, 10)
             .frame(
-                width: ModelPickerMetrics.panelWidth,
+                width: panelWidth,
                 alignment: .leading)
             .frame(maxHeight: .infinity, alignment: .center)
     }
@@ -172,7 +177,7 @@ struct ModelPickerContent: View {
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             .padding(.horizontal, 10)
             .frame(
-                width: ModelPickerMetrics.panelWidth,
+                width: panelWidth,
                 height: ModelPickerMetrics.headerHeight,
                 alignment: .leading)
     }

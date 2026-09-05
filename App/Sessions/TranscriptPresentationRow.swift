@@ -65,6 +65,8 @@ enum TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         isGroupExpanded: (String) -> Bool
     ) -> [Self] {
         rows.filter { row in
+            if case .item(.message(let message)) = row, message.role == .assistant,
+               message.document.blocks.isEmpty { return false }
             guard case .groupedTool(let groupID, _) = row else { return true }
             return isGroupExpanded(groupID)
         }

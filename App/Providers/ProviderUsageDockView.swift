@@ -37,6 +37,24 @@ struct ProviderUsageDockPresentation {
             capability: provider.capability,
             foregroundAccountRef: inspectedAccount.accountRef)
     }
+
+    static func selectorProviders(
+        _ providers: [ProviderUsageProvider]
+    ) -> [ProviderUsageProvider] {
+        providers
+    }
+}
+
+struct ProviderUsageDockHoverState: Equatable {
+    private(set) var providerID: String?
+
+    mutating func update(providerID: String, isHovered: Bool) {
+        if isHovered {
+            self.providerID = providerID
+        } else if self.providerID == providerID {
+            self.providerID = nil
+        }
+    }
 }
 
 @MainActor
@@ -155,6 +173,7 @@ struct ProviderUsageDockView: View {
     let onManageAccounts: (String) -> Void
 
     @State private var interaction: ProviderUsageDockInteraction
+    @State private var providerHover = ProviderUsageDockHoverState()
     @FocusState private var compactFocusedSelectorID: String?
     @FocusState private var expandedFocusedSelectorID: String?
     @Namespace private var expansionNamespace
@@ -235,6 +254,7 @@ struct ProviderUsageDockView: View {
             }
         }
         .onChange(of: activeSessionIdentityToken) { _, _ in
+            providerHover = ProviderUsageDockHoverState()
             interaction.openSessionDidChange()
         }
         .onExitCommand(perform: collapse)
@@ -271,7 +291,15 @@ struct ProviderUsageDockView: View {
     }
 
     private func expandedPanel(provider: ProviderUsageProvider) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 16) {
+            if !interaction.isShowingConfirmation {
+                expandedProviderSelector
+
+                Rectangle()
+                    .fill(TenXPalette.color(TenXPalette.separatorHex))
+                    .frame(height: 1)
+            }
+
             if provider.capability == .accountRouting,
                let account = inspectedAccount(in: provider),
                interaction.isShowingConfirmation {
@@ -309,16 +337,6 @@ struct ProviderUsageDockView: View {
 
     private func providerDetails(_ provider: ProviderUsageProvider) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 8) {
-                ForEach(providers) { candidate in
-                    expandedProviderButton(candidate)
-                }
-            }
-
-            Rectangle()
-                .fill(TenXPalette.color(TenXPalette.separatorHex))
-                .frame(height: 1)
-
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(provider.name)
                     .font(TenXTypography.accent(size: 19))
@@ -353,12 +371,6 @@ struct ProviderUsageDockView: View {
         account: ProviderUsageAccount
     ) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            expandedAccountSelector(provider, inspectedAccount: account)
-
-            Rectangle()
-                .fill(TenXPalette.color(TenXPalette.separatorHex))
-                .frame(height: 1)
-
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(provider.name)
@@ -433,24 +445,28 @@ struct ProviderUsageDockView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private func expandedAccountSelector(
-        _ provider: ProviderUsageProvider,
-        inspectedAccount: ProviderUsageAccount
-    ) -> some View {
-        if provider.capability == .accountRouting, !provider.accounts.isEmpty {
-            accountStack(
-                provider: ProviderUsageDockPresentation.expandedProvider(
-                    provider,
-                    inspectedAccount: inspectedAccount),
-                isGrayscale: false,
-                diameter: ProviderUsageRingGeometry.diameter,
-                focus: $expandedFocusedSelectorID,
-                isSource: false
-            ) { account in
-                inspect(provider: provider, account: account)
+    private var expandedProviderSelector: some View {
+        HStack(alignment: .bottom, spacing: Self.compactWheelSpacing) {
+            ForEach(ProviderUsageDockPresentation.selectorProviders(providers)) { provider in
+                expandedProviderButton(compactSelectorProvider(provider))
             }
         }
+    }
+
+    private func compactSelectorProvider(
+        _ provider: ProviderUsageProvider
+    ) -> ProviderUsageProvider {
+        guard provider.capability == .accountRouting,
+              let account = provider.id == interaction.inspectedProviderID
+                ? inspectedAccount(in: provider) ?? Self.foregroundAccount(provider)
+                : Self.foregroundAccount(provider)
+        else { return provider }
+        return ProviderUsageProvider(
+            id: provider.id,
+            name: provider.name,
+            accounts: [account],
+            capability: provider.capability,
+            foregroundAccountRef: account.accountRef)
     }
 
     private func compactProviderButton(_ provider: ProviderUsageProvider) -> some View {
@@ -475,16 +491,32 @@ struct ProviderUsageDockView: View {
         diameter: CGFloat,
         focus: FocusState<String?>.Binding
     ) -> some View {
-        Button {
+        let hoverGeometry = ProviderUsageDockWheelHoverGeometry(restingDiameter: diameter)
+        let isHovered = providerHover.providerID == provider.id
+        return Button {
+            providerHover.update(providerID: provider.id, isHovered: false)
             inspectProvider(provider)
         } label: {
             providerWheel(provider, isGrayscale: isGrayscale, diameter: diameter)
+                .scaleEffect(hoverGeometry.visualScale(isHovered: isHovered))
+                .frame(
+                    minWidth: hoverGeometry.hitTargetDiameter,
+                    minHeight: hoverGeometry.hitTargetDiameter)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusable()
         .focusEffectDisabled()
         .focused(focus, equals: provider.id)
+        .onHover { isHovered in
+            providerHover.update(providerID: provider.id, isHovered: isHovered)
+        }
+        .zIndex(isHovered ? 1 : 0)
+        .animation(
+            hoverGeometry.animationDuration(reduceMotion: reduceMotion).map {
+                .easeInOut(duration: $0)
+            },
+            value: isHovered)
         .accessibilityLabel(provider.name)
         .accessibilityValue(ProviderUsageAccessibility.wheelValue(
             provider: provider,
@@ -698,6 +730,7 @@ struct ProviderUsageDockView: View {
 
     private func collapse() {
         guard interaction.inspectedProviderID != nil else { return }
+        providerHover = ProviderUsageDockHoverState()
         expandedFocusedSelectorID = nil
         applyAnimation(interaction.dismiss)
     }

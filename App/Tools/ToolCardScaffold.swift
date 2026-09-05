@@ -36,6 +36,14 @@ struct ToolCardHeaderPresentation: Equatable, Sendable {
     }
 }
 
+enum ToolCardDurationPresentation {
+    static let help = "Total time from tool dispatch to completion. Process wall time in command output may be shorter."
+
+    static func label(_ duration: String) -> String {
+        "Total \(duration)"
+    }
+}
+
 enum ToolCardScaffoldLayout {
     static let minimumDisclosureHitHeight: CGFloat = 32
 }
@@ -78,7 +86,7 @@ struct ToolCardScaffold<Content: View>: View {
         ToolCardHeaderPresentation(
             content: cardContent,
             phase: presentation.phase,
-            duration: presentation.durationLabel)
+            duration: ToolCardDurationPresentation.label(presentation.durationLabel))
     }
 
     private var header: some View {
@@ -148,9 +156,10 @@ struct ToolCardScaffold<Content: View>: View {
         HStack(spacing: 8) {
             Text(presentation.phase.label)
                 .foregroundStyle(accentColor)
-            Text(presentation.durationLabel)
+            Text(ToolCardDurationPresentation.label(presentation.durationLabel))
                 .font(TenXTypography.mono(size: 10))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .help(ToolCardDurationPresentation.help)
         }
         .font(TenXTypography.body(size: 10, weight: .medium))
     }

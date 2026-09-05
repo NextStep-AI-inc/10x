@@ -88,27 +88,42 @@ enum ComposerControlsPresentation {
     }
 
     static let recentSectionID = "recent"
+    static let favoritesSectionID = "favorites"
 
     static func pickerSections(
         models: [ComposerModelInfo],
         recents: [ComposerModelInfo],
+        favorites: [ComposerModelInfo] = [],
         query: String
     ) -> [ModelPickerSection] {
-        let filtered = matching(models, query: query)
-        let providerSections = groupedByProvider(filtered).map { group in
+        let favoriteIDs = Set(favorites.map(\.id))
+        let filteredFavorites = matching(favorites, query: query)
+        let filteredCatalog = matching(models, query: query)
+            .filter { !favoriteIDs.contains($0.id) }
+        let providerSections = groupedByProvider(filteredCatalog).map { group in
             ModelPickerSection(
                 id: group.provider,
                 title: group.provider.uppercased(),
                 models: group.models,
                 showsProviderTag: false)
         }
+        let favoriteSections = filteredFavorites.isEmpty ? [] : [
+            ModelPickerSection(
+                id: favoritesSectionID,
+                title: "FAVORITES",
+                models: filteredFavorites,
+                showsProviderTag: true),
+        ]
         let isSearching = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard !isSearching, !recents.isEmpty else { return providerSections }
-        return [
+        let visibleRecents = recents.filter { !favoriteIDs.contains($0.id) }
+        guard !isSearching, !visibleRecents.isEmpty else {
+            return favoriteSections + providerSections
+        }
+        return favoriteSections + [
             ModelPickerSection(
                 id: recentSectionID,
                 title: "RECENT",
-                models: recents,
+                models: visibleRecents,
                 showsProviderTag: true),
         ] + providerSections
     }

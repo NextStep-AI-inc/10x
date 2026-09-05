@@ -6,6 +6,7 @@ struct CommandBrowserNativeControlsView: View {
     @Binding var query: String
     let onEffect: (CommandBrowserEffect) -> Void
     let restoreEditorFocus: () -> Void
+    var availableWidth: CGFloat = ModelPickerMetrics.panelWidth
 
     @State private var highlightedIndex = 0
     @FocusState private var isFocused: Bool
@@ -22,6 +23,10 @@ struct CommandBrowserNativeControlsView: View {
             thinkingLevel: controls.thinkingLevel,
             isFastModeVisible: controls.isFastModeVisible,
             isFastModeEnabled: controls.isFastModeEnabled)
+    }
+
+    private var resolvedContentWidth: CGFloat {
+        ModelPickerMetrics.resolvedPanelWidth(availableWidth: availableWidth)
     }
 
     nonisolated static func nativeRows(
@@ -104,6 +109,7 @@ struct CommandBrowserNativeControlsView: View {
                 sections: ComposerControlsPresentation.pickerSections(
                     models: controls.models,
                     recents: controls.recentModels,
+                    favorites: controls.favoriteModels,
                     query: query),
                 selectedModel: controls.selectedModel,
                 isLoading: controls.isLoading,
@@ -116,12 +122,15 @@ struct CommandBrowserNativeControlsView: View {
                         finishNativeAction(effect)
                     }
                 },
-                onCancel: handleBack)
+                onCancel: handleBack,
+                favoriteModelIDs: Set(controls.favoriteModels.map(\.id)),
+                onToggleFavorite: controls.toggleFavorite,
+                panelWidth: resolvedContentWidth)
             if let message = commandModel.inlineMessage {
                 inlineMessage(message)
             }
         }
-        .frame(width: ModelPickerMetrics.panelWidth, alignment: .topLeading)
+        .frame(width: resolvedContentWidth, alignment: .topLeading)
         .background(TenXPalette.color(TenXPalette.canvasHex))
         .overlay {
             Rectangle()
@@ -135,7 +144,7 @@ struct CommandBrowserNativeControlsView: View {
             nativeHeader(title)
             Rectangle()
                 .fill(TenXPalette.color(TenXPalette.separatorHex))
-                .frame(width: ModelPickerMetrics.panelWidth, height: ModelPickerMetrics.separatorHeight)
+                .frame(width: resolvedContentWidth, height: ModelPickerMetrics.separatorHeight)
             ForEach(Array(rows.enumerated()), id: \.element.title) { index, row in
                 nativeRow(row, isHighlighted: index == highlightedIndex)
             }
@@ -145,7 +154,7 @@ struct CommandBrowserNativeControlsView: View {
                 appliesNote
             }
         }
-        .frame(width: ModelPickerMetrics.panelWidth, alignment: .topLeading)
+        .frame(width: resolvedContentWidth, alignment: .topLeading)
         .background(TenXPalette.color(TenXPalette.canvasHex))
         .overlay {
             Rectangle()
@@ -179,7 +188,7 @@ struct CommandBrowserNativeControlsView: View {
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             .padding(.horizontal, 10)
             .frame(
-                width: ModelPickerMetrics.panelWidth,
+                width: resolvedContentWidth,
                 height: ModelPickerMetrics.headerHeight,
                 alignment: .leading)
     }

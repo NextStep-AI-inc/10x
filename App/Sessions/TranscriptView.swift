@@ -10,13 +10,15 @@ struct TranscriptView: View {
 
     let controller: SessionController
     @State private var disclosureState = ToolDisclosureState()
-    @State private var isNearBottom = true
-    @State private var hasPositionedInitialContent = false
+    @State private var isUserScrolling = false
+    @State private var searchResolution: TranscriptSearchResolution?
+    @State private var consumedSearchNonce: UUID?
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
     @Environment(ToolDetailPreferenceStore.self) private var detailPreference:
         ToolDetailPreferenceStore?
 
     var body: some View {
+        @Bindable var viewport = controller.viewport
         let allPresentationRows = Self.followObservation(for: controller.items)
         let presentationRows = TranscriptPresentationRow.visibleRows(
             from: allPresentationRows,
@@ -24,8 +26,10 @@ struct TranscriptView: View {
 
         ScrollViewReader { proxy in
             ScrollView {
+                VStack(spacing: 0) {
                 LazyVStack(spacing: 22) {
-                    if controller.runtimeState == .loading, controller.items.isEmpty {
+                    if controller.runtimeState == .loading, controller.items.isEmpty,
+                       controller.pendingSubmissions.isEmpty {
                         loadingSkeleton
                     }
                     HStack(spacing: 4) {
@@ -33,42 +37,77 @@ struct TranscriptView: View {
                         ToolDetailModeControl(mode: disclosureState.mode, onSelect: select)
                     }
                     ForEach(presentationRows, id: \.id) { row in
-                        rowView(row)
+                        VStack(alignment: .leading, spacing: 8) {
+                            if searchResolution?.rowID == row.id, let request = controller.transcriptSearchRequest,
+                               let excerpt = searchResolution?.excerpt {
+                                TranscriptPlainTextView(text: excerpt,
+                                    font: TenXTypography.body(size: 12),
+                                    color: TenXPalette.color(TenXPalette.nearBlackHex),
+                                    highlightedQuery: request.query)
+                                    .padding(8)
+                                    .background(TenXPalette.color(TenXPalette.yellowHex).opacity(0.12))
+                                    .accessibilityLabel("Search match: " + excerpt)
+                            }
+                            rowView(row)
+                        }
+                            .background(searchResolution?.rowID == row.id
+                                ? TenXPalette.color(TenXPalette.yellowHex).opacity(0.05) : .clear)
                             .padding(.top, row.isGroupedTool ? -12 : 0)
                             .id(row.id)
+                    }
+                    ForEach(controller.pendingSubmissions) { submission in
+                        VStack(alignment: .trailing, spacing: 5) {
+                            MessageBubbleView(message: submission.message)
+                            Text(submission.state.label)
+                                .font(TenXTypography.body(size: 10))
+                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                        }
+                        .id(submission.id)
                     }
                     if isAwaitingOutput {
                         TurnActivityView(startedAt: controller.turnStartedAt)
                             .id(TurnActivityView.transcriptID)
                     }
                 }
+                .scrollTargetLayout()
                 .frame(maxWidth: Self.contentMaxWidth)
                 .padding(.horizontal, 42)
                 .padding(.vertical, 28)
                 .frame(maxWidth: .infinity)
+                Color.clear.frame(height: 1).id(Self.bottomID)
+                }
             }
             .environment(\.toolDisclosureState, disclosureState)
             .scrollIndicators(.hidden)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                Self.shouldFollowBottom(
-                    contentOffset: geometry.contentOffset.y,
-                    containerHeight: geometry.containerSize.height,
-                    contentHeight: geometry.contentSize.height)
-            } action: { _, value in
-                isNearBottom = value
+            .scrollPosition(id: $viewport.anchorID, anchor: .top)
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor(viewport.isFollowingLatest ? .bottom : nil, for: .sizeChanges)
+            .onScrollPhaseChange { _, phase in
+                isUserScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            }
+            .onScrollGeometryChange(for: TranscriptViewportGeometry.self) { geometry in
+                TranscriptViewportGeometry(offset: geometry.contentOffset.y,
+                    contentHeight: geometry.contentSize.height, containerSize: geometry.containerSize)
+            } action: { previous, current in
+                viewport.observe(from: previous, to: current, isUserScrolling: isUserScrolling)
+                if viewport.isFollowingLatest, current.hasResized(from: previous) {
+                    scroll(proxy, to: Self.bottomID, intent: .automatic)
+                }
             }
             .onChange(of: allPresentationRows) { _, _ in
-                guard let lastID = presentationRows.last?.id else { return }
-                let shouldFollow = !hasPositionedInitialContent || isNearBottom
-                hasPositionedInitialContent = true
-                guard shouldFollow else { return }
-                scroll(proxy, to: lastID, intent: .automatic)
+                focusSearchResult(proxy, rows: allPresentationRows)
+                guard viewport.isFollowingLatest else { return }
+                scroll(proxy, to: Self.bottomID, intent: .automatic)
+            }
+            .task(id: controller.transcriptSearchRequest?.nonce) {
+                searchResolution = nil
+                focusSearchResult(proxy, rows: allPresentationRows)
             }
             // The indicator is not an item, so its arrival needs its own follow
             // or it appears below the fold on the send that created it.
             .onChange(of: isAwaitingOutput) { _, isAwaiting in
-                guard isAwaiting, isNearBottom else { return }
-                scroll(proxy, to: TurnActivityView.transcriptID, intent: .automatic)
+                guard isAwaiting, viewport.isFollowingLatest else { return }
+                scroll(proxy, to: Self.bottomID, intent: .automatic)
             }
             // Picks up the stored mode on open, and any change made from
             // another window while this transcript is on screen. Unanimated on
@@ -88,11 +127,14 @@ struct TranscriptView: View {
     /// over a transcript that is already tracking the bottom.
     @ViewBuilder
     private func scrollToBottomButton(_ proxy: ScrollViewProxy, lastID: String?) -> some View {
-        if hasPositionedInitialContent, !isNearBottom, let lastID {
+        if !controller.viewport.isFollowingLatest, lastID != nil {
             Button {
+                controller.focusSearchResult(nil)
+                searchResolution = nil
+                controller.viewport.isFollowingLatest = true
                 scroll(
                     proxy,
-                    to: isAwaitingOutput ? TurnActivityView.transcriptID : lastID,
+                    to: Self.bottomID,
                     intent: .explicit)
             } label: {
                 HStack(spacing: 6) {
@@ -111,6 +153,23 @@ struct TranscriptView: View {
             .padding(.bottom, 12)
             .transition(.opacity)
             .accessibilityLabel("Jump to latest")
+        }
+    }
+
+    private func focusSearchResult(_ proxy: ScrollViewProxy, rows: [TranscriptPresentationRow]) {
+        guard let request = controller.transcriptSearchRequest,
+              request.nonce != consumedSearchNonce,
+              let resolution = TranscriptSearchResolver.resolve(request, in: rows) else { return }
+        consumedSearchNonce = request.nonce
+        searchResolution = resolution
+        controller.viewport.isFollowingLatest = false
+        if let groupID = resolution.groupID { disclosureState.setGroupExpanded(true, id: groupID) }
+        disclosureState.setExpanded(true, id: request.entryID)
+        Task { @MainActor in
+            await Task.yield()
+            guard controller.transcriptSearchRequest?.nonce == request.nonce else { return }
+            controller.viewport.anchorID = resolution.rowID
+            proxy.scrollTo(resolution.rowID, anchor: .center)
         }
     }
 
@@ -138,10 +197,13 @@ struct TranscriptView: View {
     }
 
     private var isAwaitingOutput: Bool {
-        TurnActivityView.isAwaitingOutput(
+        if controller.pendingSubmissions.contains(where: { $0.state == .starting }) { return true }
+        return TurnActivityView.isAwaitingOutput(
             runtimeState: controller.runtimeState,
             lastItem: controller.items.last)
     }
+
+    private static let bottomID = "transcript-bottom"
 
     nonisolated static func followObservation(
         for items: [TranscriptItem]
@@ -214,7 +276,8 @@ struct TranscriptView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(threadStartAccessibilityLabel(date))
         case .message(let message):
-            MessageBubbleView(message: message)
+            MessageBubbleView(message: message, highlightedQuery:
+                searchResolution?.messageID == message.id ? controller.transcriptSearchRequest?.query : nil)
                 .equatable()
         case .annotation(let annotation):
             HStack(spacing: 8) {
@@ -250,7 +313,12 @@ struct TranscriptView: View {
             ToolCardView(presentation: presentation)
                 .equatable()
         case .extensionUI(let state):
-            ApprovalCardView(
+            if state.isQuestionInput {
+                ExtensionQuestionCardView(state: state) { response in
+                    await controller.respond(to: state, with: response)
+                }
+            } else {
+                ApprovalCardView(
                 state: state,
                 onRespond: { response in
                     Task { await controller.respond(to: state, with: response) }
@@ -261,6 +329,7 @@ struct TranscriptView: View {
                 onCopyURL: { url in
                     controller.copyURL(url, requestID: state.id)
                 })
+            }
         }
     }
 
