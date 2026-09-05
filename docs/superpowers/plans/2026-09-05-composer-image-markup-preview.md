@@ -17,7 +17,7 @@
 - Swift 6 with `SWIFT_STRICT_CONCURRENCY = complete`. No `as!`, no force unwraps in production code.
 - Platform: macOS 15+, Swift 6.1, SwiftUI.
 - Colors come only from `TenXPalette`; fonts only from `TenXTypography`. No new tokens, no shadow, no corner radius on the overlay chrome. Markup strokes use `TenXPalette.signalRedHex`.
-- The Xcode project is generated. Any new `.swift` file under `App/` or `Tests/` requires `ruby scripts/generate_xcodeproj.rb` before it will compile. Never hand-edit `project.pbxproj`.
+- The Xcode project is generated. Membership is static. After creating any new `.swift` file under `App/` or `Tests/`, run `ruby scripts/generate_xcodeproj.rb` immediately, before the next `xcodebuild`. That includes the failing-test file: regenerate before the red `-only-testing` run, and regenerate again after adding any later source file. A red run that executes 0 tests is not a failure and is not a pass; the named test must appear in the log. Never hand-edit `project.pbxproj`.
 - Test command: `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'`. Filter a single Swift Testing function with `-only-testing:'TenXAppTests/functionName()'` (the trailing parentheses are required).
 - Snapshot recording uses the `TEST_RUNNER_` prefix: `TEST_RUNNER_RECORD_SNAPSHOTS=1 xcodebuild test …`.
 - Closed PR #17 (`ComposerPasteMonitor`) is a classification reference only. Do not merge that interceptor. Forbidden on every path: a window-local key monitor, an `isa` swap, a `paste:` hook, or any swizzle of `SwiftUI.PlatformTextView`.
@@ -167,14 +167,17 @@ private func solidPNG(width: Int, height: Int) throws -> Data {
 
 Do not add `isPasteShortcut`, `ComposerPasteMonitor`, or any window harness.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Generate the project, then run tests to verify they fail**
+
+The new test file is not in the target until the project is regenerated. Run this generate before the red `xcodebuild`. A run that executes 0 tests is not a red result.
 
 ```bash
+ruby scripts/generate_xcodeproj.rb
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/anImageOnTheClipboardStagesAsImageData()'
 ```
 
-Expected: compile failure, `cannot find 'ComposerPasteboard' in scope`.
+Expected: the named test runs and fails to compile, `cannot find 'ComposerPasteboard' in scope`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -208,7 +211,9 @@ enum ComposerPasteboard {
 
 Do not add `Equatable` on `Content`. Tests use `guard case`. `NSImage` is not `Equatable`.
 
-- [ ] **Step 4: Generate the project and run the new tests**
+- [ ] **Step 4: Generate the project again, then run the tests**
+
+Step 3 added a source file that is not yet in the target. Regenerate before this pass run.
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -430,14 +435,17 @@ import Testing
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Generate the project, then run tests to verify they fail**
+
+The new test file is not in the target until the project is regenerated. Run this generate before the red `xcodebuild`. A run that executes 0 tests is not a red result.
 
 ```bash
+ruby scripts/generate_xcodeproj.rb
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/plainCommandVWithImageContentIsHandled()'
 ```
 
-Expected: compile failure, `cannot find 'ComposerPasteKeyRouting' in scope`.
+Expected: the named test runs and fails to compile, `cannot find 'ComposerPasteKeyRouting' in scope`.
 
 - [ ] **Step 3: Write the implementation and call it from `handleEditorKey`**
 
@@ -486,7 +494,9 @@ Replace the Task 2 inline probe in `handleEditorKey` with:
 
 `KeyEquivalent("v")` stays in `ComposerCommandKeyRouting.keys`. `.onPasteCommand` stays.
 
-- [ ] **Step 4: Generate the project and run the routing tests**
+- [ ] **Step 4: Generate the project again, then run the tests**
+
+Step 3 added a source file that is not yet in the target. Regenerate before this pass run.
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -597,14 +607,17 @@ private func solidPNG(width: Int, height: Int) throws -> Data {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Generate the project, then run tests to verify they fail**
+
+The new test file is not in the target until the project is regenerated. Run this generate before the red `xcodebuild`. A run that executes 0 tests is not a red result.
 
 ```bash
+ruby scripts/generate_xcodeproj.rb
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/pasteStagesClipboardImagesAndDoesNotInsertThemAsText()'
 ```
 
-Expected: compile failure, `cannot find 'ComposerPromptTextView' in scope`.
+Expected: the named test runs and fails to compile, `cannot find 'ComposerPromptTextView' in scope`.
 
 - [ ] **Step 3: Write the text view and swap it for `TextEditor`**
 
@@ -616,7 +629,9 @@ Create `App/Sessions/ComposerPromptTextView.swift` with:
 
 In `ComposerView.editor`, replace `TextEditor(text: $draft)` with `ComposerPromptEditor` that calls `add(pasteboardContent:)` and `handleEditorKey(key:modifiers:)`. Keep the hidden measuring `Text`, focus task, Return routing, and command-browser routing. Drop `ComposerTextViewConfigurator` from this editor. Remove `KeyEquivalent("v")` from `ComposerCommandKeyRouting.keys` if it was only the failed probe.
 
-- [ ] **Step 4: Generate the project and run the paste tests**
+- [ ] **Step 4: Generate the project again, then run the tests**
+
+Step 3 added a source file that is not yet in the target. Regenerate before this pass run.
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -717,14 +732,17 @@ import Testing
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Generate the project, then run tests to verify they fail**
+
+The new test file is not in the target until the project is regenerated. Run this generate before the red `xcodebuild`. A run that executes 0 tests is not a red result.
 
 ```bash
+ruby scripts/generate_xcodeproj.rb
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/draftAppendsEveryToolAndUndoPopsTheLastStroke()'
 ```
 
-Expected: compile failure, `cannot find 'ImageMarkupDraft' in scope`.
+Expected: the named test runs and fails to compile, `cannot find 'ImageMarkupDraft' in scope`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -801,7 +819,9 @@ enum ImageMarkupGeometry {
 }
 ```
 
-- [ ] **Step 4: Generate the project and run the markup tests**
+- [ ] **Step 4: Generate the project again, then run the tests**
+
+Step 3 added a source file that is not yet in the target. Regenerate before this pass run.
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -920,14 +940,17 @@ private func pixel(_ image: CGImage, x: Int, y: Int) -> (UInt8, UInt8, UInt8, UI
 
 If the sampler origin is off by a flip, fix `pixel(_:x:y:)` so it samples the same space the renderer writes. Do not loosen the test to "any pixel changed."
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Generate the project, then run tests to verify they fail**
+
+The new test file is not in the target until the project is regenerated. Run this generate before the red `xcodebuild`. A run that executes 0 tests is not a red result.
 
 ```bash
+ruby scripts/generate_xcodeproj.rb
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/aKnownStrokeChangesOnlyTheMappedPixel()'
 ```
 
-Expected: compile failure, `cannot find 'ImageMarkupRenderer' in scope`.
+Expected: the named test runs and fails to compile, `cannot find 'ImageMarkupRenderer' in scope`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -938,7 +961,9 @@ Create `App/Sessions/ImageMarkupRenderer.swift`. Draw `base` into a same-size co
 - `.rectangle`: stroke the integral rect. A 1x1 also fills so the 2x2 test paints exactly that pixel.
 - `.text`: `NSAttributedString` at 14pt medium, same red, drawn with a flipped `NSGraphicsContext`.
 
-- [ ] **Step 4: Generate the project and run the renderer tests**
+- [ ] **Step 4: Generate the project again, then run the tests**
+
+Step 3 added a source file that is not yet in the target. Regenerate before this pass run.
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -1051,14 +1076,17 @@ private func solidImage(width: Int, height: Int) -> NSImage {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Generate the project, then run tests to verify they fail**
+
+The new test file is not in the target until the project is regenerated. Run this generate before the red `xcodebuild`. A run that executes 0 tests is not a red result.
 
 ```bash
+ruby scripts/generate_xcodeproj.rb
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/aStrokeLessAttachmentIsNotReencoded()'
 ```
 
-Expected: compile failure, `cannot find 'ImageMarkupSend' in scope` or `has no member 'replacingMarkup'`.
+Expected: the named test runs and fails to compile, `cannot find 'ImageMarkupSend' in scope` or `has no member 'replacingMarkup'`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -1140,7 +1168,9 @@ enum ImageMarkupSend {
 }
 ```
 
-- [ ] **Step 4: Generate the project and run the send-prep tests**
+- [ ] **Step 4: Generate the project again, then run the tests**
+
+Step 3 added a source file that is not yet in the target. Regenerate before this pass run.
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -1232,14 +1262,17 @@ import Testing
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 2: Generate the project, then run tests to verify they fail**
+
+The new test file is not in the target until the project is regenerated. Run this generate before the red `xcodebuild`. A run that executes 0 tests is not a red result.
 
 ```bash
+ruby scripts/generate_xcodeproj.rb
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/openEditCopiesStrokesIntoADraftAndDoneWritesThemBack()'
 ```
 
-Expected: compile failure, `cannot find 'ImagePreviewSession' in scope`.
+Expected: the named test runs and fails to compile, `cannot find 'ImagePreviewSession' in scope`.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -1297,7 +1330,9 @@ struct ImagePreviewSession: Equatable {
 
 `openEdit` overwrites any current draft (open-another implies Cancel).
 
-- [ ] **Step 4: Generate the project and run the session tests**
+- [ ] **Step 4: Generate the project again, then run the tests**
+
+Step 3 added a source file that is not yet in the target. Regenerate before this pass run.
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -1527,6 +1562,8 @@ These four tests are red if `sendPrompt` or `startNewSession` never call `ImageM
 
 - [ ] **Step 2: Run tests to verify they fail**
 
+These four tests are edits to files already in the target. Do not run `generate_xcodeproj.rb` unless Step 1 created a new `.swift` file. If it did, regenerate first. A run that executes 0 tests is not a red result.
+
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/SessionControllerTests/sendPromptDoesNothingWhenMarkedImagesCannotBePrepared()' \
@@ -1647,6 +1684,8 @@ Add to `Tests/TenXAppTests/ImagePreviewSessionTests.swift`:
 
 - [ ] **Step 2: Run it (already true after Task 7; keep it as the chrome contract)**
 
+This test is an edit to `ImagePreviewSessionTests.swift`, which is already in the target. Do not run `generate_xcodeproj.rb` unless Step 1 created a new `.swift` file.
+
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/editModeShowsToolbarAndViewModeDoesNot()'
@@ -1703,7 +1742,9 @@ func finishEdit() {
 `attachments` is `model.newSessionAttachments` on the new-session screen and `controller.attachments` on the active session. Cancel calls `preview.cancel()` and writes nothing. `ImagePreviewOverlay` takes `session`, `base` image bytes, `pixelSize`, `selectedTool`, and the Cancel / Done / Undo / select-tool callbacks used by Task 10.
 
 
-- [ ] **Step 4: Generate the project and compile**
+- [ ] **Step 4: Generate the project after the new overlay sources, then compile**
+
+Step 3 created `ImageMarkupOverlay.swift` and `ImagePreviewOverlay.swift`. They are not in the target until this generate. The Step 1 test was an edit to an existing file, so Step 2 did not need a generate.
 
 ```bash
 ruby scripts/generate_xcodeproj.rb
@@ -1829,6 +1870,8 @@ No per-frame pen-move snapshots.
 
 - [ ] **Step 2: Run tests to verify they fail on missing references**
 
+These snapshot tests are edits to `ViewSnapshotTests.swift`, which is already in the target. Do not run `generate_xcodeproj.rb` unless Step 1 created a new `.swift` file. If it did, regenerate first. A run that executes 0 tests is not a red result.
+
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' \
   -only-testing:'TenXAppTests/composerStripWithUnmarkedThumbnailSnapshot()'
@@ -1907,7 +1950,7 @@ EOF
 | View mode zoom / pan / double-click reset, no toolbar | Task 9 |
 | Four snapshots | Task 10 |
 | 8-image cap, 1,568 fit, PNG/JPEG budget unchanged | Tasks 1, 6 |
-| `generate_xcodeproj.rb`, no hand-edited `pbxproj` | every new-file task |
+| `generate_xcodeproj.rb` after every new `.swift` file, including before the red run | every new-file task |
 
 ## Out of scope (do not implement)
 
