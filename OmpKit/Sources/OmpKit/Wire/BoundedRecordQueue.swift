@@ -15,10 +15,14 @@ struct BoundedRecordQueueLimits: Sendable, Equatable {
     /// rather than a drop: the owner tears the runtime down and says why.
     var spillBytes: Int
 
+    /// 64 MiB of backlog plus one physical frame of headroom, so a single
+    /// maximum-size reassembled frame (64 MiB, the protocol's cap) still fits
+    /// the spill file with its length prefix when something is queued ahead
+    /// of it, instead of failing the session on a legal frame.
     static let transport = BoundedRecordQueueLimits(
         memoryBytes: 4 * 1_048_576,
         memoryRecords: 1_024,
-        spillBytes: 64 * 1_048_576)
+        spillBytes: 65 * 1_048_576)
 }
 
 enum BoundedRecordQueueError: Error, Equatable, Sendable {
@@ -73,6 +77,9 @@ final class BoundedRecordQueue<Payload: Sendable>: @unchecked Sendable {
     private var isFinished = false
     private var storedFailure: BoundedRecordQueueError?
     private var waiter: CheckedContinuation<Void, Never>?
+    /// Runs between `next()`'s cancellation check and `park`, so a test can
+    /// cancel the consumer inside that window. Set before use, never after.
+    nonisolated(unsafe) var beforeParkForTesting: (@Sendable () -> Void)?
 
     init(limits: BoundedRecordQueueLimits, decode: @escaping Decode) {
         self.limits = limits
@@ -125,15 +132,13 @@ final class BoundedRecordQueue<Payload: Sendable>: @unchecked Sendable {
                 }
                 try spill?.append(encoded)
             } catch let error as BoundedRecordQueueError {
-                storedFailure = error
-                let waiter = takeWaiter()
+                let waiter = fail(with: error)
                 lock.unlock()
                 waiter?.resume()
                 throw error
             } catch {
                 let failure = BoundedRecordQueueError.spillFailed(String(describing: error))
-                storedFailure = failure
-                let waiter = takeWaiter()
+                let waiter = fail(with: failure)
                 lock.unlock()
                 waiter?.resume()
                 throw failure
@@ -164,13 +169,9 @@ final class BoundedRecordQueue<Payload: Sendable>: @unchecked Sendable {
         isFinished = true
         memory.removeAll()
         memoryHead = 0
-        spill?.close()
-        spill = nil
         metrics.memoryBytes = 0
         metrics.memoryRecords = 0
-        metrics.spilledBytes = 0
-        metrics.spilledRecords = 0
-        metrics.spillFileBytes = 0
+        releaseSpill()
         let waiter = takeWaiter()
         lock.unlock()
         waiter?.resume()
@@ -191,6 +192,7 @@ final class BoundedRecordQueue<Payload: Sendable>: @unchecked Sendable {
                 return nil
             case .empty:
                 if Task.isCancelled { return nil }
+                beforeParkForTesting?()
                 await withTaskCancellationHandler {
                     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                         if !park(continuation) { continuation.resume() }
@@ -215,21 +217,24 @@ final class BoundedRecordQueue<Payload: Sendable>: @unchecked Sendable {
         if let record = popMemoryRecord() { return .record(record) }
         if storedFailure != nil { return .ended }
         if let spill, spill.unreadRecords > 0 {
+            // ponytail: the refill decodes up to one memory budget and a
+            // compaction copies up to the spill cap while holding the lock,
+            // which briefly blocks the producer; split the file work out from
+            // under the lock if a profile ever shows the reader stalling here.
             do {
                 try refillFromSpill(spill)
             } catch let error as BoundedRecordQueueError {
-                storedFailure = error
+                _ = fail(with: error)
                 return .ended
             } catch {
-                storedFailure = .spillFailed(String(describing: error))
+                _ = fail(with: .spillFailed(String(describing: error)))
                 return .ended
             }
             if let record = popMemoryRecord() { return .record(record) }
             return .empty
         }
         if isFinished {
-            spill?.close()
-            spill = nil
+            releaseSpill()
             return .ended
         }
         return .empty
@@ -263,6 +268,23 @@ final class BoundedRecordQueue<Payload: Sendable>: @unchecked Sendable {
     }
 
     // MARK: - Locked helpers
+
+    /// Records the failure and releases the spill file: nothing behind the
+    /// failure is deliverable, so the descriptor and its bytes go now rather
+    /// than at deallocation.
+    private func fail(with error: BoundedRecordQueueError) -> CheckedContinuation<Void, Never>? {
+        storedFailure = error
+        releaseSpill()
+        return takeWaiter()
+    }
+
+    private func releaseSpill() {
+        spill?.close()
+        spill = nil
+        metrics.spilledBytes = 0
+        metrics.spilledRecords = 0
+        metrics.spillFileBytes = 0
+    }
 
     private func takeWaiter() -> CheckedContinuation<Void, Never>? {
         let waiter = self.waiter

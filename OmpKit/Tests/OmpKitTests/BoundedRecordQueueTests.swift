@@ -84,9 +84,12 @@ private func drain(_ queue: BoundedRecordQueue<Data>, count: Int) async -> [Data
         try queue.enqueue(records[5], encoded: records[5])
     }
     #expect(queue.failure == .backlogExceeded(queuedBytes: 80, limitBytes: 64))
-    // Later records are ignored rather than compounding the failure.
+    // Nothing behind the failure is deliverable, so the spill is released at
+    // once, and later records are ignored rather than compounding the failure.
+    #expect(queue.snapshot.spilledRecords == 0)
+    #expect(queue.snapshot.spillFileBytes == 0)
     try queue.enqueue(records[6], encoded: records[6])
-    #expect(queue.snapshot.spilledRecords == 3)
+    #expect(queue.snapshot.spilledRecords == 0)
 
     #expect(await drain(queue, count: 8) == Array(records[0..<2]))
     #expect(await queue.next() == nil)
@@ -154,18 +157,17 @@ private func drain(_ queue: BoundedRecordQueue<Data>, count: Int) async -> [Data
     #expect(await queue.next() == nil)
 }
 
-@Test func alreadyCancelledConsumerNeverParks() async throws {
+@Test func consumerCancelledBetweenTheCheckAndParkStillReturns() async throws {
     let queue = makeQueue(memoryBytes: 64, spillBytes: 1_024)
-    let parked = Task {
-        // Cancelled before `next()` can observe it, so the cancellation handler
-        // fires before the wait is installed; `park` must still refuse.
-        await withTaskCancellationHandler {
-            await queue.next()
-        } onCancel: {}
+    // Cancel from inside the window after `next()` saw no cancellation but
+    // before it installs its waiter: the cancellation handler then runs
+    // before the operation and finds nothing to wake, so `park` itself must
+    // refuse to park the cancelled task.
+    queue.beforeParkForTesting = {
+        withUnsafeCurrentTask { $0?.cancel() }
     }
-    parked.cancel()
-    guard let outcome = await withTimeout(.seconds(2), operation: { await parked.value }) else {
-        Issue.record("a pre-cancelled consumer must return instead of parking")
+    guard let outcome = await withTimeout(.seconds(2), operation: { await queue.next() }) else {
+        Issue.record("a consumer cancelled before parking must return instead of hanging")
         return
     }
     #expect(outcome == nil)
