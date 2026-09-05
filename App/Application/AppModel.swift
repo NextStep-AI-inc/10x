@@ -750,11 +750,13 @@ final class AppModel {
 
     func handleMemoryPressure() async {
         guard !isShuttingDown, let processManager else { return }
-        await reclaimInactiveIdleSessions()
-        guard !isShuttingDown, self.processManager === processManager else { return }
         let evicted = await processManager.evictWarmClients()
         guard !isShuttingDown, self.processManager === processManager else { return }
         let canceled = await processManager.cancelWarmings()
+        guard !isShuttingDown, self.processManager === processManager else { return }
+        // Idle runtimes are the largest reclaim and the slowest to close, so
+        // they go after the warm clients, which are cheap to drop.
+        await reclaimInactiveIdleSessions()
         guard !isShuttingDown,
               self.processManager === processManager,
               !evicted.isEmpty || !canceled.isEmpty,
