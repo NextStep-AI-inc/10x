@@ -74,8 +74,14 @@ public struct RpcClientConfiguration: Sendable {
 }
 
 struct RpcClientTestHooks: Sendable {
+    /// Runs after the child is spawned and before its stdout reader starts, so
+    /// a test can let lines pile up in the transport's backlog.
+    var beforeStartReader: (@Sendable () async -> Void)?
     var beforeWaitForReady: (@Sendable () async -> Void)?
     var readyTimeoutSleep: (@Sendable (Duration) async throws -> Void)?
+    /// Smaller budgets than `.transport`, so tests can exhaust them quickly.
+    var eventQueueLimits: BoundedRecordQueueLimits?
+    var lineQueueLimits: BoundedRecordQueueLimits?
 
     init() {}
 }
@@ -85,6 +91,11 @@ struct RpcClientTestHooks: Sendable {
 /// Responses are matched to requests by id — never by arrival order, since omp
 /// dispatches some commands concurrently. Frame types the client does not know
 /// are forwarded to `events` untouched, so a newer omp never breaks a session.
+///
+/// Events wait for their consumer in a `BoundedRecordQueue`, so a stalled
+/// consumer never stalls the reader that also delivers responses. The queue's
+/// memory and spill budgets bound what such a stall can cost; exhausting them
+/// tears the session down with a diagnostic instead of dropping frames.
 public actor RpcClient {
     private let configuration: RpcClientConfiguration
     private let transport: LineTransport
@@ -107,8 +118,14 @@ public actor RpcClient {
     private var observedExitRelatedWriteFailures = 0
     private var observedReadyTimeoutAttempts = 0
 
-    private let eventStream: AsyncStream<RpcFrame>
-    private let eventContinuation: AsyncStream<RpcFrame>.Continuation
+    /// Frames awaiting the consumer of `events`, in stdout order. Records keep
+    /// their decoded frame while in memory and re-decode from the wire bytes
+    /// when read back from spill.
+    private let eventQueue: BoundedRecordQueue<RpcFrame>
+    /// Why the transport was torn down by this client rather than by the
+    /// child, surfaced through `stderrSnapshot()` so the session's recovery
+    /// text names the real cause.
+    private var transportFailure: String?
     /// Separate from `events` so observers watching for the child's death do not
     /// consume frames the UI needs — an AsyncStream has a single consumer.
     private let terminationStream: AsyncStream<Void>
@@ -132,6 +149,9 @@ public actor RpcClient {
     var readyTimeoutAttemptCount: Int { observedReadyTimeoutAttempts }
     var hasReadyWaiter: Bool { readyContinuation != nil }
     var isReadyTimeoutArmed: Bool { readyTimeoutTask != nil }
+    var eventBacklogMetrics: BoundedRecordQueue<RpcFrame>.Metrics { eventQueue.snapshot }
+    var lineBacklogMetrics: BoundedRecordQueue<Data>.Metrics { transport.lineBacklogMetrics }
+    var transportBacklogFailure: BoundedRecordQueueError? { transport.backlogFailure }
 
     public init(configuration: RpcClientConfiguration) {
         self.init(configuration: configuration, testHooks: RpcClientTestHooks())
@@ -144,10 +164,12 @@ public actor RpcClient {
             executable: configuration.executable,
             arguments: configuration.resolvedArguments,
             currentDirectory: configuration.cwd,
-            environment: configuration.environment)
+            environment: configuration.environment,
+            lineQueueLimits: testHooks.lineQueueLimits ?? .transport)
         self.reassembler = ChunkReassembler()
-        (eventStream, eventContinuation) = AsyncStream<RpcFrame>.makeStream(
-            bufferingPolicy: .unbounded)
+        eventQueue = BoundedRecordQueue<RpcFrame>(
+            limits: testHooks.eventQueueLimits ?? .transport,
+            decode: { try RpcFrame.decode(line: $0) })
         (terminationStream, terminationContinuation) = AsyncStream<Void>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
     }
@@ -155,8 +177,19 @@ public actor RpcClient {
     /// Every frame that is not a command response: session events, extension UI
     /// requests, notices, and anything a future omp introduces.
     ///
-    /// Single-consumer, like any AsyncStream — one owner should iterate it.
-    public nonisolated var events: AsyncStream<RpcFrame> { eventStream }
+    /// Single-consumer: every access iterates the same queue, which hands each
+    /// frame out exactly once. Ends when the child is gone, or early if the
+    /// backlog budget was exhausted — the session is torn down in that case.
+    public nonisolated var events: AsyncStream<RpcFrame> {
+        let queue = eventQueue
+        return AsyncStream(unfolding: { [weak self] in
+            if let frame = await queue.next() { return frame }
+            if let failure = queue.failure {
+                await self?.poison(reason: Self.backlogFailureDescription(failure, queue: "event"))
+            }
+            return nil
+        })
+    }
 
     /// Finishes when the child process is gone, for whatever reason. Watch this
     /// rather than `events` to observe termination without stealing frames.
@@ -180,6 +213,7 @@ public actor RpcClient {
 
     private func performStart() async throws -> ReadyFrame {
         try await transport.start()
+        await testHooks.beforeStartReader?()
         startReader()
         await testHooks.beforeWaitForReady?()
 
@@ -267,7 +301,14 @@ public actor RpcClient {
         try await transport.write(try command.encodedLine(id: "unused"))
     }
 
-    public func stderrSnapshot() async -> String { await transport.stderrSnapshot() }
+    /// The child's recent stderr, prefixed with this client's own reason when
+    /// it was the one that ended the session (a backlog budget, for example),
+    /// so `SessionProcessManager` and the recovery UI report the real cause.
+    public func stderrSnapshot() async -> String {
+        let stderr = await transport.stderrSnapshot()
+        guard let transportFailure else { return stderr }
+        return stderr.isEmpty ? transportFailure : transportFailure + "\n" + stderr
+    }
 
     /// The child's exit code once it has exited, nil while it is running.
     public var exitCode: Int32? {
@@ -299,9 +340,10 @@ public actor RpcClient {
         guard !terminated else { return }
         terminated = true
         awaitingAuthoritativeExit = false
+        if transportFailure == nil { transportFailure = reason }
         failAllPending(
             exitCode: await transport.exitStatus,
-            stderrTail: await transport.stderrSnapshot())
+            stderrTail: await stderrSnapshot())
         await transport.shutdown()
         readerTask?.cancel()
         readerTask = nil
@@ -311,9 +353,27 @@ public actor RpcClient {
     private func finishStreams() {
         guard !streamsFinished else { return }
         streamsFinished = true
-        eventContinuation.finish()
+        eventQueue.finish()
         terminationContinuation.yield(())
         terminationContinuation.finish()
+    }
+
+    private static func backlogFailureDescription(
+        _ failure: BoundedRecordQueueError,
+        queue: String
+    ) -> String {
+        switch failure {
+        case .backlogExceeded(let queuedBytes, let limitBytes):
+            return "[OmpKit:RpcClient] The \(queue) backlog exceeded its "
+                + "\(limitBytes / 1_048_576) MiB storage budget; the session was stopped "
+                + "to protect memory — {queuedBytes: \(queuedBytes), limitBytes: \(limitBytes)}"
+        case .spillFailed(let detail):
+            return "[OmpKit:RpcClient] The \(queue) backlog could not use temporary "
+                + "storage; the session was stopped — {detail: \(detail)}"
+        case .corruptRecord(let detail):
+            return "[OmpKit:RpcClient] A spilled \(queue) record could not be read "
+                + "back; the session was stopped — {detail: \(detail)}"
+        }
     }
 
     // MARK: - Reader
@@ -323,6 +383,12 @@ public actor RpcClient {
             guard let self else { return }
             for await line in self.transport.lines {
                 await self.handle(line: line)
+            }
+            if let failure = self.transport.backlogFailure {
+                // The child is still alive behind a full pipe; only a teardown
+                // ends this, never an exit status.
+                await self.poison(reason: Self.backlogFailureDescription(failure, queue: "stdout"))
+                return
             }
             await self.didDrainStdout()
             for await exitCode in self.transport.onExit {
@@ -386,19 +452,27 @@ public actor RpcClient {
             } else {
                 receivedReady = ready
             }
-            yieldEvent(frame)
+            await yieldEvent(frame, encoded: line)
         case .response(let response):
             deliver(response)
         case .chunk:
             break   // handled above
         case .extensionUIRequest, .providerAccountChanged, .event:
-            yieldEvent(frame)
+            await yieldEvent(frame, encoded: line)
         }
     }
 
-    private func yieldEvent(_ frame: RpcFrame) {
+    /// Queues an event behind everything already waiting. `line` is the wire
+    /// form the queue spills and re-decodes when memory is over budget.
+    private func yieldEvent(_ frame: RpcFrame, encoded line: Data) async {
         yieldedEventCount &+= 1
-        eventContinuation.yield(frame)
+        do {
+            try eventQueue.enqueue(frame, encoded: line)
+        } catch let failure as BoundedRecordQueueError {
+            await poison(reason: Self.backlogFailureDescription(failure, queue: "event"))
+        } catch {
+            await poison(reason: "[OmpKit:RpcClient] event backlog failed — {error: \(error)}")
+        }
     }
 
     private func deliver(_ response: RpcResponse) {

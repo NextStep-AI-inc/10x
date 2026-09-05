@@ -625,3 +625,97 @@ private func waitForReadyWaiter(_ client: RpcClient) async -> Bool {
     interactive.supportsUserInteraction = true
     #expect(interactive.resolvedArguments == ["--mode", "rpc-ui", "--no-title"])
 }
+
+@Test func stalledEventConsumerDoesNotBlockResponses() async throws {
+    // 3,000 × 4 KiB of events precede the response: three times the event
+    // queue's memory budget, and nobody reads `events` until afterwards.
+    let client = makeClient(mode: "event-flood", modeArguments: ["3000", "4096"])
+    _ = try await client.start()
+
+    let response = try await client.send(.getState(), timeout: .seconds(60))
+    #expect(response.data?["sessionId"]?.stringValue == "fake-session")
+    let backlog = await client.eventBacklogMetrics
+    #expect(backlog.totalSpilledRecords > 0)
+    #expect(backlog.memoryBytes <= BoundedRecordQueueLimits.transport.memoryBytes)
+    #expect(backlog.spillFileBytes <= BoundedRecordQueueLimits.transport.spillBytes)
+
+    var indices: [Int] = []
+    for await frame in client.events {
+        if case .event("notice", let payload) = frame, let index = payload["index"]?.intValue {
+            indices.append(index)
+            if indices.count == 3_000 { break }
+        }
+    }
+    #expect(indices == Array(0..<3_000))
+    #expect(await client.eventBacklogMetrics.spilledRecords == 0)
+    #expect(await client.eventBacklogMetrics.spillFileBytes == 0)
+    await client.shutdown()
+}
+
+@Test func eventBacklogOverflowStopsTheSessionWithADiagnostic() async throws {
+    var hooks = RpcClientTestHooks()
+    hooks.eventQueueLimits = BoundedRecordQueueLimits(
+        memoryBytes: 8_192, memoryRecords: 4, spillBytes: 65_536)
+    // 400 × 4 KiB is well past a 64 KiB spill cap, and nobody reads `events`.
+    let client = makeClient(
+        mode: "event-flood", modeArguments: ["400", "4096"], testHooks: hooks)
+    _ = try await client.start()
+    let termination = Task { for await _ in client.termination {} }
+
+    let result = await Task { try await client.send(.getState(), timeout: .seconds(60)) }.result
+    guard case .failure(let error) = result,
+          case .processExited(_, let stderr) = error as? RpcClientError
+    else {
+        Issue.record("the request must fail once the event backlog overflows")
+        await client.shutdown()
+        return
+    }
+    #expect(stderr.contains("event backlog exceeded its 0 MiB storage budget"))
+    #expect(await withTimeout(.seconds(5)) { await termination.value } != nil)
+    #expect(await client.stderrSnapshot().hasPrefix("[OmpKit:RpcClient] The event backlog"))
+    #expect(await client.protocolErrors.contains {
+        $0.remoteError?.contains("event backlog") == true
+    })
+    #expect(await client.exitCode != nil)
+    var remaining = 0
+    for await _ in client.events { remaining += 1 }
+    #expect(remaining < 400)
+    await client.shutdown()
+}
+
+@Test func stdoutBacklogOverflowStopsTheSessionWithADiagnostic() async throws {
+    var hooks = RpcClientTestHooks()
+    hooks.lineQueueLimits = BoundedRecordQueueLimits(
+        memoryBytes: 8_192, memoryRecords: 4, spillBytes: 65_536)
+    // The stdout reader is held back until the flood is over, so the transport's
+    // line backlog overflows rather than the event queue behind it.
+    let gate = RpcSuspensionGate()
+    hooks.beforeStartReader = { await gate.wait() }
+    let client = makeClient(
+        mode: "line-flood", modeArguments: ["400", "4096"], testHooks: hooks)
+    let start = Task { () -> Result<ReadyFrame, any Error> in
+        do { return .success(try await client.start()) }
+        catch { return .failure(error) }
+    }
+    #expect(await waitForSuspensionGate(gate))
+    let overflowed = await withTimeout(.seconds(30)) { () -> Bool in
+        while !Task.isCancelled {
+            if case .backlogExceeded? = await client.transportBacklogFailure { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+    #expect(overflowed)
+    await gate.release()
+
+    guard case .failure(let error) = await start.value,
+          case .processExited(_, let stderr) = error as? RpcClientError
+    else {
+        Issue.record("startup must fail once the stdout backlog overflows")
+        await client.shutdown()
+        return
+    }
+    #expect(stderr.contains("stdout backlog exceeded its 0 MiB storage budget"))
+    #expect(await client.exitCode != nil)
+    await client.shutdown()
+}
