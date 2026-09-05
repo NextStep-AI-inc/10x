@@ -26,8 +26,11 @@ This work adds focused paste, optional markup, and an in-app preview.
   is no original and no re-edit.
 - Live editor and strip draw the encoded base plus a vector overlay. Bitmap
   compositing and re-encoding run only at send.
-- Focused ⌘V is handled by the composer’s existing `onKeyPress` router.
-  `Edit → Paste` while the `TextEditor` is focused is out of scope.
+- Focused image paste is gated by a built-app spike, not by a synthetic
+  key-event probe. Try the existing `onKeyPress` router first. If a real
+  focused ⌘V does not stage the image (or breaks text paste), replace the
+  composer `TextEditor` with an owned `NSTextView` representable. Never hook
+  or mutate `SwiftUI.PlatformTextView`.
 
 ## Current baseline
 
@@ -42,9 +45,10 @@ click-to-expand viewer.
 
 `TranscriptAnnotation` is a transcript event label. It is not image markup.
 
-Implement against the current composer (`TextEditor`,
+Start from the current composer (`TextEditor`,
 `ComposerCommandKeyRouting`, `ComposerTextViewConfigurator`), not the closed
-PR #17 key-monitor branch.
+PR #17 key-monitor branch. The paste spike may replace `TextEditor`; it
+must not revive that monitor.
 
 ## User flow
 
@@ -116,27 +120,41 @@ pixels. The original unmarked bytes are not kept.
 
 ### Paste
 
-Do not add a window-local key monitor. Do not mutate
-`SwiftUI.PlatformTextView` (`isa` swap, `paste:` hook, or swizzle).
+A synthetic `NSEvent` sent through `NSApp.sendEvent` is not proof that a
+real focused-editor ⌘V reaches SwiftUI `.onKeyPress` before AppKit’s menu
+key equivalent (`Edit → Paste` / `paste:`). The first implementation task
+is a built-app spike that uses a real screenshot on the clipboard and a
+real ⌘V while the composer editor is first responder.
 
-`ComposerCommandKeyRouting` already owns the focused `TextEditor` via
-`.onKeyPress`. Add `v` to that key set. In `handleEditorKey`:
+**Spike pass** (lock the key-router):
 
-- If the press is not plain ⌘V (⌘⇧V, ⌥⌘V, or typing `v`), return `.ignored`.
-- If it is plain ⌘V, classify the clipboard with
-  `ComposerPasteboard.content(of:)`.
-- Images or image files → stage through the existing `add` path and return
-  `.handled`.
-- Text or nothing → return `.ignored` so the text view pastes as it does
-  today.
+- Focused ⌘V with an image (or image file) on the clipboard stages it
+  through the existing `add` path.
+- Focused ⌘V with only text still inserts that text.
+- ⌘⇧V, ⌥⌘V, and typing `v` are unchanged.
 
-`.onPasteCommand(of: [.png, .jpeg, .tiff])` stays as the unfocused fallback
-when the paperclip or footer is first responder.
+If that pass holds, add `v` to `ComposerCommandKeyRouting.keys` and classify
+in `handleEditorKey`: plain ⌘V with image content returns `.handled` and
+stages; anything else returns `.ignored`. Keep
+`.onPasteCommand(of: [.png, .jpeg, .tiff])` as the unfocused fallback.
 
-That is the requested ⌘V path. `Edit → Paste` while the editor is focused
-is out of scope. If that parity is needed later, replace `TextEditor` with
-an owned `NSTextView` representable. Do not hook SwiftUI’s private text
-view.
+**Spike fail** (owned `NSTextView`, not a private hook):
+
+If a real focused ⌘V never reaches `.onKeyPress`, or image paste still
+does nothing, replace the composer `TextEditor` with an owned
+`NSTextView` representable that overrides `paste(_:)`. Classify with
+`ComposerPasteboard.content(of:)`. Images and image files stage and return
+without calling `super`; text and everything else call through. That path
+also covers `Edit → Paste`. Preserve today’s height overlay, focus, Return
+routing, and command-browser keys.
+
+Forbidden on every path: a window-local key monitor, an `isa` swap, a
+`paste:` hook, or any swizzle of `SwiftUI.PlatformTextView`.
+
+Record the spike outcome (pass or fail, and which path locked) in
+`docs/superpowers/evidence/` before markup work continues. Classification
+tests can land before the spike; routing-shape tests wait until the path
+is locked.
 
 ### Send
 
@@ -206,11 +224,21 @@ Keep the existing cases: PNG-only → images; PNG + text → images; Finder
 image URL → image files; `.txt` or plain text → none. Do not revive the
 PR #17 key-monitor harness.
 
-**⌘V routing**
+**Paste spike (first implementation task)**
 
-`ComposerCommandKeyRouting` / `handleEditorKey`: plain ⌘V with image
-content is `.handled`; text-only, ⌘⇧V, ⌥⌘V, and bare `v` are `.ignored`.
-Classification stays on the pasteboard helper.
+Build the current composer, put a real screenshot on the clipboard, focus
+the editor, and press ⌘V. Pass: the image stages and a following text
+paste still inserts text. Fail: switch to the owned `NSTextView` path
+above. A synthetic key event is not this test.
+
+**⌘V routing (after the spike locks a path)**
+
+If the key-router locked: `ComposerCommandKeyRouting` / `handleEditorKey`
+— plain ⌘V with image content is `.handled`; text-only, ⌘⇧V, ⌥⌘V, and
+bare `v` are `.ignored`. If the `NSTextView` locked: `paste(_:)` stages
+images and calls through for text; drive tests with `paste:` /
+`sendAction`, not synthetic ⌘V. Classification stays on the pasteboard
+helper.
 
 **`ImageMarkup`**
 
@@ -252,16 +280,19 @@ No per-frame pen-move snapshots.
 
 ## Out of scope
 
-- `Edit → Paste` while the `TextEditor` is focused
+- `Edit → Paste` while the `TextEditor` is focused, unless the paste spike
+  fails and the owned `NSTextView` path is taken (that path covers the
+  menu item as a side effect)
 - Color picker, blur, crop, highlighter, or freeform shapes beyond pen /
   arrow / rectangle / text
 - Re-editing a sent image
 - Keeping the unmarked original after send
 - Quick Look or a separate preview window
 - Auto-opening the editor on paste, drop, or paperclip
-- Replacing `TextEditor` with a custom `NSTextView`
+- Replacing `TextEditor` unless the paste spike fails
 - Changing the 8-image cap, the 1,568-pixel fit, or the PNG/JPEG budget
 - Non-image clipboard content (files still become draft paths)
+- Window-local key monitors or any runtime mutation of SwiftUI’s text view
 
 ## Implementation notes
 
@@ -271,5 +302,7 @@ No per-frame pen-move snapshots.
   corner radius on the overlay chrome. Markup strokes use `signalRedHex`.
 - Closed PR #17 (`ComposerPasteMonitor`) is a classification reference only.
   Do not merge that interceptor onto the current composer.
+- The first implementation task is the built-app paste spike. Do not lock
+  the key-router, and do not start markup, until that spike is recorded.
 - Local `main` may still carry uncommitted paste-monitor files. Leave them
   there. Implement this spec on a branch from current `origin/main`.
