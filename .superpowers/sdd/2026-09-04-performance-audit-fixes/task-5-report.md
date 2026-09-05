@@ -92,3 +92,19 @@ Task 2 is left as is; refill and compaction run under the queue lock
 Evidence: `swift test --package-path OmpKit` 217 passed (3 skips);
 changed app tests 14/14 passed (`app-review-fixes-v2.log`, `-v3.log`); full
 app suite re-run recorded below.
+
+## Final verification after the review round
+
+- `xcodebuild test` at `102dbec` (`full-app-suite-v4.log`): **1,326 Swift
+  Testing tests in 34 suites passed** plus 4 XCTest checks, 0 failures.
+- `swift test --package-path OmpKit` (`ompkit-review-fixes-v2.log`): 217 passed,
+  3 skips.
+- Two earlier full runs (`-v2`, `-v3`) failed only
+  `staleReconciliationFailureCannotOverwriteNewerBoundary` (a Task 2 test)
+  while the machine also ran another session's build (load 23–28). It passed
+  3/3 alone, 5/5 alone under sixteen CPU spinners (0.68 s each), took 5.7 s in
+  the earlier passing full run and 6.0 s in the final one against a 5 s wait
+  budget; spawn-heavy tests in the suite routinely take 8–13 s. The fixture
+  budgets now use the suite's 30 s hang ceiling and the fake server keeps its
+  two boundaries 500 ms apart (`102dbec`).
+- CI at `cf21b21`: all eight checks green, including the Swift CodeQL job.
