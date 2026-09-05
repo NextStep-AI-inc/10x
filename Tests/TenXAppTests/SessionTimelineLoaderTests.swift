@@ -74,12 +74,12 @@ import Testing
     let fixture = try TimelineLoaderFixture(message: "Stale")
     defer { fixture.remove() }
     let reader = BlockingTimelineReader()
-    let loader = SessionTimelineLoader(readData: { url in try reader.read(url) })
+    let loader = SessionTimelineLoader(readData: { url in try await reader.read(url) })
 
     let canceledLoad = Task { try await loader.load(path: fixture.file.path) }
-    #expect(reader.waitUntilBlocked())
+    await reader.waitUntilBlocked()
     canceledLoad.cancel()
-    reader.resume()
+    await reader.resume()
     await #expect(throws: CancellationError.self) {
         _ = try await canceledLoad.value
     }
@@ -88,7 +88,7 @@ import Testing
     let fresh = try await loader.load(path: fixture.file.path)
 
     #expect(fresh?.visibleText == "Fresh")
-    #expect(reader.count == 2)
+    #expect(await reader.count == 2)
 }
 
 @Test func timelineLoaderDoesNotCacheAHistoryThatChangesDuringItsRead() async throws {
@@ -118,30 +118,43 @@ private final class CountingTimelineReader: @unchecked Sendable {
     }
 }
 
-private final class BlockingTimelineReader: @unchecked Sendable {
-    private let lock = NSLock()
-    private let didStart = DispatchSemaphore(value: 0)
-    private let canFinish = DispatchSemaphore(value: 0)
+/// Holds the first read open until released. Suspends instead of blocking, so
+/// neither the loader's actor nor the test occupies a cooperative thread while
+/// waiting, which a semaphore would under a saturated pool.
+private actor BlockingTimelineReader {
     private var readCount = 0
+    private var hasStarted = false
+    private var isReleased = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
-    var count: Int { lock.withLock { readCount } }
+    var count: Int { readCount }
 
-    func read(_ url: URL) throws -> Data {
-        lock.withLock { readCount += 1 }
+    func read(_ url: URL) async throws -> Data {
+        readCount += 1
         let data = try Data(contentsOf: url)
-        if count == 1 {
-            didStart.signal()
-            canFinish.wait()
+        if readCount == 1 {
+            hasStarted = true
+            let waiters = startWaiters
+            startWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            if !isReleased {
+                await withCheckedContinuation { releaseWaiters.append($0) }
+            }
         }
         return data
     }
 
-    func waitUntilBlocked() -> Bool {
-        didStart.wait(timeout: .now() + 5) == .success
+    func waitUntilBlocked() async {
+        if hasStarted { return }
+        await withCheckedContinuation { startWaiters.append($0) }
     }
 
     func resume() {
-        canFinish.signal()
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 }
 

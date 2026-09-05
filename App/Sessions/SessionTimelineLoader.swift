@@ -3,7 +3,7 @@ import OmpKit
 import Darwin
 
 actor SessionTimelineLoader {
-    typealias DataReader = @Sendable (URL) throws -> Data
+    typealias DataReader = @Sendable (URL) async throws -> Data
 
     private struct SourceFingerprint: Equatable, Sendable {
         let path: String
@@ -26,7 +26,7 @@ actor SessionTimelineLoader {
         self.readData = readData
     }
 
-    func load(path: String) throws -> TranscriptHistory? {
+    func load(path: String) async throws -> TranscriptHistory? {
         try Task.checkCancellation()
         let url = URL(filePath: path).standardizedFileURL.resolvingSymlinksInPath()
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
@@ -34,7 +34,7 @@ actor SessionTimelineLoader {
         let before = try fingerprint(for: url)
         if cache?.fingerprint == before { return cache?.history }
 
-        let file = try SessionFileParser.parse(data: readData(url))
+        let file = try SessionFileParser.parse(data: try await readData(url))
         let history = try TranscriptHistoryMapper.mapCancellable(
             header: file.header,
             path: SessionTree.cancellableActivePath(of: file))

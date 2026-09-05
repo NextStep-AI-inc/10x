@@ -479,7 +479,7 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     let boundary = try controllerEvent(#"{"type":"turn_end"}"#)
     let reconcile = controller.testingCapturedBoundaryReconciler(frame: boundary)
     reconcile()
-    try await Task.sleep(for: .milliseconds(250))
+    await controller.testingAwaitReconciliation()
 
     #expect(controller.toolSourceContentID(for: "tool-1") == initialContentID)
     await manager.closeAll()
@@ -553,15 +553,16 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     let boundary = try controllerEvent(#"{"type":"turn_end"}"#)
 
     await controller.openNew(projectURL: try temporaryDirectory())
+    let loadsAfterOpen = await loader.requestCount
     let first = controller.testingCapturedBoundaryReconciler(frame: boundary)
     let second = controller.testingCapturedBoundaryReconciler(frame: boundary)
+    // Both boundaries land inside one debounce window; the second cancels the
+    // first's pending load before it can start.
     first()
-    try await Task.sleep(for: .milliseconds(10))
     second()
+    await controller.testingAwaitReconciliation()
 
-    #expect(await loader.waitForRequestCount(2))
-    try await Task.sleep(for: .milliseconds(100))
-    #expect(await loader.requestCount == 2)
+    #expect(await loader.requestCount == loadsAfterOpen + 1)
     await manager.closeAll()
 }
 
@@ -1269,4 +1270,32 @@ private func messageItem(id: String, text: String) -> TranscriptItem {
             "timestamp": .double(0),
         ]),
         isFinal: true))
+}
+
+@MainActor @Test func idleEvictionEligibilityRequiresAnIdleSessionWithNothingUnsaved() async throws {
+    let manager = fakeManager(mode: "basic")
+    let clean = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
+    #expect(clean.isEligibleForIdleEviction)
+
+    let busyStates: [SessionRuntimeState] = [
+        .loading, .streaming, .stopped(code: nil, stderrTail: ""), .failed("x"),
+    ]
+    for state in busyStates {
+        let busy = SessionController(processManager: manager, previewItems: [], runtimeState: state)
+        #expect(!busy.isEligibleForIdleEviction, "\(state) must not be reclaimable")
+    }
+
+    let drafted = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
+    drafted.draft = "unsent"
+    #expect(!drafted.isEligibleForIdleEviction)
+
+    let attached = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
+    attached.attachments = [ComposerAttachment(
+        name: "shot.png", data: Data([0x89, 0x50]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)]
+    #expect(!attached.isEligibleForIdleEviction)
+
+    let submitting = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
+    submitting.prepareInitialSubmission(text: "Start", attachments: [])
+    #expect(!submitting.isEligibleForIdleEviction)
 }

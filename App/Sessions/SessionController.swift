@@ -1283,6 +1283,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 context: context)
         }
     }
+
+    /// Waits for the reconciliation scheduled by the latest boundary, if any.
+    func testingAwaitReconciliation() async {
+        await reconciliationTask?.value
+    }
 #endif
 
     private func isReconciliationBoundary(_ frame: RpcFrame) -> Bool {
