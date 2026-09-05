@@ -220,18 +220,19 @@ git push
 - Modify: `App/Shell/AppShellView.swift:15-62,221-258`
 - Verify unchanged: `App/Sessions/ComposerView.swift:800-822` — the slot remains conditional on `composerProviderDockWidth > 0`.
 - Modify references: `Tests/TenXAppTests/ReferenceImages/full-shell-usage-dock-wide-window.png`
-- Modify references if rendered pixels change: `Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-wide-window.png`
-- Verify unchanged references: `full-shell-usage-dock-small-window.png`, `full-shell-account-dock-compact-trigger-window.png`, `full-shell-account-dock-minimum-window.png`
+- Modify references: `Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-wide-window.png`
+- Modify references: `Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-compact-trigger-window.png`
+- Verify unchanged references: `full-shell-usage-dock-small-window.png`, `full-shell-account-dock-minimum-window.png`
 
 **Interfaces:**
 - Consumes: `ProviderUsageDockPlacement`, `ProviderUsageDockLayout.placement(...)`, `.outsideComposer`, `.standalone`, `compact(shellSize:footerFrame:)`, and `footerWidth(providers:)` from Task 1.
 - Produces: live shell integration that reserves footer width only for `.composerFooter` and renders all three placements through the existing `ProviderUsageDockView`.
 
-- [ ] **Step 1: Confirm the current wide snapshot proves the regression**
+- [x] **Step 1: Confirm the current wide snapshot proves the regression**
 
 Inspect `Tests/TenXAppTests/ReferenceImages/full-shell-usage-dock-wide-window.png` and record the current fact: the controls are 28 points and inside the composer despite the 1280-point shell. This is the pre-fix visual reproduction; do not modify the image yet.
 
-- [ ] **Step 2: Derive placement inside live shell geometry**
+- [x] **Step 2: Derive placement inside live shell geometry**
 
 In the non-onboarding branch of `AppShellView.body`, wrap the existing workspace shell in `GeometryReader { shellGeometry in ... }`. Inside that closure, derive:
 
@@ -255,7 +256,7 @@ Inject `composerDockWidth` into `routeCanvas`:
 
 This replaces the current unconditional `hasComposer ? footerWidth(...) : 0` expression. Keep the rail padding and every other environment value unchanged.
 
-- [ ] **Step 3: Render compact and non-compact branches without duplicated dock construction**
+- [x] **Step 3: Render compact and non-compact branches without duplicated dock construction**
 
 Change `usageDock` to consume an already-resolved layout:
 
@@ -328,7 +329,7 @@ Add a sibling shell overlay for non-footer placements:
 
 Keep the search overlay after the dock overlays so search continues to cover and disable shell content as it does now.
 
-- [ ] **Step 4: Run focused shell snapshots to verify the expected RED references**
+- [x] **Step 4: Run focused shell snapshots to verify the expected RED references**
 
 Run:
 
@@ -344,9 +345,9 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x \
   -only-testing:'TenXAppTests/fullShellAccountDockMinimumWindowSnapshot()'
 ```
 
-Expected: exactly the wide reference or references fail and write `.actual.png` files. The small, compact-trigger, and minimum references must pass. If a constrained reference changes, stop and fix the layout rather than accepting the regression.
+Expected: the usage-wide, account-wide, and two-provider 1180-point references fail and write `.actual.png` files because each now has enough gutter for outside placement. The 760-point usage and account references must pass. If a constrained reference changes, stop and fix the layout rather than accepting the regression.
 
-- [ ] **Step 5: Inspect and promote only correct wide references**
+- [x] **Step 5: Inspect and promote only correct outside-placement references**
 
 Inspect each generated `.actual.png` before promotion. Required visual facts:
 
@@ -370,18 +371,26 @@ mv Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-wide-window.actual
   Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-wide-window.png
 ```
 
-- [ ] **Step 6: Re-run snapshots to verify GREEN**
+The two-provider 1180-point fixture also has enough room under the restored count-aware policy:
+
+```bash
+mv Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-compact-trigger-window.actual.png \
+  Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-compact-trigger-window.png
+```
+
+- [x] **Step 6: Re-run snapshots to verify GREEN**
 
 Run the Step 4 command again.
 
 Expected: Swift Testing reports 5 tests passed, no `.actual.png` files remain, and `** TEST SUCCEEDED **`.
 
-- [ ] **Step 7: Commit the shell integration and reviewed snapshots**
+- [x] **Step 7: Commit the shell integration and reviewed snapshots**
 
 ```bash
 git add App/Shell/AppShellView.swift \
   Tests/TenXAppTests/ReferenceImages/full-shell-usage-dock-wide-window.png \
-  Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-wide-window.png
+  Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-wide-window.png \
+  Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-compact-trigger-window.png
 git commit -m "fix(usage): move provider dock outside when it fits"
 git push
 ```
