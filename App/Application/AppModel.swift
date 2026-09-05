@@ -30,6 +30,10 @@ final class AppModel {
         case settingsUnavailable
     }
 
+    private enum SessionRenameError: Error {
+        case runtimeUnavailable
+    }
+
     private enum StartupPreparation: Sendable {
         case ready
         case missingOmp
@@ -38,12 +42,16 @@ final class AppModel {
     var route: AppRoute = .onboarding(.installOmp)
     var installation: OmpInstallation?
     var selectedProjectURL: URL?
+    var newSessionDraft = ""
+    var newSessionAttachments: [ComposerAttachment] = []
+    private(set) var newSessionFocusRequest = 0
     /// Set when OMP is installed but would not run, so setup can say that
     /// instead of reporting it as missing.
     var unrunnableOmpURL: URL?
     var sessions: [SessionMetadata] = []
     var archivedSessions: [SessionMetadata] = []
     var pendingDeletion: SessionDeletionRequest?
+    var pendingRename: SessionRenameRequest?
     var sessionActionError: String?
     var providerUsages: [ProviderUsageProvider] = []
     var isSearchPresented = false
@@ -456,6 +464,7 @@ final class AppModel {
 
     func openNewSession() {
         guard !isSessionMutationInFlight else { return }
+        newSessionFocusRequest &+= 1
         clearActiveSession()
         detachComposerControlsAndRefresh()
         route = .newSession
@@ -487,6 +496,7 @@ final class AppModel {
         guard let metadata = sessions.first(where: { $0.path == result.sessionPath }) else { return }
         closeSearch()
         openSession(metadata)
+        activeSession?.focusSearchResult(TranscriptSearchRequest(entryID: result.entryID, query: result.query))
     }
 
     func openPreviousSession() {
@@ -499,6 +509,30 @@ final class AppModel {
         openSession(session)
     }
 
+    var railSessions: [SessionMetadata] {
+        var result = sessions
+        var paths = Set(result.map(\.path))
+        var controllers = Array(managedSessions.values)
+        if let activeSession, !controllers.contains(where: { $0 === activeSession }) {
+            controllers.append(activeSession)
+        }
+        for controller in controllers {
+            let path = controller.sessionPath ?? "new:\(controller.id.uuidString)"
+            guard paths.insert(path).inserted, let projectURL = controller.projectURL else { continue }
+            let created = controller.createdAt
+            result.append(SessionMetadata(path: path, sessionId: controller.id.uuidString,
+                cwd: projectURL.path, title: controller.title, created: created, modified: created,
+                sizeBytes: 0, status: .pending))
+        }
+        return result
+    }
+
+    func liveController(for sessionPath: String) -> SessionController? {
+        if let controller = managedController(for: sessionPath) { return controller }
+        let controllers = Array(managedSessions.values) + [activeSession].compactMap { $0 }
+        return controllers.first { "new:\($0.id.uuidString)" == sessionPath }
+    }
+
     func openSession(_ metadata: SessionMetadata) {
         guard !isSessionMutationInFlight else { return }
         if !metadata.cwd.isEmpty {
@@ -506,7 +540,7 @@ final class AppModel {
                 .standardizedFileURL
         }
         guard let processManager else { return }
-        if let controller = managedController(for: metadata.path) {
+        if let controller = liveController(for: metadata.path) {
             detachComposerSources()
             activeSession = controller
             route = .session(metadata.path)
@@ -538,18 +572,28 @@ final class AppModel {
         }
     }
 
+    func reviewFailedPrompt(_ controller: SessionController) {
+        guard controller.sessionPath == nil else { return }
+        if !controller.draft.isEmpty {
+            newSessionDraft = [newSessionDraft, controller.draft].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        }
+        newSessionAttachments.append(contentsOf: controller.attachments)
+        openNewSession()
+    }
+
     func startNewSession(prompt: String, attachments: [ComposerAttachment] = []) {
         guard !isSessionMutationInFlight else { return }
         guard let processManager, let selectedProjectURL else { return }
         guard sessionActivityRegistry.canCreateManagedSession else { return }
         let primarySnapshot = sessionActivityRegistry.newSessionPrimarySnapshot()
         let controller = makeSessionController(processManager: processManager)
-        controller.draft = prompt
-        controller.attachments = attachments
+        controller.prepareInitialSubmission(text: prompt, attachments: attachments, projectURL: selectedProjectURL)
+        newSessionDraft = ""
+        newSessionAttachments = []
         detachComposerSources()
         // omp does not name the session until the child is up, so the route
         // carries a placeholder until `openNew` reports the real path.
-        let placeholderRoute = AppRoute.session("new:\(UUID().uuidString)")
+        let placeholderRoute = AppRoute.session("new:\(controller.id.uuidString)")
         route = placeholderRoute
         let selection = composerControls?.spawnSelection
         activeSession = controller
@@ -566,6 +610,7 @@ final class AppModel {
                 return
             }
             guard let sessionPath = controller.sessionPath else {
+                controller.markInitialSubmissionFailed()
                 self.removeManagedSession(controller)
                 return
             }
@@ -692,7 +737,8 @@ final class AppModel {
               startupState.phase == .preparing
         else { return }
         startupState.markStopped(.recentProjects, attemptID: attemptID)
-        startupState.enterRecovery(attemptID: attemptID)
+        startupState.enterRecovery(attemptID: attemptID,
+            reason: "Paused to free memory. Retry when memory is available or continue without preloaded workspaces.")
     }
 
     /// Runs once and is re-entrant: a second caller awaits the *completion* of the
@@ -775,6 +821,83 @@ final class AppModel {
 
     func requestDeleteSession(_ metadata: SessionMetadata) {
         pendingDeletion = .session(metadata)
+    }
+
+    func requestRenameSession(_ metadata: SessionMetadata) {
+        guard !isSessionMutationInFlight else { return }
+        pendingRename = SessionRenameRequest(metadata: metadata)
+    }
+
+    func requestRenameCurrentSession() {
+        guard !isSessionMutationInFlight,
+              let controller = activeSession,
+              let path = controller.sessionPath
+        else { return }
+        pendingRename = SessionRenameRequest(
+            path: path,
+            cwd: controller.projectURL?.path ?? selectedProjectURL?.path ?? "",
+            title: controller.title)
+    }
+
+    func updateRenameDraft(_ draft: String) {
+        guard var request = pendingRename, !isSessionMutationInFlight else { return }
+        request.draft = draft
+        request.errorMessage = nil
+        pendingRename = request
+    }
+
+    func cancelRename() {
+        guard !isSessionMutationInFlight else { return }
+        pendingRename = nil
+    }
+
+    func confirmRename() async {
+        guard var request = pendingRename else { return }
+        guard let title = request.normalizedTitle else {
+            request.errorMessage = "Enter a session name."
+            pendingRename = request
+            return
+        }
+        guard beginSessionMutation() else { return }
+        defer { endSessionMutation() }
+
+        request.errorMessage = nil
+        pendingRename = request
+        do {
+            if let controller = managedController(for: request.path) {
+                try await controller.rename(to: title)
+            } else {
+                try await renameColdSession(request, to: title)
+            }
+            await reloadSessions()
+            await reloadArchivedSessions()
+            guard pendingRename?.id == request.id else { return }
+            pendingRename = nil
+        } catch {
+            guard var current = pendingRename, current.id == request.id else { return }
+            current.errorMessage = "Could not rename this session."
+            pendingRename = current
+        }
+    }
+
+    private func renameColdSession(
+        _ request: SessionRenameRequest,
+        to title: String
+    ) async throws {
+        guard let processManager else { throw SessionRenameError.runtimeUnavailable }
+        if let handle = await processManager.handle(for: request.path) {
+            _ = try await handle.client.send(.setSessionName(title))
+            return
+        }
+
+        let handle = try await processManager.open(sessionPath: request.path, cwd: request.cwd)
+        do {
+            _ = try await handle.client.send(.setSessionName(title))
+            await processManager.close(sessionPath: request.path)
+        } catch {
+            await processManager.close(sessionPath: request.path)
+            throw error
+        }
     }
 
     func requestDeleteProject(_ group: ProjectSessionGroup) {
@@ -1146,7 +1269,13 @@ final class AppModel {
                   startupState.attemptID == id,
                   startupState.phase == .preparing
             else { return }
-            startupState.enterRecovery(attemptID: id)
+            let reason: String
+            if case StartupAttemptError.timeout = error {
+                reason = "Startup exceeded its time limit. Retry the unfinished step or continue with what is ready."
+            } else {
+                reason = "The step could not finish (\(String(describing: type(of: error)))). Retry or continue with what is ready."
+            }
+            startupState.enterRecovery(attemptID: id, reason: reason)
         }
     }
 
@@ -1878,7 +2007,8 @@ final class AppModel {
               startupState.phase == .preparing
         else { return }
         startupState.markStopped(.recentProjects, attemptID: attemptID)
-        startupState.enterRecovery(attemptID: attemptID)
+        startupState.enterRecovery(attemptID: attemptID,
+            reason: "A workspace process exited during startup. Retry it or continue without preloaded workspaces.")
     }
 
     private func startMemoryPressureMonitoring() {

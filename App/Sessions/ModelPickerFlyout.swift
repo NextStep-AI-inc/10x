@@ -1,11 +1,15 @@
 import SwiftUI
 
 enum ModelPickerMetrics {
-    static let panelWidth: CGFloat = 300
+    static let panelWidth: CGFloat = 440
+    static let compactEffortThreshold: CGFloat = 390
     static let rowHeight: CGFloat = 26
     static let headerHeight: CGFloat = 18
     static let searchHeight: CGFloat = 32
     static let settingsRowHeight: CGFloat = 28
+    static let effortTitleHeight: CGFloat = 30
+    static let effortSegmentHeight: CGFloat = 34
+    static let effortGridSpacing: CGFloat = 1
     static let maxListHeight: CGFloat = 260
     static let triggerHeight: CGFloat = 28
     static let separatorHeight: CGFloat = 1
@@ -19,8 +23,50 @@ enum ModelPickerMetrics {
     }
 
     /// Trigger step of the silhouette: never narrower than 44, never wider than the panel.
-    static func bottomWidth(triggerWidth: CGFloat) -> CGFloat {
+    static func bottomWidth(
+        triggerWidth: CGFloat,
+        panelWidth: CGFloat = panelWidth
+    ) -> CGFloat {
         min(max(44, triggerWidth), panelWidth)
+    }
+
+    static func effortColumnCount(optionCount: Int, panelWidth: CGFloat) -> Int {
+        guard optionCount > 0 else { return 0 }
+        if panelWidth < compactEffortThreshold, optionCount > 4 { return 3 }
+        return optionCount
+    }
+
+    static func effortRowCount(optionCount: Int, panelWidth: CGFloat) -> Int {
+        let columns = effortColumnCount(optionCount: optionCount, panelWidth: panelWidth)
+        guard columns > 0 else { return 0 }
+        return Int(ceil(Double(optionCount) / Double(columns)))
+    }
+
+    static func effortSegmentsHeight(optionCount: Int, panelWidth: CGFloat) -> CGFloat {
+        let rowCount = effortRowCount(optionCount: optionCount, panelWidth: panelWidth)
+        return CGFloat(rowCount) * effortSegmentHeight
+            + CGFloat(max(0, rowCount - 1)) * effortGridSpacing
+    }
+
+    static func effortLabel(_ level: String) -> String {
+        level == "xhigh" ? "Extra high" : level.capitalized
+    }
+
+    static func settingsHeight(
+        optionCount: Int,
+        panelWidth: CGFloat,
+        showsFastMode: Bool
+    ) -> CGFloat {
+        guard optionCount > 0 || showsFastMode else { return 0 }
+        let effortHeight = optionCount > 0
+            ? effortTitleHeight
+                + effortSegmentsHeight(optionCount: optionCount, panelWidth: panelWidth)
+            : 0
+        return separatorHeight + effortHeight + (showsFastMode ? settingsRowHeight : 0)
+    }
+
+    static func resolvedPanelWidth(availableWidth: CGFloat) -> CGFloat {
+        min(panelWidth, max(1, availableWidth))
     }
 }
 
@@ -48,6 +94,9 @@ struct ModelPickerFlyout: View {
     let onSelectThinking: (String) -> Void
     let onToggleFastMode: (Bool) -> Void
     let onToggle: () -> Void
+    var favoriteModelIDs: Set<String> = []
+    var onToggleFavorite: (ComposerModelInfo) -> Void = { _ in }
+    var panelWidth: CGFloat = ModelPickerMetrics.panelWidth
 
     @State private var measuredTriggerWidth: CGFloat = 0
 
@@ -74,17 +123,10 @@ struct ModelPickerFlyout: View {
     }
 
     private var settingsHeight: CGFloat {
-        var height: CGFloat = 0
-        if !thinkingOptions.isEmpty || isFastModeVisible {
-            height += ModelPickerMetrics.separatorHeight
-        }
-        if !thinkingOptions.isEmpty {
-            height += ModelPickerMetrics.settingsRowHeight
-        }
-        if isFastModeVisible {
-            height += ModelPickerMetrics.settingsRowHeight
-        }
-        return height
+        ModelPickerMetrics.settingsHeight(
+            optionCount: thinkingOptions.count,
+            panelWidth: panelWidth,
+            showsFastMode: isFastModeVisible)
     }
 
     private var topHeight: CGFloat {
@@ -97,12 +139,12 @@ struct ModelPickerFlyout: View {
     private var bottomWidth: CGFloat {
         // ~intrinsic width of the chip until the real measure lands.
         let trigger = measuredTriggerWidth > 0 ? measuredTriggerWidth : 120
-        return ModelPickerMetrics.bottomWidth(triggerWidth: trigger)
+        return ModelPickerMetrics.bottomWidth(triggerWidth: trigger, panelWidth: panelWidth)
     }
 
     private var silhouette: TwoRectShelfShape {
         TwoRectShelfShape(
-            topWidth: ModelPickerMetrics.panelWidth,
+            topWidth: panelWidth,
             topHeight: topHeight,
             bottomWidth: bottomWidth,
             bottomHeight: ModelPickerMetrics.triggerHeight)
@@ -118,7 +160,10 @@ struct ModelPickerFlyout: View {
                 hasCatalog: hasCatalog,
                 query: $query,
                 onSelectModel: onSelectModel,
-                onCancel: onToggle)
+                onCancel: onToggle,
+                favoriteModelIDs: favoriteModelIDs,
+                onToggleFavorite: onToggleFavorite,
+                panelWidth: panelWidth)
             settingsRegion
             triggerPiece
                 .fixedSize(horizontal: true, vertical: false)
@@ -133,7 +178,7 @@ struct ModelPickerFlyout: View {
         }
         .onPreferenceChange(ModelTriggerWidthKey.self) { measuredTriggerWidth = $0 }
         .frame(
-            width: ModelPickerMetrics.panelWidth,
+            width: panelWidth,
             height: topHeight + ModelPickerMetrics.triggerHeight,
             alignment: .topLeading)
         .background { silhouette.fill(TenXPalette.color(TenXPalette.canvasHex)) }
@@ -149,7 +194,7 @@ struct ModelPickerFlyout: View {
     private var separator: some View {
         Rectangle()
             .fill(TenXPalette.color(TenXPalette.separatorHex))
-            .frame(width: ModelPickerMetrics.panelWidth, height: ModelPickerMetrics.separatorHeight)
+            .frame(width: panelWidth, height: ModelPickerMetrics.separatorHeight)
     }
 
     @ViewBuilder
@@ -161,25 +206,46 @@ struct ModelPickerFlyout: View {
         }
 
         if !thinkingOptions.isEmpty {
-            HStack(spacing: 2) {
+            HStack {
                 Text("EFFORT")
                     .font(TenXTypography.mono(size: 9, weight: .semibold))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    .frame(width: 44, alignment: .leading)
-                ForEach(thinkingOptions, id: \.self) { level in
-                    effortChip(level)
-                }
-                Spacer(minLength: 0)
+                Spacer()
+                Text(ModelPickerMetrics.effortLabel(thinkingLevel))
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
             }
             .padding(.horizontal, 10)
             .frame(
-                width: ModelPickerMetrics.panelWidth,
-                height: ModelPickerMetrics.settingsRowHeight)
+                width: panelWidth,
+                height: ModelPickerMetrics.effortTitleHeight)
+
+            LazyVGrid(
+                columns: Array(
+                    repeating: GridItem(.flexible(), spacing: ModelPickerMetrics.effortGridSpacing),
+                    count: ModelPickerMetrics.effortColumnCount(
+                        optionCount: thinkingOptions.count,
+                        panelWidth: panelWidth)),
+                spacing: ModelPickerMetrics.effortGridSpacing
+            ) {
+                ForEach(thinkingOptions, id: \.self) { level in
+                    effortChip(level)
+                }
+            }
+            .background(TenXPalette.color(TenXPalette.separatorHex))
+            .overlay {
+                Rectangle()
+                    .stroke(TenXPalette.color(TenXPalette.separatorHex), lineWidth: 1)
+            }
+            .padding(.horizontal, 10)
+            .frame(
+                width: panelWidth,
+                height: ModelPickerMetrics.effortSegmentsHeight(
+                    optionCount: thinkingOptions.count,
+                    panelWidth: panelWidth))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Effort")
-            // The chip reads lowercase per the spec diagram; only VoiceOver
-            // capitalizes, matching the footer chip this row replaced.
-            .accessibilityValue(thinkingLevel.capitalized)
+            .accessibilityValue(ModelPickerMetrics.effortLabel(thinkingLevel))
         }
 
         if isFastModeVisible {
@@ -201,7 +267,7 @@ struct ModelPickerFlyout: View {
             }
             .padding(.horizontal, 10)
             .frame(
-                width: ModelPickerMetrics.panelWidth,
+                width: panelWidth,
                 height: ModelPickerMetrics.settingsRowHeight)
         }
     }
@@ -211,13 +277,12 @@ struct ModelPickerFlyout: View {
         return Button {
             onSelectThinking(level)
         } label: {
-            Text(level)
+            Text(ModelPickerMetrics.effortLabel(level))
                 .font(TenXTypography.body(size: 11))
                 .foregroundStyle(isSelected
                     ? TenXPalette.onEmphasis
                     : TenXPalette.color(TenXPalette.mutedTextHex))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity, minHeight: ModelPickerMetrics.effortSegmentHeight)
                 .background(isSelected
                     ? TenXPalette.color(TenXPalette.nearBlackHex)
                     : .clear)
@@ -225,7 +290,7 @@ struct ModelPickerFlyout: View {
         }
         .buttonStyle(.plain)
         .disabled(isMutating)
-        .accessibilityLabel(level)
+        .accessibilityLabel("Effort: \(ModelPickerMetrics.effortLabel(level))")
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 
@@ -245,40 +310,59 @@ struct ModelPickerRow: View {
     let showsProviderTag: Bool
     let isSelected: Bool
     let isHighlighted: Bool
-    let action: () -> Void
+    let isFavorite: Bool
+    let isSelectionDisabled: Bool
+    let onSelect: () -> Void
+    let onToggleFavorite: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Rectangle()
-                    .fill(isSelected ? TenXPalette.color(TenXPalette.cyanHex) : .clear)
-                    .frame(width: 2)
-                Text(model.name)
-                    .font(TenXTypography.body(size: 12, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if showsProviderTag {
-                    Text(model.provider)
-                        .font(TenXTypography.mono(size: 9))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        HStack(spacing: 0) {
+            Button(action: onSelect) {
+                HStack(spacing: 8) {
+                    Rectangle()
+                        .fill(isSelected ? TenXPalette.color(TenXPalette.cyanHex) : .clear)
+                        .frame(width: 2)
+                    Text(model.name)
+                        .font(TenXTypography.body(
+                            size: 12,
+                            weight: isSelected ? .semibold : .regular))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                         .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if showsProviderTag {
+                        Text(model.provider)
+                            .font(TenXTypography.mono(size: 9))
+                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                            .lineLimit(1)
+                    }
                 }
+                .padding(.trailing, 6)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: ModelPickerMetrics.rowHeight,
+                    alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .padding(.trailing, 10)
-            .frame(
-                maxWidth: .infinity,
-                minHeight: ModelPickerMetrics.rowHeight,
-                alignment: .leading)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(isSelectionDisabled)
+            .accessibilityLabel(model.name)
+            .accessibilityValue(ComposerControlsPresentation.rowAccessibilityValue(
+                provider: model.provider,
+                isSelected: isSelected))
+
+            Button(action: onToggleFavorite) {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(TenXPalette.color(
+                        isFavorite ? TenXPalette.cyanHex : TenXPalette.mutedTextHex))
+                    .frame(width: 32, height: ModelPickerMetrics.rowHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                "\(isFavorite ? "Remove" : "Add") favorite, \(model.name), \(model.provider)")
+            .accessibilityValue(isFavorite ? "Favorite" : "Not favorite")
         }
-        .buttonStyle(.plain)
-        // One background, not two: the shared component already renders the hover
-        // and selected wash, and the keyboard highlight is the same visual state.
         .background(FlyoutRowBackground(isSelected: isSelected || isHighlighted))
-        .accessibilityLabel(model.name)
-        .accessibilityValue(ComposerControlsPresentation.rowAccessibilityValue(
-            provider: model.provider,
-            isSelected: isSelected))
     }
 }

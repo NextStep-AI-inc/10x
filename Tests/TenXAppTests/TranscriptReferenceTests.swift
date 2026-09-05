@@ -1,6 +1,15 @@
 import Testing
 @testable import TenXApp
 
+@Test func functionCallsAreNotFileReferences() {
+    for expression in ["args.output.write_text(payload)", "sys.stdout.write(payload)"] {
+        #expect(TranscriptReference.parseInline(expression) == nil)
+        #expect(MessageContentParser.inline("`\(expression)`").attributed.runs.allSatisfy { $0.link == nil })
+    }
+    #expect(TranscriptReference.parseInline("Sources/Foo (copy).swift") ==
+        .file(path: "Sources/Foo (copy).swift", line: nil))
+}
+
 @Test func inlineFileReferencesRoundTripThroughAttributedLinks() throws {
     let reference = TranscriptReference.file(path: "App/Foo.swift", line: 8)
     let url = try #require(reference.inlineURL)

@@ -104,6 +104,52 @@ actor ActivationGate {
     await manager.closeAll()
 }
 
+@Test func managerDefaultsToNoninteractiveRPCMode() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture)
+
+    _ = try await manager.open(sessionPath: "/tmp/noninteractive.jsonl", cwd: "/tmp/project")
+
+    #expect(capture.snapshot().first?.supportsUserInteraction == false)
+    await manager.closeAll()
+}
+
+@Test func interactiveManagerForwardsCapabilityToOpenNewAndWarmClients() async throws {
+    let openCapture = ConfigurationCapture()
+    let openManager = interactiveCapturingManager(openCapture)
+    _ = try await openManager.open(sessionPath: "/tmp/interactive.jsonl", cwd: "/tmp/project")
+    #expect(openCapture.snapshot().first?.supportsUserInteraction == true)
+    await openManager.closeAll()
+
+    let newCapture = ConfigurationCapture()
+    let newManager = interactiveCapturingManager(newCapture)
+    _ = try await newManager.openNew(projectDirectory: "/tmp/project")
+    #expect(newCapture.snapshot().first?.supportsUserInteraction == true)
+    await newManager.closeAll()
+
+    let warmCapture = ConfigurationCapture()
+    let warmManager = interactiveCapturingManager(warmCapture)
+    _ = try await warmManager.warm(projectDirectory: "/tmp/project")
+    #expect(warmCapture.snapshot().first?.supportsUserInteraction == true)
+    await warmManager.closeAll()
+}
+
+private func interactiveCapturingManager(
+    _ capture: ConfigurationCapture
+) -> SessionProcessManager {
+    SessionProcessManager(
+        supportsUserInteraction: true,
+        clientFactory: { configuration in
+            capture.append(configuration)
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+            fake.rawArgv = true
+            fake.cwd = nil
+            return RpcClient(configuration: fake)
+        })
+}
+
 @Test func openNewForwardsProviderModelThinkingFlags() async throws {
     let capture = ConfigurationCapture()
     let manager = capturingManager(capture)

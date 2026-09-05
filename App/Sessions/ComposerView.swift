@@ -196,6 +196,32 @@ enum ComposerCommandDismissalRouting {
     }
 }
 
+enum ComposerReturnRouting {
+    nonisolated static func shortcut(for modifiers: EventModifiers) -> ComposerReturnShortcut? {
+        let relevant = modifiers.intersection([.shift, .option, .command, .control])
+        return switch relevant {
+        case []: .enter
+        case [.command]: .commandEnter
+        case [.shift]: .shiftEnter
+        default: nil
+        }
+    }
+
+    nonisolated static func behavior(
+        for action: ComposerReturnAction,
+        primary: StreamingBehavior
+    ) -> StreamingBehavior? {
+        switch action {
+        case .primary:
+            primary
+        case .alternate:
+            primary == .steer ? .followUp : .steer
+        case .newline:
+            nil
+        }
+    }
+}
+
 enum ComposerPresentation {
     case newSession(
         projectURL: URL?,
@@ -213,8 +239,11 @@ struct ComposerView: View {
     let controls: ComposerControlsModel?
     let commands: ComposerCommandModel?
     let controlsMode: ComposerControlsMode
+    let focusRequest: Int
+    let interactionPreferences: ComposerInteractionPreferences
     let onSend: () -> Void
 
+    @Environment(\.composerProviderDockWidth) private var providerDockWidth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isEditorFocused: Bool
     @State private var attachmentMessage: String?
@@ -235,6 +264,8 @@ struct ComposerView: View {
         controls: ComposerControlsModel? = nil,
         commands: ComposerCommandModel? = nil,
         controlsMode: ComposerControlsMode = .newSession,
+        focusRequest: Int = 0,
+        interactionPreferences: ComposerInteractionPreferences = .shared,
         onSend: @escaping () -> Void
     ) {
         _draft = draft
@@ -244,6 +275,8 @@ struct ComposerView: View {
         self.controls = controls
         self.commands = commands
         self.controlsMode = controlsMode
+        self.focusRequest = focusRequest
+        self.interactionPreferences = interactionPreferences
         self.onSend = onSend
     }
 
@@ -286,7 +319,11 @@ struct ComposerView: View {
             }
             // The composer is the only thing to type into on either screen, so
             // it takes focus as soon as it can accept a keystroke.
-            .onAppear { isEditorFocused = isAvailable }
+            .task(id: focusRequest) {
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                isEditorFocused = isAvailable
+            }
             .onChange(of: isAvailable) { _, isAvailable in
                 if isAvailable {
                     isEditorFocused = true
@@ -312,14 +349,24 @@ struct ComposerView: View {
                 ComposerAttachmentsView(attachments: attachments, onRemove: remove)
             }
 
-            HStack(spacing: 4) {
-                attachButton
-
-                footerControls
-
-                Spacer()
-
-                primaryAction
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) {
+                    attachButton
+                    footerControls.fixedSize()
+                    Spacer(minLength: 8)
+                    actionControls
+                }
+                VStack(spacing: 6) {
+                    HStack(spacing: 4) {
+                        attachButton
+                        footerControls
+                        Spacer(minLength: 0)
+                    }
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        actionControls
+                    }
+                }
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
@@ -463,6 +510,7 @@ struct ComposerView: View {
                     .onKeyPress(keys: ComposerCommandKeyRouting.keys, phases: .down, action: handleEditorKey)
                     .accessibilityLabel("Session prompt")
                     .accessibilityHint(composerModeLabel)
+                    .background(ComposerTextViewConfigurator())
             }
             .frame(minHeight: Self.minEditorHeight, maxHeight: Self.maxEditorHeight)
             // Without this the clamp is a range the parent can fill, and any
@@ -536,21 +584,27 @@ struct ComposerView: View {
 
     private func handleEditorKey(_ press: KeyPress) -> KeyPress.Result {
         if flyout == .commands, let commands, commands.isPresented {
-            guard let action = ComposerCommandKeyRouting.route(press.key, modifiers: press.modifiers) else {
-                return .ignored
+            if let commandAction = ComposerCommandKeyRouting.route(
+                press.key,
+                modifiers: press.modifiers
+            ) {
+                guard CommandBrowserKeyboardCapturePolicy.shouldCapture(
+                    commandAction,
+                    route: commands.route
+                ) else { return .ignored }
+                handleCommandKeyAction(commandAction, model: commands)
+                return .handled
             }
-            guard CommandBrowserKeyboardCapturePolicy.shouldCapture(action, route: commands.route) else {
-                return .ignored
-            }
-            handleCommandKeyAction(action, model: commands)
-            return .handled
         }
 
         guard press.key == .return else { return .ignored }
-        return Self.handleReturn(
-            modifiers: press.modifiers,
-            canSend: canSend,
-            send: onSend)
+        guard let shortcut = ComposerReturnRouting.shortcut(for: press.modifiers) else {
+            return .ignored
+        }
+        let action = interactionPreferences.action(for: shortcut)
+        guard action != .newline else { return .ignored }
+        if canSend { submit(action) }
+        return .handled
     }
 
     private func handleCommandKeyAction(
@@ -742,57 +796,106 @@ struct ComposerView: View {
             : "Could not attach \(skipped.count) images. The limit is \(limit)."
     }
 
-    /// One button, because there is only ever one obvious next move: send what
-    /// is typed, or stop the run there is nothing to add to.
-    private var primaryAction: some View {
-        let isStop = stoppableController != nil
-        let isEnabled = isStop || canSend
-        return Button {
-            if let controller = stoppableController {
-                Task { await controller.abort() }
-            } else {
-                // The warning describes an attach that is over once the prompt
-                // goes out, so it must not outlive the message it was about.
-                attachmentMessage = nil
-                onSend()
+    @ViewBuilder
+    private var actionControls: some View {
+        if let controller = streamingController {
+            providerDockSlot
+            behaviorMenu(controller)
+            sendButton
+            stopButton(controller)
+        } else {
+            providerDockSlot
+            sendButton
+            if case .active(let controller) = presentation, controller.runtimeState == .loading {
+                stopButton(controller)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var providerDockSlot: some View {
+        if providerDockWidth > 0 {
+            Color.clear
+                .frame(width: providerDockWidth, height: ProviderAccountStackGeometry.minimumHitTarget)
+                .anchorPreference(key: ComposerProviderDockAnchorKey.self, value: .bounds) { $0 }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var sendButton: some View {
+        Button {
+            submit(.primary)
             isEditorFocused = true
         } label: {
-            Group {
-                if isStop {
-                    // A square, not stop.fill: the symbol's rounded corners are
-                    // the only radius in a composer built from straight edges.
-                    Rectangle().frame(width: 9, height: 9)
-                } else {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
-                }
-            }
-                .foregroundStyle(isEnabled
+            Image(systemName: "arrow.up")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(canSend
                     ? TenXPalette.onEmphasis
                     : TenXPalette.color(TenXPalette.mutedTextHex))
                 .frame(width: 28, height: 28)
-                .background(isEnabled
+                .background(canSend
                     ? TenXPalette.color(TenXPalette.nearBlackHex)
                     : TenXPalette.color(TenXPalette.hoverNeutralHex))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .help(isStop ? "Stop the response" : sendLabel)
-        .accessibilityLabel(isStop ? "Stop response" : sendLabel)
+        .disabled(!canSend)
+        .help(sendLabel)
+        .accessibilityLabel(sendLabel)
     }
 
-    /// Stop takes over only when there is nothing staged to send: with text or
-    /// an image in the composer the button still has to send it, or Steer and
-    /// Follow up are dead.
-    private var stoppableController: SessionController? {
+    private func stopButton(_ controller: SessionController) -> some View {
+        Button {
+            Task { await controller.abort() }
+            isEditorFocused = true
+        } label: {
+            Rectangle()
+                .frame(width: 9, height: 9)
+                .foregroundStyle(TenXPalette.onEmphasis)
+                .frame(width: 28, height: 28)
+                .background(TenXPalette.color(TenXPalette.nearBlackHex))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Stop the response")
+        .accessibilityLabel("Stop response")
+    }
+
+    private func behaviorMenu(_ controller: SessionController) -> some View {
+        Menu {
+            Button("Steer") { controller.selectStreamingBehavior(.steer) }
+            Button("Follow up") { controller.selectStreamingBehavior(.followUp) }
+        } label: {
+            Text(controller.streamingBehavior == .followUp ? "Follow up" : "Steer")
+                .font(TenXTypography.body(size: 11, weight: .medium))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Composer send action")
+        .accessibilityValue(controller.streamingBehavior == .followUp ? "Follow up" : "Steer")
+    }
+
+    private var streamingController: SessionController? {
         guard case .active(let controller) = presentation,
-              controller.runtimeState == .streaming,
-              attachments.isEmpty,
-              draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              controller.runtimeState == .streaming
         else { return nil }
         return controller
+    }
+
+    private func submit(_ action: ComposerReturnAction) {
+        attachmentMessage = nil
+        switch presentation {
+        case .newSession:
+            onSend()
+        case .active(let controller):
+            let defaultPrimary: StreamingBehavior = interactionPreferences.defaultSendAction == .steer
+                ? .steer
+                : .followUp
+            let primary = controller.streamingBehavior ?? defaultPrimary
+            let behavior = ComposerReturnRouting.behavior(for: action, primary: primary)
+            Task { await controller.sendPrompt(behaviorOverride: behavior) }
+        }
     }
 
     @ViewBuilder
@@ -815,10 +918,6 @@ struct ComposerView: View {
             }
 
         case .active(let controller):
-            if controller.runtimeState == .streaming {
-                behaviorButton("Steer", behavior: .steer, controller: controller)
-                behaviorButton("Follow up", behavior: .followUp, controller: controller)
-            }
             if let controls {
                 ComposerSessionControlsView(
                     model: controls,
@@ -832,39 +931,18 @@ struct ComposerView: View {
                 Text(controller.thinkingLevel)
                     .font(TenXTypography.body(size: 10, weight: .medium))
             }
+            ContextUsageControl(
+                usage: controller.contextUsage,
+                breakdown: controller.contextBreakdown,
+                isLoading: controller.isContextLoading,
+                errorMessage: controller.contextErrorMessage,
+                onRefresh: { await controller.refreshContextDetails() })
             if controller.queuedMessageCount > 0 {
                 Text("\(controller.queuedMessageCount) queued")
                     .font(TenXTypography.body(size: 10, weight: .medium))
                     .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
             }
         }
-    }
-
-    private func behaviorButton(
-        _ title: String,
-        behavior: StreamingBehavior,
-        controller: SessionController
-    ) -> some View {
-        Button(title) {
-            controller.selectStreamingBehavior(behavior)
-        }
-        .buttonStyle(GhostActionStyle(color: behaviorColor(behavior, controller: controller)))
-        .accessibilityLabel("Composer mode, \(title)")
-        .accessibilityValue(controller.streamingBehavior == behavior ? "Selected" : "Not selected")
-    }
-
-    private func behaviorColor(
-        _ behavior: StreamingBehavior,
-        controller: SessionController
-    ) -> Color {
-        let isSelected: Bool
-        switch (behavior, controller.streamingBehavior) {
-        case (.steer, .steer?), (.followUp, .followUp?):
-            isSelected = true
-        default:
-            isSelected = false
-        }
-        return TenXPalette.color(isSelected ? TenXPalette.cyanHex : TenXPalette.nearBlackHex)
     }
 
     private func setFlyout(_ next: ComposerFlyout?) {

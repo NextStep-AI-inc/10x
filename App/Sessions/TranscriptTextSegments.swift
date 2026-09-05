@@ -10,7 +10,8 @@ enum TranscriptTextSegments {
 
     static func make(
         _ source: String,
-        maximumCharacters: Int = defaultMaximumCharacters
+        maximumCharacters: Int = defaultMaximumCharacters,
+        avoidingSplit query: String? = nil
     ) -> [TranscriptTextSegment] {
         guard !source.isEmpty else { return [] }
         precondition(maximumCharacters > 0)
@@ -18,15 +19,29 @@ enum TranscriptTextSegments {
         var segments: [TranscriptTextSegment] = []
         var start = source.startIndex
         var offset = 0
+        let protectedRanges = query.map { matchRanges(in: source, query: $0) } ?? []
 
         while start < source.endIndex {
-            let hardEnd = source.index(
+            var hardEnd = source.index(
                 start,
                 offsetBy: maximumCharacters,
                 limitedBy: source.endIndex) ?? source.endIndex
-            let end = hardEnd == source.endIndex
+            let crossingMatch = protectedRanges.first(where: {
+                   $0.lowerBound < hardEnd && $0.upperBound > hardEnd
+               })
+            if let crossingMatch {
+                hardEnd = crossingMatch.upperBound
+            }
+            var end = hardEnd == source.endIndex
                 ? hardEnd
                 : preferredEnd(in: source, from: start, through: hardEnd)
+            if let splitMatch = protectedRanges.first(where: {
+                $0.lowerBound < end && $0.upperBound > end
+            }) {
+                end = splitMatch.lowerBound > start
+                    ? splitMatch.lowerBound
+                    : splitMatch.upperBound
+            }
             let text = String(source[start..<end])
             segments.append(TranscriptTextSegment(id: offset, text: text))
             offset += text.count
@@ -34,6 +49,23 @@ enum TranscriptTextSegments {
         }
 
         return segments
+    }
+
+    static func matchRanges(in source: String, query: String) -> [Range<String.Index>] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty, !query.isEmpty else { return [] }
+        var ranges: [Range<String.Index>] = []
+        var remaining = source.startIndex..<source.endIndex
+        while let match = source.range(
+            of: query,
+            options: [.caseInsensitive, .diacriticInsensitive],
+            range: remaining,
+            locale: Locale(identifier: "en_US_POSIX")) {
+            ranges.append(match)
+            guard match.upperBound < source.endIndex else { break }
+            remaining = match.upperBound..<source.endIndex
+        }
+        return ranges
     }
 
     private static func preferredEnd(
@@ -62,16 +94,44 @@ struct TranscriptPlainTextView: View {
     let text: String
     let font: Font
     let color: Color
+    let highlightedQuery: String?
+
+    init(
+        text: String,
+        font: Font,
+        color: Color,
+        highlightedQuery: String? = nil
+    ) {
+        self.text = text
+        self.font = font
+        self.color = color
+        self.highlightedQuery = highlightedQuery
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(TranscriptTextSegments.make(text)) { segment in
-                Text(segment.text)
+            ForEach(TranscriptTextSegments.make(
+                text,
+                avoidingSplit: highlightedQuery)) { segment in
+                Text(attributedText(segment.text))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .font(font)
         .foregroundStyle(color)
         .textSelection(.enabled)
+    }
+
+    private func attributedText(_ text: String) -> AttributedString {
+        guard let highlightedQuery else { return AttributedString(text) }
+        var attributed = AttributedString(text)
+        for sourceRange in TranscriptTextSegments.matchRanges(
+            in: text,
+            query: highlightedQuery) {
+            guard let range = Range(sourceRange, in: attributed) else { continue }
+            attributed[range].backgroundColor = TenXPalette.color(TenXPalette.yellowHex)
+            attributed[range].foregroundColor = TenXPalette.color(TenXPalette.nearBlackHex)
+        }
+        return attributed
     }
 }

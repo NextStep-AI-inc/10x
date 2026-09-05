@@ -72,6 +72,14 @@ import Testing
         message: assistantMessage(id: "assistant-1", text: "Stable answer", isFinal: true)))
 }
 
+@MainActor @Test func messageBubbleEqualityTracksHighlightedQuery() {
+    let message = assistantMessage(id: "assistant-1", text: "Stable answer", isFinal: true)
+
+    #expect(MessageBubbleView(message: message, highlightedQuery: "Stable") != MessageBubbleView(
+        message: message,
+        highlightedQuery: "answer"))
+}
+
 @Test func skillTextSegmentsAreBoundedAndLossless() {
     let source = "# Skill\n\n"
         + String(repeating: "Follow this instruction carefully. ", count: 180)
@@ -98,6 +106,44 @@ import Testing
 
     #expect(segments.map(\.text).joined() == source)
     #expect(segments.map(\.text.count) == [1_024, 1_024, 452])
+}
+
+@Test func transcriptHighlightFindsExactFoldedSubstring() throws {
+    let source = "Prepared the résumé draft. Resume later."
+
+    let ranges = TranscriptTextSegments.matchRanges(in: source, query: "RESUME")
+
+    #expect(ranges.map { String(source[$0]) } == ["résumé", "Resume"])
+    #expect(TranscriptTextSegments.matchRanges(in: source, query: "  ").isEmpty)
+    #expect(TranscriptTextSegments.matchRanges(in: source, query: "missing").isEmpty)
+}
+
+@Test func transcriptSegmentsDoNotSplitAHighlightedMatch() {
+    let source = String(repeating: "x", count: 1_022) + " résumé remains"
+
+    let segments = TranscriptTextSegments.make(
+        source,
+        maximumCharacters: 1_024,
+        avoidingSplit: "resume")
+
+    #expect(segments.reduce(0) {
+        $0 + TranscriptTextSegments.matchRanges(in: $1.text, query: "resume").count
+    } == 1)
+    #expect(segments.map(\.text).joined() == source)
+}
+
+@Test func transcriptSegmentsDoNotSplitMultiwordHighlightAtInternalWhitespace() {
+    let source = String(repeating: "x", count: 1_018) + " release notes remain"
+
+    let segments = TranscriptTextSegments.make(
+        source,
+        maximumCharacters: 1_024,
+        avoidingSplit: "release notes")
+
+    #expect(segments.reduce(0) {
+        $0 + TranscriptTextSegments.matchRanges(in: $1.text, query: "release notes").count
+    } == 1)
+    #expect(segments.map(\.text).joined() == source)
 }
 
 private func assistantMessage(

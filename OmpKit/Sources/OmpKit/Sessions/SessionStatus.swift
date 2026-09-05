@@ -44,15 +44,36 @@ enum SessionStatusClassifier {
     /// mid-line, and a crash can leave a partial final line.
     static func classify(tail: Data) -> SessionStatus {
         let lines = tail.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true)
+        var trailingToolResultIDs: Set<String> = []
+        var hasUnidentifiedTrailingToolResult = false
         for line in lines.reversed() {
             guard line.first == UInt8(ascii: "{") else { continue }
             guard let object = try? JSONValue.decode(from: Data(line)),
                   object["type"]?.stringValue == "message",
                   let message = object["message"]
             else { continue }
+
+            if message["role"]?.stringValue == "toolResult" {
+                if let id = message["toolCallId"]?.stringValue, !id.isEmpty {
+                    trailingToolResultIDs.insert(id)
+                } else {
+                    hasUnidentifiedTrailingToolResult = true
+                }
+                continue
+            }
+
+            if !trailingToolResultIDs.isEmpty || hasUnidentifiedTrailingToolResult {
+                guard message["role"]?.stringValue == "assistant" else { return .interrupted }
+                return classify(
+                    assistant: message,
+                    trailingToolResultIDs: trailingToolResultIDs,
+                    hasUnidentifiedTrailingToolResult: hasUnidentifiedTrailingToolResult)
+            }
             return classify(message: message)
         }
-        return .unknown
+        return trailingToolResultIDs.isEmpty && !hasUnidentifiedTrailingToolResult
+            ? .unknown
+            : .interrupted
     }
 
     static func classify(message: JSONValue) -> SessionStatus {
@@ -72,5 +93,29 @@ enum SessionStatusClassifier {
         case "user": return .pending
         default: return .unknown
         }
+    }
+
+    private static func classify(
+        assistant message: JSONValue,
+        trailingToolResultIDs: Set<String>,
+        hasUnidentifiedTrailingToolResult: Bool
+    ) -> SessionStatus {
+        guard message["stopReason"]?.stringValue == "stop" else {
+            return classify(message: message)
+        }
+        let toolCalls = (message["content"]?.arrayValue ?? []).filter {
+            $0["type"]?.stringValue == "toolCall"
+        }
+        let toolCallIDs = toolCalls.compactMap { block -> String? in
+            let id = block["id"]?.stringValue ?? block["toolCallId"]?.stringValue
+            return id.flatMap { $0.isEmpty ? nil : $0 }
+        }
+        guard !toolCallIDs.isEmpty,
+              toolCallIDs.count == toolCalls.count,
+              Set(toolCallIDs).count == toolCallIDs.count,
+              !hasUnidentifiedTrailingToolResult,
+              Set(toolCallIDs).isSubset(of: trailingToolResultIDs)
+        else { return .interrupted }
+        return .complete
     }
 }

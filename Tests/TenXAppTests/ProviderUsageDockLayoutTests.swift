@@ -1,72 +1,40 @@
+import CoreGraphics
 import Testing
 @testable import TenXApp
 
 @Suite struct ProviderUsageDockLayoutTests {
-@Test func usageDockUsesRegularWheelsBesideComposerWhenGutterFitsThreeProviders() {
-    let layout = ProviderUsageDockLayout.compact(
-        shellWidth: 1280,
-        contentLeadingInset: 64,
-        providerCount: 3,
-        hasComposer: true)
+@Test func hoveredProviderWheelEnlargesInsideAStableSemanticTarget() {
+    let geometry = ProviderUsageDockWheelHoverGeometry(restingDiameter: 54)
 
-    #expect(layout == ProviderUsageDockCompactLayout(
-        wheelDiameter: 54,
-        trailingOffset: 0,
-        bottomOffset: 12))
+    #expect(geometry.visualScale(isHovered: false) == 1)
+    #expect(geometry.visualScale(isHovered: true) > 1)
+    #expect(geometry.hitTargetDiameter == 54)
 }
 
-@Test func usageDockUsesSendButtonSizedWheelsInsideComposerWhenGutterDoesNotFitThreeProviders() {
-    let layout = ProviderUsageDockLayout.compact(
-        shellWidth: 760,
-        contentLeadingInset: 64,
-        providerCount: 3,
-        hasComposer: true)
+@Test func constrainedProviderWheelKeepsItsFortyFourPointHitTargetWhileHovering() {
+    let geometry = ProviderUsageDockWheelHoverGeometry(restingDiameter: 28)
 
-    #expect(layout == ProviderUsageDockCompactLayout(
-        wheelDiameter: 28,
-        trailingOffset: 68,
-        bottomOffset: 22))
+    #expect(geometry.hitTargetDiameter == 44)
+    #expect(geometry.visualScale(isHovered: true) > geometry.visualScale(isHovered: false))
 }
 
-/// Regression guard for the account-stack redesign: `ProviderAccountStackView`
-/// now collapses to one wheel at rest and fans upward on hover instead of
-/// spending horizontal space on a rightward cascade, so a multi-account
-/// provider measures exactly like a single-account one. 1180 is the exact
-/// width the design doc names as where the old cascade used to force the
-/// dock above the composer — it must not do that anymore.
-@Test func multiAccountProvidersNoLongerWidenTheGutterRequirementAtTheOldConstrainedBoundary() {
-    let layout = ProviderUsageDockLayout.compact(
-        shellWidth: 1180,
-        contentLeadingInset: 64,
-        providerCount: 2,
-        hasComposer: true)
+@Test func providerWheelHoverDoesNotAnimateWithReduceMotion() {
+    let geometry = ProviderUsageDockWheelHoverGeometry(restingDiameter: 54)
 
-    #expect(layout.wheelDiameter == ProviderUsageDockLayout.regular54)
+    #expect(geometry.animationDuration(reduceMotion: false) == 0.16)
+    #expect(geometry.animationDuration(reduceMotion: true) == nil)
 }
 
-@Test func usageDockProviderCountControlsWidePlacementDecision() {
-    let twoProviderLayout = ProviderUsageDockLayout.compact(
-        shellWidth: 1180,
-        contentLeadingInset: 64,
-        providerCount: 2,
-        hasComposer: true)
-    let threeProviderLayout = ProviderUsageDockLayout.compact(
-        shellWidth: 1180,
-        contentLeadingInset: 64,
-        providerCount: 3,
-        hasComposer: true)
-
-    #expect(twoProviderLayout.wheelDiameter == 54)
-    #expect(threeProviderLayout.wheelDiameter == 28)
+@Test func usageDockTracksTheReservedFooterSlotWhenTheComposerMoves() {
+    let layout = ProviderUsageDockLayout.compact(
+        shellSize: CGSize(width: 900, height: 700),
+        footerFrame: CGRect(x: 620, y: 570, width: 148, height: 60))
+    #expect(layout.wheelDiameter == 28)
+    #expect(layout.trailingOffset + 16 == CGFloat(132))
+    #expect(layout.bottomOffset + 16 == CGFloat(70))
 }
 
-@Test func usageDockStandaloneRoutesKeepRegularWheelsWithoutOffsets() {
-    let layout = ProviderUsageDockLayout.compact(
-        shellWidth: 760,
-        contentLeadingInset: 64,
-        providerCount: 3,
-        hasComposer: false)
-
-    #expect(layout == .standalone)
+@Test func noProvidersReserveNoFooterSpace() {
+    #expect(ProviderUsageDockLayout.footerWidth(providers: []) == 0)
 }
 }
