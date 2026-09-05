@@ -14,6 +14,8 @@ struct TranscriptView: View {
     @State private var searchResolution: TranscriptSearchResolution?
     @State private var consumedSearchNonce: UUID?
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
+    @Environment(ToolDetailPreferenceStore.self) private var detailPreference:
+        ToolDetailPreferenceStore?
 
     var body: some View {
         @Bindable var viewport = controller.viewport
@@ -30,19 +32,9 @@ struct TranscriptView: View {
                        controller.pendingSubmissions.isEmpty {
                         loadingSkeleton
                     }
-                    if activityIDs.count >= 4 {
-                        HStack(spacing: 4) {
-                            Spacer()
-                            Button("Collapse all") {
-                                disclosureState.collapseAll(ids: activityIDs)
-                            }
-                            .buttonStyle(GhostActionStyle(
-                                color: TenXPalette.color(TenXPalette.mutedTextHex)))
-                            Button("Expand active") {
-                                disclosureState.expand(ids: activeActivityIDs)
-                            }
-                            .buttonStyle(GhostActionStyle())
-                        }
+                    HStack(spacing: 4) {
+                        Spacer()
+                        ToolDetailModeControl(mode: disclosureState.mode, onSelect: select)
                     }
                     ForEach(presentationRows, id: \.id) { row in
                         VStack(alignment: .leading, spacing: 8) {
@@ -116,6 +108,14 @@ struct TranscriptView: View {
             .onChange(of: isAwaitingOutput) { _, isAwaiting in
                 guard isAwaiting, viewport.isFollowingLatest else { return }
                 scroll(proxy, to: Self.bottomID, intent: .automatic)
+            }
+            // Picks up the stored mode on open, and any change made from
+            // another window while this transcript is on screen. Unanimated on
+            // purpose: `initial: true` fires on open, and animating there would
+            // play every card opening as the transcript appears. Only an
+            // explicit selection animates, in `select(_:)`.
+            .onChange(of: detailPreference?.mode ?? .auto, initial: true) { _, mode in
+                disclosureState.setMode(mode)
             }
             .overlay(alignment: .bottom) {
                 scrollToBottomButton(proxy, lastID: presentationRows.last?.id)
@@ -221,13 +221,11 @@ struct TranscriptView: View {
             || contentOffset + containerHeight >= contentHeight - threshold
     }
 
-    private var activityIDs: [String] {
-        controller.items.compactMap { item in
-            switch item {
-            case .tool, .subagent: item.id
-            default: nil
-            }
-        }
+    private func select(_ mode: ToolDetailMode) {
+        detailPreference?.select(mode)
+        let update = { disclosureState.setMode(mode) }
+        if isReduceMotionEnabled { update() }
+        else { withAnimation(.easeInOut(duration: 0.14), update) }
     }
 
     private var loadingSkeleton: some View {
@@ -250,20 +248,6 @@ struct TranscriptView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Opening session")
-    }
-
-    private var activeActivityIDs: [String] {
-        controller.items.compactMap { item in
-            switch item {
-            case .tool(let presentation) where presentation.phase != .complete:
-                presentation.id
-            case .subagent(let presentation) where presentation.status.isActive
-                || presentation.status.isError:
-                presentation.id
-            default:
-                nil
-            }
-        }
     }
 
     @ViewBuilder
