@@ -17,8 +17,8 @@ enum ToolDetailMode: String, CaseIterable, Identifiable, Sendable {
 
     var id: String { rawValue }
 
-    /// Chips read lowercase, matching the effort row they share a style with.
-    var title: String { rawValue }
+    /// Chips read capitalized, matching the effort row they share a style with.
+    var title: String { rawValue.capitalized }
 
     var accessibilityTitle: String { rawValue.capitalized }
 

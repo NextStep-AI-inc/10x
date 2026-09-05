@@ -106,7 +106,7 @@ import Testing
 
 @Test func modeChipsReadInTheOrderTheyEscalateDetail() {
     #expect(ToolDetailMode.allCases == [.auto, .expanded, .compact])
-    #expect(ToolDetailMode.allCases.map(\.title) == ["auto", "expanded", "compact"])
+    #expect(ToolDetailMode.allCases.map(\.title) == ["Auto", "Expanded", "Compact"])
     #expect(ToolDetailMode.expanded.accessibilityTitle == "Expanded")
 }
 
