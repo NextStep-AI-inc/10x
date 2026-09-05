@@ -567,6 +567,88 @@ import OmpKit
 }
 
 @MainActor
+@Test func inactiveIdleSessionRetentionIsBoundedAndAnEvictedSessionReopensSafely() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-session-retention-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "slow-exit")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let paths = (1...6).map { "/tmp/retained-\($0).jsonl" }
+    var firstController: SessionController?
+
+    for path in paths {
+        model.openSession(navigationMetadata(path, cwd: project.path))
+        await waitUntil("\(path) to become idle") {
+            model.managedController(for: path)?.runtimeState == .idle
+        }
+        if path == paths[0] {
+            firstController = model.managedController(for: path)
+        }
+    }
+    let evictedController = try #require(firstController)
+    await waitUntil("the least-recent inactive session to be removed", timeout: .seconds(2)) {
+        model.managedController(for: paths[0]) == nil
+    }
+
+    #expect(model.managedController(for: paths[0]) == nil)
+    #expect(model.managedController(for: paths[1]) != nil)
+    #expect(model.managedController(for: paths[5]) === model.activeSession)
+
+    model.openSession(navigationMetadata(paths[0], cwd: project.path))
+    let reopenedController = try #require(model.activeSession)
+    #expect(reopenedController !== evictedController)
+    await waitUntil("the evicted session to reopen after its close barrier") {
+        reopenedController.runtimeState == .idle
+    }
+    try await Task.sleep(for: .milliseconds(800))
+    let manager = try #require(model.processManager)
+    #expect(model.managedController(for: paths[0]) === reopenedController)
+    #expect(await manager.handle(for: paths[0]) != nil)
+    await manager.closeAll()
+}
+
+@MainActor
+@Test func memoryPressureEvictsInactiveIdleSessionsButPreservesTheForegroundSession() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-session-pressure-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let paths = (1...3).map { "/tmp/pressure-\($0).jsonl" }
+
+    for path in paths {
+        model.openSession(navigationMetadata(path, cwd: project.path))
+        await waitUntil("\(path) to become idle") {
+            model.managedController(for: path)?.runtimeState == .idle
+        }
+    }
+    let foreground = try #require(model.activeSession)
+    let manager = try #require(model.processManager)
+
+    await model.handleMemoryPressure()
+
+    #expect(model.managedController(for: paths[0]) == nil)
+    #expect(model.managedController(for: paths[1]) == nil)
+    #expect(model.managedController(for: paths[2]) === foreground)
+    #expect(await manager.handle(for: paths[0]) == nil)
+    #expect(await manager.handle(for: paths[1]) == nil)
+    #expect(await manager.handle(for: paths[2]) != nil)
+    await manager.closeAll()
+}
+
+@MainActor
 @Test func reopeningTheSameSessionBeforeItsInitialOpenStartsReusesItsController() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-rapid-reuse-\(UUID().uuidString)")

@@ -230,6 +230,18 @@ final class ProviderAccountCoordinator {
         unregister(sessionID: sessionID)
     }
 
+    /// Whether this coordinator still has work queued for a session: a route
+    /// waiting to apply or in flight, a routing tail still running, or a
+    /// managed turn between `beginManagedTurn` and `endManagedTurn`.
+    /// `AppModel` keeps such sessions out of idle-runtime eviction, because
+    /// `unregister` would cancel all of it.
+    func hasPendingWork(sessionID: UUID) -> Bool {
+        pendingRoutes[sessionID] != nil
+            || desiredRoutes[sessionID] != nil
+            || routingTails[sessionID] != nil
+            || activeManagedTurns.contains(sessionID)
+    }
+
     func primaryAccountRef(providerID: String) -> String? {
         primaryStore.primaryAccountRef(providerID: providerID)
     }

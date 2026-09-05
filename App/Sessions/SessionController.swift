@@ -65,6 +65,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     var attachments: [ComposerAttachment] = []
     var streamingBehavior: StreamingBehavior? = ComposerInteractionPreferences.shared.defaultSendAction == .steer ? .steer : .followUp
     let createdAt = Date()
+    /// Installed by `AppModel` so an idle-retention review runs whenever this
+    /// controller's runtime activity changes; see
+    /// `AppModel.reviewIdleSessionRetention()`.
+    @ObservationIgnored var onActivityChange: (@MainActor () -> Void)?
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
@@ -200,6 +204,33 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     var currentProviderAccountRef: String? {
         providerID.flatMap { activeProviderAccounts[$0] }
+    }
+
+    /// Whether closing this controller's runtime would lose nothing: the
+    /// session is idle with no turn starting, no unsent input or attachments,
+    /// no queued or unconfirmed prompts, no request from the runtime awaiting
+    /// an answer, and no in-flight work of its own. `AppModel` combines this
+    /// with recency and provider-account bookkeeping before reclaiming an
+    /// inactive session; a reclaimed session reopens from its persisted history.
+    var isEligibleForIdleEviction: Bool {
+        guard runtimeState == .idle,
+              openingTask == nil,
+              !isSendInFlight,
+              titleGenerationTask == nil,
+              draft.isEmpty,
+              attachments.isEmpty,
+              initialAttachments.isEmpty,
+              pendingSlashAttachments == nil,
+              pendingSubmissions.isEmpty,
+              queuedMessageCount == 0,
+              !hasPendingUserInput,
+              extensionSheetRequest == nil,
+              extensionRouter.inlineRequests.isEmpty,
+              extensionRouter.sheetRequest == nil,
+              extensionTimeoutTasks.isEmpty,
+              extensionResponsesInFlight.isEmpty
+        else { return false }
+        return true
     }
 
     var isComposerAvailable: Bool {
@@ -1655,6 +1686,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 await accountCoordinator?.sessionDidBecomeIdle(id)
             }
         }
+        onActivityChange?()
     }
 
     private static func modelLabel(_ value: JSONValue?) -> String? {
