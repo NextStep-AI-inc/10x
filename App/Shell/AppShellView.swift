@@ -54,23 +54,21 @@ struct AppShellView: View {
                         .animation(brandMenuAnimation, value: isBrandMenuPresented)
                         .overlayPreferenceValue(ComposerProviderDockAnchorKey.self) { anchor in
                             GeometryReader { geometry in
-                                let compactLayout: ProviderUsageDockCompactLayout? = {
+                                let compactLayout: ProviderUsageDockCompactLayout = {
                                     switch dockPlacement {
                                     case .outsideComposer:
                                         return .outsideComposer
                                     case .standalone:
                                         return .standalone
                                     case .composerFooter:
-                                        guard let anchor else { return nil }
+                                        guard let anchor else { return .outsideComposer }
                                         return ProviderUsageDockLayout.compact(
                                             shellSize: geometry.size,
                                             footerFrame: geometry[anchor])
                                     }
                                 }()
 
-                                if let compactLayout {
-                                    usageDock(compactLayout: compactLayout)
-                                }
+                                usageDock(compactLayout: compactLayout)
                             }
                         }
                         .overlay {
