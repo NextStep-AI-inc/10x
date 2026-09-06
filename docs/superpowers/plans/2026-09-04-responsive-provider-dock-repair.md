@@ -443,6 +443,8 @@ With three visible provider controls in a real session:
 
 Capture only the 10x window by window ID or exact window bounds. Inspect the capture before retaining or attaching it. Delete any capture that includes another app, notification, email address, access code, or desktop content.
 
+Evidence: [sanitized release-build wide-window crop](../evidence/2026-09-04-responsive-provider-dock/live-wide-release.png).
+
 - [x] **Step 6: Complete cleanup and update the draft PR**
 
 - Remove `.actual.png` files and temporary diagnostic artifacts.
