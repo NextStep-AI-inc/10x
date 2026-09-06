@@ -114,7 +114,7 @@ struct TranscriptView: View {
             // purpose: `initial: true` fires on open, and animating there would
             // play every card opening as the transcript appears. Only an
             // explicit selection animates, in `select(_:)`.
-            .onChange(of: detailPreference?.mode ?? .auto, initial: true) { _, mode in
+            .onChange(of: detailPreference?.mode ?? .standard, initial: true) { _, mode in
                 disclosureState.setMode(mode)
             }
             .overlay(alignment: .bottom) {

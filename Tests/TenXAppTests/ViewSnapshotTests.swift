@@ -2472,6 +2472,60 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
+@Test func toolCallGroupModeHeadersSnapshot() throws {
+    let read = ToolPresentation(
+        id: "one",
+        name: "read",
+        arguments: .object(["absolutePath": .string("/tmp/README.md")]),
+        result: nil,
+        phase: .complete,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 2))
+    let run = ToolPresentation(
+        id: "two",
+        name: "bash",
+        arguments: .object(["command": .string("xcodebuild test")]),
+        result: nil,
+        phase: .running,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: nil)
+    let group = try #require(TranscriptToolGroup([read, run]))
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ForEach(ToolDetailMode.allCases) { mode in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(mode.title)
+                        .font(TenXTypography.mono(size: 9, weight: .semibold))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    ToolCallGroupView(group: group)
+                        .environment(\.toolDisclosureState, ToolDisclosureState(mode: mode))
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: 520, alignment: .leading),
+        name: "tool-call-group-modes",
+        size: CGSize(width: 560, height: 200))
+}
+
+@MainActor
+@Test func slimTranscriptWindowSnapshot() throws {
+    let suiteName = "TenXAppTests.SlimTranscript.\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = ToolDetailPreferenceStore(defaults: defaults)
+    store.select(.slim)
+
+    try assertSnapshot(
+        ActiveSessionView(controller: compactTranscriptController())
+            .environment(snapshotEmptyIDEStore)
+            .environment(store),
+        name: "chat-full-900-slim",
+        size: CGSize(width: 900, height: 700))
+}
+
+@MainActor
 @Test func contentDocumentBudgetSnapshot() throws {
     let paragraphs = (1...4).map { "Paragraph \($0) stays visible before the bounded source." }
         .joined(separator: "\n\n")
