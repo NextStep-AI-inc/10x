@@ -8,17 +8,17 @@ final class ToolDisclosureState: @unchecked Sendable {
     @ObservationIgnored private var choices: [String: DisclosureChoice] = [:]
     @ObservationIgnored private var groupChoices: [String: DisclosureChoice] = [:]
 
-    init(mode: ToolDetailMode = .auto) {
+    init(mode: ToolDetailMode = .standard) {
         self.mode = mode
     }
 
-    /// A new mode discards the per-card choices taken under the old one, so
-    /// switching to Expanded cannot leave hand-closed cards shut. Group
-    /// expansion is a separate axis and is left alone.
+    /// A new mode discards per-card and per-group choices from the old one, so
+    /// switching to Slim actually collapses groups instead of leaving them open.
     func setMode(_ mode: ToolDetailMode) {
         guard mode != self.mode else { return }
         self.mode = mode
         for choice in choices.values { choice.value = nil }
+        for choice in groupChoices.values { choice.value = nil }
     }
 
     func isExpanded(for presentation: ToolPresentation) -> Bool {
@@ -42,7 +42,7 @@ final class ToolDisclosureState: @unchecked Sendable {
     }
 
     func isGroupExpanded(id: String) -> Bool {
-        choice(for: id, in: &groupChoices).value ?? true
+        choice(for: id, in: &groupChoices).value ?? mode.opensGroupsByDefault
     }
 
     func setGroupExpanded(_ isExpanded: Bool, id: String) {

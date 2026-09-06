@@ -1,5 +1,39 @@
 import SwiftUI
 
+struct ToolCallGroupHeaderPresentation: Equatable, Sendable {
+    let title: String
+    let info: String?
+    let usesInlineToolInfo: Bool
+
+    init(group: TranscriptToolGroup, mode: ToolDetailMode) {
+        usesInlineToolInfo = mode == .slim
+        if mode == .slim {
+            if group.tools.count == 1, let tool = group.tools.first {
+                title = tool.content.verb
+                info = Self.lineInfo(for: tool)
+            } else {
+                title = group.tools.map { tool in
+                    if let info = Self.lineInfo(for: tool) {
+                        return "\(tool.content.verb) \(info)"
+                    }
+                    return tool.content.verb
+                }.joined(separator: " · ")
+                info = nil
+            }
+        } else {
+            title = group.tools.count == 1 ? "Tool call" : "Tool calls (\(group.tools.count))"
+            info = nil
+        }
+    }
+
+    private static func lineInfo(for tool: ToolPresentation) -> String? {
+        guard let primary = tool.content.primary?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !primary.isEmpty
+        else { return nil }
+        return primary
+    }
+}
+
 struct ToolCallGroupView: View {
     let group: TranscriptToolGroup
     @Environment(\.toolDisclosureState) private var disclosureState
@@ -16,8 +50,7 @@ struct ToolCallGroupView: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(statusColor)
                     .frame(width: 10)
-                Text(title)
-                    .font(TenXTypography.body(size: 12, weight: .semibold))
+                titleContent
                 Spacer(minLength: 8)
                 Text(group.phase.label)
                     .font(TenXTypography.body(size: 10, weight: .medium))
@@ -32,8 +65,29 @@ struct ToolCallGroupView: View {
         .accessibilityHint(isExpanded ? "Collapses \(toolDescription)" : "Expands \(toolDescription)")
     }
 
-    private var title: String {
-        group.tools.count == 1 ? "Tool call" : "Tool calls (\(group.tools.count))"
+    @ViewBuilder
+    private var titleContent: some View {
+        let presentation = headerPresentation
+        if presentation.usesInlineToolInfo, group.tools.count == 1, let tool = group.tools.first {
+            Text(presentation.title)
+                .font(TenXTypography.body(size: 12, weight: .semibold))
+            if let reference = tool.content.reference {
+                TranscriptReferenceView(reference: reference)
+            } else if let info = presentation.info {
+                Text(info)
+                    .font(TenXTypography.mono(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            Text(presentation.title)
+                .font(TenXTypography.body(size: 12, weight: .semibold))
+        }
+    }
+
+    private var headerPresentation: ToolCallGroupHeaderPresentation {
+        ToolCallGroupHeaderPresentation(group: group, mode: currentMode)
     }
 
     private var toolDescription: String {
@@ -41,13 +95,20 @@ struct ToolCallGroupView: View {
     }
 
     private var accessibilityLabel: String {
-        group.tools.count == 1
-            ? "Tool call, \(group.phase.label)"
-            : "\(group.tools.count) tool calls, \(group.phase.label)"
+        let info = headerPresentation.info.map { ", \($0)" } ?? ""
+        return group.tools.count == 1
+            ? "\(headerPresentation.title)\(info), \(group.phase.label)"
+            : "\(headerPresentation.title), \(group.phase.label)"
+    }
+
+    private var currentMode: ToolDetailMode {
+        disclosureState?.mode ?? .standard
     }
 
     private var isExpanded: Bool {
-        disclosureState?.isGroupExpanded(id: group.id) ?? localChoice ?? true
+        disclosureState?.isGroupExpanded(id: group.id)
+            ?? localChoice
+            ?? currentMode.opensGroupsByDefault
     }
 
     private func toggle() {

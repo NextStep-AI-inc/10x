@@ -9,11 +9,12 @@ struct ToolDisclosureTraits: Equatable, Sendable {
 }
 
 enum ToolDetailMode: String, CaseIterable, Identifiable, Sendable {
-    /// Open while the work is live or failed, and for the kinds worth reading
-    /// once they land. Everything else stays closed.
-    case auto
+    /// Tool-call group open, and every tool open.
     case expanded
-    case compact
+    /// Tool-call group open, tools closed.
+    case standard
+    /// Tool-call group closed. The group line carries the tool call and its info.
+    case slim
 
     var id: String { rawValue }
 
@@ -22,11 +23,22 @@ enum ToolDetailMode: String, CaseIterable, Identifiable, Sendable {
 
     var accessibilityTitle: String { rawValue.capitalized }
 
-    func isExpandedByDefault(_ traits: ToolDisclosureTraits) -> Bool {
-        switch self {
-        case .auto: traits.isActive || traits.isError || traits.opensWhenComplete
-        case .expanded: true
-        case .compact: false
+    var opensToolsByDefault: Bool { self == .expanded }
+
+    var opensGroupsByDefault: Bool { self != .slim }
+
+    func isExpandedByDefault(_: ToolDisclosureTraits) -> Bool {
+        opensToolsByDefault
+    }
+
+    /// Older raw values keep their nearest density instead of jumping to Standard.
+    static func resolving(_ rawValue: String?) -> Self {
+        switch rawValue {
+        case "expanded": .expanded
+        case "standard": .standard
+        case "slim", "compact": .slim
+        case "auto": .standard
+        default: .standard
         }
     }
 }

@@ -4,12 +4,13 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
-@Test func disclosureDefaultsMatchActivityStateAndKind() {
+@Test func disclosureDefaultsCloseToolsAndOpenGroupsInStandard() {
     let state = ToolDisclosureState()
     #expect(!state.isExpanded(for: tool(id: "read", name: "read", phase: .complete)))
-    #expect(state.isExpanded(for: tool(id: "running", name: "bash", phase: .running)))
-    #expect(state.isExpanded(for: tool(id: "failed", name: "bash", phase: .failed)))
-    #expect(state.isExpanded(for: tool(id: "diff", name: "edit", phase: .complete)))
+    #expect(!state.isExpanded(for: tool(id: "running", name: "bash", phase: .running)))
+    #expect(!state.isExpanded(for: tool(id: "failed", name: "bash", phase: .failed)))
+    #expect(!state.isExpanded(for: tool(id: "diff", name: "edit", phase: .complete)))
+    #expect(state.isGroupExpanded(id: "tool-group-one"))
 }
 
 @Test func userDisclosureChoicePersistsAcrossPhaseChanges() {
@@ -30,16 +31,16 @@ import Testing
     let running = tool(id: "running", name: "bash", phase: .running)
     let failed = tool(id: "failed", name: "bash", phase: .failed)
 
-    state.setMode(.compact)
+    state.setMode(.slim)
     #expect(!state.isExpanded(for: complete))
     #expect(!state.isExpanded(for: running))
     #expect(!state.isExpanded(for: failed))
 
     state.setExpanded(true, for: complete)
-    state.setMode(.auto)
+    state.setMode(.standard)
     #expect(!state.isExpanded(for: complete))
-    #expect(state.isExpanded(for: running))
-    #expect(state.isExpanded(for: failed))
+    #expect(!state.isExpanded(for: running))
+    #expect(!state.isExpanded(for: failed))
 }
 
 @Test func compactToolHeaderNamesObjectOutcomeAndLifecycle() {
@@ -74,11 +75,11 @@ import Testing
     #expect(header.accessibilityLabel == "Run xcodebuild test, Running, 4.2 seconds")
 }
 
-@Test func attentionToolsDefaultExpandedAfterCompletion() {
-    let auto = ToolDisclosureState()
-    #expect(auto.isExpanded(for: tool(id: "edit", name: "edit", phase: .complete)))
-    #expect(auto.isExpanded(for: tool(id: "proposal", name: "resolve", phase: .complete)))
-    #expect(!auto.isExpanded(for: tool(id: "read", name: "read", phase: .complete)))
+@Test func expandedModeOpensCompletedAttentionTools() {
+    let expanded = ToolDisclosureState(mode: .expanded)
+    #expect(expanded.isExpanded(for: tool(id: "edit", name: "edit", phase: .complete)))
+    #expect(expanded.isExpanded(for: tool(id: "proposal", name: "resolve", phase: .complete)))
+    #expect(expanded.isExpanded(for: tool(id: "read", name: "read", phase: .complete)))
 }
 
 @Test func sharedToolDisclosureMeetsTheMinimumHitTarget() {

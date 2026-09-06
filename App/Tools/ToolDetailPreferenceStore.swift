@@ -11,10 +11,9 @@ final class ToolDetailPreferenceStore {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        // An absent, stale, or wrong-typed value degrades to today's behavior
-        // rather than to a mode the reader never chose.
-        mode = defaults.string(forKey: Self.defaultsKey)
-            .flatMap(ToolDetailMode.init(rawValue:)) ?? .auto
+        // Absent, stale, or remapped values land on Standard: Auto became
+        // Standard, Compact became Slim, and an unknown raw value is not a choice.
+        mode = ToolDetailMode.resolving(defaults.string(forKey: Self.defaultsKey))
     }
 
     func select(_ mode: ToolDetailMode) {
