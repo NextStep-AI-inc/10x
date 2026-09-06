@@ -53,22 +53,24 @@ struct AppShellView: View {
                         }
                         .animation(brandMenuAnimation, value: isBrandMenuPresented)
                         .overlayPreferenceValue(ComposerProviderDockAnchorKey.self) { anchor in
-                            if dockPlacement == .composerFooter, let anchor {
-                                GeometryReader { geometry in
-                                    usageDock(compactLayout: ProviderUsageDockLayout.compact(
-                                        shellSize: geometry.size,
-                                        footerFrame: geometry[anchor]))
+                            GeometryReader { geometry in
+                                let compactLayout: ProviderUsageDockCompactLayout? = {
+                                    switch dockPlacement {
+                                    case .outsideComposer:
+                                        return .outsideComposer
+                                    case .standalone:
+                                        return .standalone
+                                    case .composerFooter:
+                                        guard let anchor else { return nil }
+                                        return ProviderUsageDockLayout.compact(
+                                            shellSize: geometry.size,
+                                            footerFrame: geometry[anchor])
+                                    }
+                                }()
+
+                                if let compactLayout {
+                                    usageDock(compactLayout: compactLayout)
                                 }
-                            }
-                        }
-                        .overlay {
-                            switch dockPlacement {
-                            case .outsideComposer:
-                                usageDock(compactLayout: .outsideComposer)
-                            case .standalone:
-                                usageDock(compactLayout: .standalone)
-                            case .composerFooter:
-                                EmptyView()
                             }
                         }
                         .overlay {
