@@ -298,36 +298,33 @@ private func usageDock(compactLayout: ProviderUsageDockCompactLayout) -> some Vi
 }
 ```
 
-Keep `overlayPreferenceValue(ComposerProviderDockAnchorKey.self)` only for `.composerFooter`:
+Keep every placement in one `overlayPreferenceValue` structural path so `ProviderUsageDockView` keeps its interaction, focus, hover, and matched-geometry state while the window crosses the fit boundary:
 
 ```swift
 .overlayPreferenceValue(ComposerProviderDockAnchorKey.self) { anchor in
-    if dockPlacement == .composerFooter, let anchor {
-        GeometryReader { geometry in
-            usageDock(compactLayout: ProviderUsageDockLayout.compact(
-                shellSize: geometry.size,
-                footerFrame: geometry[anchor]))
-        }
+    GeometryReader { geometry in
+        let compactLayout: ProviderUsageDockCompactLayout = {
+            switch dockPlacement {
+            case .outsideComposer:
+                return .outsideComposer
+            case .standalone:
+                return .standalone
+            case .composerFooter:
+                guard let anchor else { return .outsideComposer }
+                return ProviderUsageDockLayout.compact(
+                    shellSize: geometry.size,
+                    footerFrame: geometry[anchor])
+            }
+        }()
+
+        usageDock(compactLayout: compactLayout)
     }
 }
 ```
 
-Add a sibling shell overlay for non-footer placements:
+The composer preference can be absent for one layout pass while crossing into footer placement. The non-optional `.outsideComposer` fallback preserves the existing dock instance until the measured anchor arrives; returning `nil` here closes open details and loses focus.
 
-```swift
-.overlay {
-    switch dockPlacement {
-    case .outsideComposer:
-        usageDock(compactLayout: .outsideComposer)
-    case .standalone:
-        usageDock(compactLayout: .standalone)
-    case .composerFooter:
-        EmptyView()
-    }
-}
-```
-
-Keep the search overlay after the dock overlays so search continues to cover and disable shell content as it does now.
+Keep the search overlay after the dock overlay so search continues to cover and disable shell content as it does now.
 
 - [x] **Step 4: Run focused shell snapshots to verify the expected RED references**
 
@@ -410,13 +407,13 @@ If the account-dock wide reference is byte-identical, omit it from `git add`.
 - Consumes: the complete Task 1 policy and Task 2 shell integration.
 - Produces: focused automated proof, full-suite signal, real-app visual proof, and an accurate draft PR record.
 
-- [ ] **Step 1: Run focused layout and snapshot verification**
+- [x] **Step 1: Run focused layout and snapshot verification**
 
 Run the Task 1 six-test command and Task 2 five-snapshot command once more from the final source state.
 
 Expected: 6/6 placement tests and 5/5 snapshot tests pass with `** TEST SUCCEEDED **`.
 
-- [ ] **Step 2: Run the full suite**
+- [x] **Step 2: Run the full suite**
 
 ```bash
 xcodebuild test -project 10x.xcodeproj -scheme 10x \
@@ -427,11 +424,11 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x \
 
 Expected: 1,324 or more Swift tests plus 4 XCTest tests pass. If `providerServiceForwardsExtensionRequestsOnlyForTheActiveLogin()` alone flakes again, rerun that exact function and record both results; any dock, shell, composer, or snapshot failure blocks completion.
 
-- [ ] **Step 3: Read the local-build handoff skill and launch the final app**
+- [x] **Step 3: Read the local-build handoff skill and launch the final app**
 
 Before launching or telling the user the build is ready, read `skill://launching-local-builds`. Build the `10x` scheme into a dedicated derived-data path, launch its `10x.app`, and verify that the worktree build—not `/Applications/10x.app`—is the visible frontmost app.
 
-- [ ] **Step 4: Exercise the real responsive path**
+- [x] **Step 4: Exercise the real responsive path**
 
 With three visible provider controls in a real session:
 
@@ -442,11 +439,11 @@ With three visible provider controls in a real session:
 5. Open and close a provider detail panel in both placements; verify account-stack hover and keyboard focus still work.
 6. Repeat with Reduce Motion enabled or injected in the verified surface; placement must change without relying on motion.
 
-- [ ] **Step 5: Capture sanitized visual evidence**
+- [x] **Step 5: Capture sanitized visual evidence**
 
 Capture only the 10x window by window ID or exact window bounds. Inspect the capture before retaining or attaching it. Delete any capture that includes another app, notification, email address, access code, or desktop content.
 
-- [ ] **Step 6: Complete cleanup and update the draft PR**
+- [x] **Step 6: Complete cleanup and update the draft PR**
 
 - Remove `.actual.png` files and temporary diagnostic artifacts.
 - Confirm no project generator churn and no unrelated files are included.
