@@ -1854,6 +1854,14 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
     thinkingEfforts: [],
     requiresEffort: false)
 
+private let modelPickerAstra = ComposerModelInfo(
+    modelID: "gpt-6-astra",
+    name: "GPT-6-Astra",
+    provider: "openai-codex",
+    api: "openai-codex-responses",
+    thinkingEfforts: ["low", "medium", "high", "xhigh", "max"],
+    requiresEffort: false)
+
 @MainActor
 @Test func modelPickerDefaultSnapshot() throws {
     let sections = ComposerControlsPresentation.pickerSections(
@@ -1908,6 +1916,34 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             onToggle: {}),
         name: "model-picker-searching",
         size: CGSize(width: 340, height: 420))
+}
+
+@MainActor
+@Test func modelPickerAstraEffortsSnapshot() throws {
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: [modelPickerAstra],
+        recents: [],
+        query: "astra")
+
+    try assertSnapshot(
+        ModelPickerFlyout(
+            sections: sections,
+            selectedModel: modelPickerAstra,
+            thinkingOptions: ComposerControlsPresentation.thinkingOptions(for: modelPickerAstra),
+            thinkingLevel: "low",
+            isFastModeVisible: true,
+            isFastModeEnabled: false,
+            isLoading: false,
+            isMutating: false,
+            hasCatalog: true,
+            triggerTitle: ComposerControlsPresentation.triggerTitle(for: modelPickerAstra),
+            query: .constant("astra"),
+            onSelectModel: { _ in },
+            onSelectThinking: { _ in },
+            onToggleFastMode: { _ in },
+            onToggle: {}),
+        name: "model-picker-astra-efforts",
+        size: CGSize(width: 340, height: 300))
 }
 
 @MainActor

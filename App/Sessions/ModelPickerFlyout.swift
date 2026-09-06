@@ -349,7 +349,7 @@ struct ModelPickerFlyout: View {
                 .foregroundStyle(isSelected
                     ? Color.white
                     : TenXPalette.color(TenXPalette.mutedTextHex))
-                .padding(.horizontal, 7)
+                .padding(.horizontal, 4)
                 .padding(.vertical, 2)
                 .background(isSelected
                     ? TenXPalette.color(TenXPalette.nearBlackHex)
