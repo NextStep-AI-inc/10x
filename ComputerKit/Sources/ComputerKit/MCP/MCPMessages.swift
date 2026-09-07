@@ -29,12 +29,6 @@ public protocol MCPToolProviding {
     func callTool(name: String, arguments: JSONValue) throws -> MCPResult
 }
 
-// TEMPORARY (Task 2): moves to Engine/DesktopEngine.swift in Task 3.
-public struct ComputerError: Error, Equatable {
-    public let message: String
-    public init(_ message: String) { self.message = message }
-}
-
 // TEMPORARY (Task 2): moves to MCP/MCPResources.swift in Task 6.
 public protocol MCPResourceProviding {
     func listResources() -> [JSONValue]
