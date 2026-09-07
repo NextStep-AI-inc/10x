@@ -3,16 +3,31 @@ import XCTest
 
 final class MCPServerTests: XCTestCase {
     final class FakeToolProvider: MCPToolProviding {
+        enum Behavior {
+            case text
+            case image
+            case error(String)
+        }
+
+        var behavior: Behavior = .text
         var tools: [MCPTool] = [
             MCPTool(name: "computer_ping", description: "test tool", inputSchema: .object(["type": .string("object")]))
         ]
         func callTool(name: String, arguments: JSONValue) throws -> MCPResult {
-            .text("pong:\(name)")
+            switch behavior {
+            case .text:
+                return .text("pong:\(name)")
+            case .image:
+                return .image(pngBase64: "abc123", text: "screenshot caption")
+            case .error(let message):
+                throw ComputerError(message)
+            }
         }
     }
 
-    func makeServer() -> (MCPServer, FakeToolProvider) {
+    func makeServer(behavior: FakeToolProvider.Behavior = .text) -> (MCPServer, FakeToolProvider) {
         let provider = FakeToolProvider()
+        provider.behavior = behavior
         return (MCPServer(tools: provider), provider)
     }
 
@@ -61,5 +76,35 @@ final class MCPServerTests: XCTestCase {
         let (server, _) = makeServer()
         let response = try server.handle(method: "resources/subscribe", params: .object(["uri": .string("computer://window/1/screenshot")]))
         XCTAssertEqual(response, .object([:]))
+    }
+
+    func test_toolsCall_imageContentEncoding() throws {
+        let (server, _) = makeServer(behavior: .image)
+        let response = try server.handle(method: "tools/call", params: .object([
+            "name": .string("computer_ping"), "arguments": .object([:]),
+        ]))
+        let content = try XCTUnwrap(response["content"]?.arrayValue)
+        XCTAssertEqual(content[0]["type"], .string("image"))
+        XCTAssertEqual(content[0]["data"], .string("abc123"))
+        XCTAssertEqual(content[0]["mimeType"], .string("image/png"))
+        XCTAssertEqual(content[1]["type"], .string("text"))
+        XCTAssertEqual(content[1]["text"], .string("screenshot caption"))
+        XCTAssertEqual(response["isError"], .bool(false))
+    }
+
+    func test_toolsCall_computerError_returnsIsErrorResult() throws {
+        let (server, _) = makeServer(behavior: .error("boom"))
+        let response = try server.handle(method: "tools/call", params: .object([
+            "name": .string("computer_ping"), "arguments": .object([:]),
+        ]))
+        XCTAssertEqual(response["isError"], .bool(true))
+        let text = try XCTUnwrap(response["content"]?.arrayValue?.first?["text"]?.stringValue)
+        XCTAssertTrue(text.contains("boom"))
+    }
+
+    func test_resourcesList_noProvider_returnsEmptyArray() throws {
+        let (server, _) = makeServer()
+        let response = try server.handle(method: "resources/list", params: nil)
+        XCTAssertEqual(response["resources"]?.arrayValue, [])
     }
 }
