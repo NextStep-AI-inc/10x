@@ -195,6 +195,7 @@
 		D69987337438D8374E42DAEB0B96AE02 /* SessionControllerComposerControlsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81E5DA519ACF24ECFEA60EEA9E6B4A7 /* SessionControllerComposerControlsTests.swift */; };
 		D83931FC4DBF07BB17C72E31C8C46D9C /* TranscriptReference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6108C35D468F1E41E0A39809EE7DBF1F /* TranscriptReference.swift */; };
 		D86D97C22202D7180B2DCBF0FE162A59 /* SettingRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90820BF93AB26DD47FB66B51F4406A7 /* SettingRowView.swift */; };
+		D891343613B1D4213F81F80DE2B8CF5C /* SettingMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BCCAC902E2B2E33EBBDDAEE6B7B5F61 /* SettingMetadata.swift */; };
 		D9A3A45C8608807D61347280DF5782DD /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 172EECE87F09A0B1731B9CFB378E4A3C /* MessageBubbleView.swift */; };
 		DA307B67B07D101513FB9D1DB67A4BAC /* ProviderConnectionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37B752C3C613E3C5F84426783D5EDDA1 /* ProviderConnectionsView.swift */; };
 		DA3524B10DDF81F245041CD22C0077E7 /* OmpExecutableLocatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A2A1BA39530EBB6E282C5207FC5CF52 /* OmpExecutableLocatorTests.swift */; };
@@ -367,6 +368,7 @@
 		99AF55E14B238A681359594E9F4F8DE1 /* ProviderUsageDockLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageDockLayout.swift; path = App/Providers/ProviderUsageDockLayout.swift; sourceTree = "<group>"; };
 		99B38E50D7808478EE8222F8C7A8A976 /* FileReferenceActivation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileReferenceActivation.swift; path = App/FileReferences/FileReferenceActivation.swift; sourceTree = "<group>"; };
 		9B3C83997921E809B669E49EC2941D65 /* OmpCommandRunnerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpCommandRunnerTests.swift; path = Tests/TenXAppTests/OmpCommandRunnerTests.swift; sourceTree = "<group>"; };
+		9BCCAC902E2B2E33EBBDDAEE6B7B5F61 /* SettingMetadata.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingMetadata.swift; path = App/Settings/SettingMetadata.swift; sourceTree = "<group>"; };
 		9C133747F6397FABD958011509EE75A7 /* ToolCardScaffold.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolCardScaffold.swift; path = App/Tools/ToolCardScaffold.swift; sourceTree = "<group>"; };
 		9C3E3653A6984BBF7AD1D55B1FAAEEE7 /* SessionHeaderView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionHeaderView.swift; path = App/Sessions/SessionHeaderView.swift; sourceTree = "<group>"; };
 		9C5B113B4A28F57B456DE9EBF14CEC2A /* SettingsFocusTarget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsFocusTarget.swift; path = App/Settings/SettingsFocusTarget.swift; sourceTree = "<group>"; };
@@ -584,6 +586,7 @@
 				F07ECBFB6BDAE4C811DB1D7ABEBF18F7 /* PreferredIDESettingRowView.swift */,
 				237D585093E84752237E9B5D6B92B6EE /* SettingControlView.swift */,
 				2BBBA68798C58DABEFA1D4BC83DF0BE2 /* SettingDefinition.swift */,
+				9BCCAC902E2B2E33EBBDDAEE6B7B5F61 /* SettingMetadata.swift */,
 				B90820BF93AB26DD47FB66B51F4406A7 /* SettingRowView.swift */,
 				20C8F6172588FE2E521FCAD55A8CFA6C /* SettingsCatalog.swift */,
 				4A87EB3BC3A4E6795E06B7178A561E74 /* SettingsCategory.swift */,
@@ -945,6 +948,7 @@
 				B24374A9E4F25605FD62C639DD68F6CE /* PreferredIDESettingRowView.swift in Sources */,
 				1DF215EE736D0BD93C0BDC740D1CBDBB /* SettingControlView.swift in Sources */,
 				84D1068DE4C558538DEC841D45EBB0D8 /* SettingDefinition.swift in Sources */,
+				D891343613B1D4213F81F80DE2B8CF5C /* SettingMetadata.swift in Sources */,
 				D86D97C22202D7180B2DCBF0FE162A59 /* SettingRowView.swift in Sources */,
 				94E1ED08504FB9312CE561C47662C7F9 /* SettingsCatalog.swift in Sources */,
 				114E61293A71ADD6FAE5FDADD7247958 /* SettingsCategory.swift in Sources */,
