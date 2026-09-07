@@ -56,9 +56,9 @@ struct HarnessMessageDescriptor: Equatable, Sendable {
 
 A descriptor is recorded only when the extracted text is non-empty (a
 `fileMention`-style message with no text has nothing to summarize), and only
-once per message: at `message_start` on the live path (`message_update` /
-`message_end` for the same message hit the gate too but must not re-record),
-or at the single visit on the load/history paths.
+once per unique message: the reducer dedups by content signature
+(role + customType + text), so `message_start`/`message_end` pairs — and
+repeated identical nudges — record one descriptor.
 
 ### Notice
 
@@ -89,7 +89,9 @@ func summarize(_ descriptor: HarnessMessageDescriptor) async -> String?
   existing `OmpCommandRunner`, prompt = fixed instruction + the descriptor
   text truncated to 8 KB. Summary = last non-empty stdout line (`omp -p`
   prints a `Working...` progress line first).
-- Timeout 60 s; any failure → nil → static notice.
+- No explicit timeout: `omp -p` self-terminates after answering. (Known
+  ceiling: a hung child leaves the static "summarizing…" notice; the upgrade
+  path is a task-group race with a 60 s cap.)
 - The summarizer spawns its own one-shot process; it never touches the
   session's omp child.
 
