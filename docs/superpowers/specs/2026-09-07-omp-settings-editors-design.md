@@ -1,7 +1,7 @@
 # OMP Settings Editors — Design
 
 Date: 2026-09-07
-Status: Approved (brainstorming), pending implementation plan
+Status: Approved (brainstorming + visual review), pending implementation plan
 
 ## Problem
 
@@ -16,17 +16,33 @@ record). Three usability gaps:
    knows the required shape. Flagship case: `modelRoles` — the mapping of
    internal model roles (`default`, `plan`, `advisor`, `smol`, `commit`,
    `designer`, `slow`, `task`, `tiny`, `vision`) to `provider/model:effort`
-   strings — is effectively uneditable in the GUI today.
+   strings — is effectively uneditable in the GUI today. Notably, OMP's own
+   settings panel does not surface `modelRoles` either (no UI metadata in its
+   schema); 10x will be the only GUI for it.
 3. **124 of 484 settings ship without a description**, so the row shows a
    label and a key with no explanation.
+
+## Source of truth: OMP's shipped schema
+
+The installed package (`@oh-my-pi/pi-coding-agent`, verified on 18.1.10)
+exposes its TypeScript source via `exports`, so the full settings schema is
+importable with bun:
+
+```bash
+bun -e 'import { SETTINGS_SCHEMA } from ".../pi-coding-agent/src/config/settings-schema.ts"; ...'
+```
+
+For every one of the 484 settings this yields: `type`, `values` (enum value
+lists), `default`, and `ui` metadata (`label`, `description`, `tab`, `group`,
+and for many enums `options` with **human labels and per-option
+descriptions** — e.g. `always-ask` → "Always ask — auto-approve read-only
+tools"). This is the seed data for the curated tables below.
 
 ## Decisions (from brainstorming)
 
 - Enum options and gap-fill descriptions are **hand-curated in 10x**, seeded
-  once from the installed OMP package's shipped settings schema
-  (`dist/types/config/settings-schema.d.ts` and the compiled bundle both
-  contain the full schema: values, labels, descriptions, tab/group). After
-  seeding, the table is maintained by hand; drift is caught by tests (below).
+  once from the installed OMP schema (nothing guessed), then maintained by
+  hand. Drift is caught by tests (see Testing).
 - Descriptions render as plain text with **no attribution**. OMP's own
   description always wins when present; curated text only fills true gaps.
 - **No raw JSON editing anywhere.** Known record shapes get curated editors;
@@ -38,52 +54,73 @@ record). Three usability gaps:
 
 Pure-data static table, keyed by setting key:
 
-- `enumOptions: [String]` — allowed values for curated enums.
+- `enumOptions: [SettingOption]` — value + optional human label + optional
+  per-option description, seeded from the schema's `ui.options`.
 - `description: String` — gap-fill text, used only when OMP ships none.
-- Record-editor kind for curated records (see §3).
+- Record-editor kind / array value-set metadata where curated (§3, §4).
 
 `SettingsCatalog.build(from:)` merges it: OMP description wins, curated text
-fills gaps, `enumOptions` attach to the definition. `SettingDefinition` gains
-`enumOptions: [String]` (empty when uncurated). Search already covers
+fills gaps, options attach to the definition. `SettingDefinition` gains
+`enumOptions: [SettingOption]` (empty when uncurated). Search already covers
 `description`, so gap-fill text becomes searchable automatically.
 
 ### 2. Enum control — dropdown + Other
 
-In `SettingControlView`, an enum with non-empty `enumOptions` renders a
-dropdown (saves immediately on selection, like the boolean toggle — no Apply
-button) with the curated options plus an "Other…" item that reveals the
-existing text field + Apply path. If the current value is not in the curated
-list (OMP added a value, or the user set something exotic via CLI), it appears
-as the selected custom value — never hidden, never coerced.
+An enum with non-empty `enumOptions` renders a dropdown that saves
+immediately on selection (no Apply button, like the boolean toggle).
+
+- **Closed state:** same underline-field look as today's text fields (mono 11
+  value, 1px near-black bottom rule) plus a cyan chevron at the trailing edge.
+- **Open state:** popover below the field, one row per option — human label
+  (body 12 medium) + per-option description (muted 10) when the schema
+  provides them, raw mono value otherwise; cyan checkmark on the current
+  value; hover uses `hoverNeutralHex`. "Other…" pinned at the bottom reveals
+  the existing text field + Apply path.
+- **Custom value:** if the current value is not in the curated list (OMP
+  added a value, or the user set something exotic via CLI), it shows as the
+  selected value with a "custom" marker — never hidden, never coerced.
 
 Enums without curated options keep the existing text field.
 
-### 3. Record/array structured editors
+### 3. Record editors — full-width, never raw JSON
 
-Records never show raw JSON. Curated editors for the known shapes:
+Records and object-arrays **break out of the 300px control column**: the row
+renders label/description/key on top and the editor full-width below.
 
 | Key | Editor |
 | --- | --- |
-| `modelRoles` | One row per role: model dropdown (from `OmpModelCatalogService`, the catalog the composer already uses) + effort dropdown for thinking-capable models. `:effort` suffix parsed out on read, re-joined on save. Roles can be added/removed. A current value whose model is absent from the catalog displays as-is (custom entry), never rewritten. |
+| `modelRoles` | One row per role: role name, model dropdown (from `OmpModelCatalogService`, the catalog the composer already uses), effort dropdown for thinking-capable models. `:effort` suffix parsed out on read, re-joined on save. "+ Add role" offers known roles not yet set. A current value whose model is absent from the catalog displays as-is (custom entry), never rewritten. Save writes the whole record (OMP rejects nested keys like `modelRoles.default` — verified); removing all rows resets to OMP defaults. |
 | `tools.approval` | Rows: tool name → allow/prompt/deny dropdown. |
 | `task.agentModelOverrides` | Rows: agent → model dropdown (same catalog source). |
 | `providers.maxInFlightRequests` | Rows: provider → number field. |
 | `retry.fallbackChains` | Rows: selector → ordered string list. |
-| `task.agentAdvisor`, `task.agentPrewalk` | Rows: agent → value control matching the seeded schema's per-key value type (e.g. `agentAdvisor` values are an on/off-style enum). Exact value sets come from the seed extraction, not guesses. |
-| everything else (`modelTags`, `statusLine.segmentOptions`, `images.urls.*`, future keys) | Generic key/value-row editor (scalar values), add/remove rows. |
+| `task.agentAdvisor`, `task.agentPrewalk` | Rows: agent → string value (schema type `Record<string, string>`; `agentAdvisor` currently `{"task": "on"}`). |
+| `modelTags`, `statusLine.segmentOptions`, `images.urls.options`, `images.urls.credentials` | Generic key/value-row editor (scalar values; `credentials` values masked). Also the fallback for any future record OMP adds. |
 
-Arrays of objects get a labeled mini-form per entry — concretely
-`bashInterceptor.patterns` (pattern / tool / message fields per entry, add /
-remove). Arrays of strings keep the existing list editor.
+### 4. Array editors — four treatments
 
-Booleans, numbers, and plain strings are unchanged.
+- **Object array mini-form** (1 key): `bashInterceptor.patterns` — bordered
+  card per entry with labeled underline fields (pattern / tool / message),
+  add/remove. Pattern validated as a compilable regex before save.
+- **Known-set, reorderable** (9 keys): `cycleOrder` (role names),
+  `compaction.methodOrder`, `statusLine.leftSegments`,
+  `statusLine.rightSegments`, `providers.webSearchOrder`,
+  `providers.imageOrder`, `goal.continuationModes`, `hindsight.recallTypes`,
+  `images.urls.backends` — rows with grip + value + remove, plus an
+  add-from-dropdown listing set members not yet present.
+- **Catalog-fed id lists** (4 keys): `enabledModels`, `modelProviderOrder`,
+  `enabledProviders`, `disabledProviders` — add-from-picker fed by the live
+  model/provider catalog instead of typing ids.
+- **Free-form string lists** (15 keys): `bash.patterns`, `extensions`,
+  `disabledExtensions`, `skills.*`, `shellMinimizer.only/except`,
+  `task.disabledAgents`, `workspace.additionalDirectories`,
+  `ttsr.disabledRules`, etc. — existing list editor, unchanged.
 
-### 4. Save/error flow
+### 5. Unchanged
 
-Unchanged: `SettingsViewModel.save` → `OmpConfigService.set`, per-key errors
-surface via `keyErrors` under the row. Dropdown saves go through the same
-path; OMP's server-side validation remains the backstop for anything the UI
-got wrong.
+Booleans (toggle), numbers (field), plain strings (field), search,
+categories, section layout, and the per-key error surfacing via
+`SettingsViewModel.keyErrors`.
 
 ## Testing
 
@@ -108,16 +145,20 @@ binary is locatable.
 - Enum control: current value outside curated list surfaces as custom.
 - `modelRoles` parsing: `provider/model:effort` split/join round-trip,
   missing effort, model absent from catalog.
-- Record editors serialize back to the exact `JSONValue` shape OMP expects.
+- Record editors serialize back to the exact `JSONValue` shape OMP expects
+  (whole-record write).
 
 ## Non-goals
 
 - Adopting OMP's tab/group categorization (10x's prefix-based categories stay).
 - Upstreaming descriptions to OMP.
-- Parsing OMP's schema at runtime in the app.
+- Parsing OMP's schema at runtime in the app (seed extraction is a one-time
+  dev action; the shipped table is plain Swift data).
 - Changes to boolean/number/string controls.
 
-## Out of scope / follow-ups
+## Reference material
 
-- The brainstorm mockups live in `.superpowers/brainstorm/` (gitignored) for
-  reference.
+- Brainstorm mockups (current-vs-proposed, inventory, visual wrappers):
+  `.superpowers/brainstorm/` (gitignored).
+- Extracted schema dump used for seeding: regenerate with the bun one-liner
+  above against the installed OMP package.
