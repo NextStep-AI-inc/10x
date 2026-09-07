@@ -186,9 +186,9 @@ Add the drain + record methods (next to `appendNotice`):
     }
 ```
 
-Change the three live gates. Each currently reads
-`guard TranscriptMessage.isDisplayable(message) else { return .none }` —
-replace all three (lines 41, 53, 62) with:
+Change the `message_start` and `message_end` gates (lines 41 and 62). Each
+currently reads `guard TranscriptMessage.isDisplayable(message) else { return .none }` —
+replace both with:
 
 ```swift
             guard TranscriptMessage.isDisplayable(message) else {
@@ -196,6 +196,12 @@ replace all three (lines 41, 53, 62) with:
                 return .none
             }
 ```
+
+Leave the `message_update` gate (line 53) as a plain drop: updates are growing
+token snapshots, and with content-signature dedup a streamed hidden message
+would fan out one descriptor per prefix. Start + end cover every case
+(complete injections have both; reconciliation-boundary messages have a lone
+end).
 
 In `reset()`, clear the new state alongside the existing clears:
 
