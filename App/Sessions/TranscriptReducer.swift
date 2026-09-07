@@ -211,6 +211,9 @@ struct TranscriptReducer {
             }
 
             let visibleText = Self.visibleMessageText(message)
+            if !TranscriptMessage.isDisplayable(message) {
+                recordDroppedHarnessMessage(message)
+            }
             if Self.shouldKeepMessage(message, visibleText: visibleText) {
                 items.append(.message(TranscriptMessage(
                     id: message["id"]?.stringValue ?? "history-\(index)",

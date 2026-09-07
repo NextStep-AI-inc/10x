@@ -839,3 +839,22 @@ private func message(_ json: String) throws -> JSONValue {
 
     #expect(reducer.drainDroppedHarnessMessages().count == 1)
 }
+
+@Test func aHistoryLoadCollectsDroppedDescriptors() {
+    var reducer = TranscriptReducer()
+
+    _ = reducer.load(messages: [
+        .object(["role": .string("user"), "content": .string("Ship it")]),
+        .object([
+            "role": .string("custom"),
+            "customType": .string("nudge"),
+            "display": .bool(false),
+            "content": .string("Steer harder"),
+        ]),
+    ])
+
+    let dropped = reducer.drainDroppedHarnessMessages()
+    #expect(dropped.map(\.customType) == ["nudge"])
+    #expect(dropped.first?.text == "Steer harder")
+    #expect(reducer.items.count == 1)
+}
