@@ -26,7 +26,7 @@ extension JSONValue {
         return value
     }
 
-    public var intValue: Int? { doubleValue.map(Int.init) }
+    public var intValue: Int? { doubleValue.flatMap { Int(exactly: $0) } }
 
     public var boolValue: Bool? {
         guard case .bool(let value) = self else { return nil }
