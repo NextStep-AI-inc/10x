@@ -63,6 +63,13 @@ struct SettingControlView: View {
                     : .double(value)
                 await model.save(definition, value: json)
             }
+        case .enumeration where !definition.enumOptions.isEmpty:
+            InlineDropdown(
+                options: definition.enumOptions,
+                current: definition.value?.stringValue ?? "",
+                onSelect: { value in
+                    Task { await model.save(definition, value: .string(value)) }
+                })
         case .string, .enumeration, .unknown(_):
             editableField(prompt: definition.isSecret ? "Secure value" : "Value") {
                 await model.save(definition, value: .string(draftText))
