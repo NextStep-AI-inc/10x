@@ -33,7 +33,7 @@ struct SettingDefinition: Identifiable, Equatable {
     let category: SettingsCategory
     let isSecret: Bool
     let requiresRestart: Bool
-    var enumOptions: [SettingOption] = []
+    let enumOptions: [SettingOption]
 
     var usesFullWidthEditor: Bool {
         type == .record || key == "bashInterceptor.patterns"
