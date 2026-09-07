@@ -154,11 +154,11 @@ Seven tools. Read-side auto-approves except in `always-ask`; write-side rides ex
 - **Integration:** in-process fake daemon speaking the supervision protocol — UI tested without real screen control.
 - **Acceptance:** extend `docs/qa/computer-use-release-acceptance.md` — enable, claim, watch overlay, steer mid-action, per-session stop, global shut-off with a Cursor session running.
 
-## Open verifications for the plan phase
+## Verifications (resolved 2026-09-07)
 
-1. **Per-session MCP mount in omp:** `.mcp.json` works today but is per-project; confirm whether omp accepts a per-process MCP flag/env. Fallback: project config + process-lineage correlation to map daemon sessions to 10x sessions.
-2. **MCP tool approval mapping in omp:** confirm MCP tools receive standard read/exec approval decisions under `always-ask` / `write` / `yolo`.
-3. **Cursor MCP resources:** confirm Cursor's support for MCP resources/notifications; image content in tool results is the guaranteed baseline.
+1. **Per-session MCP mount in omp:** does not exist for `--mode rpc` — no CLI flag, env var, or RPC command (ACP mode alone accepts `mcpServers` at session setup). Resolution: 10x merges a `tenx-computer` entry into the user-level `~/.omp/agent/mcp.json` once (global mount; the daemon's exclusive claims make per-session mounting unnecessary). Daemon sessions are correlated to 10x sessions by harness label + process lineage where needed.
+2. **MCP tool approval mapping in omp:** MCP tools are hard-coded to approval tier `"write"` (`src/mcp/tool-bridge.ts:490`) → auto-allowed under `write` and `yolo`, prompted under `always-ask`, overridable per tool via `tools.approval.<name>`. This is the standard high-permission behavior the spec requires; no bespoke consent UI.
+3. **Harness MCP support:** Cursor (`.cursor/mcp.json` project / `~/.cursor/mcp.json` global), Claude Code (`.mcp.json` / `claude mcp add`), and Codex (`~/.codex/config.toml` `[mcp_servers.*]`) all register the same stdio server and all read MCP resources on current versions. Two accommodations baked into ComputerKit: answer `resources/list` with an empty array when idle (Codex uses it as a health check) and no-op `resources/subscribe` (Cursor subscribes even when the server declares `subscribe: false`).
 
 ## Out of scope (V1)
 

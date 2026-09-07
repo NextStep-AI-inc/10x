@@ -245,6 +245,12 @@ final class MCPServerTests: XCTestCase {
         let (server, _) = makeServer()
         XCTAssertNil(try server.handle(method: "notifications/initialized", params: nil))
     }
+
+    func test_resourcesSubscribe_isNoOp() throws {
+        let (server, _) = makeServer()
+        let response = try server.handle(method: "resources/subscribe", params: .object(["uri": .string("computer://window/1/screenshot")]))
+        XCTAssertEqual(response, .object([:]))
+    }
 }
 ```
 
@@ -359,7 +365,13 @@ public final class MCPServer {
                 ])
             }
         case "resources/list":
+            // Must answer with an empty array when nothing is claimed — Codex
+            // uses resources/list as a health check and flags servers that error.
             return .object(["resources": .array(resourceProvider?.listResources() ?? [])])
+        case "resources/subscribe", "resources/unsubscribe":
+            // No-op: resources are stateless. Cursor subscribes even when the
+            // server declares subscribe:false, and errors here surface in its UI.
+            return .object([:])
         case "resources/read":
             guard let uri = params?["uri"]?.stringValue else { throw MCPError.invalidParams("resources/read requires uri") }
             guard let resourceProvider, let resource = resourceProvider.readResource(uri: uri) else {
