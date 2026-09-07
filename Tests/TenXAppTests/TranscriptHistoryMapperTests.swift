@@ -178,6 +178,34 @@ import Testing
     #expect(messages.map(\.visibleText) == ["Provider unavailable", "Response aborted."])
 }
 
+@Test func historyMapperSkipsDeveloperInstructionWalls() throws {
+    let header = SessionHeader(
+        id: "session-developer",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let entries: [SessionEntry] = [
+        .message(
+            base: historyBase("user-1", nil, 1),
+            message: try historyJSON(#"{"role":"user","content":[{"type":"text","text":"Ship it"}]}"#)),
+        .message(
+            base: historyBase("developer-1", "user-1", 2),
+            message: try historyJSON(#"{"role":"developer","content":[{"type":"text","text":"Plan approved.\n\n<instruction>\nYou MUST execute this plan step by step."}]}"#)),
+    ]
+
+    let messages: [TranscriptMessage] = TranscriptHistoryMapper.map(
+        header: header,
+        path: entries).items.compactMap {
+        guard case .message(let message) = $0 else { return nil }
+        return message
+    }
+
+    #expect(messages.map(\.visibleText) == ["Ship it"])
+}
+
 private func historyBase(_ id: String, _ parentID: String?, _ second: Int) -> SessionEntryBase {
     SessionEntryBase(
         id: id,

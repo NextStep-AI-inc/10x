@@ -599,6 +599,130 @@ private func message(_ json: String) throws -> JSONValue {
     #expect(reducer.items.count == 1)
 }
 
+@Test func anAdvisorMessageShowsItsNoteNotTheAdvisoryEnvelope() {
+    var reducer = TranscriptReducer()
+    let advisor = JSONValue.object([
+        "role": .string("custom"),
+        "customType": .string("advisor"),
+        "display": .bool(true),
+        "content": .string("<advisory severity=\"blocker\" guidance=\"weigh, don't blindly obey\">\nCheck the probe window before reporting.\n</advisory>"),
+        "details": .object([
+            "notes": .array([
+                .object([
+                    "note": .string("Check the probe window before reporting."),
+                    "severity": .string("blocker"),
+                ]),
+            ]),
+        ]),
+    ])
+
+    #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": advisor]))) != .none)
+    #expect(reducer.items.count == 1)
+    guard case .message(let message) = reducer.items[0] else {
+        Issue.record("Expected one message item")
+        return
+    }
+    #expect(message.visibleText == "Check the probe window before reporting.")
+}
+
+@Test func anAdvisorMessageWithoutStructuredNotesDropsTheEnvelope() {
+    var reducer = TranscriptReducer()
+    let advisor = JSONValue.object([
+        "role": .string("custom"),
+        "customType": .string("advisor"),
+        "display": .bool(true),
+        "content": .string("<advisory severity=\"info\" guidance=\"weigh, don't blindly obey\">\nFirst note.\nSecond note.\n</advisory>"),
+    ])
+
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": advisor])))
+    guard case .message(let message) = reducer.items[0] else {
+        Issue.record("Expected one message item")
+        return
+    }
+    #expect(message.visibleText == "First note.\nSecond note.")
+}
+
+@Test func aHistoryLoadKeepsHiddenCustomMessagesOut() {
+    var reducer = TranscriptReducer()
+    let hidden = JSONValue.object([
+        "role": .string("custom"),
+        "customType": .string("prewalk-plan"),
+        "display": .bool(false),
+        "content": .string("STOP: In NEXT reply, before further exploration, write a plan."),
+    ])
+
+    _ = reducer.load(messages: [hidden])
+    #expect(reducer.items.isEmpty)
+}
+
+@Test func developerInstructionWallsNeverReachTheTranscript() {
+    var reducer = TranscriptReducer()
+    let wall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .array([.object([
+            "type": .string("text"),
+            "text": .string("Plan approved.\n\n<instruction>\nYou MUST execute this plan step by step."),
+        ])]),
+    ])
+
+    #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": wall]))) == .none)
+    #expect(reducer.consume(.event(type: "message_end", payload: .object(["message": wall]))) == .none)
+    #expect(reducer.items.isEmpty)
+
+    _ = reducer.load(messages: [wall])
+    #expect(reducer.items.isEmpty)
+}
+
+@Test func toolResultsStillPairWithTheirToolCardThroughTheGate() {
+    var reducer = TranscriptReducer()
+    let call = JSONValue.object([
+        "role": .string("assistant"),
+        "content": .array([.object([
+            "type": .string("toolCall"),
+            "id": .string("tool-1"),
+            "name": .string("bash"),
+            "arguments": .object([:]),
+        ])]),
+    ])
+    let result = JSONValue.object([
+        "role": .string("toolResult"),
+        "toolCallId": .string("tool-1"),
+        "toolName": .string("bash"),
+        "content": .array([.object(["type": .string("text"), "text": .string("done")])]),
+        "isError": .bool(false),
+    ])
+
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": call])))
+    #expect(reducer.consume(.event(type: "message_end", payload: .object(["message": result]))) != .none)
+
+    guard case .tool(let tool) = reducer.items.last else {
+        Issue.record("Expected the tool result to land on its card")
+        return
+    }
+    #expect(tool.id == "tool-1")
+    #expect(tool.phase == .complete)
+}
+
+@Test func aHugeHarnessMessageIsBounded() {
+    var reducer = TranscriptReducer()
+    let dump = String(repeating: "job output line\n", count: 1_000)
+    let message = JSONValue.object([
+        "role": .string("custom"),
+        "customType": .string("async-result"),
+        "display": .bool(true),
+        "content": .string(dump),
+    ])
+
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
+    guard case .message(let item) = reducer.items.first else {
+        Issue.record("Expected the harness message to be stored")
+        return
+    }
+    #expect(item.visibleText.count < 5_000)
+    #expect(item.visibleText.hasSuffix("…"))
+    #expect(item.visibleText.hasPrefix("job output line"))
+}
+
 @Test func aChangeReplayedFromTheSessionFileIsNotShownTwice() {
     var reducer = TranscriptReducer()
     _ = reducer.consume(.event(

@@ -355,6 +355,7 @@ struct TranscriptReducer {
     }
 
     private static func shouldKeepMessage(_ message: JSONValue, visibleText: String) -> Bool {
+        guard TranscriptMessage.isDisplayable(message) else { return false }
         if message["role"]?.stringValue == "user" || !visibleText.isEmpty { return true }
         guard message["role"]?.stringValue == "assistant",
               let stopReason = message["stopReason"]?.stringValue?.lowercased()
