@@ -58,6 +58,7 @@
 		2FA2CED35BD69E6850395FDC3730D25B /* OmpConfigServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877A2FC56C324B52234C33EA8FA709FE /* OmpConfigServiceTests.swift */; };
 		30093F8555F6AB9BFAC4B772C5F5664D /* SearchResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DFBA50E93FE68B650E3DA47C2736F1D /* SearchResult.swift */; };
 		30D96D97BDCE292CEC0FD047C404BB91 /* 10x-wordmark.svg in Resources */ = {isa = PBXBuildFile; fileRef = 108FB7C260AC219C42872EE47BFAF018 /* 10x-wordmark.svg */; };
+		32B00D21CF0B5739516FC39BE445D797 /* HarnessMessageDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAF342540D98CB0535A709A3C658805F /* HarnessMessageDescriptor.swift */; };
 		334062408B2F48A01286325880DB7B03 /* ToolCardRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B78F06918C6490DCC1F2AE35935690 /* ToolCardRegistryTests.swift */; };
 		33B200F61E67EFA05EEFB807F0F4ABAB /* ToolContentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30792BD1DA4BEEB76B9E4309B28E6E30 /* ToolContentExtractor.swift */; };
 		3571BA37AA76FACBBDAEEB8E0BCED4A3 /* ComposerControlsPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE8BF1F950DDF0BA45B43F6C14DD2E3 /* ComposerControlsPresentation.swift */; };
@@ -415,6 +416,7 @@
 		C81E5DA519ACF24ECFEA60EEA9E6B4A7 /* SessionControllerComposerControlsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionControllerComposerControlsTests.swift; path = Tests/TenXAppTests/SessionControllerComposerControlsTests.swift; sourceTree = "<group>"; };
 		C8FD7B6822B9E218995023EE339B135B /* TranscriptReferenceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptReferenceTests.swift; path = Tests/TenXAppTests/TranscriptReferenceTests.swift; sourceTree = "<group>"; };
 		CA28DA0E2B373FCE0E1CCB026D76B4C0 /* ExtensionUIRouter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExtensionUIRouter.swift; path = App/ExtensionUI/ExtensionUIRouter.swift; sourceTree = "<group>"; };
+		CAF342540D98CB0535A709A3C658805F /* HarnessMessageDescriptor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessMessageDescriptor.swift; path = App/Sessions/HarnessMessageDescriptor.swift; sourceTree = "<group>"; };
 		CCB9EED15D3CD21901773164F4B8AFC6 /* ProviderConnectionRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderConnectionRowView.swift; path = App/Providers/ProviderConnectionRowView.swift; sourceTree = "<group>"; };
 		CCD51B51845667C84FE0956EBE30D561 /* ResponseMetadataView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ResponseMetadataView.swift; path = App/Sessions/ResponseMetadataView.swift; sourceTree = "<group>"; };
 		CCFEFC461F4D54A58DD7B0FDB4D9B755 /* ViewSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ViewSnapshotTests.swift; path = Tests/TenXAppTests/ViewSnapshotTests.swift; sourceTree = "<group>"; };
@@ -548,6 +550,7 @@
 				563C3A7D6488F446FD8A7AA4540D9118 /* ComposerSessionControlsView.swift */,
 				5ADC0A76BAA3F44789A7E156E1D95F14 /* ComposerView.swift */,
 				42EC21FECB1C4E09E49926AA5572960B /* ContentDocument.swift */,
+				CAF342540D98CB0535A709A3C658805F /* HarnessMessageDescriptor.swift */,
 				191525CE30166ED42663A3F444EDC923 /* MessageBlockView.swift */,
 				172EECE87F09A0B1731B9CFB378E4A3C /* MessageBubbleView.swift */,
 				D21953D8D17C2A107E43258CBB3E6E4E /* MessageContentParser.swift */,
@@ -909,6 +912,7 @@
 				2CEE7F3B8C310837833FF0D9672A30AB /* ComposerSessionControlsView.swift in Sources */,
 				BFE50037FF83AC93F46119CBE069D879 /* ComposerView.swift in Sources */,
 				ECD3CA1F7235CAB70094DABD4D9244F7 /* ContentDocument.swift in Sources */,
+				32B00D21CF0B5739516FC39BE445D797 /* HarnessMessageDescriptor.swift in Sources */,
 				9CA3690A25C24E73BE98E4D87DDEEC9B /* MessageBlockView.swift in Sources */,
 				D9A3A45C8608807D61347280DF5782DD /* MessageBubbleView.swift in Sources */,
 				F8B515929F282BD9333D5C1137D72662 /* MessageContentParser.swift in Sources */,

@@ -756,3 +756,60 @@ private func message(_ json: String) throws -> JSONValue {
     // only record that the response was retried.
     #expect(reducer.items.count == 1)
 }
+
+@Test func droppedHarnessMessagesAreCollectedForTheNoticePipeline() {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object([
+        "message": .object([
+            "role": .string("developer"),
+            "content": .string("You MUST execute this plan step by step."),
+        ]),
+    ])))
+
+    let dropped = reducer.drainDroppedHarnessMessages()
+
+    #expect(dropped.count == 1)
+    #expect(dropped.first?.role == "developer")
+    #expect(dropped.first?.customType == nil)
+    #expect(dropped.first?.text == "You MUST execute this plan step by step.")
+    #expect(dropped.first?.byteCount == "You MUST execute this plan step by step.".count)
+    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
+}
+
+@Test func aMessageStartEndPairRecordsOneDescriptor() {
+    var reducer = TranscriptReducer()
+    let message = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Same wall"),
+    ])
+
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
+
+    #expect(reducer.drainDroppedHarnessMessages().count == 1)
+}
+
+@Test func anEmptyHiddenMessageRecordsNothing() {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object([
+        "message": .object(["role": .string("fileMention")]),
+    ])))
+
+    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
+}
+
+@Test func repeatedIdenticalHiddenMessagesRecordOneDescriptor() {
+    var reducer = TranscriptReducer()
+    let message = JSONValue.object([
+        "role": .string("custom"),
+        "customType": .string("nudge"),
+        "display": .bool(false),
+        "content": .string("Keep going"),
+    ])
+
+    for _ in 0..<3 {
+        _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
+    }
+
+    #expect(reducer.drainDroppedHarnessMessages().count == 1)
+}
