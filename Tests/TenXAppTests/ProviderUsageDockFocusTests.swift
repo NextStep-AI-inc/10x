@@ -23,18 +23,106 @@ import Testing
     #expect(interaction.inspectedProviderID == "anthropic")
 }
 
-@Test func pinnedSelectorKeepsEveryProviderInConnectionOrder() {
-    let providers = [
-        ProviderUsageProvider(id: "anthropic", name: "Anthropic", accounts: []),
-        ProviderUsageProvider(id: "openai", name: "OpenAI", accounts: []),
-        ProviderUsageProvider(id: "cursor", name: "Cursor", accounts: []),
-    ]
+@Test func expandedSelectorShowsOnlyTheInspectedProvider() {
+    let personal = dockAccount(id: "openai:school", accountRef: "school", availability: .available)
+    let work = dockAccount(id: "openai:work", accountRef: "work", availability: .available)
+    let openai = ProviderUsageProvider(
+        id: "openai-codex",
+        name: "OpenAI",
+        accounts: [personal, work],
+        capability: .accountRouting,
+        foregroundAccountRef: "school")
+    let cursor = ProviderUsageProvider(id: "cursor", name: "Cursor", accounts: [])
+    let providers = [openai, cursor]
 
-    #expect(ProviderUsageDockPresentation.selectorProviders(providers).map(\.id) == [
-        "anthropic",
-        "openai",
-        "cursor",
+    #expect(ProviderUsageDockPresentation.selectorProviders(
+        providers,
+        inspectedProviderID: "openai-codex").map(\.id) == ["openai-codex"])
+    #expect(ProviderUsageDockPresentation.selectorProviders(
+        providers,
+        inspectedProviderID: "cursor").map(\.id) == ["cursor"])
+}
+
+@Test func expandedPeekShowsTheOtherAccountOfTheSameProvider() {
+    let school = dockAccount(id: "openai:school", accountRef: "school", availability: .available)
+    let work = dockAccount(id: "openai:work", accountRef: "work", availability: .available)
+    let reserve = dockAccount(id: "openai:reserve", accountRef: "reserve", availability: .available)
+    let openai = ProviderUsageProvider(
+        id: "openai-codex",
+        name: "OpenAI",
+        accounts: [school, work, reserve],
+        capability: .accountRouting,
+        foregroundAccountRef: "school")
+
+    #expect(ProviderUsageDockPresentation.peekAccount(
+        in: openai,
+        inspectedAccountID: school.id)?.id == work.id)
+    #expect(ProviderUsageDockPresentation.peekAccount(
+        in: openai,
+        inspectedAccountID: reserve.id)?.id == work.id)
+    #expect(ProviderUsageDockPresentation.peekAccount(
+        in: openai,
+        inspectedAccountID: work.id)?.id == reserve.id)
+}
+
+@Test func inspectionArrowsWalkAccountsThenWrapToTheNextProvider() {
+    let school = dockAccount(id: "openai:school", accountRef: "school", availability: .available)
+    let work = dockAccount(id: "openai:work", accountRef: "work", availability: .available)
+    let openai = ProviderUsageProvider(
+        id: "openai-codex",
+        name: "OpenAI",
+        accounts: [school, work],
+        capability: .accountRouting,
+        foregroundAccountRef: "school")
+    let cursor = ProviderUsageProvider(id: "cursor", name: "Cursor", accounts: [])
+    let providers = [openai, cursor]
+    let schoolTarget = ProviderUsageDockInspection(
+        providerID: "openai-codex",
+        accountID: school.id)
+    let workTarget = ProviderUsageDockInspection(
+        providerID: "openai-codex",
+        accountID: work.id)
+    let cursorTarget = ProviderUsageDockInspection(providerID: "cursor", accountID: nil)
+
+    #expect(ProviderUsageDockPresentation.inspectionTargets(in: providers) == [
+        schoolTarget,
+        workTarget,
+        cursorTarget,
     ])
+    #expect(ProviderUsageDockPresentation.stepInspection(
+        1, from: schoolTarget, in: providers) == workTarget)
+    #expect(ProviderUsageDockPresentation.stepInspection(
+        1, from: workTarget, in: providers) == cursorTarget)
+    #expect(ProviderUsageDockPresentation.stepInspection(
+        1, from: cursorTarget, in: providers) == schoolTarget)
+    #expect(ProviderUsageDockPresentation.stepInspection(
+        -1, from: schoolTarget, in: providers) == cursorTarget)
+}
+
+@Test func providerOnlyAccountsStillStepAndPeek() {
+    let school = dockAccount(id: "openai:school", accountRef: "school", availability: .available)
+    let work = dockAccount(id: "openai:work", accountRef: "work", availability: .available)
+    let openai = ProviderUsageProvider(
+        id: "openai-codex",
+        name: "OpenAI",
+        accounts: [school, work])
+    let cursor = ProviderUsageProvider(id: "cursor", name: "Cursor", accounts: [])
+    let providers = [openai, cursor]
+    let schoolTarget = ProviderUsageDockInspection(
+        providerID: "openai-codex",
+        accountID: school.id)
+    let workTarget = ProviderUsageDockInspection(
+        providerID: "openai-codex",
+        accountID: work.id)
+
+    #expect(ProviderUsageDockPresentation.peekAccount(
+        in: openai,
+        inspectedAccountID: school.id)?.id == work.id)
+    #expect(ProviderUsageDockPresentation.stepInspection(
+        1, from: schoolTarget, in: providers) == workTarget)
+    #expect(ProviderUsageDockPresentation.stepInspection(
+        1, from: workTarget, in: providers)
+        == ProviderUsageDockInspection(providerID: "cursor", accountID: nil))
 }
 
 @MainActor
