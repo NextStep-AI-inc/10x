@@ -40,9 +40,13 @@ tools"). This is the seed data for the curated tables below.
 
 ## Decisions (from brainstorming)
 
-- Enum options and gap-fill descriptions are **hand-curated in 10x**, seeded
-  once from the installed OMP schema (nothing guessed), then maintained by
-  hand. Drift is caught by tests (see Testing).
+- Enum options are **seeded once from the installed OMP schema** (nothing
+  guessed), then maintained by hand. Drift is caught by tests (see Testing).
+  Note: the schema's descriptions exactly match `config list --json` output —
+  the 124 undocumented keys are undocumented in the schema too (they carry no
+  `ui` block), so gap-fill descriptions are **hand-written** for the
+  user-facing subset (e.g. `modelRoles`, `cycleOrder`, `enabledModels`,
+  `shellPath`); internal keys stay blank.
 - Descriptions render as plain text with **no attribution**. OMP's own
   description always wins when present; curated text only fills true gaps.
 - **No raw JSON editing anywhere.** Known record shapes get curated editors;
@@ -102,19 +106,21 @@ renders label/description/key on top and the editor full-width below.
 - **Object array mini-form** (1 key): `bashInterceptor.patterns` — bordered
   card per entry with labeled underline fields (pattern / tool / message),
   add/remove. Pattern validated as a compilable regex before save.
-- **Known-set, reorderable** (9 keys): `cycleOrder` (role names),
-  `compaction.methodOrder`, `statusLine.leftSegments`,
-  `statusLine.rightSegments`, `providers.webSearchOrder`,
-  `providers.imageOrder`, `goal.continuationModes`, `hindsight.recallTypes`,
-  `images.urls.backends` — rows with grip + value + remove, plus an
-  add-from-dropdown listing set members not yet present.
+- **Known-set, reorderable** (4 keys): `cycleOrder` (model role names),
+  `compaction.methodOrder`, `providers.webSearchOrder`, `providers.imageOrder`
+  — rows with value + remove + up/down reorder, plus an add-from-dropdown
+  listing set members not yet present. Sets are seeded only where OMP's source
+  enumerates them (verified extractable from the installed package).
 - **Catalog-fed id lists** (4 keys): `enabledModels`, `modelProviderOrder`,
   `enabledProviders`, `disabledProviders` — add-from-picker fed by the live
   model/provider catalog instead of typing ids.
-- **Free-form string lists** (15 keys): `bash.patterns`, `extensions`,
+- **Free-form string lists** (20 keys): `bash.patterns`, `extensions`,
   `disabledExtensions`, `skills.*`, `shellMinimizer.only/except`,
   `task.disabledAgents`, `workspace.additionalDirectories`,
-  `ttsr.disabledRules`, etc. — existing list editor, unchanged.
+  `ttsr.disabledRules`, `statusLine.leftSegments/rightSegments`,
+  `goal.continuationModes`, `hindsight.recallTypes`, `images.urls.backends`,
+  etc. — existing list editor, unchanged. (These have no enumerable domain in
+  OMP's source; if OMP later exposes one, promote them to known-set.)
 
 ### 5. Unchanged
 
