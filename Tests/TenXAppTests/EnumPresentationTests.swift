@@ -23,4 +23,10 @@ struct EnumPresentationTests {
     @Test func emptyValueIsNotCustom() {
         #expect(EnumPresentation(options: options, currentValue: "").customValue == nil)
     }
+
+    @Test func displayTextFallsBackToRawValueWhenLabelMissing() {
+        let bareOptions = [SettingOption("raw-only")]
+        #expect(EnumPresentation(options: bareOptions, currentValue: "raw-only")
+            .displayText(for: "raw-only") == "raw-only")
+    }
 }

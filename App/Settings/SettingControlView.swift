@@ -67,6 +67,7 @@ struct SettingControlView: View {
             InlineDropdown(
                 options: definition.enumOptions,
                 current: definition.value?.stringValue ?? "",
+                accessibilityLabelText: definition.displayLabel,
                 onSelect: { value in
                     Task { await model.save(definition, value: .string(value)) }
                 })

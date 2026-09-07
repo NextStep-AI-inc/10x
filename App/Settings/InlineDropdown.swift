@@ -6,6 +6,7 @@ struct InlineDropdown: View {
     /// Shown when current is empty (e.g. "Add…" for list editors).
     var prompt: String? = nil
     var allowsOther = true
+    var accessibilityLabelText: String? = nil
     let onSelect: (String) -> Void
 
     @State private var isExpanded = false
@@ -25,6 +26,8 @@ struct InlineDropdown: View {
                     Text(current.isEmpty ? (prompt ?? "") : presentation.displayText(for: current))
                         .font(TenXTypography.mono(size: 11))
                         .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     if presentation.customValue != nil {
                         Text("custom")
                             .font(TenXTypography.mono(size: 8))
@@ -45,22 +48,31 @@ struct InlineDropdown: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(prompt ?? "Value")
+            .accessibilityLabel(accessibilityLabelText ?? prompt ?? "Value")
+            .accessibilityValue(current.isEmpty ? "" : presentation.displayText(for: current))
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 0) {
-                    if let custom = presentation.customValue {
-                        optionRow(value: custom, label: custom,
-                                  detail: "Current value (not a known option)", selected: true)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            if let custom = presentation.customValue {
+                                optionRow(value: custom, label: custom,
+                                          detail: "Current value (not a known option)", selected: true)
+                            }
+                            ForEach(options, id: \.value) { option in
+                                optionRow(value: option.value,
+                                          label: option.label ?? option.value,
+                                          detail: option.detail,
+                                          selected: option.value == current)
+                            }
+                        }
                     }
-                    ForEach(options, id: \.value) { option in
-                        optionRow(value: option.value,
-                                  label: option.label ?? option.value,
-                                  detail: option.detail,
-                                  selected: option.value == current)
-                    }
+                    .frame(maxHeight: 220)
+
                     if allowsOther {
-                        Divider()
+                        Rectangle()
+                            .fill(TenXPalette.color(TenXPalette.separatorHex))
+                            .frame(height: 1)
                         if showsOther {
                             HStack(spacing: 4) {
                                 TextField("Custom value", text: $otherDraft)
@@ -89,6 +101,11 @@ struct InlineDropdown: View {
                 .background(TenXPalette.color(TenXPalette.canvasHex))
                 .overlay(Rectangle().stroke(TenXPalette.color(TenXPalette.separatorHex)))
             }
+        }
+        .onChange(of: isExpanded) { _, expanded in
+            guard !expanded else { return }
+            showsOther = false
+            otherDraft = ""
         }
     }
 
@@ -120,6 +137,8 @@ struct InlineDropdown: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(FlyoutRowBackground(isSelected: selected))
+        .accessibilityValue(selected ? "selected" : "")
     }
 
     private func commitOther() {
