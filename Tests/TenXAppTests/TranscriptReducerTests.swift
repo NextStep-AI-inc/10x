@@ -792,7 +792,33 @@ private func message(_ json: String) throws -> JSONValue {
 @Test func anEmptyHiddenMessageRecordsNothing() {
     var reducer = TranscriptReducer()
     _ = reducer.consume(.event(type: "message_start", payload: .object([
-        "message": .object(["role": .string("fileMention")]),
+        "message": .object(["role": .string("developer")]),
+    ])))
+
+    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
+}
+
+@Test func aMessageEndAfterADrainDoesNotReRecord() {
+    var reducer = TranscriptReducer()
+    let message = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Same wall"),
+    ])
+
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
+    #expect(reducer.drainDroppedHarnessMessages().count == 1)
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
+    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
+}
+
+@Test func displayableMessagesRecordNothing() {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object([
+        "message": .object([
+            "id": .string("u1"),
+            "role": .string("user"),
+            "content": .string("Ship it"),
+        ]),
     ])))
 
     #expect(reducer.drainDroppedHarnessMessages().isEmpty)

@@ -1,5 +1,3 @@
-import Foundation
-
 /// A harness message the transcript gate kept out of the conversation —
 /// developer instruction walls, display:false steering customs, or a role a
 /// future omp adds. Collected so the UI can notice the drop instead of

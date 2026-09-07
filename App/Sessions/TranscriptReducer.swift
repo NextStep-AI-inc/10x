@@ -19,7 +19,7 @@ struct TranscriptReducer {
     private var nextSyntheticID = 1
     private var toolReducer = ToolEventReducer()
     private var subagentReducer = SubagentEventReducer()
-    private(set) var droppedHarnessMessages: [HarnessMessageDescriptor] = []
+    private var droppedHarnessMessages: [HarnessMessageDescriptor] = []
     private var droppedHarnessMessageSignatures: Set<String> = []
 
     @discardableResult
@@ -55,10 +55,7 @@ struct TranscriptReducer {
             return .immediate
         case "message_update":
             guard let message = payload["message"] else { return .none }
-            guard TranscriptMessage.isDisplayable(message) else {
-                recordDroppedHarnessMessage(message)
-                return .none
-            }
+            guard TranscriptMessage.isDisplayable(message) else { return .none }
             let id = inflightMessageID ?? messageID(message)
             inflightMessageID = id
             return replaceOrAppend(.message(TranscriptMessage(
