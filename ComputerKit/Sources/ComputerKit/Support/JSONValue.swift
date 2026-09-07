@@ -44,6 +44,10 @@ extension JSONValue {
     }
 }
 
+extension Optional where Wrapped == JSONValue {
+    public subscript(key: String) -> JSONValue? { self?[key] }
+}
+
 extension JSONValue: Codable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
