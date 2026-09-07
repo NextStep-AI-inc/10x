@@ -11,16 +11,20 @@ struct SettingsCatalog: Equatable {
         let definitions = object.keys.sorted().compactMap { key -> SettingDefinition? in
             guard let source = object[key]?.objectValue else { return nil }
             let isSecret = secretKey(key)
+            let runtimeDescription = source["description"]?.stringValue ?? ""
             return SettingDefinition(
                 key: key,
                 displayLabel: displayLabel(for: key),
                 value: isSecret ? nil : source["value"],
                 defaultValue: isSecret ? nil : source["default"],
                 type: SettingValueType(rawValue: source["type"]?.stringValue ?? "unknown"),
-                description: source["description"]?.stringValue ?? "",
+                description: runtimeDescription.isEmpty
+                    ? (SettingMetadata.descriptions[key] ?? "")
+                    : runtimeDescription,
                 category: category(for: key),
                 isSecret: isSecret,
-                requiresRestart: requiresRestart(key))
+                requiresRestart: requiresRestart(key),
+                enumOptions: SettingMetadata.enumOptions[key] ?? [])
         }
         return SettingsCatalog(definitions: definitions)
     }
