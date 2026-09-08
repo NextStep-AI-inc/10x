@@ -525,8 +525,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.attachments = []
         initialAttachments = attachments
         self.projectURL = projectURL
-        initialPromptTitle = text.split(whereSeparator: \.isNewline).first.map { String($0.prefix(80)) }
-            ?? "New session"
+        initialPromptTitle = Self.usableTitle(text) ?? "New session"
         isTitleLoading = true
         pendingSubmissions = [PendingUserSubmission(
             text: text, attachments: attachments, minimumUserIndex: 0, state: .starting)]
@@ -744,22 +743,25 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         context: PipelineContext
     ) {
         guard behavior == nil, titleGenerationTask == nil else { return }
-        guard title == "New session" || title == "Untitled session",
-              let titleGenerator,
-              let provider = liveComposerSelection.provider,
-              let modelID = liveComposerSelection.modelID
-        else {
+        guard title == "New session" || title == "Untitled session" else {
             finishTitleLoading()
             return
         }
+        let fallbackTitle = Self.usableTitle(prompt)
+        let provider = liveComposerSelection.provider
+        let modelID = liveComposerSelection.modelID
 
         titleGenerationGeneration &+= 1
         let generation = titleGenerationGeneration
         titleGenerationTask = Task { [weak self, titleGenerator] in
-            let generatedTitle = await titleGenerator.generate(
-                prompt: prompt,
-                provider: provider,
-                modelID: modelID)
+            let generatedTitle: String? = if let titleGenerator, let provider, let modelID {
+                await titleGenerator.generate(
+                    prompt: prompt,
+                    provider: provider,
+                    modelID: modelID)
+            } else {
+                nil
+            }
             guard let self else { return }
             defer {
                 if self.titleGenerationGeneration == generation {
@@ -767,15 +769,25 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                     self.finishTitleLoading()
                 }
             }
-            guard let generatedTitle,
+            guard let selectedTitle = Self.usableTitle(generatedTitle) ?? fallbackTitle,
                   self.isCurrent(context),
                   self.title == "New session" || self.title == "Untitled session"
             else { return }
             do {
-                _ = try await handle.client.send(.setSessionName(generatedTitle))
-                guard self.isCurrent(context) else { return }
-                self.title = generatedTitle
+                _ = try await handle.client.send(.setSessionName(selectedTitle))
+                guard self.titleGenerationGeneration == generation,
+                      self.isCurrent(context),
+                      self.title == "New session" || self.title == "Untitled session"
+                else { return }
+                self.title = selectedTitle
+            } catch is CancellationError {
+                return
             } catch {
+                os_log(
+                    .error,
+                    log: Self.transcriptLog,
+                    "[SessionController:persistInitialTitle] Title save failed — error=%{public}@",
+                    String(describing: type(of: error)))
                 return
             }
         }
@@ -1856,6 +1868,21 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private static func isPlaceholderTitle(_ title: String) -> Bool {
         title == "New session" || title == "Untitled session"
+    }
+
+    private static func usableTitle(_ value: String?) -> String? {
+        guard let firstLine = value?
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return nil }
+        let title = String(firstLine.prefix(80))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty,
+              title.rangeOfCharacter(from: .alphanumerics) != nil
+        else { return nil }
+        return title
     }
 
     private func finishTitleLoading() {
