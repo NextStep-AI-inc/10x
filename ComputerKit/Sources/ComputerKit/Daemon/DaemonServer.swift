@@ -142,9 +142,15 @@ public final class DaemonServer {
 
             if method == "resources/read", let uri = message["params"]?["uri"]?.stringValue,
                let windowID = Self.screenshotWindowID(from: uri),
-               registry.owner(of: windowID) != nil,
-               resources.readResource(uri: uri) == nil {
-                try? write(fd, errorResponse(id: id, code: -32602, message: "capture_failed: could not capture \(uri)"))
+               registry.owner(of: windowID) != nil {
+                if let resource = resources.readResource(uri: uri) {
+                    try? write(fd, .object([
+                        "jsonrpc": .string("2.0"), "id": id ?? .null,
+                        "result": .object(["contents": .array([resource])]),
+                    ]))
+                } else {
+                    try? write(fd, errorResponse(id: id, code: -32602, message: "capture_failed: could not capture \(uri)"))
+                }
                 return
             }
 

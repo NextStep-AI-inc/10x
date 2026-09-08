@@ -175,5 +175,9 @@ final class DaemonServerTests: XCTestCase {
             "params": .object(["clientInfo": .object(["name": .string("omp")])]),
         ])
         XCTAssertEqual(initResponse["result"]?["serverInfo"]?["name"], .string("tenx-computer"))
+
+        let event = try supervision.receive()
+        XCTAssertEqual(event["type"], .string("sessionStarted"))
+        XCTAssertEqual(event["harness"], .string("omp"))
     }
 }
