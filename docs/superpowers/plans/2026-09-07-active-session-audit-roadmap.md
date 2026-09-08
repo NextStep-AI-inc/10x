@@ -19,8 +19,8 @@ Source inspection and existing test coverage are recorded separately from execut
 
 ## 3. Readable turns
 
-- [ ] **ORDER:** Main normalizes contiguous text segments around inline tools for live and reopened history, retaining message identity and render lineage. Verify real provider live/completion/reopen order and parallel completions. Existing fixtures cover text/tool/text, duplicate IDs, repeated snapshots, and reconciliation.
-- [ ] **TURNS:** Keep existing tool grouping and disclosure. Add stable turn boundaries, completed duration/status, and activity derived from the active turn/tool set. Verify long quiet intervals, streaming text, concurrent tools, errors, completion, and preserved disclosure state.
+- [x] **ORDER:** Main normalizes contiguous text segments around inline tools for live and reopened history, retaining message identity and render lineage. Verify real provider live/completion/reopen order and parallel completions. Existing fixtures cover text/tool/text, duplicate IDs, repeated snapshots, and reconciliation.
+- [x] **TURNS:** Keep existing tool grouping and disclosure. Add stable turn boundaries, completed duration/status, and activity derived from the active turn/tool set. Verify long quiet intervals, streaming text, concurrent tools, errors, completion, and preserved disclosure state.
 
 ## 4. Awareness and review
 
@@ -56,3 +56,5 @@ Source inspection and existing test coverage are recorded separately from execut
 - Baseline OmpKit suite: 217 tests passed before application changes (`/tmp/10x-recovery-ompkit-baseline.log`).
 - No current-main live acceptance is claimed yet.
 - Keep each item unchecked until this run has evidence for its full stated scope, or explicitly record the remaining limitation beside it.
+
+- ORDER / TURNS: native feature-branch acceptance passed on `b4bf0b0`. [PR #35 Release evidence](../evidence/2026-09-07-readable-response-turns/README.md) distinguishes final captures, diagnostics, controlled quiet intervals, and the outstanding stack/baseline gates.

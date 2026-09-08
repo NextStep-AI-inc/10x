@@ -25,28 +25,28 @@ The summary is a restrained status line using existing typography/palette: Compl
 
 Owned: new `App/Sessions/TranscriptTurnProjection.swift`, new `Tests/TenXAppTests/TranscriptTurnProjectionTests.swift`, and generated project file through the script.
 
-- [ ] Write behavior tests for two consecutive user inputs sharing one turn, a later user after response evidence opening another, standalone preamble, and notices not splitting an input batch.
-- [ ] Assert IDs remain stable when extra batched input arrives and when equivalent live/history message segments reconcile.
-- [ ] Assert timestamps/completedAt give the same completed duration live and reopened; queued user waiting time and repeated assistant segments do not inflate it; missing completion timing produces no duration.
-- [ ] Test a running tool in the middle, concurrent running/completed tools, pending extension input, active subagent, recovered tool error followed by successful final response, terminal error/abort, and incomplete history.
-- [ ] Implement the minimal pure projection and run those focused tests with valid function selectors, recording a nonzero test count. Commit.
+- [x] Write behavior tests for two consecutive user inputs sharing one turn, a later user after response evidence opening another, standalone preamble, and notices not splitting an input batch.
+- [x] Assert IDs remain stable when extra batched input arrives and when equivalent live/history message segments reconcile.
+- [x] Assert timestamps/completedAt give the same completed duration live and reopened; queued user waiting time and repeated assistant segments do not inflate it; missing completion timing produces no duration.
+- [x] Test a running tool in the middle, concurrent running/completed tools, pending extension input, active subagent, recovered tool error followed by successful final response, terminal error/abort, and incomplete history.
+- [x] Implement the minimal pure projection and run those focused tests with valid function selectors, recording a nonzero test count. Commit.
 
 ## Task 2: Render summaries without changing transcript behavior
 
 Owned: `App/Sessions/TranscriptView.swift`, `App/Sessions/TurnActivityView.swift`, new `App/Sessions/TranscriptTurnSummaryView.swift` if needed, focused additions in existing turn/activity/disclosure/viewport tests or `TranscriptTurnProjectionTests.swift`, and targeted `ViewSnapshotTests.swift` fixtures. Regenerate the project for new Swift files.
 
-- [ ] Render existing rows plus completed summaries with stable flat scroll targets. Keep pending receipt placement, content order, tool disclosure state, search expansion, and existing viewport behavior.
-- [ ] Replace last-item quiet activity detection with active-section scanning. Leave long first-token waits visibly Working; avoid duplicate Working indicators while an earlier tool/subagent or live message is active.
-- [ ] Add focused snapshots for completed, stopped/failed, and quiet/running states. Do not automatically promote changed baseline snapshots; report actual images for parent visual review.
-- [ ] Run the focused projection/activity/row/disclosure/viewport checks, then the app suite once. Six activity snapshots fail identically at baseline `e60234a`; record them separately from any new mismatch. Do not repeat full runs absent a material change or unresolved failure.
-- [ ] Commit implementation and report exact commands, counts, artifacts, and limitations. Parent owns visual acceptance and branch review.
+- [x] Render existing rows plus completed summaries with stable flat scroll targets. Keep pending receipt placement, content order, tool disclosure state, search expansion, and existing viewport behavior.
+- [x] Replace last-item quiet activity detection with active-section scanning. Leave long first-token waits visibly Working; avoid duplicate Working indicators while an earlier tool/subagent or live message is active.
+- [x] Add focused snapshots for completed, stopped/failed, and quiet/running states. Do not automatically promote changed baseline snapshots; report actual images for parent visual review.
+- [x] Run the focused projection/activity/row/disclosure/viewport checks. Parent scoped the final verification to affected checks and native Release acceptance; another full app suite is deferred to stack integration. Six activity snapshots fail identically at baseline `e60234a`; record them separately from any new mismatch. Do not repeat full runs absent a material change or unresolved failure.
+- [x] Commit implementation and report exact commands, counts, artifacts, and limitations. Parent owns visual acceptance and branch review.
 
 ## Task 3: Verify ORDER and TURNS in Release
 
-- [ ] Build Release for the local architecture and launch an isolated native app/profile. Verify a real provider response containing text, tool activity, then final text in that order during streaming, after completion, and after relaunch/reopen.
-- [ ] Exercise quiet intervals and multiple tools with out-of-order completion. Confirm one active-state indication, stable completed timing, and final-response readability.
-- [ ] While reading older content, expand a tool, send new input, and switch away/back; confirm disclosure and reading position remain stable, with an explicit Jump to latest available. Test search jump into a collapsed group.
-- [ ] Save screenshots, build SHA and production commit, update roadmap/PR, and keep the PR draft on unresolved baseline/base-integration gates. No merge.
+- [x] Build Release for the local architecture and launch an isolated native app/profile. Verify a real provider response containing text, tool activity, then final text in that order during streaming, after completion, and after relaunch/reopen.
+- [x] Exercise quiet intervals and multiple tools with out-of-order completion. Confirm one active-state indication, stable completed timing, and final-response readability.
+- [x] While reading older content, expand a tool, send new input, and switch away/back; confirm disclosure and reading position remain stable, with an explicit Jump to latest available. Test search jump into a collapsed group.
+- [x] Save screenshots, build SHA and production commit, update roadmap/PR, and keep the PR draft on unresolved baseline/base-integration gates. No merge.
 
 ## Preflight rulings
 
@@ -64,6 +64,10 @@ The exact native gesture (collapse first tool group, expand the second group's s
 - [x] Replace continuously bound `.scrollPosition(id:)` with passive visible-target observation and explicit `ScrollViewProxy` restoration on transcript entry. Keep `viewport.anchorID` controller-owned for existing navigation/search. Use Apple's `onScrollTargetVisibilityChange(idType:threshold:_:)` with a small threshold and row-order selection of the first visible ID, observing only actual user scrolling so initial layout cannot overwrite the saved target. Do not write a scroll position on every visibility event.
 - [x] Restore the saved visible target once on transcript entry when following is disabled and no search request overrides it. Resolve a hidden grouped-tool target to its visible group when possible; ignore absent stale IDs safely. Keep direct search/Jump actions and current automatic bottom-follow behavior. Do not restore repeatedly after user gestures or item updates.
 - [x] Add focused behavioral checks for stable ordered target selection, ignoring nonuser visibility, no initial overwrite, missing/hidden anchors, and search precedence. Keep the disclosure and viewport regression selections; no full suite or unrelated snapshots.
-- [ ] Build an unsigned Release candidate. Parent repeats the exact gesture, A/B session position and disclosure retention, Jump to latest, search into Slim mode, and controlled quiet intervals before accepting. A passing unit test is not evidence the native freeze is fixed.
+- [x] Build an unsigned Release candidate. Parent repeats the exact gesture, A/B session position and disclosure retention, Jump to latest, search into Slim mode, and controlled quiet intervals before accepting. A passing unit test is not evidence the native freeze is fixed.
 
 Worker ownership for this correction: `App/Sessions/TranscriptView.swift`, `TranscriptViewportState.swift`, existing focused viewport/render/search/disclosure test files, and this plan's execution checkboxes. No other behavior, nested agents, push, merge, native UI, or packaging. Native source evidence and the official API description: https://developer.apple.com/documentation/swiftui/view/onscrolltargetvisibilitychange(idtype:threshold:_:).
+
+## Execution evidence
+
+Completed native acceptance is recorded in [the Release evidence](../evidence/2026-09-07-readable-response-turns/README.md). Final production commit `b4bf0b0`; final focused selection 33 passed. The per-PR full-suite repetition was explicitly skipped for the recorded baseline and integration reasons. PR remains draft; no merge.

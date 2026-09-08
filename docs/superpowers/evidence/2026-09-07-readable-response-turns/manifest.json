@@ -1,0 +1,82 @@
+{
+  "productionCommit": "b4bf0b09ff99566f9cb7fcbff676fb0762cd54ce",
+  "finalBundleID": "com.nextstep.tenx.turnspassiveqa",
+  "executableSHA256": "b656cebd8d527d1d40ce14a43bacaf572cebba6616ba71e78212044adba8f2ce",
+  "files": [
+    {
+      "file": "README.md",
+      "sha256": "2ed24c6c055c0f0e813c5cc811563d71f6360ec49bd52d3785a9a1aaa513d4f1",
+      "role": "verification"
+    },
+    {
+      "file": "after-send-keeps-reading-position.png",
+      "sha256": "de6753661c4fb8d189d41f6b9867ca3ef4066c7afbdca6acc5aab46b316328be",
+      "role": "final-native"
+    },
+    {
+      "file": "baseline-scroll-comparison.png",
+      "sha256": "ba89a1df538efae996b9ee458f94a4db8be88a17aa7d9e5e73b23de99a950a09",
+      "role": "diagnostic-or-earlier-native"
+    },
+    {
+      "file": "before-send-while-reading.png",
+      "sha256": "531298458b012da4bdf6f0ddd8863167751f44834fd48b5dabc165efa495170a",
+      "role": "final-native"
+    },
+    {
+      "file": "completion-keeps-reading-position.png",
+      "sha256": "22eecf45a74bb3b780e4fb3055de7f53fa1b78f04a388cc8109bda30cf0a4bba",
+      "role": "final-native"
+    },
+    {
+      "file": "diagnostic-scroll-without-binding.png",
+      "sha256": "bfbfb92aa934b734c8221c59afddc7be7327ce23d8d6122b99474a099c12d325",
+      "role": "diagnostic-or-earlier-native"
+    },
+    {
+      "file": "initial-quiet-working.png",
+      "sha256": "c47a827eee3e6e13e88af0f040e0835c2c64fbc6fcb8dcb14737a467d26bff27",
+      "role": "diagnostic-or-earlier-native"
+    },
+    {
+      "file": "ordered-completed-turn.png",
+      "sha256": "02e2540cdd1b9591f132d4a8a75e5d32f00cdcce7f63eb83761bce267bf1422a",
+      "role": "diagnostic-or-earlier-native"
+    },
+    {
+      "file": "passive-scroll-responsive.png",
+      "sha256": "4aef6c0ba3f819e1f855692189cafddcc093f9205f53ce161491d46e4306aaf9",
+      "role": "final-native"
+    },
+    {
+      "file": "quiet-after-tool-working-final.png",
+      "sha256": "4b1c7157d4daa02f0da67bcbedf7916fe5acad8db827b847035c36e19b65dc93",
+      "role": "final-native"
+    },
+    {
+      "file": "quiet-initial-working-final.png",
+      "sha256": "00fa227a66240fbac66cf6464c7fab72c523965c39e7c8b6d229a4daf612ffd6",
+      "role": "final-native"
+    },
+    {
+      "file": "quiet-turn-completed-final.png",
+      "sha256": "98030d35d9d77b77c77a7b7b563049292bb8534af38c76c5eb5ea1db038d787e",
+      "role": "final-native"
+    },
+    {
+      "file": "reading-position-after-session-switch.png",
+      "sha256": "e130e1b59df3d18c8712ea4c2d91ef6a559fabe9f3a615b5a171cdac618aa3aa",
+      "role": "final-native"
+    },
+    {
+      "file": "runtime-order-verification.json",
+      "sha256": "6e65b91b203173cd8a3df8999a5115c615c4de03e5cefe7deb48118709f81611",
+      "role": "verification"
+    },
+    {
+      "file": "search-reveals-slim-tool.png",
+      "sha256": "cf54f74be2f2ed7eeaac92f49abdea8e26548433ae869d850b859a660d462738",
+      "role": "final-native"
+    }
+  ]
+}
