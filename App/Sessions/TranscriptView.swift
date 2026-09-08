@@ -26,7 +26,6 @@ struct TranscriptView: View {
     static let contentMaxWidth: CGFloat = 860
 
     let controller: SessionController
-    @State private var disclosureState = ToolDisclosureState()
     @State private var isUserScrolling = false
     @State private var searchResolution: TranscriptSearchResolution?
     @State private var consumedSearchNonce: UUID?
@@ -36,6 +35,7 @@ struct TranscriptView: View {
 
     var body: some View {
         @Bindable var viewport = controller.viewport
+        let disclosureState = controller.toolDisclosureState
         let allPresentationRows = Self.followObservation(for: controller.items)
         let renderRows = Self.renderRows(
             for: controller.items,
@@ -186,8 +186,10 @@ struct TranscriptView: View {
         consumedSearchNonce = request.nonce
         searchResolution = resolution
         controller.viewport.isFollowingLatest = false
-        if let groupID = resolution.groupID { disclosureState.setGroupExpanded(true, id: groupID) }
-        disclosureState.setExpanded(true, id: request.entryID)
+        if let groupID = resolution.groupID {
+            controller.toolDisclosureState.setGroupExpanded(true, id: groupID)
+        }
+        controller.toolDisclosureState.setExpanded(true, id: request.entryID)
         Task { @MainActor in
             await Task.yield()
             guard controller.transcriptSearchRequest?.nonce == request.nonce else { return }
@@ -265,7 +267,7 @@ struct TranscriptView: View {
 
     private func select(_ mode: ToolDetailMode) {
         detailPreference?.select(mode)
-        let update = { disclosureState.setMode(mode) }
+        let update = { controller.toolDisclosureState.setMode(mode) }
         if isReduceMotionEnabled { update() }
         else { withAnimation(.easeInOut(duration: 0.14), update) }
     }

@@ -11,6 +11,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
     private(set) var items: [TranscriptItem] = []
     let viewport = TranscriptViewportState()
+    let toolDisclosureState = ToolDisclosureState()
     private(set) var pendingSubmissions: [PendingUserSubmission] = []
     private var consumedSubmissionEchoIndices: Set<Int> = []
     private(set) var isTitleLoading = false
