@@ -76,8 +76,38 @@ struct RecordSettingEditorTests {
         ])
     }
 
-    @Test func nextPlaceholderKeyAvoidsDuplicates() {
-        #expect(RecordSettingEditor.nextPlaceholderKey(in: []) == "key")
-        #expect(RecordSettingEditor.nextPlaceholderKey(in: [RecordEntry(key: "key", value: "")]) == "key-2")
+    @Test func invalidNumberBlocksSave() {
+        #expect(RecordSettingEditor.validateSave(
+            entries: [RecordEntry(key: "openai", value: "abc")], kind: .number) == .invalidNumber)
+    }
+
+    @Test func oversizedIntegerBlocksSave() {
+        #expect(RecordSettingEditor.validateSave(
+            entries: [RecordEntry(key: "openai", value: "1e20")], kind: .number) == .invalidNumber)
+    }
+
+    @Test func whitespaceOnlyKeyIsDropped() {
+        let object = RecordSettingEditor.jsonObject(
+            from: [RecordEntry(key: "   ", value: "on")], kind: .text)
+        #expect(object == .object([:]))
+    }
+
+    @Test func duplicateKeysBlockSave() {
+        #expect(RecordSettingEditor.validateSave(entries: [
+            RecordEntry(key: "a", value: "1"),
+            RecordEntry(key: "a", value: "2"),
+        ], kind: .text) == .duplicateKeys)
+    }
+
+    @Test func stringListDropsEmptySegments() {
+        let object = RecordSettingEditor.jsonObject(
+            from: [RecordEntry(key: "default", value: "a, , b")], kind: .stringList)
+        #expect(object == .object(["default": .array([.string("a"), .string("b")])]))
+    }
+
+    @Test func shouldResyncTreatsWholeDoubleAsInt() {
+        let entries = RecordSettingEditor.entries(from: .object(["openai": .double(4.0)]), kind: .number)
+        #expect(!RecordSettingEditor.shouldResync(
+            entries: entries, incoming: .object(["openai": .double(4.0)]), kind: .number))
     }
 }
