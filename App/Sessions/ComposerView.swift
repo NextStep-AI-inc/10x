@@ -302,7 +302,7 @@ struct ComposerView: View {
         case .newSession(let projectURL, _, _, _):
             return projectURL != nil
         case .active(let controller):
-            return controller.isComposerAvailable
+            return controller.canSendMessage
         }
     }
 
@@ -806,7 +806,8 @@ struct ComposerView: View {
         } else {
             providerDockSlot
             sendButton
-            if case .active(let controller) = presentation, controller.runtimeState == .loading {
+            if case .active(let controller) = presentation,
+               controller.runtimeState == .loading || controller.isContextCompacting {
                 stopButton(controller)
             }
         }
@@ -858,8 +859,8 @@ struct ComposerView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Stop the response")
-        .accessibilityLabel("Stop response")
+        .help(controller.isContextCompacting ? "Stop context compaction" : "Stop the response")
+        .accessibilityLabel(controller.isContextCompacting ? "Stop context compaction" : "Stop response")
     }
 
     private func behaviorMenu(_ controller: SessionController) -> some View {
@@ -925,6 +926,7 @@ struct ComposerView: View {
                     isPresented: Binding(
                         get: { flyout == .model },
                         set: { setFlyout($0 ? .model : nil) }))
+                    .disabled(controller.isContextCompacting)
             } else {
                 Text(controller.modelName)
                     .font(TenXTypography.body(size: 10, weight: .medium))
@@ -936,7 +938,12 @@ struct ComposerView: View {
                 breakdown: controller.contextBreakdown,
                 isLoading: controller.isContextLoading,
                 errorMessage: controller.contextErrorMessage,
-                onRefresh: { await controller.refreshContextDetails() })
+                canCompact: controller.canCompactContext,
+                compactionDisabledReason: controller.contextCompactionDisabledReason,
+                isCompacting: controller.isContextCompacting,
+                compactionErrorMessage: controller.contextCompactionErrorMessage,
+                onRefresh: { await controller.refreshContextDetails() },
+                onCompact: { await controller.compactContext() })
             if controller.queuedMessageCount > 0 {
                 Text("\(controller.queuedMessageCount) queued")
                     .font(TenXTypography.body(size: 10, weight: .medium))

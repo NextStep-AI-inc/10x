@@ -5723,8 +5723,29 @@ private var snapshotShelfProjectURLs: [URL] {
     for appearance in [SnapshotAppearance.light, .dark] {
         try assertSnapshot(
             ContextUsagePopover(summary: ContextUsageSummary(usage: usage, breakdown: breakdown),
-                breakdown: breakdown, isLoading: false, errorMessage: nil, onClose: {}, onRefresh: {}),
+                breakdown: breakdown, isLoading: false, errorMessage: nil,
+                canCompact: true, compactionDisabledReason: nil,
+                isCompacting: false, compactionErrorMessage: nil,
+                onClose: {}, onRefresh: {}, onCompact: {}),
             name: "context-usage-popover-\(appearance == .light ? "light" : "dark")",
-            appearance: appearance, size: CGSize(width: 360, height: 440))
+            appearance: appearance, size: CGSize(width: 360, height: 520))
     }
+
+    try assertSnapshot(
+        ContextUsagePopover(summary: ContextUsageSummary(usage: usage, breakdown: breakdown),
+            breakdown: breakdown, isLoading: false, errorMessage: nil,
+            canCompact: false, compactionDisabledReason: nil,
+            isCompacting: true, compactionErrorMessage: nil,
+            onClose: {}, onRefresh: {}, onCompact: {}),
+        name: "context-usage-popover-compacting", size: CGSize(width: 360, height: 520))
+
+    try assertSnapshot(
+        ContextUsagePopover(summary: ContextUsageSummary(usage: usage, breakdown: breakdown),
+            breakdown: breakdown, isLoading: false, errorMessage: nil,
+            canCompact: false,
+            compactionDisabledReason: "Wait for queued messages to finish.",
+            isCompacting: false,
+            compactionErrorMessage: "Context couldn’t be compacted. Try again.",
+            onClose: {}, onRefresh: {}, onCompact: {}),
+        name: "context-usage-popover-unavailable", size: CGSize(width: 360, height: 560))
 }

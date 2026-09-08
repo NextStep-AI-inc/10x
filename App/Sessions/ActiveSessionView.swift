@@ -23,16 +23,19 @@ struct ActiveSessionView: View {
                     onRestart: { Task { await controller.restart() } },
                     onOpenLog: controller.openLog,
                     onDismiss: controller.dismissRecovery,
+                    failureDescription: controller.contextCompactionRecoveryMessage,
                     canRestart: controller.sessionPath != nil && !controller.isStopping,
                     isIntentionalStop: controller.isIntentionallyStopped,
-                    isStopping: controller.isStopping)
+                    isStopping: controller.isStopping,
+                    titleOverride: controller.contextCompactionRecoveryMessage == nil
+                        ? nil : "Context compaction needs attention")
                 .frame(maxWidth: 780)
                 .padding(.horizontal, 42)
                 .padding(.bottom, 16)
             }
 
             if !controller.isRecoveryPresented,
-               controller.isIntentionallyStopped,
+               (controller.isIntentionallyStopped || controller.canRestartAfterDismissal),
                controller.sessionPath != nil {
                 Button(controller.isStopping ? "Stopping…" : "Restart session") {
                     Task { await controller.restart() }
