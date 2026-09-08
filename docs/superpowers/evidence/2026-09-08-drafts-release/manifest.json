@@ -23,5 +23,141 @@
   "bundleIdentifier": "com.nextstep.tenx.draftsqa",
   "unsignedExecutableSHA256": "86fc2b234add8bb7a8e9126ff25f703482bad70e3e32f16cf2c72aa30c921889",
   "packagedExecutableSHA256": "478e06f412adf81c7cae85dc796b885bbe522b01b91caba5dc45ace9eebd69fd",
-  "nativeLaunched": false
+  "nativeLaunched": false,
+  "nativeAcceptance": {
+    "status": "passed",
+    "sourceCommit": "d6e1508f82c9936115af8fe918530973cdd910ed",
+    "packageManifest": "route-fix-package.json",
+    "drafts": [
+      "session text and image",
+      "separate session text",
+      "new-project prompt"
+    ],
+    "routeRestoredOnRelaunch": true,
+    "unconfirmedDelivery": "one prompt total; text and image restored with warning; no replay",
+    "qaAppClosed": true,
+    "continueTimeoutPath": "regression verified; native pre-fix failure retained"
+  },
+  "acceptanceArtifacts": [
+    {
+      "path": "README.md",
+      "bytes": 2328,
+      "sha256": "63531728d6e295f500b7a9c0b2b85ed095a678cd2e9b1465eff99f7a03ff3eec"
+    },
+    {
+      "path": "draft-unconfirmed.py",
+      "bytes": 4383,
+      "sha256": "13b4f990628a825c22095f0054441da30ad5f6bd36ccb1084ccb3076e2cdfd29"
+    },
+    {
+      "path": "native-disk-before-relaunch.json",
+      "bytes": 1824,
+      "sha256": "b9fe70359ca95f7064069af172faa64fbd85597b7ec96b7a20c8151deef68bef"
+    },
+    {
+      "path": "native-disk-before-relaunch.plist",
+      "bytes": 30861,
+      "sha256": "2cc01e307d7485593f238d91cb46e7dcb69a25560f3197ae2f22819d6e7fb0da"
+    },
+    {
+      "path": "native-draft-a.jpg",
+      "bytes": 131026,
+      "sha256": "4142fd9cd4b69170a8868245bd9b7dbdf067dc47ee6a4a0fa5e33ac178a407a3"
+    },
+    {
+      "path": "native-fixed-startup.ax.txt",
+      "bytes": 8497,
+      "sha256": "8a2b0a205bbb6295e9b3a3152575b09ad3dda73d4b3bbb3b9158abbffdfc273a"
+    },
+    {
+      "path": "native-last-route-restored.ax.txt",
+      "bytes": 8497,
+      "sha256": "8a2b0a205bbb6295e9b3a3152575b09ad3dda73d4b3bbb3b9158abbffdfc273a"
+    },
+    {
+      "path": "native-last-route-restored.jpg",
+      "bytes": 93020,
+      "sha256": "bc1085e671285eaab2b214bc1d0812170a907ec50c675f441d14b70a3db0f7b1"
+    },
+    {
+      "path": "native-new-project-restored.ax.txt",
+      "bytes": 5285,
+      "sha256": "00cd717d1fb4de1bd34f826ede076f6222772e76cbc16dcc6c88875a62ea71aa"
+    },
+    {
+      "path": "native-new-project-restored.jpg",
+      "bytes": 62220,
+      "sha256": "5bc1dd827d5602a055009d553accd9c89be735c3b9630c3d8f2273ae0f28e1c1"
+    },
+    {
+      "path": "native-reopened-draft-a.jpg",
+      "bytes": 147678,
+      "sha256": "391c3ff2f42b5f7ca3ad48e002dc3654fd5ccab33afe65a78a8377bf110ea720"
+    },
+    {
+      "path": "native-session-b-restored.ax.txt",
+      "bytes": 9303,
+      "sha256": "a47cfbc99a35ab4df4fffd82cb1c99f9b1f97eb9e11586e4d5644932f92c9b1c"
+    },
+    {
+      "path": "native-session-b-restored.jpg",
+      "bytes": 93437,
+      "sha256": "57ecb1d0648040a0b46dad7504f38a2e646e58b1198bdce9ec10aceebdf4773f"
+    },
+    {
+      "path": "native-startup-warm-timeout.ax.txt",
+      "bytes": 768,
+      "sha256": "3b99b0b5f3256f646bfa9a49005ccb4a54f30efa184bc47784fa3952887b2344"
+    },
+    {
+      "path": "native-startup-warm-timeout.jpg",
+      "bytes": 46531,
+      "sha256": "6b2a013ab8617fc6b3d85d8a2eadf757820d326f3a9f748a406d304639ce9ee0"
+    },
+    {
+      "path": "native-switch-back-a.jpg",
+      "bytes": 154717,
+      "sha256": "29b7b81311545ce81e7be236203b49d999e97144a7e93016c48a1e9c1ecb7491"
+    },
+    {
+      "path": "native-unconfirmed-before-quit.ax.txt",
+      "bytes": 6451,
+      "sha256": "a02f8c1e3a2c301d233b24bd9b6f569d3804013ecbfc5ea6d96b6848b1c77027"
+    },
+    {
+      "path": "native-unconfirmed-before-quit.jpg",
+      "bytes": 83410,
+      "sha256": "0827f90df702cc3d829f94b5db1ccbe436c4bd51bc560fbae3d4013409a76f17"
+    },
+    {
+      "path": "native-unconfirmed-control.jsonl",
+      "bytes": 1425,
+      "sha256": "576a7e8f4b0da0067807bbf9ff1e9a114d34f06fbbb3d40a52737d5a4cc15c24"
+    },
+    {
+      "path": "native-unconfirmed-restored.ax.txt",
+      "bytes": 6311,
+      "sha256": "db0dce0f4871001d26f7b78ceb8cc2f1b5ee141cf21b3406be6b1f00f6a47dfb"
+    },
+    {
+      "path": "native-unconfirmed-restored.jpg",
+      "bytes": 58326,
+      "sha256": "95ca53d28e2856cfd3c265cd20a58407f6d3653ee806331a4de73bde1c080010"
+    },
+    {
+      "path": "native-unconfirmed-staged.jpg",
+      "bytes": 52437,
+      "sha256": "e2fcf596d07dc3e2841160387c41c2ff4c23b7988ee870823d20ae4973e40186"
+    },
+    {
+      "path": "native-unconfirmed-verification.json",
+      "bytes": 1512,
+      "sha256": "99df5ee0e16c13ea70ded81e85badaf1a01aa29d186c6d8cf881d6e2e4369630"
+    },
+    {
+      "path": "route-fix-package.json",
+      "bytes": 2927,
+      "sha256": "53e8398e1adb6ed45798afbc5ae470e446a79a8fd681747d1f36fb45a924f493"
+    }
+  ]
 }

@@ -1,18 +1,17 @@
-# Composer draft and route recovery acceptance status
+# Composer draft and route recovery acceptance
 
-Status: BLOCKED at native acceptance. The arm64 Release build passed and the isolated package passed ad hoc signature verification. The Mac remained locked at the final native-access check. This package has not been launched.
+Status: native feature acceptance passed in the rebuilt arm64 Release app. PR #42 remains draft for stack integration.
 
 ## Verified
 
-- Source commit: `4d74a5ee36a17ac07505e9dc7f5a14f605ffd55b`.
-- Fourteen final store/send-boundary checks passed, including failed disk writes, delayed flushes, newer draft content, and invalidated pipelines. Earlier lifecycle and last-valid-route checks passed.
-- Build command, build-log hash, package path, bundle identifier, and unsigned/packaged executable hashes are recorded in `manifest.json`.
-- No full suite was repeated. The six previously reproduced baseline activity snapshot failures remain recorded by PRs #32/#34.
+- The final source is `d6e1508f82c9936115af8fe918530973cdd910ed`. Package identity, executable hash, and build/check logs are in `route-fix-package.json`; the earlier package remains historical in `manifest.json`.
+- A session draft containing text and a 600×220 PNG, a separate session text draft, and a new-project prompt survived switching, normal quit, and relaunch. The saved existing-session route reopened automatically, with its text and image visible.
+- The controlled runtime received exactly one 66-character prompt with one image, then withheld acknowledgment and echo. After normal quit/relaunch, the draft and identical image bytes returned with “A previous send wasn’t confirmed” guidance. No automatic replay occurred; the transcript still contained only its session header. See `native-unconfirmed-verification.json` and the captured control log.
+- Fourteen final store/send-boundary checks had passed for serialized writes, failed writes, delayed flushes, newer content, and invalidated pipelines. The native startup check exposed a separate Continue-to-workspace route gap. The three-line correction calls the existing guarded route restoration after the cancelled startup task has joined; its regression plus three adjacent Continue guards passed.
+- Current primary native images: `native-last-route-restored.jpg`, `native-session-b-restored.jpg`, `native-new-project-restored.jpg`, and `native-unconfirmed-restored.jpg`. Accessibility captures omit provider-account rows. The parent inspected the restored-route and unconfirmed screenshots.
 
-## Remaining
+## Limits
 
-Stage distinct text/images in two sessions, quit/relaunch, verify route and contents, then exercise uncertain acknowledgment without an automatic resend. Keep subsequent input distinct.
+The final relaunch used the normal prepared-workspace path. The timed-out optional-preload Continue path is covered by the new regression; pre-fix native timeout evidence is retained in `native-startup-warm-timeout.*`. No unconfirmed prompt was resent manually.
 
-Stacked on PR #38. Production 4d74a5e includes the final durable send barrier; retain it when integrating Titles and the later Stop/scroll changes.
-
-Keep this PR draft until its native and integration gates pass. No merge or deployment.
+This is a feature build on the older Review base. Final integration must retain durable send ordering and include later Review, Stop, and scroll fixes. No full suite was repeated; known baseline activity snapshots remain recorded. No merge or deployment occurred. The QA app was closed after acceptance.

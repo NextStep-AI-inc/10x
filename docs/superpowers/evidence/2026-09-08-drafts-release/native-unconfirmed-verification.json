@@ -1,0 +1,50 @@
+{
+  "promptCount": 1,
+  "prompts": [
+    {
+      "at": "2026-09-08T19:13:39.916Z",
+      "direction": "command",
+      "type": "prompt",
+      "id": "req_5",
+      "messageLength": 66,
+      "imageCount": 1,
+      "promptOrdinal": 1,
+      "isReplay": false,
+      "disposition": "withheld-unconfirmed"
+    }
+  ],
+  "launches": [
+    {
+      "at": "2026-09-08T18:44:52.567Z",
+      "direction": "fixture",
+      "type": "process_launch",
+      "launchOrdinal": 1,
+      "priorPromptCount": 0
+    },
+    {
+      "at": "2026-09-08T19:11:38.549Z",
+      "direction": "fixture",
+      "type": "process_launch",
+      "launchOrdinal": 2,
+      "priorPromptCount": 0
+    },
+    {
+      "at": "2026-09-08T19:15:06.857Z",
+      "direction": "fixture",
+      "type": "process_launch",
+      "launchOrdinal": 3,
+      "priorPromptCount": 1
+    }
+  ],
+  "persistedTranscriptLines": 1,
+  "lastMeaningfulRoute": {
+    "session": {
+      "_0": "/tmp/10x-session-recovery-home/.omp/agent/sessions/-projects-draft-unconfirmed/session.jsonl"
+    }
+  },
+  "draftText": "UNCONFIRMED-NATIVE-SEP08 \u2014 keep this message and image for review.",
+  "imageBytes": 29699,
+  "imageSha256": "3c0aeea889741d43192506fef1dff535e413fb7e472fd5534ce755f2ca7cbd38",
+  "recoveryStoreSha256": "15fe3d810dddf7b98cf40cc7024021bfe2128afe472cc189f8c6a2ef3f97b0ee",
+  "nativeObservation": "Quit/relaunch restored text and image with an explicit unconfirmed-send warning. No Send action after reopening; fixture recorded exactly one prompt overall."
+}
