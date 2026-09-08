@@ -58,6 +58,7 @@ enum SessionMapGenerationScope: Equatable, Sendable {
 final class SessionMapPaneModel {
     private(set) var displayedDocument: SessionMapDocument?
     private(set) var state: SessionMapPaneState
+    var activity: SessionMapActivity
     var focus: SessionMapFocus
     private(set) var paneWidth: CGFloat
     private(set) var isVisible: Bool
@@ -71,6 +72,7 @@ final class SessionMapPaneModel {
     init(
         displayedDocument: SessionMapDocument? = nil,
         state: SessionMapPaneState = .empty,
+        activity: SessionMapActivity = .empty,
         focus: SessionMapFocus = SessionMapFocus(
             selectedNodeID: nil,
             hoveredNodeID: nil,
@@ -86,6 +88,7 @@ final class SessionMapPaneModel {
     ) {
         self.displayedDocument = displayedDocument
         self.state = state
+        self.activity = activity
         self.focus = focus
         self.paneWidth = paneWidth
         self.isVisible = isVisible

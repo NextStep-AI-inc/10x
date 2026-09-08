@@ -40,6 +40,7 @@ import Testing
             UIFixtureRoute.environmentKey: UIFixtureRoute.mapPlanning.rawValue,
             "TENX_UI_FIXTURE_SHA": "snapshot-fixture",
             "TENX_UI_FIXTURE_APPEARANCE": "light",
+            "TENX_UI_FIXTURE_REDUCE_MOTION": "on",
         ],
         isolatedRootOverride: URL(
             filePath: "/tmp/10x-session-map-snapshot-fixture",

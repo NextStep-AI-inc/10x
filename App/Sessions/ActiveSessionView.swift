@@ -119,7 +119,7 @@ struct ActiveSessionView: View {
     }
 
     private func sessionMapPane(_ model: SessionMapPaneModel) -> some View {
-        SessionMapPaneView(model: model)
+        SessionMapPaneView(model: model, activity: model.activity)
             .focusable()
             .onExitCommand { model.close() }
     }

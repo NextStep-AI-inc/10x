@@ -42,6 +42,14 @@ struct SessionMapFixtureScene: View {
         let model = fixtureModel(root: root, defaults: defaults)
         let sessions = try fixtureSessions(route: route, root: root, model: model)
         model.installSessionMapFixture(sessions, selectedPath: sessions[0].metadata.path)
+        if route == .mapPlanning {
+            model.sessionMapPaneModel(
+                for: sessions[0].controller,
+                displayedWidth: model.requestedSessionMapPaneWidth
+            ).activity = SessionMapActivity(
+                activeNodeIDs: ["writer"],
+                unmappedDescriptions: [])
+        }
         return Configuration(
             model: model,
             title: "10x | \(route.rawValue) | \(String(buildSHA.prefix(12)))",
