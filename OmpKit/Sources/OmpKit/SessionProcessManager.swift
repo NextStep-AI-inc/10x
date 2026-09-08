@@ -521,7 +521,13 @@ public actor SessionProcessManager {
         sessionPath: String,
         warm: ManagedWarmHandle
     ) async throws -> ManagedHandle {
-        _ = try await warm.managed.client.send(.switchSession(path: sessionPath))
+        let response = try await warm.managed.client.send(.switchSession(path: sessionPath))
+        guard response.data?["cancelled"]?.boolValue != true else {
+            throw RpcClientError.commandFailed(
+                command: "switch_session",
+                error: "The session switch was cancelled.",
+                code: nil)
+        }
         let handle = Handle(sessionPath: sessionPath, client: warm.managed.client)
         return ManagedHandle(managed: warm.managed, handle: handle)
     }

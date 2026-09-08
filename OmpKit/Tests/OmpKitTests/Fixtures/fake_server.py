@@ -218,6 +218,10 @@ for line in sys.stdin:
         emit({"id": cid, "type": "response", "command": ctype,
               "success": False, "error": "new session rejected"})
         continue
+    if mode == "cancel-switch" and ctype == "switch_session":
+        emit({"id": cid, "type": "response", "command": ctype,
+              "success": True, "data": {"cancelled": True}})
+        continue
     if mode == "crash-after-switch" and ctype == "switch_session":
         emit({"id": cid, "type": "response", "command": ctype, "success": True})
         time.sleep(0.2)
