@@ -1,0 +1,27 @@
+{
+  "sessionPath": "/tmp/10x-session-recovery-home/.omp/agent/sessions/-projects-titles-native/2026-09-08T19-34-30-127Z_01a08283-c9ef-7000-9f53-31a6d598a39b.jsonl",
+  "sessionSha256": "e30a3a5465e5ca8e29962680a325abaf3aa578f48c4b7f25404ff8d57a3749f7",
+  "titleRecords": [
+    {
+      "type": "title",
+      "v": 1,
+      "title": "FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not",
+      "source": "user",
+      "updatedAt": "2026-09-08T19:34:30.902Z",
+      "pad": "                                                                              "
+    },
+    {
+      "type": "title_change",
+      "id": "bdf504ac",
+      "parentId": "2c85baa7",
+      "timestamp": "2026-09-08T19:34:30.902Z",
+      "title": "FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not",
+      "source": "user"
+    }
+  ],
+  "gitHead": "136c32b2b3d78c8811c164597744e9f4835bfdb2",
+  "gitBranch": "qa-branch-c",
+  "gitStatus": "",
+  "nativeFallbackVisible": true,
+  "nativeRelaunchRouteRestored": true
+}

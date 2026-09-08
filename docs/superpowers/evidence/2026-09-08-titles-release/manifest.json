@@ -23,5 +23,115 @@
   "bundleIdentifier": "com.nextstep.tenx.titlesqa",
   "unsignedExecutableSHA256": "3af455b1a426ed054a23ffdc501d8e07bc970be17cbe7014a3685526d390a16a",
   "packagedExecutableSHA256": "00c7d7708b28e2aa7b4ccfd3273ce8779b947307b58748dd2518bdfa36cd64f9",
-  "nativeLaunched": false
+  "nativeLaunched": false,
+  "nativeAcceptance": {
+    "status": "passed",
+    "generatedTitle": true,
+    "fallbackTitlePersisted": true,
+    "manualDuplicateTitlesKeepIdentity": true,
+    "toolBranchRefresh": true,
+    "retainedSessionBranchRefresh": true,
+    "relaunchRouteRestored": true,
+    "missingProjectSkipped": true,
+    "disposableProjectRestored": true,
+    "qaAppClosed": true,
+    "fallbackWrapperProbeRemoved": true
+  },
+  "acceptanceArtifacts": [
+    {
+      "path": "README.md",
+      "bytes": 2409,
+      "sha256": "60e3260cdba9e7c21d61e86b48294e56064af4d2f0f2b0d238de94e3e6d61ac7"
+    },
+    {
+      "path": "native-baseline.json",
+      "bytes": 167,
+      "sha256": "ff3f555fcd707a33ce3068c7689ca1f7a7404811f51f23884eae5eedb584c2dc"
+    },
+    {
+      "path": "native-duplicate-titles.jpg",
+      "bytes": 84717,
+      "sha256": "b5394ccf577b242b856485328d5fcb975a7dde9dd97d709230ee448d3759d85b"
+    },
+    {
+      "path": "native-fallback-title.ax.txt",
+      "bytes": 6272,
+      "sha256": "b1437643d20a861bce1a0d64d594a1df842e4620ccc4c21f1144032e13c13138"
+    },
+    {
+      "path": "native-fallback-title.jpg",
+      "bytes": 88786,
+      "sha256": "989f6554524a232f26a934d148068d16607ea114b74a52669eeefca0938a7c74"
+    },
+    {
+      "path": "native-fallback-verification.json",
+      "bytes": 1035,
+      "sha256": "c4f35dec2f5809390d70b9848542a416a44e8b876924eb604c7b35ab3fcdcfdc"
+    },
+    {
+      "path": "native-fallback-wrapper-fragment.sh",
+      "bytes": 285,
+      "sha256": "47bf087761449a353195ebd60cebacb62d166177114f5bd2ca549dcd09ea958e"
+    },
+    {
+      "path": "native-initial-name.jpg",
+      "bytes": 80829,
+      "sha256": "8d3cc3caa8870ffd6e58ca841836b7252cf496eafee2bb899f948e7a1810d0f1"
+    },
+    {
+      "path": "native-missing-project-recovered.ax.txt",
+      "bytes": 9218,
+      "sha256": "d533490b68dabae5fba05b4b2798159a7d505af1c35fb423a0e44c73a72693ea"
+    },
+    {
+      "path": "native-missing-project-recovered.jpg",
+      "bytes": 109502,
+      "sha256": "4d9cf2d76591ca3f3bec4d40cdf4d6d02f08bf87e4acdeb74c0decdc1f9ff333"
+    },
+    {
+      "path": "native-missing-project-verification.json",
+      "bytes": 281,
+      "sha256": "232418be28f60260111aa59582d11aef3475a3feb7f91094e901ca95d3d4d7aa"
+    },
+    {
+      "path": "native-missing-project.ax.txt",
+      "bytes": 5478,
+      "sha256": "b956f729d40253b12224feb44ddd117c07767f3f45826d59b833d2d48c972607"
+    },
+    {
+      "path": "native-missing-project.jpg",
+      "bytes": 36403,
+      "sha256": "d1f35725ef2804a926c97b53b85691f69e6a24ce17553ea46a3936bbaba3bdd0"
+    },
+    {
+      "path": "native-relaunch-route.ax.txt",
+      "bytes": 8978,
+      "sha256": "06ca98259be8adc9dc5863b879477b82f051429f32a821cc34ebf0b7d0bc3569"
+    },
+    {
+      "path": "native-relaunch-route.jpg",
+      "bytes": 66773,
+      "sha256": "abfc5297d66fc3be9cfe5bca62a3405ac396e88cad8b02803ea8d27afa27fa91"
+    },
+    {
+      "path": "native-return-branch-c.jpg",
+      "bytes": 85442,
+      "sha256": "a4a941002763558b915cdfa8217be8cae14b39f55d811c0ab23b0d83b9953c9a"
+    },
+    {
+      "path": "native-startup-timeout-workspace.jpg",
+      "bytes": 45237,
+      "sha256": "f585ed91ada7947b4531b54fad63cde52f22ddb68d2710854c9a4914df5c0579"
+    },
+    {
+      "path": "native-tool-branch-b.ax.txt",
+      "bytes": 1842,
+      "sha256": "06904a3510a6d6135c5f3f2f3b16013f40eeece4359265c69fbccbc1aa669768"
+    },
+    {
+      "path": "native-tool-branch-b.jpg",
+      "bytes": 85618,
+      "sha256": "84dd95ba06d82eb069fb48972da4fd01d926dd709299d68f25983a87adc723c7"
+    }
+  ]
 }

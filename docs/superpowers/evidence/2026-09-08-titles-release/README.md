@@ -1,18 +1,18 @@
-# Session titles and metadata acceptance status
+# Session titles and metadata acceptance
 
-Status: BLOCKED at native acceptance. The arm64 Release build passed and the isolated package passed ad hoc signature verification. The Mac remained locked at the final native-access check. This package has not been launched.
+Status: native feature acceptance passed in the arm64 Release build. PR #44 remains draft for stack integration.
 
 ## Verified
 
-- Source commit: `edf8ff914750e8fd66e68e83883109f48737ac03`.
-- Six title checks and three metadata/navigation checks passed, including persisted fallback titles, generated-name precedence, manual-rename/replacement guards, real temporary git branches, and retained RPC identity.
-- Build command, build-log hash, package path, bundle identifier, and unsigned/packaged executable hashes are recorded in `manifest.json`.
-- No full suite was repeated. The six previously reproduced baseline activity snapshot failures remain recorded by PRs #32/#34.
+- Generated naming: the real OMP 18.1.10 / Cursor Grok 4.6 Fast turn persisted “Check title and branch metadata”. The disposable repository moved from `qa-branch-a` to `qa-branch-b` through its actual tool, and the header refreshed while the session remained open.
+- Retained-session refresh: an external branch change in that disposable repository to `qa-branch-c` appeared after switching away and back. Its HEAD stayed `136c32b2b3d78c8811c164597744e9f4835bfdb2`, with no file changes.
+- Two separate sessions accepted the same manual title, “Metadata duplicate”, and still reopened their distinct histories.
+- Normal quit/relaunch reopened the saved session route. When the disposable saved project was temporarily moved aside, startup skipped that route and opened a new prompt in an available project. Another existing session opened normally. The project was then restored, with HEAD and clean status verified.
+- A unique neutral QA title-generation request was made to return an invalid title. The accepted real prompt persisted and displayed its first-80-character fallback in both header and rail. The narrowly scoped QA wrapper probe was removed afterward. See `native-fallback-verification.json`.
+- Existing six naming and three metadata/navigation checks passed; the signed build and exact source/executable hashes remain in `manifest.json`.
 
-## Remaining
+## Evidence and limits
 
-Verify generated/fallback/manual/duplicate names and relaunch in the native app. Change a branch only in an owned QA repository through a real tool turn, then switch away/back after an external QA-only branch change.
+Primary native images include `native-tool-branch-b.jpg`, `native-return-branch-c.jpg`, `native-duplicate-titles.jpg`, `native-relaunch-route.jpg`, `native-fallback-title.jpg`, and `native-missing-project-recovered.jpg`. Accessibility captures omit provider-account rows. During missing-project recovery the next available project was the deliberate model-failure fixture, so its expected model warning is visible in the initial fallback screen; this did not prevent opening another existing session.
 
-Stacked on PR #42. Integrate its later 4d74a5e durable draft-send correction before final stack acceptance.
-
-Keep this PR draft until its native and integration gates pass. No merge or deployment.
+This feature build uses an older draft-recovery base. Integration must retain PR #42's later durable send barrier and Continue-after-preload correction, as well as the later Review, Stop, and scroll changes. Native verification used only disposable repositories. No user checkout, merge, or deployment changed. The QA app was closed after acceptance.
