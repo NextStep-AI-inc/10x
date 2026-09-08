@@ -871,3 +871,23 @@ private func message(_ json: String) throws -> JSONValue {
 
     #expect(reducer.drainDroppedHarnessMessages() == [descriptor])
 }
+
+@Test func aLiveDropAfterAHistoryLoadOfTheSameMessageDoesNotReRecord() {
+    var reducer = TranscriptReducer()
+    let message = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Same wall"),
+    ])
+    let history = TranscriptHistory(items: [], dropped: [
+        HarnessMessageDescriptor(
+            role: "developer",
+            customType: nil,
+            byteCount: 9,
+            text: "Same wall"),
+    ])
+
+    _ = reducer.load(history: history)
+    #expect(reducer.drainDroppedHarnessMessages().count == 1)
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
+    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
+}
