@@ -23,6 +23,36 @@ import Testing
     #expect(items.first { $0.id == "session:/sessions/second.jsonl" }?.isSelected == true)
 }
 
+@Test func sessionItemShowsComputerBadgeWhenActive() {
+    let session = metadata(path: "/sessions/active.jsonl", title: "Active")
+    let group = ProjectSessionGroup(
+        projectURL: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+        sessions: [session])
+
+    let items = RailPresentation.items(
+        groups: [group],
+        selectedSessionPath: session.path,
+        computerUseActivePaths: [session.path])
+
+    let sessionItem = items.first { $0.kind == .session }
+    #expect(sessionItem?.hasComputerUse == true)
+}
+
+@Test func sessionItemHidesComputerBadgeWhenInactive() {
+    let session = metadata(path: "/sessions/idle.jsonl", title: "Idle")
+    let group = ProjectSessionGroup(
+        projectURL: URL(filePath: "/tmp/project", directoryHint: .isDirectory),
+        sessions: [session])
+
+    let items = RailPresentation.items(
+        groups: [group],
+        selectedSessionPath: session.path,
+        computerUseActivePaths: [])
+
+    let sessionItem = items.first { $0.kind == .session }
+    #expect(sessionItem?.hasComputerUse == false)
+}
+
 @Test func projectMarkerUsesInitialsForMultiwordNames() {
     let group = ProjectSessionGroup(
         projectURL: URL(filePath: "/tmp/NextStep-Workspace", directoryHint: .isDirectory),

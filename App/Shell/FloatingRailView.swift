@@ -13,7 +13,10 @@ struct FloatingRailView: View {
     }
 
     private var items: [RailPresentationItem] {
-        RailPresentation.items(groups: groups, selectedSessionPath: selectedSessionPath)
+        RailPresentation.items(
+            groups: groups,
+            selectedSessionPath: selectedSessionPath,
+            computerUseActivePaths: model.computerUseActiveSessionPaths)
     }
 
     var body: some View {
@@ -149,6 +152,14 @@ struct FloatingRailView: View {
                         position: item.treePosition,
                         isSelected: item.isSelected)
                         .frame(width: 34, height: 28)
+                        .overlay(alignment: .topTrailing) {
+                            if item.hasComputerUse {
+                                Circle()
+                                    .fill(TenXPalette.color(TenXPalette.cyanHex))
+                                    .frame(width: 6, height: 6)
+                                    .offset(x: -2, y: 1)
+                            }
+                        }
                     if expansion.isExpanded {
                         Text(metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session")
                             .font(TenXTypography.body(size: 12))
@@ -171,7 +182,8 @@ struct FloatingRailView: View {
             .accessibilityLabel(RailAccessibility.sessionLabel(
                 title: metadata.title ?? "Untitled session",
                 project: groupName(for: metadata),
-                state: metadata.status.rawValue.capitalized))
+                state: metadata.status.rawValue.capitalized,
+                hasComputerUse: item.hasComputerUse))
         }
     }
 

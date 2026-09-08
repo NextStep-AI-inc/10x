@@ -17,6 +17,23 @@ final class AppModel {
     private(set) var processManager: SessionProcessManager?
     private(set) var settingsModel: SettingsViewModel?
     var activeComputerUse: ComputerUseController? { activeSession?.computerUse }
+
+    /// ponytail: only sessions with a live controller report activity (active +
+    /// retiring). Ceiling: a background session that keeps controlling while
+    /// closed loses its badge until reopened. Upgrade path: persist claims per
+    /// session path in the daemon and query by path.
+    var computerUseActiveSessionPaths: Set<String> {
+        var paths = Set<String>()
+        func collect(from controller: SessionController) {
+            if controller.computerUse.isEnabled, let path = controller.sessionPath {
+                paths.insert(path)
+            }
+        }
+        if let activeSession { collect(from: activeSession) }
+        for retiring in retiringSessions.values { collect(from: retiring) }
+        return paths
+    }
+
     let supervision: SupervisionClient
 
     @ObservationIgnored private let dependencies: AppDependencies

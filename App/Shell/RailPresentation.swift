@@ -20,6 +20,7 @@ struct RailPresentationItem: Identifiable, Equatable {
 
     let content: Content
     let isSelected: Bool
+    let hasComputerUse: Bool
     let markerLabel: String
     let treePosition: TreePosition
 
@@ -41,12 +42,14 @@ struct RailPresentationItem: Identifiable, Equatable {
 enum RailPresentation {
     static func items(
         groups: [ProjectSessionGroup],
-        selectedSessionPath: String?
+        selectedSessionPath: String?,
+        computerUseActivePaths: Set<String> = []
     ) -> [RailPresentationItem] {
         groups.flatMap { group in
             [RailPresentationItem(
                 content: .project(group),
                 isSelected: false,
+                hasComputerUse: false,
                 markerLabel: markerLabel(for: group.displayName),
                 treePosition: .root,
             )]
@@ -54,6 +57,7 @@ enum RailPresentation {
                     RailPresentationItem(
                         content: .session(metadata),
                         isSelected: metadata.path == selectedSessionPath,
+                        hasComputerUse: computerUseActivePaths.contains(metadata.path),
                         markerLabel: String(format: "%02d", index + 1),
                         treePosition: index == group.sessions.count - 1 ? .terminalChild : .child,
                     )
