@@ -31,6 +31,9 @@ public enum MouseButton: String, Sendable, Equatable {
     case left, right
 }
 
+/// Desktop input actions. Point coordinates are window-relative, in points,
+/// origin at the window's top-left. Map from PNG pixels using
+/// `Screenshot.scale` and `Screenshot.pixelSize`.
 public enum ComputerAction: Sendable, Equatable {
     case click(point: CGPoint, button: MouseButton)
     case doubleClick(point: CGPoint)
@@ -60,7 +63,8 @@ public struct PermissionStatus: Sendable, Equatable {
     }
 }
 
-public struct ComputerError: Error, Equatable {
+public struct ComputerError: Error, Equatable, Sendable, LocalizedError {
     public let message: String
     public init(_ message: String) { self.message = message }
+    public var errorDescription: String? { message }
 }

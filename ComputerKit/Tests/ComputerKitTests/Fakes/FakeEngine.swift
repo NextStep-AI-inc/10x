@@ -1,6 +1,6 @@
 import CoreGraphics
 import Foundation
-@testable import ComputerKit
+import ComputerKit
 
 final class FakeEngine: DesktopEngine {
     var windows: [WindowInfo] = []
