@@ -127,7 +127,9 @@ struct SettingControlView: View {
 
     private var catalogValues: [String] {
         switch definition.key {
-        case "enabledModels", "modelProviderOrder":
+        case "enabledModels":
+            // enabledModels → provider/modelID selectors; modelProviderOrder and
+            // enabled/disabledProviders → bare provider IDs (OMP rank lookup).
             KnownSetArrayEditor.modelSelectors(from: model.catalogModels)
         default:
             KnownSetArrayEditor.providerIDs(from: model.catalogModels)
