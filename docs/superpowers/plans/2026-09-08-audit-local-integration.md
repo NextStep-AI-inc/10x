@@ -23,8 +23,8 @@
 ## Task 1: Baseline and pinned inputs
 
 - [x] Fetch `origin/main`, verify its exact SHA, and create the fresh worktree/local branch.
-- [ ] Run the six known activity snapshot selectors at current main, preserving any actual/reference output for attribution: `structuredDiffSnapshot()`, `activityDisclosureSnapshot()`, `subagentActivitySnapshot()`, `activityDisclosureSnapshotDark()`, `activityStructuredDiffDarkSnapshot()`, `subagentActivitySnapshotDark()`.
-- [ ] Record the exact baseline command, nonzero test count, and outcome before source merges.
+- [x] Run the six known activity snapshot selectors at current main, preserving any actual/reference output for attribution: `structuredDiffSnapshot()`, `activityDisclosureSnapshot()`, `subagentActivitySnapshot()`, `activityDisclosureSnapshotDark()`, `activityStructuredDiffDarkSnapshot()`, `subagentActivitySnapshotDark()`.
+- [x] Record the exact baseline command, nonzero test count, and outcome before source merges.
 
 Pinned merge inputs:
 
