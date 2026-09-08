@@ -53,4 +53,31 @@ struct RecordSettingEditorTests {
         let incoming: JSONValue = .object(["task": .string("off")])
         #expect(RecordSettingEditor.shouldResync(entries: entries, incoming: incoming, kind: .text))
     }
+
+    @Test func emptyValuesAreDropped() {
+        let object = RecordSettingEditor.jsonObject(
+            from: [RecordEntry(key: "task", value: "")], kind: .text)
+        #expect(object == .object([:]))
+    }
+
+    @Test func renamingAKeyMovesTheValue() {
+        var entries = RecordSettingEditor.entries(from: .object(["old": .string("on")]), kind: .text)
+        entries[0].key = "renamed"
+        let object = RecordSettingEditor.jsonObject(from: entries, kind: .text)
+        #expect(object == .object(["renamed": .string("on")]))
+        #expect(object["old"] == nil)
+    }
+
+    @Test func numberEntriesLoadFromIntAndDouble() {
+        let value: JSONValue = .object(["openai": .int(4), "ratio": .double(4.5)])
+        #expect(RecordSettingEditor.entries(from: value, kind: .number) == [
+            RecordEntry(key: "openai", value: "4"),
+            RecordEntry(key: "ratio", value: "4.5"),
+        ])
+    }
+
+    @Test func nextPlaceholderKeyAvoidsDuplicates() {
+        #expect(RecordSettingEditor.nextPlaceholderKey(in: []) == "key")
+        #expect(RecordSettingEditor.nextPlaceholderKey(in: [RecordEntry(key: "key", value: "")]) == "key-2")
+    }
 }

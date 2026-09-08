@@ -43,10 +43,17 @@ struct RecordSettingEditor: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach($entries) { $entry in
                 HStack(spacing: 8) {
-                    Text(entry.key)
+                    TextField("Key", text: $entry.key)
+                        .textFieldStyle(.plain)
                         .font(TenXTypography.mono(size: 10))
                         .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
+                        .padding(.vertical, 5)
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(TenXPalette.color(TenXPalette.nearBlackHex)).frame(height: 1)
+                        }
                         .frame(width: 110, alignment: .leading)
+                        .onSubmit { save() }
+                        .accessibilityLabel("Key")
                     valueControl(for: $entry)
                     Button {
                         entries.removeAll { $0.id == entry.id }
@@ -60,7 +67,7 @@ struct RecordSettingEditor: View {
                 }
             }
             Button("Add entry") {
-                entries.append(RecordEntry(key: nextPlaceholderKey(), value: ""))
+                entries.append(RecordEntry(key: Self.nextPlaceholderKey(in: entries), value: ""))
             }
             .buttonStyle(GhostActionStyle())
         }
@@ -101,7 +108,7 @@ struct RecordSettingEditor: View {
         }
     }
 
-    private func nextPlaceholderKey() -> String {
+    nonisolated static func nextPlaceholderKey(in entries: [RecordEntry]) -> String {
         if !entries.contains(where: { $0.key == "key" }) { return "key" }
         var n = 2
         while entries.contains(where: { $0.key == "key-\(n)" }) { n += 1 }
@@ -141,21 +148,25 @@ struct RecordSettingEditor: View {
         }
     }
 
+    /// Rebuilds the record object from edited rows. Empty keys and whitespace-only
+    /// values are omitted so placeholder rows and cleared fields restore OMP defaults.
     nonisolated static func jsonObject(from entries: [RecordEntry], kind: RecordValueKind) -> JSONValue {
         var object: [String: JSONValue] = [:]
         for entry in entries where !entry.key.isEmpty {
+            let trimmedValue = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedValue.isEmpty else { continue }
             switch kind {
             case .number:
-                if let number = Double(entry.value) {
+                if let number = Double(trimmedValue) {
                     object[entry.key] = number == number.rounded() ? .int(Int(number)) : .double(number)
                 }
             case .stringList:
                 object[entry.key] = .array(
-                    entry.value.split(separator: ",").map {
+                    trimmedValue.split(separator: ",").map {
                         .string($0.trimmingCharacters(in: .whitespaces))
                     })
             case .text, .policy, .model:
-                object[entry.key] = .string(entry.value)
+                object[entry.key] = .string(trimmedValue)
             }
         }
         return .object(object)
