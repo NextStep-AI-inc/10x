@@ -16,6 +16,9 @@ final class SettingsViewModel {
 
     @ObservationIgnored private let service: OmpConfigService
     @ObservationIgnored private let catalogService: OmpModelCatalogService?
+    // ponytail: per-key write chain serializes saves/restores; a failed write returns
+    // false but does not block subsequent writes on the same key.
+    @ObservationIgnored private var writeChains: [String: Task<Bool, Never>] = [:]
     private(set) var catalogModels: [ComposerModelInfo] = []
 
     init(service: OmpConfigService, catalog: OmpModelCatalogService? = nil) {
@@ -50,6 +53,40 @@ final class SettingsViewModel {
 
     @discardableResult
     func save(_ definition: SettingDefinition, value: JSONValue) async -> Bool {
+        let key = definition.key
+        let prior = writeChains[key]
+        let task = Task<Bool, Never> {
+            _ = await prior?.value
+            return await self.performSave(definition, value: value)
+        }
+        writeChains[key] = task
+        return await task.value
+    }
+
+    @discardableResult
+    func restoreDefault(_ definition: SettingDefinition) async -> Bool {
+        let key = definition.key
+        let prior = writeChains[key]
+        let task = Task<Bool, Never> {
+            _ = await prior?.value
+            return await self.performRestoreDefault(definition)
+        }
+        writeChains[key] = task
+        return await task.value
+    }
+
+    func error(for key: String) -> String? {
+        keyErrors[key]
+    }
+
+    @discardableResult
+    func prepareForFocus(_ target: SettingsFocusTarget?) -> Bool {
+        guard target == .preferredIDE else { return false }
+        query = ""
+        return true
+    }
+
+    private func performSave(_ definition: SettingDefinition, value: JSONValue) async -> Bool {
         keyErrors[definition.key] = nil
         do {
             try await service.set(key: definition.key, value: value)
@@ -64,8 +101,7 @@ final class SettingsViewModel {
         }
     }
 
-    @discardableResult
-    func restoreDefault(_ definition: SettingDefinition) async -> Bool {
+    private func performRestoreDefault(_ definition: SettingDefinition) async -> Bool {
         keyErrors[definition.key] = nil
         do {
             let value = try await service.reset(key: definition.key)
@@ -75,16 +111,5 @@ final class SettingsViewModel {
             keyErrors[definition.key] = error.localizedDescription
             return false
         }
-    }
-
-    func error(for key: String) -> String? {
-        keyErrors[key]
-    }
-
-    @discardableResult
-    func prepareForFocus(_ target: SettingsFocusTarget?) -> Bool {
-        guard target == .preferredIDE else { return false }
-        query = ""
-        return true
     }
 }

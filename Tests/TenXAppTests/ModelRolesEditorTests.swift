@@ -13,15 +13,18 @@ struct ModelRolesEditorTests {
         #expect(entries.map(\.role) == ["plan", "vision", "custom-role"])
     }
 
-    @Test func unparseableValuesAreDroppedFromEditingButPreservedOnSave() {
-        // A value that fails to parse stays in the record untouched.
+    @Test func unparseableValuesAreSurfacedAndPreservedOnSave() {
         let value: JSONValue = .object([
             "plan": .string("anthropic/claude-fable-5:max"),
             "weird": .string("garbage"),
         ])
-        var entries = ModelRolesEditor.entries(from: value)
-        entries[0].value.effort = "high"
-        let object = ModelRolesEditor.jsonObject(from: entries, preserving: value)
+        let entries = ModelRolesEditor.entries(from: value)
+        #expect(entries.map(\.role) == ["plan", "weird"])
+        #expect(entries.first { $0.role == "weird" }?.isUnrecognized == true)
+
+        var editable = entries
+        editable[0].value.effort = "high"
+        let object = ModelRolesEditor.jsonObject(from: editable, preserving: value)
         #expect(object["plan"] == .string("anthropic/claude-fable-5:high"))
         #expect(object["weird"] == .string("garbage"))
     }
@@ -43,5 +46,48 @@ struct ModelRolesEditorTests {
         let object = ModelRolesEditor.jsonObject(from: entries, preserving: value)
         #expect(object["vision"] == nil)
         #expect(object["plan"] == .string("anthropic/claude-fable-5:max"))
+    }
+
+    @Test func removedUnrecognizedRoleIsDeletedOnSave() {
+        let value: JSONValue = .object([
+            "plan": .string("anthropic/claude-fable-5:max"),
+            "weird": .string("garbage"),
+        ])
+        var entries = ModelRolesEditor.entries(from: value)
+        entries.removeAll { $0.role == "weird" }
+        let object = ModelRolesEditor.jsonObject(from: entries, preserving: value)
+        #expect(object["weird"] == nil)
+        #expect(object["plan"] == .string("anthropic/claude-fable-5:max"))
+    }
+
+    @Test func jsonObjectSkipsInvalidDraftEntries() {
+        let value: JSONValue = .object([
+            "plan": .string("anthropic/claude-fable-5:max"),
+        ])
+        let entries = [
+            ModelRoleEntry(role: "plan", value: ModelRoleValue(provider: "anthropic", modelID: "claude-fable-5", effort: "max")),
+            ModelRoleEntry(role: "vision", value: ModelRoleValue(provider: "", modelID: "", effort: nil)),
+        ]
+        let object = ModelRolesEditor.jsonObject(from: entries, preserving: value)
+        #expect(object["plan"] == .string("anthropic/claude-fable-5:max"))
+        #expect(object["vision"] == nil)
+    }
+
+    @Test func shouldResyncReturnsFalseForOwnSaveEcho() {
+        let entries = ModelRolesEditor.entries(from: .object([
+            "plan": .string("anthropic/claude-fable-5:max"),
+        ]))
+        let incoming = ModelRolesEditor.jsonObject(from: entries, preserving: .object([:]))
+        #expect(!ModelRolesEditor.shouldResync(entries: entries, incoming: incoming))
+    }
+
+    @Test func shouldResyncReturnsTrueForExternalChange() {
+        let entries = ModelRolesEditor.entries(from: .object([
+            "plan": .string("anthropic/claude-fable-5:max"),
+        ]))
+        let incoming: JSONValue = .object([
+            "plan": .string("cursor/composer-2.5-fast"),
+        ])
+        #expect(ModelRolesEditor.shouldResync(entries: entries, incoming: incoming))
     }
 }

@@ -46,6 +46,21 @@ import Testing
 }
 
 @MainActor
+@Test func rapidSavesOnSameKeyApplyInIssueOrder() async throws {
+    let runner = OrderedDelayConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "autoResume"))
+
+    async let slow = model.save(definition, value: .bool(false))
+    async let fast = model.save(definition, value: .bool(true))
+    _ = await (slow, fast)
+
+    #expect(await runner.appliedValues == ["false", "true"])
+    #expect(model.catalog.definition(key: "autoResume")?.value == .bool(true))
+}
+
+@MainActor
 @Test func restoringAnUnsetDefaultClearsTheDisplayedValue() async throws {
     let runner = FakeConfigRunner()
     let model = SettingsViewModel(service: OmpConfigService(runner: runner))
@@ -126,6 +141,28 @@ import Testing
 
     #expect(kill(pid, 0) == -1)
     #expect(errno == ESRCH)
+}
+
+private actor OrderedDelayConfigRunner: OmpConfigRunning {
+    private(set) var appliedValues: [String] = []
+
+    func run(arguments: [String]) async throws -> Data {
+        if arguments == ["config", "list", "--json"] {
+            return Data(#"{"autoResume":{"value":false,"type":"boolean","description":"Automatically resume"},"shellPath":{"value":"20","type":"string","description":""}}"#.utf8)
+        }
+        if arguments == ["config", "path"] {
+            return Data("/tmp/omp/config.json\n".utf8)
+        }
+        if arguments.count >= 4, arguments[0] == "config", arguments[1] == "set" {
+            let value = arguments[3]
+            if value == "false" {
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            appliedValues.append(value)
+            return Data()
+        }
+        return Data()
+    }
 }
 
 private actor FakeConfigRunner: OmpConfigRunning {

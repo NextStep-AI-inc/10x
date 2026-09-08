@@ -5,6 +5,15 @@ struct ModelRoleEntry: Equatable, Identifiable {
     var id: String { role }
     var role: String
     var value: ModelRoleValue
+    var unrecognizedRaw: String?
+
+    var isUnrecognized: Bool { unrecognizedRaw != nil }
+
+    init(role: String, value: ModelRoleValue, unrecognizedRaw: String? = nil) {
+        self.role = role
+        self.value = value
+        self.unrecognizedRaw = unrecognizedRaw
+    }
 }
 
 struct ModelRolesEditor: View {
@@ -13,8 +22,9 @@ struct ModelRolesEditor: View {
 
     @State private var entries: [ModelRoleEntry]
 
-    static let knownRoles = ["default", "plan", "advisor", "smol", "commit",
-                             "designer", "slow", "task", "tiny", "vision"]
+    static let knownRoles = SettingMetadata.knownArrayValues["cycleOrder"]
+        ?? ["default", "plan", "advisor", "smol", "commit",
+            "designer", "slow", "task", "tiny", "vision"]
 
     init(definition: SettingDefinition, model: SettingsViewModel) {
         self.definition = definition
@@ -25,43 +35,10 @@ struct ModelRolesEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach($entries) { $entry in
-                HStack(spacing: 8) {
-                    Text(entry.role)
-                        .font(TenXTypography.mono(size: 10))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
-                        .frame(width: 70, alignment: .leading)
-                    InlineDropdown(
-                        options: Self.modelOptions(from: model.catalogModels),
-                        current: "\(entry.value.provider)/\(entry.value.modelID)",
-                        onSelect: { selection in
-                            if let parsed = ModelRoleValue(raw: selection) {
-                                entry.value.provider = parsed.provider
-                                entry.value.modelID = parsed.modelID
-                                entry.value.effort = nil
-                                save()
-                            }
-                        })
-                    if !effortOptions(for: entry.value).isEmpty {
-                        InlineDropdown(
-                            options: effortOptions(for: entry.value),
-                            current: entry.value.effort ?? "",
-                            prompt: "effort",
-                            allowsOther: false,
-                            onSelect: { effort in
-                                entry.value.effort = effort.isEmpty ? nil : effort
-                                save()
-                            })
-                        .frame(width: 90)
-                    }
-                    Button {
-                        entries.removeAll { $0.role == entry.role }
-                        save()
-                    } label: {
-                        Image(systemName: "minus")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
-                    .accessibilityLabel("Remove \(entry.role)")
+                if entry.isUnrecognized {
+                    unrecognizedRow(entry: $entry)
+                } else {
+                    editableRow(entry: $entry)
                 }
             }
             let unused = Self.knownRoles.filter { role in !entries.contains { $0.role == role } }
@@ -78,30 +55,107 @@ struct ModelRolesEditor: View {
                 .font(TenXTypography.body(size: 12, weight: .medium))
                 .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
             }
-            Text("Saved as a whole record; removing all rows restores OMP defaults.")
+            Text("Remove every role to restore the defaults.")
                 .font(TenXTypography.body(size: 10))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
         }
         .task { await model.loadCatalogIfNeeded() }
         .onChange(of: definition.value) { _, newValue in
-            let serialized = Self.jsonObject(from: entries, preserving: newValue ?? .object([:]))
-            if serialized != newValue {
+            if Self.shouldResync(entries: entries, incoming: newValue) {
                 entries = Self.entries(from: newValue ?? .object([:]))
             }
         }
     }
 
+    @ViewBuilder
+    private func unrecognizedRow(entry: Binding<ModelRoleEntry>) -> some View {
+        HStack(spacing: 8) {
+            Text(entry.wrappedValue.role)
+                .font(TenXTypography.mono(size: 10))
+                .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
+                .frame(width: 70, alignment: .leading)
+            Text("\(entry.wrappedValue.role) — \(entry.wrappedValue.unrecognizedRaw ?? "")")
+                .font(TenXTypography.mono(size: 11))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .lineLimit(1)
+            Text("(unrecognized)")
+                .font(TenXTypography.body(size: 10))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            Spacer()
+            removeButton(for: entry.wrappedValue.role)
+        }
+    }
+
+    @ViewBuilder
+    private func editableRow(entry: Binding<ModelRoleEntry>) -> some View {
+        HStack(spacing: 8) {
+            Text(entry.wrappedValue.role)
+                .font(TenXTypography.mono(size: 10))
+                .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
+                .frame(width: 70, alignment: .leading)
+            InlineDropdown(
+                options: Self.modelOptions(from: model.catalogModels),
+                current: "\(entry.wrappedValue.value.provider)/\(entry.wrappedValue.value.modelID)",
+                accessibilityLabelText: "\(entry.wrappedValue.role) model",
+                onSelect: { selection in
+                    if let parsed = ModelRoleValue(raw: selection) {
+                        entry.wrappedValue.value.provider = parsed.provider
+                        entry.wrappedValue.value.modelID = parsed.modelID
+                        entry.wrappedValue.value.effort = parsed.effort
+                        save()
+                    }
+                })
+            if showsEffortDropdown(for: entry.wrappedValue.value) {
+                InlineDropdown(
+                    options: effortOptions(for: entry.wrappedValue.value),
+                    current: entry.wrappedValue.value.effort ?? "",
+                    prompt: "effort",
+                    allowsOther: false,
+                    accessibilityLabelText: "\(entry.wrappedValue.role) effort",
+                    onSelect: { effort in
+                        entry.wrappedValue.value.effort = effort.isEmpty ? nil : effort
+                        save()
+                    })
+                .frame(width: 90)
+            }
+            removeButton(for: entry.wrappedValue.role)
+        }
+    }
+
+    private func removeButton(for role: String) -> some View {
+        Button {
+            entries.removeAll { $0.role == role }
+            save()
+        } label: {
+            Image(systemName: "minus")
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+        .accessibilityLabel("Remove \(role)")
+    }
+
     private func defaultValue(for role: String) -> ModelRoleValue {
-        // New roles start from the "default" role's model when one is set.
-        if let d = entries.first(where: { $0.role == "default" })?.value { return d }
+        if let d = entries.first(where: { $0.role == "default" })?.value,
+           ModelRoleValue(raw: d.raw) != nil {
+            return d
+        }
+        if let first = model.catalogModels.first {
+            return ModelRoleValue(provider: first.provider, modelID: first.modelID, effort: nil)
+        }
         return ModelRoleValue(provider: "", modelID: "", effort: nil)
     }
 
+    private func showsEffortDropdown(for value: ModelRoleValue) -> Bool {
+        value.effort != nil || !effortOptions(for: value).isEmpty
+    }
+
     private func effortOptions(for value: ModelRoleValue) -> [SettingOption] {
-        guard let found = model.catalogModels.first(where: {
+        if let found = model.catalogModels.first(where: {
             $0.provider == value.provider && $0.modelID == value.modelID
-        }), !found.thinkingEfforts.isEmpty else { return [] }
-        return found.thinkingEfforts.map { SettingOption($0) }
+        }), !found.thinkingEfforts.isEmpty {
+            return found.thinkingEfforts.map { SettingOption($0) }
+        }
+        return ModelRoleValue.efforts.map { SettingOption($0) }
     }
 
     private func sortEntries() {
@@ -117,12 +171,22 @@ struct ModelRolesEditor: View {
         Task { await model.save(definition, value: object) }
     }
 
+    nonisolated static func shouldResync(entries: [ModelRoleEntry], incoming: JSONValue?) -> Bool {
+        let newValue = incoming ?? .object([:])
+        return jsonObject(from: entries, preserving: newValue) != newValue
+    }
+
     nonisolated static func entries(from value: JSONValue) -> [ModelRoleEntry] {
         let object = value.objectValue ?? [:]
-        return object.compactMap { role, raw in
-            raw.stringValue.flatMap(ModelRoleValue.init(raw:)).map {
-                ModelRoleEntry(role: role, value: $0)
+        return object.compactMap { role, raw -> ModelRoleEntry? in
+            guard let string = raw.stringValue else { return nil }
+            if let parsed = ModelRoleValue(raw: string) {
+                return ModelRoleEntry(role: role, value: parsed)
             }
+            return ModelRoleEntry(
+                role: role,
+                value: ModelRoleValue(provider: "", modelID: "", effort: nil),
+                unrecognizedRaw: string)
         }.sorted { a, b in
             let ia = knownRoles.firstIndex(of: a.role) ?? .max
             let ib = knownRoles.firstIndex(of: b.role) ?? .max
@@ -130,18 +194,24 @@ struct ModelRolesEditor: View {
         }
     }
 
-    /// Serializes edited entries; roles whose values never parsed are carried
-    /// over from the original record so editing can't silently drop them.
+    /// Serializes edited entries. Invalid drafts are skipped; unrecognized rows
+    /// keep their raw string; removed roles (parsed or not) are deleted.
     nonisolated static func jsonObject(from entries: [ModelRoleEntry], preserving original: JSONValue) -> JSONValue {
         var object = original.objectValue ?? [:]
+        let currentRoles = Set(entries.map(\.role))
+
         for entry in entries {
-            object[entry.role] = .string(entry.value.raw)
+            if entry.isUnrecognized, let raw = entry.unrecognizedRaw {
+                object[entry.role] = .string(raw)
+            } else if ModelRoleValue(raw: entry.value.raw) != nil {
+                object[entry.role] = .string(entry.value.raw)
+            }
         }
-        let editedRoles = Set(entries.map(\.role))
-        let originallyParsed = Set(Self.entries(from: original).map(\.role))
-        for role in originallyParsed where !editedRoles.contains(role) {
+
+        for role in object.keys where !currentRoles.contains(role) {
             object[role] = nil
         }
+
         return .object(object)
     }
 
