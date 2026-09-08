@@ -47,6 +47,8 @@ final class SessionController: ComposerSessionControlling {
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
+    private let harnessNoticePreferences: HarnessNoticePreferenceStore?
+    private let harnessNoticeSummarizer: (any HarnessNoticeSummarizing)?
     private let activityRegistry: SessionActivityRegistry?
     private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
@@ -81,12 +83,16 @@ final class SessionController: ComposerSessionControlling {
         processManager: SessionProcessManager,
         id: UUID = UUID(),
         activityRegistry: SessionActivityRegistry? = nil,
-        historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:)
+        historyLoader: @escaping HistoryLoader = SessionController.loadHistory(path:),
+        harnessNoticePreferences: HarnessNoticePreferenceStore? = nil,
+        harnessNoticeSummarizer: (any HarnessNoticeSummarizing)? = nil
     ) {
         self.processManager = processManager
         self.id = id
         self.activityRegistry = activityRegistry
         self.historyLoader = historyLoader
+        self.harnessNoticePreferences = harnessNoticePreferences
+        self.harnessNoticeSummarizer = harnessNoticeSummarizer
     }
 
     init(
@@ -107,6 +113,8 @@ final class SessionController: ComposerSessionControlling {
     ) {
         self.processManager = processManager
         self.historyLoader = historyLoader
+        self.harnessNoticePreferences = nil
+        self.harnessNoticeSummarizer = nil
         self.items = previewItems
         self.runtimeState = runtimeState
         self.title = title
@@ -494,6 +502,12 @@ final class SessionController: ComposerSessionControlling {
             }
             guard isCurrent(openingContext) else { return }
             let processor = TranscriptEventProcessor()
+            await processor.setOnDroppedHarnessMessages { [weak self, weak processor] dropped in
+                Task { @MainActor [weak self, weak processor] in
+                    guard let processor else { return }
+                    self?.handleDroppedHarnessMessages(dropped, from: processor)
+                }
+            }
             self.processor = processor
             let processorContext = currentPipelineContext()
             let initialSnapshot = await processor.load(
@@ -545,6 +559,38 @@ final class SessionController: ComposerSessionControlling {
                 await self?.handleControl(frame, processor: processor)
             }
         }
+    }
+
+    private func handleDroppedHarnessMessages(
+        _ dropped: [HarnessMessageDescriptor],
+        from source: TranscriptEventProcessor
+    ) {
+        guard let preferences = harnessNoticePreferences, preferences.isEnabled,
+              let processor, processor === source
+        else { return }
+        for descriptor in dropped where descriptor.byteCount >= preferences.threshold {
+            let label = Self.harnessNoticeLabel(descriptor)
+            let noticeID = UUID().uuidString
+            let summarizer = harnessNoticeSummarizer
+            Task {
+                await processor.appendNotice(
+                    id: noticeID,
+                    level: "info",
+                    message: summarizer == nil ? label : "\(label) — summarizing…")
+                guard let summarizer else { return }
+                let summary = await summarizer.summarize(descriptor)
+                await processor.updateNotice(
+                    id: noticeID,
+                    message: summary.map { "\(label): \($0)" } ?? label)
+            }
+        }
+    }
+
+    private static func harnessNoticeLabel(_ descriptor: HarnessMessageDescriptor) -> String {
+        let size = descriptor.byteCount < 1_000
+            ? "\(descriptor.byteCount) chars"
+            : String(format: "%.1f KB", Double(descriptor.byteCount) / 1_000)
+        return "Hidden \(descriptor.kindLabel) message (\(size))"
     }
 
     private func stopEventPipeline() {
