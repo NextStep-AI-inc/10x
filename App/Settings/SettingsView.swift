@@ -222,7 +222,9 @@ struct SettingsView: View {
                     focusPreferredIDEIfNeeded(proxy: proxy)
                 }
 
-                if !section.definitions.isEmpty {
+                if showsHarnessNoticeRow {
+                    Divider()
+                } else if !section.definitions.isEmpty {
                     Divider()
                 }
             }

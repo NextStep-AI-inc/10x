@@ -84,6 +84,7 @@
 		4B1BC133340D91429B7410CD7AD98B15 /* TurnActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDEF3C8E979206D3524D161DB99A960C /* TurnActivityTests.swift */; };
 		4C9BD66E04D2373E1B21CD7174E3FABE /* TurnActivityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D571A76482D84C6FB84D70F08D008F62 /* TurnActivityView.swift */; };
 		4ED931FCA5B0F7F51869FC1D55C8C904 /* SessionDeletionConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FAEB9B26382BB231DDC6996D7BFAA7F /* SessionDeletionConfirmationView.swift */; };
+		4FE1B50FD6A217E796B7C06E57A720EA /* HarnessNoticeSettingRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14F68CA118145EF0CEBFE40A985A63DB /* HarnessNoticeSettingRowTests.swift */; };
 		51C0D52B312905D58FC68023AC30FD89 /* BrandWordmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC82A22B2AB1B4AF8D75C32BD1574437 /* BrandWordmark.swift */; };
 		52A780991B123C29F5E7B88B165F0D88 /* FileReferenceLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69EC4224D86689BF1A5D2D37996F7381 /* FileReferenceLabel.swift */; };
 		535A5C281EB24D42B6F4FDE0A55198AD /* TranscriptItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0256F4BEBCCEA41B65D70F361AB00E82 /* TranscriptItem.swift */; };
@@ -261,6 +262,7 @@
 		108FB7C260AC219C42872EE47BFAF018 /* 10x-wordmark.svg */ = {isa = PBXFileReference; includeInIndex = 1; name = "10x-wordmark.svg"; path = "App/Resources/10x-wordmark.svg"; sourceTree = "<group>"; };
 		1358E8B1E1F95D30DD0AE9DB03D31DE2 /* SourceSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourceSurface.swift; path = App/Design/SourceSurface.swift; sourceTree = "<group>"; };
 		144FEB107522651ECAFD41008C930D94 /* SessionRuntimeState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionRuntimeState.swift; path = App/Sessions/SessionRuntimeState.swift; sourceTree = "<group>"; };
+		14F68CA118145EF0CEBFE40A985A63DB /* HarnessNoticeSettingRowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessNoticeSettingRowTests.swift; path = Tests/TenXAppTests/HarnessNoticeSettingRowTests.swift; sourceTree = "<group>"; };
 		153320A3E0CBC5F87098D9794539D14E /* IDEPreferenceStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IDEPreferenceStore.swift; path = App/FileReferences/IDEPreferenceStore.swift; sourceTree = "<group>"; };
 		1684556654321E9FA4F3E82E46DA2FB6 /* libsqlite3.tbd */ = {isa = PBXFileReference; includeInIndex = 1; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		172EECE87F09A0B1731B9CFB378E4A3C /* MessageBubbleView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessageBubbleView.swift; path = App/Sessions/MessageBubbleView.swift; sourceTree = "<group>"; };
@@ -673,6 +675,7 @@
 				57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */,
 				6B9D28101EEB3E94C7B933DB50FDDF71 /* FileTypeIconTests.swift */,
 				B4F09A56181CE669AA995DBD927EED92 /* HarnessNoticePreferenceStoreTests.swift */,
+				14F68CA118145EF0CEBFE40A985A63DB /* HarnessNoticeSettingRowTests.swift */,
 				51B0A7BFC138996A545AD785F9B4094E /* HarnessNoticeSummarizerTests.swift */,
 				F704B536389AAF360BC1D53826D583AD /* IDEPreferenceStoreTests.swift */,
 				E85949BDAE9F5A41A912C50F05954C28 /* MessageBubbleViewTests.swift */,
@@ -1027,6 +1030,7 @@
 				16227F7A3F65DE75B91ABF6F77D31CFF /* FileReferenceResolverTests.swift in Sources */,
 				12A20BCCB60CC63CC14BE7F3C5A7CE49 /* FileTypeIconTests.swift in Sources */,
 				D56C2F1CAC246D2FF39DBCA057F16335 /* HarnessNoticePreferenceStoreTests.swift in Sources */,
+				4FE1B50FD6A217E796B7C06E57A720EA /* HarnessNoticeSettingRowTests.swift in Sources */,
 				18343B774420448C021D354F48B4774D /* HarnessNoticeSummarizerTests.swift in Sources */,
 				2A9831E4F0D6FFE0ED7EA8E7C3C82DB0 /* IDEPreferenceStoreTests.swift in Sources */,
 				E35B5E09ED9858397770C064E6C977A4 /* MessageBubbleViewTests.swift in Sources */,

@@ -11,9 +11,14 @@ struct HarnessNoticeSettingRowView: View {
         (4_000, "4 KB"),
     ]
 
-    static func matches(query: String) -> Bool {
-        query.isEmpty
-            || "hidden harness messages".localizedCaseInsensitiveContains(query)
+    nonisolated static func matches(query: String) -> Bool {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        return ["Hidden harness messages",
+                "Show a transcript notice when a harness message is kept out of the chat, with a one-line summary from a small model",
+                "Notice threshold",
+                "Summary model"]
+            .contains { $0.localizedCaseInsensitiveContains(trimmed) }
     }
 
     var body: some View {
@@ -32,7 +37,8 @@ struct HarnessNoticeSettingRowView: View {
                 Toggle("", isOn: $store.isEnabled)
                     .labelsHidden()
                     .toggleStyle(.switch)
-                    .controlSize(.small)
+                    .tint(TenXPalette.color(TenXPalette.cyanHex))
+                    .accessibilityLabel("Hidden harness messages")
             }
 
             if store.isEnabled {
@@ -50,6 +56,7 @@ struct HarnessNoticeSettingRowView: View {
                             .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                     }
                     .menuStyle(.borderlessButton)
+                    .accessibilityLabel("Notice threshold")
                 }
 
                 HStack(spacing: 30) {
@@ -70,6 +77,7 @@ struct HarnessNoticeSettingRowView: View {
                             .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                     }
                     .menuStyle(.borderlessButton)
+                    .accessibilityLabel("Summary model")
                 }
             }
         }
