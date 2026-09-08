@@ -42,10 +42,9 @@ import Testing
     state.enterRecovery(attemptID: attempt)
     let size = CGSize(width: 640, height: 400)
     let root = SplashView(
-        state: state,
-        buildVersion: "0.1.0",
-        onRetry: {},
-        onContinue: {})
+        presentation: SplashPresentation.startup(
+            state: state, onRetry: {}, onContinue: {}),
+        buildVersion: "0.1.0")
         .frame(width: size.width, height: size.height)
         .environment(\.colorScheme, .light)
         .environment(\.startupSignalReduceMotionOverride, true)
@@ -72,4 +71,17 @@ import Testing
     }
 
     #expect(hasRedPixel)
+}
+
+@Test func determinateTrimClampsToTheUnitInterval() {
+    #expect(StartupSignalMotion.determinateTrim(-0.5) == 0)
+    #expect(StartupSignalMotion.determinateTrim(0) == 0)
+    #expect(StartupSignalMotion.determinateTrim(0.42) == 0.42)
+    #expect(StartupSignalMotion.determinateTrim(1) == 1)
+    #expect(StartupSignalMotion.determinateTrim(1.5) == 1)
+}
+
+@Test func determinateTrimSurvivesNonFiniteInput() {
+    #expect(StartupSignalMotion.determinateTrim(.nan) == 0)
+    #expect(StartupSignalMotion.determinateTrim(.infinity) == 1)
 }

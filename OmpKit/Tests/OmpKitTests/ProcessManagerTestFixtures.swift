@@ -1,6 +1,13 @@
 import Foundation
 @testable import OmpKit
 
+func expectedFreshSessionDirectory(for cwd: String) -> String {
+    FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".omp/agent/sessions")
+        .appendingPathComponent(SessionPathEncoding.bucketName(forCwd: cwd))
+        .path
+}
+
 final class ConfigurationCapture: @unchecked Sendable {
     private let lock = NSLock()
     private var values: [RpcClientConfiguration] = []
@@ -53,13 +60,16 @@ final class ClientCapture: @unchecked Sendable {
 }
 
 func capturingManager(
-    _ capture: ConfigurationCapture, mode: String = "basic"
+    _ capture: ConfigurationCapture,
+    mode: String = "basic",
+    modeArguments: [String] = []
 ) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         capture.append(configuration)
         var fake = configuration
         fake.executable = "/usr/bin/env"
         fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
+            + modeArguments
         fake.rawArgv = true
         fake.cwd = nil
         return RpcClient(configuration: fake)

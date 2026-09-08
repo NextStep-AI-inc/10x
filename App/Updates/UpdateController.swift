@@ -1,0 +1,176 @@
+import Foundation
+import Sparkle
+
+@MainActor
+protocol UpdateChecking: AnyObject {
+    var state: UpdateState { get }
+    func check(isUserInitiated: Bool)
+    func cancelCheck()
+    func accept()
+    func dismiss()
+}
+
+extension UpdateChecking {
+    /// Runs the advisory launch check. Returns when the check answers or when `deadline`
+    /// elapses, whichever comes first. It never throws, never fails, and never reports a
+    /// problem to the user, because a launch must not depend on network health.
+    ///
+    /// The deadline runs as an independent, unstructured task rather than inside a
+    /// `TaskGroup`, which implicitly awaits every child before returning. An unstructured
+    /// task has no such join: this function's own progress depends only on
+    /// `state.waitForCheckOutcome()`, and the deadline task either resolves that wait
+    /// itself (by cancelling the check) or is discarded once the real answer already
+    /// resolved it.
+    ///
+    /// The deadline task re-checks `state.phase` before cancelling: if the real answer
+    /// already landed by the time the deadline fires, cancelling would call
+    /// `cancelCheck()` → `state.reset()` and silently wipe a legitimate offer off the
+    /// splash. Guarding on the phase (not just on the task's own cancellation flag)
+    /// closes that window even if the deadline and the real answer land at nearly the
+    /// same instant.
+    func checkAtLaunch(
+        deadline: Duration,
+        sleep: @escaping @Sendable (Duration) async throws -> Void
+    ) async {
+        check(isUserInitiated: false)
+        // If the check already answered synchronously inside `check()` (as a test
+        // double may), skip the deadline task entirely rather than spawning it and
+        // relying on cancellation to stop it in time — a debug-build async call can
+        // still interleave a queued task's body before a synchronous caller reaches
+        // its next line, so a spawn-then-cancel race is not a reliable guarantee.
+        guard case .checking = state.phase else { return }
+        let deadlineTask = Task { @MainActor in
+            try? await sleep(deadline)
+            guard !Task.isCancelled, case .checking = state.phase else { return }
+            cancelCheck()
+        }
+        await state.waitForCheckOutcome()
+        deadlineTask.cancel()
+    }
+
+    /// Begins a user-initiated check from the menu and returns the deadline task
+    /// watching it, so the caller can track and cancel it (see `AppModel.checkForUpdatesFromMenu`).
+    ///
+    /// `check(isUserInitiated: true)` runs inline, synchronously, rather than inside the
+    /// returned task — the same invariant `checkAtLaunch` relies on (I5:
+    /// `state.phase` must become `.checking` before this function returns, because
+    /// `SPUUpdater.checkForUpdates()` does not call back into the driver synchronously).
+    /// `AppModel.checkForUpdatesFromMenu()`'s own `!isPresentingUpdate` guard depends on
+    /// that ordering too. Unlike `checkAtLaunch`, this function does not await the
+    /// outcome itself — a menu click has no caller waiting on it — so it hands the
+    /// watchdog back instead of resolving when the check does.
+    ///
+    /// Closes a real gap: unlike the advisory launch check, a menu-triggered check had
+    /// no deadline of its own. Against an updater whose `start()` never succeeded (a
+    /// build defect — see `UpdateController.start()`), Sparkle never calls back into the
+    /// driver, so nothing would ever move `state.phase` off `.checking`. A stall found
+    /// at the deadline resolves into a *visible* `.failed` state with a `Try again`
+    /// action rather than a silent reset: the user explicitly asked, so per the rule
+    /// `SplashUpdateDriver.showUpdaterError` already applies to a live Sparkle error on
+    /// a user-initiated check, an unanswered menu check must not look like nothing
+    /// happened.
+    @discardableResult
+    func checkFromMenu(
+        deadline: Duration,
+        sleep: @escaping @Sendable (Duration) async throws -> Void
+    ) -> Task<Void, Never>? {
+        check(isUserInitiated: true)
+        guard case .checking = state.phase else { return nil }
+        return Task { @MainActor in
+            try? await sleep(deadline)
+            guard !Task.isCancelled, case .checking = state.phase else { return }
+            cancelCheck()
+            state.fail(.unknown)
+        }
+    }
+}
+
+@MainActor
+final class UpdateController: UpdateChecking {
+    let state: UpdateState
+    private let updater: SPUUpdater
+    private let driver: SplashUpdateDriver
+    private var didFailToStart = false
+
+    init(
+        state: UpdateState = UpdateState(),
+        currentVersion: String = Bundle.main.object(
+            forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+        prepareForInstall: @escaping @MainActor () async -> Void
+    ) {
+        self.state = state
+        let driver = SplashUpdateDriver(
+            state: state,
+            currentVersion: currentVersion,
+            prepareForInstall: prepareForInstall)
+        self.driver = driver
+        updater = SPUUpdater(
+            hostBundle: Bundle.main,
+            applicationBundle: Bundle.main,
+            userDriver: driver,
+            delegate: nil)
+    }
+
+    /// Must be called once before any check. A failure here means the bundle is missing
+    /// its feed or key, which is a build defect rather than a user-facing condition.
+    ///
+    /// It records the failure rather than painting it. `AppModel.updateChecker` is
+    /// created lazily by `StartupSceneView`'s first `presentation` read, which runs
+    /// before `bootstrap()` does, so failing the state here put the update-failure splash
+    /// on the very first frame of a cold launch — the same thing the advisory rules
+    /// forbid a slow network from doing. The failure surfaces on the next check the user
+    /// actually asked for, where it is an answer rather than an ambush.
+    func start() {
+        start { try updater.start() }
+    }
+
+    /// Visible for testing: the same recording step with the throwing call injected, so
+    /// a test can reproduce a misconfigured bundle without one.
+    func start(performing operation: () throws -> Void) {
+        do {
+            try operation()
+        } catch {
+            didFailToStart = true
+        }
+    }
+
+    /// Both paths use `checkForUpdates()` rather than `checkForUpdatesInBackground()`.
+    /// The background variant is governed by Sparkle's own scheduling permission, which
+    /// `SUEnableAutomaticChecks = NO` disables, so it would silently do nothing.
+    ///
+    /// `state.beginCheck()` runs here, synchronously, rather than being left to the
+    /// driver's `showUserInitiatedUpdateCheck` callback. `SPUUpdater.checkForUpdates()`
+    /// does not reach the user driver synchronously — it hops through an install-status
+    /// probe and back onto the main queue before Sparkle calls back into `driver`. If
+    /// the launch gate relied on that callback alone, `waitForCheckOutcome()` could see
+    /// `state.phase` still `.idle` immediately after this call returns, treat "hasn't
+    /// started yet" as "already finished," and return with the check still silently in
+    /// flight — exactly the abandoned-check hazard `cancelCheck()` exists to prevent.
+    /// The driver's own later `beginCheck()` call is harmless: `waitForCheckOutcome`
+    /// loops on `while case .checking`, so a redundant transition re-suspends instead
+    /// of escaping.
+    func check(isUserInitiated: Bool) {
+        driver.beginCheck(isUserInitiated: isUserInitiated)
+        state.beginCheck(isUserInitiated: isUserInitiated)
+        // A never-started updater produces no Sparkle callback of any kind, so asking it
+        // to check would stall at `.checking` until a deadline gave up on it. Answer
+        // directly instead: visibly for a check the user asked for, silently for the
+        // advisory launch one.
+        guard !didFailToStart else {
+            if isUserInitiated { state.fail(.unknown) } else { state.reset() }
+            return
+        }
+        updater.checkForUpdates()
+    }
+
+    func cancelCheck() { driver.cancelCheck() }
+
+    func accept() { driver.acceptUpdate() }
+
+    func dismiss() { driver.dismissUpdate() }
+
+    /// Read-only test hook exposing the flag `check(isUserInitiated:)` sets on the
+    /// driver. Production code never reads this; it exists so a test can prove a menu
+    /// check followed by a launch check leaves the flag `false` for the launch check.
+    var isUserInitiatedForTesting: Bool { driver.isUserInitiated }
+}

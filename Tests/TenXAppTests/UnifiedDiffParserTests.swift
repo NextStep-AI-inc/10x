@@ -80,3 +80,31 @@ import Testing
     #expect(collapsed == [4])
     #expect(rows.compactMap(\.lineIndex) == [0, 1, 6, 7, 8, 9])
 }
+
+@Test func collapsedContextHasTheExactHiddenLineCount() throws {
+    let diff = try #require(UnifiedDiffParser.parse("""
+    --- a/App.swift
+    +++ b/App.swift
+    @@ -1,8 +1,8 @@
+     one
+     two
+     three
+     four
+     five
+     six
+     seven
+     eight
+    """))
+    let rows = try #require(diff.files.first?.hunks.first?.displayRows(context: 2))
+    let collapsed = try #require(rows.first { row in
+        if case .collapsed = row { return true }
+        return false
+    })
+
+    guard case .collapsed(_, let count, let indices) = collapsed else {
+        Issue.record("Expected collapsed context")
+        return
+    }
+    #expect(count == 4)
+    #expect(indices == [2, 3, 4, 5])
+}

@@ -91,6 +91,12 @@ struct SettingOption: Equatable {
     let value: String
     var label: String? = nil
     var detail: String? = nil
+
+    init(_ value: String, label: String? = nil, detail: String? = nil) {
+        self.value = value
+        self.label = label
+        self.detail = detail
+    }
 }
 
 enum SettingMetadata {

@@ -1,0 +1,66 @@
+{
+  "generatedAt": 1787846528870,
+  "reports": [
+    {
+      "provider": "anthropic",
+      "fetchedAt": 1787846515631,
+      "limits": [
+        {
+          "id": "5h",
+          "label": "5 Hour",
+          "scope": {
+            "provider": "anthropic"
+          },
+          "window": {
+            "id": "5h",
+            "label": "5 Hour",
+            "resetsAt": 1787857315631
+          },
+          "amount": {
+            "usedFraction": 0.2,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "7d",
+          "label": "7 Day",
+          "scope": {
+            "provider": "anthropic"
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 Day",
+            "resetsAt": 1788192115631
+          },
+          "amount": {
+            "usedFraction": 0.05,
+            "unit": "percent"
+          },
+          "status": "ok"
+        }
+      ],
+      "metadata": {
+        "orgName": "tenx-verification (synthetic, task 12, no identity)"
+      }
+    }
+  ],
+  "accountsWithoutUsage": [],
+  "disabledCredentials": [],
+  "capacity": {
+    "anthropic": [
+      {
+        "window": "5 Hour",
+        "accounts": 1,
+        "usedAccounts": 0.2,
+        "remainingAccounts": 0.8
+      },
+      {
+        "window": "7 Day",
+        "accounts": 1,
+        "usedAccounts": 0.05,
+        "remainingAccounts": 0.95
+      }
+    ]
+  }
+}

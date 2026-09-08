@@ -4,6 +4,8 @@ DerivedData/
 .claude/worktrees/
 .DS_Store
 .superpowers/
+dist/
+.release-build/
 
 # Snapshot output awaiting review; promote with mv, never commit.
 *.actual.png

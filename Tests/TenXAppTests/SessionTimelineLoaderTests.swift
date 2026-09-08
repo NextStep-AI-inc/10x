@@ -34,3 +34,213 @@ import Testing
     #expect(history == nil)
 }
 
+@Test func timelineLoaderReadsAndMapsUnchangedHistoryOnce() async throws {
+    let fixture = try TimelineLoaderFixture(message: "First")
+    defer { fixture.remove() }
+    let reader = CountingTimelineReader()
+    let loader = SessionTimelineLoader(readData: { url in try reader.read(url) })
+
+    let first = try await loader.load(path: fixture.file.path)
+    let second = try await loader.load(path: fixture.file.path)
+
+    #expect(first == second)
+    #expect(reader.count == 1)
+}
+
+@Test func timelineLoaderReloadsChangedAndReplacedFiles() async throws {
+    let fixture = try TimelineLoaderFixture(message: "First")
+    defer { fixture.remove() }
+    let reader = CountingTimelineReader()
+    let loader = SessionTimelineLoader(readData: { url in try reader.read(url) })
+
+    _ = try await loader.load(path: fixture.file.path)
+    try fixture.write(message: "Changed value")
+    try fixture.setModificationDate(Date(timeIntervalSince1970: 1_800_000_000))
+    let changed = try await loader.load(path: fixture.file.path)
+
+    let modificationDate = try fixture.modificationDate()
+    let size = try fixture.size()
+    try fixture.replace(message: "Replaced text", modificationDate: modificationDate)
+    #expect(try fixture.modificationDate() == modificationDate)
+    #expect(try fixture.size() == size)
+    let replaced = try await loader.load(path: fixture.file.path)
+
+    #expect(changed?.visibleText == "Changed value")
+    #expect(replaced?.visibleText == "Replaced text")
+    #expect(reader.count == 3)
+}
+
+@Test func canceledTimelineLoadThrowsAndDoesNotInstallAStaleCacheEntry() async throws {
+    let fixture = try TimelineLoaderFixture(message: "Stale")
+    defer { fixture.remove() }
+    let reader = BlockingTimelineReader()
+    let loader = SessionTimelineLoader(readData: { url in try await reader.read(url) })
+
+    let canceledLoad = Task { try await loader.load(path: fixture.file.path) }
+    await reader.waitUntilBlocked()
+    canceledLoad.cancel()
+    await reader.resume()
+    await #expect(throws: CancellationError.self) {
+        _ = try await canceledLoad.value
+    }
+
+    try fixture.write(message: "Fresh")
+    let fresh = try await loader.load(path: fixture.file.path)
+
+    #expect(fresh?.visibleText == "Fresh")
+    #expect(await reader.count == 2)
+}
+
+@Test func timelineLoaderDoesNotCacheAHistoryThatChangesDuringItsRead() async throws {
+    let fixture = try TimelineLoaderFixture(message: "Stale")
+    defer { fixture.remove() }
+    let reader = ChangingTimelineReader(
+        replacement: TimelineLoaderFixture.data(message: "Fresh history"))
+    let loader = SessionTimelineLoader(readData: { url in try reader.read(url) })
+
+    let stale = try await loader.load(path: fixture.file.path)
+    let fresh = try await loader.load(path: fixture.file.path)
+
+    #expect(stale?.visibleText == "Stale")
+    #expect(fresh?.visibleText == "Fresh history")
+    #expect(reader.count == 2)
+}
+
+private final class CountingTimelineReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private var readCount = 0
+
+    var count: Int { lock.withLock { readCount } }
+
+    func read(_ url: URL) throws -> Data {
+        lock.withLock { readCount += 1 }
+        return try Data(contentsOf: url)
+    }
+}
+
+/// Holds the first read open until released. Suspends instead of blocking, so
+/// neither the loader's actor nor the test occupies a cooperative thread while
+/// waiting, which a semaphore would under a saturated pool.
+private actor BlockingTimelineReader {
+    private var readCount = 0
+    private var hasStarted = false
+    private var isReleased = false
+    private var startWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    var count: Int { readCount }
+
+    func read(_ url: URL) async throws -> Data {
+        readCount += 1
+        let data = try Data(contentsOf: url)
+        if readCount == 1 {
+            hasStarted = true
+            let waiters = startWaiters
+            startWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            if !isReleased {
+                await withCheckedContinuation { releaseWaiters.append($0) }
+            }
+        }
+        return data
+    }
+
+    func waitUntilBlocked() async {
+        if hasStarted { return }
+        await withCheckedContinuation { startWaiters.append($0) }
+    }
+
+    func resume() {
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+}
+
+private final class ChangingTimelineReader: @unchecked Sendable {
+    private let lock = NSLock()
+    private let replacement: Data
+    private var readCount = 0
+
+    init(replacement: Data) {
+        self.replacement = replacement
+    }
+
+    var count: Int { lock.withLock { readCount } }
+
+    func read(_ url: URL) throws -> Data {
+        let data = try Data(contentsOf: url)
+        let shouldReplace = lock.withLock {
+            readCount += 1
+            return readCount == 1
+        }
+        if shouldReplace { try replacement.write(to: url) }
+        return data
+    }
+}
+
+private struct TimelineLoaderFixture: Sendable {
+    let directory: URL
+    let file: URL
+
+    init(message: String) throws {
+        directory = FileManager.default.temporaryDirectory
+            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        file = directory.appending(path: "session.jsonl")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try write(message: message)
+    }
+
+    func write(message: String) throws {
+        try data(message: message).write(to: file)
+    }
+
+    func replace(message: String, modificationDate: Date) throws {
+        let replacement = directory.appending(path: "replacement.jsonl")
+        try data(message: message).write(to: replacement)
+        try FileManager.default.setAttributes(
+            [.modificationDate: modificationDate],
+            ofItemAtPath: replacement.path)
+        try FileManager.default.removeItem(at: file)
+        try FileManager.default.moveItem(at: replacement, to: file)
+    }
+
+    func modificationDate() throws -> Date {
+        let values = try file.resourceValues(forKeys: [.contentModificationDateKey])
+        return try #require(values.contentModificationDate)
+    }
+
+    func size() throws -> UInt64 {
+        let values = try file.resourceValues(forKeys: [.fileSizeKey])
+        return UInt64(try #require(values.fileSize))
+    }
+
+    func setModificationDate(_ date: Date) throws {
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+    }
+
+    func remove() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    static func data(message: String) -> Data {
+        Data("""
+        {"type":"session","version":3,"id":"s","timestamp":"2026-08-24T20:00:00.000Z","cwd":"/tmp"}
+        {"type":"message","id":"a","parentId":null,"timestamp":"2026-08-24T20:00:01.000Z","message":{"role":"assistant","content":"\(message)","timestamp":1787601601000}}
+        """.utf8)
+    }
+
+    private func data(message: String) -> Data {
+        Self.data(message: message)
+    }
+}
+
+private extension TranscriptHistory {
+    var visibleText: String? {
+        items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item else { return nil }
+            return message
+        }.first?.visibleText
+    }
+}

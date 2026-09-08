@@ -75,6 +75,20 @@ import Testing
     #expect(items.last?.treePosition == .terminalChild)
 }
 
+@Test func railPresentationEmitsOnlyTheProjectItemForAGroupWithNoSessions() {
+    let group = ProjectSessionGroup(
+        projectURL: URL(filePath: "/tmp/empty-project", directoryHint: .isDirectory),
+        sessions: [])
+
+    let items = RailPresentation.items(groups: [group], selectedSessionPath: nil)
+
+    #expect(items.count == 1)
+    #expect(items.map(\.id) == ["project:/tmp/empty-project"])
+    #expect(items[0].kind == .project)
+    #expect(items[0].treePosition == .root)
+    #expect(items.contains { $0.kind == .disclosure } == false)
+}
+
 @Test func projectMarkerUsesInitialsForMultiwordNames() {
     let group = ProjectSessionGroup(
         projectURL: URL(filePath: "/tmp/NextStep-Workspace", directoryHint: .isDirectory),

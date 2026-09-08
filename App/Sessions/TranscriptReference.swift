@@ -165,7 +165,8 @@ enum TranscriptReference: Equatable, Hashable, Sendable {
     private static func isRelativeFilePath(_ path: String) -> Bool {
         if path.hasPrefix("./") || path.hasPrefix("../") { return true }
         let fileExtension = URL(filePath: path).pathExtension
-        return !fileExtension.isEmpty && fileExtension.contains(where: \.isLetter)
+        return fileExtension.contains(where: \.isLetter)
+            && fileExtension.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
     }
 
     private static func lineSuffix(in path: String) -> (path: String, line: Int?) {

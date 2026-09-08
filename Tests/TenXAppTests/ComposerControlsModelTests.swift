@@ -53,6 +53,37 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
 }
 
 @MainActor
+private func isolatedFavorites(_ name: String = #function) -> FavoriteModelStore {
+    let suiteName = "favorite-tests.\(name)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.removePersistentDomain(forName: suiteName)
+    return FavoriteModelStore(defaults: defaults)
+}
+
+@MainActor
+@Test func togglingAFavoriteUpdatesThePickerWithoutSelectingTheModel() async {
+    let session = FakeComposerSessionController()
+    let model = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, anthropicSonnet],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents(),
+        favorites: isolatedFavorites())
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
+    model.attachActiveSession(session)
+
+    model.toggleFavorite(anthropicSonnet)
+
+    #expect(model.favoriteModels == [anthropicSonnet])
+    #expect(model.selectedModel == anthropicOpus)
+    #expect(session.setModelCalls.isEmpty)
+}
+
+@MainActor
 @Test func refreshFiltersToAuthenticatedProvidersAndSeedsSelection() async {
     let catalog = FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
         models: [anthropicOpus, anthropicSonnet, cursorModel],
@@ -63,7 +94,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     let model = ComposerControlsModel(
         catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
 
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
 
     #expect(model.models.map(\.modelID) == ["claude-opus-4-8", "claude-sonnet-4-5"])
     #expect(model.selectedModel?.modelID == "claude-opus-4-8")
@@ -85,10 +116,51 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
     let model = ComposerControlsModel(
         catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
 
-    await model.refresh(authenticatedProviderIDs: ["cursor"])
+    await model.refresh(authenticatedProviderIDs: ["cursor"], projectURL: nil)
 
     #expect(model.selectedModel?.provider == "cursor")
     #expect(model.isFastModeVisible == false)
+}
+
+@MainActor
+@Test func staleRefreshDoesNotClearTheCurrentRefreshOrPublishAnError() async {
+    let firstGate = RefreshLoadGate()
+    let secondGate = RefreshLoadGate()
+    let catalog = OverlappingRefreshCatalog(
+        firstGate: firstGate,
+        secondGate: secondGate,
+        newerSnapshot: ComposerCatalogSnapshot(
+            models: [anthropicSonnet],
+            selected: anthropicSonnet,
+            thinkingLevel: "high",
+            fastModeEnabled: false,
+            fastModeActive: false))
+    let model = ComposerControlsModel(
+        catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
+
+    let staleRefresh = Task {
+        await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
+    }
+    await firstGate.waitUntilBlocked()
+    let currentRefresh = Task {
+        await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
+    }
+    await secondGate.waitUntilBlocked()
+
+    await firstGate.release()
+    await staleRefresh.value
+
+    #expect(model.isLoading)
+    #expect(model.models.isEmpty)
+    #expect(model.errorMessage == nil)
+
+    await secondGate.release()
+    await currentRefresh.value
+
+    #expect(model.isLoading == false)
+    #expect(model.models.map(\.modelID) == ["claude-sonnet-4-5"])
+    #expect(model.selectedModel?.modelID == "claude-sonnet-4-5")
+    #expect(model.errorMessage == nil)
 }
 
 @MainActor
@@ -103,10 +175,11 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: defaults,
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
 
-    await model.selectModel(anthropicSonnet, mode: .newSession)
+    let outcome = await model.selectModel(anthropicSonnet, mode: .newSession)
 
+    #expect(outcome == .success)
     let modelCalls = await defaults.modelCalls
     #expect(modelCalls.count == 1)
     #expect(modelCalls.first?.0 == "anthropic")
@@ -128,10 +201,11 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: defaults,
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
 
-    await model.selectModel(anthropicSonnet, mode: .newSession)
+    let outcome = await model.selectModel(anthropicSonnet, mode: .newSession)
 
+    #expect(outcome == .failure("Couldn’t update the default model."))
     #expect(model.selectedModel?.modelID == "claude-opus-4-8")
     #expect(model.errorMessage != nil)
     #expect(await defaults.modelCalls.count == 1)
@@ -150,11 +224,12 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: defaults,
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.selectModel(anthropicSonnet, mode: .activeSession)
+    let outcome = await model.selectModel(anthropicSonnet, mode: .activeSession)
 
+    #expect(outcome == .success)
     #expect(session.setModelCalls.count == 1)
     #expect(session.setModelCalls.first?.0 == "anthropic")
     #expect(session.setModelCalls.first?.1 == "claude-sonnet-4-5")
@@ -175,7 +250,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: defaults,
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
 
     await model.setFastMode(true, mode: .newSession)
 
@@ -197,11 +272,12 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.setFastMode(true, mode: .activeSession)
+    let outcome = await model.setFastMode(true, mode: .activeSession)
 
+    #expect(outcome == .success)
     #expect(session.setFastModeCalls == [true])
     #expect(model.isFastModeEnabled == true)
 }
@@ -219,11 +295,12 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.selectModel(anthropicSonnet, mode: .activeSession)
+    let outcome = await model.selectModel(anthropicSonnet, mode: .activeSession)
 
+    #expect(outcome != .success)
     #expect(session.setModelCalls.count == 1)
     #expect(model.selectedModel?.modelID == "claude-opus-4-8")
     #expect(model.errorMessage != nil)
@@ -242,11 +319,12 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.selectThinking("high", mode: .activeSession)
+    let outcome = await model.selectThinking("high", mode: .activeSession)
 
+    #expect(outcome != .success)
     #expect(session.setThinkingCalls == ["high"])
     #expect(model.thinkingLevel == "auto")
     #expect(model.errorMessage != nil)
@@ -265,7 +343,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"], projectURL: nil)
     session.liveComposerSelection = ComposerLiveSelection(
         provider: "anthropic",
         modelID: "claude-opus-4-8",
@@ -296,16 +374,79 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
     #expect(model.isFastModeVisible == true)
 
-    await model.setFastMode(true, mode: .activeSession)
+    let outcome = await model.setFastMode(true, mode: .activeSession)
 
+    #expect(outcome == .failure("Fast mode isn’t available for this model."))
     #expect(session.setFastModeCalls == [true])
     #expect(model.isFastModeEnabled == false)
     #expect(model.isFastModeVisible == false)
     #expect(model.errorMessage == "Fast mode isn’t available for this model.")
+
+    let invisibleOutcome = await model.setFastMode(true, mode: .activeSession)
+    #expect(invisibleOutcome == .failure("Fast mode isn’t available for this model."))
+}
+
+@MainActor
+@Test func mutationOutcomesRejectMissingControllerAndRepeatedIdenticalRPCFailures() async {
+    let catalog = FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+        models: [anthropicOpus, anthropicSonnet],
+        selected: anthropicOpus,
+        thinkingLevel: "auto",
+        fastModeEnabled: false,
+        fastModeActive: false))
+    let controls = ComposerControlsModel(
+        catalog: catalog,
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
+    await controls.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
+
+    #expect(
+        await controls.selectModel(anthropicSonnet, mode: .activeSession)
+            == .failure("Couldn’t update this setting."))
+
+    let session = FakeComposerSessionController()
+    session.setModelError = FakeComposerVerboseError()
+    controls.attachActiveSession(session)
+
+    let firstFailure = await controls.selectModel(anthropicSonnet, mode: .activeSession)
+    let secondFailure = await controls.selectModel(anthropicSonnet, mode: .activeSession)
+
+    #expect(firstFailure == .failure("Couldn’t update the model."))
+    #expect(secondFailure == .failure("Couldn’t update the model."))
+    #expect(session.setModelCalls.count == 2)
+}
+
+@MainActor
+@Test func mutationOutcomesRejectInFlightMutationWithoutReportingSuccess() async {
+    let gate = RefreshLoadGate()
+    let controls = ComposerControlsModel(
+        catalog: FakeComposerCatalog(snapshot: ComposerCatalogSnapshot(
+            models: [anthropicOpus, anthropicSonnet],
+            selected: anthropicOpus,
+            thinkingLevel: "auto",
+            fastModeEnabled: false,
+            fastModeActive: false)),
+        defaults: FakeComposerDefaults(),
+        recents: isolatedRecents())
+    await controls.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
+    let session = BlockingComposerSessionController(gate: gate)
+    controls.attachActiveSession(session)
+
+    let activeMutation = Task {
+        await controls.selectModel(anthropicSonnet, mode: .activeSession)
+    }
+    await gate.waitUntilBlocked()
+
+    #expect(
+        await controls.selectModel(anthropicOpus, mode: .activeSession)
+            == .failure("Couldn’t update this setting."))
+
+    await gate.release()
+    #expect(await activeMutation.value == .success)
 }
 
 @MainActor
@@ -321,11 +462,12 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
     model.attachActiveSession(session)
 
-    await model.setFastMode(true, mode: .activeSession)
+    let outcome = await model.setFastMode(true, mode: .activeSession)
 
+    #expect(outcome != .success)
     #expect(session.setFastModeCalls == [true])
     #expect(model.isFastModeEnabled == false)
     #expect(model.isFastModeVisible == true)
@@ -349,14 +491,14 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
         fastModeEnabled: false)
     let model = ComposerControlsModel(
         catalog: catalog, defaults: FakeComposerDefaults(), recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"], projectURL: nil)
     model.attachActiveSession(session)
 
     #expect(model.selectedModel?.modelID == "gpt-5")
     #expect(model.thinkingLevel == "low")
     #expect(model.isFastModeEnabled == false)
 
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"], projectURL: nil)
 
     #expect(model.selectedModel?.modelID == "gpt-5")
     #expect(model.thinkingLevel == "low")
@@ -375,7 +517,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "cursor"], projectURL: nil)
     #expect(model.selectedModel?.modelID == "claude-opus-4-8")
 
     model.applyLiveSelection(ComposerLiveSelection(
@@ -401,7 +543,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic"], projectURL: nil)
 
     #expect(model.thinkingOptions.isEmpty)
     #expect(model.spawnSelection.thinking == nil)
@@ -440,7 +582,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"], projectURL: nil)
 
     await model.selectModel(codexRequiredEffort, mode: .newSession)
 
@@ -459,7 +601,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"], projectURL: nil)
 
     await model.selectModel(codexRequiredEffort, mode: .newSession)
 
@@ -479,7 +621,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"], projectURL: nil)
     model.attachActiveSession(session)
 
     await model.selectModel(codexRequiredEffort, mode: .activeSession)
@@ -502,7 +644,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: defaults,
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"], projectURL: nil)
     model.attachActiveSession(session)
 
     await model.selectModel(codexRequiredEffort, mode: .activeSession)
@@ -528,7 +670,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: defaults,
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "openai-codex"], projectURL: nil)
     model.attachActiveSession(session)
 
     await model.selectModel(codexRequiredEffort, mode: .activeSession)
@@ -558,7 +700,7 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
             fastModeActive: false)),
         defaults: FakeComposerDefaults(),
         recents: isolatedRecents())
-    await model.refresh(authenticatedProviderIDs: ["anthropic", "fireworks"])
+    await model.refresh(authenticatedProviderIDs: ["anthropic", "fireworks"], projectURL: nil)
     model.attachActiveSession(session)
     #expect(model.isFastModeVisible == true)
 
@@ -579,16 +721,87 @@ private func isolatedRecents(_ name: String = #function) -> RecentModelStore {
 
 private actor FakeComposerCatalog: ComposerCatalogLoading {
     private let snapshot: ComposerCatalogSnapshot
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
 
     init(snapshot: ComposerCatalogSnapshot) {
         self.snapshot = snapshot
     }
 
-    func load() async throws -> ComposerCatalogSnapshot {
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
         snapshot
     }
 
     func shutdown() async {}
+}
+
+private actor OverlappingRefreshCatalog: ComposerCatalogLoading {
+    private let firstGate: RefreshLoadGate
+    private let secondGate: RefreshLoadGate
+    private let newerSnapshot: ComposerCatalogSnapshot
+    private var loadCount = 0
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState>(
+        bufferingPolicy: .bufferingNewest(1)) { continuation in
+            continuation.yield(.available([]))
+            continuation.finish()
+        }
+
+    init(
+        firstGate: RefreshLoadGate,
+        secondGate: RefreshLoadGate,
+        newerSnapshot: ComposerCatalogSnapshot
+    ) {
+        self.firstGate = firstGate
+        self.secondGate = secondGate
+        self.newerSnapshot = newerSnapshot
+    }
+
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
+        loadCount += 1
+        if loadCount == 1 {
+            await firstGate.block()
+            throw CancellationError()
+        }
+        await secondGate.block()
+        return newerSnapshot
+    }
+
+    func shutdown() async {}
+}
+
+private actor RefreshLoadGate {
+    private var hasBlocked = false
+    private var isReleased = false
+    private var blockedWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func block() async {
+        hasBlocked = true
+        let waiters = blockedWaiters
+        blockedWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilBlocked() async {
+        guard !hasBlocked else { return }
+        await withCheckedContinuation { continuation in
+            blockedWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        isReleased = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
 }
 
 private actor FakeComposerDefaults: ComposerDefaultPersisting {
@@ -608,6 +821,30 @@ private actor FakeComposerDefaults: ComposerDefaultPersisting {
     func setDefaultThinkingLevel(_ level: String) async throws {
         thinkingCalls.append(level)
         if shouldFail { throw FakeComposerError.persistFailed }
+    }
+}
+
+@MainActor
+private final class BlockingComposerSessionController: ComposerSessionControlling {
+    var liveComposerSelection = ComposerLiveSelection(
+        provider: nil,
+        modelID: nil,
+        thinkingLevel: nil,
+        fastModeEnabled: false)
+    private let gate: RefreshLoadGate
+
+    init(gate: RefreshLoadGate) {
+        self.gate = gate
+    }
+
+    func setModel(provider: String, modelID: String) async throws {
+        await gate.block()
+    }
+
+    func setThinkingLevel(_ level: String) async throws {}
+
+    func setFastMode(_ enabled: Bool) async throws -> Bool {
+        true
     }
 }
 

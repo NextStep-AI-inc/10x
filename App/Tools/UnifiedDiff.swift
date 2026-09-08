@@ -3,6 +3,17 @@ import Foundation
 struct UnifiedDiff: Equatable, Sendable {
     let raw: String
     let files: [UnifiedDiffFile]
+    let renderID: UUID
+
+    init(raw: String, files: [UnifiedDiffFile], renderID: UUID = UUID()) {
+        self.raw = raw
+        self.files = files
+        self.renderID = renderID
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.raw == rhs.raw && lhs.files == rhs.files
+    }
 }
 
 struct UnifiedDiffFile: Equatable, Identifiable, Sendable {

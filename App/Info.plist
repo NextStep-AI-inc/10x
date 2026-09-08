@@ -6,7 +6,7 @@
     <string>10x</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
-    <key>CFBundleIconName</key>
+    <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
@@ -17,14 +17,22 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>ATSApplicationFontsPath</key>
     <string>Fonts</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/NextStep-AI-inc/10x/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>wwawdb9QZnhSSuVVE79cj2A9GRlCnaNy6GHvAlKbLZ4=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <false/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <false/>
 </dict>
 </plist>

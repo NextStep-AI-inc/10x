@@ -91,3 +91,28 @@ import Testing
     #expect(kill(pid, 0) == -1)
     #expect(errno == ESRCH)
 }
+
+@Test func displayedPathsAreDerivedFromTheDirectoriesThatAreActuallyProbed() {
+    #expect(OmpExecutableLocator.knownPaths
+        == OmpProcessEnvironment.toolDirectories.map { "\($0)/omp" })
+}
+
+@Test func locatorFindsAnExecutableInstalledByTheOfficialScript() async throws {
+    let fixture = try OmpCommandFixture()
+    defer { fixture.cleanup() }
+
+    let directory = fixture.root.appending(path: ".local/bin", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let executable = directory.appending(path: "omp")
+    try "#!/bin/sh\nprintf '18.0.4\\n'\n".write(to: executable, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o755],
+        ofItemAtPath: executable.path)
+
+    let locator = OmpExecutableLocator(homeDirectory: fixture.root, path: "")
+    let location = try await locator.locate(preferredURL: nil)
+
+    #expect(location == .found(OmpInstallation(
+        executableURL: executable.standardizedFileURL,
+        version: "18.0.4")))
+}

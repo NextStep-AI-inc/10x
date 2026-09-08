@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ComposerSessionControlsView: View {
@@ -6,11 +7,17 @@ struct ComposerSessionControlsView: View {
     @Binding var isPresented: Bool
 
     @State private var query = ""
+    @State private var availablePanelWidth = ModelPickerMetrics.panelWidth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         trigger
             .overlay(alignment: .bottomLeading) { flyout }
+            .background {
+                ModelPickerWidthReader { width in
+                    availablePanelWidth = width
+                }
+            }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: isPresented)
             .onChange(of: isPresented) { _, isPresented in
                 if !isPresented { query = "" }
@@ -41,6 +48,7 @@ struct ComposerSessionControlsView: View {
                 sections: ComposerControlsPresentation.pickerSections(
                     models: model.models,
                     recents: model.recentModels,
+                    favorites: model.favoriteModels,
                     query: query),
                 selectedModel: model.selectedModel,
                 thinkingOptions: model.thinkingOptions,
@@ -66,7 +74,11 @@ struct ComposerSessionControlsView: View {
                 onToggleFastMode: { enabled in
                     Task { await model.setFastMode(enabled, mode: mode) }
                 },
-                onToggle: { isPresented = false })
+                onToggle: { isPresented = false },
+                favoriteModelIDs: Set(model.favoriteModels.map(\.id)),
+                onToggleFavorite: model.toggleFavorite,
+                panelWidth: ModelPickerMetrics.resolvedPanelWidth(
+                    availableWidth: availablePanelWidth))
             .transition(transition)
         }
     }
@@ -76,5 +88,38 @@ struct ComposerSessionControlsView: View {
         return .asymmetric(
             insertion: .opacity.combined(with: .offset(y: 8)),
             removal: .opacity.combined(with: .offset(y: 4)))
+    }
+}
+
+private struct ModelPickerWidthReader: NSViewRepresentable {
+    let onChange: @MainActor (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> ModelPickerWidthReaderView {
+        ModelPickerWidthReaderView()
+    }
+
+    func updateNSView(_ view: ModelPickerWidthReaderView, context: Context) {
+        view.onChange = onChange
+        view.reportAvailableWidth()
+    }
+}
+
+private final class ModelPickerWidthReaderView: NSView {
+    var onChange: (@MainActor (CGFloat) -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        reportAvailableWidth()
+    }
+
+    override func layout() {
+        super.layout()
+        reportAvailableWidth()
+    }
+
+    func reportAvailableWidth() {
+        guard let window else { return }
+        let origin = convert(bounds.origin, to: nil)
+        onChange?(window.contentLayoutRect.maxX - origin.x - 8)
     }
 }

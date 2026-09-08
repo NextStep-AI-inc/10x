@@ -9,15 +9,28 @@ import Foundation
 /// it is installed. Launching from a terminal masks this: the shell's PATH is
 /// inherited and everything resolves.
 enum OmpProcessEnvironment {
-    /// Where `omp` and its interpreter are installed. Same set the setup screen
-    /// lists, so the paths it claims to check are the paths a spawn can reach.
-    static let toolDirectories = ["~/.bun/bin", "/opt/homebrew/bin", "/usr/local/bin"]
+    /// Where `omp` and its interpreter are installed, in probe order. The
+    /// official install script writes `~/.local/bin` unless a matching bun is
+    /// already present, in which case it writes `~/.bun/bin`.
+    ///
+    /// Single source for the three things that must agree: the paths setup
+    /// says it checks, the paths discovery probes, and the PATH a spawn gets.
+    static let toolDirectories = [
+        "~/.bun/bin",
+        "~/.local/bin",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+    ]
+
+    /// `toolDirectories` as absolute URLs for a given home.
+    static func resolvedToolDirectories(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> [URL] {
+        toolDirectories.map { URL(filePath: expand($0, homeDirectory: homeDirectory)) }
+    }
 
     /// Appends any missing tool directory to PATH. Appends rather than prepends
     /// so an explicitly configured PATH still wins.
-    // ponytail: static directory list, not the login shell's PATH. Reading that
-    // means `zsh -ilc 'echo $PATH'`, which sources rc files and can hang on a
-    // slow profile. Switch to it only if installs outside these three appear.
     static func resolved(
         base: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser

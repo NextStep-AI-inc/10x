@@ -31,18 +31,38 @@ enum ProviderUsageAccessibility {
     }
 
     static func wheelValue(provider: ProviderUsageProvider, activeCount: Int) -> String {
-        let activityDescription: String
-        switch activeCount {
-        case ...0:
-            activityDescription = "No active sessions"
-        case 1:
-            activityDescription = "1 active session"
-        default:
-            activityDescription = "\(activeCount) active sessions"
+        if provider.capability == .accountRouting,
+           provider.accounts.count == 1,
+           let account = provider.accounts.first {
+            return accountWheelValue(account: account, activeCount: activeCount)
         }
 
-        return ([provider.name, activityDescription] + provider.ringLimits.map(limitSummary))
+        return ([provider.name, activityDescription(activeCount)]
+            + provider.ringLimits.map(limitSummary))
             .joined(separator: ", ")
+    }
+
+    static func accountWheelLabel(
+        provider: String,
+        account: ProviderUsageAccount
+    ) -> String {
+        "\(provider), \(account.label)"
+    }
+
+    static func accountWheelValue(
+        account: ProviderUsageAccount,
+        activeCount: Int
+    ) -> String {
+        ([account.label, activityDescription(activeCount)] + account.limits.map(limitSummary))
+            .joined(separator: ", ")
+    }
+
+    private static func activityDescription(_ activeCount: Int) -> String {
+        switch activeCount {
+        case ...0: "No active sessions"
+        case 1: "1 active session"
+        default: "\(activeCount) active sessions"
+        }
     }
 
     private static func limitSummary(_ limit: ProviderUsageLimit) -> String {

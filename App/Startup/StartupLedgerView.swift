@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct StartupLedgerView: View {
-    let rows: [StartupStageRow]
+    let rows: [SplashLedgerRow]
+    let accessibilityLabel: String
 
     var body: some View {
         VStack(spacing: 0) {
@@ -26,7 +27,7 @@ struct StartupLedgerView: View {
         }
         .frame(width: 286)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Startup preparation")
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private func statusColor(_ status: StartupStageStatus) -> Color {

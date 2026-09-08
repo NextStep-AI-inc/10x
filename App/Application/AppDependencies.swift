@@ -11,6 +11,10 @@ struct AppDependencies: Sendable {
     let makeSettingsModel: @MainActor @Sendable (URL) -> SettingsViewModel
     let makeProviderModel: @MainActor @Sendable (URL) -> ProviderManagementViewModel
     let makeComposerControls: @MainActor @Sendable (URL) -> ComposerControlsModel
+    let makeProviderAccountCoordinator: @MainActor @Sendable () -> ProviderAccountCoordinator
+    let makeUpdateChecker: @MainActor @Sendable (
+        @escaping @MainActor () async -> Void) -> any UpdateChecking
+    let makeSessionTitleGenerator: @Sendable (URL) -> OmpSessionTitleGenerator?
 
     @MainActor
     init(
@@ -20,11 +24,20 @@ struct AppDependencies: Sendable {
         recentProjectStore: RecentProjectStore? = nil,
         startupTiming: StartupTiming = .live,
         makeProcessManager: @escaping @Sendable (String) -> SessionProcessManager = {
-            SessionProcessManager(executable: $0)
+            SessionProcessManager(
+                executable: $0,
+                extraArguments: ProviderExtensionBundle.spawnArguments(),
+                supportsUserInteraction: true)
         },
         makeSettingsModel: (@MainActor @Sendable (URL) -> SettingsViewModel)? = nil,
         makeProviderModel: @escaping @MainActor @Sendable (URL) -> ProviderManagementViewModel,
-        makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel
+        makeComposerControls: @escaping @MainActor @Sendable (URL) -> ComposerControlsModel,
+        makeProviderAccountCoordinator: @escaping @MainActor @Sendable () -> ProviderAccountCoordinator = {
+            ProviderAccountCoordinator()
+        },
+        makeUpdateChecker: (@MainActor @Sendable (
+            @escaping @MainActor () async -> Void) -> any UpdateChecking)? = nil,
+        makeSessionTitleGenerator: @escaping @Sendable (URL) -> OmpSessionTitleGenerator? = { _ in nil }
     ) {
         self.ompLocator = ompLocator
         self.sessionLibrary = sessionLibrary
@@ -40,6 +53,13 @@ struct AppDependencies: Sendable {
         }
         self.makeProviderModel = makeProviderModel
         self.makeComposerControls = makeComposerControls
+        self.makeProviderAccountCoordinator = makeProviderAccountCoordinator
+        self.makeUpdateChecker = makeUpdateChecker ?? { prepareForInstall in
+            let controller = UpdateController(prepareForInstall: prepareForInstall)
+            controller.start()
+            return controller
+        }
+        self.makeSessionTitleGenerator = makeSessionTitleGenerator
     }
 
     @MainActor static let live = AppDependencies(
@@ -49,7 +69,10 @@ struct AppDependencies: Sendable {
         recentProjectStore: RecentProjectStore(),
         startupTiming: .live,
         makeProcessManager: { executable in
-            SessionProcessManager(executable: executable)
+            SessionProcessManager(
+                executable: executable,
+                extraArguments: ProviderExtensionBundle.spawnArguments(),
+                supportsUserInteraction: true)
         },
         makeSettingsModel: { executableURL in
             SettingsViewModel(
@@ -68,9 +91,21 @@ struct AppDependencies: Sendable {
         },
         makeComposerControls: { executableURL in
             ComposerControlsModel(
-                catalog: OmpModelCatalogService(executableURL: executableURL),
+                catalog: ComposerCatalogService(executableURL: executableURL),
                 defaults: OmpComposerDefaultStore(
                     config: OmpConfigService(
                         runner: OmpConfigProcessRunner(executableURL: executableURL))))
+        },
+        makeProviderAccountCoordinator: {
+            ProviderAccountCoordinator(
+                primaryStore: ProviderPrimaryPreferenceStore(defaults: .standard))
+        },
+        makeUpdateChecker: { prepareForInstall in
+            let controller = UpdateController(prepareForInstall: prepareForInstall)
+            controller.start()
+            return controller
+        },
+        makeSessionTitleGenerator: { executableURL in
+            OmpSessionTitleGenerator(executableURL: executableURL)
         })
 }

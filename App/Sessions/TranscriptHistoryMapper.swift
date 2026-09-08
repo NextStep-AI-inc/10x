@@ -3,18 +3,42 @@ import OmpKit
 
 struct TranscriptHistory: Equatable, Sendable {
     let items: [TranscriptItem]
+    /// Hidden messages encountered while mapping, for the notice pipeline.
+    let dropped: [HarnessMessageDescriptor]
+
+    init(items: [TranscriptItem], dropped: [HarnessMessageDescriptor] = []) {
+        self.items = items
+        self.dropped = dropped
+    }
 }
 
 enum TranscriptHistoryMapper {
     static func map(header: SessionHeader, path: [SessionEntry]) -> TranscriptHistory {
+        map(header: header, path: path, checkCancellation: {})
+    }
+
+    static func mapCancellable(
+        header: SessionHeader,
+        path: [SessionEntry]
+    ) throws -> TranscriptHistory {
+        try map(header: header, path: path, checkCancellation: Task.checkCancellation)
+    }
+
+    private static func map(
+        header: SessionHeader,
+        path: [SessionEntry],
+        checkCancellation: () throws -> Void
+    ) rethrows -> TranscriptHistory {
         var mapper = Mapper()
         mapper.items.append(.threadStart(
             id: "thread-start-\(header.id)",
             date: date(from: header.timestamp)))
-        for entry in path {
+        for (index, entry) in path.enumerated() {
+            if index.isMultiple(of: 64) { try checkCancellation() }
             mapper.consume(entry)
         }
-        return TranscriptHistory(items: mapper.items)
+        try checkCancellation()
+        return TranscriptHistory(items: mapper.items, dropped: mapper.dropped)
     }
 
     private struct Mapper {
@@ -23,6 +47,20 @@ enum TranscriptHistoryMapper {
         var currentMode: String?
         var sessionInit: SessionInitMetadata?
         var hasConversation = false
+        private(set) var dropped: [HarnessMessageDescriptor] = []
+        private var droppedSignatures: Set<String> = []
+
+        private mutating func recordDropped(_ message: JSONValue) {
+            let text = TranscriptMessage.visibleText(from: message)
+            guard !text.isEmpty else { return }
+            let descriptor = HarnessMessageDescriptor(
+                role: message["role"]?.stringValue,
+                customType: message["customType"]?.stringValue,
+                byteCount: text.count,
+                text: text)
+            guard droppedSignatures.insert(descriptor.signature).inserted else { return }
+            dropped.append(descriptor)
+        }
 
         mutating func consume(_ entry: SessionEntry) {
             switch entry {
@@ -54,40 +92,60 @@ enum TranscriptHistoryMapper {
                     detail: branch.summary,
                     timestamp: TranscriptHistoryMapper.date(from: base.timestamp),
                     tone: .neutral))
+            case .unknown("custom_message", let base, .object(var message)):
+                message["role"] = .string("custom")
+                consumeMessage(base: base, message: .object(message))
             case .labelEntry, .resetBoundary, .unknown:
                 break
             }
         }
 
         mutating func consumeMessage(base: SessionEntryBase, message: JSONValue) {
+            let existingToolIndex = message["toolCallId"]?.stringValue.flatMap { id in
+                items.firstIndex { item in
+                    guard case .tool(let tool) = item else { return false }
+                    return tool.id == id
+                }
+            }
+            let existingTool = existingToolIndex.flatMap { index -> ToolPresentation? in
+                guard case .tool(let tool) = items[index] else { return nil }
+                return tool
+            }
             if let toolResult = toolResultPresentation(
                 message,
-                fallbackDate: TranscriptHistoryMapper.date(from: base.timestamp)) {
-                mergeToolResult(toolResult, message: message)
+                fallbackDate: TranscriptHistoryMapper.date(from: base.timestamp),
+                existingTool: existingTool) {
+                mergeToolResult(toolResult, message: message, existingIndex: existingToolIndex)
                 return
             }
 
-            let transcriptMessage = TranscriptMessage(
+            let fallbackDate = TranscriptHistoryMapper.date(from: base.timestamp) ?? Date()
+            let existingTools = Dictionary(items.compactMap { item -> (String, ToolPresentation)? in
+                guard case .tool(let tool) = item else { return nil }
+                return (tool.id, tool)
+            }, uniquingKeysWith: { existing, _ in existing })
+            let normalized = TranscriptMessageNormalizer.items(
                 id: base.id,
                 raw: message,
                 timestamp: TranscriptHistoryMapper.date(from: base.timestamp),
                 attribution: attribution,
-                isFinal: true)
-            let isTerminalFailure = transcriptMessage.role == .assistant
-                && ["error", "aborted"].contains(message["stopReason"]?.stringValue?.lowercased())
-            // Tool calls on the entry are still collected below: only the
-            // message body is withheld.
-            if TranscriptMessage.isDisplayable(message),
-               transcriptMessage.role == .user
-                || !transcriptMessage.visibleText.isEmpty
-                || isTerminalFailure {
-                items.append(.message(transcriptMessage))
+                isFinal: true,
+                existingTools: existingTools,
+                fallbackDate: fallbackDate)
+            if !TranscriptMessage.isDisplayable(message) {
+                recordDropped(message)
+            }
+            if normalized.contains(where: { item in
+                switch item {
+                case .message, .tool:
+                    return true
+                default:
+                    return false
+                }
+            }) {
                 hasConversation = true
             }
-            items.append(contentsOf: toolCallPresentations(
-                message,
-                fallbackDate: TranscriptHistoryMapper.date(from: base.timestamp))
-                .map(TranscriptItem.tool))
+            items.append(contentsOf: normalized)
         }
 
         var attribution: TranscriptResponseAttribution {
@@ -99,13 +157,13 @@ enum TranscriptHistoryMapper {
                 modelRole: sessionInit?.modelRole)
         }
 
-        mutating func mergeToolResult(_ result: ToolPresentation, message: JSONValue) {
-            if let index = items.firstIndex(where: { $0.id == result.id }),
-               case .tool(var existing) = items[index] {
-                existing.result = message
-                existing.phase = result.phase
-                existing.endDate = result.endDate
-                items[index] = .tool(existing)
+        mutating func mergeToolResult(
+            _ result: ToolPresentation,
+            message: JSONValue,
+            existingIndex: Int?
+        ) {
+            if let index = existingIndex {
+                items[index] = .tool(result)
             } else {
                 items.append(.tool(result))
             }
@@ -125,35 +183,22 @@ enum TranscriptHistoryMapper {
         }
     }
 
-    private static func toolCallPresentations(
-        _ message: JSONValue,
-        fallbackDate: Date?
-    ) -> [ToolPresentation] {
-        let timestamp = TranscriptMessage.messageDate(message) ?? fallbackDate ?? Date()
-        return message["content"]?.arrayValue?.compactMap { block in
-            guard block["type"]?.stringValue == "toolCall",
-                  let id = block["id"]?.stringValue ?? block["toolCallId"]?.stringValue,
-                  let name = block["name"]?.stringValue ?? block["toolName"]?.stringValue
-            else { return nil }
-            return ToolPresentation(
-                id: id,
-                name: name,
-                arguments: block["arguments"] ?? block["args"] ?? .object([:]),
-                result: nil,
-                phase: .running,
-                startDate: timestamp,
-                endDate: nil)
-        } ?? []
-    }
-
     private static func toolResultPresentation(
         _ message: JSONValue,
-        fallbackDate: Date?
+        fallbackDate: Date?,
+        existingTool: ToolPresentation?
     ) -> ToolPresentation? {
         guard message["role"]?.stringValue == "toolResult",
               let id = message["toolCallId"]?.stringValue
         else { return nil }
         let timestamp = TranscriptMessage.messageDate(message) ?? fallbackDate ?? Date()
+        if var existingTool {
+            existingTool.update(
+                result: .some(message),
+                phase: message["isError"]?.boolValue == true ? .failed : .complete,
+                endDate: .some(timestamp))
+            return existingTool
+        }
         return ToolPresentation(
             id: id,
             name: message["toolName"]?.stringValue ?? "Unknown tool",

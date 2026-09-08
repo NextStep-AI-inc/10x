@@ -16,6 +16,9 @@
   delayed-prompt-success — delays a prompt success response so controller replacement can race it
   delayed-prompt-failure — delays a prompt failure response so controller replacement can race it
   activity-lifecycle — scripted provider/config/runtime events for controller activity tests
+  provider-account-failover — emits a provider account event before a normal response
+  line-flood N S — ready, then N notice lines carrying S filler bytes each, then exit 0
+  event-flood N S — like basic, but get_state is preceded by N notice events of S bytes
 """
 import base64
 import json
@@ -75,6 +78,12 @@ if mode == "noisy":
 if mode == "burst-exit":
     for index in range(200):
         emit({"type": "notice", "index": index})
+    raise SystemExit(0)
+if mode == "line-flood":
+    flood_count, flood_size = int(sys.argv[2]), int(sys.argv[3])
+    flood_payload = "y" * flood_size
+    for index in range(flood_count):
+        emit({"type": "notice", "index": index, "payload": flood_payload})
     raise SystemExit(0)
 if mode == "stderr-held-open-exit":
     child = r"""
@@ -151,6 +160,10 @@ while True:
 
 STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
          "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
+if mode == "unique-session-file":
+    session_id = f"fake-{os.getpid()}"
+    STATE["sessionId"] = session_id
+    STATE["sessionFile"] = f"/tmp/{session_id}.jsonl"
 if mode in ("activity-lifecycle", "pending-streaming"):
     STATE = {"model": {"id": "initial-model", "provider": "initial-provider"},
              "isStreaming": True, "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
@@ -243,6 +256,20 @@ for line in sys.stdin:
                 time.sleep(0.01)
         if mode == "noisy":
             emit({"type": "notice", "level": "info", "message": "before response", "source": "fake"})
+        if mode == "event-flood":
+            flood_count, flood_size = int(sys.argv[2]), int(sys.argv[3])
+            flood_payload = "z" * flood_size
+            for index in range(flood_count):
+                emit({"type": "notice", "index": index, "payload": flood_payload})
+        if mode == "provider-account-failover":
+            emit({
+                "type": "provider_account_changed",
+                "providerId": "openai-codex",
+                "accountRef": "acct_failover",
+                "reason": "automaticFailover",
+                "sequence": 4,
+                "future": {"ignored": True},
+            })
         if mode == "chunked":
             large_state = {**STATE, "padding": "x" * 1048576}
             payload = json.dumps(
@@ -365,7 +392,9 @@ for line in sys.stdin:
                 "content": [{"type": "text", "text": "done"}],
                 "timestamp": 0,
             }})
-            time.sleep(0.1)
+            # Well clear of the controller's 50 ms reconciliation debounce, so
+            # the two boundaries stay two loads even when the suite is loaded.
+            time.sleep(0.5)
             emit({"type": "agent_end", "messages": [], "isTerminal": True})
         elif mode == "extension-timeout":
             emit({"type": "extension_ui_request", "id": "timeout-confirm", "method": "confirm",

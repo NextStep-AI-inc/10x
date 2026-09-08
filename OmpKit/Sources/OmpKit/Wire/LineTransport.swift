@@ -15,7 +15,9 @@ struct LineTransportTestHooks: Sendable {
 ///
 /// Framing above this layer is JSON-per-line; this type only splits lines,
 /// bounds the buffers, and owns process lifetime. Oversized unterminated lines
-/// are dropped rather than allowed to grow without limit.
+/// are dropped rather than allowed to grow without limit, and complete lines
+/// wait in a `BoundedRecordQueue` whose memory and spill budgets cap what a
+/// stalled consumer can cost — see `backlogFailure`.
 public actor LineTransport {
     private let executable: String
     private let arguments: [String]
@@ -45,8 +47,9 @@ public actor LineTransport {
     /// off the actor to avoid wedging every other call.
     private let writeQueue = DispatchQueue(label: "sh.omp.ompkit.stdin")
 
-    private let lineStream: AsyncStream<Data>
-    private let lineContinuation: AsyncStream<Data>.Continuation
+    /// Complete stdout lines awaiting the consumer of `lines`. The reader
+    /// callback enqueues without ever blocking on that consumer.
+    private let lineQueue: BoundedRecordQueue<Data>
     private let exitStream: AsyncStream<Int32>
     private let exitContinuation: AsyncStream<Int32>.Continuation
 
@@ -65,18 +68,46 @@ public actor LineTransport {
         currentDirectory: URL?,
         environment: [String: String]?
     ) {
+        self.init(
+            executable: executable,
+            arguments: arguments,
+            currentDirectory: currentDirectory,
+            environment: environment,
+            lineQueueLimits: .transport)
+    }
+
+    init(
+        executable: String,
+        arguments: [String],
+        currentDirectory: URL?,
+        environment: [String: String]?,
+        lineQueueLimits: BoundedRecordQueueLimits
+    ) {
         self.executable = executable
         self.arguments = arguments
         self.currentDirectory = currentDirectory
         self.environment = environment
-        (lineStream, lineContinuation) = AsyncStream<Data>.makeStream(
-            bufferingPolicy: .unbounded)
+        lineQueue = BoundedRecordQueue<Data>(limits: lineQueueLimits, decode: { $0 })
         (exitStream, exitContinuation) = AsyncStream<Int32>.makeStream(
             bufferingPolicy: .unbounded)
     }
 
-    /// Lines from the child's stdout. Finishes when stdout closes.
-    public nonisolated var lines: AsyncStream<Data> { lineStream }
+    /// Lines from the child's stdout, in order. Finishes when stdout closes,
+    /// or early when the backlog budget is exhausted — see `backlogFailure`.
+    ///
+    /// Single-consumer: every access iterates the same queue, which hands each
+    /// line out exactly once.
+    public nonisolated var lines: AsyncStream<Data> {
+        let queue = lineQueue
+        return AsyncStream(unfolding: { await queue.next() })
+    }
+
+    /// Set once stdout lines stopped being accepted because the backlog
+    /// exceeded its budget. `lines` ends right after, while the child may still
+    /// be alive with a full pipe, so the owner has to tear the process down.
+    nonisolated var backlogFailure: BoundedRecordQueueError? { lineQueue.failure }
+
+    nonisolated var lineBacklogMetrics: BoundedRecordQueue<Data>.Metrics { lineQueue.snapshot }
 
     /// Fires once with the child's exit code after draining output bytes that
     /// are available at direct-child exit. Inherited writers do not delay it.
@@ -104,11 +135,21 @@ public actor LineTransport {
             process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
         }
 
-        let lineContinuation = self.lineContinuation
+        let lineQueue = self.lineQueue
         let drainer = StdoutDrainer(
             handle: stdoutPipe.fileHandleForReading,
             buffer: buffer,
-            continuation: lineContinuation,
+            deliver: { line in
+                do {
+                    try lineQueue.enqueue(line, encoded: line)
+                    return true
+                } catch {
+                    // The queue already recorded why; stop reading so the
+                    // backlog cannot grow past its budget.
+                    return false
+                }
+            },
+            finish: { lineQueue.finish() },
             maxLineBytes: Self.maxLineBytes,
             afterFinalDrainSnapshot: testHooks.afterStdoutFinalDrainSnapshot)
         stdoutDrainer = drainer
@@ -230,6 +271,7 @@ public actor LineTransport {
     private func finishStreams() {
         stderrDrainer?.finish()
         stdoutDrainer?.finish()
+        lineQueue.finish()
         exitContinuation.finish()
     }
 
@@ -370,10 +412,14 @@ final class LineBuffer: @unchecked Sendable {
 
 /// Serializes callback reads and the final drain so stdout is consumed exactly
 /// once, even when EOF and Process.terminationHandler arrive together.
+///
+/// `deliver` returns false when the line queue refused a line; reading stops
+/// there so a producer that outran its budget cannot keep filling memory.
 private final class StdoutDrainer: @unchecked Sendable {
     private let handle: FileHandle
     private let buffer: LineBuffer
-    private let continuation: AsyncStream<Data>.Continuation
+    private let deliver: @Sendable (Data) -> Bool
+    private let finishQueue: @Sendable () -> Void
     private let maxLineBytes: Int
     private let afterFinalDrainSnapshot: @Sendable () -> Void
     private let lock = NSLock()
@@ -382,13 +428,15 @@ private final class StdoutDrainer: @unchecked Sendable {
     init(
         handle: FileHandle,
         buffer: LineBuffer,
-        continuation: AsyncStream<Data>.Continuation,
+        deliver: @escaping @Sendable (Data) -> Bool,
+        finish: @escaping @Sendable () -> Void,
         maxLineBytes: Int,
         afterFinalDrainSnapshot: (@Sendable () -> Void)?
     ) {
         self.handle = handle
         self.buffer = buffer
-        self.continuation = continuation
+        self.deliver = deliver
+        self.finishQueue = finish
         self.maxLineBytes = maxLineBytes
         self.afterFinalDrainSnapshot = afterFinalDrainSnapshot ?? {}
     }
@@ -401,11 +449,16 @@ private final class StdoutDrainer: @unchecked Sendable {
         if data.isEmpty {
             finished = true
             handle.readabilityHandler = nil
-            continuation.finish()
+            finishQueue()
             return
         }
         for line in buffer.append(data, maxLineBytes: maxLineBytes) {
-            continuation.yield(line)
+            guard deliver(line) else {
+                finished = true
+                handle.readabilityHandler = nil
+                finishQueue()
+                return
+            }
         }
     }
 
@@ -420,10 +473,10 @@ private final class StdoutDrainer: @unchecked Sendable {
             afterSnapshot: afterFinalDrainSnapshot)
         if !remaining.isEmpty {
             for line in buffer.append(remaining, maxLineBytes: maxLineBytes) {
-                continuation.yield(line)
+                guard deliver(line) else { break }
             }
         }
-        continuation.finish()
+        finishQueue()
     }
 }
 

@@ -37,6 +37,39 @@ import Testing
 }
 
 @MainActor
+@Test func knownProjectsRetainsMoreThanTwoWhileRankedProjectsStaysAtTwo() throws {
+    let fixture = try RecentProjectFixture()
+    defer { fixture.cleanup() }
+    let names = ["One", "Two", "Three", "Four", "Five"]
+    let directories = try names.map { try fixture.directory($0) }
+    let store = fixture.store()
+    for directory in directories {
+        store.recordSelection(directory)
+    }
+
+    // Most recently recorded first.
+    #expect(store.knownProjects() == directories.reversed().map { $0.resolvingSymlinksInPath() })
+    #expect(store.rankedProjects(sessions: []) == [
+        directories[4].resolvingSymlinksInPath(),
+        directories[3].resolvingSymlinksInPath(),
+    ])
+}
+
+@MainActor
+@Test func knownProjectsFiltersDirectoriesDeletedSinceTheyWereRecorded() throws {
+    let fixture = try RecentProjectFixture()
+    defer { fixture.cleanup() }
+    let first = try fixture.directory("First")
+    let removed = try fixture.directory("Removed")
+    let store = fixture.store()
+    store.recordSelection(removed)
+    store.recordSelection(first)
+    try FileManager.default.removeItem(at: removed)
+
+    #expect(store.knownProjects() == [first.resolvingSymlinksInPath()])
+}
+
+@MainActor
 @Test func rankingFiltersMissingFilesAndStopsAtTwoProjects() throws {
     let fixture = try RecentProjectFixture()
     defer { fixture.cleanup() }

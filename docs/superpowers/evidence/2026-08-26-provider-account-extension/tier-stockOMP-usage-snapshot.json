@@ -1,0 +1,117 @@
+{
+  "generatedAt": 1787846528518,
+  "reports": [
+    {
+      "provider": "anthropic",
+      "fetchedAt": 1787846515528,
+      "limits": [
+        {
+          "id": "5h",
+          "label": "5 Hour",
+          "scope": {
+            "provider": "anthropic",
+            "accountId": "fake-acct-001"
+          },
+          "window": {
+            "id": "5h",
+            "label": "5 Hour",
+            "resetsAt": 1787857315528
+          },
+          "amount": {
+            "usedFraction": 0.42,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "7d",
+          "label": "7 Day",
+          "scope": {
+            "provider": "anthropic",
+            "accountId": "fake-acct-001"
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 Day",
+            "resetsAt": 1788192115528
+          },
+          "amount": {
+            "usedFraction": 0.1,
+            "unit": "percent"
+          },
+          "status": "ok"
+        }
+      ],
+      "metadata": {
+        "accountId": "fake-acct-001",
+        "email": "fake-account-one@example.test",
+        "orgName": "tenx-verification (synthetic, task 12)"
+      }
+    },
+    {
+      "provider": "anthropic",
+      "fetchedAt": 1787846515528,
+      "limits": [
+        {
+          "id": "5h",
+          "label": "5 Hour",
+          "scope": {
+            "provider": "anthropic",
+            "accountId": "fake-acct-002"
+          },
+          "window": {
+            "id": "5h",
+            "label": "5 Hour",
+            "resetsAt": 1787857315528
+          },
+          "amount": {
+            "usedFraction": 0.87,
+            "unit": "percent"
+          },
+          "status": "ok"
+        },
+        {
+          "id": "7d",
+          "label": "7 Day",
+          "scope": {
+            "provider": "anthropic",
+            "accountId": "fake-acct-002"
+          },
+          "window": {
+            "id": "7d",
+            "label": "7 Day",
+            "resetsAt": 1788192115528
+          },
+          "amount": {
+            "usedFraction": 0.55,
+            "unit": "percent"
+          },
+          "status": "ok"
+        }
+      ],
+      "metadata": {
+        "accountId": "fake-acct-002",
+        "email": "fake-account-two@example.test",
+        "orgName": "tenx-verification (synthetic, task 12)"
+      }
+    }
+  ],
+  "accountsWithoutUsage": [],
+  "disabledCredentials": [],
+  "capacity": {
+    "anthropic": [
+      {
+        "window": "5 Hour",
+        "accounts": 2,
+        "usedAccounts": 1.29,
+        "remainingAccounts": 0.71
+      },
+      {
+        "window": "7 Day",
+        "accounts": 2,
+        "usedAccounts": 0.65,
+        "remainingAccounts": 1.35
+      }
+    ]
+  }
+}
