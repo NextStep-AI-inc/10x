@@ -34,6 +34,12 @@ final class AppModel {
         return paths
     }
 
+    /// Daemon session IDs for the active 10x session when correlated with the daemon.
+    var openableDaemonSessionIDs: Set<Int> {
+        guard let id = activeSession?.computerUse.daemonSessionID else { return [] }
+        return [id]
+    }
+
     let supervision: SupervisionClient
 
     @ObservationIgnored private let dependencies: AppDependencies
@@ -113,6 +119,11 @@ final class AppModel {
         guard let metadata = sessions.first(where: { $0.path == result.sessionPath }) else { return }
         closeSearch()
         openSession(metadata)
+    }
+
+    func openSession(forDaemonSession daemonSessionID: Int) {
+        guard openableDaemonSessionIDs.contains(daemonSessionID) else { return }
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func openSession(_ metadata: SessionMetadata) {

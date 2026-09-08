@@ -361,6 +361,28 @@ import Testing
 }
 
 @MainActor
+@Test func computerMenuBarGroupedSnapshot() throws {
+    let client = SupervisionClient(socketPath: NSTemporaryDirectory() + "unused-\(UUID().uuidString).sock")
+    client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
+    client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
+    client.apply(.sessionStarted(session: 2, harness: "Cursor", label: nil, pid: nil))
+    client.apply(.windowClaimed(session: 2, harness: "Cursor", windowID: 11, app: "Terminal", title: "zsh", bounds: "0,0 800x600"))
+    try assertSnapshot(
+        ComputerUseMenuBarView(client: client, onOpenSession: { _ in }, openableSessionIDs: [1]),
+        name: "computer-menu-bar",
+        size: CGSize(width: 320, height: 220))
+}
+
+@MainActor
+@Test func computerMenuBarEmptySnapshot() throws {
+    let client = SupervisionClient(socketPath: NSTemporaryDirectory() + "unused-\(UUID().uuidString).sock")
+    try assertSnapshot(
+        ComputerUseMenuBarView(client: client, onOpenSession: { _ in }, openableSessionIDs: []),
+        name: "computer-menu-bar-empty",
+        size: CGSize(width: 320, height: 80))
+}
+
+@MainActor
 @Test func collapsedRailSnapshot() throws {
     let (model, expansion) = snapshotRail(isExpanded: false)
 
