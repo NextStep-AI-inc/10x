@@ -1938,6 +1938,17 @@ git commit -m "feat(computerkit): near-live preview frames for the active window
 
 ### Task 10: MacDesktopEngine — real capture, input, windows, launch
 
+> **Deviation (landed):** plain `CGEventPostToPid` proved insufficient — keyboard events are
+> silently dropped when the target app isn't window-server-active (a background app has no key
+> window). Input delivery was replaced with the SkyLight SPI port from pi-natives' `skylight.rs`:
+> event stamping (`SLEventSetIntegerValueField` window/pid fields + `CGEventSetWindowLocation`),
+> dual-post for mouse (`SLEventPostToPid` + `CGEventPostToPid`), authenticated keyboard-only post
+> (`SLSEventAuthenticationMessage`, macOS 15+), and `activateWithoutRaise` (248-byte focus record
+> via `SLPSPostEventRecordTo`). Background keyboard is refused when the target process owns more
+> than one window (keystrokes route to whichever window is key). Screenshots are sized from
+> `filter.contentRect × pointPixelScale` (the 1920×1080 `SCStreamConfiguration` default breaks
+> Retina scale). See `Engine/SkyLight.swift`.
+
 **Files:**
 - Create: `ComputerKit/Sources/ComputerKit/Engine/MacDesktopEngine.swift`
 - Create: `ComputerKit/Sources/ComputerKit/Engine/KeyChord.swift`
@@ -2171,6 +2182,15 @@ git commit -m "feat(computerkit): mac engine for capture, input, windows, launch
 ---
 
 ### Task 11: CLI — `mcp`, `daemon`, `stop-all`, `selfcheck`
+
+> **Deviation (landed):** the selfcheck's same-process NSWindow probe cannot receive
+> window-server key focus (a CLI process can't activate), so keyboard verification against it is
+> impossible. Replaced with a cross-process probe: `tenx-computer probe <outfile>` (a second
+> process of the same binary — AppKit text-field window, `.accessory`, never activates, writes
+> field content to `<outfile>` on a timer) spawned and driven by `selfcheck`. Verified on hardware:
+> `selfcheck: OK — input typed, capture 640x304px @2x`. Selfcheck also requests missing
+> permissions (`CGRequestScreenCaptureAccess`, `AXIsProcessTrustedWithOptions` prompt) before
+> exiting so the binary appears in System Settings.
 
 **Files:**
 - Modify: `ComputerKit/Sources/tenx-computer/main.swift`
