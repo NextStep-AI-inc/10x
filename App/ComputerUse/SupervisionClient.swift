@@ -133,6 +133,9 @@ public final class SupervisionClient: @unchecked Sendable {
     func resetConnectionState() {
         isConnected = false
         permissions = nil
+        sessions.removeAll()
+        frames.removeAll()
+        lastAction = nil
     }
 
     /// Pure reducer — the tested surface.

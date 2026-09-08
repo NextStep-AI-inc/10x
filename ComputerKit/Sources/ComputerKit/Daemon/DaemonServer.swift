@@ -28,7 +28,8 @@ public final class DaemonServer {
     private var ownsSocketFile = false
     private var clients: [Int32: ClientState] = [:]
     private var isRunning = false
-    /// Set by `stop_all`; never cleared — in-flight engine work aborts until daemon restart.
+    /// Set by `stop_all`; cleared when a new MCP session handshakes. ponytail: an old
+    /// session's in-flight type loop may resume if a new session registers mid-flight.
     private final class StopAllFlag: @unchecked Sendable {
         var value = false
     }
@@ -202,6 +203,7 @@ public final class DaemonServer {
                 let permissions = engine.preflightPermissions()
                 broadcast(.permissions(screenRecording: permissions.screenRecording, accessibility: permissions.accessibility))
             } else {
+                stopAllFlag.value = false // Fresh session = fresh user intent; un-latch global shut-off.
                 let label = message["label"]?.stringValue
                 let session = registry.registerSession(clientName: nil, label: label, peerPID: client.peerPID)
                 let tools = ComputerTools(engine: engine, registry: registry, session: session)
@@ -463,7 +465,9 @@ public final class DaemonServer {
             do {
                 try self.writeRaw(fd, data)
             } catch {
-                self.removeClient(fd)
+                // Peer closed — don't removeClient; readLoop drains buffered lines
+                // and disconnect() is the sole closer. shutdown(SHUT_WR) fails future writes fast.
+                shutdown(fd, SHUT_WR)
             }
         }
     }

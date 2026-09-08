@@ -821,4 +821,94 @@ final class DaemonServerTests: XCTestCase {
         XCTAssertEqual(event["type"], .string("sessionStarted"))
         XCTAssertEqual(event["harness"], .string("omp"))
     }
+
+    func test_fireAndForgetStopAll_processesCommandAndReleasesClaims() throws {
+        let safari = WindowInfo(id: 10, appName: "Safari", title: "Apple", bounds: .init(x: 0, y: 0, width: 800, height: 600), pid: 100)
+        engine.windows = [safari]
+
+        let mcp = try DaemonClient(socketPath: socketPath)
+        try mcp.send(.object(["role": .string("mcp")]))
+        _ = try rpc(mcp, [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("omp")])]),
+        ])
+        _ = try rpc(mcp, [
+            "jsonrpc": .string("2.0"), "id": .number(2), "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("computer_claim"),
+                "arguments": .object(["window_id": .number(10)]),
+            ]),
+        ])
+        XCTAssertNotNil(daemon.registry.owner(of: 10))
+
+        // Fire-and-forget: role + stop_all, close without reading ack (matches CLI stop-all).
+        let fireAndForget = try DaemonClient(socketPath: socketPath)
+        try fireAndForget.send(.object(["role": .string("supervision")]))
+        try fireAndForget.send(.object(["command": .string("stop_all")]))
+        fireAndForget.close()
+
+        let supervision = try connectSupervision()
+        var gotStopped = false
+        for _ in 0..<10 {
+            let event = try expectEvent(supervision)
+            if event["type"] == .string("stopped"), event["session"] == .null {
+                gotStopped = true
+                break
+            }
+        }
+        XCTAssertTrue(gotStopped, "stop_all must execute even when supervision client closes before ack")
+        XCTAssertNil(daemon.registry.owner(of: 10))
+        XCTAssertEqual(daemon.registry.allSessions.values.filter(\.isActive).count, 0)
+        XCTAssertEqual(daemon.registry.allSessions.count, 1, "no phantom session from mis-handled stop_all line")
+    }
+
+    func test_stopAllFlag_clearsOnNewSession() throws {
+        let safari = WindowInfo(id: 10, appName: "Safari", title: "Apple", bounds: .init(x: 0, y: 0, width: 800, height: 600), pid: 100)
+        engine.windows = [safari]
+
+        let mcp1 = try DaemonClient(socketPath: socketPath)
+        try mcp1.send(.object(["role": .string("mcp")]))
+        _ = try rpc(mcp1, [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("omp")])]),
+        ])
+        _ = try rpc(mcp1, [
+            "jsonrpc": .string("2.0"), "id": .number(2), "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("computer_claim"),
+                "arguments": .object(["window_id": .number(10)]),
+            ]),
+        ])
+
+        let stopClient = try DaemonClient(socketPath: socketPath)
+        try stopClient.send(.object(["role": .string("supervision")]))
+        try stopClient.send(.object(["command": .string("stop_all")]))
+        stopClient.close()
+        Thread.sleep(forTimeInterval: 0.1)
+
+        let mcp2 = try DaemonClient(socketPath: socketPath)
+        try mcp2.send(.object(["role": .string("mcp")]))
+        _ = try rpc(mcp2, [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("Cursor")])]),
+        ])
+        _ = try rpc(mcp2, [
+            "jsonrpc": .string("2.0"), "id": .number(2), "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("computer_claim"),
+                "arguments": .object(["window_id": .number(10)]),
+            ]),
+        ])
+
+        let typeResponse = try rpc(mcp2, [
+            "jsonrpc": .string("2.0"), "id": .number(3), "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("computer_act"),
+                "arguments": .object([
+                    "window_id": .number(10), "action": .string("type"), "text": .string("hi"),
+                ]),
+            ]),
+        ])
+        XCTAssertEqual(typeResponse["result"]?["isError"], .bool(false))
+    }
 }

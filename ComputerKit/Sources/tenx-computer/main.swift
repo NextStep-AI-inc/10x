@@ -28,19 +28,52 @@ func runMCPFront() throws {
     let client = try DaemonClient()
     try client.send(.object(["role": .string("mcp")]))
 
+    final class PendingState: @unchecked Sendable {
+        let lock = NSLock()
+        var pendingCount = 0
+        var stdinClosed = false
+
+        func trackRequest(_ value: JSONValue) {
+            guard let id = value["id"], id != .null else { return }
+            lock.lock()
+            pendingCount += 1
+            lock.unlock()
+        }
+
+        func completeResponse(_ value: JSONValue) -> Bool {
+            guard let id = value["id"], id != .null else { return false }
+            lock.lock()
+            pendingCount = max(0, pendingCount - 1)
+            let shouldExit = stdinClosed && pendingCount == 0
+            lock.unlock()
+            return shouldExit
+        }
+
+        func markStdinClosed() -> Bool {
+            lock.lock()
+            stdinClosed = true
+            let shouldExit = pendingCount == 0
+            lock.unlock()
+            return shouldExit
+        }
+    }
+    let pendingState = PendingState()
+
     // stdin -> socket
     DispatchQueue.global().async {
         while let line = readLine(strippingNewline: true) {
             guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(line.utf8)) else { continue }
+            pendingState.trackRequest(value)
             try? client.send(value)
         }
-        exit(0)
+        if pendingState.markStdinClosed() { exit(0) }
     }
     // socket -> stdout
     while true {
         let response = try client.receive()
         let data = try JSONEncoder().encode(response)
         FileHandle.standardOutput.write(data + Data([0x0A]))
+        if pendingState.completeResponse(response) { exit(0) }
     }
 }
 

@@ -96,6 +96,18 @@ final class SupervisionClientTests: XCTestCase {
         XCTAssertNil(client.permissions)
     }
 
+    func test_disconnect_clearsSessionsAndFrames() {
+        let client = makeClient()
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
+        client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
+        client.apply(.screenshotTaken(session: 1, windowID: 10, pngBase64: Data([1, 2]).base64EncodedString(), width: 100, height: 100, scale: 2))
+        client.apply(.action(session: 1, windowID: 10, kind: "click", x: 50, y: 60))
+        client.resetConnectionState()
+        XCTAssertTrue(client.sessions.isEmpty)
+        XCTAssertTrue(client.frames.isEmpty)
+        XCTAssertNil(client.lastAction)
+    }
+
     func test_sessionEnded_removesOnlyThatSession() {
         let client = makeClient()
         client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
