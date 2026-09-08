@@ -32,3 +32,10 @@ import Testing
     #expect(model.isSearchPresented)
     #expect(model.route == .session("/tmp/session.jsonl"))
 }
+
+@MainActor
+@Test func beginComputerUseWithoutActiveSessionIsNoop() async {
+    let model = AppModel()
+    await model.beginComputerUse() // must not crash; nothing to send to
+    #expect(model.activeSession == nil)
+}

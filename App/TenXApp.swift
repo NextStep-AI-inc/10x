@@ -17,6 +17,15 @@ struct TenXApp: App {
         .defaultSize(width: 1180, height: 760)
         .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Use Computer") {
+                    Task { await model.beginComputerUse() }
+                }
+                .keyboardShortcut("c", modifiers: [.shift, .command])
+                .disabled(model.activeSession?.isComposerAvailable != true)
+            }
+        }
 
         MenuBarExtra(isInserted: computerMenuBinding) {
             ComputerUseMenuBarView(

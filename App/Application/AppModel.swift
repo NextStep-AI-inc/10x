@@ -115,6 +115,15 @@ final class AppModel {
         isSearchPresented = false
     }
 
+    /// ⇧⌘C — point the active session at the computer tools. The MCP mount is
+    /// user-level (Task 12), so every omp session already has the tools; the
+    /// command is the agent's cue to use them.
+    func beginComputerUse() async {
+        guard let activeSession, activeSession.isComposerAvailable else { return }
+        activeSession.draft = "Use the computer: claim a window with computer_claim (or launch one with computer_launch), then work there. Set computer_status so I can follow along."
+        await activeSession.sendPrompt()
+    }
+
     func openSearchResult(_ result: SearchResult) {
         guard let metadata = sessions.first(where: { $0.path == result.sessionPath }) else { return }
         closeSearch()
