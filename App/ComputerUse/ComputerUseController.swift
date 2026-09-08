@@ -38,13 +38,13 @@ final class ComputerUseController {
         focusWindowID.flatMap { supervision.frames[$0] }
     }
 
-    /// "App — Title" for the focus window, from the supervision snapshot.
+    /// "App · Title" for the focus window, from the supervision snapshot.
     var focusWindowLabel: String? {
         guard let focusWindowID else { return nil }
         guard let window = supervision.sessions.values
             .flatMap(\.windows)
             .first(where: { $0.windowID == focusWindowID }) else { return nil }
-        return window.title.isEmpty ? window.app : "\(window.app) — \(window.title)"
+        return window.title.isEmpty ? window.app : "\(window.app) · \(window.title)"
     }
 
     // MARK: - Transcript stream (called by SessionController)

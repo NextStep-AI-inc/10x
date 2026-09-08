@@ -75,7 +75,7 @@ final class ComputerUseControllerTests: XCTestCase {
         supervision.apply(.screenshotTaken(session: 7, windowID: 20, pngBase64: png, width: 400, height: 300, scale: 2))
         // Most recent claim of the correlated session wins for BOTH surfaces.
         XCTAssertEqual(controller.latestFrame, Data([0x89, 0x50]))
-        XCTAssertEqual(controller.focusWindowLabel, "Finder — Recents")
+        XCTAssertEqual(controller.focusWindowLabel, "Finder · Recents")
     }
 }
 

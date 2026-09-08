@@ -120,7 +120,10 @@ final class AppModel {
     /// command is the agent's cue to use them.
     func beginComputerUse() async {
         guard let activeSession, activeSession.isComposerAvailable else { return }
-        activeSession.draft = "Use the computer: claim a window with computer_claim (or launch one with computer_launch), then work there. Set computer_status so I can follow along."
+        let prompt = "Use the computer: claim a window with computer_claim (or launch one with computer_launch), then work there. Set computer_status so I can follow along."
+        // An in-progress draft is user data: append the cue, never replace it.
+        let existing = activeSession.draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        activeSession.draft = existing.isEmpty ? prompt : "\(existing)\n\n\(prompt)"
         await activeSession.sendPrompt()
     }
 
@@ -132,6 +135,11 @@ final class AppModel {
 
     func openSession(forDaemonSession daemonSessionID: Int) {
         guard openableDaemonSessionIDs.contains(daemonSessionID) else { return }
+        // ponytail: correlation covers the active session only, so "open" is
+        // activate + surface the session UI. Ceiling: can't jump to a
+        // background 10x session. Upgrade path: match daemon peerPID to each
+        // session's omp process PID.
+        closeSearch()
         NSApp.activate(ignoringOtherApps: true)
     }
 

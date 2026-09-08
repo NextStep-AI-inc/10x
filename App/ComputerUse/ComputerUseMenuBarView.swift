@@ -27,7 +27,7 @@ struct ComputerUseMenuBarView: View {
         }
         if !client.isConnected {
             Divider()
-            Text("Daemon not running — starts on first use")
+            Text("Daemon not running. Starts on first use.")
                 .font(TenXTypography.mono(size: 9))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
         }
@@ -55,7 +55,7 @@ struct ComputerUseMenuBarView: View {
                 .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
             }
             ForEach(session.windows) { window in
-                Text("  \(window.app) — \(window.title)")
+                Text("  \(window.title.isEmpty ? window.app : "\(window.app) · \(window.title)")")
                     .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     .lineLimit(1)

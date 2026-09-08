@@ -39,7 +39,7 @@ struct TenXApp: App {
 
     private var computerMenuBinding: Binding<Bool> {
         Binding(
-            get: { model.supervision.hasAnyActivity || model.supervision.isConnected },
+            get: { model.supervision.hasAnyActivity },
             set: { _ in }) // insertion is state-driven; nothing to do on removal
     }
 }
