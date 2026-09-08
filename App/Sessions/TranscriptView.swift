@@ -2,12 +2,16 @@ import SwiftUI
 
 enum TranscriptRenderRow: Identifiable, Equatable {
     case presentation(TranscriptPresentationRow)
-    case summary(id: String, state: TranscriptTurnState, duration: TimeInterval?)
+    case summary(
+        id: String,
+        state: TranscriptTurnState,
+        duration: TimeInterval?,
+        files: [TranscriptTurnFile])
 
     var id: String {
         switch self {
         case .presentation(let row): row.id
-        case .summary(let id, _, _): id
+        case .summary(let id, _, _, _): id
         }
     }
 
@@ -70,8 +74,12 @@ struct TranscriptView: View {
                                         .accessibilityLabel("Search match: " + excerpt)
                                 }
                                 rowView(presentationRow)
-                            } else if case .summary(_, let state, let duration) = row {
-                                TranscriptTurnSummaryView(state: state, duration: duration)
+                            } else if case .summary(_, let state, let duration, let files) = row {
+                                TranscriptTurnSummaryView(
+                                    state: state,
+                                    duration: duration,
+                                    files: files,
+                                    onSelectFile: focusTurnFile)
                             }
                         }
                             .background(searchResolution?.rowID == row.id
@@ -206,12 +214,13 @@ struct TranscriptView: View {
         guard let request = controller.transcriptNavigationRequest,
               request.nonce != consumedNavigationNonce else { return }
         consumedNavigationNonce = request.nonce
-        guard let row = rows.first(where: { $0.id == request.rowID }) else { return }
+        guard Self.revealNavigationTarget(
+            rowID: request.rowID,
+            in: rows,
+            disclosureState: disclosureState)
+        else { return }
         searchResolution = nil
         controller.viewport.isFollowingLatest = false
-        if case .groupedTool(let groupID, _) = row {
-            disclosureState.setGroupExpanded(true, id: groupID)
-        }
         Task { @MainActor in
             await Task.yield()
             guard controller.transcriptNavigationRequest?.nonce == request.nonce,
@@ -219,6 +228,23 @@ struct TranscriptView: View {
             controller.viewport.anchorID = request.rowID
             proxy.scrollTo(request.rowID, anchor: .center)
         }
+    }
+
+    private func focusTurnFile(_ file: TranscriptTurnFile) {
+        controller.focusTranscriptRow(TranscriptTurnFilesView.navigationRequest(for: file))
+    }
+
+    nonisolated static func revealNavigationTarget(
+        rowID: String,
+        in rows: [TranscriptPresentationRow],
+        disclosureState: ToolDisclosureState
+    ) -> Bool {
+        guard let row = rows.first(where: { $0.id == rowID }) else { return false }
+        if case .groupedTool(let groupID, let tool) = row {
+            disclosureState.setGroupExpanded(true, id: groupID)
+            disclosureState.setExpanded(true, id: tool.id)
+        }
+        return true
     }
 
     private func scroll(
@@ -273,7 +299,8 @@ struct TranscriptView: View {
             rows.append(.summary(
                 id: "summary:\(section.id)",
                 state: state,
-                duration: section.duration))
+                duration: section.duration,
+                files: TranscriptTurnFiles.files(in: section)))
             return rows
         }
     }

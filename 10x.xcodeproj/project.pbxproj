@@ -245,6 +245,7 @@
 		AB714F626D4A8FC11A938954229D29C8 /* ProviderUsageDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9319E4E7CCAD5F4188FC30AB93456D7 /* ProviderUsageDockView.swift */; };
 		ABB30B69985AC6AF1B08C2989C6D8EC1 /* ProviderAccountSwitchConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40228569430A12666591C24D49E223DD /* ProviderAccountSwitchConfirmationView.swift */; };
 		AC6D6ABD1B3EB3D12CAC184082A7205A /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962089969C661B3172D5ED6DC78219BE /* AppRoute.swift */; };
+		ACA2C6637D3996C6F8A55445620BF8F4 /* TranscriptTurnFilesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3A13AE19A0C35B9AAC8972152E3888 /* TranscriptTurnFilesView.swift */; };
 		AE066C28C79B9763618F4AF6D843C5ED /* ToolCardRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 768B841E66BD95E02EB6BE2DD8565041 /* ToolCardRegistry.swift */; };
 		AE4F45EDD32B46FACFC2B20CDD38E2BD /* StartupSignalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E1E47F7E6E59BE4929294768C650CEF /* StartupSignalView.swift */; };
 		AE83F5D331201C1E5D98FF0455A78609 /* OmpUsageServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFDF2B4BFB3C0920EC62965FF97FD1E2 /* OmpUsageServiceTests.swift */; };
@@ -585,6 +586,7 @@
 		8E53D6F34C8B9357DCDFB55710EF05E6 /* ComposerInteractionPreferences.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerInteractionPreferences.swift; path = App/Sessions/ComposerInteractionPreferences.swift; sourceTree = "<group>"; };
 		8EBD16FB5447285EB04367AB01C558D9 /* ComposerCatalogServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerCatalogServiceTests.swift; path = Tests/TenXAppTests/ComposerCatalogServiceTests.swift; sourceTree = "<group>"; };
 		8F18E50BB3B08F5F5E72126459122025 /* SnapshotHarness.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SnapshotHarness.swift; path = Tests/TenXAppTests/SnapshotHarness.swift; sourceTree = "<group>"; };
+		8F3A13AE19A0C35B9AAC8972152E3888 /* TranscriptTurnFilesView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptTurnFilesView.swift; path = App/Sessions/TranscriptTurnFilesView.swift; sourceTree = "<group>"; };
 		8FCE005EDE56CD93F1447FFBE253CC50 /* SessionControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionControllerTests.swift; path = Tests/TenXAppTests/SessionControllerTests.swift; sourceTree = "<group>"; };
 		9139523FF7D8FFEB9D40538B255181F2 /* SessionTimelineLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionTimelineLoader.swift; path = App/Sessions/SessionTimelineLoader.swift; sourceTree = "<group>"; };
 		91812CFE3017F7226113A400C82E2F55 /* TenXAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TenXAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -919,6 +921,7 @@
 				CE2D3A9D841091AEB7D1CE9AF7DFE0AE /* TranscriptSnapshot.swift */,
 				057C34D6ACC67BB0B0F48EFF3E89C488 /* TranscriptTextSegments.swift */,
 				A32EE7487AB90846BE37758B69FA6189 /* TranscriptTurnFiles.swift */,
+				8F3A13AE19A0C35B9AAC8972152E3888 /* TranscriptTurnFilesView.swift */,
 				D73233B7776DC7B5F5D6388D3F64D507 /* TranscriptTurnProjection.swift */,
 				BBBD5DCAC22E794CA15A5FD0B035E705 /* TranscriptTurnSummaryView.swift */,
 				974783DE436CE196147C1685500F4D4E /* TranscriptView.swift */,
@@ -1426,6 +1429,7 @@
 				D3CAAB97A3304F24F0F1A3BFDF700621 /* TranscriptSnapshot.swift in Sources */,
 				59A77226EF2328003466510A89718A79 /* TranscriptTextSegments.swift in Sources */,
 				3DC1847F173AA4C1D7ABBC85BFC19128 /* TranscriptTurnFiles.swift in Sources */,
+				ACA2C6637D3996C6F8A55445620BF8F4 /* TranscriptTurnFilesView.swift in Sources */,
 				B9C83572F04FB8C37AE054C7D98C4E3C /* TranscriptTurnProjection.swift in Sources */,
 				0EF38522A863E1D65A2926B605D5C173 /* TranscriptTurnSummaryView.swift in Sources */,
 				966ADF1BA155709CAB7442F91C39B498 /* TranscriptView.swift in Sources */,

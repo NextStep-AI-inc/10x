@@ -147,10 +147,55 @@ import Testing
         "message:u2", "message:failed", "summary:turn:u2",
     ])
     let summaryStates: [TranscriptTurnState] = rows.compactMap { row in
-        guard case .summary(_, let state, _) = row else { return nil }
+        guard case .summary(_, let state, _, _) = row else { return nil }
         return state
     }
     #expect(summaryStates == [.completed, .failed])
+}
+
+@Test func terminalSummaryCarriesOnlyItsTurnsToolReportedFiles() {
+    let items: [TranscriptItem] = [
+        .message(userMessage(id: "u1", timestamp: 1)),
+        .tool(tool(
+            id: "write-one",
+            name: "write",
+            phase: .complete,
+            arguments: .object([
+                "path": .string("App/One.swift"),
+                "content": .string("one"),
+            ]))),
+        .message(responseMessage(id: "done", stopReason: "stop", completedAt: 4)),
+    ]
+
+    let rows = TranscriptView.renderRows(
+        for: items, runtimeState: .idle, isGroupExpanded: { _ in true })
+
+    let files = rows.compactMap { row -> [TranscriptTurnFile]? in
+        guard case .summary(_, _, _, let files) = row else { return nil }
+        return files
+    }
+    #expect(files == [[TranscriptTurnFile(path: "App/One.swift", toolID: "write-one")]])
+}
+
+@Test func turnFileNavigationTargetsTheStableToolRowAndRevealsItFromSlimMode() {
+    let file = TranscriptTurnFile(path: "App/One.swift", toolID: "two")
+    let request = TranscriptTurnFilesView.navigationRequest(for: file)
+    let rows = TranscriptPresentationRow.rows(from: [
+        .tool(tool(id: "one", phase: .complete)),
+        .tool(tool(id: "two", phase: .complete)),
+    ])
+    let disclosureState = ToolDisclosureState(mode: .slim)
+
+    #expect(request.rowID == "tool:two")
+    #expect(TranscriptView.revealNavigationTarget(
+        rowID: request.rowID,
+        in: rows,
+        disclosureState: disclosureState))
+    #expect(disclosureState.isGroupExpanded(id: "tool-group-one"))
+    #expect(disclosureState.isExpanded(id: "two", traits: .init(
+        isActive: false,
+        isError: false,
+        opensWhenComplete: false)))
 }
 
 @Test func incompleteAndActiveTurnsDoNotReceiveSummaryRows() {
@@ -217,13 +262,15 @@ private func responseMessage(
 
 private func tool(
     id: String,
+    name: String = "bash",
     phase: ToolPhase,
+    arguments: JSONValue = .object([:]),
     result: JSONValue? = nil
 ) -> ToolPresentation {
     ToolPresentation(
         id: id,
-        name: "bash",
-        arguments: .object([:]),
+        name: name,
+        arguments: arguments,
         result: result,
         phase: phase,
         startDate: Date(timeIntervalSince1970: 1),
