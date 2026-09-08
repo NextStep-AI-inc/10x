@@ -70,6 +70,7 @@ enum ComposerRecoveryRoute: Codable, Equatable, Sendable {
 @MainActor
 final class ComposerRecoveryStore {
     static let fileName = "composer-recovery.plist"
+    static let maximumEncodedJPEGBytes = 16_000_000
 
     fileprivate struct Contents: Codable, Sendable {
         let formatVersion: Int
@@ -171,6 +172,41 @@ final class ComposerRecoveryStore {
         scheduleWrite()
     }
 
+    func moveRecord(from source: ComposerRecoveryOwner, to destination: ComposerRecoveryOwner) {
+        let source = source.canonicalized
+        let destination = destination.canonicalized
+        guard source != destination,
+              let sourceIndex = contents.records.firstIndex(where: { $0.owner == source })
+        else { return }
+        let sourceRecord = contents.records.remove(at: sourceIndex)
+        if let destinationIndex = contents.records.firstIndex(where: { $0.owner == destination }) {
+            let destinationRecord = contents.records[destinationIndex]
+            contents.records[destinationIndex] = ComposerRecoveryRecord(
+                owner: destination,
+                draft: Self.merged(sourceRecord.draft, destinationRecord.draft),
+                inFlight: sourceRecord.inFlight ?? destinationRecord.inFlight)
+        } else {
+            contents.records.append(ComposerRecoveryRecord(
+                owner: destination,
+                draft: sourceRecord.draft,
+                inFlight: sourceRecord.inFlight))
+        }
+        scheduleWrite()
+    }
+
+    func consumeInitialRecords(for projectURL: URL) -> ComposerRecoveryDraft? {
+        let records = initialRecords(for: projectURL)
+        guard !records.isEmpty else { return nil }
+        let empty = ComposerRecoveryDraft(text: "", attachments: [])
+        let draft = records.reduce(empty) { result, record in
+            Self.merged(result, Self.merged(record.inFlight?.draft ?? empty, record.draft))
+        }
+        let owners = Set(records.map(\.owner))
+        contents.records.removeAll { owners.contains($0.owner) }
+        scheduleWrite()
+        return draft
+    }
+
     func setLastMeaningfulRoute(_ route: ComposerRecoveryRoute?) {
         contents.lastMeaningfulRoute = route?.canonicalized
         scheduleWrite()
@@ -246,9 +282,12 @@ final class ComposerRecoveryStore {
     private static func sanitized(_ draft: ComposerRecoveryDraft) -> ComposerRecoveryDraft {
         var ids: Set<UUID> = []
         let attachments = draft.attachments.filter { attachment in
+            let maximumBytes = attachment.mimeType == "image/png"
+                ? ComposerAttachmentEncoder.pngBudgetBytes
+                : Self.maximumEncodedJPEGBytes
             guard ids.insert(attachment.id).inserted,
                   !attachment.data.isEmpty,
-                  attachment.data.count <= ComposerAttachmentEncoder.pngBudgetBytes,
+                  attachment.data.count <= maximumBytes,
                   attachment.pixelWidth > 0,
                   attachment.pixelHeight > 0,
                   attachment.pixelWidth <= ComposerAttachmentEncoder.maxPixelDimension,
@@ -256,8 +295,20 @@ final class ComposerRecoveryStore {
                   attachment.mimeType == "image/png" || attachment.mimeType == "image/jpeg"
             else { return false }
             return true
-        }.prefix(ComposerAttachmentEncoder.maximumCount)
-        return ComposerRecoveryDraft(text: draft.text, attachments: Array(attachments))
+        }
+        return ComposerRecoveryDraft(text: draft.text, attachments: attachments)
+    }
+
+    static func merged(
+        _ older: ComposerRecoveryDraft,
+        _ newer: ComposerRecoveryDraft
+    ) -> ComposerRecoveryDraft {
+        let text = [older.text, newer.text].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        var ids: Set<UUID> = []
+        let attachments = (older.attachments + newer.attachments).filter {
+            ids.insert($0.id).inserted
+        }
+        return sanitized(ComposerRecoveryDraft(text: text, attachments: attachments))
     }
 }
 

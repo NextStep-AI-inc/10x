@@ -124,6 +124,43 @@ import Testing
         #expect(store.initialRecords(for: project).map(\.owner) == [owner])
         #expect(store.lastMeaningfulRoute == .newSession(projectURL: project))
     }
+
+    @Test func encodedJPEGAboveThePNGChoiceThresholdIsPreserved() async throws {
+        let root = try recoveryTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let owner = ComposerRecoveryOwner.session("/tmp/large-jpeg.jsonl")
+        let jpeg = ComposerAttachment(
+            name: "photo.jpg",
+            data: Data(repeating: 0xA5, count: ComposerAttachmentEncoder.pngBudgetBytes + 1),
+            mimeType: "image/jpeg",
+            pixelWidth: ComposerAttachmentEncoder.maxPixelDimension,
+            pixelHeight: ComposerAttachmentEncoder.maxPixelDimension)
+        let store = ComposerRecoveryStore(rootURL: root)
+
+        store.setDraft(ComposerRecoveryDraft(text: "photo", attachments: [jpeg]), for: owner)
+        await store.flush()
+
+        let restored = ComposerRecoveryStore(rootURL: root)
+        #expect(restored.record(for: owner)?.draft.attachments == [jpeg])
+    }
+
+    @Test func mergingDistinctFullDraftsNeverDropsOverflowAttachments() {
+        let older = ComposerRecoveryDraft(
+            text: "older",
+            attachments: (0..<ComposerAttachmentEncoder.maximumCount).map {
+                recoveryAttachment(byte: UInt8($0), name: "old-\($0).png")
+            })
+        let newer = ComposerRecoveryDraft(
+            text: "newer",
+            attachments: (0..<ComposerAttachmentEncoder.maximumCount).map {
+                recoveryAttachment(byte: UInt8($0 + 8), name: "new-\($0).png")
+            })
+
+        let merged = ComposerRecoveryStore.merged(older, newer)
+
+        #expect(merged.attachments.count == ComposerAttachmentEncoder.maximumCount * 2)
+        #expect(merged.attachments.map(\.id) == older.attachments.map(\.id) + newer.attachments.map(\.id))
+    }
 }
 
 private func recoveryTemporaryDirectory() throws -> URL {
