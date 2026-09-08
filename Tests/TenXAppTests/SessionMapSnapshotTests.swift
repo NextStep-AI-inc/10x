@@ -3,6 +3,60 @@ import Testing
 @testable import TenXApp
 
 @MainActor
+@Test func sessionMapPanePlacesDiagramBeforeSupportingProse() throws {
+    #expect(SessionMapFixtures.supportingSummary.count == 600)
+    let document = try SessionMapFixtures.document(SessionMapFixtures.supportingXML)
+    let model = SessionMapPaneModel(displayedDocument: document, state: .ready, isVisible: true)
+    try assertSnapshot(
+        sessionMapSnapshotView(model: model),
+        name: "session-map-diagram-first",
+        size: CGSize(width: 440, height: 760))
+}
+
+@MainActor
+@Test func sessionMapPaneStateSnapshots() throws {
+    let document = try SessionMapFixtures.document(SessionMapFixtures.supportingXML)
+    let states: [(String, SessionMapPaneState, SessionMapDocument?)] = [
+        ("supporting", .ready, document),
+        ("empty", .empty, nil),
+        ("stale", .stale, document),
+        ("failed", .failed(message: "provider/model/raw-id"), document),
+        ("checking", .checking, document),
+        ("needs-model", .needsModel, nil),
+    ]
+    for appearance in [SnapshotAppearance.light, .dark] {
+        for width in [320, 440] {
+            for state in states {
+                let model = SessionMapPaneModel(
+                    displayedDocument: state.2,
+                    state: state.1,
+                    paneWidth: CGFloat(width),
+                    isVisible: true)
+                try assertSnapshot(
+                    sessionMapSnapshotView(model: model),
+                    name: "session-map-\(state.0)-\(width)\(appearance == .dark ? "-dark" : "")",
+                    appearance: appearance,
+                    size: CGSize(width: width, height: 760))
+            }
+        }
+    }
+}
+
+@MainActor
+@Test func sessionMapSupportingLeavesSnapshots() throws {
+    let document = try SessionMapFixtures.document(SessionMapFixtures.supportingXML)
+    for appearance in [SnapshotAppearance.light, .dark] {
+        for width in [320, 440] {
+            try assertSnapshot(
+                sessionMapSupportingSnapshotView(document: document, width: CGFloat(width)),
+                name: "session-map-supporting-leaves-\(width)\(appearance == .dark ? "-dark" : "")",
+                appearance: appearance,
+                size: CGSize(width: width, height: 900))
+        }
+    }
+}
+
+@MainActor
 @Test func sessionMapGraphSnapshots() throws {
     let states: [(String, SessionMapFocus, Bool)] = [
         ("normal", SessionMapFocus(
@@ -76,3 +130,49 @@ private struct SessionMapGraphSnapshotHarness: View {
         }
     }
 }
+
+@MainActor
+private func sessionMapSnapshotView(model: SessionMapPaneModel) -> some View {
+    SessionMapPaneView(
+        model: model,
+        activity: model.displayedDocument == nil ? .empty : SessionMapActivity(
+            activeNodeIDs: ["document"],
+            unmappedDescriptions: ["Running focused tests"]),
+        updatedAt: Date(timeIntervalSince1970: 1_788_800_000),
+        attribution: "Generated from session. Layout not checked.")
+        .environment(sessionMapSnapshotIDEStore())
+        .environment(\.fileReferenceBaseURL, sessionMapSnapshotProjectURL)
+}
+
+@MainActor
+private func sessionMapSupportingSnapshotView(
+    document: SessionMapDocument,
+    width: CGFloat
+) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+        ForEach(Array(document.blocks.enumerated()), id: \.offset) { _, block in
+            SessionMapSupportingBlockView(block: block, onAction: { _ in })
+        }
+    }
+    .padding(16)
+    .frame(width: width, alignment: .leading)
+    .frame(maxHeight: .infinity, alignment: .topLeading)
+    .environment(sessionMapSnapshotIDEStore())
+    .environment(\.fileReferenceBaseURL, sessionMapSnapshotProjectURL)
+}
+
+@MainActor
+private func sessionMapSnapshotIDEStore() -> IDEPreferenceStore {
+    let defaults = UserDefaults(suiteName: "TenXAppTests.SessionMapSnapshots") ?? .standard
+    defaults.removePersistentDomain(forName: "TenXAppTests.SessionMapSnapshots")
+    return IDEPreferenceStore(
+        defaults: defaults,
+        registry: IDERegistry.testing(applications: [
+            "com.todesktop.230313mzl4w4u92": URL(filePath: "/Applications/Cursor.app"),
+        ]))
+}
+
+private let sessionMapSnapshotProjectURL = URL(filePath: #filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()

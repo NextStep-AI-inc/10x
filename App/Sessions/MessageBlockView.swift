@@ -4,11 +4,17 @@ import SwiftUI
 struct ContentDocumentView: View {
     let document: ContentDocument
     let spacing: CGFloat
+    let bodySize: CGFloat
     @State private var renderState = ContentDocumentRenderState()
 
-    init(document: ContentDocument, spacing: CGFloat = 10) {
+    init(
+        document: ContentDocument,
+        spacing: CGFloat = 10,
+        bodySize: CGFloat = MessageBlockView.proseFontSize
+    ) {
         self.document = document
         self.spacing = spacing
+        self.bodySize = bodySize
     }
 
     var body: some View {
@@ -19,7 +25,7 @@ struct ContentDocumentView: View {
             limit: effectiveState.reveal.visibleCount(total: total))
         VStack(alignment: .leading, spacing: spacing) {
             ForEach(Array(slice.document.blocks.enumerated()), id: \.offset) { _, block in
-                MessageBlockView(block: block)
+                MessageBlockView(block: block, bodySize: bodySize)
             }
             if effectiveState.showsRevealControl(total: total) {
                 ProgressiveRevealButton(
@@ -42,6 +48,7 @@ struct ContentDocumentView: View {
 
 struct MessageBlockView: View {
     let block: ContentBlock
+    var bodySize: CGFloat = Self.proseFontSize
 
     static let proseFontSize: CGFloat = 15
     static let proseLineSpacing: CGFloat = 4
@@ -51,19 +58,19 @@ struct MessageBlockView: View {
         switch block {
         case .paragraph(let content):
             richText(content)
-                .font(TenXTypography.body(size: Self.proseFontSize))
+                .font(TenXTypography.body(size: bodySize))
         case .heading(let level, let content):
             richText(content)
                 .font(TenXTypography.body(
-                    size: level == 1 ? 19 : max(Self.proseFontSize, 18 - CGFloat(level)),
+                    size: level == 1 ? bodySize + 4 : max(bodySize, bodySize + 3 - CGFloat(level)),
                     weight: .semibold))
                 .padding(.top, level == 1 ? 3 : 0)
         case .list(let list):
-            ContentListView(list: list)
+            ContentListView(list: list, bodySize: bodySize)
         case .quote(let blocks):
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, child in
-                    MessageBlockView(block: child)
+                    MessageBlockView(block: child, bodySize: bodySize)
                 }
             }
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
@@ -138,6 +145,7 @@ struct MessageImageView: View {
 
 private struct ContentListView: View {
     let list: ContentList
+    let bodySize: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -148,13 +156,13 @@ private struct ContentListView: View {
                             .font(TenXTypography.body(size: 13, weight: .semibold))
                             .frame(width: 22, alignment: .trailing)
                         Text(item.content.attributed)
-                            .font(TenXTypography.body(size: MessageBlockView.proseFontSize))
+                            .font(TenXTypography.body(size: bodySize))
                             .lineSpacing(MessageBlockView.proseLineSpacing)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
-                        ContentListView(list: child)
+                        ContentListView(list: child, bodySize: bodySize)
                             .padding(.leading, 22)
                     }
                 }

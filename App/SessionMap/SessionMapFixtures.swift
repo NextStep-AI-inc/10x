@@ -1,6 +1,10 @@
 import Foundation
 
 enum SessionMapFixtures {
+    static let supportingSummary = String(String(repeating:
+        "The map keeps architecture visible while compact session details explain the evidence and next actions. ",
+        count: 7).prefix(600))
+
     static let context = SessionMapValidationContext(
         knownRefs: ["u1", "tool-1", "tool-2"],
         facts: [
@@ -55,6 +59,15 @@ enum SessionMapFixtures {
         <edge from="view-v2" to="service-v2" kind="flow"/>
         </map><flow title="Request"><step node="view-v2">Start.</step><step node="service-v2">Finish.</step></flow>
         <plan title="Build"><task status="todo" node="service-v2">Build it.</task></plan></sessionmap>
+        """
+
+    static let focusReorderedXML = """
+        <sessionmap headline="Request path" phase="implementing"><summary>A request.</summary><map>
+        <node id="service" label="Service" kind="service" file="App/RequestService.swift" status="proposed" ref="u1"/>
+        <node id="view" label="Request view" kind="view" file="App/RequestView.swift" status="planned" ref="u1"/>
+        <edge from="view" to="service" kind="flow"/>
+        </map><flow title="Request"><step node="service">Finish.</step><step node="view">Start.</step></flow>
+        <plan title="Build"><task status="todo" node="service">Build it.</task></plan></sessionmap>
         """
 
     static let planningXML = """
@@ -152,7 +165,7 @@ enum SessionMapFixtures {
 
     static let supportingXML = """
         <sessionmap headline="Supporting session details" phase="mixed">
-          <summary>Compact details support the architecture.</summary>
+          <summary>\(supportingSummary)</summary>
           <map><node id="document" label="Map document" kind="component" status="active" ref="u1"/></map>
           <section title="Current work">
             <row>

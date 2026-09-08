@@ -16,10 +16,6 @@ struct SessionMapGraphView: View {
             }
             relationshipList
         }
-        .onChange(of: document) { oldDocument, newDocument in
-            focus = SessionMapInteraction.reconciledFocus(
-                focus, replacing: oldDocument, with: newDocument)
-        }
     }
 
     static func measuredHeights(for graph: SessionMapGraph) -> [String: CGFloat] {

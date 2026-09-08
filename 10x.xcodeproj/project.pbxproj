@@ -40,6 +40,7 @@
 		16227F7A3F65DE75B91ABF6F77D31CFF /* FileReferenceResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */; };
 		175942C869C877CD39AA31473861FA1B /* ProviderManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C62FABF4DCE1A61B0AF5B1A62E89D4A /* ProviderManaging.swift */; };
 		17E4CC50D2CBB20C3ACC2D8EB9E721BA /* OnboardingInstallLogBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DBC57C8FAC7040E884E8E191B76538 /* OnboardingInstallLogBuffer.swift */; };
+		1865470733645373FC4D8FE953A827C6 /* SessionMapPaneModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0EFF65CB55A7E6A77CE1ED432E86AD8 /* SessionMapPaneModelTests.swift */; };
 		186684E4CE12CB2B29E9FDDDDBFA1EF7 /* SettingsOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55726728AC7CE94931331D9D19BF57A6 /* SettingsOwnershipTests.swift */; };
 		190E6300120ACDA0FD2F05198C1171D9 /* SessionMapDocumentParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3605D35FBA166BDA00A943EF88D8C99 /* SessionMapDocumentParser.swift */; };
 		1954B339DE6721B7C932C909D4274CF5 /* ExtensionUIRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA28DA0E2B373FCE0E1CCB026D76B4C0 /* ExtensionUIRouter.swift */; };
@@ -196,6 +197,8 @@
 		863B086C0CC8C25B98573EAFFB38D488 /* SessionRenameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9184DBB95AC7035C9F4A0743F26739A2 /* SessionRenameTests.swift */; };
 		8643EFA0E39D3171C3AF42EBCADFE7DC /* TranscriptEventProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65DD34C599234CF61AA2F47A8B625865 /* TranscriptEventProcessor.swift */; };
 		87A436DC02ED8261421CA7C051047F6E /* TranscriptReferenceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6195C2D3E49373746BC1BFFF0C425DF /* TranscriptReferenceView.swift */; };
+		8843A552ADD3C175C0DE2E43CF10D2EF /* SessionMapPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A57F28A120ADE252EC627757E31BAE7 /* SessionMapPaneView.swift */; };
+		8948E00BC595A0B7952E0ED35120C71A /* SessionMapPaneModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D6F2CCA813FADE851EB4D295DD6B934 /* SessionMapPaneModel.swift */; };
 		894B808999E573D9E7F72E872D62ADFE /* ProjectSessionGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00FE4C175F423D7BAF5DC3250CF8F47E /* ProjectSessionGrouper.swift */; };
 		89D5AE7906E0826CFC6EB9AFBBE47501 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 1684556654321E9FA4F3E82E46DA2FB6 /* libsqlite3.tbd */; };
 		89FA250152F1160917A74C0AFA0541A8 /* ProviderAccountUsageBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D3D7E93CA9E76D7BC5C488160249CAF /* ProviderAccountUsageBackend.swift */; };
@@ -321,6 +324,7 @@
 		DCDAC1258767E034A80CB119F6688157 /* FileOpenServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44178CCDE8E16FFA71077383483CE251 /* FileOpenServiceTests.swift */; };
 		DE9BBCD2A9EB1978C7B5EF7C50CDDC5D /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 67968C81D3C1B906EAD72F6BB0A96209 /* AppIcon.icns */; };
 		DF1139780D527B15487C20A757BA16A5 /* RailExpansionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4DE8504E174D28155FD0A39B1A9AE6C /* RailExpansionModel.swift */; };
+		DFD635480A051654D6E8CCEE3236D021 /* SessionMapSupportingBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBCA3F53071EA3A771B4C8A91A32C9BB /* SessionMapSupportingBlockView.swift */; };
 		E088BB361D93635243EAA8BF8EFC0E38 /* ToolDetailMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8082359E9EA2724212C926ABB2131EC5 /* ToolDetailMode.swift */; };
 		E2736F9132278EA98ED4DF7C1E50358F /* ContentRenderSlice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E2127525FB7770198393A6DDF01EB64 /* ContentRenderSlice.swift */; };
 		E291E3DE386CC36E6FC7125827CC0695 /* CodeBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 722A90AFEAB60805D76D3078CB9B153C /* CodeBlockView.swift */; };
@@ -586,7 +590,9 @@
 		858E692783D96DFED18DD3954012213B /* PendingUserSubmissionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PendingUserSubmissionTests.swift; path = Tests/TenXAppTests/PendingUserSubmissionTests.swift; sourceTree = "<group>"; };
 		877A2FC56C324B52234C33EA8FA709FE /* OmpConfigServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpConfigServiceTests.swift; path = Tests/TenXAppTests/OmpConfigServiceTests.swift; sourceTree = "<group>"; };
 		88D6DC39FEEF22CEAB21C2A6A6FEFFF1 /* CornerCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CornerCard.swift; path = App/Design/CornerCard.swift; sourceTree = "<group>"; };
+		8A57F28A120ADE252EC627757E31BAE7 /* SessionMapPaneView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapPaneView.swift; path = App/SessionMap/SessionMapPaneView.swift; sourceTree = "<group>"; };
 		8CA6C5484CCCD828D9CBA15E3C79078D /* SessionHeaderMetadataTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionHeaderMetadataTests.swift; path = Tests/TenXAppTests/SessionHeaderMetadataTests.swift; sourceTree = "<group>"; };
+		8D6F2CCA813FADE851EB4D295DD6B934 /* SessionMapPaneModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapPaneModel.swift; path = App/SessionMap/SessionMapPaneModel.swift; sourceTree = "<group>"; };
 		8E1E47F7E6E59BE4929294768C650CEF /* StartupSignalView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StartupSignalView.swift; path = App/Startup/StartupSignalView.swift; sourceTree = "<group>"; };
 		8E53D6F34C8B9357DCDFB55710EF05E6 /* ComposerInteractionPreferences.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerInteractionPreferences.swift; path = App/Sessions/ComposerInteractionPreferences.swift; sourceTree = "<group>"; };
 		8EBD16FB5447285EB04367AB01C558D9 /* ComposerCatalogServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerCatalogServiceTests.swift; path = Tests/TenXAppTests/ComposerCatalogServiceTests.swift; sourceTree = "<group>"; };
@@ -724,6 +730,7 @@
 		EF34BB91F763CA26F210767ECF8B1E85 /* SessionTitleView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionTitleView.swift; path = App/Sessions/SessionTitleView.swift; sourceTree = "<group>"; };
 		F02AC7D19DF24FEC5EB46B95DA8E9833 /* DiffView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DiffView.swift; path = App/Tools/DiffView.swift; sourceTree = "<group>"; };
 		F07ECBFB6BDAE4C811DB1D7ABEBF18F7 /* PreferredIDESettingRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PreferredIDESettingRowView.swift; path = App/Settings/PreferredIDESettingRowView.swift; sourceTree = "<group>"; };
+		F0EFF65CB55A7E6A77CE1ED432E86AD8 /* SessionMapPaneModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapPaneModelTests.swift; path = Tests/TenXAppTests/SessionMapPaneModelTests.swift; sourceTree = "<group>"; };
 		F13E32214A370E0E3329B1786F2A08B4 /* AppModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppModel.swift; path = App/Application/AppModel.swift; sourceTree = "<group>"; };
 		F140F1B49E31B955FF6C00CC13A6614C /* ContextUsageControl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContextUsageControl.swift; path = App/Sessions/ContextUsageControl.swift; sourceTree = "<group>"; };
 		F404B26A137A6F32B34D8CDC875BE407 /* ProviderManagementService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderManagementService.swift; path = App/Providers/ProviderManagementService.swift; sourceTree = "<group>"; };
@@ -740,6 +747,7 @@
 		FB25640479B6D09E54E09FACD0C16006 /* ProviderAccountStackTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountStackTests.swift; path = Tests/TenXAppTests/ProviderAccountStackTests.swift; sourceTree = "<group>"; };
 		FB45F370DEDFCA9B9E2A0419A504C90C /* ToolMediaLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolMediaLoader.swift; path = App/Tools/ToolMediaLoader.swift; sourceTree = "<group>"; };
 		FBCA1730CCC11291EB162EB605D22111 /* SourcePageLoaderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourcePageLoaderTests.swift; path = Tests/TenXAppTests/SourcePageLoaderTests.swift; sourceTree = "<group>"; };
+		FBCA3F53071EA3A771B4C8A91A32C9BB /* SessionMapSupportingBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapSupportingBlockView.swift; path = App/SessionMap/SessionMapSupportingBlockView.swift; sourceTree = "<group>"; };
 		FC401EACACBD59AF101F4168D6767F18 /* ComposerCatalogService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerCatalogService.swift; path = App/Sessions/ComposerCatalogService.swift; sourceTree = "<group>"; };
 		FFDF2B4BFB3C0920EC62965FF97FD1E2 /* OmpUsageServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpUsageServiceTests.swift; path = Tests/TenXAppTests/OmpUsageServiceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -861,7 +869,10 @@
 				1F392D4E90FC0748BCD88DF14F859267 /* SessionMapLayout.swift */,
 				31F2CCC0406413730A833C23FD30F0A4 /* SessionMapLimits.swift */,
 				A4528BF577074E01973452BDC95B6D9B /* SessionMapNodeView.swift */,
+				8D6F2CCA813FADE851EB4D295DD6B934 /* SessionMapPaneModel.swift */,
+				8A57F28A120ADE252EC627757E31BAE7 /* SessionMapPaneView.swift */,
 				29E6D435F9DBEA8608BF2EB7CB22103D /* SessionMapPlanView.swift */,
+				FBCA3F53071EA3A771B4C8A91A32C9BB /* SessionMapSupportingBlockView.swift */,
 				B38998ACEBDD0AAC27B5010E5F47A8E3 /* SessionMapWalkthroughView.swift */,
 				548CA6213C928CA4B52FAC3EBD197B0F /* ActiveSessionView.swift */,
 				214D8A464AFFD39114EA532C70AA69D7 /* AdvisoryContentParser.swift */,
@@ -1091,6 +1102,7 @@
 				95DC4CE6EB9198D9F7944E7E037F7A39 /* SessionMapDocumentTests.swift */,
 				EB36DA99EB55D7B7D4546A841794DA77 /* SessionMapInteractionTests.swift */,
 				5539BC00E8730ACFC064AAF2943ABB38 /* SessionMapLayoutTests.swift */,
+				F0EFF65CB55A7E6A77CE1ED432E86AD8 /* SessionMapPaneModelTests.swift */,
 				F4DE6FC858BA424F6473D1B71607D875 /* SessionMapSnapshotTests.swift */,
 				B7E60699D00256F3304465D59D97EB81 /* SessionMapValidationTests.swift */,
 				9184DBB95AC7035C9F4A0743F26739A2 /* SessionRenameTests.swift */,
@@ -1370,7 +1382,10 @@
 				D6FF81BD6EB8CB5EB0C6034E79477CE0 /* SessionMapLayout.swift in Sources */,
 				024F38F5520BFA779F6D42830722E2F6 /* SessionMapLimits.swift in Sources */,
 				AA3F8276DAB2D8EEF876731AC5A92914 /* SessionMapNodeView.swift in Sources */,
+				8948E00BC595A0B7952E0ED35120C71A /* SessionMapPaneModel.swift in Sources */,
+				8843A552ADD3C175C0DE2E43CF10D2EF /* SessionMapPaneView.swift in Sources */,
 				554924AA2DD77FE1FBE965E3481C599A /* SessionMapPlanView.swift in Sources */,
+				DFD635480A051654D6E8CCEE3236D021 /* SessionMapSupportingBlockView.swift in Sources */,
 				50518FF7E4DA1E4F4665D43A3123A559 /* SessionMapWalkthroughView.swift in Sources */,
 				C248BA5BB250C6AE7B34B48BC9256C37 /* ActiveSessionView.swift in Sources */,
 				4CDE327A0B49049A49FF27A94DAD013A /* AdvisoryContentParser.swift in Sources */,
@@ -1587,6 +1602,7 @@
 				FA6ECF898B51284F87359A21AEC4832B /* SessionMapDocumentTests.swift in Sources */,
 				68511512C6156693F505D26F9F1F4DD1 /* SessionMapInteractionTests.swift in Sources */,
 				FD2AC3B89F49F37AA10DE15702AA6D6B /* SessionMapLayoutTests.swift in Sources */,
+				1865470733645373FC4D8FE953A827C6 /* SessionMapPaneModelTests.swift in Sources */,
 				F987E142925062F38ABB78E56C8687A6 /* SessionMapSnapshotTests.swift in Sources */,
 				0304AB330F912F3488062D8CAA0562F9 /* SessionMapValidationTests.swift in Sources */,
 				863B086C0CC8C25B98573EAFFB38D488 /* SessionRenameTests.swift in Sources */,
