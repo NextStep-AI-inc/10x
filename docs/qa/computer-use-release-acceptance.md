@@ -1,62 +1,114 @@
 # Computer Use Release Acceptance
 
-Date: 2026-08-26
+Date: 2026-09-07
 Branch: `codex/computer-use-design`
-Build SHA: `0b8ad26`
-Release app: `/tmp/tenx-agent-desktop-release-0b8ad26/Build/Products/Release/10x.app`
-Release PID observed: `25273`
-OMP prerequisite binary: `/Users/tannerpham/CS Projects/.worktrees/oh-my-pi-computer-foreground-handoff/packages/coding-agent/dist/omp`
-OMP prerequisite version: `omp/18.0.5`
+Build SHA: `0ca8ea2`
 
-## Automated Checks
+Architecture under test: the `tenx-computer` daemon (ComputerKit) owns the
+engine, session registry, MCP socket, and supervision event stream. Harnesses
+(omp, Cursor, Claude Code, Codex) connect through the `tenx-computer mcp`
+stdio shim. The 10x app connects as a supervision client and renders the menu
+bar item, window overlays, and per-session chrome from the event stream.
+
+This replaces the Agent Desktop acceptance pass (AeroSpace/Hammerspoon/
+Background providers), which was deleted in Plan 2 Task 5.
+
+## Automated checks
 
 | Check | Evidence | Result |
 |---|---|---|
-| Whitespace/static diff check | `git diff --check` exited 0 | PASS |
-| OmpKit contract tests | `swift test --package-path OmpKit --no-parallel` passed 165 tests with 2 expected environment skips | PASS |
-| App tests | `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -parallel-testing-enabled NO -derivedDataPath /tmp/tenx-computer-use-final-tests-0b8ad26-rerun -resultBundlePath /tmp/tenx-computer-use-final-0b8ad26.xcresult` passed 223 tests | PASS |
-| Release build | `xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination 'generic/platform=macOS' -derivedDataPath /tmp/tenx-agent-desktop-release-0b8ad26` succeeded | PASS |
-| Release architecture | `file` reported a Mach-O universal binary with `x86_64` and `arm64` slices | PASS |
-| Release launch | PID `25273` ran from the exact packaged Release path. A real `10x` window was created through the packaged app's File > New Window command. The background launch and restored foreground left ChatGPT active; pointer coordinates remained exactly unchanged. | PASS |
-| Entitlements | `codesign -dv --entitlements :-` showed only `com.apple.security.get-task-allow` from local Xcode signing | PASS |
-| OMP smoke | Approved prerequisite binary reported `omp/18.0.5` and `smoke-test: ok` | PASS |
+| ComputerKit suite | `cd ComputerKit && swift test` — 98 tests, 0 failures | PASS |
+| App suite | `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'` — TEST SUCCEEDED (165 tests) | PASS |
+| Project generation | `ruby scripts/generate_xcodeproj.rb` byte-stable across runs | PASS |
 
-The final exact-head OmpKit and app suites passed on their canonical runs. Earlier timing-sensitive failures from the pre-fix acceptance pass are superseded by this evidence.
+## Live acceptance checklist
 
-## Desktop Acceptance Matrix
+1. **Fresh state.** No daemon, no claims: menu bar icon absent.
+   VERIFIED 2026-09-07 — app launched against an idle daemon showed no menu
+   bar extra and no overlays.
+2. **⇧⌘C in a 10x session.** Agent claims or launches a window. Header
+   metadata item, rail badge, overlay frame + tag, menu bar listing.
+   PARTIAL — overlay frame + tag and menu bar insertion verified live with a
+   synthetic MCP session (labelled harness "acceptance"); header item and
+   rail badge are unit- and snapshot-tested but need one live agent session
+   for final sign-off.
+3. **Non-interrupting.** User types into the controlled window while the
+   agent works; header popover shows a fresh frame and the agent's status.
+   PARTIAL — background input verified (daemon typed into the claimed probe
+   window without focus theft; focus acquire/release wraps each `act`).
+   Popover freshness needs a live agent session.
+4. **Cursor dot.** The overlay cursor tracks agent actions.
+   VERIFIED 2026-09-07 — cyan dot rendered at the last click point and moved
+   with each `computer_act` click (screenshot evidence).
+5. **Stop from the header popover.** Claims release, overlay vanishes, badge
+   clears. PARTIAL — stop via the supervision socket verified end to end
+   (windowReleased → sessionEnded → stopped; overlay removed within one poll
+   interval, zero overlay pixels in post-stop capture). The popover path
+   shares the same `stopComputerUse` call and is unit-tested; live click
+   pending a real session.
+6. **Cross-harness.** A Cursor session (config snippet from Settings) appears
+   in the 10x menu bar under its harness; Stop from 10x kills its control.
+   PARTIAL — a synthetic non-omp harness session appeared in the supervision
+   stream with label and pid and was stoppable; menu bar grouping is
+   unit-tested (`MenuBarPresentationTests`). A real Cursor MCP run is pending.
+7. **Global shut-off.** Menu bar "Stop All Computer Use" and ⌃⌥⌘Esc each
+   stop everything, all harnesses.
+   PARTIAL — `stop_all` over the supervision socket verified (all claims
+   released, overlays torn down). ⌃⌥⌘Esc not exercised live.
+8. **CLI.** `tenx-computer selfcheck` passes; `stop-all` from a terminal
+   works with no app running.
+   VERIFIED 2026-09-07 — selfcheck: "input typed, capture 640x304px @2x".
+   `stop-all` initially FAILED (fire-and-forget command swallowed; finding 1);
+   re-verified after the fix: a held claim was released by terminal
+   `stop-all` (zero claimed windows after), and a new session immediately
+   claimed and typed into a window (finding 2 latch confirmed cleared).
 
-| Configuration | Build | Focus unchanged | Pointer unchanged | Existing windows unchanged | Evidence rendered | Result |
-|---|---|---:|---:|---:|---:|---|
-| AeroSpace helper isolation | Release environment | Yes | Yes | Yes | N/A | PASS |
-| AeroSpace full 10x + OMP flow | Release | Not run | Not run | Not run | No | BLOCKED |
-| Hammerspoon | Release environment | Yes | Yes | Yes | No | FAIL CLOSED |
-| Background Only | Release | Not run | Not run | Not run | No | NOT RUN |
-| Older OMP | Release | N/A | N/A | N/A | Best-effort label Yes | PASS |
+## Findings from the 2026-09-07 live pass
 
-## Physical Desktop Evidence
+Found by running the daemon + app against a synthetic MCP session driving a
+probe window:
 
-- AeroSpace `0.21.3-Beta` and Hammerspoon `1.1.1` were installed and configured for this acceptance pass. Hammerspoon used native user Space `1709`; the previously selected fullscreen Space was rejected by the final validation.
-- AeroSpace helper isolation passed against a real TextEdit window. The window moved to workspace `10x-physicalqa` while the foreground 10x process/window, pointer coordinates, current native Space, current AeroSpace workspace, and pre-existing windows remained unchanged. The exact probe window was closed afterward.
-- The full 10x + OMP AeroSpace flow remained blocked because the locally ad-hoc-signed OMP worker continued to receive macOS Accessibility denial even after the binary was visibly enabled in System Settings. Screen Recording was granted. This is a signing/responsible-process identity blocker, not an AeroSpace isolation failure.
-- Hammerspoon's private Spaces calls returned success but did not move a real TextEdit window to native user Space `1709`, and `gotoSpace(1709)` likewise left the focused Space unchanged. Foreground application/window and existing windows remained unchanged. The final Lua bridge now verifies `windowSpaces` and `focusedSpace`, accepts only `user` spaces, and reports these no-ops as failure instead of success.
-- Setup now waits up to two seconds for the selected provider to observe the exact disposable probe window ID before attempting placement, closing the AeroSpace registration race observed during physical acceptance.
-- Background Only was not exercised through a live configured agent session in the Release app.
-- Older OMP gating was exercised through the real Release settings surface using the default `~/.bun/bin/omp` (`omp/18.0.4`). The UI displayed `BEST EFFORT`, reported `OMP: omp/18.0.4 · Best effort`, retained the warning that background control may interrupt the current app, and the setup probe failed closed without claiming window placement.
-- Release UI snapshots for setup complete, setup degraded, Ready, Controlling, Needs handoff, and computer evidence are covered by the automated snapshot suite, not by live physical desktop interaction.
+1. **Fire-and-forget supervision commands swallowed.** A client sending
+   `{"role":"supervision"}` + `{"command":"stop_all"}` and closing
+   immediately (exactly what `tenx-computer stop-all` does) lost the command:
+   the ack write failed (EPIPE), the write-failure path removed the client
+   before the read loop processed the buffered command, and the command line
+   fell into the handshake branch, registering a phantom MCP session and
+   leaking the fd. Fix: write failures now only `shutdown(SHUT_WR)`; the read
+   loop remains the sole closer and drains buffered commands.
+2. **Global shut-off latched forever.** `stopAllFlag` was never cleared, so
+   every later session's engine work aborted with `aborted: shut-off` until
+   the daemon was restarted. Fix: the latch clears when a new MCP session
+   registers.
+3. **MCP shim dropped in-flight responses on stdin EOF.**
+   `runMCPFront` exited the moment stdin closed, before the daemon's
+   responses were written to stdout. Fix: exit only after all pending
+   requests are answered or the socket closes.
+4. **Stale session state on daemon disconnect.** The app's supervision
+   client kept sessions/frames when the socket dropped. Fix: disconnect
+   clears sessions, frames, and last action; a reconnect rebuilds from the
+   daemon's replay.
+5. **Investigated, not reproducible:** a single `computer_act` type call
+   appeared to insert its text twice into the probe field. The keyboard path
+   has a single SkyLight delivery route and selfcheck asserts exact-match
+   output; no second delivery path exists. Closed as not reproducible.
 
-## Completion Gate
+Fix commit: `0ca8ea2` — `fix(computer-use): daemon supervision, MCP stdin EOF, and disconnect cleanup`.
+Findings 1 and 2 were re-verified live after the fix (terminal `stop-all`
+releases claims; a post-shut-off session claims and types successfully).
 
-| Requirement | Evidence | Result |
-|---|---|---|
-| Prerequisite OMP contract is available to the tested binary | Approved prerequisite OMP reports `omp/18.0.5` and smoke passes | PASS |
-| New and reopened sessions start with computer use Off | Covered by app tests, including `reopeningAnEnabledOMPComputerSessionDisablesItAndStaysOff` | PASS |
-| Cross-process and same-process contention allow one controlling session only | Covered by lease and registry tests | PASS |
-| Automatic selection order is AeroSpace, Hammerspoon, Background Only | Covered by provider selection tests | PASS |
-| Provider commands use fixed argv, timeout, capped output, validated JSON, and no shell | Covered by command runner and provider tests | PASS |
-| Only new window IDs are claimed; borrowed or ambiguous windows are untouched | Covered by launcher and host-tool tests | PASS |
-| Denied handoff produces no focus-changing native call; approval is one-shot | Covered by controller tests and handoff card review | PASS |
-| Stop, helper or watcher failure, permission loss, lock, sleep, logout, and OMP exit converge on fail-closed cleanup | Unit coverage exists for Stop, helper/watch failure, permission loss, OMP exit, teardown, and shortcut/menu path; lock/sleep physical behavior not exercised | PARTIAL |
-| Computer screenshots and details render live and after session reopen | Covered by presentation, reducer, history mapper, and snapshot tests | PASS |
-| Header, menu bar, and emergency shortcut invoke the same Stop path | Covered by controller, menu, app model, and shortcut code review/tests | PASS |
-| AeroSpace, Hammerspoon, Background Only, and older-OMP Release checks are recorded | Recorded above with direct helper evidence and explicit blocked/not-run states | PASS |
-| Any stolen focus, pointer movement, misplaced keystroke, moved existing window, or automatic desktop switch is a release failure | Direct AeroSpace isolation preserved all observed state. Full OMP task evidence remains blocked by macOS Accessibility identity, Hammerspoon failed closed, and Background Only was not run. | PARTIAL |
+## For the user to verify live
+
+These need a real agent session and/or the physical desktop; everything else
+is covered above or by the automated suites.
+
+- In a 10x session: ⇧⌘C, watch the agent claim a window; confirm the header
+  item, rail badge, and popover preview; type into the controlled window
+  while the agent works.
+- Stop from the header popover; confirm the overlay and badge clear.
+- Add the Cursor/Claude Code/Codex config snippet from Settings → Computer
+  Use, run a computer task there, and confirm the session appears in the 10x
+  menu bar grouped under that harness; stop it from 10x.
+- ⌃⌥⌘Esc global shut-off while any session is controlling.
+- Menu bar "Stop All Computer Use", then start a fresh session and confirm
+  computer use works again without restarting the daemon (finding 2).
