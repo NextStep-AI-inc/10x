@@ -7,8 +7,8 @@ Status: **IN_PROGRESS**. This report tracks Tanner's five requested adjustments 
 ## Current verification
 
 - Diff behavior checks passed **25 tests in two suites**, including exact path identity, typed totals, header text, progressive rendering and context reveal. Source `3257fe5`.
-- The two old structured-diff screenshot fixtures were found to render collapsed cards. Both fixtures now explicitly expand their cards; their new captures are pending. Header-only images have not been accepted as proof of the expanded layout.
-- Five popup placement tests first failed because the new placement type was absent, as expected. The implementation and green run are in progress.
+- The two old structured-diff screenshot fixtures were found to render collapsed cards. Both fixtures now explicitly expand their cards. The expanded light/dark captures were visually reviewed, saved in [diff-snapshots](diff-snapshots), accepted, and passed after rebuilding the reference resources.
+- Five popup placement tests first failed because the new placement type was absent, as expected. All five now pass. The full source compiled, and 68 selected behavior checks passed across placement, composer routing/presentation/activity, and context. Source `632d6bf`.
 - The [native RPC fixture](native-fixture.py) passed handshake/start/queue/finish/history/shutdown and pipelined-command smoke checks. It simulates provider events locally and records received commands. It performs no model work. It writes only neutral files and session records in the isolated QA profile.
 
 ## Native acceptance checklist

@@ -2440,6 +2440,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         endDate: Date(timeIntervalSince1970: 1.7))
     try assertSnapshot(
         ToolCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
             .environment(snapshotEmptyIDEStore)
             .frame(width: 720),
         name: "activity-structured-diff",
@@ -4454,6 +4455,7 @@ private actor SnapshotMediaGate {
         endDate: Date(timeIntervalSince1970: 1.7))
     try assertSnapshot(
         ToolCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
             .environment(snapshotEmptyIDEStore)
             .frame(width: 720),
         name: "activity-structured-diff-dark",

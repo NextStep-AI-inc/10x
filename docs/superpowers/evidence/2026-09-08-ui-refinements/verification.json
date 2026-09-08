@@ -23,11 +23,28 @@
       "executedTests": 0,
       "log": "/tmp/10x-ui-refinements-flyout-red.log",
       "logSHA256": "cd3bf0b7f197a1b05b66f1259edcf8f96dc0f9e2172a730acb3a57adaec5a499"
+    },
+    {
+      "check": "Popup placement, composer routing/presentation/activity, context and expanded diff captures",
+      "result": "68 behavior tests passed; two expected screenshot mismatches",
+      "executedTests": 70,
+      "log": "/tmp/10x-ui-refinements-popup-checks-exact.log",
+      "logSHA256": "3ff7918441e8f041b0ea26aab5ce59d8bc630ec20d671cd20e806af3959d7a9a",
+      "passedBehaviorTests": 68,
+      "expectedSnapshotMismatches": 2
+    },
+    {
+      "check": "Visually reviewed expanded diff references",
+      "result": "passed after rebuilding updated reference resources",
+      "executedTests": 2,
+      "log": "/tmp/10x-ui-refinements-diff-reviewed-build.log",
+      "logSHA256": "edcc095849fa699b0ab4dc6534e74dc0e6a91a6a22d26874f2cfa2b232603d45"
     }
   ],
   "fixtureSmoke": [
     "Handshake, start, queue=1, finish, unique persisted user entries, shutdown",
     "Four pipelined input commands acknowledged once"
   ],
-  "nativeAcceptance": "pending Release build"
+  "nativeAcceptance": "pending Release build",
+  "popupSourceCommit": "632d6bf"
 }
