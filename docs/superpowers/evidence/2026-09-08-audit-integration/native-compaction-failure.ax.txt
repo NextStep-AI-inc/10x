@@ -1,0 +1,90 @@
+Window: "10x", App: 10x Integration QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 button Description: Show earlier rail items, ID: chevron.up
+			9 scroll area
+				10 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					11 button Description: details, Help: Starts a new session in details
+					12 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					13 button Description: titles-native, Help: Starts a new session in titles-native
+					14 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					15 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					16 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					17 button Description: input-native, Help: Starts a new session in input-native
+					18 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					19 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					20 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Ready, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					21 button Description: review-native, Help: Starts a new session in review-native
+					22 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					23 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					24 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					25 button Description: context-busy, Help: Starts a new session in context-busy
+					26 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					27 button Description: context-failure, Help: Starts a new session in context-failure
+					28 button Description: Untitled session, context-failure, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					29 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					30 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					31 button Description: context, Help: Starts a new session in context
+					32 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					33 button Description: continuity, Help: Starts a new session in continuity
+					34 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					35 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					36 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					37 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					38 button Description: queue-reject, Help: Starts a new session in queue-reject
+					39 button Description: Reject queued input, queue-reject, Pending, Help: Reject queued input, Secondary Actions: Rename Session
+					40 button Description: failure, Help: Starts a new session in failure
+					41 button Description: Recover unavailable project, failure, Ready, Help: Recover unavailable project, Secondary Actions: Rename Session
+					42 button Description: reopen, Help: Starts a new session in reopen
+					43 button Description: Reopen saved history, reopen, Ready, Help: Reopen saved history, Secondary Actions: Rename Session
+					44 button Description: attention-edge, Help: Starts a new session in attention-edge
+			45 button Description: Show later rail items, ID: chevron.down
+			46 button Archived sessions
+		47 text Value: Untitled session, Secondary Actions: Rename Session
+		48 unknown Description: Branch, Details: detached
+		49 unknown Description: Folder, Details: context-failure
+		50 scroll area
+			51 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				52 container Description: Model expansion, Details: Standard
+					53 button Description: Expanded, Value: Not selected
+					54 button Description: Standard, Value: Selected
+					55 button Description: Slim, Value: Not selected
+				56 unknown Thread started Tuesday, September 8, 2026 at 12:23 AM
+		57 text Send a message
+		58 scroll area Secondary Actions: Scroll Up, Scroll Down
+			59 text entry area (settable) Description: Session prompt, Help: Active session prompt
+			60 scroll bar (settable, float) 0.05767440795898438
+				61 value indicator (settable, float) 0.05767440795898438
+				62 increment arrow button
+				63 decrement arrow button
+				64 increment page button
+				65 decrement page button
+		66 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		67 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
+		68 button (selected) Description: Context window, Help: Shows context usage details, Value: 42 percent used
+			69 popover Secondary Actions: Cancel
+				70 container Context window details
+					71 text Context window
+					72 button Description: Close context details, ID: xmark
+					73 text 84,000 / 200,000 tokens
+					74 unknown Description: Context used, Details: 42 percent
+					75 text 42% used 116,000 context remaining Conversation, 62,000 tokens System instructions, 8,000 tokens Tool definitions, 6,000 tokens Project context, 5,000 tokens Skills, 3,000 tokens Estimated current context · updated 2:13 PM Compresses older conversation to free context space.
+					76 button Compact context
+					77 text Context couldn’t be compacted. Try again.
+		78 button (disabled) Description: Send message, ID: arrow.up
+	79 close button
+	80 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	81 minimize button
+82 menu bar
+	83 10x Integration QA
+	84 File
+	85 Edit
+	86 View
+	87 Navigate
+	88 Session
+	89 Window
+	90 Help
+
+The focused UI element is 59 text entry area (settable) Description: Session prompt, Help: Active session prompt

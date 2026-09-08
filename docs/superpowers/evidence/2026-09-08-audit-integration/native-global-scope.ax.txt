@@ -1,0 +1,89 @@
+Window: "10x", App: 10x Integration QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: queue, Help: Starts a new session in queue
+					7 button Description: Integration queue wait complete, queue, Ready, Help: Integration queue wait complete, Secondary Actions: Rename Session
+					8 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					9 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					10 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					11 button Description: integration-native, Help: Starts a new session in integration-native
+					12 button Description: Combined native acceptance fixture, integration-native, Ready, Help: Combined native acceptance fixture, Secondary Actions: Rename Session
+					13 button Description: Integration acceptance baseline, integration-native, Unknown, Help: Integration acceptance baseline, Secondary Actions: Rename Session
+					14 button Description: details, Help: Starts a new session in details
+					15 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					16 button Description: titles-native, Help: Starts a new session in titles-native
+					17 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					18 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					19 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					20 button Description: input-native, Help: Starts a new session in input-native
+					21 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					22 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					23 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Ready, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					24 button Description: review-native, Help: Starts a new session in review-native
+					25 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					26 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					27 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					28 button Description: context-busy, Help: Starts a new session in context-busy
+					29 button Description: Untitled session, context-busy, Stopped, Help: Untitled session, Secondary Actions: Rename Session
+					30 button Description: context-failure, Help: Starts a new session in context-failure
+					31 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					32 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					33 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					34 button Description: context, Help: Starts a new session in context
+					35 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					36 button Description: continuity, Help: Starts a new session in continuity
+					37 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					38 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					39 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					40 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+			41 button Description: Show later rail items, ID: chevron.down
+			42 button Description: Archived sessions, ID: archivebox
+		43 button Back
+		44 text Settings
+		45 button Open Providers
+		46 image Description: Search, ID: magnifyingglass
+		47 text field (settable) Search all settings
+		48 text OMP 10x
+		49 scroll area
+			50 button General
+			51 button Appearance
+			52 button Models
+			53 button Agent
+			54 button Tools
+			55 button Subagents
+			56 button Memory
+			57 button Integrations
+			58 button (selected) Safety
+			59 button Advanced
+		60 button General
+		61 button Composer
+		62 scroll area
+			63 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				64 text Global OMP defaults /tmp/10x-session-recovery-home/.omp/agent 484 settings Safety 2
+				65 container
+					66 text Secrets Enabled Obfuscate configured secrets and redact credential-shaped tokens before sending to AI providers secrets.enabled
+					67 toggle button Description: Secrets Enabled, Value: off
+					68 button Description: Use default for Secrets Enabled: Default, Help: Use default: Default
+				69 container
+					70 text Security Enabled Enable OMP-native security scan planning, execution, and the read-only security:// resource namespace security.enabled
+					71 toggle button Description: Security Enabled, Value: off
+					72 button Description: Use default for Security Enabled: Default, Help: Use default: Default
+		73 button
+	74 close button
+	75 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	76 minimize button
+77 menu bar
+	78 10x Integration QA
+	79 File
+	80 Edit
+	81 View
+	82 Navigate
+	83 Session
+	84 Window
+	85 Help
+
+The focused UI element is 0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise

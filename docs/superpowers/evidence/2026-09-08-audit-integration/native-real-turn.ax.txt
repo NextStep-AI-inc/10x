@@ -75,7 +75,7 @@ Window: "10x", App: 10x Integration QA.
 					77 button Help: Expands tool details, Value: Collapsed, Description: Edit /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt, +1 −1, Complete, Total 0.0 seconds
 					78 button Description: Choose an IDE for /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt, Help: Hold Option while clicking to reveal in Finder
 					79 text · +1 −1 Complete Total 0.0s
-				80 text integration-alpha.txt  
+				80 text integration-alpha.txt
 integration-beta.txt Completed, 10.6s Tool-reported files (2) Completed edit and write tools in this turn. Shell commands and other workspace changes are not included.
 				81 button Show tool details for /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt
 				82 button Show tool details for /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt

@@ -1,0 +1,92 @@
+Window: "10x", App: 10x Integration QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: queue, Help: Starts a new session in queue
+					11 button Description: Integration queue wait complete, queue, Ready, Help: Integration queue wait complete, Secondary Actions: Rename Session
+					12 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					13 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					14 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					15 button Description: integration-native, Help: Starts a new session in integration-native
+					16 button Description: Combined native acceptance fixture, integration-native, Ready, Help: Combined native acceptance fixture, Secondary Actions: Rename Session
+					17 button Description: Integration acceptance baseline, integration-native, Unknown, Help: Integration acceptance baseline, Secondary Actions: Rename Session
+					18 button Description: details, Help: Starts a new session in details
+					19 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					20 button Description: titles-native, Help: Starts a new session in titles-native
+					21 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					22 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					23 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					24 button Description: input-native, Help: Starts a new session in input-native
+					25 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					26 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					27 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Ready, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					28 button Description: review-native, Help: Starts a new session in review-native
+					29 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					30 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					31 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					32 button Description: context-busy, Help: Starts a new session in context-busy
+					33 button Description: Untitled session, context-busy, Stopped, Help: Untitled session, Secondary Actions: Rename Session
+					34 button Description: context-failure, Help: Starts a new session in context-failure
+					35 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					36 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					37 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					38 button Description: context, Help: Starts a new session in context
+					39 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					40 button Description: continuity, Help: Starts a new session in continuity
+					41 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					42 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					43 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					44 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+			45 button Description: Show later rail items, ID: chevron.down
+			46 button Archived sessions
+		47 text Value: Integration queue wait complete, Secondary Actions: Rename Session
+		48 unknown Description: Branch, Details: detached
+		49 unknown Description: Folder, Details: queue
+		50 scroll area
+			51 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				52 text Cursor-Grok-4.6-Fast, Tuesday, September 8, 2026 at 2:11 PM QUEUED FOLLOW-UP COMPLETE Completed, 3.7s INTEGRATION QUEUE COUNT. Run bash: sleep 90; printf "QUEUE_COUNT_WAIT_DONE\n" with a timeout of 120 seconds. Do not read or change files. Reply COUNT WAIT DONE. Cursor-Grok-4.6-Fast, Tuesday, September 8, 2026 at 2:12 PM I'll run the 90-second wait now, then reply COUNT WAIT DONE. No files will be read or changed.
+				53 button Description: Tool call, Complete, Help: Collapses tool call, Value: Expanded
+				54 container Run sleep 90; printf "QUEUE_COUNT_WAIT_DONE\n", 3 lines, Complete, Total 60.0 seconds
+					55 button Description: Run sleep 90; printf "QUEUE_COUNT_WAIT_DONE\n", 3 lines, Complete, Total 60.0 seconds, Help: Expands tool details, Value: Collapsed
+					56 text sleep 90; printf "QUEUE_COUNT_WAIT_DONE\n" · 3 lines Complete Total 60.0s
+				57 text COUNT WAIT DONE Completed, 64.9s INTEGRATION COUNT FOLLOW-UP: reply with only COUNT FOLLOW-UP COMPLETE. Cursor-Grok-4.6-Fast, Tuesday, September 8, 2026 at 2:13 PM COUNT FOLLOW-UP COMPLETE The bash call returned `pending`, not completed. Do not treat that as success or send the completion reply until the async result arrives; the required 90-second wait must actually finish first. Cursor-Grok-4.6-Fast, Tuesday, September 8, 2026 at 2:13 PM The 90-second wait is still running. I'll wait for it to finish before treating it as done.
+				58 button Description: Tool call, Complete, Help: Collapses tool call, Value: Expanded
+				59 container Coordinate, Complete, Total 0.0 seconds
+					60 button Description: Coordinate, Complete, Total 0.0 seconds, Help: Expands tool details, Value: Collapsed
+					61 text Complete Total 0.0s
+				62 text The 90-second sleep is still running. Waiting for it to finish.
+				63 button Description: Tool call, Complete, Help: Collapses tool call, Value: Expanded
+				64 container Coordinate, Complete, Total 6.6 seconds
+					65 button Description: Coordinate, Complete, Total 6.6 seconds, Help: Expands tool details, Value: Collapsed
+					66 text Complete Total 6.6s
+				67 text COUNT WAIT DONE Completed, 30.1s
+		68 text Send a message
+		69 scroll area Secondary Actions: Scroll Up, Scroll Down
+			70 text entry area (settable) Description: Session prompt, Help: Active session prompt
+			71 scroll bar (settable, float) 0.05767440795898438
+				72 value indicator (settable, float) 0.05767440795898438
+				73 increment arrow button
+				74 decrement arrow button
+				75 increment page button
+				76 decrement page button
+		77 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		78 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
+		79 button Description: Context window, Help: Shows context usage details, Value: 10 percent used
+		80 button (disabled) Description: Send message, ID: arrow.up
+	81 close button
+	82 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	83 minimize button
+84 menu bar
+	85 10x Integration QA
+	86 File
+	87 Edit
+	88 View
+	89 Navigate
+	90 Session
+	91 Window
+	92 Help
+
+The focused UI element is 70 text entry area (settable) Description: Session prompt, Help: Active session prompt

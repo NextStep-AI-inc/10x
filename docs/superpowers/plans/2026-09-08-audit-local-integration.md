@@ -63,13 +63,15 @@ Pinned merge inputs:
 
 ## Task 4: Accept the combined native flow
 
-- [ ] Confirm the exact QA build is visible. Start from the existing neutral QA profile, with a separate app bundle identifier and app-specific preferences/drafts.
-- [ ] Exercise a real short provider turn, inline multi-file edit review, and branch metadata. Verify completion/status, per-file navigation, and preferred-editor behavior together.
-- [ ] Exercise pending requests while reading/typing, queue/Stop controls, disclosure and reading position across session switches, and compaction feedback through the prepared controlled fixtures.
-- [ ] Use the native picker inside text, native Undo/Redo, staged image and independent model/attachment errors. Quit/relaunch to confirm separate draft and last-route recovery; reuse the controlled unconfirmed-send fixture to rule out automatic replay if integration touched the send barrier.
-- [ ] Inspect tool timer/tail/child details in the combined build. Reuse already recorded individual-feature proof when its code is unchanged and the combined focused tests cover the connection; state any skipped native repetition explicitly.
-- [ ] Run live CJK composition only if pending Pinyin approval arrives. Otherwise preserve that precise outstanding gate.
-- [ ] Capture real screenshots/AX evidence and neutral control traces, close task-owned QA processes, and commit the final acceptance report with branch/SHA, verified/not-verified/user-test sections.
+- [x] Confirm the exact QA build is visible. Start from the existing neutral QA profile, with a separate app bundle identifier and app-specific preferences/drafts.
+- [x] Exercise a real short provider turn, inline multi-file edit review, and branch metadata. Verify completion/status, per-file navigation, and preferred-editor behavior together.
+- [x] Exercise pending requests while reading/typing, queue/Stop controls, disclosure and reading position across session switches, and compaction feedback through the prepared controlled fixtures.
+- [x] Use the native picker inside text, native Undo/Redo, staged image and independent model/attachment errors. Quit/relaunch to confirm separate draft and last-route recovery; reuse the controlled unconfirmed-send fixture to rule out automatic replay if integration touched the send barrier.
+- [x] Inspect tool timer/tail/child details in the combined build. Reuse already recorded individual-feature proof when its code is unchanged and the combined focused tests cover the connection; state any skipped native repetition explicitly.
+- [ ] Run live CJK composition only if pending Pinyin approval arrives. Otherwise preserve that precise outstanding gate. **Still pending: no Pinyin approval received.**
+- [x] Capture real screenshots/AX evidence and neutral control traces, close task-owned QA processes, and commit the final acceptance report with branch/SHA, verified/not-verified/user-test sections.
+
+Acceptance evidence: [combined Release report](../evidence/2026-09-08-audit-integration/README.md). The timer/tail/child native repetition was explicitly reused from the unchanged accepted feature implementation. Combined typing screenshots start after requests were already pending; the individual feature evidence covers arrival.
 
 ## Completion boundary
 

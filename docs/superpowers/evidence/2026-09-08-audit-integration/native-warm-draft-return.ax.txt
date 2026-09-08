@@ -7,7 +7,7 @@ Window: "10x", App: 10x Integration QA.
 				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
 					10 button Description: integration-native, Help: Starts a new session in integration-native
 					11 button Description: Combined native acceptance fixture, integration-native, Ready, Help: Combined native acceptance fixture, Secondary Actions: Rename Session
-					12 button Description: Integration acceptance baseline, integration-native, Unknown, Help: Integration acceptance baseline, Secondary Actions: Rename Session
+					12 button Description: Integration acceptance baseline, integration-native, Ready, Help: Integration acceptance baseline, Secondary Actions: Rename Session
 					13 button Description: details, Help: Starts a new session in details
 					14 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
 					15 button Description: titles-native, Help: Starts a new session in titles-native
@@ -41,7 +41,7 @@ Window: "10x", App: 10x Integration QA.
 					43 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
 					44 button Description: queue-reject, Help: Starts a new session in queue-reject
 			45 button Description: Show later rail items, ID: chevron.down
-			46 button Description: Archived sessions, ID: archivebox
+			46 button Archived sessions
 		47 text Value: Combined native acceptance fixture, Secondary Actions: Rename Session
 		48 unknown Description: Branch, Details: qa-integration-b
 		49 unknown Description: Folder, Details: integration-native
@@ -84,12 +84,12 @@ integration-beta.txt Completed, 10.6s Tool-reported files (2) Completed edit and
 			86 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT |
 /private/tmp/10x-session-recovery-home/projects/input-native/folder with spaces for attachment acceptance/long nested folder preserving caret position and text on both sides/deliberate insertion notes.txt
 AFTER
-			87 scroll bar (settable, float) 0.6786594390869141
-				88 value indicator (settable, float) 0.6786594390869141
-				89 increment arrow button
-				90 decrement arrow button
-				91 increment page button
-				92 decrement page button
+			87 scroll bar (disabled, settable, float) 0
+		88 scroll area Attached images
+			89 container context.png
+				90 image
+				91 text context.png 600×220 · 30 KB
+				92 button Description: Remove context.png, ID: xmark
 		93 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
 		94 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
 		95 button Description: Context window, Help: Shows context usage details, Value: 10 percent used

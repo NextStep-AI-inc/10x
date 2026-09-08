@@ -76,12 +76,12 @@ Window: "10x", App: 10x Integration QA.
 					78 button Help: Hold Option while clicking to reveal in Finder, Description: Open integration-beta.txt in Cursor, /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt
 					80 unknown Description: Removed line, beta original, Secondary Actions: show menu
 					81 unknown Description: Added line, beta integrated, Secondary Actions: show menu
-				82 text integration-alpha.txt  
+				82 text integration-alpha.txt
 integration-beta.txt
 					83 link integration-alpha.txt, Value: tenx-file://reference?path=integration-alpha.txt
 					84 link integration-beta.txt, Value: tenx-file://reference?path=integration-beta.txt
 		85 scroll area Secondary Actions: Scroll Up, Scroll Down
-			86 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT | 
+			86 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT |
 /private/tmp/10x-session-recovery-home/projects/input-native/folder with spaces for attachment acceptance/long nested folder preserving caret position and text on both sides/deliberate insertion notes.txt
 AFTER
 			87 scroll bar (settable, float) 0.6786594390869141
@@ -112,6 +112,6 @@ AFTER
 	112 Window
 	113 Help
 
-The focused UI element is 86 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT | 
+The focused UI element is 86 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT |
 /private/tmp/10x-session-recovery-home/projects/input-native/folder with spaces for attachment acceptance/long nested folder preserving caret position and text on both sides/deliberate insertion notes.txt
 AFTER

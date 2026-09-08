@@ -81,7 +81,7 @@ Window: "10x", App: 10x Integration QA.
 					83 button Help: Hold Option while clicking to reveal in Finder, Description: Open integration-beta.txt in Cursor, /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt
 					85 unknown Description: Removed line, beta original, Secondary Actions: show menu
 					86 unknown Description: Added line, beta integrated, Secondary Actions: show menu
-				87 text integration-alpha.txt  
+				87 text integration-alpha.txt
 integration-beta.txt Completed, 10.6s Tool-reported files (2) Completed edit and write tools in this turn. Shell commands and other workspace changes are not included.
 				88 button Show tool details for /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt
 				89 button Show tool details for /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt

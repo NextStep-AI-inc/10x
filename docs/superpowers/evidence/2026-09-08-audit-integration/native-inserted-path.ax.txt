@@ -77,12 +77,12 @@ Window: "10x", App: 10x Integration QA.
 					79 button Help: Hold Option while clicking to reveal in Finder, Description: Open integration-beta.txt in Cursor, /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt
 					81 unknown Description: Removed line, beta original, Secondary Actions: show menu
 					82 unknown Description: Added line, beta integrated, Secondary Actions: show menu
-				83 text integration-alpha.txt  
+				83 text integration-alpha.txt
 integration-beta.txt Completed, 10.6s Tool-reported files (2) Completed edit and write tools in this turn. Shell commands and other workspace changes are not included.
 				84 button Show tool details for /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt
 				85 button Show tool details for /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt
 		86 scroll area Secondary Actions: Scroll Up, Scroll Down
-			87 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT | 
+			87 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT |
 /private/tmp/10x-session-recovery-home/projects/input-native/folder with spaces for attachment acceptance/long nested folder preserving caret position and text on both sides/deliberate insertion notes.txt
 			88 scroll bar (settable, float) 0.5893049240112305
 				89 value indicator (settable, float) 0.5893049240112305
@@ -107,5 +107,5 @@ integration-beta.txt Completed, 10.6s Tool-reported files (2) Completed edit and
 	108 Window
 	109 Help
 
-The focused UI element is 87 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT | 
+The focused UI element is 87 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT |
 /private/tmp/10x-session-recovery-home/projects/input-native/folder with spaces for attachment acceptance/long nested folder preserving caret position and text on both sides/deliberate insertion notes.txt

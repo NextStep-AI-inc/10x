@@ -1,0 +1,79 @@
+Window: "10x", App: 10x Integration QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 button Description: Show earlier rail items, ID: chevron.up
+			9 scroll area
+				10 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					11 button Description: input-native, Help: Starts a new session in input-native
+					12 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					13 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					14 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Ready, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					15 button Description: review-native, Help: Starts a new session in review-native
+					16 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					17 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					18 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					19 button Description: context-busy, Help: Starts a new session in context-busy
+					20 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					21 button Description: context-failure, Help: Starts a new session in context-failure
+					22 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					23 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					24 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					25 button Description: context, Help: Starts a new session in context
+					26 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					27 button Description: continuity, Help: Starts a new session in continuity
+					28 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					29 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					30 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					31 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					32 button Description: queue, Help: Starts a new session in queue
+					33 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					34 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					35 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					36 button Description: queue-reject, Help: Starts a new session in queue-reject
+					37 button Description: Reject queued input, queue-reject, Pending, Help: Reject queued input, Secondary Actions: Rename Session
+					38 button Description: failure, Help: Starts a new session in failure
+					39 button Description: Recover unavailable project, failure, Ready, Help: Recover unavailable project, Secondary Actions: Rename Session
+					40 button Description: reopen, Help: Starts a new session in reopen
+					41 button Description: Reopen saved history, reopen, Ready, Help: Reopen saved history, Secondary Actions: Rename Session
+					42 button Description: attention-edge, Help: Starts a new session in attention-edge
+					43 button Description: Attention timeout and cancel acceptance, attention-edge, Ready, Help: Attention timeout and cancel acceptance, Secondary Actions: Rename Session
+					44 button Description: attention, Help: Starts a new session in attention
+					45 button Description: Attention acceptance, attention, Needs your response, Help: Attention acceptance, Secondary Actions: Rename Session
+			46 button Archived sessions
+		47 text Value: Attention acceptance, Secondary Actions: Rename Session
+		48 unknown Description: Branch, Details: detached
+		49 unknown Description: Folder, Details: attention
+		50 button Description: Needs your response, Help: Shows the earliest pending request
+		51 button Jump to latest
+		52 scroll area
+			53 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				54 text Acceptance history item 9. Keep this neutral transcript line available for scroll-position checks. Attention-Fixture, Monday, September 7, 2026 at 12:38 AM Recorded neutral acceptance history item 9. This older response adds enough transcript height for deliberate scrolling. Completed, 1.0s Acceptance history item 10. Keep this neutral transcript line available for scroll-position checks. Attention-Fixture, Monday, September 7, 2026 at 12:40 AM Recorded neutral acceptance history item 10. This older response adds enough transcript height for deliberate scrolling. Completed, 1.0s Acceptance history item 11. Keep this neutral transcript line available for scroll-position checks. Attention-Fixture, Monday, September 7, 2026 at 12:42 AM Recorded neutral acceptance history item 11. This older response adds enough transcript height for deliberate scrolling. Completed, 1.0s Acceptance history item 12. Keep this neutral transcript line available for scroll-position checks. Attention-Fixture, Monday, September 7, 2026 at 12:44 AM Recorded neutral acceptance history item 12. This older response adds enough transcript height for deliberate scrolling. Completed, 1.0s INTEGRATION ATTENTION — emit the three pending requests. Attention-Fixture, Tuesday, September 8, 2026 at 2:07 PM Waiting for three controlled fixture decisions. Attention-Fixture, Streaming, Tuesday, September 8, 2026 at 2:07 PM Waiting for three controlled fixture decisions. Add a fixture note
+				55 text field (settable) Value: INTEGRATION REQUEST NOTE, Placeholder: Optional acceptance note
+				56 button Submit
+				57 button Cancel, Response
+		58 scroll area Secondary Actions: Scroll Up, Scroll Down
+			59 text entry area (settable) Description: Session prompt, Help: Active session prompt, Steer mode, Value: INTEGRATION FOCUS RETAINEDx
+			60 scroll bar (disabled, settable, float) 0
+		61 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		62 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
+		63 button Description: Context window, Help: Shows context usage details, Value: 1 percent used
+		64 button Description: Needs your response, Help: Shows the earliest pending request
+		65 menu button Description: Composer send action, Value: Steer
+		66 button Description: Send message, ID: arrow.up
+		67 button Description: Stop response, Help: Stop the response
+	68 close button
+	69 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	70 minimize button
+71 menu bar
+	72 10x Integration QA
+	73 File
+	74 Edit
+	75 View
+	76 Navigate
+	77 Session
+	78 Window
+	79 Help
+
+The focused UI element is 55 text field (settable) Value: INTEGRATION REQUEST NOTE, Placeholder: Optional acceptance note

@@ -1,0 +1,13 @@
+{"at":"2026-09-08T21:07:22.300Z","direction":"command","type":"negotiate_protocol","id":"req_1"}
+{"at":"2026-09-08T21:07:22.329Z","direction":"command","type":"get_state","id":"req_2"}
+{"at":"2026-09-08T21:07:22.370Z","direction":"command","type":"get_available_commands","id":"req_3"}
+{"at":"2026-09-08T21:07:22.397Z","direction":"command","type":"set_subagent_subscription","id":"req_4"}
+{"at":"2026-09-08T21:07:32.600Z","direction":"command","type":"prompt","id":"req_5","messageLength":56,"imageCount":0}
+{"at":"2026-09-08T21:07:32.797Z","direction":"command","type":"get_state","id":"req_6"}
+{"at":"2026-09-08T21:07:44.604Z","direction":"event","type":"extension_ui_request","id":"attention-confirm-1","method":"confirm","elapsedMs":12004}
+{"at":"2026-09-08T21:07:46.605Z","direction":"event","type":"extension_ui_request","id":"attention-select-1","method":"select","elapsedMs":14004}
+{"at":"2026-09-08T21:07:48.603Z","direction":"event","type":"extension_ui_request","id":"attention-input-1","method":"input","elapsedMs":16002}
+{"at":"2026-09-08T21:08:47.382Z","direction":"command","type":"extension_ui_response","id":"attention-confirm-1","matchedMethod":"confirm","body":{"confirmed":true}}
+{"at":"2026-09-08T21:09:05.286Z","direction":"command","type":"extension_ui_response","id":"attention-select-1","matchedMethod":"select","body":{"hasValue":true,"valueLength":8}}
+{"at":"2026-09-08T21:09:20.421Z","direction":"command","type":"abort","id":"req_7","wasStreaming":true,"pendingIds":["attention-input-1"]}
+{"at":"2026-09-08T21:09:20.422Z","direction":"event","type":"turn_end","stopReason":"aborted"}

@@ -1,0 +1,107 @@
+Window: "10x", App: 10x Integration QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 button Description: Show earlier rail items, ID: chevron.up
+			9 scroll area
+				10 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					11 button Description: titles-native, Help: Starts a new session in titles-native
+					12 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					13 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					14 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					15 button Description: input-native, Help: Starts a new session in input-native
+					16 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					17 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					18 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Ready, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					19 button Description: review-native, Help: Starts a new session in review-native
+					20 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					21 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					22 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					23 button Description: context-busy, Help: Starts a new session in context-busy
+					24 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					25 button Description: context-failure, Help: Starts a new session in context-failure
+					26 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					27 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					28 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					29 button Description: context, Help: Starts a new session in context
+					30 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					31 button Description: continuity, Help: Starts a new session in continuity
+					32 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					33 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					34 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					35 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					36 button Description: queue-reject, Help: Starts a new session in queue-reject
+					37 button Description: Reject queued input, queue-reject, Pending, Help: Reject queued input, Secondary Actions: Rename Session
+					38 button Description: failure, Help: Starts a new session in failure
+					39 button Description: Recover unavailable project, failure, Ready, Help: Recover unavailable project, Secondary Actions: Rename Session
+					40 button Description: reopen, Help: Starts a new session in reopen
+					41 button Description: Reopen saved history, reopen, Ready, Help: Reopen saved history, Secondary Actions: Rename Session
+					42 button Description: attention-edge, Help: Starts a new session in attention-edge
+					43 button Description: Attention timeout and cancel acceptance, attention-edge, Ready, Help: Attention timeout and cancel acceptance, Secondary Actions: Rename Session
+					44 button Description: attention, Help: Starts a new session in attention
+					45 button Description: Attention acceptance, attention, Stopped, Help: Attention acceptance, Secondary Actions: Rename Session
+			46 button Description: Show later rail items, ID: chevron.down
+			47 button Archived sessions
+		48 text Value: Integration queue wait complete, Secondary Actions: Rename Session
+		49 unknown Description: Branch, Details: detached
+		50 unknown Description: Folder, Details: queue
+		51 unknown Working
+		52 scroll area
+			53 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				54 button Description: Tool call, Complete, Help: Collapses tool call, Value: Expanded
+				55 container Run sleep 60; printf "INTEGRATION_WAIT_COMPLETE\n", 3 lines, Complete, Total 60.0 seconds
+					56 button Description: Run sleep 60; printf "INTEGRATION_WAIT_COMPLETE\n", 3 lines, Complete, Total 60.0 seconds, Help: Expands tool details, Value: Collapsed
+					57 text sleep 60; printf "INTEGRATION_WAIT_COMPLETE\n" · 3 lines Complete Total 60.0s
+				58 text WAIT COMPLETE <system-notice>
+Background job bg_1 has completed. Resume your work using the result below.
+INTEGRATION_WAIT_COMPLETE
+Wall time: 60.04 seconds
+Timeout clamped to 3600s (requested 75000s; allowed range 1-3600s).
+</system-notice> Completed, 69.0s INTEGRATION QUEUED FOLLOW-UP: reply with only QUEUED FOLLOW-UP COMPLETE. Cursor-Grok-4.6-Fast, Tuesday, September 8, 2026 at 2:11 PM QUEUED FOLLOW-UP COMPLETE Completed, 3.7s INTEGRATION QUEUE COUNT. Run bash: sleep 90; printf "QUEUE_COUNT_WAIT_DONE\n" with a timeout of 120 seconds. Do not read or change files. Reply COUNT WAIT DONE. <system-notice>
+Background job bg_1 has completed. Resume your work using the result below.
+INTEGRATION_WAIT_COMPLETE
+Wall time: 60.04 seconds
+Timeout clamped to 3600s (requested 75000s; allowed range 1-3600s).
+</system-notice> <system-notice>
+Background job bg_1 has completed. Resume your work using the result below.
+INTEGRATION_WAIT_COMPLETE
+Wall time: 60.04 seconds
+Timeout clamped to 3600s (requested 75000s; allowed range 1-3600s).
+</system-notice> Cursor-Grok-4.6-Fast, Streaming, Tuesday, September 8, 2026 at 2:12 PM I'll run the 90-second wait now, then reply COUNT WAIT DONE. No files will be read or changed.
+				59 button Description: Tool call, Running, Help: Collapses tool call, Value: Expanded
+				60 container Run sleep 90; printf "QUEUE_COUNT_WAIT_DONE\n", Waiting for output, Running
+					61 button Description: Run sleep 90; printf "QUEUE_COUNT_WAIT_DONE\n", Waiting for output, Running, Help: Expands tool details, Value: Collapsed
+					62 text sleep 90; printf "QUEUE_COUNT_WAIT_DONE\n" · Waiting for output Running Total 44.0s
+				63 text INTEGRATION COUNT FOLLOW-UP: reply with only COUNT FOLLOW-UP COMPLETE. Queued as follow-up
+		64 text Steer or follow up
+		65 scroll area Secondary Actions: Scroll Up, Scroll Down
+			66 text entry area (settable) Description: Session prompt, Help: Active session prompt, Follow up mode
+			67 scroll bar (settable, float) 0.05767440795898438
+				68 value indicator (settable, float) 0.05767440795898438
+				69 increment arrow button
+				70 decrement arrow button
+				71 increment page button
+				72 decrement page button
+		73 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		74 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
+		75 button Description: Context window, Help: Shows context usage details, Value: 10 percent used
+		76 unknown Working
+		77 text 1 queued
+		78 menu button Description: Composer send action, Value: Follow up
+		79 button (disabled) Description: Send message, ID: arrow.up
+		80 button Description: Stop response, Help: Stop the response
+	81 close button
+	82 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	83 minimize button
+84 menu bar
+	85 10x Integration QA
+	86 File
+	87 Edit
+	88 View
+	89 Navigate
+	90 Session
+	91 Window
+	92 Help
+
+The focused UI element is 66 text entry area (settable) Description: Session prompt, Help: Active session prompt, Follow up mode
