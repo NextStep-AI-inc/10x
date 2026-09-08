@@ -5,6 +5,7 @@ enum ToolPhase: Equatable, Sendable {
     case running
     case complete
     case failed
+    case interrupted
 }
 
 extension ToolPhase {
@@ -13,6 +14,7 @@ extension ToolPhase {
         case .running: "Running"
         case .complete: "Complete"
         case .failed: "Error"
+        case .interrupted: "Stopped"
         }
     }
 }

@@ -22,10 +22,24 @@ struct ActiveSessionView: View {
                     exitCode: code,
                     onRestart: { Task { await controller.restart() } },
                     onOpenLog: controller.openLog,
-                    onDismiss: controller.dismissRecovery)
+                    onDismiss: controller.dismissRecovery,
+                    canRestart: controller.sessionPath != nil && !controller.isStopping,
+                    isIntentionalStop: controller.isIntentionallyStopped,
+                    isStopping: controller.isStopping)
                 .frame(maxWidth: 780)
                 .padding(.horizontal, 42)
                 .padding(.bottom, 16)
+            }
+
+            if !controller.isRecoveryPresented,
+               controller.isIntentionallyStopped,
+               controller.sessionPath != nil {
+                Button(controller.isStopping ? "Stopping…" : "Restart session") {
+                    Task { await controller.restart() }
+                }
+                .buttonStyle(GhostActionStyle())
+                .disabled(controller.isStopping)
+                .padding(.bottom, 12)
             }
 
             if controller.sessionPath == nil, case .stopped = controller.runtimeState,

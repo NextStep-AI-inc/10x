@@ -3,6 +3,21 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func interruptedToolWithoutAResultDoesNotClaimAnEmptySuccess() {
+    let content = ToolContentExtractor.card(
+        name: "glob",
+        arguments: .object(["pattern": .string("*.swift")]),
+        result: nil,
+        phase: .interrupted)
+
+    #expect(content.outcome == "Stopped")
+    guard case .empty(let detail) = content.body else {
+        Issue.record("Expected a stopped empty state")
+        return
+    }
+    #expect(detail == "Stopped before completion")
+}
+
 @Test func taskCardsRenderOMPPhaseSnapshots() {
     let arguments: JSONValue = .object(["op": .string("view")])
     let snapshot: JSONValue = .object(["details": .object(["phases": .array([

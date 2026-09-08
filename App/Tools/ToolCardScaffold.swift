@@ -183,8 +183,13 @@ struct ToolCardScaffold<Content: View>: View {
     }
 
     private var accentColor: Color {
-        TenXPalette.color(presentation.isError
-            ? TenXPalette.signalRedHex
-            : TenXPalette.cyanHex)
+        switch presentation.phase {
+        case .failed:
+            TenXPalette.color(TenXPalette.signalRedHex)
+        case .interrupted:
+            TenXPalette.color(TenXPalette.mutedTextHex)
+        case .running, .complete:
+            TenXPalette.color(TenXPalette.cyanHex)
+        }
     }
 }

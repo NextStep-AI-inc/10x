@@ -1,0 +1,74 @@
+[
+  {
+    "at": "2026-09-08T06:47:20.346Z",
+    "direction": "command",
+    "type": "prompt",
+    "id": "req_6",
+    "messageLength": 49,
+    "imageCount": 0
+  },
+  {
+    "at": "2026-09-08T06:47:32.357Z",
+    "direction": "event",
+    "type": "extension_ui_request",
+    "id": "attention-confirm-1",
+    "method": "confirm",
+    "elapsedMs": 12010
+  },
+  {
+    "at": "2026-09-08T06:47:34.350Z",
+    "direction": "event",
+    "type": "extension_ui_request",
+    "id": "attention-select-1",
+    "method": "select",
+    "elapsedMs": 14003
+  },
+  {
+    "at": "2026-09-08T06:47:36.352Z",
+    "direction": "event",
+    "type": "extension_ui_request",
+    "id": "attention-input-1",
+    "method": "input",
+    "elapsedMs": 16005
+  },
+  {
+    "at": "2026-09-08T06:47:54.024Z",
+    "direction": "command",
+    "type": "abort",
+    "id": "req_8",
+    "wasStreaming": true,
+    "pendingIds": [
+      "attention-confirm-1",
+      "attention-select-1",
+      "attention-input-1"
+    ]
+  },
+  {
+    "at": "2026-09-08T06:47:54.029Z",
+    "direction": "event",
+    "type": "turn_end",
+    "stopReason": "aborted"
+  },
+  {
+    "at": "2026-09-08T06:48:27.706Z",
+    "direction": "command",
+    "type": "prompt",
+    "id": "req_5",
+    "messageLength": 47,
+    "imageCount": 0
+  },
+  {
+    "at": "2026-09-08T06:48:38.817Z",
+    "direction": "command",
+    "type": "abort",
+    "id": "req_7",
+    "wasStreaming": true,
+    "pendingIds": []
+  },
+  {
+    "at": "2026-09-08T06:48:38.820Z",
+    "direction": "event",
+    "type": "turn_end",
+    "stopReason": "aborted"
+  }
+]

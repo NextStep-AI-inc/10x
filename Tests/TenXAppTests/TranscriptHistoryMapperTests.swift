@@ -196,6 +196,39 @@ import Testing
     #expect(messages.map(\.visibleText) == ["Provider unavailable", "Response aborted."])
 }
 
+@Test func historyMapperInterruptsUnresolvedToolsOnlyWithPersistedAbortEvidence() throws {
+    let header = SessionHeader(
+        id: "session-interrupted-tool",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let toolCall = SessionEntry.message(
+        base: historyBase("tool-use", nil, 1),
+        message: try historyJSON(#"{"role":"assistant","content":[{"type":"toolCall","id":"tool-1","name":"bash","arguments":{"command":"sleep 10"}}],"stopReason":"toolUse"}"#))
+    let aborted = SessionEntry.message(
+        base: historyBase("aborted", "tool-use", 2),
+        message: try historyJSON(#"{"role":"assistant","content":[],"stopReason":"aborted"}"#))
+
+    let incomplete = TranscriptHistoryMapper.map(header: header, path: [toolCall])
+    let stopped = TranscriptHistoryMapper.map(header: header, path: [toolCall, aborted])
+    let incompleteTool = try #require(incomplete.items.compactMap { item -> ToolPresentation? in
+        guard case .tool(let tool) = item else { return nil }
+        return tool
+    }.first)
+    let stoppedTool = try #require(stopped.items.compactMap { item -> ToolPresentation? in
+        guard case .tool(let tool) = item else { return nil }
+        return tool
+    }.first)
+
+    #expect(incompleteTool.phase == .running)
+    #expect(incompleteTool.endDate == nil)
+    #expect(stoppedTool.phase == .interrupted)
+    #expect(stoppedTool.endDate == historyDate(2))
+}
+
 @Test func historyMapperSkipsDeveloperInstructionWalls() throws {
     let header = SessionHeader(
         id: "session-developer",

@@ -554,6 +554,30 @@ import Testing
     #expect(reducer.runtimeState == .idle)
 }
 
+@Test func abortedAssistantBoundaryInterruptsUnresolvedToolsAndRejectsLateResults() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"tool_execution_start","toolCallId":"running","toolName":"bash","args":{"command":"sleep 10"}}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"aborted","role":"assistant","content":[],"stopReason":"aborted"}}
+        """))
+
+    guard case .tool(let interrupted) = try #require(reducer.items.first) else {
+        Issue.record("Expected interrupted tool")
+        return
+    }
+    #expect(interrupted.phase == .interrupted)
+    #expect(interrupted.endDate != nil)
+
+    reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"running","toolName":"bash","result":{"content":[{"type":"text","text":"late"}]},"isError":false}
+        """))
+    guard case .tool(let stillInterrupted) = try #require(reducer.items.first) else { return }
+    #expect(stillInterrupted.phase == .interrupted)
+    #expect(stillInterrupted.result == nil)
+}
+
 @Test func historicalToolCallsKeepArgumentsAndMergeTheirResults() throws {
     var reducer = TranscriptReducer()
     reducer.load(messages: [

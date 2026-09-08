@@ -55,6 +55,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private(set) var extensionSheetRequest: ExtensionUIState?
     private(set) var hasPendingUserInput = false
     private(set) var isRecoveryPresented = false
+    private(set) var isStopping = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
     let id: UUID
@@ -254,6 +255,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     var canRetryOpening: Bool {
         guard case .failed = runtimeState else { return false }
         return sessionPath != nil && handle == nil
+    }
+
+    var isIntentionallyStopped: Bool {
+        guard wasStoppedByUser else { return false }
+        if case .stopped = runtimeState { return true }
+        return false
     }
 
     var availableCommands: [AvailableSlashCommand] {
@@ -721,40 +728,58 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func abort() async {
-        if runtimeState == .loading {
-            let path = stopAndDetachCurrentSession()
-            wasStoppedByUser = true
-            runtimeState = .stopped(code: nil, stderrTail: "")
-            markInitialSubmissionFailed()
-            reportActivity()
-            if let path { await processManager.close(sessionPath: path) }
-            return
+        guard runtimeState == .loading || runtimeState == .streaming else { return }
+        let stoppedAt = Date()
+        let stoppedHandle = handle
+        let path = stopAndDetachCurrentSession()
+        let closePredecessor = openingCloseTask
+        let stopGeneration = pipelineGeneration
+
+        isStopping = true
+        wasStoppedByUser = true
+        runtimeState = .stopped(code: nil, stderrTail: "")
+        _ = TranscriptReducer.settleActiveTurnAfterStop(in: &items, at: stoppedAt)
+        isRecoveryPresented = true
+        queuedMessageCount = 0
+        markInitialSubmissionFailed()
+        for index in pendingSubmissions.indices {
+            pendingSubmissions[index].state = .unconfirmed
         }
-        guard let handle, runtimeState == .streaming else { return }
-        let context = currentPipelineContext()
-        do {
-            _ = try await handle.client.send(.abort())
-            wasStoppedByUser = true
-        } catch {
-            fail(error, function: "abort", context: context)
+        reportActivity()
+
+        let closeTask = Task { [processManager] in
+            await closePredecessor?.value
+            if let stoppedHandle {
+                _ = try? await stoppedHandle.client.send(.abort(), timeout: .milliseconds(250))
+            }
+            if let path {
+                await processManager.close(sessionPath: path)
+            }
+        }
+        openingCloseTask = closeTask
+        await closeTask.value
+        isStopping = false
+        if pipelineGeneration == stopGeneration {
+            openingCloseTask = nil
         }
     }
 
     func restart() async {
-        guard let projectURL, let sessionPath else { return }
+        guard !isStopping, let projectURL, let sessionPath else { return }
         stopEventPipeline()
         publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
-        await processManager.close(sessionPath: sessionPath)
-        guard pipelineGeneration == openingGeneration else { return }
         await pendingOpeningCloseTask?.value
+        guard pipelineGeneration == openingGeneration else { return }
+        await processManager.close(sessionPath: sessionPath)
         guard pipelineGeneration == openingGeneration else { return }
         let openingContext = PipelineContext(
             generation: openingGeneration,
             handle: nil,
             processor: nil)
         runtimeState = .loading
+        wasStoppedByUser = false
         reportActivity()
         isRecoveryPresented = false
         let projectPath = projectURL.path

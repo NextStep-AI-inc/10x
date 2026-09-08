@@ -1,0 +1,17 @@
+{
+  "recordedUTC": "2026-09-08T07:04:12.469812+00:00",
+  "finalSourceCommit": "ae2b1354b77206318a6753bb8b6bc160f0dac352",
+  "finalExecutableSHA256": "8d03c5e53d7cb1620e5c35ac941914250b9358961638d5b5717de9130ae14945",
+  "realBackgroundSourceCommit": "bb37c6a",
+  "realBackgroundExecutableSHA256": "c4ddf171777516fc7e26882ea42b6c69f39007b6b4ac5fdf2bfc9f6741882780",
+  "files": {
+    "README.md": "9ae8d38cafcf66523fcf877926ad4be0d7385efc5569d34bbb9d5bc35aa3666c",
+    "model-popup-keyboard-stop.png": "39438bdedade30bfc8229766a1c58c8406ec1449f30ea92857d98940551c2e2c",
+    "pending-input-control-verification.json": "4941295c99e1cec9d19ca17306d5c378c120c5bc24cebd7d179cc18cebf4bb44",
+    "pending-input-keyboard-stop.png": "887227894571f9112fa647e0a978832acb394869737fde0bd1f1a2b2a08a7492",
+    "restarted-input-still-unsent.png": "a9ec4a4ce9bf88fc973370d132049a641e6d7a095f0381ee051ce023364ca9c2",
+    "runtime-stop-verification.json": "9df288a8363421dee1cfb5aa0c6326a6053f762211221e2497c72ae663261e9e",
+    "staged-before-stop.png": "dc2c717b97e4b6226bcd330b2677c47651d9550239b1e8a89f364f4de6637bf8",
+    "stopped-with-input-preserved.png": "65a616d4998f7e11ce5241c2113eed0e8ba10b35fba80a353e29ce2640cc935c"
+  }
+}
