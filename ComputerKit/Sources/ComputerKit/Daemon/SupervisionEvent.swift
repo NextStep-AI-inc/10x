@@ -1,7 +1,9 @@
 import Foundation
 
-/// Events pushed to supervision subscribers (10x) and commands accepted back.
+/// Events pushed to supervision subscribers (10x).
 /// Wire format: one JSON object per line, "type" discriminates.
+/// `screenshotTaken` lines can be megabytes (full window PNG, base64).
+/// `jsonLine()` returns the JSON object only — the broadcaster must append `0x0A` (newline).
 public enum SupervisionEvent: Equatable, Sendable {
     case sessionStarted(session: Int, harness: String)
     case sessionEnded(session: Int, harness: String)
