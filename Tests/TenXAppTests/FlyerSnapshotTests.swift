@@ -29,35 +29,41 @@ import Testing
 }
 
 @Test func marqueePresentationResetsOnTextOrWidthChange() {
+    let body13 = Font.system(size: 13, weight: .regular)
     let original = MarqueePresentationKey(
         text: "Three turns finished",
-        fontIdentity: "body-13",
+        font: body13,
         viewportWidth: 180,
         layoutDirection: .leftToRight)
 
     #expect(original != MarqueePresentationKey(
         text: "Four turns finished",
-        fontIdentity: "body-13",
+        font: body13,
         viewportWidth: 180,
         layoutDirection: .leftToRight))
     #expect(original != MarqueePresentationKey(
         text: original.text,
-        fontIdentity: "body-15",
+        font: Font.system(size: 18, weight: .regular),
         viewportWidth: 180,
         layoutDirection: .leftToRight))
     #expect(original != MarqueePresentationKey(
         text: original.text,
-        fontIdentity: "body-13",
+        font: Font.system(size: 13, weight: .bold),
+        viewportWidth: 180,
+        layoutDirection: .leftToRight))
+    #expect(original != MarqueePresentationKey(
+        text: original.text,
+        font: body13,
         viewportWidth: 120,
         layoutDirection: .leftToRight))
     #expect(original != MarqueePresentationKey(
         text: original.text,
-        fontIdentity: "body-13",
+        font: body13,
         viewportWidth: 180,
         layoutDirection: .rightToLeft))
     #expect(original == MarqueePresentationKey(
         text: original.text,
-        fontIdentity: "body-13",
+        font: Font.system(size: 13, weight: .regular),
         viewportWidth: 180,
         layoutDirection: .leftToRight))
 }

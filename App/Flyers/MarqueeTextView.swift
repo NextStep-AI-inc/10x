@@ -2,7 +2,7 @@ import SwiftUI
 
 struct MarqueePresentationKey: Equatable {
     let text: String
-    let fontIdentity: String
+    let font: Font
     let viewportWidth: CGFloat
     let layoutDirection: LayoutDirection
 }
@@ -55,7 +55,7 @@ struct MarqueeTextView: View {
     @State private var viewportWidth: CGFloat = 0
 
     private static var now: TimeInterval {
-        Date.now.timeIntervalSinceReferenceDate
+        ProcessInfo.processInfo.systemUptime
     }
 
     private var reduceMotion: Bool {
@@ -67,10 +67,14 @@ struct MarqueeTextView: View {
         return max(0, textWidth - viewportWidth)
     }
 
+    private var resolvedFont: Font {
+        font ?? TenXTypography.body()
+    }
+
     private var presentationKey: MarqueePresentationKey {
         MarqueePresentationKey(
             text: text,
-            fontIdentity: font.map { String(reflecting: $0) } ?? "inherited-default",
+            font: resolvedFont,
             viewportWidth: viewportWidth,
             layoutDirection: layoutDirection)
     }
@@ -96,9 +100,8 @@ struct MarqueeTextView: View {
             } else if shouldSchedule {
                 TimelineView(.animation(
                     minimumInterval: 1.0 / 30.0,
-                    paused: shouldPause)) { context in
-                    movingText(elapsed: clock.elapsed(
-                        at: context.date.timeIntervalSinceReferenceDate))
+                    paused: shouldPause)) { _ in
+                    movingText(elapsed: clock.elapsed(at: Self.now))
                 }
             } else {
                 movingText(elapsed: clock.elapsed(at: Self.now))
@@ -120,7 +123,7 @@ struct MarqueeTextView: View {
         }
         .popover(isPresented: $isDetailsPresented, arrowEdge: .top) {
             Text(text)
-                .font(font ?? TenXTypography.body())
+                .font(resolvedFont)
                 .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                 .textSelection(.enabled)
                 .padding(12)
@@ -145,7 +148,7 @@ struct MarqueeTextView: View {
 
     private var staticText: some View {
         Text(text)
-            .font(font ?? TenXTypography.body())
+            .font(resolvedFont)
             .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
             .lineLimit(1)
             .truncationMode(.tail)
@@ -154,7 +157,7 @@ struct MarqueeTextView: View {
 
     private var measurementText: some View {
         Text(text)
-            .font(font ?? TenXTypography.body())
+            .font(resolvedFont)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
             .hidden()
@@ -172,14 +175,14 @@ struct MarqueeTextView: View {
             overflow: overflow,
             isRightToLeft: layoutDirection == .rightToLeft)
         return Text(text)
-            .font(font ?? TenXTypography.body())
+            .font(resolvedFont)
             .lineLimit(1)
             .truncationMode(.tail)
             .hidden()
             .frame(maxWidth: .infinity, alignment: .leading)
             .overlay(alignment: .leading) {
                 Text(text)
-                    .font(font ?? TenXTypography.body())
+                    .font(resolvedFont)
                     .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
