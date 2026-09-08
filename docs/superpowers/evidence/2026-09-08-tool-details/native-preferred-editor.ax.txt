@@ -1,0 +1,84 @@
+Window: "10x", App: 10x Details QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: details, Help: Starts a new session in details
+					7 button Description: DETAILS child acceptance, details, Ready, Help: DETAILS child acceptance, Secondary Actions: Rename Session
+					8 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					9 button Description: titles-native, Help: Starts a new session in titles-native
+					10 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					11 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					12 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					13 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Unknown, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					14 button Description: review-native, Help: Starts a new session in review-native
+					15 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					16 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					17 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					18 button Description: context-busy, Help: Starts a new session in context-busy
+					19 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					20 button Description: context-failure, Help: Starts a new session in context-failure
+					21 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					22 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					23 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					24 button Description: context, Help: Starts a new session in context
+					25 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					26 button Description: continuity, Help: Starts a new session in continuity
+					27 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					28 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					29 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					30 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					31 button Description: queue, Help: Starts a new session in queue
+					32 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					33 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					34 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					35 button Description: queue-reject, Help: Starts a new session in queue-reject
+					36 button Description: Reject queued input, queue-reject, Pending, Help: Reject queued input, Secondary Actions: Rename Session
+					37 button Description: failure, Help: Starts a new session in failure
+					38 button Description: Recover unavailable project, failure, Ready, Help: Recover unavailable project, Secondary Actions: Rename Session
+					39 button Description: reopen, Help: Starts a new session in reopen
+					40 button Description: Reopen saved history, reopen, Ready, Help: Reopen saved history, Secondary Actions: Rename Session
+			41 button Description: Show later rail items, ID: chevron.down
+			42 button Description: Archived sessions, ID: archivebox
+		43 button Back
+		44 text Settings
+		45 button Open Providers
+		46 image Description: Search, ID: magnifyingglass
+		47 text field (settable) Search all settings
+		48 text OMP 10x
+		49 scroll area
+			50 button General
+			51 button Appearance
+			52 button Models
+			53 button Agent
+			54 button Tools
+			55 button Subagents
+			56 button Memory
+			57 button Integrations
+			58 button Safety
+			59 button Advanced
+		60 button (selected) General
+		61 button Composer
+		62 scroll area
+			63 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				64 text General 2
+				65 container
+					66 text Preferred IDE Open file references in this application
+					67 menu button Description: Preferred IDE, Value: Cursor
+				68 text Hidden harness messages Show a transcript notice when a harness message is kept out of the chat, with a one-line summary from a small model
+				69 toggle button Description: Hidden harness messages, Value: off
+		70 button
+	71 close button
+	72 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	73 minimize button
+74 menu bar
+	75 10x Details QA
+	76 File
+	77 Edit
+	78 View
+	79 Navigate
+	80 Session
+	81 Window
+	82 Help

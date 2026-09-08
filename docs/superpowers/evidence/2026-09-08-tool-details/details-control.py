@@ -21,7 +21,7 @@ ASSISTANT_ID = "details-assistant-1"
 BASH_TOOL_ID = "details-bash-1"
 TASK_TOOL_ID = "details-task-1"
 SUBAGENT_ID = "details-child-agent"
-BASH_COMMAND = "for i in $(seq 1 45); do printf 'DETAILS line %02d\\n' \"$i\"; sleep 0.45; done"
+BASH_COMMAND = "for i in $(seq 1 45); do printf 'DETAILS line %02d\\n' \"$i\"; sleep 1; done"
 
 
 def now_milliseconds():
@@ -340,7 +340,7 @@ def run_turn(command):
                     "progress": {
                         "id": SUBAGENT_ID,
                         "status": "running",
-                        "durationMs": line_number * 450,
+                        "durationMs": line_number * 1000,
                         "resolvedModel": "test/details-child:low",
                         "modelRole": "fast",
                         "currentTool": "bash",
@@ -357,7 +357,7 @@ def run_turn(command):
                     },
                 },
             })
-        time.sleep(0.45)
+        time.sleep(1.0)
 
     completed_at = now_milliseconds()
     final_output = "\n".join(output_lines)

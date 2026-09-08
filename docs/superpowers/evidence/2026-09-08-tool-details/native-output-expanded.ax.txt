@@ -1,0 +1,130 @@
+Window: "10x", App: 10x Details QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: details, Help: Starts a new session in details
+					11 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					12 button Description: titles-native, Help: Starts a new session in titles-native
+					13 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					14 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					15 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					16 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Unknown, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					17 button Description: review-native, Help: Starts a new session in review-native
+					18 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					19 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					20 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					21 button Description: context-busy, Help: Starts a new session in context-busy
+					22 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					23 button Description: context-failure, Help: Starts a new session in context-failure
+					24 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					25 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					26 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					27 button Description: context, Help: Starts a new session in context
+					28 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					29 button Description: continuity, Help: Starts a new session in continuity
+					30 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					31 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					32 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					33 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					34 button Description: queue, Help: Starts a new session in queue
+					35 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					36 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					37 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					38 button Description: queue-reject, Help: Starts a new session in queue-reject
+					39 button Description: Reject queued input, queue-reject, Pending, Help: Reject queued input, Secondary Actions: Rename Session
+					40 button Description: failure, Help: Starts a new session in failure
+					41 button Description: Recover unavailable project, failure, Ready, Help: Recover unavailable project, Secondary Actions: Rename Session
+					42 button Description: reopen, Help: Starts a new session in reopen
+					43 button Description: Reopen saved history, reopen, Ready, Help: Reopen saved history, Secondary Actions: Rename Session
+					44 button Description: attention-edge, Help: Starts a new session in attention-edge
+			45 button Description: Show later rail items, ID: chevron.down
+			46 button Archived sessions
+		47 text Value: DETAILS controlled acceptance, Secondary Actions: Rename Session
+		48 unknown Description: Branch, Details: detached
+		49 unknown Description: Folder, Details: details
+		50 scroll area
+			51 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				52 button Description: Tool calls (2), Complete, Help: Collapses tool calls, Value: Expanded
+				53 container Run for i in $(seq 1 45); do printf 'DETAILS line %02d\n' "$i"; sleep 1; done, 45 lines, Complete, Total 45.2 seconds
+					54 button Help: Collapses tool details, Value: Expanded, Description: Run for i in $(seq 1 45); do printf 'DETAILS line %02d\n' "$i"; sleep 1; done, 45 lines, Complete, Total 45.2 seconds
+					55 text for i in $(seq 1 45); do printf 'DETAILS line %02d\n' "$i"; sleep 1; done · 45 lines Complete Total 45.2s COMMAND for i in $(seq 1 45); do printf 'DETAILS line %02d\n' "$i"; sleep 1; done OUTPUT
+					56 button Scroll
+					57 button Copy
+					58 text DETAILS line 01
+DETAILS line 02
+DETAILS line 03
+DETAILS line 04
+DETAILS line 05
+DETAILS line 06
+DETAILS line 07
+DETAILS line 08
+DETAILS line 09
+DETAILS line 10
+DETAILS line 11
+DETAILS line 12
+DETAILS line 13
+DETAILS line 14
+DETAILS line 15
+DETAILS line 16
+DETAILS line 17
+DETAILS line 18
+DETAILS line 19
+DETAILS line 20
+DETAILS line 21
+DETAILS line 22
+DETAILS line 23
+DETAILS line 24
+DETAILS line 25
+DETAILS line 26
+DETAILS line 27
+DETAILS line 28
+DETAILS line 29
+DETAILS line 30
+DETAILS line 31
+DETAILS line 32
+DETAILS line 33
+DETAILS line 34
+DETAILS line 35
+DETAILS line 36
+DETAILS line 37
+DETAILS line 38
+DETAILS line 39
+DETAILS line 40
+DETAILS line 41
+DETAILS line 42
+DETAILS line 43
+DETAILS line 44
+DETAILS line 45
+					59 button Show fewer output lines
+				60 container Delegate Inspect the controlled DETAILS child transcript, Complete
+					61 button Description: Delegate Inspect the controlled DETAILS child transcript, Complete, Help: Expands tool details, Value: Collapsed
+					62 text Inspect the controlled DETAILS child transcript Complete
+				63 text The controlled long command and child report completed.
+				64 disclosure triangle Description: worker subagent, Complete, Value: off
+					65 text Worker Inspect DETAILS child details-child Complete
+				66 text Completed
+		67 text Send a message
+		68 scroll area Secondary Actions: Scroll Up, Scroll Down
+			69 text entry area (settable) Description: Session prompt, Help: Active session prompt
+			70 scroll bar (disabled, settable, float) 0
+		71 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		72 button Description: Model, Help: Shows model menu
+		73 button Description: Context window, Help: Shows context usage details, Value: 0 percent used
+		74 button (disabled) Description: Send message, ID: arrow.up
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+78 menu bar
+	79 10x Details QA
+	80 File
+	81 Edit
+	82 View
+	83 Navigate
+	84 Session
+	85 Window
+	86 Help
+
+The focused UI element is 69 text entry area (settable) Description: Session prompt, Help: Active session prompt

@@ -1,0 +1,82 @@
+Window: "10x", App: 10x Details QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: details, Help: Starts a new session in details
+					11 button Description: DETAILS child acceptance, details, Ready, Help: DETAILS child acceptance, Secondary Actions: Rename Session
+					12 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					13 button Description: titles-native, Help: Starts a new session in titles-native
+					14 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					15 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					16 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					17 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Unknown, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					18 button Description: review-native, Help: Starts a new session in review-native
+					19 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					20 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					21 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					22 button Description: context-busy, Help: Starts a new session in context-busy
+					23 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					24 button Description: context-failure, Help: Starts a new session in context-failure
+					25 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					26 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					27 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					28 button Description: context, Help: Starts a new session in context
+					29 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					30 button Description: continuity, Help: Starts a new session in continuity
+					31 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					32 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					33 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					34 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					35 button Description: queue, Help: Starts a new session in queue
+					36 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					37 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					38 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					39 button Description: queue-reject, Help: Starts a new session in queue-reject
+					40 button Description: Reject queued input, queue-reject, Pending, Help: Reject queued input, Secondary Actions: Rename Session
+					41 button Description: failure, Help: Starts a new session in failure
+					42 button Description: Recover unavailable project, failure, Ready, Help: Recover unavailable project, Secondary Actions: Rename Session
+					43 button Description: reopen, Help: Starts a new session in reopen
+					44 button Description: Reopen saved history, reopen, Ready, Help: Reopen saved history, Secondary Actions: Rename Session
+			45 button Description: Show later rail items, ID: chevron.down
+			46 button Archived sessions
+		47 text Value: DETAILS child acceptance, Secondary Actions: Rename Session
+		48 unknown Description: Branch, Details: detached
+		49 unknown Description: Folder, Details: details
+		50 scroll area
+			51 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				52 container Description: Model expansion, Details: Standard
+					53 button Description: Expanded, Value: Not selected
+					54 button Description: Standard, Value: Selected
+					55 button Description: Slim, Value: Not selected
+				56 unknown Thread started Tuesday, September 8, 2026 at 12:06 PM
+				57 text Inspect the controlled DETAILS child session. Details-Child, Tuesday, September 8, 2026 at 12:06 PM The reported child session opened successfully. Completed, 0.5s
+		58 text Send a message
+		59 scroll area Secondary Actions: Scroll Up, Scroll Down
+			60 text entry area (settable) Description: Session prompt, Help: Active session prompt
+			61 scroll bar (settable, float) 0.311366081237793
+				62 value indicator (settable, float) 0.311366081237793
+				63 increment arrow button
+				64 decrement arrow button
+				65 increment page button
+				66 decrement page button
+		67 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		68 button Description: Model, Help: Shows model menu
+		69 button Description: Context window, Help: Shows context usage details, Value: 0 percent used
+		70 button (disabled) Description: Send message, ID: arrow.up
+	71 close button
+	72 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	73 minimize button
+74 menu bar
+	75 10x Details QA
+	76 File
+	77 Edit
+	78 View
+	79 Navigate
+	80 Session
+	81 Window
+	82 Help
+
+The focused UI element is 60 text entry area (settable) Description: Session prompt, Help: Active session prompt
