@@ -10,6 +10,17 @@ import UniformTypeIdentifiers
 /// The real engine. Every method converts failures into ComputerError so MCP
 /// clients get actionable text instead of crashes.
 public final class MacDesktopEngine: DesktopEngine {
+    private static let localEventFilter: UInt32 = 0x01 | 0x02 | 0x04
+
+    private var lastFocusedWid: CGWindowID?
+    private let eventSource: CGEventSource = {
+        let source = CGEventSource(stateID: .hidSystemState)!
+        CGEventSourceSetLocalEventsSuppressionInterval(source, 0)
+        CGEventSourceSetLocalEventsFilterDuringSuppressionState(source, localEventFilter, 0)
+        CGEventSourceSetLocalEventsFilterDuringSuppressionState(source, localEventFilter, 1)
+        return source
+    }()
+
     public init() {}
 
     public func preflightPermissions() -> PermissionStatus {
@@ -128,67 +139,219 @@ public final class MacDesktopEngine: DesktopEngine {
 
     public func act(_ action: ComputerAction, window: WindowInfo) throws {
         guard preflightPermissions().accessibility else { throw ComputerError("permission_missing: accessibility") }
-        let pid = pid_t(window.pid)
-        func globalPoint(_ windowRelative: CGPoint) -> CGPoint {
-            CGPoint(x: window.bounds.minX + windowRelative.x, y: window.bounds.minY + windowRelative.y)
-        }
+        let pid = window.pid
+        let wid = window.id
         switch action {
         case .click(let point, let button):
-            let location = globalPoint(point)
-            let (downType, upType, cgButton): (CGEventType, CGEventType, CGMouseButton) = button == .right
-                ? (.rightMouseDown, .rightMouseUp, .right) : (.leftMouseDown, .leftMouseUp, .left)
-            try post(CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: location, mouseButton: cgButton), to: pid, windowID: window.id)
-            try post(CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: location, mouseButton: cgButton), to: pid, windowID: window.id)
+            try ensureBackgroundFocus(pid: pid, wid: wid)
+            let group = clickGroupID()
+            let (downType, upType, cgButton, buttonNumber) = buttonTypes(button)
+            try pointerPrologue(pid: pid, wid: wid, window: window, x: point.x, y: point.y, group: group)
+            try postMouse(
+                pid: pid, wid: wid, window: window, type: downType, button: cgButton,
+                x: point.x, y: point.y, phase: 3, clickState: 1, buttonNumber: buttonNumber, group: group
+            )
+            Thread.sleep(forTimeInterval: 0.001)
+            try postMouse(
+                pid: pid, wid: wid, window: window, type: upType, button: cgButton,
+                x: point.x, y: point.y, phase: 3, clickState: 1, buttonNumber: buttonNumber, group: group
+            )
         case .doubleClick(let point):
-            let location = globalPoint(point)
-            for state in 1...2 {
-                let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: location, mouseButton: .left)
-                let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: location, mouseButton: .left)
-                down?.setIntegerValueField(.mouseEventClickState, value: Int64(state))
-                up?.setIntegerValueField(.mouseEventClickState, value: Int64(state))
-                try post(down, to: pid, windowID: window.id)
-                try post(up, to: pid, windowID: window.id)
+            try ensureBackgroundFocus(pid: pid, wid: wid)
+            let group = clickGroupID()
+            try pointerPrologue(pid: pid, wid: wid, window: window, x: point.x, y: point.y, group: group)
+            for clickState in 1...2 {
+                try postMouse(
+                    pid: pid, wid: wid, window: window, type: .leftMouseDown, button: .left,
+                    x: point.x, y: point.y, phase: 3, clickState: Int64(clickState), buttonNumber: 0, group: group
+                )
+                Thread.sleep(forTimeInterval: 0.001)
+                try postMouse(
+                    pid: pid, wid: wid, window: window, type: .leftMouseUp, button: .left,
+                    x: point.x, y: point.y, phase: 3, clickState: Int64(clickState), buttonNumber: 0, group: group
+                )
+                if clickState < 2 { Thread.sleep(forTimeInterval: 0.08) }
             }
         case .drag(let from, let to):
-            let start = globalPoint(from), end = globalPoint(to)
-            try post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left), to: pid, windowID: window.id)
+            try ensureBackgroundFocus(pid: pid, wid: wid)
+            let group = clickGroupID()
+            try pointerPrologue(pid: pid, wid: wid, window: window, x: from.x, y: from.y, group: group)
+            try postMouse(
+                pid: pid, wid: wid, window: window, type: .leftMouseDown, button: .left,
+                x: from.x, y: from.y, phase: 3, clickState: 1, buttonNumber: 0, group: group
+            )
             let steps = 6
             for step in 1...steps {
                 let t = CGFloat(step) / CGFloat(steps)
-                let point = CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t)
-                try post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left), to: pid, windowID: window.id)
+                let point = CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t)
+                Thread.sleep(forTimeInterval: 0.016)
+                try postMouse(
+                    pid: pid, wid: wid, window: window, type: .leftMouseDragged, button: .left,
+                    x: point.x, y: point.y, phase: 3, clickState: 1, buttonNumber: 0, group: group
+                )
             }
-            try post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left), to: pid, windowID: window.id)
+            Thread.sleep(forTimeInterval: 0.05)
+            try postMouse(
+                pid: pid, wid: wid, window: window, type: .leftMouseUp, button: .left,
+                x: to.x, y: to.y, phase: 3, clickState: 1, buttonNumber: 0, group: group
+            )
         case .scroll(let deltaX, let deltaY):
-            try post(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: clampScrollWheel(-deltaY), wheel2: clampScrollWheel(-deltaX), wheel3: 0), to: pid, windowID: window.id)
+            try ensureBackgroundFocus(pid: pid, wid: wid)
+            let group = clickGroupID()
+            let center = CGPoint(x: window.bounds.width / 2, y: window.bounds.height / 2)
+            try postMouse(
+                pid: pid, wid: wid, window: window, type: .mouseMoved, button: .left,
+                x: center.x, y: center.y, phase: 2, clickState: 0, buttonNumber: 0, group: group
+            )
+            Thread.sleep(forTimeInterval: 0.015)
+            guard let event = CGEvent(
+                scrollWheelEvent2Source: eventSource,
+                units: .pixel,
+                wheelCount: 2,
+                wheel1: clampScrollWheel(-deltaY),
+                wheel2: clampScrollWheel(-deltaX),
+                wheel3: 0
+            ) else {
+                throw ComputerError("event_create_failed")
+            }
+            event.location = globalPoint(center, in: window)
+            try SkyLight.stamp(
+                event: event, pid: pid, wid: wid,
+                windowLocal: windowLocalPoint(x: center.x, y: center.y, in: window),
+                phase: 3, clickState: 0, button: 0, clickGroup: group
+            )
+            try postStamped(event, pid: pid, windowID: wid, keyboard: false)
         case .type(let text):
+            try prepareBackgroundKeyboard(window: window)
             for scalar in text {
                 var unichar = Array(String(scalar).utf16)
-                try post(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)?.applyingUnicode(&unichar), to: pid, windowID: window.id)
-                try post(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)?.applyingUnicode(&unichar), to: pid, windowID: window.id)
+                try postKeyboard(CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true)?.applyingUnicode(&unichar), pid: pid, windowID: wid)
+                Thread.sleep(forTimeInterval: 0.008)
+                try postKeyboard(CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: false)?.applyingUnicode(&unichar), pid: pid, windowID: wid)
+                Thread.sleep(forTimeInterval: 0.008)
             }
         case .key(let chord):
+            try prepareBackgroundKeyboard(window: window)
             let (modifiers, keyCode) = try KeyChord.parse(chord)
             for modifier in modifiers {
-                try post(CGEvent(keyboardEventSource: nil, virtualKey: modifier, keyDown: true), to: pid, windowID: window.id)
+                try postKeyboard(CGEvent(keyboardEventSource: eventSource, virtualKey: modifier, keyDown: true), pid: pid, windowID: wid)
+                Thread.sleep(forTimeInterval: 0.008)
             }
-            try post(CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true), to: pid, windowID: window.id)
-            try post(CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false), to: pid, windowID: window.id)
+            try postKeyboard(CGEvent(keyboardEventSource: eventSource, virtualKey: keyCode, keyDown: true), pid: pid, windowID: wid)
+            Thread.sleep(forTimeInterval: 0.008)
+            try postKeyboard(CGEvent(keyboardEventSource: eventSource, virtualKey: keyCode, keyDown: false), pid: pid, windowID: wid)
+            Thread.sleep(forTimeInterval: 0.008)
             for modifier in modifiers.reversed() {
-                try post(CGEvent(keyboardEventSource: nil, virtualKey: modifier, keyDown: false), to: pid, windowID: window.id)
+                try postKeyboard(CGEvent(keyboardEventSource: eventSource, virtualKey: modifier, keyDown: false), pid: pid, windowID: wid)
+                Thread.sleep(forTimeInterval: 0.008)
             }
         }
     }
 
-    private func post(_ event: CGEvent?, to pid: pid_t, windowID: CGWindowID) throws {
+    private func ensureBackgroundFocus(pid: pid_t, wid: CGWindowID) throws {
+        guard lastFocusedWid != wid else { return }
+        try SkyLight.activateWithoutRaise(pid: pid, wid: wid)
+        lastFocusedWid = wid
+    }
+
+    private func prepareBackgroundKeyboard(window: WindowInfo) throws {
+        let siblings = try listWindows().filter { $0.pid == window.pid }.count
+        if siblings > 1 {
+            throw ComputerError(
+                "background_unavailable: window \(window.id) is one of \(siblings) windows in its application; background keystrokes go to whichever window is key"
+            )
+        }
+        try SkyLight.activateWithoutRaise(pid: window.pid, wid: window.id)
+        lastFocusedWid = window.id
+    }
+
+    private func pointerPrologue(pid: pid_t, wid: CGWindowID, window: WindowInfo, x: CGFloat, y: CGFloat, group: Int64) throws {
+        try postMouse(
+            pid: pid, wid: wid, window: window, type: .mouseMoved, button: .left,
+            x: x, y: y, phase: 2, clickState: 0, buttonNumber: 0, group: group
+        )
+        Thread.sleep(forTimeInterval: 0.015)
+        try postMouse(
+            pid: pid, wid: wid, window: window, type: .leftMouseDown, button: .left,
+            x: -1, y: -1, phase: 1, clickState: 1, buttonNumber: 0, group: group
+        )
+        Thread.sleep(forTimeInterval: 0.001)
+        try postMouse(
+            pid: pid, wid: wid, window: window, type: .leftMouseUp, button: .left,
+            x: -1, y: -1, phase: 2, clickState: 1, buttonNumber: 0, group: group
+        )
+        Thread.sleep(forTimeInterval: 0.1)
+    }
+
+    private func postMouse(
+        pid: pid_t,
+        wid: CGWindowID,
+        window: WindowInfo,
+        type: CGEventType,
+        button: CGMouseButton,
+        x: CGFloat,
+        y: CGFloat,
+        phase: Int64,
+        clickState: Int64,
+        buttonNumber: Int64,
+        group: Int64
+    ) throws {
+        let screenPoint = x == -1 && y == -1 ? CGPoint(x: -1, y: -1) : globalPoint(CGPoint(x: x, y: y), in: window)
+        guard let event = CGEvent(
+            mouseEventSource: eventSource,
+            mouseType: type,
+            mouseCursorPosition: screenPoint,
+            mouseButton: button
+        ) else {
+            throw ComputerError("event_create_failed")
+        }
+        let windowLocal = windowLocalPoint(x: x, y: y, in: window)
+        try SkyLight.stamp(
+            event: event, pid: pid, wid: wid, windowLocal: windowLocal,
+            phase: phase, clickState: clickState, button: buttonNumber, clickGroup: group
+        )
+        try postStamped(event, pid: pid, windowID: wid, keyboard: false)
+    }
+
+    private func postKeyboard(_ event: CGEvent?, pid: pid_t, windowID: CGWindowID) throws {
         guard let event else { throw ComputerError("event_create_failed") }
+        try postStamped(event, pid: pid, windowID: windowID, keyboard: true)
+    }
+
+    private func postStamped(_ event: CGEvent, pid: pid_t, windowID: CGWindowID, keyboard: Bool) throws {
         if kill(pid, 0) == -1, errno == ESRCH {
             throw ComputerError("window_gone: \(windowID)")
         }
         // ponytail: background delivery only, by design — the agent never steals
-        // focus. Ceiling: some apps ignore posted-to-pid events. Upgrade path:
-        // CGEventPostToPSN / Skylight private APIs (see pi-natives skylight.rs).
-        event.postToPid(pid)
+        // focus. Ceiling: SkyLight private SPI; multi-window processes reject
+        // background keyboard; symbols probed at runtime.
+        if keyboard {
+            try SkyLight.postKeyboard(pid: pid, event: event)
+        } else {
+            try SkyLight.postDual(pid: pid, event: event)
+        }
+    }
+
+    private func globalPoint(_ windowRelative: CGPoint, in window: WindowInfo) -> CGPoint {
+        CGPoint(x: window.bounds.minX + windowRelative.x, y: window.bounds.maxY - windowRelative.y)
+    }
+
+    private func windowLocalPoint(x: CGFloat, y: CGFloat, in window: WindowInfo) -> CGPoint {
+        if x == -1, y == -1 { return CGPoint(x: -1, y: -1) }
+        return CGPoint(x: x, y: window.bounds.height - y)
+    }
+
+    private func buttonTypes(_ button: MouseButton) -> (CGEventType, CGEventType, CGMouseButton, Int64) {
+        switch button {
+        case .left: (.leftMouseDown, .leftMouseUp, .left, 0)
+        case .right: (.rightMouseDown, .rightMouseUp, .right, 1)
+        }
+    }
+
+    private func clickGroupID() -> Int64 {
+        var timespec = timespec()
+        clock_gettime(CLOCK_REALTIME, &timespec)
+        return Int64(timespec.tv_nsec)
     }
 
     private func clampScrollWheel(_ value: Double) -> Int32 {
@@ -196,6 +359,12 @@ public final class MacDesktopEngine: DesktopEngine {
         return Int32(min(Double(Int32.max), max(Double(Int32.min), value)))
     }
 }
+
+@_silgen_name("CGEventSourceSetLocalEventsSuppressionInterval")
+private func CGEventSourceSetLocalEventsSuppressionInterval(_ source: CGEventSource, _ seconds: CFTimeInterval)
+
+@_silgen_name("CGEventSourceSetLocalEventsFilterDuringSuppressionState")
+private func CGEventSourceSetLocalEventsFilterDuringSuppressionState(_ source: CGEventSource, _ filter: UInt32, _ state: UInt32)
 
 private func encodePNG(from image: CGImage) throws -> Data {
     let data = NSMutableData()

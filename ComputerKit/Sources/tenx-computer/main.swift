@@ -78,25 +78,33 @@ func runSelfCheck() throws {
 
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
+    app.finishLaunching()
     let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 320, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
     window.title = "tenx-computer probe"
     let field = NSTextField(frame: NSRect(x: 20, y: 40, width: 280, height: 30))
     field.stringValue = ""
     window.contentView?.addSubview(field)
     window.makeKeyAndOrderFront(nil)
-    app.activate(ignoringOtherApps: true)
+    RunLoop.current.run(until: Date().addingTimeInterval(0.3))
 
-    // Find the probe window through the engine.
+    // Find the probe window through the engine. Pump the run loop so the
+    // window server actually registers it — Thread.sleep alone never does.
     let deadline = Date().addingTimeInterval(5)
     var probe: WindowInfo?
     while Date() < deadline, probe == nil {
+        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
         probe = try? engine.listWindows().first(where: { $0.title == "tenx-computer probe" })
-        Thread.sleep(forTimeInterval: 0.2)
     }
-    guard let probe else { throw ComputerError("selfcheck: probe window not found") }
+    guard let probe else {
+        FileHandle.standardError.write("selfcheck: probe window not found\n".data(using: .utf8)!)
+        exit(1)
+    }
 
-    // Type into it (background delivery to our own pid).
-    try engine.act(.click(point: CGPoint(x: 160, y: 45), button: .left), window: probe)
+    // Type into it (background delivery to our own pid). The click point is
+    // frame-relative top-left: flip the field's bottom-left-origin center and
+    // account for the title bar (WindowInfo.bounds includes chrome).
+    let clickPoint = CGPoint(x: field.frame.midX, y: window.frame.height - field.frame.midY)
+    try engine.act(.click(point: clickPoint, button: .left), window: probe)
     try engine.act(.type("hello 10x"), window: probe)
 
     // Pump the run loop so the events land.
@@ -126,12 +134,17 @@ func runSelfCheckOnMain() throws {
     }
 }
 
-switch arguments.first {
-case "daemon": try runDaemon()
-case "stop-all": try runStopAll()
-case "selfcheck": try runSelfCheckOnMain()
-case "mcp", nil: try runMCPFront()
-default:
-    FileHandle.standardError.write("usage: tenx-computer [mcp|daemon|stop-all|selfcheck]\n".data(using: .utf8)!)
-    exit(64)
+do {
+    switch arguments.first {
+    case "daemon": try runDaemon()
+    case "stop-all": try runStopAll()
+    case "selfcheck": try runSelfCheckOnMain()
+    case "mcp", nil: try runMCPFront()
+    default:
+        FileHandle.standardError.write("usage: tenx-computer [mcp|daemon|stop-all|selfcheck]\n".data(using: .utf8)!)
+        exit(64)
+    }
+} catch {
+    FileHandle.standardError.write("tenx-computer: \(error.localizedDescription)\n".data(using: .utf8)!)
+    exit(1)
 }
