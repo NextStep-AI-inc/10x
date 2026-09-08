@@ -14,7 +14,7 @@ Source inspection and existing test coverage are recorded separately from execut
 
 ## 2. Interrupt and acknowledge
 
-- [ ] **STOP:** Main has independent Stop beside Send and Cmd-Period. Verify staged text/images, actual runtime settling, open flyouts, and focused pending decisions; change only if the real flow fails.
+- [x] **STOP:** Bounded runtime shutdown prevents background revival. Verified actual OMP background/foreground work, staged text/PNG, Restart without resend, and Command-period from model/pending-input fields. [PR #36](https://github.com/NextStep-AI-inc/10x/pull/36) · [Release evidence](../evidence/2026-09-07-reliable-session-stop/README.md).
 - [ ] **QUEUE:** Main has per-message sending/queued/unconfirmed receipts with echo reconciliation. Refresh the authoritative queue count after acceptance and consumption, without allowing older replies to overwrite newer state. Verify multiple follow-ups, steering, rejection, and exactly one echo per accepted message.
 
 ## 3. Readable turns
