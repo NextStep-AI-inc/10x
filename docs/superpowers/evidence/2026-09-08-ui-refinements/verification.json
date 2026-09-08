@@ -1,0 +1,33 @@
+{
+  "status": "IN_PROGRESS",
+  "diffSourceCommit": "3257fe5",
+  "derivedData": "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aotxfgauppgfpjaamwnkyebclbnl",
+  "checks": [
+    {
+      "check": "Diff behavior and render checks",
+      "result": "passed",
+      "executedTests": 25,
+      "log": "/tmp/10x-ui-refinements-diff-tests.log",
+      "logSHA256": "c3555893771ad5e9d65e4fd60ca4949c2c93d58664eb7df481d655411dcdb57a"
+    },
+    {
+      "check": "Existing diff snapshot fixture diagnostic",
+      "result": "expected mismatch; fixtures were collapsed; expanded rerun pending",
+      "executedTests": 2,
+      "log": "/tmp/10x-ui-refinements-diff-snapshots.log",
+      "logSHA256": "f85697454c76ea6b02ba6e81165c8fdfd25a943492ca6790726048d26e0187df"
+    },
+    {
+      "check": "Flyout placement red phase",
+      "result": "expected missing FlyoutPlacement compile failure",
+      "executedTests": 0,
+      "log": "/tmp/10x-ui-refinements-flyout-red.log",
+      "logSHA256": "cd3bf0b7f197a1b05b66f1259edcf8f96dc0f9e2172a730acb3a57adaec5a499"
+    }
+  ],
+  "fixtureSmoke": [
+    "Handshake, start, queue=1, finish, unique persisted user entries, shutdown",
+    "Four pipelined input commands acknowledged once"
+  ],
+  "nativeAcceptance": "pending Release build"
+}

@@ -14,24 +14,24 @@
 
 1. Keep the top session status. Replace the composer's repeated dot/Working label with a small animation. Preserve elapsed time if useful, accessible Working state, and Stop. Reduce Motion gets a stationary treatment.
 2. Attachment and model warnings share a warning trigger in the composer footer. Opening it shows the full messages in an existing-style flyout; a warning's presence must not add an inline red-text row or increase composer height. Long text wraps in the panel. Loading/error/empty behavior remains owned by its component.
-3. Follow-up receipts and delivered messages use a branch-arrow cue, a distinct leading accent and a restrained alternate surface, with a Follow-up label as additional information. Steer gets its own cue. Standard messages remain standard. Known mode survives the receipt becoming a history row and reopening. Older messages with no recorded mode are never guessed from their wording.
+3. Follow-up receipts and delivered messages use a branch-arrow cue, a distinct leading accent and a restrained alternate surface, with a Follow-up label as additional information. Steer gets its own cue. Standard messages remain standard. Known unambiguous mode survives the receipt becoming a history row and reopening. Identical pending payloads with conflicting modes cannot be safely identified by OMP history and keep the standard delivered style. Older messages with no recorded mode are never guessed from their wording.
 4. The tool card's top header owns the colored addition/removal summary. The diff body has one aligned file-details/action row, without a separate aggregate statistics toolbar. Multi-file patches retain per-file headings. Copy patch and Wrap/Scroll remain available, keyboard accessible, and truthful. File references, hunk context, progressive loading, and actual row coloring remain intact.
-5. Model, context, warning, steer/follow-up, and project flyouts use the same placement rules. Prefer the component's configured side, choose the opposite side when it fits better, clamp to the usable window, and scroll oversized contents. The trigger remains connected to the panel's stepped shape. Escape, outside-click, toggling, switching panels, and window resize work without click-through or lost editor focus. Existing command-browser keyboard behavior must continue to work.
+5. Model, context, warning, steer/follow-up, and project flyouts use the same placement rules. Prefer the component's configured side, choose the opposite side when it fits better, clamp to the usable window, and scroll oversized contents. The trigger remains connected to the panel's stepped shape. Escape, outside-click, toggling, switching panels, and window resize work without accidental action activation or lost editor focus. Preserve `OutsideInteractionDismissal`'s existing single-click handoff to the intended outside control; do not swallow deliberate navigation clicks. Existing command-browser keyboard behavior must continue to work.
 
 ## Task 1: Simplify diff chrome
 
 **Ownership:** `App/Tools/DiffView.swift`, `ToolCardScaffold.swift`, `ToolSurfaceView.swift`, `ToolCardView.swift`; tightly related tests under `Tests/TenXAppTests/`. New shared diff presentation helpers only if the existing models cannot express the summary. No composer edits.
 
-- [ ] Inspect `ToolCardContent` and every `DiffView` caller. Keep standalone diff headers informative as well as tool-card usage.
-- [ ] Add a focused check for summary ownership and single/multiple-file header behavior. Existing structured-diff rendering checks cover parsing and progressive content; do not duplicate them.
-- [ ] Remove `DiffView.toolbar`'s aggregate colored counts. Place its Wrap/Scroll and Copy patch actions alongside the relevant file header; allow a second action row only when the available width cannot hold both.
-- [ ] Render typed diff totals in `ToolCardScaffold`'s outcome position with cyan additions and red removals. Avoid parsing a generic outcome string to recover numbers. Preserve the existing accessible header text.
+- [x] Inspect `ToolCardContent` and every `DiffView` caller. Keep standalone diff headers informative as well as tool-card usage.
+- [x] Add a focused check for summary ownership and single/multiple-file header behavior. Existing structured-diff rendering checks cover parsing and progressive content; do not duplicate them.
+- [x] Remove `DiffView.toolbar`'s aggregate colored counts. Place its Wrap/Scroll and Copy patch actions alongside the relevant file header; allow a second action row only when the available width cannot hold both.
+- [x] Render typed diff totals in `ToolCardScaffold`'s outcome position with cyan additions and red removals. Avoid parsing a generic outcome string to recover numbers. Preserve the existing accessible header text.
 - [ ] Capture the changed structured-diff snapshot, visually inspect it, then accept only the relevant reference images. Parent repeats this flow in the Release app.
-- [ ] Commit the bounded diff change after relevant checks pass.
+- [x] Commit the bounded diff change after relevant checks pass.
 
 ## Task 2: Component-owned flyouts, warnings, and activity
 
-**Ownership:** Composer controls (`ComposerView.swift`, `ComposerSessionControlsView.swift`, `ContextUsageControl.swift`, `ChooseProjectFlyout.swift`, `ModelPickerFlyout.swift`, `TurnActivityView.swift`), reused design primitives under `App/Design/`, and directly related tests. Keep broad session lifecycle and tool rendering changes out.
+**Ownership:** Composer controls (`ComposerView.swift`, `ComposerSessionControlsView.swift`, `ContextUsageControl.swift`, `ChooseProjectFlyout.swift`, `ModelPickerFlyout.swift`, `SessionActivityControl.swift`, `TurnActivityView.swift`), reused design primitives under `App/Design/`, and directly related tests. Keep broad session lifecycle and tool rendering changes out.
 
 - [ ] Extract the existing window measurement into a reusable anchor reader and add a pure placement result. Inputs are the anchor rect, window content rect, desired panel size, preferred vertical side, and edge padding. Outputs are a clamped panel rect and selected side. The algorithm is:
 
@@ -57,13 +57,13 @@ The reader normalizes AppKit coordinates to the helper's top-down coordinates on
 - [ ] Replace context's system popover and the send action's OS `Menu` with component-owned app-style panels. Send-action options are `Steer` / `Send during the current response` and `Follow up` / `Queue for the next turn`; selecting an option updates the existing controller preference and returns focus to the editor.
 - [ ] Add warning presentation to `ComposerFlyout`, rendering the existing deduplicated feedback in a footer-triggered panel. Keep the trigger slot's height constant. Remove the inline warning row, retain complete warning text in the panel, and dismiss when the warning is resolved.
 - [ ] Reuse the component placement/dismissal behavior for project selection and verify command-browser coexistence. Avoid separate parent-level offsets for the migrated controls.
-- [ ] Replace the composer activity dot/text in `TurnActivityView` with a restrained progress animation. Use the Reduce Motion environment and expose an accessible Working label; preserve top status and Stop behavior.
+- [ ] Give `SessionActivityControl` an explicit compact composer variant that replaces its dot/Working label with a restrained animation; its header default keeps text. Remove the duplicate quiet-turn Working label in `TurnActivityView` by reusing the same restrained animated treatment where appropriate. Use the Reduce Motion environment and expose an accessible Working label; preserve top status and Stop behavior.
 - [ ] Run focused composer routing, model picker, context control, and placement checks. Parent owns Release native checks at the app's minimum width, a short window, and a normal desktop window.
 - [ ] Commit the bounded component change after checks pass.
 
 ## Task 3: Preserve and render known submission mode
 
-**Ownership:** `PendingUserSubmission.swift`, `SessionController.swift`, `TranscriptView.swift`, `MessageBubbleView.swift`; a small colocated submission-presentation store and its tests. No OMP schema/runtime edits or recovery-store expansion.
+**Ownership:** `PendingUserSubmission.swift`, `SessionController.swift`, `TranscriptView.swift`, `MessageBubbleView.swift`; a small colocated submission-presentation store and its tests; `App/Application/AppDependencies.swift` for store injection and `App/Application/AppModel.swift:makeSessionController` for passing that dependency only. Default test/preview controllers use an in-memory store. No OMP schema/runtime edits or recovery-store expansion.
 
 - [ ] Retain the requested `StreamingBehavior?` on the receipt before awaiting prompt acknowledgment. An idle primary send has no mode; never read the current global preference to classify an older message.
 - [ ] Extend receipt reconciliation with a matched-pair callback/result while preserving its current consumed-index behavior. Keep unresolved mode receipts separately until a real history load can bind them to persisted entry IDs. Controller history-loading sites already know when the data is persisted; no broad snapshot-provenance system is needed.
