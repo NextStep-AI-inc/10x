@@ -432,6 +432,21 @@ import Testing
 }
 
 @MainActor
+@Test func approvalDefaultScopeSnapshot() async throws {
+    let model = SettingsViewModel(service: OmpConfigService(runner: ApprovalScopeConfigRunner()))
+    await model.load()
+    model.query = "tools.approval"
+
+    try assertSnapshot(
+        SettingsView(
+            model: model,
+            registry: .testing(applications: [:]),
+            store: snapshotEmptyIDEStore),
+        name: "approval-default-scope",
+        size: CGSize(width: 1_060, height: 720))
+}
+
+@MainActor
 @Test func settingsProvidersEmbeddedSnapshot() async throws {
     let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
     let providerModel = try providerWorkspaceModel()
@@ -3708,6 +3723,15 @@ private struct SnapshotConfigRunner: OmpConfigRunning {
     }
 }
 
+private struct ApprovalScopeConfigRunner: OmpConfigRunning {
+    func run(arguments: [String]) async throws -> Data {
+        if arguments == ["config", "path"] {
+            return Data("/Users/example/.omp/agent\n".utf8)
+        }
+        return Data(#"{"tools.approvalMode":{"value":"always-ask","default":"always-ask","type":"enum","description":"Require confirmation before write and command tools"},"tools.approval":{"value":{"bash":"deny"},"default":{},"type":"record","description":"Set approval policy for individual tools"}}"#.utf8)
+    }
+}
+
 private let snapshotProjectURL = URL(filePath: #filePath)
     .deletingLastPathComponent()
     .deletingLastPathComponent()
@@ -4263,6 +4287,22 @@ private actor SnapshotMediaGate {
             providerModel: providerModel),
         name: "continuous-settings-dark",
         appearance: .dark)
+}
+
+@MainActor
+@Test func approvalDefaultScopeDarkSnapshot() async throws {
+    let model = SettingsViewModel(service: OmpConfigService(runner: ApprovalScopeConfigRunner()))
+    await model.load()
+    model.query = "tools.approval"
+
+    try assertSnapshot(
+        SettingsView(
+            model: model,
+            registry: .testing(applications: [:]),
+            store: snapshotEmptyIDEStore),
+        name: "approval-default-scope-dark",
+        appearance: .dark,
+        size: CGSize(width: 1_060, height: 720))
 }
 
 /// The user's own message is drawn on an emphasis fill, so it carries the same
