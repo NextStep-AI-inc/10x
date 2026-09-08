@@ -5,14 +5,14 @@ struct ModelRoleEntry: Equatable, Identifiable {
     var id: String { role }
     var role: String
     var value: ModelRoleValue
-    var unrecognizedRaw: String?
+    var unrecognizedValue: JSONValue?
 
-    var isUnrecognized: Bool { unrecognizedRaw != nil }
+    var isUnrecognized: Bool { unrecognizedValue != nil }
 
-    init(role: String, value: ModelRoleValue, unrecognizedRaw: String? = nil) {
+    init(role: String, value: ModelRoleValue, unrecognizedValue: JSONValue? = nil) {
         self.role = role
         self.value = value
-        self.unrecognizedRaw = unrecognizedRaw
+        self.unrecognizedValue = unrecognizedValue
     }
 }
 
@@ -21,6 +21,7 @@ struct ModelRolesEditor: View {
     let model: SettingsViewModel
 
     @State private var entries: [ModelRoleEntry]
+    @State private var localError: String?
 
     static let knownRoles = SettingMetadata.knownArrayValues["cycleOrder"]
         ?? ["default", "plan", "advisor", "smol", "commit",
@@ -58,9 +59,15 @@ struct ModelRolesEditor: View {
             Text("Remove every role to restore the defaults.")
                 .font(TenXTypography.body(size: 10))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            if let localError {
+                Text(localError)
+                    .font(TenXTypography.mono(size: 9))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+            }
         }
         .task { await model.loadCatalogIfNeeded() }
         .onChange(of: definition.value) { _, newValue in
+            if model.isOwnEcho(for: definition.key, value: newValue) { return }
             guard !model.hasPendingWrite(for: definition.key) else { return }
             if Self.shouldResync(entries: entries, incoming: newValue) {
                 entries = Self.entries(from: newValue ?? .object([:]))
@@ -75,7 +82,7 @@ struct ModelRolesEditor: View {
                 .font(TenXTypography.mono(size: 10))
                 .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
                 .frame(width: 70, alignment: .leading)
-            Text(entry.wrappedValue.unrecognizedRaw ?? "")
+            Text(Self.unrecognizedDisplayText(for: entry.wrappedValue.unrecognizedValue))
                 .font(TenXTypography.mono(size: 11))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 .lineLimit(1)
@@ -163,8 +170,19 @@ struct ModelRolesEditor: View {
     }
 
     private func save() {
+        if Self.hasInvalidDraft(entries: entries) {
+            localError = "Choose a model for every role before saving."
+            return
+        }
+        localError = nil
         let object = Self.jsonObject(from: entries, preserving: definition.value ?? .object([:]))
         Task { await model.save(definition, value: object) }
+    }
+
+    nonisolated static func hasInvalidDraft(entries: [ModelRoleEntry]) -> Bool {
+        entries.contains { entry in
+            !entry.isUnrecognized && ModelRoleValue(raw: entry.value.raw) == nil
+        }
     }
 
     nonisolated static func shouldResync(entries: [ModelRoleEntry], incoming: JSONValue?) -> Bool {
@@ -175,14 +193,19 @@ struct ModelRolesEditor: View {
     nonisolated static func entries(from value: JSONValue) -> [ModelRoleEntry] {
         let object = value.objectValue ?? [:]
         return object.compactMap { role, raw -> ModelRoleEntry? in
-            guard let string = raw.stringValue else { return nil }
-            if let parsed = ModelRoleValue(raw: string) {
-                return ModelRoleEntry(role: role, value: parsed)
+            if let string = raw.stringValue {
+                if let parsed = ModelRoleValue(raw: string) {
+                    return ModelRoleEntry(role: role, value: parsed)
+                }
+                return ModelRoleEntry(
+                    role: role,
+                    value: ModelRoleValue(provider: "", modelID: "", effort: nil),
+                    unrecognizedValue: .string(string))
             }
             return ModelRoleEntry(
                 role: role,
                 value: ModelRoleValue(provider: "", modelID: "", effort: nil),
-                unrecognizedRaw: string)
+                unrecognizedValue: raw)
         }.sorted { a, b in
             let ia = knownRoles.firstIndex(of: a.role) ?? .max
             let ib = knownRoles.firstIndex(of: b.role) ?? .max
@@ -191,14 +214,14 @@ struct ModelRolesEditor: View {
     }
 
     /// Serializes edited entries. Invalid drafts are skipped; unrecognized rows
-    /// keep their raw string; removed roles (parsed or not) are deleted.
+    /// keep their raw value; removed roles (parsed or not) are deleted.
     nonisolated static func jsonObject(from entries: [ModelRoleEntry], preserving original: JSONValue) -> JSONValue {
         var object = original.objectValue ?? [:]
         let currentRoles = Set(entries.map(\.role))
 
         for entry in entries {
-            if entry.isUnrecognized, let raw = entry.unrecognizedRaw {
-                object[entry.role] = .string(raw)
+            if entry.isUnrecognized, let raw = entry.unrecognizedValue {
+                object[entry.role] = raw
             } else if ModelRoleValue(raw: entry.value.raw) != nil {
                 object[entry.role] = .string(entry.value.raw)
             }
@@ -209,6 +232,12 @@ struct ModelRolesEditor: View {
         }
 
         return .object(object)
+    }
+
+    nonisolated static func unrecognizedDisplayText(for value: JSONValue?) -> String {
+        guard let value else { return "" }
+        if let string = value.stringValue { return string }
+        return jsonText(value)
     }
 
     nonisolated static func showsEffortDropdown(for value: ModelRoleValue, catalog: [ComposerModelInfo]) -> Bool {
@@ -226,5 +255,12 @@ struct ModelRolesEditor: View {
 
     nonisolated static func modelOptions(from models: [ComposerModelInfo]) -> [SettingOption] {
         models.map { SettingOption("\($0.provider)/\($0.modelID)", label: $0.name, detail: $0.provider) }
+    }
+
+    nonisolated private static func jsonText(_ value: JSONValue) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let data = try? encoder.encode(value) else { return "" }
+        return String(decoding: data, as: UTF8.self)
     }
 }

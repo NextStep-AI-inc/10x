@@ -30,6 +30,7 @@ struct KnownSetArrayEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // ponytail: offset identity is safe here: rows carry no per-row state; upgrade path is a stable-id wrapper if rows gain state.
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 HStack(spacing: 6) {
                     Text(item)
@@ -83,6 +84,7 @@ struct KnownSetArrayEditor: View {
         .frame(maxWidth: 290)
         .task { await model.loadCatalogIfNeeded() }
         .onChange(of: definition.value) { _, newValue in
+            if model.isOwnEcho(for: definition.key, value: newValue) { return }
             guard !model.hasPendingWrite(for: definition.key) else { return }
             if Self.shouldResync(items: items, incoming: newValue) {
                 items = (newValue?.arrayValue ?? []).compactMap(\.stringValue)

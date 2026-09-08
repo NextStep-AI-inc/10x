@@ -81,7 +81,7 @@ struct RecordSettingEditor: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
-                    .accessibilityLabel("Remove \(entry.key)")
+                    .accessibilityLabel(entry.key.isEmpty ? "Remove entry" : "Remove \(entry.key)")
                 }
             }
             Button("Add entry") {
@@ -100,6 +100,7 @@ struct RecordSettingEditor: View {
             save()
         }
         .onChange(of: definition.value) { _, newValue in
+            if model.isOwnEcho(for: definition.key, value: newValue) { return }
             guard !model.hasPendingWrite(for: definition.key) else { return }
             if Self.shouldResync(entries: entries, incoming: newValue, kind: valueKind) {
                 entries = Self.entries(from: newValue ?? .object([:]), kind: valueKind)
@@ -109,45 +110,51 @@ struct RecordSettingEditor: View {
 
     @ViewBuilder
     private func valueControl(for entry: Binding<RecordEntry>) -> some View {
-        switch valueKind {
-        case .policy:
-            InlineDropdown(
-                options: [SettingOption("allow"), SettingOption("prompt"), SettingOption("deny")],
-                current: entry.wrappedValue.value,
-                allowsOther: false,
-                accessibilityLabelText: "\(entry.wrappedValue.key) policy",
-                onSelect: { entry.wrappedValue.value = $0; save() })
-            .frame(width: 130)
-        case .model:
-            InlineDropdown(
-                options: ModelRolesEditor.modelOptions(from: model.catalogModels),
-                current: entry.wrappedValue.value,
-                accessibilityLabelText: "\(entry.wrappedValue.key) model",
-                onSelect: { entry.wrappedValue.value = $0; save() })
-        case .number, .text, .stringList:
-            if entry.wrappedValue.isUnrecognized {
-                Text(Self.unrecognizedTypeHint(for: entry.wrappedValue.unrecognizedRaw))
-                    .font(TenXTypography.mono(size: 11))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityLabel(
-                        entry.wrappedValue.key.isEmpty
-                            ? "Non-string entry value"
-                            : "\(entry.wrappedValue.key) value, \(Self.unrecognizedTypeHint(for: entry.wrappedValue.unrecognizedRaw))")
-            } else {
-                TextField(valueKind == .stringList ? "a, b, c" : "Value", text: entry.projectedValue.value)
-                    .textFieldStyle(.plain)
-                    .font(TenXTypography.mono(size: 11))
-                    .padding(.vertical, 5)
-                    .overlay(alignment: .bottom) {
-                        Rectangle().fill(TenXPalette.color(TenXPalette.nearBlackHex)).frame(height: 1)
+        if entry.wrappedValue.isUnrecognized {
+            Text(Self.unrecognizedTypeHint(for: entry.wrappedValue.unrecognizedRaw))
+                .font(TenXTypography.mono(size: 11))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(
+                    entry.wrappedValue.key.isEmpty
+                        ? "Non-string entry value"
+                        : "\(entry.wrappedValue.key) value, \(Self.unrecognizedTypeHint(for: entry.wrappedValue.unrecognizedRaw))")
+        } else {
+            switch valueKind {
+            case .policy:
+                InlineDropdown(
+                    options: [SettingOption("allow"), SettingOption("prompt"), SettingOption("deny")],
+                    current: entry.wrappedValue.value,
+                    allowsOther: false,
+                    accessibilityLabelText: "\(entry.wrappedValue.key) policy",
+                    onSelect: { entry.wrappedValue.value = $0; save() })
+                .frame(width: 130)
+            case .model:
+                InlineDropdown(
+                    options: ModelRolesEditor.modelOptions(from: model.catalogModels),
+                    current: entry.wrappedValue.value,
+                    accessibilityLabelText: "\(entry.wrappedValue.key) model",
+                    onSelect: { entry.wrappedValue.value = $0; save() })
+            case .number, .text, .stringList:
+                Group {
+                    if definition.isSecret {
+                        SecureField(valueKind == .stringList ? "a, b, c" : "Value", text: entry.projectedValue.value)
+                    } else {
+                        TextField(valueKind == .stringList ? "a, b, c" : "Value", text: entry.projectedValue.value)
                     }
-                    .focused($focusedField, equals: .value(entry.wrappedValue.id))
-                    .onSubmit { save() }
-                    .accessibilityLabel(
-                        entry.wrappedValue.key.isEmpty
-                            ? "Entry value"
-                            : "\(entry.wrappedValue.key) value")
+                }
+                .textFieldStyle(.plain)
+                .font(TenXTypography.mono(size: 11))
+                .padding(.vertical, 5)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(TenXPalette.color(TenXPalette.nearBlackHex)).frame(height: 1)
+                }
+                .focused($focusedField, equals: .value(entry.wrappedValue.id))
+                .onSubmit { save() }
+                .accessibilityLabel(
+                    entry.wrappedValue.key.isEmpty
+                        ? "Entry value"
+                        : "\(entry.wrappedValue.key) value")
             }
         }
     }
@@ -173,7 +180,7 @@ struct RecordSettingEditor: View {
 
             let trimmedValue = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
             guard entry.unrecognizedRaw != nil || !trimmedValue.isEmpty else { continue }
-            if kind == .number, numberJSON(from: trimmedValue) == nil {
+            if entry.unrecognizedRaw == nil, kind == .number, numberJSON(from: trimmedValue) == nil {
                 return .invalidNumber
             }
         }
@@ -202,13 +209,31 @@ struct RecordSettingEditor: View {
         (value.objectValue ?? [:]).sorted { $0.key < $1.key }.map { key, raw in
             switch kind {
             case .stringList:
-                RecordEntry(key: key, value: (raw.arrayValue ?? []).compactMap(\.stringValue).joined(separator: ", "))
+                if let array = raw.arrayValue, array.allSatisfy({ $0.stringValue != nil }) {
+                    RecordEntry(
+                        key: key,
+                        value: array.compactMap(\.stringValue).joined(separator: ", "))
+                } else {
+                    RecordEntry(key: key, value: "", unrecognizedRaw: raw)
+                }
             case .number:
-                RecordEntry(key: key, value: rawValueText(from: raw))
-            case .text where raw.stringValue == nil:
-                RecordEntry(key: key, value: "", unrecognizedRaw: raw)
-            default:
-                RecordEntry(key: key, value: raw.stringValue ?? "")
+                if raw.intValue != nil || raw.doubleValue != nil || raw.stringValue != nil {
+                    RecordEntry(key: key, value: rawValueText(from: raw))
+                } else {
+                    RecordEntry(key: key, value: "", unrecognizedRaw: raw)
+                }
+            case .policy, .model:
+                if let string = raw.stringValue {
+                    RecordEntry(key: key, value: string)
+                } else {
+                    RecordEntry(key: key, value: "", unrecognizedRaw: raw)
+                }
+            case .text:
+                if raw.stringValue == nil {
+                    RecordEntry(key: key, value: "", unrecognizedRaw: raw)
+                } else {
+                    RecordEntry(key: key, value: raw.stringValue ?? "")
+                }
             }
         }
     }
@@ -221,7 +246,7 @@ struct RecordSettingEditor: View {
             let key = entry.key.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { continue }
             let trimmedValue = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            if kind == .text, let raw = entry.unrecognizedRaw {
+            if let raw = entry.unrecognizedRaw {
                 object[key] = raw
             } else {
                 guard !trimmedValue.isEmpty else { continue }
@@ -249,9 +274,12 @@ struct RecordSettingEditor: View {
         let incomingObject = incoming.objectValue ?? [:]
         let allKeys = Set(serialized.keys).union(incomingObject.keys)
         for key in allKeys {
-            let left = serialized[key].flatMap(numericDouble)
-            let right = incomingObject[key].flatMap(numericDouble)
-            if left != right { return false }
+            let left = serialized[key]
+            let right = incomingObject[key]
+            switch (left.flatMap(numericDouble), right.flatMap(numericDouble)) {
+            case let (l?, r?): if l != r { return false }
+            default: if left != right { return false }
+            }
         }
         return true
     }

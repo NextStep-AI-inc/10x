@@ -37,6 +37,8 @@ struct SettingControlView: View {
                 "Use default for \(definition.displayLabel): \(Self.defaultActionLabel(for: definition))")
         }
         .onChange(of: definition.value) { _, value in
+            guard !model.isOwnEcho(for: definition.key, value: value),
+                  !model.hasPendingWrite(for: definition.key) else { return }
             draftText = Self.textValue(value)
             draftItems = Self.arrayValues(value)
         }

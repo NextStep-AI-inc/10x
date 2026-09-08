@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 import OmpKit
 
@@ -19,7 +20,9 @@ final class SettingsViewModel {
     // ponytail: per-key write chain serializes saves/restores; a failed write returns
     // false but does not block subsequent writes on the same key.
     @ObservationIgnored private var writeChains: [String: Task<Bool, Never>] = [:]
+    @ObservationIgnored private var writeTokens: [String: UUID] = [:]
     @ObservationIgnored private var pendingWrites: [String: Int] = [:]
+    @ObservationIgnored private var ownEchoes: [String: [JSONValue]] = [:]
     private(set) var catalogModels: [ComposerModelInfo] = []
 
     init(service: OmpConfigService, catalog: OmpModelCatalogService? = nil) {
@@ -39,6 +42,7 @@ final class SettingsViewModel {
         guard !isLoading else { return loadError == nil && !configPath.isEmpty }
         isLoading = true
         loadError = nil
+        ownEchoes = [:]
         defer { isLoading = false }
         do {
             async let values = service.list()
@@ -56,26 +60,40 @@ final class SettingsViewModel {
     func save(_ definition: SettingDefinition, value: JSONValue) async -> Bool {
         let key = definition.key
         pendingWrites[key, default: 0] += 1
+        let token = UUID()
+        writeTokens[key] = token
         let prior = writeChains[key]
         let task = Task<Bool, Never> {
             _ = await prior?.value
             return await self.performSave(definition, value: value)
         }
         writeChains[key] = task
-        return await task.value
+        let result = await task.value
+        if writeTokens[key] == token {
+            writeChains[key] = nil
+            writeTokens[key] = nil
+        }
+        return result
     }
 
     @discardableResult
     func restoreDefault(_ definition: SettingDefinition) async -> Bool {
         let key = definition.key
         pendingWrites[key, default: 0] += 1
+        let token = UUID()
+        writeTokens[key] = token
         let prior = writeChains[key]
         let task = Task<Bool, Never> {
             _ = await prior?.value
             return await self.performRestoreDefault(definition)
         }
         writeChains[key] = task
-        return await task.value
+        let result = await task.value
+        if writeTokens[key] == token {
+            writeChains[key] = nil
+            writeTokens[key] = nil
+        }
+        return result
     }
 
     func error(for key: String) -> String? {
@@ -84,6 +102,19 @@ final class SettingsViewModel {
 
     func hasPendingWrite(for key: String) -> Bool {
         (pendingWrites[key] ?? 0) > 0
+    }
+
+    /// Consumes one queued echo of our own write. Editors call this from
+    /// onChange(of: definition.value): SwiftUI delivers the value change on a
+    /// later render pass than the synchronous performSave block, so
+    /// hasPendingWrite is already false when our own echo arrives — the echo
+    /// queue is what actually distinguishes our writes from external changes.
+    func isOwnEcho(for key: String, value: JSONValue?) -> Bool {
+        guard let value, var queue = ownEchoes[key],
+              let index = queue.firstIndex(of: value) else { return false }
+        queue.remove(at: index)
+        ownEchoes[key] = queue.isEmpty ? nil : queue
+        return true
     }
 
     @discardableResult
@@ -98,8 +129,9 @@ final class SettingsViewModel {
         keyErrors[key] = nil
         do {
             try await service.set(key: key, value: value)
-            pendingWrites[key, default: 0] -= 1
+            ownEchoes[key, default: []].append(value)
             catalog.update(key: key, value: value)
+            pendingWrites[key, default: 0] -= 1
             return true
         } catch OmpConfigServiceError.invalidShellPath {
             pendingWrites[key, default: 0] -= 1
@@ -117,8 +149,11 @@ final class SettingsViewModel {
         keyErrors[key] = nil
         do {
             let value = try await service.reset(key: key)
-            pendingWrites[key, default: 0] -= 1
+            if let value {
+                ownEchoes[key, default: []].append(value)
+            }
             catalog.update(key: key, value: value)
+            pendingWrites[key, default: 0] -= 1
             return true
         } catch {
             pendingWrites[key, default: 0] -= 1

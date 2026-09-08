@@ -61,7 +61,7 @@ struct ObjectArraySettingEditor: View {
                 }
             }
             Button("Add pattern") {
-                entries.append(InterceptorPatternEntry(pattern: "", tool: "read", message: ""))
+                entries.append(InterceptorPatternEntry(pattern: "", tool: "bash", message: ""))
             }
             .buttonStyle(GhostActionStyle())
             if let localError {
@@ -75,6 +75,7 @@ struct ObjectArraySettingEditor: View {
             save()
         }
         .onChange(of: definition.value) { _, newValue in
+            if model.isOwnEcho(for: definition.key, value: newValue) { return }
             guard !model.hasPendingWrite(for: definition.key) else { return }
             if Self.shouldResync(entries: entries, incoming: newValue) {
                 entries = Self.interceptorEntries(from: newValue ?? .array([]))
@@ -136,6 +137,7 @@ struct ObjectArraySettingEditor: View {
                 InlineDropdown(
                     options: Self.toolOptions,
                     current: entry.wrappedValue.tool,
+                    prompt: "tool",
                     accessibilityLabelText: "Tool for pattern \(label)",
                     onSelect: { entry.wrappedValue.tool = $0; save() })
                 .frame(width: 140)
@@ -196,13 +198,13 @@ struct ObjectArraySettingEditor: View {
             return
         }
         localError = nil
-        let value = Self.jsonArray(from: entries, preserving: definition.value ?? .array([]))
+        let value = Self.jsonArray(from: entries)
         Task { await model.save(definition, value: value) }
     }
 
     nonisolated static func shouldResync(entries: [InterceptorPatternEntry], incoming: JSONValue?) -> Bool {
         let newValue = incoming ?? .array([])
-        return jsonArray(from: entries, preserving: newValue) != newValue
+        return jsonArray(from: entries) != newValue
     }
 
     nonisolated static func interceptorEntries(from value: JSONValue) -> [InterceptorPatternEntry] {
@@ -211,22 +213,19 @@ struct ObjectArraySettingEditor: View {
                let pattern = object["pattern"]?.stringValue {
                 return InterceptorPatternEntry(
                     pattern: pattern,
-                    tool: object["tool"]?.stringValue ?? "read",
+                    tool: object["tool"]?.stringValue ?? "",
                     message: object["message"]?.stringValue ?? "",
                     sourceObject: object)
             }
             return InterceptorPatternEntry(
                 pattern: "",
-                tool: "read",
+                tool: "",
                 message: "",
                 unrecognizedRaw: jsonText(item))
         }
     }
 
-    nonisolated static func jsonArray(
-        from entries: [InterceptorPatternEntry],
-        preserving original: JSONValue
-    ) -> JSONValue {
+    nonisolated static func jsonArray(from entries: [InterceptorPatternEntry]) -> JSONValue {
         .array(entries.compactMap { entry in
             if entry.isUnrecognized, let raw = entry.unrecognizedRaw {
                 return parseJSONText(raw)
@@ -234,8 +233,12 @@ struct ObjectArraySettingEditor: View {
             guard isSaveablePattern(entry.pattern) else { return nil }
             var object = entry.sourceObject ?? [:]
             object["pattern"] = .string(entry.pattern)
-            object["tool"] = .string(entry.tool)
-            object["message"] = .string(entry.message)
+            if !entry.tool.isEmpty {
+                object["tool"] = .string(entry.tool)
+            }
+            if !entry.message.isEmpty || entry.sourceObject?["message"] != nil {
+                object["message"] = .string(entry.message)
+            }
             return .object(object)
         })
     }

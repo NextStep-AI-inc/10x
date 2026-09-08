@@ -68,9 +68,20 @@ struct ModelRolesEditorTests {
             ModelRoleEntry(role: "plan", value: ModelRoleValue(provider: "anthropic", modelID: "claude-fable-5", effort: "max")),
             ModelRoleEntry(role: "vision", value: ModelRoleValue(provider: "", modelID: "", effort: nil)),
         ]
+        #expect(ModelRolesEditor.hasInvalidDraft(entries: entries))
         let object = ModelRolesEditor.jsonObject(from: entries, preserving: value)
         #expect(object["plan"] == .string("anthropic/claude-fable-5:max"))
         #expect(object["vision"] == nil)
+    }
+
+    @Test func nonStringRoleValueRoundTripsByteIdentically() {
+        let value: JSONValue = .object([
+            "weird": .object(["provider": .string("openai"), "model": .string("gpt-4")]),
+        ])
+        let entries = ModelRolesEditor.entries(from: value)
+        #expect(entries.first { $0.role == "weird" }?.isUnrecognized == true)
+        let object = ModelRolesEditor.jsonObject(from: entries, preserving: value)
+        #expect(object == value)
     }
 
     @Test func catalogNonThinkingModelHasNoEffortOptions() {

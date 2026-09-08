@@ -52,7 +52,7 @@ struct KnownSetArrayEditorTests {
             == ["p1", "p2"])
         #expect(KnownSetArrayEditor.catalogValues(for: "disabledProviders", models: models)
             == ["p1", "p2"])
-        #expect(KnownSetArrayEditor.catalogValues(for: "enabledProviders", models: models)
+        #expect(KnownSetArrayEditor.catalogValues(for: "bogus.key", models: models)
             == [])
     }
 

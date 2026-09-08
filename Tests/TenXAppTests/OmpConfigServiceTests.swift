@@ -167,6 +167,48 @@ import Testing
     #expect(failed.loadError != nil)
 }
 
+@MainActor
+@Test func isOwnEchoConsumesWrittenValueOnce() async throws {
+    let runner = FakeConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "autoResume"))
+    let value: JSONValue = .bool(true)
+
+    #expect(!model.isOwnEcho(for: "autoResume", value: value))
+    _ = await model.save(definition, value: value)
+    #expect(model.isOwnEcho(for: "autoResume", value: value))
+    #expect(!model.isOwnEcho(for: "autoResume", value: value))
+}
+
+@MainActor
+@Test func chainedSavesQueueEchoesInOrder() async throws {
+    let runner = FakeConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "autoResume"))
+    let first: JSONValue = .bool(false)
+    let second: JSONValue = .bool(true)
+
+    _ = await model.save(definition, value: first)
+    _ = await model.save(definition, value: second)
+    #expect(model.isOwnEcho(for: "autoResume", value: first))
+    #expect(model.isOwnEcho(for: "autoResume", value: second))
+    #expect(!model.isOwnEcho(for: "autoResume", value: first))
+}
+
+@MainActor
+@Test func failedSaveQueuesNoEcho() async throws {
+    let runner = FakeConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "shellPath"))
+    let value: JSONValue = .string("20")
+
+    _ = await model.save(definition, value: value)
+    #expect(!model.isOwnEcho(for: "shellPath", value: value))
+}
+
 @Test func configErrorsNeverIncludeTheSecretValue() async {
     let service = OmpConfigService(runner: FailingConfigRunner())
     do {

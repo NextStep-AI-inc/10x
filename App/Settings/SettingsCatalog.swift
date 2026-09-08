@@ -11,13 +11,14 @@ struct SettingsCatalog: Equatable {
         let definitions = object.keys.sorted().compactMap { key -> SettingDefinition? in
             guard let source = object[key]?.objectValue else { return nil }
             let isSecret = secretKey(key)
+            let type = SettingValueType(rawValue: source["type"]?.stringValue ?? "unknown")
             let runtimeDescription = source["description"]?.stringValue ?? ""
             return SettingDefinition(
                 key: key,
                 displayLabel: displayLabel(for: key),
-                value: isSecret ? nil : source["value"],
+                value: isSecret && type != .record ? nil : source["value"],
                 defaultValue: isSecret ? nil : source["default"],
-                type: SettingValueType(rawValue: source["type"]?.stringValue ?? "unknown"),
+                type: type,
                 description: runtimeDescription.isEmpty
                     ? (SettingMetadata.descriptions[key] ?? "")
                     : runtimeDescription,
@@ -58,7 +59,8 @@ struct SettingsCatalog: Equatable {
 
     mutating func update(key: String, value: JSONValue?) {
         guard let index = definitions.firstIndex(where: { $0.key == key }) else { return }
-        definitions[index].value = definitions[index].isSecret ? nil : value
+        definitions[index].value = definitions[index].isSecret && definitions[index].type != .record
+            ? nil : value
     }
 
     private static func category(for key: String) -> SettingsCategory {
@@ -97,7 +99,7 @@ struct SettingsCatalog: Equatable {
 
     private static func secretKey(_ key: String) -> Bool {
         let value = key.lowercased()
-        return ["token", "secret", "password", "apikey", "api_key"].contains {
+        return ["token", "secret", "password", "apikey", "api_key", "credential"].contains {
             value.contains($0)
         }
     }

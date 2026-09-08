@@ -10,7 +10,7 @@ struct ObjectArraySettingEditorTests {
         let entries = ObjectArraySettingEditor.interceptorEntries(from: value)
         #expect(entries.count == 1)
         #expect(entries[0].pattern == "^\\s*cat\\s+")
-        #expect(ObjectArraySettingEditor.jsonArray(from: entries, preserving: value) == value)
+        #expect(ObjectArraySettingEditor.jsonArray(from: entries) == value)
     }
 
     @Test func rejectsBadRegex() {
@@ -23,7 +23,7 @@ struct ObjectArraySettingEditorTests {
             .object(["pattern": .string("^cat"), "tool": .string("read"), "message": .string("")]),
         ])
         let entries = ObjectArraySettingEditor.interceptorEntries(from: original)
-        let incoming = ObjectArraySettingEditor.jsonArray(from: entries, preserving: original)
+        let incoming = ObjectArraySettingEditor.jsonArray(from: entries)
         #expect(!ObjectArraySettingEditor.shouldResync(entries: entries, incoming: incoming))
     }
 
@@ -55,7 +55,7 @@ struct ObjectArraySettingEditorTests {
         ])
         var entries = ObjectArraySettingEditor.interceptorEntries(from: value)
         entries.removeAll { $0.isUnrecognized }
-        let saved = ObjectArraySettingEditor.jsonArray(from: entries, preserving: value)
+        let saved = ObjectArraySettingEditor.jsonArray(from: entries)
         #expect(saved == .array([
             .object(["pattern": .string("^ok"), "tool": .string("grep"), "message": .string("")]),
         ]))
@@ -67,7 +67,7 @@ struct ObjectArraySettingEditorTests {
             .object(["pattern": .string("^ok"), "tool": .string("grep"), "message": .string("")]),
         ])
         let entries = ObjectArraySettingEditor.interceptorEntries(from: value)
-        let saved = ObjectArraySettingEditor.jsonArray(from: entries, preserving: value)
+        let saved = ObjectArraySettingEditor.jsonArray(from: entries)
         #expect(saved == value)
     }
 
@@ -104,7 +104,7 @@ struct ObjectArraySettingEditorTests {
         ])
         var entries = ObjectArraySettingEditor.interceptorEntries(from: value)
         entries[0].pattern = "^dog"
-        let saved = ObjectArraySettingEditor.jsonArray(from: entries, preserving: value)
+        let saved = ObjectArraySettingEditor.jsonArray(from: entries)
         let object = saved.arrayValue?[0].objectValue
         #expect(object?["pattern"] == .string("^dog"))
         #expect(object?["flags"] == .string("i"))
@@ -119,12 +119,21 @@ struct ObjectArraySettingEditorTests {
         #expect(!ObjectArraySettingEditor.canSave(entries: entries))
     }
 
-    @Test func missingToolDefaultsToRead() {
+    @Test func missingToolDefaultsToEmpty() {
         let value: JSONValue = .array([
             .object(["pattern": .string("^cat"), "message": .string("Use read")]),
         ])
         let entries = ObjectArraySettingEditor.interceptorEntries(from: value)
-        #expect(entries[0].tool == "read")
+        #expect(entries[0].tool == "")
+    }
+
+    @Test func patternWithoutToolOrMessageRoundTripsWithoutInventingKeys() {
+        let value: JSONValue = .array([
+            .object(["pattern": .string("^cat")]),
+        ])
+        let entries = ObjectArraySettingEditor.interceptorEntries(from: value)
+        let saved = ObjectArraySettingEditor.jsonArray(from: entries)
+        #expect(saved == value)
     }
 
     @Test func shouldResyncReturnsFalseWhenExtrasPreserved() {
@@ -137,7 +146,7 @@ struct ObjectArraySettingEditorTests {
             ]),
         ])
         let entries = ObjectArraySettingEditor.interceptorEntries(from: original)
-        let incoming = ObjectArraySettingEditor.jsonArray(from: entries, preserving: original)
+        let incoming = ObjectArraySettingEditor.jsonArray(from: entries)
         #expect(!ObjectArraySettingEditor.shouldResync(entries: entries, incoming: incoming))
     }
 }
