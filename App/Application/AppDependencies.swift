@@ -79,13 +79,6 @@ struct AppDependencies: Sendable {
                 extraArguments: ProviderExtensionBundle.spawnArguments(),
                 supportsUserInteraction: true)
         },
-        makeSettingsModel: { executableURL in
-            SettingsViewModel(
-                service: OmpConfigService(
-                    runner: OmpConfigProcessRunner(executableURL: executableURL)),
-                catalog: ComposerCatalogService(executableURL: executableURL),
-                computerUseSetup: ComputerUseSetupModel(supervision: SupervisionClient()))
-        },
         makeProviderModel: { executableURL in
             ProviderManagementViewModel(
                 providerService: ProviderManagementService(executableURL: executableURL),

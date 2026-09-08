@@ -1889,6 +1889,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             ToolCardView(presentation: running)
             ToolCardView(presentation: failed)
         }
+        .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
         .frame(width: 720),
         name: "activity-running-error",
         size: CGSize(width: 800, height: 520))
@@ -2430,7 +2431,9 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         durationMilliseconds: 4_200,
         result: nil)
     try assertSnapshot(
-        SubagentCardView(presentation: presentation).frame(width: 720),
+        SubagentCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
+            .frame(width: 720),
         name: "activity-subagent",
         size: CGSize(width: 800, height: 330))
 }
@@ -2472,6 +2475,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     try assertSnapshot(
         ToolCardView(presentation: presentation)
             .environment(snapshotEmptyIDEStore)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
             .frame(width: 720),
         name: "activity-structured-diff",
         size: CGSize(width: 800, height: 650))
@@ -4500,6 +4504,7 @@ private actor SnapshotMediaGate {
     try assertSnapshot(
         ToolCardView(presentation: presentation)
             .environment(snapshotEmptyIDEStore)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
             .frame(width: 720),
         name: "activity-structured-diff-dark",
         appearance: .dark,
@@ -5181,7 +5186,9 @@ private actor SnapshotMediaGate {
         durationMilliseconds: 4_200,
         result: nil)
     try assertSnapshot(
-        SubagentCardView(presentation: presentation).frame(width: 720),
+        SubagentCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
+            .frame(width: 720),
         name: "activity-subagent-dark", appearance: .dark,
         size: CGSize(width: 800, height: 330))
 }
@@ -5215,6 +5222,7 @@ private actor SnapshotMediaGate {
             ToolCardView(presentation: running)
             ToolCardView(presentation: failed)
         }
+        .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
         .frame(width: 720),
         name: "activity-running-error-dark", appearance: .dark,
         size: CGSize(width: 800, height: 520))

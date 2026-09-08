@@ -2,7 +2,7 @@
 
 # OMP RPC Wire Contract
 
-Reference for a Swift Codable port of the oh-my-pi (`@oh-my-pi/pi-coding-agent` v18.0.5) headless RPC protocol. Source of truth: `packages/coding-agent/src/modes/rpc/` (`rpc-types.ts`, `rpc-frame.ts`, `rpc-mode.ts`, `rpc-messages.ts`, `rpc-input.ts`, `rpc-client.ts`, `host-tools.ts`, `host-uris.ts`) and `packages/coding-agent/src/tools/computer/protocol.ts`. All quotes below are verbatim from that checkout unless marked as an implementation note.
+Reference for a Swift Codable port of the oh-my-pi (`@oh-my-pi/pi-coding-agent` v18.0.5) headless RPC protocol. Source of truth: `packages/coding-agent/src/modes/rpc/` (`rpc-types.ts`, `rpc-frame.ts`, `rpc-mode.ts`, `rpc-messages.ts`, `rpc-input.ts`, `rpc-client.ts`, `host-tools.ts`, `host-uris.ts`). All quotes below are verbatim from that checkout unless marked as an implementation note.
 
 Transport model (from the `rpc-types.ts` header comment):
 
@@ -38,9 +38,6 @@ export type RpcCommand =
 
 	// State
 	| { id?: string; type: "get_state" }
-	| { id?: string; type: "set_computer_use"; enabled: boolean; foregroundPolicy: ComputerForegroundPolicy }
-	| { id?: string; type: "get_computer_use" }
-	| { id?: string; type: "probe_computer_use"; target?: string; verificationText?: string }
 	| { id?: string; type: "set_fast_mode"; enabled: boolean }
 	| { id?: string; type: "get_available_commands" }
 	| { id?: string; type: "set_todos"; phases: TodoPhase[] }
@@ -84,7 +81,6 @@ export type RpcCommand =
 	| { id?: string; type: "get_branch_messages" }
 	| { id?: string; type: "get_last_assistant_text" }
 	| { id?: string; type: "set_session_name"; name: string }
-	| { id?: string; type: "handoff"; customInstructions?: string }
 
 	// Messages
 	| { id?: string; type: "get_messages" }
@@ -107,9 +103,6 @@ Compact table (every variant carries optional `id?: string` for response correla
 | `abort_and_prompt` | `message: string`, `images?: ImageContent[]` |
 | `new_session` | `parentSession?: string` |
 | `get_state` | — |
-| `set_computer_use` | `enabled: boolean`, `foregroundPolicy: "allow" \| "require-handoff"` |
-| `get_computer_use` | — |
-| `probe_computer_use` | `target?: string`, `verificationText?: string` |
 | `set_fast_mode` | `enabled: boolean` |
 | `get_available_commands` | — |
 | `set_todos` | `phases: TodoPhase[]` |
@@ -139,65 +132,12 @@ Compact table (every variant carries optional `id?: string` for response correla
 | `get_branch_messages` | — |
 | `get_last_assistant_text` | — |
 | `set_session_name` | `name: string` |
-| `handoff` | `customInstructions?: string` |
 | `get_messages` | — |
 | `get_messages_page` | `cursor?: string`, `limit?: number` (1–256, default 100) |
 | `get_login_providers` | — |
 | `login` | `providerId: string` |
 
 Unknown `type` values get an error response: `` return error(undefined, unknownCommand.type, `Unknown command: ${unknownCommand.type}`); `` (`rpc-mode.ts` `default` arm — note `id` is `undefined` there even if the command carried one).
-
-### 1.1 Computer-use safety contract and version gate
-
-The v18.0.5 computer-use protocol types are:
-
-```ts
-export type ComputerForegroundPolicy = "allow" | "require-handoff";
-
-export interface ComputerUseState {
-	enabled: boolean;
-	foregroundPolicy: ComputerForegroundPolicy;
-}
-
-export interface ComputerProbeResult {
-	capabilities: DesktopCapabilities;
-	captureSucceeded: boolean;
-	backgroundInputSucceeded: boolean | null;
-}
-```
-
-`set_computer_use` and `get_computer_use` return:
-
-```ts
-{ enabled: boolean; foregroundPolicy: "allow" | "require-handoff" }
-```
-
-`probe_computer_use` returns `{ capabilities, captureSucceeded, backgroundInputSucceeded }`, where
-`capabilities` contains `backend`, `capturePermission`, `inputPermission`, and
-`axPermission`; permissions are `"granted" | "denied" | "unavailable" | "unknown"`.
-`backgroundInputSucceeded` may be `null`. The optional `get_state.data.computerUse`
-field has the same shape as the set/get response. Probe and handoff targets are opaque
-native identifiers such as `"42"`, not synthesized strings such as `"window:42"`.
-
-Complete Agent Desktop contract: `get_state.data.computerUse` parses and
-`set_computer_use(enabled, foregroundPolicy: require-handoff)` succeeds.
-Best-effort background mode: either signal is absent or the command returns an
-unknown-command error. Best-effort mode must not display the non-interruption guarantee.
-
-Foreground consent is an extension UI round trip, so the response reuses the request
-ID and does not receive a client-generated request ID:
-
-```ts
-// stdout
-{ type: "extension_ui_request", id, method: "computer_foreground_handoff",
-  target, action: "foreground-input" | "pointer-move" | "window-raise" | "accessibility-focus", reason }
-
-// stdin
-{ type: "extension_ui_response", id, approved: boolean }
-```
-
-Clients must preserve the entire extension UI payload, including fields added by newer
-extensions, even when they expose this method through a typed view.
 
 ---
 
@@ -229,20 +169,6 @@ export type RpcResponse =
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
-	| {
-			id?: string;
-			type: "response";
-			command: "set_computer_use" | "get_computer_use";
-			success: true;
-			data: ComputerUseState;
-	  }
-	| {
-			id?: string;
-			type: "response";
-			command: "probe_computer_use";
-			success: true;
-			data: ComputerProbeResult;
-	  }
 	| {
 			id?: string;
 			type: "response";
@@ -352,7 +278,6 @@ export type RpcResponse =
 			data: { text: string | null };
 	  }
 	| { id?: string; type: "response"; command: "set_session_name"; success: true }
-	| { id?: string; type: "response"; command: "handoff"; success: true; data: RpcHandoffResult | null }
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
@@ -420,7 +345,6 @@ export interface RpcSessionState {
 	autoCompactionEnabled: boolean;
 	fastModeEnabled: boolean;
 	fastModeActive: boolean;
-	computerUse?: ComputerUseState;
 	tokensPerSecond: number | null;
 	messageCount: number;
 	queuedMessageCount: number;
@@ -439,10 +363,6 @@ export interface RpcAvailableSlashCommand {
 	input?: { hint?: string };
 	subcommands?: Array<{ name: string; description?: string; usage?: string }>;
 	source: AvailableSlashCommandSource;
-}
-
-export interface RpcHandoffResult {
-	savedPath?: string;
 }
 
 export type RpcSubagentSubscriptionLevel = "off" | "progress" | "events";
