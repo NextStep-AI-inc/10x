@@ -336,6 +336,31 @@ import Testing
 }
 
 @MainActor
+@Test func sessionHeaderComputerItemSnapshot() throws {
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        supervision: SupervisionClient(socketPath: NSTemporaryDirectory() + "unused-\(UUID().uuidString).sock"))
+    controller.computerUse.handleToolStarted(
+        name: "mcp__tenx-computer_computer_claim", input: ["window_id": 10])
+    try assertSnapshot(
+        SessionHeaderView(controller: controller),
+        name: "session-header-computer",
+        size: CGSize(width: 760, height: 54))
+}
+
+@MainActor
+@Test func currentlyViewingPopoverSnapshot() throws {
+    try assertSnapshot(
+        CurrentlyViewingPopover(
+            framePNG: nil,
+            windowTitle: "Safari — Apple",
+            status: "Running tests…",
+            onStop: {}),
+        name: "currently-viewing-popover",
+        size: CGSize(width: 400, height: 260))
+}
+
+@MainActor
 @Test func collapsedRailSnapshot() throws {
     let (model, expansion) = snapshotRail(isExpanded: false)
 

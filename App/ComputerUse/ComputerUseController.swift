@@ -27,6 +27,16 @@ final class ComputerUseController {
         claimedWindowIDs.sorted().last.flatMap { supervision.frames[$0] }
     }
 
+    /// App names for claimed windows, from the supervision snapshot.
+    var windowAppNames: [String] {
+        claimedWindowIDs.sorted().compactMap { windowID in
+            supervision.sessions.values
+                .flatMap(\.windows)
+                .first(where: { $0.windowID == windowID })?
+                .app
+        }
+    }
+
     // MARK: - Transcript stream (called by SessionController)
 
     func handleToolStarted(name: String, input: [String: Any]?) {
