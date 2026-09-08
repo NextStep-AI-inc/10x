@@ -789,34 +789,53 @@ import OmpKit
 }
 
 @MainActor
-@Test func failedOpenExistingWithoutSessionPathIsNotReusedOnRetry() async throws {
+@Test func failedExistingSessionCanReopenAndKeepItsDraft() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-failed-open-retry-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: container) }
     try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
-    let executable = try makeNavigationExecutable(in: container, mode: "crash-after-negotiation")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "negotiation-fails")
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: FixedOmpLocator(executableURL: executable),
         sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
     await model.bootstrap()
-    let metadata = navigationMetadata("/tmp/fake.jsonl")
+    let metadata = navigationMetadata("/tmp/fake.jsonl", cwd: project.path)
     let manager = try #require(model.processManager)
 
     model.openSession(metadata)
     let failed = try #require(model.activeSession)
     await waitUntil("the session to report its failure") {
-        failed.sessionPath == nil && isFailed(failed.runtimeState)
+        isFailed(failed.runtimeState)
     }
-    #expect(failed.sessionPath == nil)
-    #expect(isFailed(failed.runtimeState))
+    failed.draft = "Continue after reopening"
+    let attachment = ComposerAttachment(
+        name: "context.png",
+        data: Data([1, 2, 3]),
+        mimeType: "image/png",
+        pixelWidth: 1,
+        pixelHeight: 1)
+    failed.attachments = [attachment]
+    #expect(failed.sessionPath == metadata.path)
+    #expect(model.managedController(for: metadata.path) === failed)
+    #expect(failed.canRetryOpening)
 
+    _ = try makeNavigationExecutable(in: container, mode: "basic")
+    await failed.restart()
+    #expect(failed.isComposerAvailable)
+    #expect(!failed.isRecoveryPresented)
+    #expect(!failed.canRetryOpening)
+    #expect(failed.sessionPath == metadata.path)
+    #expect(failed.projectURL?.path == metadata.cwd)
+    #expect(failed.draft == "Continue after reopening")
+    #expect(failed.attachments == [attachment])
+    await failed.sendPrompt()
+    #expect(failed.draft.isEmpty)
+    #expect(failed.attachments.isEmpty)
     model.openNewSession()
     model.openSession(metadata)
-    let retried = try #require(model.activeSession)
-
-    #expect(retried !== failed)
-    #expect(model.providerActivityCounts.isEmpty)
-    #expect(await manager.handle(for: metadata.path) == nil)
+    #expect(model.activeSession === failed)
     await manager.closeAll()
 }
 

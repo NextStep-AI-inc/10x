@@ -250,6 +250,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
     }
 
+    var canRetryOpening: Bool {
+        guard case .failed = runtimeState else { return false }
+        return sessionPath != nil && handle == nil
+    }
+
     var availableCommands: [AvailableSlashCommand] {
         guard case .available(let commands) = commandCatalogState else { return [] }
         return commands
@@ -272,6 +277,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     func openExisting(_ metadata: SessionMetadata) async {
         let priorSessionPath = stopAndDetachCurrentSession()
+        self.sessionPath = metadata.path
         publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
@@ -329,6 +335,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             ? .failed
             : .notRequested
         let priorSessionPath = stopAndDetachCurrentSession()
+        sessionPath = nil
         publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
