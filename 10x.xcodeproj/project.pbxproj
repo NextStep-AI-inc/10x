@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		005F6E9C16D7011E0FFFBBB2503B9DB2 /* TranscriptSearchRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41F427B680BF353246E75700E57E204F /* TranscriptSearchRequest.swift */; };
 		006E4755358C1DA20AB58A11B0627B31 /* ComposerModelInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6591DBF910CAB9E12B80C3616F099278 /* ComposerModelInfo.swift */; };
+		009365CD2BA4F796B6F925CD132E6363 /* SessionMapPlanningExcerptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C5F4F2BE24C3207A7ABD2F5CD05B27B /* SessionMapPlanningExcerptTests.swift */; };
 		017739EF32A32FF41286FF216B1F99E1 /* TranscriptViewportState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AA35380583228F17DF74F94A11056A7 /* TranscriptViewportState.swift */; };
 		024F38F5520BFA779F6D42830722E2F6 /* SessionMapLimits.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31F2CCC0406413730A833C23FD30F0A4 /* SessionMapLimits.swift */; };
 		02DFC7FCA4426E3156722441A8C7090C /* SessionControllerCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE2386BE3F48EE843454A4E3526B773 /* SessionControllerCommandTests.swift */; };
@@ -50,6 +51,7 @@
 		1954B339DE6721B7C932C909D4274CF5 /* ExtensionUIRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA28DA0E2B373FCE0E1CCB026D76B4C0 /* ExtensionUIRouter.swift */; };
 		19B092A0F92B14CB8A0B346CE9F0F476 /* RendererSaturationFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C43005FA517CE145F81242173B66582 /* RendererSaturationFixtureTests.swift */; };
 		1A56435934F1305F8CCD89E44B58D51E /* RailSessionReadStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 846058B6AE33EBD78A7754C17F4631E0 /* RailSessionReadStateTests.swift */; };
+		1BBA3C826CCBFB691C393817A9462FB3 /* SessionMapSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DE306D5299E72E7B71ECDB1971DC540 /* SessionMapSource.swift */; };
 		1BC473F161411225EFE82C5325A20CC3 /* DiffView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02AC7D19DF24FEC5EB46B95DA8E9833 /* DiffView.swift */; };
 		1C537CAEC7398A7946038A0217946A49 /* SessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FCE005EDE56CD93F1447FFBE253CC50 /* SessionControllerTests.swift */; };
 		1CC04B8CE15AEF35DDC20352B831BF42 /* ComposerInteractionRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12ECD71D809F3BFA5A44D4E666A4D65B /* ComposerInteractionRoutingTests.swift */; };
@@ -93,6 +95,7 @@
 		2FA2CED35BD69E6850395FDC3730D25B /* OmpConfigServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877A2FC56C324B52234C33EA8FA709FE /* OmpConfigServiceTests.swift */; };
 		30093F8555F6AB9BFAC4B772C5F5664D /* SearchResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DFBA50E93FE68B650E3DA47C2736F1D /* SearchResult.swift */; };
 		30D96D97BDCE292CEC0FD047C404BB91 /* 10x-wordmark.svg in Resources */ = {isa = PBXBuildFile; fileRef = 108FB7C260AC219C42872EE47BFAF018 /* 10x-wordmark.svg */; };
+		31E6311F94CBCA3305FBEADE1FDB3648 /* SessionMapDigestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF2CC20C55FABBA60FAA07F53056965A /* SessionMapDigestTests.swift */; };
 		32AB7620DAA31EB21914CA5C98086A8C /* SplashUpdateDriverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31044C28FED174AFD0FB14452ADC8C73 /* SplashUpdateDriverTests.swift */; };
 		334062408B2F48A01286325880DB7B03 /* ToolCardRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B78F06918C6490DCC1F2AE35935690 /* ToolCardRegistryTests.swift */; };
 		33B200F61E67EFA05EEFB807F0F4ABAB /* ToolContentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30792BD1DA4BEEB76B9E4309B28E6E30 /* ToolContentExtractor.swift */; };
@@ -107,6 +110,7 @@
 		39AF91ADA09EAC0132F6EC7C1F794C9B /* IDERegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70480B74480456F9EB012E088B3F9F93 /* IDERegistry.swift */; };
 		3A1ACC6023D7489AB5FB4B86E00E8C87 /* UnifiedDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 526E1CBFAF1745824F470D25BC432443 /* UnifiedDiff.swift */; };
 		3B0CA387F67B8914B611A30FACF5A8A7 /* ComposerCommandModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1A332CCC9938472585DD2C6070D73C /* ComposerCommandModel.swift */; };
+		3B40899547B1DF055F1EAB96B645BFE9 /* SessionMapPlanningExcerptReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4E60882A53DDA8FBD1D1D198FDA28C7 /* SessionMapPlanningExcerptReader.swift */; };
 		3D1F563CB908156E5D93E1E7E93206C7 /* TenXTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E403B13EEC1C85CBA3FA9C86C96BB9E /* TenXTypography.swift */; };
 		3E962389C87ADF7942BE2F90BF9034EC /* OnboardingProjectStepView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC831AF3F8003EF46E92EFAC4B8FB7B7 /* OnboardingProjectStepView.swift */; };
 		3F96DB3DBA13596AA84A52C18C103BF7 /* ProviderConnectionPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EE27420A27133AF2381D570E911A1B1 /* ProviderConnectionPresentationTests.swift */; };
@@ -258,6 +262,7 @@
 		AA3F8276DAB2D8EEF876731AC5A92914 /* SessionMapNodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4528BF577074E01973452BDC95B6D9B /* SessionMapNodeView.swift */; };
 		AB714F626D4A8FC11A938954229D29C8 /* ProviderUsageDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9319E4E7CCAD5F4188FC30AB93456D7 /* ProviderUsageDockView.swift */; };
 		ABB30B69985AC6AF1B08C2989C6D8EC1 /* ProviderAccountSwitchConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40228569430A12666591C24D49E223DD /* ProviderAccountSwitchConfirmationView.swift */; };
+		AC474D76F8E0ED4C214525930B0F1BE8 /* SessionMapDigestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F43E6E02705C07A0B71CB244E1C0A984 /* SessionMapDigestBuilder.swift */; };
 		AC6D6ABD1B3EB3D12CAC184082A7205A /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962089969C661B3172D5ED6DC78219BE /* AppRoute.swift */; };
 		AE066C28C79B9763618F4AF6D843C5ED /* ToolCardRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 768B841E66BD95E02EB6BE2DD8565041 /* ToolCardRegistry.swift */; };
 		AE4F45EDD32B46FACFC2B20CDD38E2BD /* StartupSignalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E1E47F7E6E59BE4929294768C650CEF /* StartupSignalView.swift */; };
@@ -343,6 +348,7 @@
 		E291E3DE386CC36E6FC7125827CC0695 /* CodeBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 722A90AFEAB60805D76D3078CB9B153C /* CodeBlockView.swift */; };
 		E33F00AD08A3D7B737D46E63F7DCBC54 /* SessionMapDocumentValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0E94DC0159DC9362F2EB7CB41EA46A1 /* SessionMapDocumentValidator.swift */; };
 		E35B5E09ED9858397770C064E6C977A4 /* MessageBubbleViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E85949BDAE9F5A41A912C50F05954C28 /* MessageBubbleViewTests.swift */; };
+		E3ADEBF089F94A52E3C330AC9AFCFD79 /* SessionMapSourceAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74B7D83EE00CC9B9DDE1C6195BC5AC5D /* SessionMapSourceAdapter.swift */; };
 		E41203435B01C45D9A52D8EBB1D1F10B /* OnboardingRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF69D68CDAC979D339A885DB18E85B2 /* OnboardingRoutingTests.swift */; };
 		E41DB82664DD077A2061304AAC5696A0 /* SessionHeaderMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5535C8E9BA0BF585156039450368CC /* SessionHeaderMetadata.swift */; };
 		E43313EE07DBA4E51426660CAA32B96F /* TranscriptHistoryMapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD8DA63189AEF1F213279CBC6377E70 /* TranscriptHistoryMapperTests.swift */; };
@@ -373,6 +379,7 @@
 		F987E142925062F38ABB78E56C8687A6 /* SessionMapSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4DE6FC858BA424F6473D1B71607D875 /* SessionMapSnapshotTests.swift */; };
 		F9CED5BCC51213FE16D5697F66757D21 /* AppModelUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B359C25C1853CA0C9D8303FB93D8799 /* AppModelUpdateTests.swift */; };
 		FA6ECF898B51284F87359A21AEC4832B /* SessionMapDocumentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95DC4CE6EB9198D9F7944E7E037F7A39 /* SessionMapDocumentTests.swift */; };
+		FAF8DE366E4FBD7837500712DE302CDD /* SessionMapSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 753D7622917DC47FD47598306A76CBA3 /* SessionMapSourceTests.swift */; };
 		FC445FF5B31ADC77D666D4BFAACAC69F /* ProviderAccountPinBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8922FB4A926B45E3305E495958A097 /* ProviderAccountPinBackendTests.swift */; };
 		FC69131EA12B6064C063E3548105E6F6 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = BD7C0E944F514B6C9FF3C58480C88D4F /* Fonts */; };
 		FCB02AC971FF7586B7AB7677B7523DDF /* StartupSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F23951615EC5073F1FEAAA9C678509E /* StartupSceneView.swift */; };
@@ -445,7 +452,9 @@
 		172EECE87F09A0B1731B9CFB378E4A3C /* MessageBubbleView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessageBubbleView.swift; path = App/Sessions/MessageBubbleView.swift; sourceTree = "<group>"; };
 		191525CE30166ED42663A3F444EDC923 /* MessageBlockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessageBlockView.swift; path = App/Sessions/MessageBlockView.swift; sourceTree = "<group>"; };
 		191B41F1B92228F1DB3A5A1DCA4CB0E9 /* ProviderUsagePresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsagePresentation.swift; path = App/Providers/ProviderUsagePresentation.swift; sourceTree = "<group>"; };
+		1C5F4F2BE24C3207A7ABD2F5CD05B27B /* SessionMapPlanningExcerptTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapPlanningExcerptTests.swift; path = Tests/TenXAppTests/SessionMapPlanningExcerptTests.swift; sourceTree = "<group>"; };
 		1D1A332CCC9938472585DD2C6070D73C /* ComposerCommandModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerCommandModel.swift; path = App/Sessions/ComposerCommandModel.swift; sourceTree = "<group>"; };
+		1DE306D5299E72E7B71ECDB1971DC540 /* SessionMapSource.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapSource.swift; path = App/SessionMap/SessionMapSource.swift; sourceTree = "<group>"; };
 		1DEC4A0E337D1117EC03EE6C74974AB3 /* ToolCallGroupView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolCallGroupView.swift; path = App/Tools/ToolCallGroupView.swift; sourceTree = "<group>"; };
 		1E174B497A5B0CF79696A9F557C5F9D1 /* FavoriteModelStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FavoriteModelStore.swift; path = App/Sessions/FavoriteModelStore.swift; sourceTree = "<group>"; };
 		1E807E71640D125B6C6A96E3154162B7 /* ProviderUsageSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageSnapshot.swift; path = App/Providers/ProviderUsageSnapshot.swift; sourceTree = "<group>"; };
@@ -586,7 +595,9 @@
 		728CD22003792D3D197CC9A5666BA792 /* SplashUpdateDriver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SplashUpdateDriver.swift; path = App/Updates/SplashUpdateDriver.swift; sourceTree = "<group>"; };
 		7294634AF3F767AB36F3A88FAACCE97B /* AccessibilityLabelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AccessibilityLabelTests.swift; path = Tests/TenXAppTests/AccessibilityLabelTests.swift; sourceTree = "<group>"; };
 		7323EF9BF7E6DC8E9FA4EAD6E50822E3 /* ExtensionUIState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExtensionUIState.swift; path = App/ExtensionUI/ExtensionUIState.swift; sourceTree = "<group>"; };
+		74B7D83EE00CC9B9DDE1C6195BC5AC5D /* SessionMapSourceAdapter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapSourceAdapter.swift; path = App/SessionMap/SessionMapSourceAdapter.swift; sourceTree = "<group>"; };
 		750C935A8BED92CD49108D54039E91B3 /* ProviderUsageDockLayoutTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageDockLayoutTests.swift; path = Tests/TenXAppTests/ProviderUsageDockLayoutTests.swift; sourceTree = "<group>"; };
+		753D7622917DC47FD47598306A76CBA3 /* SessionMapSourceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapSourceTests.swift; path = Tests/TenXAppTests/SessionMapSourceTests.swift; sourceTree = "<group>"; };
 		761A4B5142B31A06BBA9A4D3F5CCD9E2 /* ProviderAccountPinBackend.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountPinBackend.swift; path = App/Providers/ProviderAccountPinBackend.swift; sourceTree = "<group>"; };
 		7640229E9B50A3716E51A25E0D4D66B0 /* InteractionPresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = InteractionPresentationTests.swift; path = Tests/TenXAppTests/InteractionPresentationTests.swift; sourceTree = "<group>"; };
 		768B841E66BD95E02EB6BE2DD8565041 /* ToolCardRegistry.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolCardRegistry.swift; path = App/Tools/ToolCardRegistry.swift; sourceTree = "<group>"; };
@@ -726,12 +737,14 @@
 		CDBB07833109F31D51F73C34E1B05AE6 /* RailSessionReadState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailSessionReadState.swift; path = App/Shell/RailSessionReadState.swift; sourceTree = "<group>"; };
 		CDFC72D3124CDFAE67E6381F1A8AFA74 /* StartupLedgerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StartupLedgerView.swift; path = App/Startup/StartupLedgerView.swift; sourceTree = "<group>"; };
 		CE2D3A9D841091AEB7D1CE9AF7DFE0AE /* TranscriptSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptSnapshot.swift; path = App/Sessions/TranscriptSnapshot.swift; sourceTree = "<group>"; };
+		CF2CC20C55FABBA60FAA07F53056965A /* SessionMapDigestTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapDigestTests.swift; path = Tests/TenXAppTests/SessionMapDigestTests.swift; sourceTree = "<group>"; };
 		CF8922FB4A926B45E3305E495958A097 /* ProviderAccountPinBackendTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountPinBackendTests.swift; path = Tests/TenXAppTests/ProviderAccountPinBackendTests.swift; sourceTree = "<group>"; };
 		D0E94DC0159DC9362F2EB7CB41EA46A1 /* SessionMapDocumentValidator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapDocumentValidator.swift; path = App/SessionMap/SessionMapDocumentValidator.swift; sourceTree = "<group>"; };
 		D15D4E97C6EA2DAA493F24225714297B /* ToolDetailModeControl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolDetailModeControl.swift; path = App/Tools/ToolDetailModeControl.swift; sourceTree = "<group>"; };
 		D1AFFC6AB8D63954109A728D2AB69E4D /* FlyerIntegrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FlyerIntegrationTests.swift; path = Tests/TenXAppTests/FlyerIntegrationTests.swift; sourceTree = "<group>"; };
 		D21953D8D17C2A107E43258CBB3E6E4E /* MessageContentParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MessageContentParser.swift; path = App/Sessions/MessageContentParser.swift; sourceTree = "<group>"; };
 		D422F7E810EB9916337FD969ACB8E5A6 /* TranscriptReducer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptReducer.swift; path = App/Sessions/TranscriptReducer.swift; sourceTree = "<group>"; };
+		D4E60882A53DDA8FBD1D1D198FDA28C7 /* SessionMapPlanningExcerptReader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapPlanningExcerptReader.swift; path = App/SessionMap/SessionMapPlanningExcerptReader.swift; sourceTree = "<group>"; };
 		D51EFD581EEFD45A453F1875E53AC1AF /* ModelPickerFlyout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ModelPickerFlyout.swift; path = App/Sessions/ModelPickerFlyout.swift; sourceTree = "<group>"; };
 		D571A76482D84C6FB84D70F08D008F62 /* TurnActivityView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TurnActivityView.swift; path = App/Sessions/TurnActivityView.swift; sourceTree = "<group>"; };
 		D7651ABB34DCD41F0E1384304EA0C22A /* AppTerminationDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppTerminationDelegate.swift; path = App/Application/AppTerminationDelegate.swift; sourceTree = "<group>"; };
@@ -765,6 +778,7 @@
 		F13E32214A370E0E3329B1786F2A08B4 /* AppModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppModel.swift; path = App/Application/AppModel.swift; sourceTree = "<group>"; };
 		F140F1B49E31B955FF6C00CC13A6614C /* ContextUsageControl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContextUsageControl.swift; path = App/Sessions/ContextUsageControl.swift; sourceTree = "<group>"; };
 		F404B26A137A6F32B34D8CDC875BE407 /* ProviderManagementService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderManagementService.swift; path = App/Providers/ProviderManagementService.swift; sourceTree = "<group>"; };
+		F43E6E02705C07A0B71CB244E1C0A984 /* SessionMapDigestBuilder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapDigestBuilder.swift; path = App/SessionMap/SessionMapDigestBuilder.swift; sourceTree = "<group>"; };
 		F4C26B5820AE54CAAC8833DA5303BABE /* AppShellView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppShellView.swift; path = App/Shell/AppShellView.swift; sourceTree = "<group>"; };
 		F4DE6FC858BA424F6473D1B71607D875 /* SessionMapSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapSnapshotTests.swift; path = Tests/TenXAppTests/SessionMapSnapshotTests.swift; sourceTree = "<group>"; };
 		F5799BC39D7647D45E72ACECA5F6FF59 /* IDEApplication.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IDEApplication.swift; path = App/FileReferences/IDEApplication.swift; sourceTree = "<group>"; };
@@ -900,6 +914,7 @@
 				6ED0B06D0ACA3A31602C718C4FDF22F6 /* SessionSearchDocument.swift */,
 				820616B4ADC325CD37B2DD16742382D2 /* SessionSearchDocumentBuilder.swift */,
 				B3EF186EA996949E598D53D7B5E831D4 /* SessionSearchService.swift */,
+				F43E6E02705C07A0B71CB244E1C0A984 /* SessionMapDigestBuilder.swift */,
 				76BC268520A013D28F056F038E185FEC /* SessionMapDocument.swift */,
 				C3605D35FBA166BDA00A943EF88D8C99 /* SessionMapDocumentParser.swift */,
 				D0E94DC0159DC9362F2EB7CB41EA46A1 /* SessionMapDocumentValidator.swift */,
@@ -914,6 +929,9 @@
 				8D6F2CCA813FADE851EB4D295DD6B934 /* SessionMapPaneModel.swift */,
 				8A57F28A120ADE252EC627757E31BAE7 /* SessionMapPaneView.swift */,
 				29E6D435F9DBEA8608BF2EB7CB22103D /* SessionMapPlanView.swift */,
+				D4E60882A53DDA8FBD1D1D198FDA28C7 /* SessionMapPlanningExcerptReader.swift */,
+				1DE306D5299E72E7B71ECDB1971DC540 /* SessionMapSource.swift */,
+				74B7D83EE00CC9B9DDE1C6195BC5AC5D /* SessionMapSourceAdapter.swift */,
 				FBCA3F53071EA3A771B4C8A91A32C9BB /* SessionMapSupportingBlockView.swift */,
 				B38998ACEBDD0AAC27B5010E5F47A8E3 /* SessionMapWalkthroughView.swift */,
 				548CA6213C928CA4B52FAC3EBD197B0F /* ActiveSessionView.swift */,
@@ -1146,12 +1164,15 @@
 				5E699BA1F243D00C345CEA4956EBD7AA /* SessionControllerQuestionTests.swift */,
 				8FCE005EDE56CD93F1447FFBE253CC50 /* SessionControllerTests.swift */,
 				8CA6C5484CCCD828D9CBA15E3C79078D /* SessionHeaderMetadataTests.swift */,
+				CF2CC20C55FABBA60FAA07F53056965A /* SessionMapDigestTests.swift */,
 				95DC4CE6EB9198D9F7944E7E037F7A39 /* SessionMapDocumentTests.swift */,
 				EB36DA99EB55D7B7D4546A841794DA77 /* SessionMapInteractionTests.swift */,
 				5539BC00E8730ACFC064AAF2943ABB38 /* SessionMapLayoutTests.swift */,
 				F0EFF65CB55A7E6A77CE1ED432E86AD8 /* SessionMapPaneModelTests.swift */,
 				A508C5CB310D3D95A4D807C069F07B4F /* SessionMapPanePresentationTests.swift */,
+				1C5F4F2BE24C3207A7ABD2F5CD05B27B /* SessionMapPlanningExcerptTests.swift */,
 				F4DE6FC858BA424F6473D1B71607D875 /* SessionMapSnapshotTests.swift */,
+				753D7622917DC47FD47598306A76CBA3 /* SessionMapSourceTests.swift */,
 				B7E60699D00256F3304465D59D97EB81 /* SessionMapValidationTests.swift */,
 				9184DBB95AC7035C9F4A0743F26739A2 /* SessionRenameTests.swift */,
 				366335EAE0309E543F652198FEA33EDF /* SessionSearchDatabaseTests.swift */,
@@ -1429,6 +1450,7 @@
 				4A0AFD9E671813F38CFA3A1472066F2D /* SessionSearchDocument.swift in Sources */,
 				BDC5536A0CB42AA9E6C4612E54C342E4 /* SessionSearchDocumentBuilder.swift in Sources */,
 				BD98BDD407BAABE3AD0724D4FDE1D85C /* SessionSearchService.swift in Sources */,
+				AC474D76F8E0ED4C214525930B0F1BE8 /* SessionMapDigestBuilder.swift in Sources */,
 				9078DB5085B93EE0C8B3DE5B4BB0B338 /* SessionMapDocument.swift in Sources */,
 				190E6300120ACDA0FD2F05198C1171D9 /* SessionMapDocumentParser.swift in Sources */,
 				E33F00AD08A3D7B737D46E63F7DCBC54 /* SessionMapDocumentValidator.swift in Sources */,
@@ -1443,6 +1465,9 @@
 				8948E00BC595A0B7952E0ED35120C71A /* SessionMapPaneModel.swift in Sources */,
 				8843A552ADD3C175C0DE2E43CF10D2EF /* SessionMapPaneView.swift in Sources */,
 				554924AA2DD77FE1FBE965E3481C599A /* SessionMapPlanView.swift in Sources */,
+				3B40899547B1DF055F1EAB96B645BFE9 /* SessionMapPlanningExcerptReader.swift in Sources */,
+				1BBA3C826CCBFB691C393817A9462FB3 /* SessionMapSource.swift in Sources */,
+				E3ADEBF089F94A52E3C330AC9AFCFD79 /* SessionMapSourceAdapter.swift in Sources */,
 				DFD635480A051654D6E8CCEE3236D021 /* SessionMapSupportingBlockView.swift in Sources */,
 				50518FF7E4DA1E4F4665D43A3123A559 /* SessionMapWalkthroughView.swift in Sources */,
 				C248BA5BB250C6AE7B34B48BC9256C37 /* ActiveSessionView.swift in Sources */,
@@ -1662,12 +1687,15 @@
 				29AF6B9E8DB1C42824E2B8BC257EFFF1 /* SessionControllerQuestionTests.swift in Sources */,
 				1C537CAEC7398A7946038A0217946A49 /* SessionControllerTests.swift in Sources */,
 				741D91F33918CCC7B84410E97C7AEFA1 /* SessionHeaderMetadataTests.swift in Sources */,
+				31E6311F94CBCA3305FBEADE1FDB3648 /* SessionMapDigestTests.swift in Sources */,
 				FA6ECF898B51284F87359A21AEC4832B /* SessionMapDocumentTests.swift in Sources */,
 				68511512C6156693F505D26F9F1F4DD1 /* SessionMapInteractionTests.swift in Sources */,
 				FD2AC3B89F49F37AA10DE15702AA6D6B /* SessionMapLayoutTests.swift in Sources */,
 				1865470733645373FC4D8FE953A827C6 /* SessionMapPaneModelTests.swift in Sources */,
 				F7E3057BF7D3C886EE337B0E84502F56 /* SessionMapPanePresentationTests.swift in Sources */,
+				009365CD2BA4F796B6F925CD132E6363 /* SessionMapPlanningExcerptTests.swift in Sources */,
 				F987E142925062F38ABB78E56C8687A6 /* SessionMapSnapshotTests.swift in Sources */,
+				FAF8DE366E4FBD7837500712DE302CDD /* SessionMapSourceTests.swift in Sources */,
 				0304AB330F912F3488062D8CAA0562F9 /* SessionMapValidationTests.swift in Sources */,
 				863B086C0CC8C25B98573EAFFB38D488 /* SessionRenameTests.swift in Sources */,
 				7359661AC17223C80D96F8DD716A27FA /* SessionSearchDatabaseTests.swift in Sources */,
