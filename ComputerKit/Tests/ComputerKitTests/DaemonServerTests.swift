@@ -333,6 +333,75 @@ final class DaemonServerTests: XCTestCase {
         }
     }
 
+    func test_mcpDisconnect_doesNotStopOtherSessionsPreview() throws {
+        daemon.stop()
+        daemon = nil
+        socketPath = NSTemporaryDirectory() + "tenx-computer-test-\(UUID().uuidString).sock"
+        daemon = DaemonServer(engine: engine, socketPath: socketPath, previewInterval: 0.05)
+        try daemon.start()
+
+        let safari = WindowInfo(id: 10, appName: "Safari", title: "Apple", bounds: .init(x: 0, y: 0, width: 800, height: 600), pid: 100)
+        engine.windows = [safari]
+        engine.screenshotPNG = Data([0x89])
+
+        let supervision = try DaemonClient(socketPath: socketPath)
+        try supervision.send(.object(["role": .string("supervision")]))
+        _ = try supervision.receive()
+
+        let mcpA = try DaemonClient(socketPath: socketPath)
+        try mcpA.send(.object(["role": .string("mcp")]))
+        _ = try rpc(mcpA, [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("omp")])]),
+        ])
+        _ = try expectEvent(supervision)
+
+        _ = try rpc(mcpA, [
+            "jsonrpc": .string("2.0"), "id": .number(2), "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("computer_claim"),
+                "arguments": .object(["window_id": .number(10)]),
+            ]),
+        ])
+        _ = try expectEvent(supervision)
+
+        _ = try rpc(mcpA, [
+            "jsonrpc": .string("2.0"), "id": .number(3), "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("computer_act"),
+                "arguments": .object([
+                    "window_id": .number(10),
+                    "action": .string("click"),
+                    "x": .number(10),
+                    "y": .number(10),
+                ]),
+            ]),
+        ])
+
+        var mcpB: DaemonClient? = try DaemonClient(socketPath: socketPath)
+        try mcpB?.send(.object(["role": .string("mcp")]))
+        _ = try rpc(mcpB!, [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("Cursor")])]),
+        ])
+        _ = try expectEvent(supervision)
+
+        mcpB = nil
+
+        _ = try expectEvent(supervision) // windowReleased from B disconnect
+        _ = try expectEvent(supervision) // sessionEnded from B disconnect
+
+        let screenshotAfterDisconnect = expectation(description: "session A preview continues")
+        for _ in 0..<10 {
+            let event = try expectEvent(supervision)
+            if event["type"] == .string("screenshotTaken"), event["session"] == .number(1) {
+                screenshotAfterDisconnect.fulfill()
+                break
+            }
+        }
+        wait(for: [screenshotAfterDisconnect], timeout: 1.0)
+    }
+
     func test_supervisionClient_unknownEventLine_doesNotTearDownSocket() throws {
         let supervision = try DaemonClient(socketPath: socketPath)
         try supervision.send(.object(["role": .string("supervision")]))

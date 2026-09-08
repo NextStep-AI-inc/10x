@@ -33,7 +33,7 @@ public final class DaemonServer {
         var buffer = Data()
     }
 
-    public init(engine: DesktopEngine, socketPath: String = DaemonServer.defaultSocketPath, previewInterval: TimeInterval = 1.0) {
+    init(engine: DesktopEngine, socketPath: String = DaemonServer.defaultSocketPath, previewInterval: TimeInterval = 1.0) {
         self.engine = engine
         self.previewInterval = previewInterval
         self.socketPath = socketPath
@@ -186,6 +186,7 @@ public final class DaemonServer {
             var response: JSONValue?
             var events: [SupervisionEvent] = []
             var previewAction: (session: SessionID, windowID: CGWindowID)?
+            var previewStop: (session: SessionID, windowID: CGWindowID)?
 
             lock.lock()
             let claimsBefore = Set(registry.claimedWindows(for: session).map(\.id))
@@ -216,6 +217,7 @@ public final class DaemonServer {
                         )
                         events.append(contentsOf: toolResult.events)
                         previewAction = toolResult.previewAction
+                        previewStop = toolResult.previewStop
                         response = .object(["jsonrpc": .string("2.0"), "id": id ?? .null, "result": result])
                     }
                 } catch let error as MCPError {
@@ -232,6 +234,9 @@ public final class DaemonServer {
             if let previewAction {
                 preview.actionOccurred(session: previewAction.session, windowID: previewAction.windowID)
             }
+            if let previewStop {
+                preview.stopPreview(for: previewStop.session, windowID: previewStop.windowID)
+            }
             if let response { try? write(fd, response) }
 
         case .supervision:
@@ -244,7 +249,7 @@ public final class DaemonServer {
                         let releases = releaseEvents(for: session, reason: "stopped")
                         registry.stop(session)
                         lock.unlock()
-                        preview.setActive(session: nil, windowID: nil)
+                        preview.stopPreview(for: session)
                         for event in releases { broadcast(event) }
                         broadcast(.stopped(reason: "session \(raw) stopped"))
                     }
@@ -291,6 +296,7 @@ public final class DaemonServer {
     private struct ToolEventResult {
         var events: [SupervisionEvent]
         var previewAction: (session: SessionID, windowID: CGWindowID)?
+        var previewStop: (session: SessionID, windowID: CGWindowID)?
     }
 
     /// Collects supervision events for a completed tools/call. Claims are diffed
@@ -298,10 +304,11 @@ public final class DaemonServer {
     /// execution) is covered by the same path as computer_claim.
     private func toolEvents(session: SessionID, method: String, params: JSONValue?, claimsBefore: Set<CGWindowID>) -> ToolEventResult {
         guard method == "tools/call", let name = params?["name"]?.stringValue else {
-            return ToolEventResult(events: [], previewAction: nil)
+            return ToolEventResult(events: [], previewAction: nil, previewStop: nil)
         }
         var events: [SupervisionEvent] = []
         var previewAction: (session: SessionID, windowID: CGWindowID)?
+        var previewStop: (session: SessionID, windowID: CGWindowID)?
         let newClaims = registry.claimedWindows(for: session).filter { !claimsBefore.contains($0.id) }
         let harness = registry.session(session)?.harness ?? "unknown"
         for window in newClaims {
@@ -316,6 +323,7 @@ public final class DaemonServer {
         case "computer_release":
             if let windowID = args?["window_id"]?.intValue {
                 events.append(.windowReleased(session: session.raw, windowID: windowID, reason: "released"))
+                previewStop = (session, CGWindowID(windowID))
             }
         case "computer_act":
             events.append(.action(
@@ -333,7 +341,7 @@ public final class DaemonServer {
         default:
             break
         }
-        return ToolEventResult(events: events, previewAction: previewAction)
+        return ToolEventResult(events: events, previewAction: previewAction, previewStop: previewStop)
     }
 
     private func broadcast(_ event: SupervisionEvent) {
@@ -360,18 +368,16 @@ public final class DaemonServer {
             return
         }
         var events: [SupervisionEvent] = []
-        let hadMCPSession: Bool
+        var disconnectedSession: SessionID?
         if case .mcp(let session, _, _) = client.role {
-            hadMCPSession = true
+            disconnectedSession = session
             events.append(contentsOf: releaseEvents(for: session, reason: "disconnect"))
             let harness = registry.session(session)?.harness ?? "unknown"
             registry.stop(session)
             events.append(.sessionEnded(session: session.raw, harness: harness))
-        } else {
-            hadMCPSession = false
         }
         lock.unlock()
-        if hadMCPSession { preview.setActive(session: nil, windowID: nil) }
+        if let disconnectedSession { preview.stopPreview(for: disconnectedSession) }
         for event in events { broadcast(event) }
         close(fd)
     }

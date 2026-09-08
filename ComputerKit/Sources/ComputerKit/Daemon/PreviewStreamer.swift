@@ -20,11 +20,19 @@ public final class PreviewStreamer {
         self.emit = emit
     }
 
+    deinit {
+        timer?.setEventHandler {}
+        timer?.cancel()
+    }
+
     func actionOccurred(session: SessionID, windowID: CGWindowID) {
-        queue.sync {
+        let event: SupervisionEvent? = queue.sync {
             setActiveLocked(session: session, windowID: windowID)
-            emitFrameLocked()
+            return captureFrameLocked()
         }
+        // ponytail: emit must not call back into PreviewStreamer — re-entrancy
+        // into queue.sync would deadlock.
+        if let event { emit(event) }
     }
 
     func setActive(session: SessionID?, windowID: CGWindowID?) {
@@ -32,10 +40,22 @@ public final class PreviewStreamer {
             if let session, let windowID {
                 setActiveLocked(session: session, windowID: windowID)
             } else {
-                active = nil
-                timer?.cancel()
-                timer = nil
+                clearActiveLocked()
             }
+        }
+    }
+
+    func stopPreview(for session: SessionID) {
+        queue.sync {
+            guard active?.session == session else { return }
+            clearActiveLocked()
+        }
+    }
+
+    func stopPreview(for session: SessionID, windowID: CGWindowID) {
+        queue.sync {
+            guard active?.session == session, active?.windowID == windowID else { return }
+            clearActiveLocked()
         }
     }
 
@@ -45,13 +65,35 @@ public final class PreviewStreamer {
         timer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + interval, repeating: interval)
-        timer.setEventHandler { [weak self] in self?.emitFrameLocked() }
+        timer.setEventHandler { [weak self] in self?.heartbeatLocked() }
         timer.resume()
         self.timer = timer
     }
 
-    private func emitFrameLocked() {
-        guard let active, let shot = try? engine.screenshot(windowID: active.windowID) else { return }
-        emit(.screenshotTaken(session: active.session.raw, windowID: Int(active.windowID), pngBase64: shot.pngData.base64EncodedString()))
+    private func clearActiveLocked() {
+        active = nil
+        timer?.cancel()
+        timer = nil
+    }
+
+    private func heartbeatLocked() {
+        guard let event = captureFrameLocked() else { return }
+        DispatchQueue.global(qos: .utility).async { [emit] in emit(event) }
+    }
+
+    private func captureFrameLocked() -> SupervisionEvent? {
+        guard let active else { return nil }
+        do {
+            let shot = try engine.screenshot(windowID: active.windowID)
+            return .screenshotTaken(
+                session: active.session.raw, windowID: Int(active.windowID),
+                pngBase64: shot.pngData.base64EncodedString()
+            )
+        } catch let error as ComputerError where error.message.hasPrefix("window_gone") {
+            clearActiveLocked()
+            return nil
+        } catch {
+            return nil
+        }
     }
 }
