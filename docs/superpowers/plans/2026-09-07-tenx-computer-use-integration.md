@@ -22,6 +22,8 @@ If the scheme is missing, run `xcodebuild -list -project 10x.xcodeproj` and use 
 
 **Naming collision warning:** both OmpKit and ComputerKit define `JSONValue`. In app files that import both, qualify: `ComputerKit.JSONValue`, `ComputerKit.SupervisionEvent`.
 
+**Wire freeze (post-Plan-1 audit, commit 2968eb4):** the supervision protocol is final — camelCase keys; `sessionStarted{session,harness,label,pid}`; `stopped{reason,session}` (`session: null` = global); `permissions{screenRecording,accessibility}`; `screenshotTaken{...,width,height,scale}`; `action` x/y are `null` for type/key, window center for scroll. Absent optionals encode as explicit `null`, never omitted keys. `windowReleased.reason` ∈ `disconnect|stopped|shutoff|released|window_gone`. Do not change these from Plan 2 code — change ComputerKit instead and re-freeze.
+
 ---
 
 ### Task 1: Wire ComputerKit into the app target
@@ -40,8 +42,8 @@ import XCTest
 final class ComputerKitWiringTests: XCTestCase {
     func test_computerKitIsLinked() {
         // SupervisionEvent is the type the app's supervision client decodes.
-        let event = SupervisionEvent.stopped(reason: "wiring check")
-        XCTAssertEqual(event, .stopped(reason: "wiring check"))
+        let event = SupervisionEvent.stopped(reason: "wiring check", session: nil)
+        XCTAssertEqual(event, .stopped(reason: "wiring check", session: nil))
     }
 }
 ```
@@ -106,15 +108,15 @@ final class SupervisionClientTests: XCTestCase {
 
     func test_sessionStarted_addsSessionGroupedByHarness() {
         let client = makeClient()
-        client.apply(.sessionStarted(session: 1, harness: "omp"))
-        client.apply(.sessionStarted(session: 2, harness: "Cursor"))
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
+        client.apply(.sessionStarted(session: 2, harness: "Cursor", label: nil, pid: nil))
         XCTAssertEqual(client.sessions[1]?.harness, "omp")
         XCTAssertEqual(client.sessions[2]?.harness, "Cursor")
     }
 
     func test_windowClaimed_attachesWindowToSession() {
         let client = makeClient()
-        client.apply(.sessionStarted(session: 1, harness: "omp"))
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
         client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
         XCTAssertEqual(client.sessions[1]?.windows.first?.windowID, 10)
         XCTAssertEqual(client.sessions[1]?.windows.first?.app, "Safari")
@@ -122,7 +124,7 @@ final class SupervisionClientTests: XCTestCase {
 
     func test_windowReleased_removesWindow() {
         let client = makeClient()
-        client.apply(.sessionStarted(session: 1, harness: "omp"))
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
         client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
         client.apply(.windowReleased(session: 1, windowID: 10, reason: "released"))
         XCTAssertEqual(client.sessions[1]?.windows.count, 0)
@@ -130,10 +132,10 @@ final class SupervisionClientTests: XCTestCase {
 
     func test_screenshotTaken_storesLatestFramePerWindow() {
         let client = makeClient()
-        client.apply(.sessionStarted(session: 1, harness: "omp"))
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
         client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
-        client.apply(.screenshotTaken(session: 1, windowID: 10, pngBase64: Data([1, 2]).base64EncodedString()))
-        client.apply(.screenshotTaken(session: 1, windowID: 10, pngBase64: Data([3, 4]).base64EncodedString()))
+        client.apply(.screenshotTaken(session: 1, windowID: 10, pngBase64: Data([1, 2]).base64EncodedString(), width: 100, height: 100, scale: 2))
+        client.apply(.screenshotTaken(session: 1, windowID: 10, pngBase64: Data([3, 4]).base64EncodedString(), width: 100, height: 100, scale: 2))
         XCTAssertEqual(client.frames[10], Data([3, 4]))
     }
 
@@ -146,24 +148,41 @@ final class SupervisionClientTests: XCTestCase {
 
     func test_statusChanged_updatesSessionStatus() {
         let client = makeClient()
-        client.apply(.sessionStarted(session: 1, harness: "omp"))
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
         client.apply(.statusChanged(session: 1, status: "Running tests…"))
         XCTAssertEqual(client.sessions[1]?.status, "Running tests…")
     }
 
     func test_stopped_clearsEverything() {
         let client = makeClient()
-        client.apply(.sessionStarted(session: 1, harness: "omp"))
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
         client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
-        client.apply(.stopped(reason: "global shut-off"))
+        client.apply(.stopped(reason: "global shut-off", session: nil))
         XCTAssertTrue(client.sessions.isEmpty)
         XCTAssertTrue(client.frames.isEmpty)
     }
 
+    func test_stoppedWithSession_removesOnlyThatSession() {
+        let client = makeClient()
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
+        client.apply(.sessionStarted(session: 2, harness: "Cursor", label: nil, pid: nil))
+        client.apply(.stopped(reason: "session 1 stopped", session: 1))
+        XCTAssertNil(client.sessions[1])
+        XCTAssertNotNil(client.sessions[2])
+    }
+
+    func test_permissions_storesLatest() {
+        let client = makeClient()
+        XCTAssertNil(client.permissions)
+        client.apply(.permissions(screenRecording: true, accessibility: false))
+        XCTAssertEqual(client.permissions?.screenRecording, true)
+        XCTAssertEqual(client.permissions?.accessibility, false)
+    }
+
     func test_sessionEnded_removesOnlyThatSession() {
         let client = makeClient()
-        client.apply(.sessionStarted(session: 1, harness: "omp"))
-        client.apply(.sessionStarted(session: 2, harness: "Cursor"))
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
+        client.apply(.sessionStarted(session: 2, harness: "Cursor", label: nil, pid: nil))
         client.apply(.sessionEnded(session: 1, harness: "omp"))
         XCTAssertNil(client.sessions[1])
         XCTAssertNotNil(client.sessions[2])
@@ -172,7 +191,7 @@ final class SupervisionClientTests: XCTestCase {
     func test_hasAnyActivity_drivesMenuBarInsertion() {
         let client = makeClient()
         XCTAssertFalse(client.hasAnyActivity)
-        client.apply(.sessionStarted(session: 1, harness: "omp"))
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
         client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
         XCTAssertTrue(client.hasAnyActivity)
     }
@@ -203,6 +222,7 @@ public struct ClaimedWindowState: Equatable, Identifiable, Sendable {
 public struct ComputerSessionState: Equatable, Identifiable, Sendable {
     public let id: Int
     public var harness: String
+    public var label: String?
     public var status: String?
     public var windows: [ClaimedWindowState] = []
 }
@@ -214,8 +234,9 @@ public struct ComputerSessionState: Equatable, Identifiable, Sendable {
 public final class SupervisionClient {
     public private(set) var sessions: [Int: ComputerSessionState] = [:]
     public private(set) var frames: [Int: Data] = [:] // windowID -> latest PNG
-    public private(set) var lastAction: (windowID: Int, kind: String, x: Double, y: Double, at: Date)?
+    public private(set) var lastAction: (windowID: Int, kind: String, x: Double?, y: Double?, at: Date)?
     public private(set) var isConnected = false
+    public private(set) var permissions: (screenRecording: Bool, accessibility: Bool)?
 
     /// True when any harness has a claimed window — drives MenuBarExtra insertion.
     public var hasAnyActivity: Bool {
@@ -284,8 +305,8 @@ public final class SupervisionClient {
     /// Pure reducer — the tested surface.
     public func apply(_ event: SupervisionEvent) {
         switch event {
-        case .sessionStarted(let session, let harness):
-            sessions[session] = ComputerSessionState(id: session, harness: harness)
+        case .sessionStarted(let session, let harness, let label, _):
+            sessions[session] = ComputerSessionState(id: session, harness: harness, label: label)
         case .sessionEnded(let session, _):
             if let ended = sessions.removeValue(forKey: session) {
                 for window in ended.windows { frames.removeValue(forKey: window.windowID) }
@@ -297,14 +318,23 @@ public final class SupervisionClient {
             frames.removeValue(forKey: windowID)
         case .action(_, let windowID, let kind, let x, let y):
             lastAction = (windowID, kind, x, y, Date())
-        case .screenshotTaken(_, let windowID, let pngBase64):
+        case .screenshotTaken(_, let windowID, let pngBase64, _, _, _):
             if let data = Data(base64Encoded: pngBase64) { frames[windowID] = data }
         case .statusChanged(let session, let status):
             sessions[session]?.status = status
-        case .stopped:
-            sessions.removeAll()
-            frames.removeAll()
-            lastAction = nil
+        case .permissions(let screenRecording, let accessibility):
+            permissions = (screenRecording, accessibility)
+        case .stopped(_, let session):
+            if let session {
+                // Per-session stop: drop just that session.
+                if let ended = sessions.removeValue(forKey: session) {
+                    for window in ended.windows { frames.removeValue(forKey: window.windowID) }
+                }
+            } else {
+                sessions.removeAll()
+                frames.removeAll()
+                lastAction = nil
+            }
         }
         onEvent?(event)
     }
@@ -649,7 +679,7 @@ final class ComputerUseControllerTests: XCTestCase {
     func test_stoppedEvent_clearsActivity() {
         let controller = makeController()
         controller.handleToolStarted(name: "mcp__tenx-computer_computer_claim", input: ["window_id": 10])
-        controller.applySupervision(.stopped(reason: "global shut-off"))
+        controller.applySupervision(.stopped(reason: "global shut-off", session: nil))
         XCTAssertEqual(controller.phase, .off)
         XCTAssertEqual(controller.claimedWindowIDs, [])
     }
@@ -715,7 +745,7 @@ final class ComputerUseController {
             self.status = status
         case .windowReleased(_, let windowID, _):
             claimedWindowIDs.remove(windowID)
-        case .stopped:
+        case .stopped(_, let session) where session == nil || session == daemonSessionID:
             claimedWindowIDs.removeAll()
             status = nil
             daemonSessionID = nil
@@ -796,9 +826,10 @@ ComputerKit's `FakeEngine` lives in its test target and is not visible to the ap
 ```swift
 import ComputerKit
 
-private struct NoopEngine: DesktopEngine {
+private final class NoopEngine: DesktopEngine {
+    var isCancelled: @Sendable () -> Bool = { false }
     func preflightPermissions() -> PermissionStatus { .init(screenRecording: true, accessibility: true) }
-    func listWindows() throws -> [WindowInfo] { [] }
+    func listWindows(onScreenOnly: Bool) throws -> [WindowInfo] { [] }
     func screenshot(windowID: CGWindowID) throws -> Screenshot {
         Screenshot(pngData: Data(), pixelSize: .zero, scale: 1)
     }
@@ -1157,7 +1188,7 @@ final class OverlayModelTests: XCTestCase {
     func test_stopped_clearsAll() {
         let model = OverlayModel()
         model.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "", bounds: "100,100 800x600"))
-        model.apply(.stopped(reason: "global shut-off"))
+        model.apply(.stopped(reason: "global shut-off", session: nil))
         XCTAssertTrue(model.overlays.isEmpty)
     }
 }
@@ -1206,7 +1237,8 @@ final class OverlayModel {
             overlays.removeValue(forKey: windowID)
             windowSession.removeValue(forKey: windowID)
         case .action(_, let windowID, let kind, let x, let y):
-            guard overlays[windowID] != nil else { return }
+            // type/key carry null coordinates — the cursor stays put.
+            guard overlays[windowID] != nil, let x, let y else { return }
             overlays[windowID]?.cursor = CGPoint(x: x, y: y)
             overlays[windowID]?.cursorKind = kind
             overlays[windowID]?.cursorAt = Date()
@@ -1438,9 +1470,9 @@ Design (approved mockups): grouped by harness (10x first), one row per session �
 @MainActor
 @Test func computerMenuBarGroupedSnapshot() throws {
     let client = SupervisionClient(socketPath: NSTemporaryDirectory() + "unused-\(UUID().uuidString).sock")
-    client.apply(.sessionStarted(session: 1, harness: "omp"))
+    client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
     client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
-    client.apply(.sessionStarted(session: 2, harness: "Cursor"))
+    client.apply(.sessionStarted(session: 2, harness: "Cursor", label: nil, pid: nil))
     client.apply(.windowClaimed(session: 2, harness: "Cursor", windowID: 11, app: "Terminal", title: "zsh", bounds: "0,0 800x600"))
     try assertSnapshot(
         ComputerUseMenuBarView(client: client, onOpenSession: { _ in }, openableSessionIDs: [1]),
@@ -1507,7 +1539,7 @@ struct ComputerUseMenuBarView: View {
     private func sessionRow(_ session: ComputerSessionState) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text("Session \(session.id)")
+                Text(session.label ?? "Session \(session.id)")
                     .font(TenXTypography.body(size: 12, weight: .semibold))
                 if let status = session.status, !status.isEmpty {
                     Text(status)
