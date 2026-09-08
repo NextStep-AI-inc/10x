@@ -204,9 +204,9 @@ struct TranscriptView: View {
 
     private func focusTranscriptRow(_ proxy: ScrollViewProxy, rows: [TranscriptPresentationRow]) {
         guard let request = controller.transcriptNavigationRequest,
-              request.nonce != consumedNavigationNonce,
-              let row = rows.first(where: { $0.id == request.rowID }) else { return }
+              request.nonce != consumedNavigationNonce else { return }
         consumedNavigationNonce = request.nonce
+        guard let row = rows.first(where: { $0.id == request.rowID }) else { return }
         searchResolution = nil
         controller.viewport.isFollowingLatest = false
         if case .groupedTool(let groupID, _) = row {

@@ -29,11 +29,23 @@ struct SessionActivityControl: View {
                 .frame(width: 6, height: 6)
             Text(state.rawValue)
                 .font(TenXTypography.body(size: 10, weight: .medium))
-                .foregroundStyle(state.color)
+                .foregroundStyle(labelColor)
                 .lineLimit(1)
+            if state == .needsInput {
+                Image(systemName: "chevron.forward")
+                    .font(.system(size: 7, weight: .semibold))
+                    .foregroundStyle(labelColor)
+                    .accessibilityHidden(true)
+            }
         }
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(state.rawValue)
+    }
+
+    private var labelColor: Color {
+        state == .needsInput
+            ? TenXPalette.color(TenXPalette.interactiveCyanHex)
+            : TenXPalette.color(TenXPalette.mutedTextHex)
     }
 }

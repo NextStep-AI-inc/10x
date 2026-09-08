@@ -19,6 +19,13 @@ import Testing
             timeout: nil)),
     ])
     controller.draft = "Keep this draft"
+    let attachment = ComposerAttachment(
+        name: "evidence.png",
+        data: Data([1]),
+        mimeType: "image/png",
+        pixelWidth: 1,
+        pixelHeight: 1)
+    controller.attachments = [attachment]
     let originalItems = controller.items
 
     controller.focusPendingRequest()
@@ -26,6 +33,7 @@ import Testing
     #expect(controller.transcriptNavigationRequest?.rowID == "extension-ui:select")
     #expect(controller.items == originalItems)
     #expect(controller.draft == "Keep this draft")
+    #expect(controller.attachments == [attachment])
 }
 
 @MainActor
@@ -116,6 +124,10 @@ import Testing
     #expect(controller.transcriptSearchRequest == nil)
     #expect(!controller.viewport.isFollowingLatest)
     #expect(controller.transcriptNavigationRequest?.rowID == "message:target")
+
+    controller.focusTranscriptRow(nil)
+
+    #expect(controller.transcriptNavigationRequest == nil)
 }
 
 @MainActor
