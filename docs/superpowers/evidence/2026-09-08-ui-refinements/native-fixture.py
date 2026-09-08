@@ -61,8 +61,12 @@ queue = []
 is_streaming = False
 started_at = None
 catalog_error = False
-selected_model = {'id': 'fixture-standard', 'name': 'Standard fixture', 'provider': 'test', 'contextWindow': 200000, 'reasoning': True, 'input': ['text', 'image']}
-models = [selected_model, {'id': 'fixture-compact', 'name': 'Compact fixture', 'provider': 'test', 'contextWindow': 100000, 'reasoning': True, 'input': ['text', 'image']}]
+selected_model = {'id': 'fixture-standard', 'name': 'Standard fixture', 'provider': 'openai-codex', 'contextWindow': 200000, 'reasoning': True, 'input': ['text', 'image']}
+# Use the signed-in QA provider ID so the real authenticated-catalog filter runs.
+# These are still entirely local fixture models; the wrapper handles every RPC.
+models = [selected_model, {'id': 'fixture-compact', 'name': 'Compact fixture', 'provider': 'openai-codex', 'contextWindow': 100000, 'reasoning': True, 'input': ['text', 'image']}]
+
+models += [{**selected_model, 'id': f'fixture-option-{index}', 'name': f'Layout fixture option {index}'} for index in range(1, 15)]
 
 
 def persist(message):
