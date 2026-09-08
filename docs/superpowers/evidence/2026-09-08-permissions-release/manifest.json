@@ -1,0 +1,48 @@
+{
+  "name": "permissions",
+  "sourceCommit": "ab4f9c95b885ef9e10ba5098e925c22c3dd19606",
+  "command": [
+    "xcodebuild",
+    "build",
+    "-project",
+    "10x.xcodeproj",
+    "-scheme",
+    "10x",
+    "-configuration",
+    "Release",
+    "-destination",
+    "generic/platform=macOS",
+    "-derivedDataPath",
+    "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj",
+    "ARCHS=arm64",
+    "CODE_SIGNING_ALLOWED=NO"
+  ],
+  "log": "/tmp/10x-permissions-final-release.log",
+  "logSHA256": "94bf2c39373cb316737833c0dd86c36244cea15d3d0a3d8e314fcce40a1ae1e8",
+  "app": "/tmp/10x-permissions-final-build/10x-permissions.app",
+  "bundleIdentifier": "com.nextstep.tenx.permissionsqa",
+  "unsignedExecutableSHA256": "86713e6f77938eadccad970e64baaa56ed16623c7ff177a53912de965b62971c",
+  "packagedExecutableSHA256": "bbdbcdf09bcaffe0cb42af2a505c9fa0c1559e5c6463118bb2618f30e6714690",
+  "nativeLaunched": true,
+  "nativeAccepted": true,
+  "nativeSettingsChanged": false,
+  "nativeQuitCompleted": true,
+  "nativeEvidence": [
+    {
+      "path": "native-approval-scope.jpg",
+      "sha256": "3e3077814ffd38a4d0b063dd1ef6d2db743d23bf683810d9fa65b970e7493d11"
+    },
+    {
+      "path": "native-approval-scope.ax.txt",
+      "sha256": "0396a1cef334be75fdb44e8c0a845f7369e52bd838ff13b09157c8ea446e2666"
+    }
+  ],
+  "nativeScopeResult": "accepted",
+  "requestMatrix": "parent native accepted in PR #37",
+  "durableStop": "tracked separately in PR #36",
+  "integration": "pending",
+  "rpcLimitations": [
+    "no active effective-policy field",
+    "no Always Allow response"
+  ]
+}

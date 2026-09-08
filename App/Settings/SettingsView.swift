@@ -245,10 +245,15 @@ struct SettingsView: View {
 
     private var ompMetadata: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(model.configPath.isEmpty ? "OMP configuration" : model.configPath)
-                .font(TenXTypography.mono(size: 9))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Global OMP defaults")
+                    .font(TenXTypography.mono(size: 9, weight: .semibold))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                Text(model.configPath.isEmpty ? "OMP configuration" : model.configPath)
+                    .font(TenXTypography.mono(size: 9))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .lineLimit(1)
+            }
             Spacer()
             Text("\(model.settingCount) settings")
                 .font(TenXTypography.mono(size: 9))
