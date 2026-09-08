@@ -225,6 +225,8 @@ final class AppModel {
     @ObservationIgnored private var menuUpdateCheckTask: Task<Void, Never>?
     @ObservationIgnored private var shutdownOperation: Task<Void, Never>?
     @ObservationIgnored private var isApplyingNewSessionRecovery = false
+    @ObservationIgnored private var hasRestoredMeaningfulRoute = false
+    @ObservationIgnored private var hasUserNavigated = false
 
     var updateState: UpdateState { updateChecker.state }
 
@@ -389,6 +391,7 @@ final class AppModel {
         clearActiveSession()
         detachComposerControlsAndRefresh()
         route = .newSession
+        recordMeaningfulRoute(.newSession(projectURL: selectedProjectURL ?? url))
         reviewIdleSessionRetention()
     }
 
@@ -457,6 +460,7 @@ final class AppModel {
             routeBeforeSettings = route
         }
         settingsFocusTarget = focus
+        hasUserNavigated = true
         route = .settings
         Task { await settingsModel?.load() }
     }
@@ -480,6 +484,7 @@ final class AppModel {
     }
 
     func openProviders(_ section: ProviderWorkspaceSection) {
+        hasUserNavigated = true
         providerModel?.selectedSection = section
         route = .providers(section)
     }
@@ -495,11 +500,15 @@ final class AppModel {
         clearActiveSession()
         detachComposerControlsAndRefresh()
         route = .newSession
+        if let selectedProjectURL {
+            recordMeaningfulRoute(.newSession(projectURL: selectedProjectURL))
+        }
         reviewIdleSessionRetention()
     }
 
     func openArchivedSessions() {
         guard !isSessionMutationInFlight else { return }
+        hasUserNavigated = true
         route = .archivedSessions
         Task { await reloadArchivedSessions() }
     }
@@ -569,6 +578,7 @@ final class AppModel {
                 recordInRecentProjects: false)
         }
         guard let processManager else { return }
+        recordMeaningfulRoute(.session(metadata.path))
         if let controller = liveController(for: metadata.path) {
             detachComposerSources()
             activeSession = controller
@@ -643,6 +653,7 @@ final class AppModel {
         // carries a placeholder until `openNew` reports the real path.
         let placeholderRoute = AppRoute.session("new:\(controller.id.uuidString)")
         route = placeholderRoute
+        recordMeaningfulRoute(.newSession(projectURL: selectedProjectURL))
         let selection = composerControls?.spawnSelection
         activeSession = controller
         reviewIdleSessionRetention()
@@ -672,6 +683,7 @@ final class AppModel {
             // child for a session that is already running here.
             if self.activeSession === controller, self.route == placeholderRoute {
                 self.route = .session(sessionPath)
+                self.recordMeaningfulRoute(.session(sessionPath))
             }
             if self.activeSession === controller {
                 if fastOutcome == .unsupported || fastOutcome == .failed {
@@ -1259,6 +1271,56 @@ final class AppModel {
         }
     }
 
+    private func recordMeaningfulRoute(_ route: ComposerRecoveryRoute) {
+        hasUserNavigated = true
+        dependencies.composerRecoveryStore.setLastMeaningfulRoute(route)
+    }
+
+    private func restoreMeaningfulRouteIfReady() {
+        guard !hasRestoredMeaningfulRoute,
+              !hasUserNavigated,
+              installation != nil,
+              providerModel?.hasAuthenticatedProvider == true
+        else { return }
+        hasRestoredMeaningfulRoute = true
+        let store = dependencies.composerRecoveryStore
+        switch store.lastMeaningfulRoute {
+        case .session(let path):
+            guard let metadata = sessions.first(where: {
+                ComposerRecoveryOwner.session($0.path).canonicalized
+                    == ComposerRecoveryOwner.session(path).canonicalized
+            }),
+            Self.isExistingDirectory(URL(filePath: metadata.cwd, directoryHint: .isDirectory))
+            else {
+                store.setLastMeaningfulRoute(nil)
+                gateRoute()
+                return
+            }
+            openSession(metadata)
+        case .newSession(let projectURL):
+            var isDirectory: ObjCBool = false
+            guard FileManager.default.fileExists(
+                atPath: projectURL.path,
+                isDirectory: &isDirectory),
+                isDirectory.boolValue
+            else {
+                store.setLastMeaningfulRoute(nil)
+                gateRoute()
+                return
+            }
+            selectProject(projectURL, recordInRecentProjects: false)
+            route = .newSession
+        case nil:
+            break
+        }
+    }
+
+    private static func isExistingDirectory(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+
     // Not private: the navigation tests wait on the reuse registry rather than on
     // activeSession.sessionPath, which a controller sets partway through its open.
     func managedController(for sessionPath: String) -> SessionController? {
@@ -1548,6 +1610,7 @@ final class AppModel {
             try await group.waitForAll()
         }
         try checkStartupAttempt(attemptID)
+        restoreMeaningfulRouteIfReady()
         return .ready
     }
 
