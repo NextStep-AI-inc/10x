@@ -54,5 +54,7 @@ Source inspection and existing test coverage are recorded separately from execut
 ## Execution record
 
 - Baseline OmpKit suite: 217 tests passed before application changes (`/tmp/10x-recovery-ompkit-baseline.log`).
-- No current-main live acceptance is claimed yet.
+- SAVE / OPEN / ERROR acceptance is recorded in the [Release evidence](../evidence/2026-09-07-session-continuity-recovery/README.md), including real warm/cold persistence and fixture-driven rejection. PR #32 stays draft on the documented baseline/base gates.
+- QUEUE implementation is in [PR #33](https://github.com/NextStep-AI-inc/10x/pull/33), with live STOP / QUEUE verification next.
+- Image history restoration is a dependency discovered during recovery QA, planned in [PR #34](https://github.com/NextStep-AI-inc/10x/pull/34).
 - Keep each item unchecked until this run has evidence for its full stated scope, or explicitly record the remaining limitation beside it.
