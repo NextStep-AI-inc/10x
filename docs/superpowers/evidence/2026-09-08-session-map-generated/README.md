@@ -1,6 +1,6 @@
 # Generated Session Map evidence
 
-Status: **In progress.** Canonical source derivation and records/settings are implemented and reviewed, with native settings evidence below. Isolated generation, the current-writer corpus, and live catch-up integration remain in progress. No model-generation success is claimed here.
+Status: **In progress.** Canonical source derivation, records/settings, and isolated generation are implemented and reviewed, with native settings evidence below. The current-writer corpus, checker, and live catch-up integration remain in progress. No model-generation success is claimed here.
 
 ## Source provenance and checks
 
@@ -21,6 +21,8 @@ The actual Release build at `452c9f34db5643a9dce6b05387501fe6ac33032d` also pass
 The reviewed correction `666f5b82abbaa634ea307ea33bca3b1cdba32e15` refreshes the catalog after Settings closes and rejects older load results. Two regressions reproduced the fault, then 24 focused tests passed in 0.274 seconds. The exact corrected Release build passed the affected native close/reopen check. Record lineage now has one persisted source, and explicit unsupported-schema and occupied-canonical migration tests pass. The scoped re-review found all three findings addressed with no new Critical/Important breakage.
 
 ## Current writer preflight
+
+[Isolated writer evidence](writer.md) records 28 passing focused tests, reproduced request/save races, and the inspected native save-error rendering. Actual model calls and Release-native generation remain the next gate.
 
 On 2026-09-08, read-only OMP config and catalog queries resolved `smol` to `cursor/composer-2.5-fast`. The catalog advertised text/image input and no thinking-effort metadata for that model. This establishes configuration/catalog availability only; authentication and generation remain unverified. The checker preference remains Off. The eventual live gate will use synthetic input and isolated preferences.
 
