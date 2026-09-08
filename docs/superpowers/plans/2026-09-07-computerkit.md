@@ -448,7 +448,7 @@ final class DesktopEngineContractTests: XCTestCase {
     func test_fake_recordsActions() throws {
         let engine = FakeEngine()
         engine.windows = [WindowInfo(id: 10, appName: "Safari", title: "Apple", bounds: .init(x: 0, y: 0, width: 800, height: 600), pid: 100)]
-        try engine.act(.click(point: .init(x: 10, y: 10), button: .left), windowID: 10)
+        try engine.act(.click(point: .init(x: 10, y: 10), button: .left), window: engine.windows[0])
         XCTAssertEqual(engine.actions.count, 1)
     }
 
