@@ -14,9 +14,11 @@ Status: DONE_WITH_CONCERNS
 - Parent visually approved both 1060×720-point candidates for readability, hierarchy, contrast, and clipping. The promoted files are byte-identical to those candidates:
   - Light: `7434b9d0141bf345a832256e4f96c7660d5a6fc5a4d0fc031454cb5fff429e9a`
   - Dark: `7ac3c787e1e394eeb9583d55e3a6755e9c4dfb3b010be037772058545fbda9f2`
+- A final `test-without-building` invocation selected four tests. `configServiceUsesTheExactOMPCommands()` and `rapidSavesOnSameKeyApplyInIssueOrder()` passed. Both newly rendered snapshot `.actual.png` files matched the approved references byte-for-byte at the hashes above. Log: `/tmp/10x-permissions-final-focused.log`.
 - `git diff --check` passed before promotion.
 
 ## Not verified
 
-- The final snapshot-reference match and existing setting-save checks were not run. The candidate test invocation produced the expected two missing-reference issues, then `xcodebuild` exited 133 while writing diagnostics because the disk was full. This is not a passing test result. Log: `/tmp/10x-permissions-corrected-snapshot-candidates.log`.
+- The final snapshot harness pass was not obtained. Because `test-without-building` reused a test bundle created before reference promotion, the bundle contained neither new reference image. The run therefore exited 65 with exactly two missing-reference issues despite the source-tree `.actual.png` files matching their references byte-for-byte. A resource rebuild is required before rerunning these snapshots; this is not a passing test result.
+- The earlier candidate invocation also produced its expected two missing-reference issues, then exited 133 while writing diagnostics because the disk was full. Log: `/tmp/10x-permissions-corrected-snapshot-candidates.log`.
 - The requested arm64 Release build remains paused until disk space is recovered.
