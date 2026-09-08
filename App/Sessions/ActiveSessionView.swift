@@ -24,7 +24,6 @@ struct ActiveSessionView: View {
                    let sessionMapPresentation,
                    case .drawer = sessionMapPresentation {
                     sessionMapPane(sessionMapModel)
-                        .shadow(color: .black.opacity(0.2), radius: 18, x: -4)
                 }
             }
             if isSessionMapVisible,
