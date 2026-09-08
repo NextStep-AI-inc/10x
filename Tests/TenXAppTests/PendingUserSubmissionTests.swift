@@ -1,5 +1,42 @@
+import Foundation
 import Testing
 @testable import TenXApp
+
+@Test func pendingSubmissionRetainsItsRequestedModeAcrossStateChanges() {
+    var submission = PendingUserSubmission(
+        text: "Keep the existing approach",
+        attachments: [],
+        minimumUserIndex: 0,
+        mode: .followUp,
+        state: .sending)
+
+    submission.state = .unconfirmed
+
+    #expect(submission.mode == .followUp)
+}
+
+@MainActor @Test func submissionPresentationStoreReopensKnownModesByCanonicalSessionPath() throws {
+    let suiteName = "submission-presentation-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    let aliasedPath = directory.appending(path: "child/../session.jsonl").path
+    let canonicalPath = directory.appending(path: "session.jsonl").path
+
+    SubmissionPresentationStore(defaults: defaults).setMode(
+        .steer,
+        forMessageID: "persisted-user-1",
+        sessionPath: aliasedPath)
+    let reopened = SubmissionPresentationStore(defaults: defaults)
+
+    #expect(reopened.mode(
+        forMessageID: "persisted-user-1",
+        sessionPath: canonicalPath) == .steer)
+    #expect(reopened.mode(
+        forMessageID: "older-unannotated-user",
+        sessionPath: canonicalPath) == nil)
+}
 
 @Test func oneEchoConsumesOnlyOneRepeatedPendingSubmission() {
     let first = pending("Repeat this")

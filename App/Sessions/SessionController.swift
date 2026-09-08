@@ -15,6 +15,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     let toolDisclosureState = ToolDisclosureState()
     private(set) var pendingSubmissions: [PendingUserSubmission] = []
     private var consumedSubmissionEchoIndices: Set<Int> = []
+    private var unresolvedSubmissionPresentations: [PendingUserSubmission] = []
+    private var transientSubmissionModes: [String: StreamingBehavior] = [:]
     private(set) var isTitleLoading = false
     private var initialPromptTitle: String?
     private var initialAttachments: [ComposerAttachment] = []
@@ -88,6 +90,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private let titleGenerator: OmpSessionTitleGenerator?
     private let headerMetadataResolver: HeaderMetadataResolver
     private let recoveryStore: ComposerRecoveryStore?
+    private let submissionPresentationStore: SubmissionPresentationStore
     private var recoveryOwner: ComposerRecoveryOwner?
     private var isApplyingRecovery = false
     private(set) var projectURL: URL?
@@ -170,6 +173,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         headerMetadataResolver: @escaping HeaderMetadataResolver = SessionHeaderMetadata.resolve,
         recoveryStore: ComposerRecoveryStore? = nil,
         recoveryOwner: ComposerRecoveryOwner? = nil,
+        submissionPresentationStore: SubmissionPresentationStore = .inMemory(),
         harnessNoticePreferences: HarnessNoticePreferenceStore? = nil,
         harnessNoticeSummarizer: (any HarnessNoticeSummarizing)? = nil
     ) {
@@ -183,6 +187,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.headerMetadataResolver = headerMetadataResolver
         self.recoveryStore = recoveryStore
         self.recoveryOwner = recoveryOwner?.canonicalized
+        self.submissionPresentationStore = submissionPresentationStore
         self.harnessNoticePreferences = harnessNoticePreferences
         self.harnessNoticeSummarizer = harnessNoticeSummarizer
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
@@ -238,6 +243,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.titleGenerator = titleGenerator
         self.recoveryStore = nil
         self.recoveryOwner = nil
+        self.submissionPresentationStore = .inMemory()
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
         self.commandUpdates = commandUpdates.stream
@@ -591,6 +597,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func prepareInitialSubmission(text: String, attachments: [ComposerAttachment], projectURL: URL? = nil) {
+        unresolvedSubmissionPresentations = []
+        transientSubmissionModes = [:]
         draft = ""
         self.attachments = []
         initialAttachments = attachments
@@ -638,6 +646,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
     }
 
+    func submissionMode(for messageID: String) -> StreamingBehavior? {
+        if let mode = transientSubmissionModes[messageID] { return mode }
+        guard let sessionPath else { return nil }
+        return submissionPresentationStore.mode(
+            forMessageID: messageID,
+            sessionPath: sessionPath)
+    }
+
     func sendSlashCommand(_ text: String) async {
         await send(
             text: text,
@@ -677,7 +693,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 receiptID = pendingSubmissions[index].id
             } else {
                 let receipt = PendingUserSubmission(
-                    text: text, attachments: staged, minimumUserIndex: userMessages.count, state: .sending)
+                    text: text,
+                    attachments: staged,
+                    minimumUserIndex: userMessages.count,
+                    mode: behavior,
+                    state: .sending)
                 pendingSubmissions.append(receipt)
                 receiptID = receipt.id
             }
@@ -1054,6 +1074,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         items = []
         pendingSubmissions = []
         consumedSubmissionEchoIndices = []
+        unresolvedSubmissionPresentations = []
+        transientSubmissionModes = [:]
         isTitleLoading = false
         runtimeState = .stopped(code: nil, stderrTail: "")
         accountCoordinator?.unregister(sessionID: id)
@@ -1104,6 +1126,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 }
             }
             guard isCurrent(openingContext) else { return }
+            if let loadedHistory, let sessionPath {
+                bindSubmissionPresentations(to: loadedHistory, sessionPath: sessionPath)
+            }
             let initialContent: TranscriptInitialContent
             if let history = loadedHistory {
                 initialContent = .history(history)
@@ -1481,6 +1506,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                         processorID: processorID,
                         generation: generation) == true
                 else { return }
+                self?.bindSubmissionPresentations(to: history, sessionPath: sessionPath)
                 await processor.reconcile(history, hasWarning: false, generation: generation)
             } catch {
                 guard !Task.isCancelled,
@@ -1826,6 +1852,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             guard !Task.isCancelled else { throw CancellationError() }
             reconciliationGeneration &+= 1
             let generation = reconciliationGeneration
+            bindSubmissionPresentations(to: history, sessionPath: sessionPath)
             await processor.reconcile(history, hasWarning: false, generation: generation)
             guard isCurrent(context), reconciliationGeneration == generation else { return }
             guard !Task.isCancelled else { throw CancellationError() }
@@ -2087,8 +2114,18 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         installedSnapshotRevision = snapshot.revision
         items = snapshot.items
         if !pendingSubmissions.isEmpty {
+            var matches: [PendingUserSubmission.Match] = []
             pendingSubmissions = PendingUserSubmission.reconcile(
-                pendingSubmissions, messages: userMessages, consumedIndices: &consumedSubmissionEchoIndices)
+                pendingSubmissions,
+                messages: userMessages,
+                consumedIndices: &consumedSubmissionEchoIndices,
+                onMatch: { matches.append($0) })
+            for match in matches {
+                unresolvedSubmissionPresentations.append(match.submission)
+                if let mode = match.mode {
+                    transientSubmissionModes[match.message.id] = mode
+                }
+            }
         }
         runtimeState = snapshot.runtimeState
         os_signpost(
@@ -2098,6 +2135,47 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             "revision %{public}llu",
             snapshot.revision)
         reportActivity()
+    }
+
+    private func bindSubmissionPresentations(
+        to history: TranscriptHistory,
+        sessionPath: String
+    ) {
+        let historicalUserMessages = history.items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item, message.role == .user else { return nil }
+            return message
+        }
+        guard !historicalUserMessages.isEmpty else { return }
+
+        let unresolvedIDs = Set(unresolvedSubmissionPresentations.map(\.id))
+        let pendingIDs = Set(pendingSubmissions.map(\.id))
+        var candidates = unresolvedSubmissionPresentations
+        candidates.append(contentsOf: pendingSubmissions)
+        guard !candidates.isEmpty else { return }
+
+        var consumedIndices: Set<Int> = []
+        var matches: [PendingUserSubmission.Match] = []
+        let remaining = PendingUserSubmission.reconcile(
+            candidates,
+            messages: historicalUserMessages,
+            consumedIndices: &consumedIndices,
+            matchingObservedTimestamps: true,
+            onMatch: { matches.append($0) })
+        unresolvedSubmissionPresentations = remaining.filter { unresolvedIDs.contains($0.id) }
+        pendingSubmissions = remaining.filter { pendingIDs.contains($0.id) }
+
+        for match in matches {
+            if let mode = match.mode {
+                submissionPresentationStore.setMode(
+                    mode,
+                    forMessageID: match.message.id,
+                    sessionPath: sessionPath)
+            }
+            if let liveMessageID = match.observedEchoID {
+                transientSubmissionModes.removeValue(forKey: liveMessageID)
+            }
+            transientSubmissionModes.removeValue(forKey: match.message.id)
+        }
     }
 
     func flushRecovery() async {

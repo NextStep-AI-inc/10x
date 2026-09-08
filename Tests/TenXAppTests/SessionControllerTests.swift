@@ -241,6 +241,109 @@ import Testing
     }
 }
 
+@Test func liveEchoBeforePromptAcknowledgmentKeepsItsRequestedMode() async throws {
+    try await withQueueController { controller, fixture in
+        try await fixture.control("echo-before-next-ack")
+        controller.draft = "Continue after the current response"
+
+        let send = Task { await controller.sendPrompt(behaviorOverride: .followUp) }
+
+        #expect(await eventually {
+            fixture.hasEchoedBeforeAcknowledgment
+                && controller.pendingSubmissions.isEmpty
+        })
+        #expect(controller.submissionMode(for: "user-1") == .followUp)
+
+        try await fixture.control("release-prompt-ack")
+        await send.value
+        #expect(controller.submissionMode(for: "user-1") == .followUp)
+    }
+}
+
+@Test func conflictingModesForIdenticalOverlappingMessagesStayUnannotated() async throws {
+    try await withQueueController { controller, fixture in
+        controller.draft = "Use the same payload"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        controller.draft = "Use the same payload"
+        await controller.sendPrompt(behaviorOverride: .steer)
+
+        try await fixture.control("consume")
+        #expect(await eventually { controller.message(for: "user-1") != nil })
+        #expect(controller.submissionMode(for: "user-1") == nil)
+
+        try await fixture.control("consume")
+        #expect(await eventually {
+            controller.message(for: "user-2") != nil
+                && controller.pendingSubmissions.isEmpty
+        })
+        #expect(controller.submissionMode(for: "user-1") == nil)
+        #expect(controller.submissionMode(for: "user-2") == nil)
+        #expect(controller.submissionMode(for: "persisted-user-1") == nil)
+        #expect(controller.submissionMode(for: "persisted-user-2") == nil)
+    }
+}
+
+@Test func liveModeMovesToPersistedIDAndReopensWithoutClassifyingOlderHistory() async throws {
+    let suiteName = "controller-submission-presentation-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = SubmissionPresentationStore(defaults: defaults)
+
+    try await withQueueController(presentationStore: store) { controller, fixture in
+        controller.draft = "Persist this follow-up"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        try await fixture.control("consume")
+
+        #expect(await eventually {
+            controller.message(for: "persisted-user-1") != nil
+                && controller.submissionMode(for: "persisted-user-1") == .followUp
+        })
+        #expect(controller.submissionMode(for: "user-1") == nil)
+
+        let reopenedManager = fakeManager(mode: "no-session-file")
+        let reopened = SessionController(
+            processManager: reopenedManager,
+            submissionPresentationStore: SubmissionPresentationStore(defaults: defaults))
+        await reopened.openExisting(metadata(
+            path: fixture.sessionPath,
+            cwd: fixture.directory.path))
+
+        #expect(reopened.message(for: "persisted-user-1") != nil)
+        #expect(reopened.submissionMode(for: "persisted-user-1") == .followUp)
+        #expect(reopened.message(for: "persisted-older-user") != nil)
+        #expect(reopened.submissionMode(for: "persisted-older-user") == nil)
+        await reopenedManager.closeAll()
+    }
+}
+
+@Test func staleHistoryReconciliationCannotPersistASubmissionMode() async throws {
+    let loader = StaleSubmissionModeHistoryLoader()
+    let store = SubmissionPresentationStore.inMemory()
+    try await withQueueController(
+        presentationStore: store,
+        historyLoader: { path in try await loader.load(path: path) }
+    ) { controller, fixture in
+        try await fixture.control("echo-before-next-ack")
+        controller.draft = "Do not bind stale history"
+        let send = Task { await controller.sendPrompt(behaviorOverride: .steer) }
+        #expect(await eventually { fixture.hasEchoedBeforeAcknowledgment })
+        try await fixture.control("release-prompt-ack")
+        await send.value
+
+        let boundary = try controllerEvent(#"{"type":"turn_end"}"#)
+        controller.testingCapturedBoundaryReconciler(frame: boundary)()
+        await loader.waitUntilDelayedLoadStarts()
+        await controller.restart()
+        await loader.releaseDelayedLoad()
+        await loader.waitUntilDelayedLoadReturns()
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(store.mode(
+            forMessageID: "stale-persisted-user",
+            sessionPath: fixture.sessionPath) == nil)
+    }
+}
+
 @Test func manualContextCompactionRequiresAnIdleBuiltinCapability() async throws {
     #expect(SessionController.defaultContextCompactionTimeout == .seconds(600))
     for (mode, expected) in [
@@ -1625,8 +1728,17 @@ private struct QueueFixture {
     let client: RpcClient
     let directory: URL
 
+    var sessionPath: String {
+        directory.appending(path: "session.jsonl").path
+    }
+
     var isStateDeferred: Bool {
         FileManager.default.fileExists(atPath: directory.appending(path: "state-deferred").path)
+    }
+
+    var hasEchoedBeforeAcknowledgment: Bool {
+        FileManager.default.fileExists(
+            atPath: directory.appending(path: "echoed-before-ack").path)
     }
 
     func control(_ action: String) async throws {
@@ -1638,6 +1750,8 @@ private struct QueueFixture {
 
 @MainActor
 private func withQueueController<T>(
+    presentationStore: SubmissionPresentationStore = .inMemory(),
+    historyLoader: SessionController.HistoryLoader? = nil,
     _ body: (SessionController, QueueFixture) async throws -> T
 ) async throws -> T {
     let directory = try temporaryDirectory()
@@ -1654,7 +1768,10 @@ private func withQueueController<T>(
         fake.cwd = nil
         return RpcClient(configuration: fake)
     })
-    let controller = SessionController(processManager: manager)
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: historyLoader,
+        submissionPresentationStore: presentationStore)
     do {
         let sessionPath = directory.appending(path: "session.jsonl").path
         await controller.openExisting(metadata(
@@ -2261,6 +2378,38 @@ private actor DelayedHistoryLoader {
     }
 }
 
+private actor StaleSubmissionModeHistoryLoader {
+    private let gate = LoadGate()
+    private var requestCount = 0
+    private var didReturnDelayedLoad = false
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount == 2 else { return nil }
+        await gate.started()
+        await gate.waitForRelease()
+        didReturnDelayedLoad = true
+        return TranscriptHistory(items: [submissionModeUserItem(
+            id: "stale-persisted-user",
+            text: "Do not bind stale history",
+            timestamp: Date(timeIntervalSince1970: 1_787_601_601))])
+    }
+
+    func waitUntilDelayedLoadStarts() async {
+        await gate.waitForStart()
+    }
+
+    func releaseDelayedLoad() async {
+        await gate.release()
+    }
+
+    func waitUntilDelayedLoadReturns() async {
+        while !didReturnDelayedLoad {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+}
+
 private actor CountingHistoryLoader {
     private(set) var requestCount = 0
 
@@ -2347,6 +2496,26 @@ private func messageItem(id: String, text: String) -> TranscriptItem {
                 ]),
             ]),
             "timestamp": .double(0),
+        ]),
+        isFinal: true))
+}
+
+private func submissionModeUserItem(
+    id: String,
+    text: String,
+    timestamp: Date
+) -> TranscriptItem {
+    .message(TranscriptMessage(
+        id: id,
+        raw: .object([
+            "role": .string("user"),
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string(text),
+                ]),
+            ]),
+            "timestamp": .double(timestamp.timeIntervalSince1970 * 1_000),
         ]),
         isFinal: true))
 }

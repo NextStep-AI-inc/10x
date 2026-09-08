@@ -1245,6 +1245,7 @@ final class AppModel {
             },
             recoveryStore: dependencies.composerRecoveryStore,
             recoveryOwner: recoveryOwner,
+            submissionPresentationStore: dependencies.submissionPresentationStore,
             harnessNoticePreferences: harnessNoticePreferenceStore,
             harnessNoticeSummarizer: harnessNoticeSummarizer)
         managedSessions[controller.id] = controller

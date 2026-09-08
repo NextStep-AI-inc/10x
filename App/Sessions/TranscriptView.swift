@@ -93,7 +93,9 @@ struct TranscriptView: View {
                     }
                     ForEach(controller.pendingSubmissions) { submission in
                         VStack(alignment: .trailing, spacing: 5) {
-                            MessageBubbleView(message: submission.message)
+                            MessageBubbleView(
+                                message: submission.message,
+                                mode: submission.mode)
                             Text(submission.state.label)
                                 .font(TenXTypography.body(size: 10))
                                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
@@ -425,8 +427,12 @@ struct TranscriptView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(threadStartAccessibilityLabel(date))
         case .message(let message):
-            MessageBubbleView(message: message, highlightedQuery:
-                searchResolution?.messageID == message.id ? controller.transcriptSearchRequest?.query : nil)
+            MessageBubbleView(
+                message: message,
+                mode: controller.submissionMode(for: message.id),
+                highlightedQuery: searchResolution?.messageID == message.id
+                    ? controller.transcriptSearchRequest?.query
+                    : nil)
                 .equatable()
         case .annotation(let annotation):
             HStack(spacing: 8) {

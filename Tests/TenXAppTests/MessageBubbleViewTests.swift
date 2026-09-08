@@ -80,6 +80,23 @@ import Testing
         highlightedQuery: "answer"))
 }
 
+@MainActor @Test func messageBubbleEqualityTracksKnownSubmissionMode() {
+    let message = TranscriptMessage(
+        id: "user-1",
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Continue after the current response"),
+        ]),
+        isFinal: true)
+
+    #expect(MessageBubbleView(message: message) != MessageBubbleView(
+        message: message,
+        mode: .followUp))
+    #expect(MessageBubbleView(message: message, mode: .followUp) != MessageBubbleView(
+        message: message,
+        mode: .steer))
+}
+
 @Test func skillTextSegmentsAreBoundedAndLossless() {
     let source = "# Skill\n\n"
         + String(repeating: "Follow this instruction carefully. ", count: 180)

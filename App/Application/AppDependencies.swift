@@ -7,6 +7,7 @@ struct AppDependencies: Sendable {
     let sessionSearch: SessionSearchService
     let recentProjectStore: RecentProjectStore
     let composerRecoveryStore: ComposerRecoveryStore
+    let submissionPresentationStore: SubmissionPresentationStore
     let startupTiming: StartupTiming
     let makeProcessManager: @Sendable (String) -> SessionProcessManager
     let makeSettingsModel: @MainActor @Sendable (URL) -> SettingsViewModel
@@ -24,6 +25,7 @@ struct AppDependencies: Sendable {
         sessionSearch: SessionSearchService = SessionSearchService(),
         recentProjectStore: RecentProjectStore? = nil,
         composerRecoveryStore: ComposerRecoveryStore? = nil,
+        submissionPresentationStore: SubmissionPresentationStore? = nil,
         startupTiming: StartupTiming = .live,
         makeProcessManager: @escaping @Sendable (String) -> SessionProcessManager = {
             SessionProcessManager(
@@ -46,6 +48,7 @@ struct AppDependencies: Sendable {
         self.sessionSearch = sessionSearch
         self.recentProjectStore = recentProjectStore ?? RecentProjectStore()
         self.composerRecoveryStore = composerRecoveryStore ?? .inMemory()
+        self.submissionPresentationStore = submissionPresentationStore ?? .inMemory()
         self.startupTiming = startupTiming
         self.makeProcessManager = makeProcessManager
         self.makeSettingsModel = makeSettingsModel ?? { executableURL in
@@ -71,6 +74,7 @@ struct AppDependencies: Sendable {
         sessionSearch: SessionSearchService(),
         recentProjectStore: RecentProjectStore(),
         composerRecoveryStore: ComposerRecoveryStore.live(),
+        submissionPresentationStore: SubmissionPresentationStore.live(),
         startupTiming: .live,
         makeProcessManager: { executable in
             SessionProcessManager(
