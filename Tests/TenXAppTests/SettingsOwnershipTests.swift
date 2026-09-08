@@ -38,7 +38,7 @@ import Testing
         #expect(await model.load() == false)
         #expect(model.settingCount == 0)
         #expect(model.loadError != nil)
-        #expect(TenXSettingsCategory.allCases == [.general, .composer])
+        #expect(TenXSettingsCategory.allCases == [.general, .composer, .computerUse])
     }
 }
 

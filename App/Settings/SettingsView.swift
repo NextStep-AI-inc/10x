@@ -336,7 +336,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 sectionHeader(
                     category.title,
-                    count: category == .general ? nativeGeneralRowCount : 4)
+                    count: category == .general ? nativeGeneralRowCount : category == .computerUse ? 1 : 4)
                 Rectangle()
                     .fill(TenXPalette.color(TenXPalette.cyanHex))
                     .frame(height: 2)
@@ -363,6 +363,8 @@ struct SettingsView: View {
                     }
                 case .composer:
                     ComposerInteractionSettingRows(preferences: composerPreferences)
+                case .computerUse:
+                    ComputerUseSettingsSection(model: model.computerUseSetup)
                 }
             }
         }

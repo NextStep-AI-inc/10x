@@ -69,6 +69,34 @@ final class AppModel {
     private(set) var activeSession: SessionController?
     private(set) var processManager: SessionProcessManager?
     private(set) var settingsModel: SettingsViewModel?
+    var activeComputerUse: ComputerUseController? { activeSession?.computerUse }
+
+    /// ponytail: only sessions with a live controller report activity. Ceiling: a
+    /// background session that keeps controlling while closed loses its badge until
+    /// reopened. Upgrade path: persist claims per session path in the daemon.
+    var computerUseActiveSessionPaths: Set<String> {
+        var paths = Set<String>()
+        for controller in managedSessions.values {
+            if controller.computerUse.isEnabled, let path = controller.sessionPath {
+                paths.insert(path)
+            }
+        }
+        if let activeSession,
+           activeSession.computerUse.isEnabled,
+           let path = activeSession.sessionPath {
+            paths.insert(path)
+        }
+        return paths
+    }
+
+    /// Daemon session IDs for the active 10x session when correlated with the daemon.
+    var openableDaemonSessionIDs: Set<Int> {
+        guard let id = activeSession?.computerUse.daemonSessionID else { return [] }
+        return [id]
+    }
+
+    var supervision: SupervisionClient { dependencies.supervisionClient }
+
     let ideRegistry: IDERegistry
     let idePreferenceStore: IDEPreferenceStore
     let harnessNoticePreferenceStore: HarnessNoticePreferenceStore
@@ -223,6 +251,9 @@ final class AppModel {
         }
     @ObservationIgnored private var menuUpdateCheckTask: Task<Void, Never>?
     @ObservationIgnored private var shutdownOperation: Task<Void, Never>?
+    @ObservationIgnored private let emergencyShortcut = GlobalEmergencyShortcut()
+    @ObservationIgnored private let overlayController = OverlayWindowController()
+    @ObservationIgnored private var lifecycleTokens: [NSObjectProtocol] = []
 
     var updateState: UpdateState { updateChecker.state }
 
@@ -240,6 +271,16 @@ final class AppModel {
         toolDetailPreferenceStore = ToolDetailPreferenceStore(defaults: preferenceDefaults)
         self.fileOpenService = fileOpenService
         startMemoryPressureMonitoring()
+        installComputerUseLifecycleObservers()
+        overlayController.start()
+        dependencies.supervisionClient.start()
+        dependencies.supervisionClient.onEvent = { [weak self] event in
+            Task { @MainActor in
+                self?.overlayController.apply(event)
+                self?.activeSession?.computerUse.applySupervision(event)
+            }
+        }
+        updateEmergencyShortcut()
         // Installed here, after every stored property has a value (`self`
         // cannot be captured in a closure any earlier), rather than inside
         // `AppDependencies`'s coordinator factory: both arguments close
@@ -753,6 +794,32 @@ final class AppModel {
             primaryProjectDirectory: selectedProjectURL.path)
     }
 
+    func updateEmergencyShortcut() {
+        emergencyShortcut.update(isActive: supervision.hasAnyActivity) { [weak self] in
+            self?.supervision.stopAll()
+        }
+    }
+
+    func stopActiveComputerUse() async {
+        guard let activeComputerUse else { return }
+        await activeComputerUse.stopComputerUse()
+    }
+
+    /// ⇧⌘C — silently arm the active session with the computer-use capability
+    /// notice. The MCP mount is user-level, so every omp session already has the
+    /// tools; the hidden steer is the agent's cue to use them.
+    func beginComputerUse() async {
+        guard let activeSession else { return }
+        await activeSession.sendComputerUseCue()
+    }
+
+    func openSession(forDaemonSession daemonSessionID: Int) {
+        guard openableDaemonSessionIDs.contains(daemonSessionID) else { return }
+        closeSearch()
+        if let path = activeSession?.sessionPath { route = .session(path) }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func handleMemoryPressure() async {
         guard !isShuttingDown, let processManager else { return }
         let evicted = await processManager.evictWarmClients()
@@ -858,6 +925,33 @@ final class AppModel {
         await activeExits?.value
         await usage?.task.value
         await menuUpdateCheck?.value
+        overlayController.stop()
+        supervision.stopAll()
+    }
+
+    private func installComputerUseLifecycleObservers() {
+        guard lifecycleTokens.isEmpty else { return }
+        let workspace = NSWorkspace.shared
+        for name in [
+            NSWorkspace.sessionDidResignActiveNotification,
+            NSWorkspace.willSleepNotification,
+        ] {
+            lifecycleTokens.append(workspace.notificationCenter.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main)
+            { [weak self] _ in
+                Task { @MainActor in self?.supervision.stopAll() }
+            })
+        }
+        lifecycleTokens.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main)
+        { [weak self] _ in
+            MainActor.assumeIsolated { self?.overlayController.stop() }
+            self?.supervision.stopAll()
+        })
     }
 
     func requestDeleteSession(_ metadata: SessionMetadata) {
@@ -1182,6 +1276,7 @@ final class AppModel {
         }
         let controller = SessionController(
             processManager: processManager,
+            supervision: dependencies.supervisionClient,
             activityRegistry: sessionActivityRegistry,
             accountChannelRegistry: accountChannelRegistry,
             titleGenerator: installation.flatMap {

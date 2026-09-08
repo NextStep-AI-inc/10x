@@ -9,6 +9,7 @@ struct SettingsCatalog: Equatable {
     static func build(from value: JSONValue) -> SettingsCatalog {
         guard let object = value.objectValue else { return .empty }
         let definitions = object.keys.sorted().compactMap { key -> SettingDefinition? in
+            guard key != "computer.enabled" else { return nil }
             guard let source = object[key]?.objectValue else { return nil }
             let isSecret = secretKey(key)
             let type = SettingValueType(rawValue: source["type"]?.stringValue ?? "unknown")

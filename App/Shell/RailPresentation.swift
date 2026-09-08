@@ -28,6 +28,7 @@ struct RailPresentationItem: Identifiable, Equatable {
 
     let content: Content
     let isSelected: Bool
+    let hasComputerUse: Bool
     let markerLabel: String
     let treePosition: TreePosition
 
@@ -59,7 +60,8 @@ enum RailPresentation {
     static func items(
         groups: [ProjectSessionGroup],
         selectedSessionPath: String?,
-        expandedProjectIDs: Set<String> = []
+        expandedProjectIDs: Set<String> = [],
+        computerUseActivePaths: Set<String> = []
     ) -> [RailPresentationItem] {
         groups.flatMap { group in
             let hasDisclosure = group.sessions.count > recentSessionLimit
@@ -71,6 +73,7 @@ enum RailPresentation {
             return [RailPresentationItem(
                 content: .project(group),
                 isSelected: false,
+                hasComputerUse: false,
                 markerLabel: markerLabel(for: group.displayName),
                 treePosition: .root,
             )]
@@ -78,6 +81,7 @@ enum RailPresentation {
                     RailPresentationItem(
                         content: .session(metadata),
                         isSelected: metadata.path == selectedSessionPath,
+                        hasComputerUse: computerUseActivePaths.contains(metadata.path),
                         markerLabel: String(format: "%02d", index + 1),
                         treePosition: !hasDisclosure && index == visibleSessions.count - 1
                             ? .terminalChild
@@ -91,6 +95,7 @@ enum RailPresentation {
                             hiddenCount: group.sessions.count - recentSessionLimit,
                             isExpanded: isExpanded)),
                         isSelected: false,
+                        hasComputerUse: false,
                         markerLabel: "...",
                         treePosition: .terminalChild,
                     )]

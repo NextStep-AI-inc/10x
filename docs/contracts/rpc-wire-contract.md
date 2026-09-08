@@ -1,8 +1,8 @@
-<!-- Extracted 2026-08-24 from oh-my-pi v18.0.4 checkout (github.com/can1357/oh-my-pi). Regenerate on omp version bumps. Verified against OmpKit tests 2026-08-24. -->
+<!-- Extracted 2026-08-25 from oh-my-pi v18.0.5 checkout at prerequisite SHA 97f8d1900 (github.com/can1357/oh-my-pi). Regenerate on omp version bumps. Verified against OmpKit tests 2026-08-25. -->
 
 # OMP RPC Wire Contract
 
-Reference for a Swift Codable port of the oh-my-pi (`@oh-my-pi/pi-coding-agent` v18.0.4) headless RPC protocol. Source of truth: `packages/coding-agent/src/modes/rpc/` (`rpc-types.ts`, `rpc-frame.ts`, `rpc-mode.ts`, `rpc-messages.ts`, `rpc-input.ts`, `rpc-client.ts`, `host-tools.ts`, `host-uris.ts`). All quotes below are verbatim from that checkout.
+Reference for a Swift Codable port of the oh-my-pi (`@oh-my-pi/pi-coding-agent` v18.0.5) headless RPC protocol. Source of truth: `packages/coding-agent/src/modes/rpc/` (`rpc-types.ts`, `rpc-frame.ts`, `rpc-mode.ts`, `rpc-messages.ts`, `rpc-input.ts`, `rpc-client.ts`, `host-tools.ts`, `host-uris.ts`). All quotes below are verbatim from that checkout unless marked as an implementation note.
 
 Transport model (from the `rpc-types.ts` header comment):
 
@@ -81,7 +81,6 @@ export type RpcCommand =
 	| { id?: string; type: "get_branch_messages" }
 	| { id?: string; type: "get_last_assistant_text" }
 	| { id?: string; type: "set_session_name"; name: string }
-	| { id?: string; type: "handoff"; customInstructions?: string }
 
 	// Messages
 	| { id?: string; type: "get_messages" }
@@ -133,7 +132,6 @@ Compact table (every variant carries optional `id?: string` for response correla
 | `get_branch_messages` | — |
 | `get_last_assistant_text` | — |
 | `set_session_name` | `name: string` |
-| `handoff` | `customInstructions?: string` |
 | `get_messages` | — |
 | `get_messages_page` | `cursor?: string`, `limit?: number` (1–256, default 100) |
 | `get_login_providers` | — |
@@ -280,7 +278,6 @@ export type RpcResponse =
 			data: { text: string | null };
 	  }
 	| { id?: string; type: "response"; command: "set_session_name"; success: true }
-	| { id?: string; type: "response"; command: "handoff"; success: true; data: RpcHandoffResult | null }
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
@@ -366,10 +363,6 @@ export interface RpcAvailableSlashCommand {
 	input?: { hint?: string };
 	subcommands?: Array<{ name: string; description?: string; usage?: string }>;
 	source: AvailableSlashCommandSource;
-}
-
-export interface RpcHandoffResult {
-	savedPath?: string;
 }
 
 export type RpcSubagentSubscriptionLevel = "off" | "progress" | "events";
@@ -910,4 +903,4 @@ Opaque referenced types NOT expanded (import them or treat as raw JSON in Swift;
 
 The full `AgentSessionEvent` stream shares stdout with everything above (client-recognized types: `agent_start`, `agent_end`, `turn_start`, `turn_end`, `message_start`, `message_update`, `message_end`, `tool_execution_start`, `tool_execution_update`, `tool_execution_end`, `auto_compaction_start`, `auto_compaction_end`, `auto_retry_start`, `auto_retry_end`, `retry_fallback_applied`, `retry_fallback_succeeded`, `ttsr_triggered`, `todo_reminder`, `todo_auto_clear`, `irc_message`, `notice`, `thinking_level_changed`, `model_changed`, `goal_updated` — per the `sessionEventTypes` set in `rpc-client.ts`); only `notice` is expanded here — the rest are documented in the sibling event-stream reference, not this file. A Swift decoder must tolerate unknown `type` values on stdout without failing.
 
-Version caveat: shapes reflect the v18.0.4 checkout at the scratchpad path on 2026-08-24. The strict-equality v2 handshake (`supportsRpcProtocolV2` compares `maxFrameBytes`/`maxReassembledFrameBytes` exactly against the client's own constants) means any build that changes `MAX_RPC_FRAME_BYTES` or `MAX_RPC_REASSEMBLED_BYTES` silently falls back to protocol v1 against the reference client.
+Version caveat: shapes reflect the v18.0.5 checkout at prerequisite SHA `97f8d1900` on 2026-08-25. The strict-equality v2 handshake (`supportsRpcProtocolV2` compares `maxFrameBytes`/`maxReassembledFrameBytes` exactly against the client's own constants) means any build that changes `MAX_RPC_FRAME_BYTES` or `MAX_RPC_REASSEMBLED_BYTES` silently falls back to protocol v1 against the reference client.

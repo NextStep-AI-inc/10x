@@ -104,6 +104,51 @@ import OmpKit
 }
 
 @MainActor
+@Test func beginComputerUseWithoutActiveSessionIsNoop() async {
+    let model = AppModel()
+    await model.beginComputerUse()
+}
+
+@MainActor
+@Test func beginComputerUseSendsOneExtensionCueAndLeavesDraftUntouched() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-computer-use-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(
+        in: container,
+        mode: "basic",
+        arguments: [],
+        environment: [:])
+    let library = SessionLibrary(root: container.appendingPathComponent("sessions"))
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: library))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
+    let controller = try #require(model.activeSession)
+    await waitUntil("/tmp/fake.jsonl to become idle") {
+        model.managedController(for: "/tmp/fake.jsonl")?.runtimeState == .idle
+    }
+    controller.draft = "leave me alone"
+    let channel = AppModelComputerUseCueChannel()
+    model.accountChannelRegistry.attach(sessionID: controller.id, channel: channel, sessionFile: nil)
+
+    await model.beginComputerUse()
+
+    let sent = await channel.sentCommands()
+    #expect(sent.count == 1)
+    #expect(sent[0].command == "computer_use_cue")
+    #expect(sent[0].params.isEmpty)
+    #expect(controller.draft == "leave me alone")
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@MainActor
 @Test func openArchivedSessionsSelectsArchivedRoute() {
     let model = AppModel()
 
@@ -1121,7 +1166,8 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
 func makeNavigationExecutable(
     in directory: URL,
     mode: String = "basic",
-    arguments: [String] = []
+    arguments: [String] = [],
+    environment: [String: String] = [:]
 ) throws -> URL {
     let repository = URL(filePath: #filePath)
         .deletingLastPathComponent()
@@ -1131,8 +1177,12 @@ func makeNavigationExecutable(
         .appendingPathComponent("OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py")
     let executable = directory.appendingPathComponent("fake-omp")
     let extraArguments = arguments.map { " \"\($0)\"" }.joined()
+    let exportLines = environment.map { key, value in
+        "export \(key)=\(value.replacingOccurrences(of: "\"", with: "\\\""))"
+    }.joined(separator: "\n")
     let wrapper = """
     #!/bin/sh
+    \(exportLines)
     exec /usr/bin/python3 "\(fixture.path)" "\(mode)"\(extraArguments)
     """
     try Data(wrapper.utf8).write(to: executable)
@@ -1140,6 +1190,19 @@ func makeNavigationExecutable(
         [.posixPermissions: 0o755],
         ofItemAtPath: executable.path)
     return executable
+}
+
+private actor AppModelComputerUseCueChannel: ProviderAccountChannel {
+    private var commands: [ProviderAccountChannelCommand] = []
+
+    func send(_ command: ProviderAccountChannelCommand) async throws -> JSONValue {
+        commands.append(command)
+        return .object(["delivered": .bool(true)])
+    }
+
+    func sentCommands() -> [ProviderAccountChannelCommand] {
+        commands
+    }
 }
 
 /// Models a session under the now-installed `ProviderAccountTieredRoutingBackend`

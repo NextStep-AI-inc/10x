@@ -240,6 +240,19 @@ build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
 build_file.product_ref = product
 app.frameworks_build_phase.files << build_file
 
+computer_package = project.new(Xcodeproj::Project::Object::XCLocalSwiftPackageReference)
+computer_package.relative_path = "ComputerKit"
+project.root_object.package_references << computer_package
+
+computer_product = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+computer_product.package = computer_package
+computer_product.product_name = "ComputerKit"
+app.package_product_dependencies << computer_product
+
+computer_build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
+computer_build_file.product_ref = computer_product
+app.frameworks_build_phase.files << computer_build_file
+
 sparkle_package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
 sparkle_package.repositoryURL = "https://github.com/sparkle-project/Sparkle"
 sparkle_package.requirement = {

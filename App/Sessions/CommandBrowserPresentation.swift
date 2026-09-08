@@ -22,6 +22,7 @@ enum AppCommand: String, CaseIterable, Hashable, Sendable {
     case model
     case effort
     case fast
+    case computer
 }
 
 struct CommandBrowserRowID: Hashable, Sendable {
@@ -102,7 +103,7 @@ enum CommandBrowserPresentation {
     }
 
     static func rows(commands: [AvailableSlashCommand], mode: CommandBrowserMode) -> [CommandBrowserRow] {
-        let appRows = AppCommand.allCases.map { appRow(for: $0, mode: mode) }
+        let appRows = visibleAppCommands(for: mode).map { appRow(for: $0, mode: mode) }
         guard mode != .unavailable else { return appRows }
 
         let visibleSources: Set<CommandBrowserSource>
@@ -236,19 +237,42 @@ enum CommandBrowserPresentation {
             summary = "Choose reasoning effort"
         case .fast:
             summary = "Toggle fast mode"
+        case .computer:
+            summary = "Run a task with computer use"
+        }
+        let inputHint: String? = switch command {
+        case .computer: "<task>"
+        default: nil
+        }
+        let executionNote: String? = switch command {
+        case .computer:
+            mode == .activeStreaming ? "Runs after the current response" : "Send a computer-use task"
+        default:
+            mode == .activeStreaming ? "Applies to the next request" : nil
         }
         return CommandBrowserRow(
             id: CommandBrowserRowID(rawSource: "app", canonicalName: command.rawValue),
             canonicalName: command.rawValue,
             aliases: [],
             summary: summary,
-            inputHint: nil,
+            inputHint: inputHint,
             subcommands: [],
             source: .app,
             rawSource: "app",
             kind: .app(command),
             availabilityMessage: nil,
-            executionNote: mode == .activeStreaming ? "Applies to the next request" : nil)
+            executionNote: executionNote)
+    }
+
+    private static func visibleAppCommands(for mode: CommandBrowserMode) -> [AppCommand] {
+        AppCommand.allCases.filter { command in
+            switch command {
+            case .computer:
+                mode == .activeIdle || mode == .activeStreaming
+            default:
+                true
+            }
+        }
     }
 
     private static func sources(

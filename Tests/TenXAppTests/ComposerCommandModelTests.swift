@@ -54,6 +54,14 @@ import Testing
         hasSelection: false) == .useCommandModel)
 }
 
+@Test func commandBrowserNewSessionComputerDraftUsesCommandModel() {
+    #expect(ComposerCommandActivationRouting.action(
+        isNewSession: true,
+        hasVisibleRows: false,
+        hasSelection: false,
+        draft: "/computer check my email") == .useCommandModel)
+}
+
 @Test func commandBrowserComposerFocusReturnsOnlyWhenTheEditorOwnsInput() {
     #expect(!ComposerCommandFocusRouting.shouldRestoreEditorFocus(
         effect: .none,
@@ -303,7 +311,7 @@ import Testing
     model.moveSelection(.next)
     #expect(model.highlightedRow?.canonicalName == "model")
     model.moveSelection(.pageNext)
-    #expect(model.highlightedRow?.canonicalName == "command-05")
+    #expect(model.highlightedRow?.canonicalName == "command-04")
     model.moveSelection(.pagePrevious)
     #expect(model.highlightedRow?.canonicalName == "model")
     model.moveSelection(.pagePrevious)
@@ -766,9 +774,87 @@ import Testing
 }
 
 @MainActor
+@Test func commandModelCompletingComputerRowStagesTaskInput() async {
+    let session = CommandModelSession(state: .idle, catalog: .available(commandModelCommands))
+    let model = commandModel(catalog: CommandModelCatalog())
+    model.attachActiveSession(session)
+    #expect(model.updateDraft("/computer"))
+    model.highlight(CommandBrowserRowID(rawSource: "app", canonicalName: "computer"))
+    #expect(model.complete() == .replaceDraft("/computer "))
+    #expect(session.computerUsePromptTasks.isEmpty)
+    #expect(model.isPresented)
+}
+
+@MainActor
+@Test func commandModelActivatingComputerRowSendsWrappedPromptOnce() async {
+    for state in [SessionRuntimeState.idle, .streaming] {
+        let session = CommandModelSession(state: state, catalog: .available(commandModelCommands))
+        let model = commandModel(catalog: CommandModelCatalog())
+        model.attachActiveSession(session)
+        #expect(model.updateDraft("/computer check my email"))
+        model.highlight(CommandBrowserRowID(rawSource: "app", canonicalName: "computer"))
+        #expect(await model.activate() == .executed)
+        #expect(session.computerUsePromptTasks == ["check my email"])
+        #expect(session.sent.isEmpty)
+        #expect(!model.isPresented)
+    }
+}
+
+@MainActor
+@Test func commandModelActivatingComputerRowWithoutTaskSendsInstructionOnly() async {
+    let session = CommandModelSession(state: .idle, catalog: .available(commandModelCommands))
+    let model = commandModel(catalog: CommandModelCatalog())
+    model.attachActiveSession(session)
+    #expect(model.updateDraft("/computer "))
+    model.highlight(CommandBrowserRowID(rawSource: "app", canonicalName: "computer"))
+    #expect(await model.activate() == .executed)
+    #expect(session.computerUsePromptTasks == [""])
+    #expect(!model.isPresented)
+}
+
+@MainActor
+@Test func commandModelTypedComputerDraftUsesVisiblePromptPath() async {
+    let session = CommandModelSession(state: .idle, catalog: .available(commandModelCommands))
+    let model = commandModel(catalog: CommandModelCatalog())
+    model.attachActiveSession(session)
+    #expect(model.updateDraft("/computer check my email"))
+    #expect(await model.activate() == .executed)
+    #expect(session.computerUsePromptTasks == ["check my email"])
+    #expect(session.sent.isEmpty)
+}
+
+@MainActor
+@Test func commandModelTypedComputerDraftStartsNewSessionWithWrappedText() async {
+    var starts: [(String, [ComposerAttachment])] = []
+    let model = ComposerCommandModel(
+        catalog: CommandModelCatalog(),
+        controls: ComposerControlsModel(catalog: CommandModelCatalog(), defaults: CommandModelDefaults())
+    ) { text, attachments in
+        starts.append((text, attachments))
+    }
+    #expect(model.updateDraft("/computer check my email"))
+    #expect(await model.activate() == .executed)
+    #expect(starts.count == 1)
+    #expect(starts[0].0 == ComputerUsePrompt.wrap("check my email"))
+    #expect(starts[0].1.isEmpty)
+}
+
+@MainActor
+@Test func commandModelTypedComputerDraftIgnoresHighlightedNonComputerRow() async {
+    let session = CommandModelSession(state: .idle, catalog: .available(commandModelCommands))
+    let model = commandModel(catalog: CommandModelCatalog())
+    model.attachActiveSession(session)
+    #expect(model.updateDraft("/computer check my email"))
+    model.highlight(CommandBrowserRowID(rawSource: "app", canonicalName: "model"))
+    #expect(await model.activate() == .executed)
+    #expect(session.computerUsePromptTasks == ["check my email"])
+    #expect(session.sent.isEmpty)
+}
+
+@MainActor
 @Test func commandModelRoutesNativeBackAndDismissalTransitions() async {
     let model = commandModel(catalog: CommandModelCatalog())
-    for command in AppCommand.allCases {
+    for command in AppCommand.allCases where command != .computer {
         #expect(model.updateDraft("/\(command.rawValue)"))
         #expect(await model.activate() == .keepDraft)
         #expect(model.route == .native(command))
@@ -1071,6 +1157,7 @@ private final class CommandModelSession: ComposerCommandSession {
     var commandCatalogState: ComposerCommandCatalogState
     let commandUpdates = AsyncStream<ComposerCommandCatalogState> { _ in }
     private(set) var sent: [String] = []
+    private(set) var computerUsePromptTasks: [String] = []
 
     init(state: SessionRuntimeState, catalog: ComposerCommandCatalogState) {
         runtimeState = state
@@ -1078,6 +1165,7 @@ private final class CommandModelSession: ComposerCommandSession {
     }
 
     func sendSlashCommand(_ text: String) async { sent.append(text) }
+    func sendComputerUsePrompt(_ task: String) async { computerUsePromptTasks.append(task) }
 }
 
 @MainActor
@@ -1103,6 +1191,7 @@ private final class StreamingCommandSession: ComposerCommandSession {
     }
 
     func sendSlashCommand(_ text: String) async { sent.append(text) }
+    func sendComputerUsePrompt(_ task: String) async {}
 }
 
 @MainActor
@@ -1173,6 +1262,7 @@ private final class NativeCommandSession: ComposerCommandSession, ComposerSessio
     init(catalog: ComposerCommandCatalogState) { commandCatalogState = catalog }
 
     func sendSlashCommand(_ text: String) async { sent.append(text) }
+    func sendComputerUsePrompt(_ task: String) async {}
     func setModel(provider: String, modelID: String) async throws { modelCalls.append((provider, modelID)) }
     func setThinkingLevel(_ level: String) async throws { thinkingCalls.append(level) }
     func setFastMode(_ enabled: Bool) async throws -> Bool {

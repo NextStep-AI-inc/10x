@@ -21,7 +21,8 @@ struct FloatingRailView: View {
         RailPresentation.items(
             groups: groups,
             selectedSessionPath: selectedSessionPath,
-            expandedProjectIDs: expansion.isExpanded ? expandedProjectIDs : [])
+            expandedProjectIDs: expansion.isExpanded ? expandedProjectIDs : [],
+            computerUseActivePaths: model.computerUseActiveSessionPaths)
     }
 
     private var activityByPath: [String: RailSessionActivity] {
@@ -225,6 +226,14 @@ struct FloatingRailView: View {
                         activityState: activityState,
                         usesForegroundNeutral: true)
                         .frame(width: 34, height: 28)
+                        .overlay(alignment: .topTrailing) {
+                            if item.hasComputerUse {
+                                Circle()
+                                    .fill(TenXPalette.color(TenXPalette.cyanHex))
+                                    .frame(width: 6, height: 6)
+                                    .offset(x: -2, y: 1)
+                            }
+                        }
                     if expansion.isExpanded {
                         SessionTitleView(title: title, isLoading: isTitleLoading)
                             .font(TenXTypography.body(size: 12))
@@ -248,7 +257,8 @@ struct FloatingRailView: View {
                 state: accessibilityState(
                     activity: observedActivity,
                     indicator: indicator,
-                    metadataStatus: metadata.status)))
+                    metadataStatus: metadata.status),
+                hasComputerUse: item.hasComputerUse))
             .contextMenu {
                 Button("Rename Session...", systemImage: "pencil") {
                     model.requestRenameSession(metadata)

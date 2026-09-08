@@ -83,6 +83,7 @@ enum ToolCardRegistry {
         case "inspect_image": .inspectImage
         case "browser": .browser
         case "computer": .computer
+        case let n where n.hasPrefix("mcp__tenx-computer_computer_"): .computer
         case "checkpoint": .checkpoint
         case "rewind": .rewind
         case "security_scan": .securityScan

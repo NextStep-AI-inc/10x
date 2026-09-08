@@ -47,6 +47,21 @@ struct TenXApp: App {
         .commands {
             TenXCommands(model: model)
         }
+
+        MenuBarExtra(isInserted: computerMenuBinding) {
+            ComputerUseMenuBarView(
+                client: model.supervision,
+                onOpenSession: { daemonSession in model.openSession(forDaemonSession: daemonSession) },
+                openableSessionIDs: model.openableDaemonSessionIDs)
+        } label: {
+            Label("10x Computer", systemImage: "display")
+        }
+    }
+
+    private var computerMenuBinding: Binding<Bool> {
+        Binding(
+            get: { model.supervision.hasAnyActivity },
+            set: { _ in })
     }
 }
 
@@ -72,6 +87,9 @@ private struct WorkspaceSceneView: View {
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 Task { await model.refreshProvidersIfNeeded() }
+            }
+            .onChange(of: model.supervision.hasAnyActivity) {
+                model.updateEmergencyShortcut()
             }
             .onChange(of: model.updateState.isPresentingUpdate) { _, isPresenting in
                 guard isPresenting else { return }

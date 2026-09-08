@@ -7,6 +7,7 @@ struct AppDependencies: Sendable {
     let sessionSearch: SessionSearchService
     let recentProjectStore: RecentProjectStore
     let startupTiming: StartupTiming
+    let supervisionClient: SupervisionClient
     let makeProcessManager: @Sendable (String) -> SessionProcessManager
     let makeSettingsModel: @MainActor @Sendable (URL) -> SettingsViewModel
     let makeProviderModel: @MainActor @Sendable (URL) -> ProviderManagementViewModel
@@ -23,6 +24,7 @@ struct AppDependencies: Sendable {
         sessionSearch: SessionSearchService = SessionSearchService(),
         recentProjectStore: RecentProjectStore? = nil,
         startupTiming: StartupTiming = .live,
+        supervisionClient: SupervisionClient = SupervisionClient(),
         makeProcessManager: @escaping @Sendable (String) -> SessionProcessManager = {
             SessionProcessManager(
                 executable: $0,
@@ -44,12 +46,14 @@ struct AppDependencies: Sendable {
         self.sessionSearch = sessionSearch
         self.recentProjectStore = recentProjectStore ?? RecentProjectStore()
         self.startupTiming = startupTiming
+        self.supervisionClient = supervisionClient
         self.makeProcessManager = makeProcessManager
         self.makeSettingsModel = makeSettingsModel ?? { executableURL in
             SettingsViewModel(
                 service: OmpConfigService(
                     runner: OmpConfigProcessRunner(executableURL: executableURL)),
-                catalog: ComposerCatalogService(executableURL: executableURL))
+                catalog: ComposerCatalogService(executableURL: executableURL),
+                computerUseSetup: ComputerUseSetupModel(supervision: supervisionClient))
         }
         self.makeProviderModel = makeProviderModel
         self.makeComposerControls = makeComposerControls
@@ -68,17 +72,12 @@ struct AppDependencies: Sendable {
         sessionSearch: SessionSearchService(),
         recentProjectStore: RecentProjectStore(),
         startupTiming: .live,
+        supervisionClient: SupervisionClient(),
         makeProcessManager: { executable in
             SessionProcessManager(
                 executable: executable,
                 extraArguments: ProviderExtensionBundle.spawnArguments(),
                 supportsUserInteraction: true)
-        },
-        makeSettingsModel: { executableURL in
-            SettingsViewModel(
-                service: OmpConfigService(
-                    runner: OmpConfigProcessRunner(executableURL: executableURL)),
-                catalog: ComposerCatalogService(executableURL: executableURL))
         },
         makeProviderModel: { executableURL in
             ProviderManagementViewModel(

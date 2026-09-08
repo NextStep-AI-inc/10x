@@ -432,6 +432,63 @@ import Testing
 }
 
 @MainActor
+@Test func computerUseSettingsSnapshot() throws {
+    let model = ComputerUseSetupModel(supervision: SupervisionClient())
+    try assertSnapshot(
+        ComputerUseSettingsSection(model: model)
+            .frame(width: 600)
+            .frame(maxHeight: .infinity, alignment: .topLeading),
+        name: "computer-use-settings",
+        size: CGSize(width: 760, height: 680))
+}
+
+@MainActor
+@Test func computerToolCardSnapshot() throws {
+    let presentation = computerToolSnapshotPresentation(
+        id: "computer-card",
+        imageColors: [NSColor(deviceRed: 0, green: 0.65, blue: 0.76, alpha: 1)],
+        capabilities: ComputerCapabilities(
+            backend: "macos",
+            capture: .granted,
+            input: .denied,
+            accessibility: .granted))
+
+    let disclosure = ToolDisclosureState()
+    disclosure.setExpanded(true, id: presentation.id)
+    try assertSnapshot(
+        ComputerToolCardView(presentation: presentation)
+            .frame(width: 520)
+            .environment(\.toolDisclosureState, disclosure),
+        name: "computer-tool-card",
+        size: CGSize(width: 600, height: 650))
+}
+
+@MainActor
+@Test func computerToolGallerySnapshot() throws {
+    let presentation = computerToolSnapshotPresentation(
+        id: "computer-gallery",
+        imageColors: [
+            NSColor(deviceRed: 0.96, green: 0.48, blue: 0.12, alpha: 1),
+            NSColor(deviceRed: 0, green: 0.65, blue: 0.76, alpha: 1),
+            NSColor(deviceRed: 0.55, green: 0.32, blue: 0.75, alpha: 1),
+        ],
+        capabilities: ComputerCapabilities(
+            backend: "macos",
+            capture: .granted,
+            input: .granted,
+            accessibility: .granted))
+
+    let disclosure = ToolDisclosureState()
+    disclosure.setExpanded(true, id: presentation.id)
+    try assertSnapshot(
+        ComputerToolCardView(presentation: presentation)
+            .frame(width: 780)
+            .environment(\.toolDisclosureState, disclosure),
+        name: "computer-tool-gallery",
+        size: CGSize(width: 860, height: 700))
+}
+
+@MainActor
 @Test func settingsProvidersEmbeddedSnapshot() async throws {
     let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
     let providerModel = try providerWorkspaceModel()
@@ -1832,6 +1889,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             ToolCardView(presentation: running)
             ToolCardView(presentation: failed)
         }
+        .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
         .frame(width: 720),
         name: "activity-running-error",
         size: CGSize(width: 800, height: 520))
@@ -2373,7 +2431,9 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         durationMilliseconds: 4_200,
         result: nil)
     try assertSnapshot(
-        SubagentCardView(presentation: presentation).frame(width: 720),
+        SubagentCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
+            .frame(width: 720),
         name: "activity-subagent",
         size: CGSize(width: 800, height: 330))
 }
@@ -2415,6 +2475,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     try assertSnapshot(
         ToolCardView(presentation: presentation)
             .environment(snapshotEmptyIDEStore)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
             .frame(width: 720),
         name: "activity-structured-diff",
         size: CGSize(width: 800, height: 650))
@@ -2578,6 +2639,53 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         SessionHeaderView(controller: controller),
         name: "active-session-header",
         size: CGSize(width: 900, height: 80))
+}
+
+@MainActor
+@Test func sessionHeaderComputerItemSnapshot() throws {
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        supervision: SupervisionClient(socketPath: NSTemporaryDirectory() + "unused-\(UUID().uuidString).sock"))
+    controller.computerUse.handleToolStarted(
+        name: "mcp__tenx-computer_computer_claim", input: ["window_id": 10])
+    try assertSnapshot(
+        SessionHeaderView(controller: controller),
+        name: "session-header-computer",
+        size: CGSize(width: 760, height: 54))
+}
+
+@MainActor
+@Test func currentlyViewingPopoverSnapshot() throws {
+    try assertSnapshot(
+        CurrentlyViewingPopover(
+            framePNG: nil,
+            windowTitle: "Safari — Apple",
+            status: "Running tests…",
+            onStop: {}),
+        name: "currently-viewing-popover",
+        size: CGSize(width: 400, height: 260))
+}
+
+@MainActor
+@Test func computerMenuBarGroupedSnapshot() throws {
+    let client = SupervisionClient(socketPath: NSTemporaryDirectory() + "unused-\(UUID().uuidString).sock")
+    client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
+    client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
+    client.apply(.sessionStarted(session: 2, harness: "Cursor", label: nil, pid: nil))
+    client.apply(.windowClaimed(session: 2, harness: "Cursor", windowID: 11, app: "Terminal", title: "zsh", bounds: "0,0 800x600"))
+    try assertSnapshot(
+        ComputerUseMenuBarView(client: client, onOpenSession: { _ in }, openableSessionIDs: [1]),
+        name: "computer-menu-bar",
+        size: CGSize(width: 320, height: 220))
+}
+
+@MainActor
+@Test func computerMenuBarEmptySnapshot() throws {
+    let client = SupervisionClient(socketPath: NSTemporaryDirectory() + "unused-\(UUID().uuidString).sock")
+    try assertSnapshot(
+        ComputerUseMenuBarView(client: client, onOpenSession: { _ in }, openableSessionIDs: []),
+        name: "computer-menu-bar-empty",
+        size: CGSize(width: 320, height: 80))
 }
 
 @MainActor
@@ -3699,6 +3807,82 @@ private func snapshotToolCardStack(
     .frame(width: width, alignment: .leading)
 }
 
+private func computerToolSnapshotPresentation(
+    id: String,
+    imageColors: [NSColor],
+    capabilities: ComputerCapabilities
+) -> ToolPresentation {
+    let images = imageColors.enumerated().map { index, color in
+        JSONValue.object([
+            "type": .string("image"),
+            "data": .string(snapshotComputerImage(color: color).base64EncodedString()),
+            "mimeType": .string("image/png"),
+            "detail": .string("original"),
+            "index": .int(index),
+        ])
+    }
+    return ToolPresentation(
+        id: id,
+        name: "computer",
+        arguments: .object([
+            "code": .string("let window = await desktop.windows()[0]\nawait window.screenshot()"),
+            "read_only": .bool(false),
+        ]),
+        result: .object([
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string("Captured the dedicated TextEdit window."),
+                ]),
+            ] + images),
+            "details": .object([
+                "backend": .string(capabilities.backend),
+                "capturePermission": .string(capabilities.capture.rawValue),
+                "inputPermission": .string(capabilities.input.rawValue),
+                "axPermission": .string(capabilities.accessibility.rawValue),
+                "returnValue": .string("Verification complete"),
+                "screenshots": .array([
+                    .object(["target": .string("TextEdit")]),
+                ]),
+            ]),
+        ]),
+        phase: .complete,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: Date(timeIntervalSince1970: 1.8))
+}
+
+private func snapshotComputerImage(color: NSColor) -> Data {
+    let width = 640
+    let height = 360
+    let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil,
+        pixelsWide: width,
+        pixelsHigh: height,
+        bitsPerSample: 8,
+        samplesPerPixel: 4,
+        hasAlpha: true,
+        isPlanar: false,
+        colorSpaceName: .deviceRGB,
+        bytesPerRow: 0,
+        bitsPerPixel: 0)!
+    let primary = [color.redComponent, color.greenComponent, color.blueComponent]
+        .map { UInt8(clamping: Int($0 * 255)) }
+    let faded = [color.redComponent, color.greenComponent, color.blueComponent]
+        .map { UInt8(clamping: Int(($0 * 0.55 + 0.45) * 255)) }
+    let pixels = bitmap.bitmapData!
+    for x in 0..<width {
+        for y in 0..<height {
+            let components = ((x / 80) + (y / 60)).isMultiple(of: 2) ? primary : faded
+            let offset = y * bitmap.bytesPerRow + x * 4
+            pixels[offset] = components[0]
+            pixels[offset + 1] = components[1]
+            pixels[offset + 2] = components[2]
+            pixels[offset + 3] = 255
+        }
+    }
+    return bitmap.representation(using: .png, properties: [:])!
+}
+
 private struct SnapshotConfigRunner: OmpConfigRunning {
     func run(arguments: [String]) async throws -> Data {
         if arguments == ["config", "path"] {
@@ -3893,6 +4077,7 @@ private final class SnapshotCommandBrowserSession: ComposerCommandSession {
     }
 
     func sendSlashCommand(_ text: String) async {}
+    func sendComputerUsePrompt(_ task: String) async {}
 }
 
 private actor SnapshotComposerDefaults: ComposerDefaultPersisting {
@@ -4320,6 +4505,7 @@ private actor SnapshotMediaGate {
     try assertSnapshot(
         ToolCardView(presentation: presentation)
             .environment(snapshotEmptyIDEStore)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
             .frame(width: 720),
         name: "activity-structured-diff-dark",
         appearance: .dark,
@@ -5001,7 +5187,9 @@ private actor SnapshotMediaGate {
         durationMilliseconds: 4_200,
         result: nil)
     try assertSnapshot(
-        SubagentCardView(presentation: presentation).frame(width: 720),
+        SubagentCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
+            .frame(width: 720),
         name: "activity-subagent-dark", appearance: .dark,
         size: CGSize(width: 800, height: 330))
 }
@@ -5035,6 +5223,7 @@ private actor SnapshotMediaGate {
             ToolCardView(presentation: running)
             ToolCardView(presentation: failed)
         }
+        .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
         .frame(width: 720),
         name: "activity-running-error-dark", appearance: .dark,
         size: CGSize(width: 800, height: 520))

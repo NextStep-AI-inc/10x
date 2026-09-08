@@ -310,8 +310,12 @@ struct TranscriptView: View {
             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             .accessibilityElement(children: .combine)
         case .tool(let presentation):
-            ToolCardView(presentation: presentation)
-                .equatable()
+            if ToolCardRegistry.kind(for: presentation.name) == .computer {
+                ComputerToolCardView(presentation: presentation)
+            } else {
+                ToolCardView(presentation: presentation)
+                    .equatable()
+            }
         case .extensionUI(let state):
             if state.isQuestionInput {
                 ExtensionQuestionCardView(state: state) { response in

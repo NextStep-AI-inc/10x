@@ -15,6 +15,8 @@ struct SessionHeaderView: View {
     let controller: SessionController
     @Environment(\.renameCurrentSession) private var renameCurrentSession
 
+    @State private var isComputerPopoverPresented = false
+
     var body: some View {
         VStack(spacing: 4) {
             SessionTitleView(title: controller.title, isLoading: controller.isTitleLoading)
@@ -35,7 +37,7 @@ struct SessionHeaderView: View {
                     renameCurrentSession?()
                 }
 
-            if !controller.headerMetadata.presentationItems.isEmpty {
+            if !controller.headerMetadata.presentationItems.isEmpty || computerItem != nil {
                 HStack(spacing: 14) {
                     ForEach(controller.headerMetadata.presentationItems) { item in
                         HStack(spacing: 4) {
@@ -47,6 +49,32 @@ struct SessionHeaderView: View {
                         .accessibilityLabel(item.accessibilityLabel)
                         .accessibilityValue(item.value)
                     }
+
+                    if let computer = computerItem {
+                        Button { isComputerPopoverPresented.toggle() } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "display")
+                                    .font(.system(size: 9, weight: .medium))
+                                Text(computer.label)
+                            }
+                            .foregroundStyle(computer.isControlling
+                                ? TenXPalette.color(TenXPalette.cyanHex)
+                                : TenXPalette.color(TenXPalette.mutedTextHex))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Computer use")
+                        .accessibilityValue(computer.label)
+                        .popover(isPresented: $isComputerPopoverPresented) {
+                            CurrentlyViewingPopover(
+                                framePNG: controller.computerUse.latestFrame,
+                                windowTitle: computer.label,
+                                status: controller.computerUse.status,
+                                onStop: {
+                                    isComputerPopoverPresented = false
+                                    Task { await controller.computerUse.stopComputerUse() }
+                                })
+                        }
+                    }
                 }
                 .font(TenXTypography.mono(size: 10))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
@@ -57,5 +85,11 @@ struct SessionHeaderView: View {
         .frame(height: 54)
         .padding(.leading, 42)
         .padding(.trailing, 92)
+    }
+
+    private var computerItem: (label: String, isControlling: Bool)? {
+        guard controller.computerUse.isEnabled else { return nil }
+        let label = controller.computerUse.focusWindowLabel ?? "Computer"
+        return (label, controller.computerUse.phase == .controlling)
     }
 }

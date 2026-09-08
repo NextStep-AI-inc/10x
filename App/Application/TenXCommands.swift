@@ -85,6 +85,12 @@ struct TenXCommands: Commands {
                 Task { await model.archiveCurrentSession() }
             }
             .disabled(!model.menuState.canArchiveSession)
+
+            Button("Use Computer") {
+                Task { await model.beginComputerUse() }
+            }
+            .keyboardShortcut("c", modifiers: [.shift, .command])
+            .disabled(model.activeSession?.isComposerAvailable != true)
         }
     }
 

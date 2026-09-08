@@ -11,6 +11,7 @@ final class SettingsViewModel {
     private(set) var isLoading = false
     private(set) var loadError: String?
     private(set) var keyErrors: [String: String] = [:]
+    let computerUseSetup: ComputerUseSetupModel
 
     var sections: [SettingsSection] { catalog.sections(query: query) }
     var settingCount: Int { catalog.definitions.count }
@@ -25,9 +26,14 @@ final class SettingsViewModel {
     @ObservationIgnored private var ownEchoes: [String: [JSONValue]] = [:]
     private(set) var catalogModels: [ComposerModelInfo] = []
 
-    init(service: OmpConfigService, catalog: ComposerCatalogService? = nil) {
+    init(
+        service: OmpConfigService,
+        catalog: ComposerCatalogService? = nil,
+        computerUseSetup: ComputerUseSetupModel = ComputerUseSetupModel(supervision: SupervisionClient())
+    ) {
         self.service = service
         self.catalogService = catalog
+        self.computerUseSetup = computerUseSetup
     }
 
     func loadCatalogIfNeeded() async {

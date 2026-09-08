@@ -8,9 +8,15 @@ enum SettingsOwner: String {
 enum TenXSettingsCategory: String, CaseIterable, Identifiable {
     case general
     case composer
+    case computerUse
 
     var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self {
+        case .general, .composer: rawValue.capitalized
+        case .computerUse: "Computer Use"
+        }
+    }
 
     func matches(query: String, preferredIDEName: String?) -> Bool {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,6 +31,11 @@ enum TenXSettingsCategory: String, CaseIterable, Identifiable {
             [
                 "Composer", "default send action", "Steer", "Follow up",
                 "keyboard shortcuts", "Enter", "Command-Enter", "Shift-Enter", "New line",
+            ].contains { $0.localizedCaseInsensitiveContains(query) }
+        case .computerUse:
+            [
+                "Computer", "Computer Use", "MCP", "daemon", "install", "selfcheck",
+                "Claude Code", "Codex",
             ].contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }

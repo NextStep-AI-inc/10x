@@ -56,6 +56,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private(set) var isRecoveryPresented = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
+    private(set) var computerUse: ComputerUseController
     let id: UUID
     private(set) var providerID: String?
     private(set) var activeProviderAccounts: [String: String] = [:]
@@ -140,6 +141,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     init(
         processManager: SessionProcessManager,
+        supervision: SupervisionClient = SupervisionClient(
+            socketPath: NSTemporaryDirectory() + "unused-\(UUID().uuidString).sock"),
+        computerUse: ComputerUseController? = nil,
         id: UUID = UUID(),
         activityRegistry: SessionActivityRegistry? = nil,
         accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
@@ -149,6 +153,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         harnessNoticeSummarizer: (any HarnessNoticeSummarizing)? = nil
     ) {
         self.processManager = processManager
+        self.computerUse = computerUse ?? ComputerUseController(supervision: supervision)
         self.id = id
         self.accountCoordinator = activityRegistry
         self.accountChannelRegistry = accountChannelRegistry
@@ -174,6 +179,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             branch: "",
             repo: "",
             worktreePath: nil),
+        supervision: SupervisionClient = SupervisionClient(
+            socketPath: NSTemporaryDirectory() + "preview-\(UUID().uuidString).sock"),
         id: UUID = UUID(),
         providerID: String? = nil,
         activityRegistry: SessionActivityRegistry? = nil,
@@ -181,6 +188,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         historyLoader: HistoryLoader? = nil
     ) {
         self.processManager = processManager
+        self.computerUse = ComputerUseController(supervision: supervision)
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
         self.harnessNoticePreferences = nil
         self.harnessNoticeSummarizer = nil
@@ -525,6 +533,43 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             failureFunction: "sendSlashCommand")
     }
 
+    func sendComputerUsePrompt(_ task: String) async {
+        await send(
+            text: ComputerUsePrompt.wrap(task),
+            behavior: runtimeState == .streaming ? .followUp : nil,
+            attachmentDisposition: .clearImmediately,
+            failureFunction: "sendComputerUsePrompt")
+    }
+
+    func sendComputerUseCue() async {
+        guard handle != nil else { return }
+        switch runtimeState {
+        case .idle, .streaming:
+            break
+        case .loading, .stopped, .failed:
+            return
+        }
+        guard let channel = accountChannelRegistry?.entry(for: id)?.channel else {
+            os_log(
+                .error,
+                log: Self.transcriptLog,
+                "[SessionController:sendComputerUseCue] Extension channel unavailable")
+            return
+        }
+        do {
+            _ = try await channel.send(ProviderAccountChannelCommand(
+                id: UUID().uuidString,
+                command: "computer_use_cue",
+                params: [:]))
+        } catch {
+            os_log(
+                .error,
+                log: Self.transcriptLog,
+                "[SessionController:sendComputerUseCue] Extension command failed: %{public}@",
+                String(describing: error))
+        }
+    }
+
     @discardableResult
     private func send(
         text: String,
@@ -833,6 +878,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     func handleUnexpectedExit(code: Int32?, stderrTail: String) {
         stopEventPipeline()
+        Task { await computerUse.stopComputerUse() }
         runtimeState = .stopped(code: code, stderrTail: stderrTail)
         isRecoveryPresented = true
         logText = stderrTail.isEmpty ? "OMP exited without stderr output." : stderrTail
@@ -845,6 +891,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func close() async {
+        await computerUse.stopComputerUse()
         await dispose()?.value
     }
 
@@ -1003,6 +1050,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 if case .event("available_commands_update", _) = frame {
                     await self?.consumeCommandCatalogUpdate(frame, processor: processor)
                 }
+                await self?.routeToolEvent(frame)
                 await eventFence.didConsumeEvent()
             }
             await eventFence.finish()
@@ -1524,6 +1572,63 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             guard isCurrent(context), !Task.isCancelled else { return }
             contextErrorMessage = "Couldn’t load the context breakdown."
         }
+    }
+
+    private func routeToolEvent(_ frame: RpcFrame) {
+        guard case .event(let type, let payload) = frame,
+              let toolName = payload["toolName"]?.stringValue
+        else { return }
+        switch type {
+        case "tool_execution_start":
+            computerUse.handleToolStarted(
+                name: toolName,
+                input: Self.toolInput(from: payload))
+        case "tool_execution_end":
+            computerUse.handleToolCompleted(
+                name: toolName,
+                claimedWindowID: Self.claimedWindowID(from: payload, toolName: toolName))
+        default:
+            break
+        }
+    }
+
+    private static func toolInput(from payload: JSONValue) -> [String: Any]? {
+        guard let args = payload["args"]?.objectValue else { return nil }
+        var result: [String: Any] = [:]
+        for (key, value) in args {
+            if let intValue = value.intValue {
+                result[key] = intValue
+            } else if let stringValue = value.stringValue {
+                result[key] = stringValue
+            } else if let doubleValue = value.doubleValue {
+                result[key] = doubleValue
+            } else if let boolValue = value.boolValue {
+                result[key] = boolValue
+            }
+        }
+        return result.isEmpty ? nil : result
+    }
+
+    private static let claimedWindowPattern = /claimed window (\d+)/
+
+    private static func claimedWindowID(from payload: JSONValue, toolName: String) -> Int? {
+        guard toolName.hasSuffix("computer_launch") else { return nil }
+        guard let text = toolResultText(from: payload),
+              let match = text.firstMatch(of: claimedWindowPattern)
+        else { return nil }
+        return Int(match.1)
+    }
+
+    private static func toolResultText(from payload: JSONValue) -> String? {
+        guard let result = payload["result"] else { return payload["content"]?.stringValue }
+        if let text = result.stringValue { return text }
+        if let content = result["content"]?.arrayValue {
+            return content.compactMap { block -> String? in
+                guard block["type"]?.stringValue == "text" else { return nil }
+                return block["text"]?.stringValue
+            }.joined(separator: "\n")
+        }
+        return nil
     }
 
     private func consumeContextReport(_ frame: RpcFrame, processor: TranscriptEventProcessor) -> Bool {
