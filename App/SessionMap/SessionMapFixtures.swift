@@ -14,6 +14,10 @@ enum SessionMapFixtures {
             sourceRef: "tool-2",
             status: .done,
             target: .label("Native map document")
+        ), SessionMapStatusEvidence(
+            sourceRef: "tool-1",
+            status: .failed,
+            target: .label("Request handler")
         )]
     )
 
@@ -158,6 +162,28 @@ enum SessionMapFixtures {
           <checklist><item done="true">Define the graph vocabulary.</item><item done="false">Verify the native layout.</item></checklist>
           <callout title="Layout check" tone="warn" ref="u1">Dense labels still need native snapshot coverage.</callout>
           <next><step prompt="Show the dense graph layout.">Review the dense fixture.</step></next>
+        </sessionmap>
+        """
+
+    static let graphStatesXML = """
+        <sessionmap headline="Request pipeline" phase="mixed">
+          <summary>The request passes through native components with one disconnected audit record.</summary>
+          <map>
+            <node id="view" label="Request view" kind="view" file="App/RequestView.swift" status="exists" group="Interface" ref="u1">Collects the request.</node>
+            <node id="writer" label="Map writer" kind="service" status="active" group="Generation" ref="tool-1">Builds the bounded document.</node>
+            <node id="document" label="Native map document" kind="component" file="App/SessionMap/SessionMapDocument.swift" status="done" group="Model" ref="tool-2">Stores the validated graph.</node>
+            <node id="handler" label="Request handler" kind="actor" status="failed" group="Runtime" ref="tool-1">Reports the failed request.</node>
+            <node id="audit" label="Audit record" kind="store" status="planned" group="History" ref="u1">Remains disconnected from the live request.</node>
+            <edge from="view" to="writer" kind="flow" label="request"/>
+            <edge from="writer" to="document" kind="flow" label="XML"/>
+            <edge from="document" to="handler" kind="flow" label="install"/>
+          </map>
+          <flow title="Follow the request">
+            <step node="view" ref="u1">Start with the request view.</step>
+            <step node="writer" ref="tool-1">Generate the bounded map.</step>
+            <step node="document" ref="tool-2">Validate the native document.</step>
+            <step node="handler" ref="tool-1">Inspect the failed installation.</step>
+          </flow>
         </sessionmap>
         """
 
