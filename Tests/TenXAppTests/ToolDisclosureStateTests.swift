@@ -75,6 +75,43 @@ import Testing
     #expect(header.accessibilityLabel == "Run xcodebuild test, Running, 4.2 seconds")
 }
 
+@Test func typedDiffTotalsOwnTheDiffHeaderOutcome() throws {
+    let diff = try #require(UnifiedDiffParser.parse("""
+    --- a/App.swift
+    +++ b/App.swift
+    @@ -1,1 +1,2 @@
+    -old
+    +new
+    +another
+    """))
+    let header = ToolCardHeaderPresentation(
+        content: ToolCardContent(
+            title: "Edit",
+            verb: "Edit",
+            primary: "App.swift",
+            outcome: "+99 −88",
+            reference: nil,
+            body: .diff(diff, fallbackPath: nil)),
+        phase: .complete,
+        duration: "0.3s")
+
+    #expect(header.diffTotals == ToolCardDiffTotals(additions: 2, removals: 1))
+    #expect(header.visibleText == "Edit App.swift · +2 −1")
+    #expect(header.accessibilityLabel == "Edit App.swift, +2 −1, Complete, 0.3 seconds")
+}
+
+@Test func singleFileDiffHeaderChromeIsRemovedOnlyInsideANamedCard() {
+    #expect(!DiffViewLayout.shouldShowFileHeader(
+        fileCount: 1,
+        isSingleFileNamedInCard: true))
+    #expect(DiffViewLayout.shouldShowFileHeader(
+        fileCount: 1,
+        isSingleFileNamedInCard: false))
+    #expect(DiffViewLayout.shouldShowFileHeader(
+        fileCount: 2,
+        isSingleFileNamedInCard: true))
+}
+
 @Test func expandedModeOpensCompletedAttentionTools() {
     let expanded = ToolDisclosureState(mode: .expanded)
     #expect(expanded.isExpanded(for: tool(id: "edit", name: "edit", phase: .complete)))

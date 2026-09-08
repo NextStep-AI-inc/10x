@@ -6,10 +6,16 @@ import SwiftUI
 struct ToolSurfaceView: View {
     let surface: ToolBody
     let phase: ToolPhase
+    let topFilePath: String?
 
-    init(body: ToolBody, phase: ToolPhase = .complete) {
+    init(
+        body: ToolBody,
+        phase: ToolPhase = .complete,
+        topFilePath: String? = nil
+    ) {
         surface = body
         self.phase = phase
+        self.topFilePath = topFilePath
     }
 
     @ViewBuilder
@@ -20,7 +26,10 @@ struct ToolSurfaceView: View {
         case .source(let source, let previewLines):
             SourceSurface(presentation: source, previewLineLimit: previewLines)
         case .diff(let diff, let fallbackPath):
-            DiffView(diff: diff, fallbackPath: fallbackPath)
+            DiffView(
+                diff: diff,
+                fallbackPath: fallbackPath,
+                topHeaderPath: topFilePath)
         case .console(let command, let output, let exitCode):
             ConsoleSurfaceView(
                 command: command,
@@ -38,7 +47,10 @@ struct ToolSurfaceView: View {
         case .stack(let bodies):
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(bodies.enumerated()), id: \.offset) { _, body in
-                    ToolSurfaceView(body: body, phase: phase)
+                    ToolSurfaceView(
+                        body: body,
+                        phase: phase,
+                        topFilePath: topFilePath)
                 }
             }
         case .empty(let message):

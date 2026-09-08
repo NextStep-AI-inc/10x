@@ -1,14 +1,29 @@
 import SwiftUI
 
+struct ToolCardDiffTotals: Equatable, Sendable {
+    let additions: Int
+    let removals: Int
+
+    var summary: String { "+\(additions) −\(removals)" }
+}
+
 struct ToolCardHeaderPresentation: Equatable, Sendable {
     let content: ToolCardContent
     let phase: ToolPhase
     let duration: String?
+    let diffTotals: ToolCardDiffTotals?
+
+    init(content: ToolCardContent, phase: ToolPhase, duration: String?) {
+        self.content = content
+        self.phase = phase
+        self.duration = duration
+        diffTotals = content.body.diffTotals
+    }
 
     var visibleText: String {
         var value = content.verb
         if let primary = content.primary, !primary.isEmpty { value += " \(primary)" }
-        if let displayedOutcome { value += " · \(displayedOutcome)" }
+        if let displayedOutcomeText { value += " · \(displayedOutcomeText)" }
         return value
     }
 
@@ -16,7 +31,7 @@ struct ToolCardHeaderPresentation: Equatable, Sendable {
         var leading = content.verb
         if let primary = content.primary, !primary.isEmpty { leading += " \(primary)" }
         var parts = [leading]
-        if let displayedOutcome { parts.append(displayedOutcome) }
+        if let displayedOutcomeText { parts.append(displayedOutcomeText) }
         parts.append(phase.label)
         if let accessibleDuration { parts.append(accessibleDuration) }
         return parts.joined(separator: ", ")
@@ -30,10 +45,33 @@ struct ToolCardHeaderPresentation: Equatable, Sendable {
         return outcome
     }
 
+    var displayedOutcomeText: String? {
+        diffTotals?.summary ?? displayedOutcome
+    }
+
     private var accessibleDuration: String? {
         guard let duration else { return nil }
         guard duration.hasSuffix("s") else { return duration }
         return "\(duration.dropLast()) seconds"
+    }
+}
+
+private extension ToolBody {
+    var diffTotals: ToolCardDiffTotals? {
+        switch self {
+        case .diff(let diff, _):
+            return ToolCardDiffTotals(
+                additions: diff.files.reduce(0) { $0 + $1.additions },
+                removals: diff.files.reduce(0) { $0 + $1.removals })
+        case .stack(let bodies):
+            let totals = bodies.compactMap(\.diffTotals)
+            guard !totals.isEmpty else { return nil }
+            return ToolCardDiffTotals(
+                additions: totals.reduce(0) { $0 + $1.additions },
+                removals: totals.reduce(0) { $0 + $1.removals })
+        default:
+            return nil
+        }
     }
 }
 
@@ -102,11 +140,7 @@ struct ToolCardScaffold<Content: View>: View {
             VStack(alignment: .leading, spacing: 5) {
                 leadingContent(showsOutcome: false)
                 HStack(spacing: 8) {
-                    if let outcome = headerPresentation.displayedOutcome {
-                        Text(outcome)
-                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    outcomeContent(includeSeparator: false)
                     Spacer(minLength: 8)
                     statusContent
                 }
@@ -146,12 +180,32 @@ struct ToolCardScaffold<Content: View>: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            if showsOutcome, let outcome = headerPresentation.displayedOutcome {
-                Text("· \(outcome)")
-                    .font(TenXTypography.body(size: 10, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    .fixedSize(horizontal: false, vertical: true)
+            if showsOutcome {
+                outcomeContent(includeSeparator: true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func outcomeContent(includeSeparator: Bool) -> some View {
+        if let totals = headerPresentation.diffTotals {
+            if includeSeparator {
+                Text("·")
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
+            HStack(spacing: 3) {
+                Text("+\(totals.additions)")
+                    .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+                Text("−\(totals.removals)")
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+            }
+            .font(TenXTypography.mono(size: 10, weight: .semibold))
+            .fixedSize(horizontal: false, vertical: true)
+        } else if let outcome = headerPresentation.displayedOutcome {
+            Text(includeSeparator ? "· \(outcome)" : outcome)
+                .font(TenXTypography.body(size: 10, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
