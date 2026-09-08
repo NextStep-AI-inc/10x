@@ -1,0 +1,44 @@
+Window: "10x | settings-map | 452c9f34db56", App: 10x Flyer QA.
+0 standard window 10x | settings-map | 452c9f34db56, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+					10 button Description: settings-map, Help: Starts a new session in settings-map
+			11 button Description: Archived sessions, ID: archivebox
+		12 button Back
+		13 text Settings
+		14 image Description: Search, ID: magnifyingglass
+		15 text field (settable) Description: Search all settings, Value: preferred IDE
+		16 text OMP 10x
+		17 scroll area
+			18 button Models
+		19 button General
+		20 button Composer
+		21 button (selected) Map
+		22 scroll area
+			23 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				24 text 10x General 1
+				25 container
+					26 text Preferred IDE Open file references in this application
+					27 menu button Description: Preferred IDE, Value: Choose IDE
+		28 button
+	29 close button
+	30 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	31 minimize button
+32 menu bar
+	33 10x Flyer QA
+	34 File
+	35 Edit
+	36 View
+	37 Navigate
+	38 Session
+	39 Window
+	40 Help
+
+The focused UI element is 15 text field (settable) Description: Search all settings, Value: preferred IDE

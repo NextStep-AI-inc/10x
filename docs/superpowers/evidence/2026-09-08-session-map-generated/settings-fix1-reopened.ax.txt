@@ -1,0 +1,51 @@
+Window: "10x | settings-map | 666f5b82abba", App: 10x Flyer QA.
+0 standard window 10x | settings-map | 666f5b82abba, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+					10 button Description: settings-map, Help: Starts a new session in settings-map
+			11 button Description: Archived sessions, ID: archivebox
+		12 button Back
+		13 text Settings
+		14 image Description: Search, ID: magnifyingglass
+		15 text field (settable) Search all settings
+		16 text OMP 10x
+		17 scroll area
+			18 button Models
+		19 button General
+		20 button Composer
+		21 button (selected) Map
+		22 scroll area
+			23 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				24 text Map 3
+				25 container
+					26 text Writer model Updates an open map after completed turns.
+					27 menu button Description: Session Map writer model, Value: Fixture Writer · fixture-text, fixture-text / writer-text
+					28 text fixture-text / writer-text
+				29 container
+					30 text Checker model Checks structural map changes with an image-capable model.
+					31 menu button Description: Session Map checker model, Value: Off
+				32 container
+					33 text Unattended updates Allow map updates after completed turns when the map is closed.
+					34 toggle button Description: Unattended Session Map updates, Value: on
+		35 button
+	36 close button
+	37 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	38 minimize button
+39 menu bar
+	40 10x Flyer QA
+	41 File
+	42 Edit
+	43 View
+	44 Navigate
+	45 Session
+	46 Window
+	47 Help
+
+The focused UI element is 0 standard window 10x | settings-map | 666f5b82abba, ID: workspace-AppWindow-1, Secondary Actions: Raise

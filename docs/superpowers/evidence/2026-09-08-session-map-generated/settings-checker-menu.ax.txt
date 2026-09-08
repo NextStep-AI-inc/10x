@@ -1,0 +1,8 @@
+Window: "10x | settings-map | 452c9f34db56", App: 10x Flyer QA.
+0 menu Secondary Actions: Cancel
+	1 Off, ID: menuAction:
+	2 Role: smol, ID: menuAction:
+	3 Role: vision, ID: menuAction:
+	4 Fixture Vision · fixture-image, ID: menuAction:
+	5 Fixture Vision · fixture-image · low, ID: menuAction:
+	6 Fixture Vision · fixture-image · high, ID: menuAction:

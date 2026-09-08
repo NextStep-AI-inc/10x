@@ -1,0 +1,53 @@
+Window: "10x | settings-map | 452c9f34db56", App: 10x Flyer QA.
+0 standard window 10x | settings-map | 452c9f34db56, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+					10 button Description: settings-map, Help: Starts a new session in settings-map
+			11 button Description: Archived sessions, ID: archivebox
+		12 button Back
+		13 text Settings
+		14 image Description: Search, ID: magnifyingglass
+		15 text field (settable) Description: Search all settings, Value: Command-Enter
+		16 text OMP 10x
+		17 scroll area
+			18 button Models
+		19 button General
+		20 button Composer
+		21 button (selected) Map
+		22 scroll area
+			23 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				24 text 10x Composer 4
+				25 container
+					26 text Default send action Action used by the primary send shortcut
+					27 menu button Description: Default send action, Value: Steer
+				28 container
+					29 text Enter Composer keyboard shortcut
+					30 menu button Description: Enter, Value: Steer
+				31 container
+					32 text Command-Enter Composer keyboard shortcut
+					33 menu button Description: Command-Enter, Value: Follow up
+				34 container
+					35 text Shift-Enter Composer keyboard shortcut
+					36 menu button Description: Shift-Enter, Value: New line
+		37 button
+	38 close button
+	39 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	40 minimize button
+41 menu bar
+	42 10x Flyer QA
+	43 File
+	44 Edit
+	45 View
+	46 Navigate
+	47 Session
+	48 Window
+	49 Help
+
+The focused UI element is 15 text field (settable) Description: Search all settings, Value: Command-Enter
