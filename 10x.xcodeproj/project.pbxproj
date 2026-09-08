@@ -154,6 +154,7 @@
 		A01FAD6A8813B9364F20E9A55122B9F7 /* TranscriptEventProcessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A35E8A634BF91C74F76FAFB5DB3EA35 /* TranscriptEventProcessorTests.swift */; };
 		A0357CF3880C981B1B76A7784B883ACC /* AppTerminationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7651ABB34DCD41F0E1384304EA0C22A /* AppTerminationDelegate.swift */; };
 		A078DC580C936680E1CD7EC4372217D9 /* UnifiedDiffParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F513DACCB59B05DE95FDF6BE27EADC /* UnifiedDiffParserTests.swift */; };
+		A29AAEBDC84C6F45FB78AB02F1850D79 /* ModelRoleValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CBA786D1C90ECA4F18B67B8019866D /* ModelRoleValue.swift */; };
 		A5C0DC572F461CBD1B83225283E4CD1C /* SessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A57C0E807C4A8A640794119722D0A6 /* SessionController.swift */; };
 		A5C7CC305635633BBA38B8B7F0C82938 /* PreferredIDESettingRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDFF67A9D90589ECD9B4DBF77A72E1D3 /* PreferredIDESettingRowTests.swift */; };
 		A60F9BBED30310ABF4128961FABECE31 /* SessionRuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 144FEB107522651ECAFD41008C930D94 /* SessionRuntimeState.swift */; };
@@ -219,6 +220,7 @@
 		E848982C1FA390DDCBB2486D40922213 /* ProviderUsageWheelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF79A80AACF3EB8FEE4F7A0DB3A24C6C /* ProviderUsageWheelView.swift */; };
 		EB407C0645C444431FB8DF304E718205 /* RuntimeRecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BB8763379A60FF807A6B74B58B7F1B1 /* RuntimeRecoveryView.swift */; };
 		ECD3CA1F7235CAB70094DABD4D9244F7 /* ContentDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42EC21FECB1C4E09E49926AA5572960B /* ContentDocument.swift */; };
+		F1F133D1EF1326438D9AFF12790EA4A0 /* ModelRoleValueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBE8DDF4894696006393C2441C71EF79 /* ModelRoleValueTests.swift */; };
 		F5AA922492FD90FB7E0873818465F1C3 /* ComposerAttachmentsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D9D6899E872ED851831FE481330E0A5 /* ComposerAttachmentsView.swift */; };
 		F60B3EE489531A3A35F1D4D621F38246 /* RecentModelStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6DD98A8B79DC599CD01C6860A3D07AE /* RecentModelStore.swift */; };
 		F850BFA95403E93F71BFB3DC48DCD8A5 /* ModelPickerFlyout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D51EFD581EEFD45A453F1875E53AC1AF /* ModelPickerFlyout.swift */; };
@@ -331,6 +333,7 @@
 		61DE789082B8E3E9DF0189841BCBC9D6 /* ComposerControlsModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerControlsModel.swift; path = App/Sessions/ComposerControlsModel.swift; sourceTree = "<group>"; };
 		6585FF60EAB13C3F4E67F70552BCF81E /* FileTypeIcons */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = FileTypeIcons; path = App/Resources/FileTypeIcons; sourceTree = "<group>"; };
 		6591DBF910CAB9E12B80C3616F099278 /* ComposerModelInfo.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerModelInfo.swift; path = App/Sessions/ComposerModelInfo.swift; sourceTree = "<group>"; };
+		65CBA786D1C90ECA4F18B67B8019866D /* ModelRoleValue.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ModelRoleValue.swift; path = App/Settings/ModelRoleValue.swift; sourceTree = "<group>"; };
 		65DD34C599234CF61AA2F47A8B625865 /* TranscriptEventProcessor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptEventProcessor.swift; path = App/Sessions/TranscriptEventProcessor.swift; sourceTree = "<group>"; };
 		6730739B6C833D443EA8AA8AB4A0366E /* SplashView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SplashView.swift; path = App/Startup/SplashView.swift; sourceTree = "<group>"; };
 		6926F08F9655728CE398C085E2B7F08C /* ApprovalAccessibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ApprovalAccessibility.swift; path = App/ExtensionUI/ApprovalAccessibility.swift; sourceTree = "<group>"; };
@@ -450,6 +453,7 @@
 		E907C42AE39C3EA91FBE4ADD066D4500 /* FileTypeIcon.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileTypeIcon.swift; path = App/FileReferences/FileTypeIcon.swift; sourceTree = "<group>"; };
 		E95317FE231AEB99B29458EDDBC99FFD /* TenXPalette.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TenXPalette.swift; path = App/Design/TenXPalette.swift; sourceTree = "<group>"; };
 		EA3544CF04A50DB1F740F0BA2EE1ADEA /* SourcePresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourcePresentationTests.swift; path = Tests/TenXAppTests/SourcePresentationTests.swift; sourceTree = "<group>"; };
+		EBE8DDF4894696006393C2441C71EF79 /* ModelRoleValueTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ModelRoleValueTests.swift; path = Tests/TenXAppTests/ModelRoleValueTests.swift; sourceTree = "<group>"; };
 		EDEF3C8E979206D3524D161DB99A960C /* TurnActivityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TurnActivityTests.swift; path = Tests/TenXAppTests/TurnActivityTests.swift; sourceTree = "<group>"; };
 		EDFF67A9D90589ECD9B4DBF77A72E1D3 /* PreferredIDESettingRowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PreferredIDESettingRowTests.swift; path = Tests/TenXAppTests/PreferredIDESettingRowTests.swift; sourceTree = "<group>"; };
 		EE1EBE2E7662963A090F73332018C1AC /* RailAccessibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailAccessibility.swift; path = App/Shell/RailAccessibility.swift; sourceTree = "<group>"; };
@@ -591,6 +595,7 @@
 				D571A76482D84C6FB84D70F08D008F62 /* TurnActivityView.swift */,
 				4B2A371EF65EBD74975385C2D357B4FF /* EnumPresentation.swift */,
 				5E21B6D044E0E4A6F7D0A8AA3E43E1F8 /* InlineDropdown.swift */,
+				65CBA786D1C90ECA4F18B67B8019866D /* ModelRoleValue.swift */,
 				526667F3C26993A531F8787F4D47074F /* OmpConfigRunning.swift */,
 				0104A1E5E91274724142DEEABC01240F /* OmpConfigService.swift */,
 				F07ECBFB6BDAE4C811DB1D7ABEBF18F7 /* PreferredIDESettingRowView.swift */,
@@ -673,6 +678,7 @@
 				F704B536389AAF360BC1D53826D583AD /* IDEPreferenceStoreTests.swift */,
 				E85949BDAE9F5A41A912C50F05954C28 /* MessageBubbleViewTests.swift */,
 				CD958A4AA2C6C9733395C292C2B2E550 /* MessageContentParserTests.swift */,
+				EBE8DDF4894696006393C2441C71EF79 /* ModelRoleValueTests.swift */,
 				9B3C83997921E809B669E49EC2941D65 /* OmpCommandRunnerTests.swift */,
 				877A2FC56C324B52234C33EA8FA709FE /* OmpConfigServiceTests.swift */,
 				0A2A1BA39530EBB6E282C5207FC5CF52 /* OmpExecutableLocatorTests.swift */,
@@ -957,6 +963,7 @@
 				4C9BD66E04D2373E1B21CD7174E3FABE /* TurnActivityView.swift in Sources */,
 				44479C6D49AFA50ABC168C69A570E5B0 /* EnumPresentation.swift in Sources */,
 				DCE7F1B6C0908C69994818F51D1981A8 /* InlineDropdown.swift in Sources */,
+				A29AAEBDC84C6F45FB78AB02F1850D79 /* ModelRoleValue.swift in Sources */,
 				8B8208069E8A64682CEE4A6B8EDE0E64 /* OmpConfigRunning.swift in Sources */,
 				C7557B01139A822D1614DE967328DBD8 /* OmpConfigService.swift in Sources */,
 				B24374A9E4F25605FD62C639DD68F6CE /* PreferredIDESettingRowView.swift in Sources */,
@@ -1026,6 +1033,7 @@
 				2A9831E4F0D6FFE0ED7EA8E7C3C82DB0 /* IDEPreferenceStoreTests.swift in Sources */,
 				E35B5E09ED9858397770C064E6C977A4 /* MessageBubbleViewTests.swift in Sources */,
 				C609B7FB0E74B067B308947981F19315 /* MessageContentParserTests.swift in Sources */,
+				F1F133D1EF1326438D9AFF12790EA4A0 /* ModelRoleValueTests.swift in Sources */,
 				C805AACC9752F54990AFA8CF22F9D347 /* OmpCommandRunnerTests.swift in Sources */,
 				2FA2CED35BD69E6850395FDC3730D25B /* OmpConfigServiceTests.swift in Sources */,
 				DA3524B10DDF81F245041CD22C0077E7 /* OmpExecutableLocatorTests.swift in Sources */,
