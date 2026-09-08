@@ -71,6 +71,7 @@ struct SessionHeaderView: View {
                     .labelStyle(.titleAndIcon)
                     .buttonStyle(GhostActionStyle(horizontalPadding: 8))
                     .keyboardShortcut("c", modifiers: [.command, .shift])
+                    .focusable()
                     .focused($isMapToggleFocused)
                     .accessibilityLabel(isMapVisible ? "Close session map" : "Open session map")
                     .accessibilityValue(isMapVisible ? "Open" : "Closed")
