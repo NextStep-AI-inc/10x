@@ -52,6 +52,24 @@ import Testing
     ])
 }
 
+@MainActor
+@Test func collapsedToolRowsCannotRemainExposedAsTheScrollAnchor() {
+    let rows = TranscriptPresentationRow.rows(from: [
+        .message(message(id: "before")),
+        .tool(tool(id: "one", phase: .complete)),
+        .message(message(id: "after")),
+    ])
+    let collapsedRows = TranscriptPresentationRow.visibleRows(
+        from: rows,
+        isGroupExpanded: { $0 != "tool-group-one" })
+    let visibleIDs = Set(collapsedRows.map(\.id))
+
+    #expect(TranscriptView.validScrollAnchor(
+        "tool:one", visibleIDs: visibleIDs) == nil)
+    #expect(TranscriptView.validScrollAnchor(
+        "tool-group-one", visibleIDs: visibleIDs) == "tool-group-one")
+}
+
 @Test func noticeEndsToolGroupRatherThanBeingAbsorbed() {
     let rows = TranscriptPresentationRow.rows(from: [
         .tool(tool(id: "before", phase: .running)),
