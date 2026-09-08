@@ -4077,6 +4077,7 @@ private final class SnapshotCommandBrowserSession: ComposerCommandSession {
     }
 
     func sendSlashCommand(_ text: String) async {}
+    func sendComputerUsePrompt(_ task: String) async {}
 }
 
 private actor SnapshotComposerDefaults: ComposerDefaultPersisting {

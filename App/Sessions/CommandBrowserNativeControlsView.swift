@@ -50,6 +50,8 @@ struct CommandBrowserNativeControlsView: View {
                 NativeControlRow(title: "Off", detail: isFastModeEnabled ? nil : "Status"),
                 NativeControlRow(title: "Status", detail: isFastModeEnabled ? "On" : "Off"),
             ]
+        case .computer:
+            return []
         }
     }
 
@@ -75,7 +77,7 @@ struct CommandBrowserNativeControlsView: View {
             thinkingLevel
         case .fast:
             isFastModeEnabled ? "On" : "Off"
-        case .model, nil:
+        case .model, .computer, nil:
             nil
         }
 
@@ -95,6 +97,8 @@ struct CommandBrowserNativeControlsView: View {
                 rowChild(title: "Effort")
             case .fast:
                 rowChild(title: "Fast mode")
+            case .computer:
+                EmptyView()
             case nil:
                 EmptyView()
             }
@@ -256,7 +260,7 @@ struct CommandBrowserNativeControlsView: View {
         case .fast:
             (row.title == "On" && controls.isFastModeEnabled)
                 || (row.title == "Off" && !controls.isFastModeEnabled)
-        case .model, nil:
+        case .model, .computer, nil:
             false
         }
     }
@@ -306,7 +310,7 @@ struct CommandBrowserNativeControlsView: View {
                     finishNativeAction(effect)
                 }
             }
-        case .model, nil:
+        case .model, .computer, nil:
             break
         }
     }

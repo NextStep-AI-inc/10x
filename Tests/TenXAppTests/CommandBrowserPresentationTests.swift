@@ -66,9 +66,9 @@ private func matchNames(_ query: String) -> [String] {
 
 @Test func appRowsReplaceSameNamedOMPRowsAndLeadStableRootOrder() {
     let rows = CommandBrowserPresentation.rows(commands: browserFixtureCommands, mode: .activeIdle)
-    #expect(rows.prefix(3).map(\.canonicalName) == ["model", "effort", "fast"])
+    #expect(rows.prefix(4).map(\.canonicalName) == ["model", "effort", "fast", "computer"])
     #expect(rows.filter { $0.canonicalName == "model" }.count == 1)
-    #expect(rows.dropFirst(3).map(\.source).starts(with: [.commands]))
+    #expect(rows.dropFirst(4).map(\.source).starts(with: [.commands]))
 }
 
 @Test func appReplacementUsesCaseInsensitiveCanonicalEqualityOnly() {
@@ -79,7 +79,7 @@ private func matchNames(_ query: String) -> [String] {
         AvailableSlashCommand(name: "fa-st", source: .builtin),
     ], mode: .activeIdle)
 
-    #expect(rows.map(\.canonicalName) == ["model", "effort", "fast", "fa-st", "m:odel"])
+    #expect(rows.map(\.canonicalName) == ["model", "effort", "fast", "computer", "fa-st", "m:odel"])
 }
 
 @Test func sameSourceCanonicalCaseTiesHaveInputIndependentOrder() {
@@ -195,8 +195,28 @@ private func matchNames(_ query: String) -> [String] {
         selectedSource: .all,
         mode: .activeIdle)
 
-    #expect(result.rows.map(\.canonicalName) == ["model", "effort", "fast"])
+    #expect(result.rows.map(\.canonicalName) == ["model", "effort", "fast", "computer"])
     #expect(!result.sources.contains { $0.id == .other })
+}
+
+@Test func computerAppRowAppearsOnlyForActiveSessions() {
+    let activeIdle = CommandBrowserPresentation.rows(commands: [], mode: .activeIdle)
+    let activeStreaming = CommandBrowserPresentation.rows(commands: [], mode: .activeStreaming)
+    let newSession = CommandBrowserPresentation.rows(commands: [], mode: .newSession)
+    let unavailable = CommandBrowserPresentation.rows(commands: [], mode: .unavailable)
+
+    #expect(activeIdle.map(\.canonicalName).contains("computer"))
+    #expect(activeStreaming.map(\.canonicalName).contains("computer"))
+    #expect(!newSession.map(\.canonicalName).contains("computer"))
+    #expect(!unavailable.map(\.canonicalName).contains("computer"))
+}
+
+@Test func computerAppRowUsesTaskInputHint() {
+    let row = CommandBrowserPresentation.rows(commands: [], mode: .activeIdle)
+        .first { $0.canonicalName == "computer" }
+
+    #expect(row?.summary == "Run a task with computer use")
+    #expect(row?.inputHint == "<task>")
 }
 
 @Test func streamingRowsExplainWhenEachCommandWillRun() {

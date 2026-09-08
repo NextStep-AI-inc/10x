@@ -533,6 +533,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             failureFunction: "sendSlashCommand")
     }
 
+    func sendComputerUsePrompt(_ task: String) async {
+        await send(
+            text: ComputerUsePrompt.wrap(task),
+            behavior: runtimeState == .streaming ? streamingBehavior : nil,
+            attachmentDisposition: .clearImmediately,
+            failureFunction: "sendComputerUsePrompt")
+    }
+
     func sendComputerUseCue() async {
         guard handle != nil else { return }
         switch runtimeState {

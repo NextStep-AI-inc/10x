@@ -8,6 +8,7 @@ protocol ComposerCommandSession: AnyObject {
     var commandCatalogState: ComposerCommandCatalogState { get }
     var commandUpdates: AsyncStream<ComposerCommandCatalogState> { get }
     func sendSlashCommand(_ text: String) async
+    func sendComputerUsePrompt(_ task: String) async
 }
 
 enum CommandBrowserRoute: Equatable, Sendable {
@@ -241,6 +242,12 @@ final class ComposerCommandModel {
         guard let row = highlightedRow else { return .none }
         switch row.kind {
         case .app(let command):
+            if command == .computer {
+                let canonical = canonicalSlashText(for: row, trailingSpace: true)
+                draft = canonical
+                parsedDraft = CommandBrowserPresentation.parseDraft(canonical)
+                return .replaceDraft(canonical)
+            }
             route = .native(command)
             return .keepDraft
         case .omp:
@@ -298,6 +305,11 @@ final class ComposerCommandModel {
             }
             switch row.kind {
             case .app(let command):
+                if command == .computer {
+                    return await executeComputerUse(
+                        task: parsedDraft?.arguments ?? "",
+                        attachments: attachments)
+                }
                 route = .native(command)
                 return .keepDraft
             case .omp:
@@ -574,6 +586,21 @@ final class ComposerCommandModel {
         return "/\(row.canonicalName)\(suffix)"
     }
 
+    private func executeComputerUse(
+        task: String,
+        attachments: [ComposerAttachment]
+    ) async -> CommandBrowserEffect {
+        let wrapped = ComputerUsePrompt.wrap(task)
+        if let activeSession {
+            await activeSession.sendComputerUsePrompt(task)
+            dismissPresentation()
+            return .executed
+        }
+        onStartNewSession(wrapped, attachments)
+        dismissPresentation()
+        return .executed
+    }
+
     private func execute(row: CommandBrowserRow, attachments: [ComposerAttachment]) async -> CommandBrowserEffect {
         let text = canonicalSlashText(for: row)
         if let activeSession {
@@ -590,6 +617,11 @@ final class ComposerCommandModel {
     private func executeTypedDraft(attachments: [ComposerAttachment]) async -> CommandBrowserEffect {
         let text = canonicalTypedDraft()
         guard text.first == "/", catalogState != .unavailable else { return .none }
+        if let parsed = CommandBrowserPresentation.parseDraft(text),
+           parsed.query.lowercased() == AppCommand.computer.rawValue
+        {
+            return await executeComputerUse(task: parsed.arguments, attachments: attachments)
+        }
         if let activeSession {
             await activeSession.sendSlashCommand(text)
             dismissPresentation()
