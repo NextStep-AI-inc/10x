@@ -35,8 +35,8 @@ struct SessionHeaderView: View {
                     renameCurrentSession?()
                 }
 
-            if !controller.headerMetadata.presentationItems.isEmpty {
-                HStack(spacing: 14) {
+            HStack(spacing: 14) {
+                if !controller.headerMetadata.presentationItems.isEmpty {
                     ForEach(controller.headerMetadata.presentationItems) { item in
                         HStack(spacing: 4) {
                             Image(systemName: item.systemImage)
@@ -48,10 +48,13 @@ struct SessionHeaderView: View {
                         .accessibilityValue(item.value)
                     }
                 }
-                .font(TenXTypography.mono(size: 10))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                .lineLimit(1)
+                SessionActivityControl(
+                    state: controller.activityState,
+                    onActivate: controller.focusPendingRequest)
             }
+            .font(TenXTypography.mono(size: 10))
+            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            .lineLimit(1)
         }
         .frame(maxWidth: 480)
         .frame(height: 54)

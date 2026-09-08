@@ -18,6 +18,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private var initialAttachments: [ComposerAttachment] = []
     private var wasStoppedByUser = false
     private(set) var transcriptSearchRequest: TranscriptSearchRequest?
+    private(set) var transcriptNavigationRequest: TranscriptNavigationRequest?
     private(set) var runtimeState: SessionRuntimeState = .loading {
         didSet {
             guard runtimeState != oldValue else { return }
@@ -186,6 +187,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.harnessNoticeSummarizer = nil
         self.items = previewItems
         self.runtimeState = runtimeState
+        self.hasPendingUserInput = previewItems.contains { item in
+            guard case .extensionUI(let state) = item else { return false }
+            return state.requiresUserInput
+        }
         self.title = title
         self.modelName = modelName
         self.thinkingLevel = thinkingLevel
@@ -272,7 +277,25 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     func focusSearchResult(_ request: TranscriptSearchRequest?) {
         transcriptSearchRequest = request
-        if request != nil { viewport.isFollowingLatest = false }
+        if request != nil {
+            transcriptNavigationRequest = nil
+            viewport.isFollowingLatest = false
+        }
+    }
+
+    func focusTranscriptRow(_ request: TranscriptNavigationRequest?) {
+        transcriptNavigationRequest = request
+        guard request != nil else { return }
+        transcriptSearchRequest = nil
+        viewport.isFollowingLatest = false
+    }
+
+    func focusPendingRequest() {
+        guard let item = items.first(where: { item in
+            guard case .extensionUI(let state) = item else { return false }
+            return state.requiresUserInput
+        }) else { return }
+        focusTranscriptRow(TranscriptNavigationRequest(rowID: item.viewID))
     }
 
     func openExisting(_ metadata: SessionMetadata) async {
