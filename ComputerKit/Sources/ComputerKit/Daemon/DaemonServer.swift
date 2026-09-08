@@ -185,18 +185,21 @@ public final class DaemonServer {
             }
             if message["role"]?.stringValue == "supervision" {
                 client.role = .supervision
-                let replay = replayEvents()
-                lock.unlock()
-                let permissions = engine.preflightPermissions()
+                // Ack + replay enqueue under the lock: broadcast() snapshots
+                // supervision fds under the same lock, so no live event can
+                // interleave ahead of the replayed sessionStarted. Enqueues are
+                // queue appends only — no I/O happens under the lock.
                 let ack = try? JSONEncoder().encode(JSONValue.object(["role": .string("supervision"), "ok": .bool(true)])) + Data([0x0A])
                 if let ack { enqueueSupervisionWrite(fd, ack) }
                 // Late-attaching subscribers (10x opened while another harness is
                 // mid-control) get the current state as a replay of synthetic events.
-                for event in replay {
+                for event in replayEvents() {
                     if let line = try? event.jsonLine().data(using: .utf8) {
                         enqueueSupervisionWrite(fd, line + Data([0x0A]))
                     }
                 }
+                lock.unlock()
+                let permissions = engine.preflightPermissions()
                 broadcast(.permissions(screenRecording: permissions.screenRecording, accessibility: permissions.accessibility))
             } else {
                 let label = message["label"]?.stringValue

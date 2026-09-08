@@ -36,8 +36,7 @@ public final class SupervisionClient: @unchecked Sendable {
 
     private let socketPath: String
     private var listenTask: Task<Void, Never>?
-    // ponytail: listenLoop and stop() are the only writers; no lock needed beyond this.
-    nonisolated(unsafe) private var activeClient: DaemonClient?
+    private let clientBox = Locked<DaemonClient?>(nil)
 
     /// Side-channel for per-session forwarding — AppModel sets this to route
     /// events to the active session's ComputerUseController.
@@ -55,8 +54,11 @@ public final class SupervisionClient: @unchecked Sendable {
     public func stop() {
         listenTask?.cancel()
         listenTask = nil
-        activeClient?.close()
-        activeClient = nil
+        let client = clientBox.with { current -> DaemonClient? in
+            defer { current = nil }
+            return current
+        }
+        client?.close()
     }
 
     public func stopSession(_ sessionID: Int) {
@@ -77,13 +79,15 @@ public final class SupervisionClient: @unchecked Sendable {
     }
 
     private func listenLoop() async {
+        var published: DaemonClient?
         while !Task.isCancelled {
             do {
                 let client = try DaemonClient(socketPath: socketPath)
-                activeClient = client
+                published = client
+                clientBox.with { $0 = client }
                 if Task.isCancelled {
                     client.close()
-                    activeClient = nil
+                    clientBox.with { if $0 === client { $0 = nil } }
                     break
                 }
                 try client.send(.object(["role": .string("supervision")]))
@@ -101,7 +105,8 @@ public final class SupervisionClient: @unchecked Sendable {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-        activeClient = nil
+        // Identity-guarded: a stop()/start() race must not clear the new loop's client.
+        if let published { clientBox.with { if $0 === published { $0 = nil } } }
     }
 
     /// Pure reducer — the tested surface.
@@ -141,5 +146,20 @@ public final class SupervisionClient: @unchecked Sendable {
             }
         }
         onEvent?(event)
+    }
+}
+
+/// NSLock behind a sync `with` — legal from async contexts, where Swift 6
+/// forbids bare lock()/unlock(). Never call async or reenter inside `body`.
+private final class Locked<Value>: @unchecked Sendable {
+    private var value: Value
+    private let lock = NSLock()
+
+    init(_ value: Value) { self.value = value }
+
+    func with<R>(_ body: (inout Value) -> R) -> R {
+        lock.lock()
+        defer { lock.unlock() }
+        return body(&value)
     }
 }
