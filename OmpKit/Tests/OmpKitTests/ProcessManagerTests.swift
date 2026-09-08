@@ -1,5 +1,34 @@
 import Testing
+import Foundation
 @testable import OmpKit
+
+actor ActivationGate {
+    private var entered = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func markEntered() {
+        entered = true
+        let waiters = self.waiters
+        self.waiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+
+    func waitUntilEntered() async {
+        guard !entered else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func waitUntilReleased() async {
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
+
+    func release() {
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+}
 
 @Test func openIsIdempotentPerPath() async throws {
     let manager = fakeManager()
@@ -55,9 +84,75 @@ import Testing
     await manager.closeAll()
 }
 
+@Test func managerForwardsExtraArgumentsOnOpen() async throws {
+    let capture = ConfigurationCapture()
+    let manager = SessionProcessManager(
+        extraArguments: ["-e", "/fake/ext/index.ts"],
+        clientFactory: { configuration in
+            capture.append(configuration)
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+            fake.rawArgv = true
+            fake.cwd = nil
+            return RpcClient(configuration: fake)
+        })
+
+    _ = try await manager.open(sessionPath: "/tmp/extra-args.jsonl", cwd: "/tmp/project")
+
+    #expect(capture.snapshot().first?.extraArguments == ["-e", "/fake/ext/index.ts"])
+    await manager.closeAll()
+}
+
+@Test func managerDefaultsToNoninteractiveRPCMode() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture)
+
+    _ = try await manager.open(sessionPath: "/tmp/noninteractive.jsonl", cwd: "/tmp/project")
+
+    #expect(capture.snapshot().first?.supportsUserInteraction == false)
+    await manager.closeAll()
+}
+
+@Test func interactiveManagerForwardsCapabilityToOpenNewAndWarmClients() async throws {
+    let openCapture = ConfigurationCapture()
+    let openManager = interactiveCapturingManager(openCapture)
+    _ = try await openManager.open(sessionPath: "/tmp/interactive.jsonl", cwd: "/tmp/project")
+    #expect(openCapture.snapshot().first?.supportsUserInteraction == true)
+    await openManager.closeAll()
+
+    let newCapture = ConfigurationCapture()
+    let newManager = interactiveCapturingManager(newCapture)
+    _ = try await newManager.openNew(projectDirectory: "/tmp/project")
+    #expect(newCapture.snapshot().first?.supportsUserInteraction == true)
+    await newManager.closeAll()
+
+    let warmCapture = ConfigurationCapture()
+    let warmManager = interactiveCapturingManager(warmCapture)
+    _ = try await warmManager.warm(projectDirectory: "/tmp/project")
+    #expect(warmCapture.snapshot().first?.supportsUserInteraction == true)
+    await warmManager.closeAll()
+}
+
+private func interactiveCapturingManager(
+    _ capture: ConfigurationCapture
+) -> SessionProcessManager {
+    SessionProcessManager(
+        supportsUserInteraction: true,
+        clientFactory: { configuration in
+            capture.append(configuration)
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+            fake.rawArgv = true
+            fake.cwd = nil
+            return RpcClient(configuration: fake)
+        })
+}
+
 @Test func openNewForwardsProviderModelThinkingFlags() async throws {
     let capture = ConfigurationCapture()
-    let manager = capturingManager(capture, mode: "no-session-file")
+    let manager = capturingManager(capture)
     _ = try await manager.openNew(
         projectDirectory: "/tmp/project",
         provider: "anthropic",
@@ -72,20 +167,159 @@ import Testing
         "--provider", "anthropic",
         "--model", "claude-opus-4-8",
         "--thinking", "high",
+        "--session-dir", expectedFreshSessionDirectory(for: "/tmp/project"),
     ])
     await manager.closeAll()
 }
 
-@Test func openNewForwardsWorkingDirectoryAndUsesUniqueFallbackKeys() async throws {
+@Test func coldOpenNewStartsFreshAndPersisted() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ProcessManager-\(UUID().uuidString)", isDirectory: true)
+    let commandLog = root.appendingPathComponent("commands.log")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: commandLog.path, contents: nil)
+    defer { try? FileManager.default.removeItem(at: root) }
+
     let capture = ConfigurationCapture()
-    let manager = capturingManager(capture, mode: "no-session-file")
+    let manager = capturingManager(
+        capture,
+        mode: "command-log",
+        modeArguments: [commandLog.path])
+    _ = try await manager.openNew(projectDirectory: root.path)
+
+    let configuration = capture.snapshot().first
+    #expect(configuration?.noSession == false)
+    #expect(configuration?.resolvedArguments == [
+        "--mode", "rpc", "--no-title",
+        "--session-dir",
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".omp/agent/sessions")
+            .appendingPathComponent(SessionPathEncoding.bucketName(forCwd: root.path))
+            .path,
+    ])
+    let commands = try String(contentsOf: commandLog, encoding: .utf8)
+        .split(separator: "\n")
+        .map(String.init)
+    #expect(commands == ["negotiate_protocol", "get_state"])
+    await manager.closeAll()
+}
+
+@Test func openNewRejectsAnUnpersistedSession() async {
+    let clients = ClientCapture()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "no-session-file"]
+        fake.rawArgv = true
+        fake.cwd = nil
+        let client = RpcClient(configuration: fake)
+        clients.append(client)
+        return client
+    })
+    await #expect(throws: SessionProcessManagerError.self) {
+        _ = try await manager.openNew(projectDirectory: "/tmp/project")
+    }
+    #expect(await clients.snapshot().first?.exitCode != nil)
+}
+
+@Test func twoColdSessionsInOneProjectKeepDistinctRuntimeOwners() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture, mode: "unique-session-file")
     let first = try await manager.openNew(projectDirectory: "/tmp/project")
     let second = try await manager.openNew(projectDirectory: "/tmp/project")
+
     #expect(first.sessionPath != second.sessionPath)
-    let configurations = capture.snapshot()
-    #expect(configurations.count == 2)
-    #expect(configurations.allSatisfy { $0.cwd?.path == "/tmp/project" })
-    #expect(configurations.allSatisfy { $0.resumeSessionPath == nil })
+    #expect(first.client !== second.client)
+    #expect(await manager.handle(for: first.sessionPath)?.client === first.client)
+    #expect(await manager.handle(for: second.sessionPath)?.client === second.client)
+    #expect(capture.snapshot().allSatisfy { configuration in
+        configuration.noSession == false
+            && configuration.extraArguments == [
+                "--session-dir",
+                expectedFreshSessionDirectory(for: "/tmp/project"),
+            ]
+    })
+    await manager.closeAll()
+}
+
+@Test func duplicateNewSessionPathPreservesTheExistingOwner() async throws {
+    let clients = ClientCapture()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+        fake.rawArgv = true
+        fake.cwd = nil
+        let client = RpcClient(configuration: fake)
+        clients.append(client)
+        return client
+    })
+
+    let first = try await manager.openNew(projectDirectory: "/tmp/project")
+    do {
+        _ = try await manager.openNew(projectDirectory: "/tmp/project")
+        Issue.record("Expected duplicate session path to be rejected")
+    } catch let error as SessionProcessManagerError {
+        #expect(error == .duplicateSessionPath("/tmp/fake.jsonl"))
+    }
+
+    let spawned = clients.snapshot()
+    #expect(spawned.count == 2)
+    #expect(await manager.handle(for: first.sessionPath)?.client === first.client)
+    #expect(await first.client.exitCode == nil)
+    #expect(await spawned[1].exitCode != nil)
+    await manager.closeAll()
+}
+
+@Test func joinedOpenSharesDuplicateActivationFailure() async throws {
+    let gate = ActivationGate()
+    let clients = ClientCapture()
+    let manager = SessionProcessManager(
+        clientFactory: { configuration in
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+            fake.rawArgv = true
+            fake.cwd = nil
+            let client = RpcClient(configuration: fake)
+            clients.append(client)
+            return client
+        },
+        beforeWarmActivation: {
+            await gate.markEntered()
+            await gate.waitUntilReleased()
+        },
+        beforeWarmRegistration: nil)
+
+    _ = try await manager.warm(projectDirectory: "/tmp/project")
+    let owner = Task { () throws -> SessionProcessManager.Handle in
+        try await manager.open(sessionPath: "/tmp/fake.jsonl", cwd: "/tmp/project")
+    }
+    await gate.waitUntilEntered()
+    let joined = Task { () throws -> SessionProcessManager.Handle in
+        try await manager.open(sessionPath: "/tmp/fake.jsonl", cwd: "/tmp/project")
+    }
+    let claimant = try await manager.openNew(projectDirectory: "/tmp/project")
+    await gate.release()
+
+    do {
+        _ = try await owner.value
+        Issue.record("Expected owner to reject duplicate session path")
+    } catch let error as SessionProcessManagerError {
+        #expect(error == .duplicateSessionPath("/tmp/fake.jsonl"))
+    }
+    do {
+        _ = try await joined.value
+        Issue.record("Expected joined open to reject duplicate session path")
+    } catch let error as SessionProcessManagerError {
+        #expect(error == .duplicateSessionPath("/tmp/fake.jsonl"))
+    }
+
+    #expect(await manager.handle(for: claimant.sessionPath)?.client === claimant.client)
+    let captured = clients.snapshot()
+    #expect(captured.count == 2)
+    #expect(await captured[0].exitCode != nil)
+    #expect(await captured[1].exitCode == nil)
     await manager.closeAll()
 }
 
@@ -278,4 +512,77 @@ import Testing
         return nil
     } ?? nil
     #expect(path == nil)
+}
+
+@Test func eventBacklogOverflowIsReportedAsAnUnexpectedExitWithItsDiagnostic() async throws {
+    let hooks: RpcClientTestHooks = {
+        var hooks = RpcClientTestHooks()
+        hooks.eventQueueLimits = BoundedRecordQueueLimits(
+            memoryBytes: 8_192, memoryRecords: 4, spillBytes: 65_536)
+        return hooks
+    }()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3", fixtureURL("fake_server.py").path, "event-flood", "400", "4096",
+        ]
+        fake.rawArgv = true
+        return RpcClient(configuration: fake, testHooks: hooks)
+    })
+    let handle = try await manager.open(sessionPath: "/tmp/flood.jsonl", cwd: "/tmp")
+    let exits = manager.unexpectedExits
+
+    // Nobody reads `events`; the flood overflows the small budget and the
+    // client stops the session itself.
+    _ = try? await handle.client.send(.getState(), timeout: .seconds(30))
+
+    let exit = await withTimeout(.seconds(10)) { () -> SessionProcessManager.UnexpectedExit? in
+        for await exit in exits { return exit }
+        return nil
+    } ?? nil
+    #expect(exit?.sessionPath == "/tmp/flood.jsonl")
+    #expect(exit?.stderrTail.hasPrefix("[OmpKit:RpcClient] The event backlog exceeded its") == true)
+    #expect(await manager.handle(for: "/tmp/flood.jsonl") == nil)
+    await manager.closeAll()
+}
+
+private final class ManagerBox: @unchecked Sendable {
+    var manager: SessionProcessManager?
+}
+
+@Test func exitNoticedBeforeAReopenIsNotReportedAgainstTheReplacement() async throws {
+    // "background-exit" exits one second after `set_subagent_subscription`,
+    // which only the app sends, so the first child dies on request and the
+    // second one stays alive.
+    let box = ManagerBox()
+    let manager = SessionProcessManager(
+        clientFactory: { configuration in
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "background-exit"]
+            fake.rawArgv = true
+            return RpcClient(configuration: fake)
+        },
+        beforeWarmActivation: nil,
+        beforeWarmRegistration: nil,
+        beforeExitReport: {
+            _ = try? await box.manager?.open(sessionPath: "/tmp/reopened.jsonl", cwd: "/tmp")
+        })
+    box.manager = manager
+    let first = try await manager.open(sessionPath: "/tmp/reopened.jsonl", cwd: "/tmp")
+    let exits = manager.unexpectedExits
+    _ = try await first.client.send(.setSubagentSubscription(level: .progress))
+
+    let reported = await withTimeout(.seconds(6)) { () -> Bool in
+        for await _ in exits { return true }
+        return false
+    }
+    // nil: the wait timed out without a report, which is the required outcome.
+    #expect(reported == nil)
+    let replacement = await manager.handle(for: "/tmp/reopened.jsonl")
+    #expect(replacement != nil)
+    #expect(replacement?.client !== first.client)
+    #expect(await replacement?.client.exitCode == nil)
+    await manager.closeAll()
 }

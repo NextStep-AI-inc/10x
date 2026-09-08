@@ -21,7 +21,7 @@ struct TurnActivityView: View {
         case .message(let message):
             // Only a live assistant message is output in progress. A user
             // message is the thing being answered, so the run is still silent.
-            return message.role != .assistant || message.isFinal
+            return message.role != .assistant || message.isFinal || message.document.blocks.isEmpty
         case .tool(let presentation):
             return presentation.phase == .complete || presentation.phase == .failed
         case .subagent(let presentation):

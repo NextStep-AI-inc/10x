@@ -5,20 +5,60 @@ struct SourcePresentation: Equatable, Sendable {
     let language: String?
     let text: String
     let lines: [SourceLine]
+    let contentID: UUID
 
     init(language: String?, text: String) {
         self.language = language
         self.text = text
-        lines = SourceTokenizer.lines(text, language: language)
+        contentID = UUID()
+        lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .enumerated()
+            .map { offset, line in
+                SourceLine(number: offset + 1, text: String(line))
+            }
+    }
+
+    init(language: String?, text: String, lines: [SourceLine], contentID: UUID = UUID()) {
+        self.language = language
+        self.text = text
+        self.lines = lines
+        self.contentID = contentID
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.language == rhs.language && lhs.text == rhs.text && lhs.lines == rhs.lines
     }
 }
 
 struct SourceLine: Equatable, Sendable, Identifiable {
     let number: Int
     let spans: [SourceSpan]
+    let rawText: String
+
+    init(number: Int, spans: [SourceSpan]) {
+        self.number = number
+        self.spans = spans
+        rawText = spans.count == 1 ? spans[0].text : spans.map(\.text).joined()
+    }
+
+    init(number: Int, text: String) {
+        self.number = number
+        rawText = text
+        spans = [SourceSpan(text: text, role: .plain)]
+    }
 
     var id: Int { number }
-    var plainText: String { spans.map(\.text).joined() }
+    var plainText: String { rawText }
+
+    func characterCount(cappedAt limit: Int) -> Int {
+        var count = 0
+        var index = rawText.startIndex
+        while index < rawText.endIndex, count < limit {
+            rawText.formIndex(after: &index)
+            count += 1
+        }
+        return count
+    }
 }
 
 struct SourceSpan: Equatable, Sendable {
@@ -309,12 +349,33 @@ enum SourceTokenizer {
     }
 }
 
+struct SourceRenderState: Equatable {
+    private(set) var contentID: UUID?
+    var reveal: ProgressiveReveal
+
+    init(contentID: UUID? = nil, initialLimit: Int) {
+        self.contentID = contentID
+        reveal = ProgressiveReveal(initialLimit: initialLimit, pageSize: 200)
+    }
+
+    func effective(for contentID: UUID, initialLimit: Int) -> Self {
+        guard self.contentID == contentID else {
+            return Self(contentID: contentID, initialLimit: initialLimit)
+        }
+        return self
+    }
+
+    mutating func reset(contentID: UUID, initialLimit: Int) {
+        guard self.contentID != contentID else { return }
+        self = Self(contentID: contentID, initialLimit: initialLimit)
+    }
+}
+
 struct SourceSurface: View {
     let presentation: SourcePresentation
     let previewLineLimit: Int?
-
-    @State private var isWrapped: Bool
-    @State private var isShowingAll = false
+    let isInitiallyWrapped: Bool
+    @State private var renderState: SourceRenderState
 
     init(
         presentation: SourcePresentation,
@@ -323,30 +384,115 @@ struct SourceSurface: View {
     ) {
         self.presentation = presentation
         self.previewLineLimit = previewLineLimit
-        _isWrapped = State(initialValue: isInitiallyWrapped)
+        self.isInitiallyWrapped = isInitiallyWrapped
+        _renderState = State(initialValue: SourceRenderState(
+            contentID: presentation.contentID,
+            initialLimit: previewLineLimit ?? 200))
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            SourceCard(
+                presentation: presentation,
+                lines: Array(visibleLines),
+                isInitiallyWrapped: isInitiallyWrapped)
+            ProgressiveRevealButton(
+                reveal: Binding(
+                    get: { effectiveRenderState.reveal },
+                    set: {
+                        renderState.reset(
+                            contentID: presentation.contentID,
+                            initialLimit: initialLimit)
+                        renderState.reveal = $0
+                    }),
+                total: presentation.lines.count,
+                noun: "lines",
+                accessibilityNoun: "source lines")
+        }
+        .task(id: presentation.contentID) {
+            renderState.reset(
+                contentID: presentation.contentID,
+                initialLimit: initialLimit)
+        }
+    }
+
+    private var visibleLines: ArraySlice<SourceLine> {
+        return presentation.lines.prefix(Self.visibleLineCount(
+            total: presentation.lines.count,
+            previewLineLimit: previewLineLimit,
+            reveal: effectiveRenderState.reveal))
+    }
+
+    private var initialLimit: Int { previewLineLimit ?? 200 }
+
+    private var effectiveRenderState: SourceRenderState {
+        renderState.effective(
+            for: presentation.contentID,
+            initialLimit: initialLimit)
+    }
+
+    nonisolated static func visibleLineCount(
+        total: Int,
+        previewLineLimit: Int?,
+        reveal: ProgressiveReveal
+    ) -> Int {
+        let boundedTotal = max(0, total)
+        let previewCount = min(boundedTotal, previewLineLimit ?? 200)
+        return max(previewCount, reveal.visibleCount(total: boundedTotal))
+    }
+
+}
+
+struct SourceCard: View {
+    let presentation: SourcePresentation
+    let lines: [SourceLine]
+    let isInitiallyWrapped: Bool
+
+    @State private var isWrapped: Bool
+    @StateObject private var pageLoader: SourcePageLoader
+
+    init(
+        presentation: SourcePresentation,
+        lines: [SourceLine],
+        isInitiallyWrapped: Bool = true
+    ) {
+        self.presentation = presentation
+        self.lines = lines
+        self.isInitiallyWrapped = isInitiallyWrapped
+        _isWrapped = State(initialValue: isInitiallyWrapped)
+        _pageLoader = StateObject(wrappedValue: SourcePageLoader(
+            contentID: presentation.contentID,
+            initialLines: lines,
+            language: presentation.language))
+    }
+
+    var body: some View {
+        let contentID = presentation.contentID
+        VStack(alignment: .leading, spacing: 8) {
             header
             if isWrapped {
-                rows
+                rows(contentID: contentID)
             } else {
                 ScrollView(.horizontal) {
-                    rows.fixedSize(horizontal: true, vertical: false)
+                    rows(contentID: contentID).fixedSize(horizontal: true, vertical: false)
                 }
-            }
-            if hasHiddenLines {
-                Button(isShowingAll ? "Show less" : "Show all \(presentation.lines.count) lines") {
-                    isShowingAll.toggle()
-                }
-                .buttonStyle(GhostActionStyle(horizontalPadding: 0))
-                .accessibilityLabel(isShowingAll ? "Show fewer source lines" : "Show all source lines")
             }
         }
         .padding(10)
         .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
         .clipShape(RoundedRectangle(cornerRadius: 4))
+        .task(id: SourceLoadID(
+            contentID: contentID,
+            lineNumbers: lines.map(\.number))) {
+            pageLoader.reset(
+                contentID: contentID,
+                initialLines: lines,
+                language: presentation.language)
+            await pageLoader.load(
+                lines: lines,
+                language: presentation.language,
+                contentID: contentID)
+        }
     }
 
     private var header: some View {
@@ -355,41 +501,29 @@ struct SourceSurface: View {
                 .font(TenXTypography.mono(size: 10, weight: .medium))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             Spacer(minLength: 12)
-            Button(isWrapped ? "Scroll" : "Wrap") {
-                isWrapped.toggle()
-            }
-            .buttonStyle(GhostActionStyle())
-            .accessibilityLabel(isWrapped
-                ? "Use horizontal scrolling for source"
-                : "Wrap source lines")
+            Button(isWrapped ? "Scroll" : "Wrap") { isWrapped.toggle() }
+                .buttonStyle(GhostActionStyle())
+                .accessibilityLabel(isWrapped
+                    ? "Use horizontal scrolling for source"
+                    : "Wrap source lines")
             Button("Copy") { copy() }
                 .buttonStyle(GhostActionStyle())
                 .accessibilityLabel("Copy source")
         }
     }
 
-    private var rows: some View {
+    private func rows(contentID: UUID) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            ForEach(visibleLines) { line in
+            ForEach(lines) { line in
                 SourceLineView(
                     line: line,
+                    spans: pageLoader.spans(for: line, contentID: contentID) ?? line.spans,
                     showsNumber: presentation.lines.count > 1,
                     isWrapped: isWrapped)
+                    .id(SourceLineID(contentID: contentID, number: line.number))
             }
         }
         .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
-    }
-
-    private var visibleLines: ArraySlice<SourceLine> {
-        guard let previewLineLimit, !isShowingAll else {
-            return presentation.lines[...]
-        }
-        return presentation.lines.prefix(previewLineLimit)
-    }
-
-    private var hasHiddenLines: Bool {
-        guard let previewLineLimit else { return false }
-        return presentation.lines.count > previewLineLimit
     }
 
     private func copy() {
@@ -398,26 +532,86 @@ struct SourceSurface: View {
     }
 }
 
-private struct SourceLineView: View {
+private struct SourceLoadID: Hashable {
+    let contentID: UUID
+    let lineNumbers: [Int]
+}
+
+private struct SourceLineID: Hashable {
+    let contentID: UUID
+    let number: Int
+}
+
+struct SourceLineRenderPresentation: Equatable, Sendable {
+    static let disclosureAccessibilityNoun = "source line characters"
+
+    let spans: [SourceSpan]
+    let visibleText: String
+    let accessibilityText: String
+    let hasMore: Bool
+    let progressiveTotal: Int
+
+    init(line: SourceLine, spans: [SourceSpan], characterLimit: Int, pageSize: Int = 2_048) {
+        let limit = max(0, characterLimit)
+        self.spans = Self.prefix(spans, characterLimit: limit)
+        visibleText = self.spans.map(\.text).joined()
+        accessibilityText = visibleText
+        let boundedCount = line.characterCount(cappedAt: limit + pageSize + 1)
+        hasMore = boundedCount > limit
+        progressiveTotal = hasMore ? min(boundedCount, limit + pageSize) : limit
+    }
+
+    func accessibilityLabel(lineNumber: Int) -> String {
+        "Line \(lineNumber), \(accessibilityText)"
+            + (hasMore ? ". Truncated. Show more characters to continue." : "")
+    }
+
+    private static func prefix(_ spans: [SourceSpan], characterLimit: Int) -> [SourceSpan] {
+        var remaining = characterLimit
+        var result: [SourceSpan] = []
+        for span in spans where remaining > 0 {
+            let text = String(span.text.prefix(remaining))
+            guard !text.isEmpty else { continue }
+            result.append(SourceSpan(text: text, role: span.role))
+            remaining -= text.count
+        }
+        return result
+    }
+}
+
+struct SourceLineView: View {
     let line: SourceLine
+    let spans: [SourceSpan]
     let showsNumber: Bool
     let isWrapped: Bool
+    @State private var reveal = ProgressiveReveal(initialLimit: 2_048, pageSize: 2_048)
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            if showsNumber {
-                Text(String(line.number))
-                    .font(TenXTypography.mono(size: 10))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    .frame(width: 28, alignment: .trailing)
-                    .accessibilityHidden(true)
+        let presentation = SourceLineRenderPresentation(
+            line: line,
+            spans: spans,
+            characterLimit: reveal.limit)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 8) {
+                if showsNumber {
+                    Text(String(line.number))
+                        .font(TenXTypography.mono(size: 10))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                        .frame(width: 28, alignment: .trailing)
+                        .accessibilityHidden(true)
+                }
+                SourceTextView(spans: presentation.spans, isWrapped: isWrapped)
+                    .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
             }
-            SourceTextView(spans: line.spans, isWrapped: isWrapped)
-                .frame(maxWidth: isWrapped ? .infinity : nil, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(presentation.accessibilityLabel(lineNumber: line.number))
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: presentation.progressiveTotal,
+                noun: "characters",
+                accessibilityNoun: SourceLineRenderPresentation.disclosureAccessibilityNoun)
         }
         .frame(minHeight: 16, alignment: .topLeading)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Line \(line.number), \(line.plainText)")
     }
 }
 

@@ -20,7 +20,8 @@ struct ProviderConnectionRowPresentation: Equatable, Sendable {
         provider: ProviderLoginProvider,
         hasCredentialIssue: Bool,
         activeLoginProviderID: String?,
-        loginMessage: String?
+        loginMessage: String?,
+        loginMessageIsError: Bool
     ) -> ProviderConnectionRowPresentation {
         let isConnecting = activeLoginProviderID == provider.id
         let action: ProviderConnectionAction
@@ -30,7 +31,7 @@ struct ProviderConnectionRowPresentation: Equatable, Sendable {
             action = .unavailable
         } else if provider.isAuthenticated {
             action = .connected
-        } else if loginMessage != nil {
+        } else if loginMessage != nil && loginMessageIsError {
             action = .retry
         } else if hasCredentialIssue {
             action = .reconnect
@@ -88,6 +89,7 @@ struct ProviderConnectionRowView: View {
     let credentialIssue: ProviderCredentialIssue?
     let activeLoginProviderID: String?
     let loginMessage: String?
+    let loginMessageIsError: Bool
     let onConnect: () -> Void
     let onCancel: () -> Void
 
@@ -157,7 +159,8 @@ struct ProviderConnectionRowView: View {
             provider: provider,
             hasCredentialIssue: credentialIssue != nil,
             activeLoginProviderID: activeLoginProviderID,
-            loginMessage: loginMessage)
+            loginMessage: loginMessage,
+            loginMessageIsError: loginMessageIsError)
     }
 
     private var actionTitle: String {

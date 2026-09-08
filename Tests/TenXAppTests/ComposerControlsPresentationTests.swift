@@ -175,6 +175,38 @@ private let noEffortModel = ComposerModelInfo(
     #expect(sections.flatMap(\.models).count == 2)
 }
 
+@Test func pickerSectionsPutFilteredFavoritesFirstWithoutDuplicatingThem() {
+    let favorites = [pickerCatalog[3], pickerCatalog[0]]
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: pickerCatalog,
+        recents: [pickerCatalog[0], pickerCatalog[2]],
+        favorites: favorites,
+        query: "opus")
+
+    #expect(sections.map(\.id) == ["favorites"])
+    #expect(sections[0].title == "FAVORITES")
+    #expect(sections[0].showsProviderTag)
+    #expect(sections[0].models.map(\.id) == [
+        "cursor/claude-opus-4-5",
+        "anthropic/claude-opus-4-5",
+    ])
+    #expect(Set(sections.flatMap(\.models).map(\.id)).count == 2)
+}
+
+@Test func pickerSectionsRemoveFavoritesFromRecentsAndProviderGroups() {
+    let favorite = pickerCatalog[0]
+    let sections = ComposerControlsPresentation.pickerSections(
+        models: pickerCatalog,
+        recents: [favorite, pickerCatalog[2]],
+        favorites: [favorite],
+        query: "")
+
+    #expect(sections.map(\.id) == ["favorites", "recent", "anthropic", "openai-codex", "cursor"])
+    #expect(sections[0].models.map(\.id) == [favorite.id])
+    #expect(sections[1].models.map(\.id) == [pickerCatalog[2].id])
+    #expect(sections.dropFirst(2).flatMap(\.models).contains(where: { $0.id == favorite.id }) == false)
+}
+
 @Test func pickerSectionsDropProvidersWithNoMatches() {
     let sections = ComposerControlsPresentation.pickerSections(
         models: pickerCatalog, recents: [], query: "sonnet")
@@ -213,6 +245,40 @@ private let noEffortModel = ComposerModelInfo(
     #expect(ModelPickerMetrics.bottomWidth(triggerWidth: 120) == 120)
     #expect(ModelPickerMetrics.bottomWidth(triggerWidth: 900)
         == ModelPickerMetrics.panelWidth)
+}
+
+@Test func effortLayoutUsesEveryAvailableColumnAtTheApprovedWidths() {
+    #expect(ModelPickerMetrics.effortColumnCount(optionCount: 6, panelWidth: 440) == 6)
+    #expect(ModelPickerMetrics.effortRowCount(optionCount: 6, panelWidth: 440) == 1)
+    #expect(ModelPickerMetrics.effortColumnCount(optionCount: 6, panelWidth: 360) == 3)
+    #expect(ModelPickerMetrics.effortRowCount(optionCount: 6, panelWidth: 360) == 2)
+    #expect(ModelPickerMetrics.effortColumnCount(optionCount: 4, panelWidth: 360) == 4)
+    #expect(ModelPickerMetrics.effortRowCount(optionCount: 4, panelWidth: 360) == 1)
+}
+
+@Test func panelWidthUsesTheAvailableWindowSpaceUpToTheApprovedWidth() {
+    #expect(ModelPickerMetrics.resolvedPanelWidth(availableWidth: 800) == 440)
+    #expect(ModelPickerMetrics.resolvedPanelWidth(availableWidth: 360) == 360)
+    #expect(ModelPickerMetrics.resolvedPanelWidth(availableWidth: 200) == 200)
+}
+
+@Test func effortLabelsShowTheCompleteSupportedNames() {
+    #expect(["auto", "low", "medium", "high", "xhigh", "max"].map(
+        ModelPickerMetrics.effortLabel) == ["Auto", "Low", "Medium", "High", "Extra high", "Max"])
+}
+
+@Test func settingsHeightAccountsForTheEffortHeadingRowsAndFastMode() {
+    #expect(ModelPickerMetrics.settingsHeight(optionCount: 6, panelWidth: 440, showsFastMode: true)
+        == ModelPickerMetrics.separatorHeight
+            + ModelPickerMetrics.effortTitleHeight
+            + ModelPickerMetrics.effortSegmentHeight
+            + ModelPickerMetrics.settingsRowHeight)
+    #expect(ModelPickerMetrics.settingsHeight(optionCount: 6, panelWidth: 360, showsFastMode: true)
+        == ModelPickerMetrics.separatorHeight
+            + ModelPickerMetrics.effortTitleHeight
+            + 2 * ModelPickerMetrics.effortSegmentHeight
+            + ModelPickerMetrics.effortGridSpacing
+            + ModelPickerMetrics.settingsRowHeight)
 }
 
 @Test func flatIndexCountsOnlyTheRowsAboveASection() {

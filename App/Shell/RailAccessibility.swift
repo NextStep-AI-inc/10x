@@ -3,6 +3,10 @@ enum RailAccessibility {
         [title, project, state].joined(separator: ", ")
     }
 
+    static func projectHint(_ displayName: String) -> String {
+        "Starts a new session in \(displayName)"
+    }
+
     static func disclosureLabel(hiddenCount: Int, isExpanded: Bool) -> String {
         isExpanded ? "Show recent 5 sessions" : "Show \(hiddenCount) more sessions"
     }

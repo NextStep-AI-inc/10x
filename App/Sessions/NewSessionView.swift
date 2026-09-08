@@ -4,8 +4,6 @@ import SwiftUI
 struct NewSessionView: View {
     let model: AppModel
 
-    @State private var draft = ""
-    @State private var attachments: [ComposerAttachment] = []
     @State private var flyout: ComposerFlyout?
 
     var body: some View {
@@ -13,21 +11,26 @@ struct NewSessionView: View {
             Spacer(minLength: 0)
 
             ComposerView(
-                draft: $draft,
-                attachments: $attachments,
+                draft: Bindable(model).newSessionDraft,
+                attachments: Bindable(model).newSessionAttachments,
                 flyout: $flyout,
                 presentation: .newSession(
                     projectURL: model.selectedProjectURL,
                     projectURLs: ProjectSessionGrouper.choosableProjectURLs(
                         from: model.sessions,
-                        including: model.selectedProjectURL),
+                        including: model.selectedProjectURL,
+                        knownProjectURLs: model.knownProjectURLs),
                     onChooseProject: model.chooseProject,
                     onAddExistingFolder: addExistingFolder),
                 controls: model.composerControls,
+                commands: model.composerCommands,
                 controlsMode: .newSession,
+                focusRequest: model.newSessionFocusRequest,
                 onSend: {
                     flyout = nil
-                    model.startNewSession(prompt: draft, attachments: attachments)
+                    model.startNewSession(
+                        prompt: model.newSessionDraft,
+                        attachments: model.newSessionAttachments)
                 })
             .frame(maxWidth: 780)
         }
@@ -37,6 +40,7 @@ struct NewSessionView: View {
         .onExitCommand {
             flyout = nil
         }
+        .onChange(of: model.newSessionFocusRequest) { _, _ in flyout = nil }
     }
 
     private func addExistingFolder() {

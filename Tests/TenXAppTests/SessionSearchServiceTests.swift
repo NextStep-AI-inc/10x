@@ -26,7 +26,7 @@ import Testing
     #expect(messageResults.first?.entryID == "user-1")
     #expect(messageResults.first?.excerpt == "Summarize the release notes")
 
-    let toolResults = await service.search(query: "absolutePath", sessions: [metadata])
+    let toolResults = await service.search(query: "README.md", sessions: [metadata])
     #expect(toolResults.map(\.kind) == [.tool])
     #expect(toolResults.first?.entryID == "tool-1")
     #expect(toolResults.first?.excerpt == "read /tmp/README.md 80")
@@ -48,16 +48,65 @@ import Testing
     #expect(results.map(\.entryID) == ["message-1"])
 }
 
+@Test func searchExcludesInactiveBranchEntries() async throws {
+    let directory = try makeSearchTestDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionURL = directory.appending(path: "branches.jsonl")
+    let fixture = """
+    {"type":"session","id":"branches","cwd":"/tmp","timestamp":"2026-08-24T12:00:00Z","version":3}
+    {"type":"message","id":"root","parentId":null,"timestamp":"2026-08-24T12:01:00Z","message":{"role":"user","content":"shared root"}}
+    {"type":"message","id":"inactive","parentId":"root","timestamp":"2026-08-24T12:02:00Z","message":{"role":"assistant","content":"discarded heliotrope branch"}}
+    {"type":"message","id":"active","parentId":"root","timestamp":"2026-08-24T12:03:00Z","message":{"role":"assistant","content":"kept saffron branch"}}
+    """
+    let metadata = try writeSession(fixture, to: sessionURL)
+    let service = SessionSearchService(
+        databaseURL: directory.appending(path: "SearchIndex-v1.sqlite"))
+
+    #expect(await service.search(query: "discarded heliotrope", sessions: [metadata]).isEmpty)
+    #expect(await service.search(query: "kept saffron", sessions: [metadata]).map(\.entryID) == ["active"])
+}
+
+@Test func searchIndexesOnlyRenderableContent() async throws {
+    let directory = try makeSearchTestDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionURL = directory.appending(path: "renderable.jsonl")
+    let fixture = """
+    {"type":"session","id":"renderable","cwd":"/tmp","timestamp":"2026-08-24T12:00:00Z","version":3}
+    {"type":"message","id":"assistant-entry","parentId":null,"timestamp":"2026-08-24T12:01:00Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"private ultramarine reasoning"},{"type":"text","text":"Visible résumé answer"},{"type":"toolCall","id":"read-call","name":"read","arguments":{"absolutePath":"/tmp/Cobalt.swift","lineLimit":80}}]}}
+    {"type":"message","id":"result-entry","parentId":"assistant-entry","timestamp":"2026-08-24T12:02:00Z","message":{"role":"toolResult","toolCallId":"read-call","toolName":"read","content":[{"type":"text","text":"rendered amber output"}]}}
+    """
+    let metadata = try writeSession(fixture, to: sessionURL)
+    let service = SessionSearchService(
+        databaseURL: directory.appending(path: "SearchIndex-v1.sqlite"))
+
+    let messageResults = await service.search(query: "resume answer", sessions: [metadata])
+    #expect(messageResults.map(\.entryID) == ["assistant-entry"])
+
+    let argumentResults = await service.search(query: "Cobalt.swift", sessions: [metadata])
+    #expect(argumentResults.map(\.entryID) == ["read-call"])
+    #expect(argumentResults.map(\.kind) == [.tool])
+
+    let resultResults = await service.search(query: "amber output", sessions: [metadata])
+    #expect(resultResults.map(\.entryID) == ["read-call"])
+    #expect(await service.search(query: "private ultramarine", sessions: [metadata]).isEmpty)
+    #expect(await service.search(query: "absolutePath", sessions: [metadata]).isEmpty)
+    #expect(await service.search(query: "lineLimit", sessions: [metadata]).isEmpty)
+}
+
 @Test func searchPreservesSessionMessageToolPathAndSubstringResults() async throws {
     let directory = try makeSearchTestDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let sessionURL = directory.appending(path: "searchable-session-path.jsonl")
+    // The temporary path is searchable too; keep it from matching the numeric tool query.
+    var lineLimit = 80
+    while directory.path.contains(String(lineLimit)) { lineLimit += 1 }
     let fixture = completeSearchFixture(
         sessionID: "shape-session",
         title: "Migration work",
         messageID: "shape-message",
         messageText: "Summarize the release notes",
-        toolID: "shape-tool")
+        toolID: "shape-tool",
+        lineLimit: lineLimit)
     let metadata = try writeSession(fixture, to: sessionURL, title: "Migration work")
     let service = SessionSearchService(
         databaseURL: directory.appending(path: "SearchIndex-v1.sqlite"))
@@ -67,8 +116,8 @@ import Testing
         ("searchable-session-path", .session, nil),
         ("release notes", .message, "shape-message"),
         ("lease not", .message, "shape-message"),
-        ("toolCall", .tool, "shape-tool"),
-        ("lineLimit", .tool, "shape-tool"),
+        ("read", .tool, "shape-tool"),
+        (String(lineLimit), .tool, "shape-tool"),
         ("README.md", .tool, "shape-tool"),
     ]
 
@@ -338,11 +387,12 @@ private func completeSearchFixture(
     title: String,
     messageID: String,
     messageText: String,
-    toolID: String
+    toolID: String,
+    lineLimit: Int = 80
 ) -> String {
     """
     {"type":"session","id":"\(sessionID)","cwd":"/tmp/Prime Radiant","timestamp":"2026-08-24T12:00:00Z","version":3,"title":"\(title)"}
-    {"type":"message","id":"\(messageID)","timestamp":"2026-08-24T12:01:00Z","message":{"role":"user","content":[{"type":"text","text":"\(messageText)"}]}}
-    {"type":"message","id":"\(toolID)","timestamp":"2026-08-24T12:02:00Z","message":{"role":"assistant","content":[{"type":"toolCall","name":"read","arguments":{"absolutePath":"/tmp/README.md","lineLimit":80}}]}}
+    {"type":"message","id":"\(messageID)","parentId":null,"timestamp":"2026-08-24T12:01:00Z","message":{"role":"user","content":[{"type":"text","text":"\(messageText)"}]}}
+    {"type":"message","id":"tool-source-entry","parentId":"\(messageID)","timestamp":"2026-08-24T12:02:00Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"\(toolID)","name":"read","arguments":{"absolutePath":"/tmp/README.md","lineLimit":\(lineLimit)}}]}}
     """
 }

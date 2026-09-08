@@ -5,27 +5,12 @@ struct ProviderSetupView: View {
     let onContinue: () -> Void
 
     var body: some View {
-        GeometryReader { _ in
-            VStack(alignment: .leading, spacing: 26) {
-                BrandWordmark(width: 48)
+        VStack(alignment: .leading, spacing: 26) {
+            providerList
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Connect a provider")
-                        .font(TenXTypography.title(size: 38))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                    Text("Choose at least one provider to start sessions.")
-                        .font(TenXTypography.body(size: 14))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                }
-
-                providerList
-
-                Button("Continue", action: onContinue)
-                    .buttonStyle(GhostActionStyle())
-                    .disabled(!model.hasAuthenticatedProvider)
-            }
-            .frame(width: 470, alignment: .leading)
-            .padding(56)
+            Button("Continue", action: onContinue)
+                .buttonStyle(GhostActionStyle())
+                .disabled(!model.hasAuthenticatedProvider)
         }
         .sheet(item: extensionSheetBinding) { request in
             ExtensionInputSheet(
@@ -46,7 +31,7 @@ struct ProviderSetupView: View {
     @ViewBuilder
     private var providerList: some View {
         if model.isLoadingProviders && model.providers.isEmpty {
-            ProviderSetupLoadingRows()
+            OnboardingSkeletonRows()
         } else if let providerMessage = model.providerMessage {
             VStack(alignment: .leading, spacing: 8) {
                 Text(providerMessage)
@@ -74,7 +59,9 @@ struct ProviderSetupView: View {
                 if let loginMessage = model.loginMessage {
                     Text(loginMessage)
                         .font(TenXTypography.body(size: 13))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                        .foregroundStyle(model.loginMessageIsError
+                            ? TenXPalette.color(TenXPalette.signalRedHex)
+                            : TenXPalette.color(TenXPalette.mutedTextHex))
                 }
 
                 if model.isShowingAllProviders {
@@ -128,20 +115,7 @@ private struct ProviderSetupRowView: View {
     let model: ProviderManagementViewModel
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(provider.name)
-                    .font(TenXTypography.body(size: 14, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
-                if let description {
-                    Text(description)
-                        .font(TenXTypography.body(size: 12))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                }
-            }
-
-            Spacer(minLength: 12)
-
+        OnboardingRowView(title: provider.name, detail: description) {
             if model.activeLoginProviderID == provider.id {
                 Text("Connecting…")
                     .font(TenXTypography.body(size: 12))
@@ -163,13 +137,6 @@ private struct ProviderSetupRowView: View {
                 .disabled(!provider.isAvailable || model.activeLoginProviderID != nil)
             }
         }
-        .frame(height: 42)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(TenXPalette.color(TenXPalette.separatorHex))
-                .frame(height: 1)
-        }
-        .accessibilityElement(children: .combine)
     }
 
     private var description: String? {
@@ -179,36 +146,6 @@ private struct ProviderSetupRowView: View {
         case "cursor": "Cursor account"
         case "google-gemini-cli": "Google Cloud account"
         default: nil
-        }
-    }
-}
-
-private struct ProviderSetupLoadingRows: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(0..<4, id: \.self) { _ in
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(TenXPalette.color(TenXPalette.separatorHex))
-                            .frame(width: 128, height: 12)
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(TenXPalette.color(TenXPalette.separatorHex))
-                            .frame(width: 96, height: 10)
-                    }
-                    Spacer()
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(TenXPalette.color(TenXPalette.separatorHex))
-                        .frame(width: 60, height: 12)
-                }
-                .padding(.vertical, 8)
-                .overlay(alignment: .bottom) {
-                    Rectangle()
-                        .fill(TenXPalette.color(TenXPalette.separatorHex))
-                        .frame(height: 1)
-                }
-                .accessibilityHidden(true)
-            }
         }
     }
 }

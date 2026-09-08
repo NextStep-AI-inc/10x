@@ -316,3 +316,117 @@ private func fixturePID(at url: URL) -> pid_t? {
     #expect(!stderr.contains("late-stderr-marker"))
     #expect(stderr.utf8.count < 1_024)
 }
+
+@Test func providerAccountChangedLineDecodesTypedEventAndUnknownReason() throws {
+    let manual = Data("""
+    {"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_B","reason":"manual","sequence":7}
+    """.utf8)
+    guard case .providerAccountChanged(let event) = try RpcFrame.decode(line: manual) else {
+        Issue.record("not a provider account event"); return
+    }
+    #expect(event.providerID == "openai-codex")
+    #expect(event.accountRef == "acct_B")
+    #expect(event.reason == .manual)
+    #expect(event.sequence == 7)
+
+    let future = Data("""
+    {"type":"provider_account_changed","providerId":"openai-codex","accountRef":"acct_future","reason":"serverSideMigration","sequence":8}
+    """.utf8)
+    guard case .providerAccountChanged(let unknown) = try RpcFrame.decode(line: future) else {
+        Issue.record("future provider account event was dropped"); return
+    }
+    #expect(unknown.accountRef == "acct_future")
+    #expect(unknown.reason == .unknown("serverSideMigration"))
+}
+
+private func makeFloodTransport(
+    count: Int,
+    bytes: Int,
+    limits: BoundedRecordQueueLimits
+) -> LineTransport {
+    LineTransport(
+        executable: "/usr/bin/env",
+        arguments: [
+            "python3", fixtureURL("fake_server.py").path, "line-flood",
+            String(count), String(bytes),
+        ],
+        currentDirectory: nil,
+        environment: nil,
+        lineQueueLimits: limits)
+}
+
+private func noticeIndex(in line: Data) -> Int? {
+    guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any] else {
+        return nil
+    }
+    return object["index"] as? Int
+}
+
+@Test func stdoutBacklogSpillsBeyondTheMemoryBudgetAndReplaysLinesInOrder() async throws {
+    // 2,000 × 4 KiB against a 64 KiB memory budget: nearly everything spills
+    // while nobody is reading, and comes back in order once someone does.
+    let transport = makeFloodTransport(
+        count: 2_000,
+        bytes: 4_096,
+        limits: BoundedRecordQueueLimits(
+            memoryBytes: 65_536, memoryRecords: 1_024, spillBytes: 32 * 1_048_576))
+    try await transport.start()
+    let exited = await withTimeout(.seconds(60)) { () -> Int32 in
+        for await code in transport.onExit { return code }
+        return Int32.min
+    }
+    #expect(exited == 0)
+    let backlog = transport.lineBacklogMetrics
+    #expect(backlog.totalSpilledRecords > 0)
+    #expect(backlog.memoryBytes <= 65_536)
+    #expect(transport.backlogFailure == nil)
+
+    var sawReady = false
+    var indices: [Int] = []
+    for await line in transport.lines {
+        if String(decoding: line, as: UTF8.self).contains(#""type":"ready""#) {
+            sawReady = true
+        } else if let index = noticeIndex(in: line) {
+            indices.append(index)
+        }
+    }
+    #expect(sawReady)
+    #expect(indices == Array(0..<2_000))
+    #expect(transport.lineBacklogMetrics.spilledRecords == 0)
+    #expect(transport.lineBacklogMetrics.spillFileBytes == 0)
+    await transport.shutdown()
+}
+
+@Test func stdoutBacklogOverflowEndsLinesAndRecordsTheFailure() async throws {
+    let transport = makeFloodTransport(
+        count: 2_000,
+        bytes: 4_096,
+        limits: BoundedRecordQueueLimits(
+            memoryBytes: 8_192, memoryRecords: 4, spillBytes: 65_536))
+    try await transport.start()
+    let overflowed = await withTimeout(.seconds(30)) { () -> Bool in
+        while !Task.isCancelled {
+            if transport.backlogFailure != nil { return true }
+            await Task.yield()
+        }
+        return false
+    } ?? false
+    #expect(overflowed)
+    guard case .backlogExceeded(_, let limit)? = transport.backlogFailure else {
+        Issue.record("expected the line backlog to report its cap")
+        await transport.shutdown()
+        return
+    }
+    #expect(limit == 65_536)
+
+    var delivered = 0
+    for await _ in transport.lines { delivered += 1 }
+    #expect(delivered > 0)
+    #expect(delivered < 2_000)
+    // The child is still wedged on a full pipe; shutdown must reap it anyway.
+    let clock = ContinuousClock()
+    let started = clock.now
+    await transport.shutdown()
+    #expect(clock.now - started < .seconds(5))
+    #expect(await transport.exitStatus != nil)
+}

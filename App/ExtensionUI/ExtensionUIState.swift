@@ -35,6 +35,24 @@ enum ExtensionUIState: Identifiable, Equatable, Sendable {
             return id
         }
     }
+
+    var requiresUserInput: Bool {
+        switch self {
+        case .confirm, .select, .input, .editor, .openURL:
+            true
+        case .cancel, .notification, .status, .widget, .title, .setEditorText:
+            false
+        }
+    }
+
+    var isQuestionInput: Bool {
+        switch self {
+        case .select, .input, .editor:
+            true
+        default:
+            false
+        }
+    }
 }
 
 enum ExtensionUIResponse: Equatable {

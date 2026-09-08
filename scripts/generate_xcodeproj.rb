@@ -65,8 +65,17 @@ def stable_uuid_keys(project)
     end
   end
 
+  # A local package is identified by its path on disk; a remote one has no path,
+  # only a repository URL. Keying both off relative_path raised NoMethodError as soon
+  # as the first remote package (Sparkle) was added.
   root_object.package_references.each do |package|
-    keys[package] = "package/#{package.relative_path}"
+    identity =
+      if package.respond_to?(:relative_path) && package.relative_path
+        package.relative_path
+      else
+        package.repositoryURL
+      end
+    keys[package] = "package/#{identity}"
   end
 
   configuration_lists.each do |list, owner|
@@ -132,6 +141,11 @@ end
 
 root = File.expand_path("..", __dir__)
 project_path = File.join(root, "10x.xcodeproj")
+
+resolved_relative = "project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+resolved_path = File.join(project_path, resolved_relative)
+preserved_resolved = File.exist?(resolved_path) ? File.read(resolved_path) : nil
+
 FileUtils.rm_rf(project_path)
 
 project = Xcodeproj::Project.new(project_path)
@@ -157,8 +171,12 @@ end
 wordmark = app_group.new_file("App/Resources/10x-wordmark.svg")
 app.resources_build_phase.add_file_reference(wordmark)
 
-icon = app_group.new_file("App/Resources/AppIcon.icon")
-icon.last_known_file_type = "folder.iconcomposer.icon"
+# App/Resources/AppIcon.icon remains in the repo as the authoring source, but is NOT
+# a build resource. Icon Composer assets are versioned against the Xcode that wrote
+# them, and actool on every Xcode currently available to GitHub runners (up to 26.3)
+# crashes compiling one authored in 26.6. AppIcon.icns is exported from that same
+# .icon and carries all ten macOS sizes, so it builds on any toolchain.
+icon = app_group.new_file("App/Resources/AppIcon.icns")
 app.resources_build_phase.add_file_reference(icon)
 
 fonts = app_group.new_file("App/Resources/Fonts")
@@ -169,9 +187,42 @@ file_type_icons = app_group.new_file("App/Resources/FileTypeIcons")
 file_type_icons.last_known_file_type = "folder"
 app.resources_build_phase.add_file_reference(file_type_icons)
 
+# The provider account extension ships as a TypeScript source tree, not a
+# compiled resource, so it needs its own Copy Files phase rather than the
+# ordinary resources phase: only that phase type can place its contents at a
+# `dst_path` nested under Resources/ (`omp-extensions/provider-accounts`)
+# instead of a flat top-level folder named after the source directory. Only
+# `index.ts` and `src/` are referenced (never `test/` or `node_modules/`), and
+# `src` is a folder reference so future files added under it (e.g. a later
+# task's `accounts.ts`/`events.ts`) are picked up without touching this script.
+extension_group = project.main_group.new_group("OmpExtension")
+
+extension_index = extension_group.new_file("OmpExtension/index.ts")
+
+extension_src = extension_group.new_file("OmpExtension/src")
+extension_src.last_known_file_type = "folder"
+
+extension_copy_phase = app.new_copy_files_build_phase("Bundle Provider Account Extension")
+extension_copy_phase.symbol_dst_subfolder_spec = :resources
+extension_copy_phase.dst_path = "omp-extensions/provider-accounts"
+extension_copy_phase.add_file_reference(extension_index)
+extension_copy_phase.add_file_reference(extension_src)
+
 snapshot_path = File.join(root, "Tests/TenXAppTests/ReferenceImages")
 if File.directory?(snapshot_path)
   reference = test_group.new_file("Tests/TenXAppTests/ReferenceImages")
+  reference.last_known_file_type = "folder"
+  tests.resources_build_phase.add_file_reference(reference)
+end
+
+# Parity fixtures (e.g. credential-pin-hashes.json) are looked up the same
+# way as reference images: Bundle(for: SnapshotToken.self).url(forResource:
+# withExtension:subdirectory: "Fixtures"). A folder reference preserves the
+# `Fixtures/` nesting in the built test bundle, which flat file references
+# on the resources phase do not.
+fixtures_path = File.join(root, "Tests/TenXAppTests/Fixtures")
+if File.directory?(fixtures_path)
+  reference = test_group.new_file("Tests/TenXAppTests/Fixtures")
   reference.last_known_file_type = "folder"
   tests.resources_build_phase.add_file_reference(reference)
 end
@@ -189,29 +240,62 @@ build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
 build_file.product_ref = product
 app.frameworks_build_phase.files << build_file
 
+sparkle_package = project.new(Xcodeproj::Project::Object::XCRemoteSwiftPackageReference)
+sparkle_package.repositoryURL = "https://github.com/sparkle-project/Sparkle"
+sparkle_package.requirement = {
+  "kind" => "upToNextMajorVersion",
+  "minimumVersion" => "2.6.0",
+}
+project.root_object.package_references << sparkle_package
+
+sparkle_product = project.new(Xcodeproj::Project::Object::XCSwiftPackageProductDependency)
+sparkle_product.package = sparkle_package
+sparkle_product.product_name = "Sparkle"
+app.package_product_dependencies << sparkle_product
+
+sparkle_build_file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
+sparkle_build_file.product_ref = sparkle_product
+app.frameworks_build_phase.files << sparkle_build_file
+
 sqlite = project.frameworks_group.new_file("usr/lib/libsqlite3.tbd")
 sqlite.source_tree = "SDKROOT"
 app.frameworks_build_phase.add_file_reference(sqlite)
 
 app.build_configurations.each do |configuration|
   configuration.build_settings.merge!({
-    "PRODUCT_BUNDLE_IDENTIFIER" => "com.tannerpham.tenx",
+    "PRODUCT_BUNDLE_IDENTIFIER" => "com.nextstep.tenx",
     "PRODUCT_MODULE_NAME" => "TenXApp",
     "INFOPLIST_FILE" => "App/Info.plist",
     "GENERATE_INFOPLIST_FILE" => "NO",
+    "MARKETING_VERSION" => "0.1.0",
+    "CURRENT_PROJECT_VERSION" => "1",
     "SWIFT_VERSION" => "6.0",
     "SWIFT_STRICT_CONCURRENCY" => "complete",
     "MACOSX_DEPLOYMENT_TARGET" => "15.0",
     "ENABLE_APP_SANDBOX" => "NO",
-    "ASSETCATALOG_COMPILER_APPICON_NAME" => "AppIcon",
     "ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME" => "",
-    "CODE_SIGN_STYLE" => "Automatic",
+    "DEVELOPMENT_TEAM" => "345S42BKPY",
   })
+
+  if configuration.name == "Release"
+    configuration.build_settings.merge!({
+      "CODE_SIGN_STYLE" => "Manual",
+      "CODE_SIGN_IDENTITY" => "Developer ID Application",
+      "ENABLE_HARDENED_RUNTIME" => "YES",
+    })
+  else
+    configuration.build_settings.merge!({
+      "CODE_SIGN_STYLE" => "Manual",
+      "CODE_SIGN_IDENTITY" => "-",
+      "CODE_SIGNING_REQUIRED" => "YES",
+      "CODE_SIGNING_ALLOWED" => "YES",
+    })
+  end
 end
 
 tests.build_configurations.each do |configuration|
   configuration.build_settings.merge!({
-    "PRODUCT_BUNDLE_IDENTIFIER" => "com.tannerpham.tenx.tests",
+    "PRODUCT_BUNDLE_IDENTIFIER" => "com.nextstep.tenx.tests",
     "PRODUCT_MODULE_NAME" => "TenXAppTests",
     "GENERATE_INFOPLIST_FILE" => "YES",
     "SWIFT_VERSION" => "6.0",
@@ -219,11 +303,19 @@ tests.build_configurations.each do |configuration|
     "MACOSX_DEPLOYMENT_TARGET" => "15.0",
     "TEST_HOST" => "$(BUILT_PRODUCTS_DIR)/10x.app/Contents/MacOS/10x",
     "BUNDLE_LOADER" => "$(TEST_HOST)",
+    "DEVELOPMENT_TEAM" => "345S42BKPY",
+    "CODE_SIGN_STYLE" => "Manual",
+    "CODE_SIGN_IDENTITY" => "-",
   })
 end
 
 assign_stable_uuids!(project)
 project.save
+
+if preserved_resolved
+  FileUtils.mkdir_p(File.dirname(resolved_path))
+  File.write(resolved_path, preserved_resolved)
+end
 
 scheme = Xcodeproj::XCScheme.new
 scheme.add_build_target(app)

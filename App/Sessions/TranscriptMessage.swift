@@ -22,6 +22,19 @@ struct TranscriptResponseAttribution: Equatable, Sendable {
         modelRole: nil)
 }
 
+struct TranscriptRenderLineageKey: Hashable, Sendable {
+    let baseMessageID: String
+    let precedingToolCallID: String?
+    let followingToolCallID: String?
+
+    static func base(messageID: String) -> Self {
+        Self(
+            baseMessageID: messageID,
+            precedingToolCallID: nil,
+            followingToolCallID: nil)
+    }
+}
+
 struct TranscriptMessage: Identifiable, Equatable, Sendable {
     let id: String
     let role: TranscriptMessageRole
@@ -29,8 +42,11 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
     let timestamp: Date?
     let attribution: TranscriptResponseAttribution
     let isFinal: Bool
+    let showsResponseMetadata: Bool
     let stopReason: String?
     let document: ContentDocument
+    /// Renderer continuity metadata, deliberately excluded from semantic equality.
+    let renderLineageKey: TranscriptRenderLineageKey
 
     var visibleText: String {
         document.source
@@ -41,9 +57,13 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         raw: JSONValue,
         timestamp: Date? = nil,
         attribution: TranscriptResponseAttribution = .none,
-        isFinal: Bool
+        isFinal: Bool,
+        showsResponseMetadata: Bool = true,
+        renderLineageKey: TranscriptRenderLineageKey? = nil,
+        previousDocument: ContentDocument? = nil
     ) {
         self.id = id
+        self.renderLineageKey = renderLineageKey ?? .base(messageID: id)
         let rawRole = raw["role"]?.stringValue
         role = switch rawRole {
         case "user": .user
@@ -59,9 +79,11 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             agent: attribution.agent,
             modelRole: attribution.modelRole)
         self.isFinal = isFinal
+        self.showsResponseMetadata = showsResponseMetadata
         stopReason = raw["stopReason"]?.stringValue
         let parsedDocument = Self.advisorDocument(from: raw) ?? Self.contentDocument(from: raw)
         let normalizedDocument = role == .other
+            && raw["customType"]?.stringValue != "skill-prompt"
             ? Self.boundingHarnessDocument(parsedDocument)
             : parsedDocument
         let displayText: String
@@ -79,9 +101,23 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         }
         // Keyed on blocks, not source: an image-only message has parsed content
         // and no text, and re-parsing would throw the image away.
-        document = normalizedDocument.blocks.isEmpty
+        let candidateDocument = normalizedDocument.blocks.isEmpty
             ? MessageContentParser.parse(displayText)
             : normalizedDocument
+        document = previousDocument.map(candidateDocument.assigningRenderLineage(after:))
+            ?? candidateDocument
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id
+            && lhs.role == rhs.role
+            && lhs.raw == rhs.raw
+            && lhs.timestamp == rhs.timestamp
+            && lhs.attribution == rhs.attribution
+            && lhs.isFinal == rhs.isFinal
+            && lhs.showsResponseMetadata == rhs.showsResponseMetadata
+            && lhs.stopReason == rhs.stopReason
+            && lhs.document == rhs.document
     }
 
     /// Conversation roles render; `toolResult` must pass so the live pipeline
@@ -149,10 +185,24 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             .joined(separator: "\n")
     }
 
+    static func advisoryContent(from message: JSONValue) -> AdvisoryContentParser.Result? {
+        guard let content = message["content"] else { return nil }
+        if let source = content.stringValue {
+            return AdvisoryContentParser.parseSuffix(in: source)
+        }
+        guard let contentBlocks = content.arrayValue else { return nil }
+        let source = contentBlocks.compactMap { block -> String? in
+            if let source = block.stringValue { return source }
+            guard block["type"]?.stringValue?.lowercased() == "text" else { return nil }
+            return block["text"]?.stringValue
+        }.joined(separator: "\n")
+        return AdvisoryContentParser.parseSuffix(in: source)
+    }
+
     private static func contentDocument(from message: JSONValue) -> ContentDocument {
         guard let content = message["content"] else { return .empty }
         if let source = content.stringValue {
-            return MessageContentParser.parse(source)
+            return displayDocument(for: source)
         }
         guard let contentBlocks = content.arrayValue else { return .empty }
 
@@ -160,17 +210,17 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         var sourceParts: [String] = []
         for contentBlock in contentBlocks {
             if let source = contentBlock.stringValue {
-                let document = MessageContentParser.parse(source)
+                let document = displayDocument(for: source)
                 blocks.append(contentsOf: document.blocks)
-                sourceParts.append(source)
+                sourceParts.append(document.source)
                 continue
             }
 
             let type = contentBlock["type"]?.stringValue?.lowercased()
             if type == "text", let source = contentBlock["text"]?.stringValue {
-                let document = MessageContentParser.parse(source)
+                let document = displayDocument(for: source)
                 blocks.append(contentsOf: document.blocks)
-                sourceParts.append(source)
+                sourceParts.append(document.source)
             } else if type == "image", let image = imageContent(contentBlock) {
                 // Deliberately not added to `sourceParts`: the label is a
                 // stand-in for a picture, not text the user wrote, and it would
@@ -187,6 +237,14 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         return ContentDocument(
             source: sourceParts.joined(separator: "\n"),
             blocks: blocks)
+    }
+
+    private static func displayDocument(for source: String) -> ContentDocument {
+        guard let advisory = AdvisoryContentParser.parseSuffix(in: source) else {
+            return MessageContentParser.parse(source)
+        }
+        let display = MessageContentParser.parse(advisory.displaySource)
+        return display
     }
 
     private static func imageContent(_ block: JSONValue) -> ContentImage? {

@@ -1,6 +1,134 @@
 import Foundation
+import OmpKit
 import Testing
 @testable import TenXApp
+
+@Suite struct ProviderUsagePresentationTests {
+
+@Test func accountUsageJoinsOnlyOpaqueRefsAndPreservesDuplicateLabelsInConnectionOrder() throws {
+    let providerID = "openai-codex"
+    let accounts = [
+        providerAccountFixture(providerID: providerID, ref: "acct_C", label: "Same", order: 3),
+        providerAccountFixture(providerID: providerID, ref: "acct_A", label: "Same", order: 1),
+        providerAccountFixture(providerID: providerID, ref: "acct_B", label: "Same", order: 2),
+    ]
+    let usage = [
+        providerAccountUsageFixture(
+            providerID: providerID,
+            ref: "Same",
+            windows: [providerAccountUsageWindowFixture(id: "label-guess", label: "Must not join")]),
+        providerAccountUsageFixture(
+            providerID: providerID,
+            ref: "acct_B",
+            windows: [providerAccountUsageWindowFixture(id: "exact", label: "Exact join")]),
+    ]
+
+    let presentation = ProviderUsagePresentation.makeAccountRouting(
+        providerNames: [providerID: "ChatGPT"],
+        accounts: accounts,
+        usage: usage,
+        now: Date(timeIntervalSince1970: 1))
+
+    let provider = try #require(presentation.providers.first)
+    #expect(provider.accounts.map(\.accountRef) == ["acct_A", "acct_B", "acct_C"])
+    #expect(provider.accounts.map(\.label) == ["Same", "Same", "Same"])
+    #expect(provider.accounts[0].usageState == .unavailable)
+    #expect(provider.accounts[1].limits.map(\.label) == ["Exact join"])
+    #expect(provider.accounts[2].usageState == .unavailable)
+    #expect(provider.accounts.flatMap(\.limits).contains(where: { $0.id == "label-guess" }) == false)
+}
+
+@Test func accountUsageOrdersKnownDurationsAroundUnknownSourceSlots() throws {
+    let providerID = "cursor"
+    let usage = providerAccountUsageFixture(
+        providerID: providerID,
+        ref: "acct_A",
+        windows: [
+            providerAccountUsageWindowFixture(id: "weekly", label: "Weekly", sourceIndex: 0, duration: .init(value: 1, unit: .week)),
+            providerAccountUsageWindowFixture(id: "unknown-a", label: "Unknown A", sourceIndex: 1),
+            providerAccountUsageWindowFixture(id: "five-hour", label: "5 hour", sourceIndex: 2, duration: .init(value: 5, unit: .hour)),
+            providerAccountUsageWindowFixture(id: "daily", label: "Daily", sourceIndex: 3, duration: .init(value: 1, unit: .day)),
+            providerAccountUsageWindowFixture(id: "unknown-b", label: "Unknown B", sourceIndex: 4),
+        ])
+
+    let presentation = ProviderUsagePresentation.makeAccountRouting(
+        providerNames: [providerID: "Cursor"],
+        accounts: [providerAccountFixture(providerID: providerID, ref: "acct_A", label: "Account", order: 0)],
+        usage: [usage],
+        now: Date(timeIntervalSince1970: 1))
+
+    let provider = try #require(presentation.providers.first)
+    #expect(provider.ringLimits.map(\.label) == [
+        "5 hour",
+        "Unknown A",
+        "Daily",
+        "Weekly",
+        "Unknown B",
+    ])
+}
+
+@Test func foregroundUsesActiveThenPrimaryThenFirstEligibleThenFirstConnected() throws {
+    let providerID = "openai-codex"
+    let accounts = [
+        providerAccountFixture(providerID: providerID, ref: "acct_unavailable", label: "Unavailable", order: 0, availability: .unavailable),
+        providerAccountFixture(providerID: providerID, ref: "acct_first", label: "First", order: 1),
+        providerAccountFixture(providerID: providerID, ref: "acct_primary", label: "Primary", order: 2),
+        providerAccountFixture(providerID: providerID, ref: "acct_active", label: "Active", order: 3),
+    ]
+
+    let active = ProviderUsagePresentation.makeAccountRouting(
+        providerNames: [providerID: "ChatGPT"],
+        accounts: accounts,
+        usage: [],
+        activeAccountRefs: [providerID: "acct_active"],
+        primaryAccountRefs: [providerID: "acct_primary"],
+        now: Date(timeIntervalSince1970: 1))
+    let primary = ProviderUsagePresentation.makeAccountRouting(
+        providerNames: [providerID: "ChatGPT"],
+        accounts: accounts,
+        usage: [],
+        activeAccountRefs: [providerID: "missing"],
+        primaryAccountRefs: [providerID: "acct_primary"],
+        now: Date(timeIntervalSince1970: 1))
+    let eligible = ProviderUsagePresentation.makeAccountRouting(
+        providerNames: [providerID: "ChatGPT"],
+        accounts: accounts,
+        usage: [],
+        primaryAccountRefs: [providerID: "missing"],
+        now: Date(timeIntervalSince1970: 1))
+    let unavailableAccounts = accounts.map {
+        providerAccountFixture(
+            providerID: $0.providerID,
+            ref: $0.accountRef,
+            label: $0.displayLabel,
+            order: $0.connectionOrder,
+            availability: .unavailable)
+    }
+    let allUnavailable = ProviderUsagePresentation.makeAccountRouting(
+        providerNames: [providerID: "ChatGPT"],
+        accounts: unavailableAccounts,
+        usage: [],
+        now: Date(timeIntervalSince1970: 1))
+
+    #expect(try #require(active.providers.first).foregroundAccountRef == "acct_active")
+    #expect(try #require(primary.providers.first).foregroundAccountRef == "acct_primary")
+    #expect(try #require(eligible.providers.first).foregroundAccountRef == "acct_first")
+    #expect(try #require(allUnavailable.providers.first).foregroundAccountRef == "acct_unavailable")
+}
+
+@Test func providerOnlyPresentationExposesNoAccountControls() throws {
+    let presentation = ProviderUsagePresentation.make(
+        snapshot: try usageSnapshotFixture(),
+        providerNames: ["cursor": "Cursor"],
+        now: Date(timeIntervalSince1970: 1))
+
+    let provider = try #require(presentation.providers.first)
+    #expect(provider.capability == .providerOnly)
+    #expect(provider.foregroundAccountRef == nil)
+    #expect(!provider.showsAccountSelectors)
+    #expect(!provider.showsAccountSwitch)
+    #expect(!provider.showsAccountRemoval)
+}
 
 @Test func usagePresentationShowsRemainingCapacityAndOmitsUnboundedRailAmounts() throws {
     let snapshot = try usageSnapshotFixture()
@@ -274,4 +402,6 @@ private func usageLimit(id: String, label: String, windowID: String) -> String {
         .replacingOccurrences(of: "$ID", with: id)
         .replacingOccurrences(of: "$LABEL", with: label)
         .replacingOccurrences(of: "$WINDOW", with: windowID)
+}
+
 }

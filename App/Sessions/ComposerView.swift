@@ -6,6 +6,220 @@ import UniformTypeIdentifiers
 enum ComposerFlyout: Equatable {
     case project
     case model
+    case commands
+}
+
+enum ComposerCommandKeyAction: Sendable {
+    case move(CommandBrowserMove)
+    case cycle(CommandBrowserCycle)
+    case sourceIndex(Int)
+    case activate
+    case complete
+    case back
+}
+
+extension ComposerCommandKeyAction: Equatable {
+    static func == (lhs: ComposerCommandKeyAction, rhs: ComposerCommandKeyAction) -> Bool {
+        switch (lhs, rhs) {
+        case (.move(.previous), .move(.previous)),
+             (.move(.next), .move(.next)),
+             (.move(.first), .move(.first)),
+             (.move(.last), .move(.last)),
+             (.move(.pagePrevious), .move(.pagePrevious)),
+             (.move(.pageNext), .move(.pageNext)),
+             (.cycle(.forward), .cycle(.forward)),
+             (.cycle(.backward), .cycle(.backward)),
+             (.activate, .activate),
+             (.complete, .complete),
+             (.back, .back):
+            return true
+        case (.sourceIndex(let lhsIndex), .sourceIndex(let rhsIndex)):
+            return lhsIndex == rhsIndex
+        default:
+            return false
+        }
+    }
+}
+
+enum ComposerCommandKeyRouting {
+    static let keys: Set<KeyEquivalent> = [
+        .upArrow,
+        .downArrow,
+        .home,
+        .end,
+        .pageUp,
+        .pageDown,
+        .tab,
+        .return,
+        .escape,
+        KeyEquivalent("1"),
+        KeyEquivalent("2"),
+        KeyEquivalent("3"),
+        KeyEquivalent("4"),
+        KeyEquivalent("5"),
+        KeyEquivalent("6"),
+        KeyEquivalent("7"),
+    ]
+
+    nonisolated static func route(
+        _ key: KeyEquivalent,
+        modifiers: EventModifiers
+    ) -> ComposerCommandKeyAction? {
+        let controlShift: EventModifiers = [.control, .shift]
+        if key == .tab, modifiers.intersection(controlShift) == controlShift,
+           modifiers.intersection([.option, .command]).isEmpty
+        {
+            return .cycle(.backward)
+        }
+        if key == .tab, modifiers.intersection([.control]) == [.control],
+           modifiers.intersection([.shift, .option, .command]).isEmpty
+        {
+            return .cycle(.forward)
+        }
+        if let index = sourceIndex(for: key, modifiers: modifiers) {
+            return .sourceIndex(index)
+        }
+        guard modifiers.intersection([.shift, .option, .command, .control]).isEmpty else {
+            return nil
+        }
+        switch key {
+        case .upArrow:
+            return .move(.previous)
+        case .downArrow:
+            return .move(.next)
+        case .home:
+            return .move(.first)
+        case .end:
+            return .move(.last)
+        case .pageUp:
+            return .move(.pagePrevious)
+        case .pageDown:
+            return .move(.pageNext)
+        case .return:
+            return .activate
+        case .tab:
+            return .complete
+        case .escape:
+            return .back
+        default:
+            return nil
+        }
+    }
+
+    private static func sourceIndex(
+        for key: KeyEquivalent,
+        modifiers: EventModifiers
+    ) -> Int? {
+        guard modifiers.intersection([.command]) == [.command],
+              modifiers.intersection([.shift, .option, .control]).isEmpty
+        else { return nil }
+
+        switch key {
+        case KeyEquivalent("1"): return 1
+        case KeyEquivalent("2"): return 2
+        case KeyEquivalent("3"): return 3
+        case KeyEquivalent("4"): return 4
+        case KeyEquivalent("5"): return 5
+        case KeyEquivalent("6"): return 6
+        case KeyEquivalent("7"): return 7
+        default: return nil
+        }
+    }
+}
+
+enum ComposerCommandActivationAction: Equatable, Sendable {
+    case useCommandModel
+    case sendUnchangedDraft
+}
+
+enum ComposerCommandActivationRouting {
+    nonisolated static func action(
+        isNewSession: Bool,
+        hasVisibleRows: Bool,
+        hasSelection: Bool
+    ) -> ComposerCommandActivationAction {
+        isNewSession && !hasVisibleRows && !hasSelection
+            ? .sendUnchangedDraft
+            : .useCommandModel
+    }
+}
+
+enum ComposerCommandFocusRouting {
+    nonisolated static func shouldRestoreEditorFocus(
+        effect: CommandBrowserEffect,
+        isPresented: Bool,
+        route: CommandBrowserRoute
+    ) -> Bool {
+        switch effect {
+        case .none:
+            return false
+        case .keepDraft:
+            return !isPresented || route == .root
+        case .replaceDraft:
+            if case .native = route { return false }
+            return true
+        case .dismiss, .executed:
+            return true
+        }
+    }
+}
+
+enum ComposerCommandSourceSwitchFocusRouting {
+    nonisolated static func shouldRestoreEditorFocus(
+        didSwitch: Bool,
+        previousRoute: CommandBrowserRoute,
+        currentRoute: CommandBrowserRoute
+    ) -> Bool {
+        guard didSwitch, case .native = previousRoute else { return false }
+        return currentRoute == .root
+    }
+}
+
+enum ComposerCommandQueryRouting {
+    nonisolated static func query(
+        draft: String,
+        route: CommandBrowserRoute
+    ) -> String {
+        if case .native(.model) = route { return "" }
+        return CommandBrowserPresentation.parseDraft(draft)?.query ?? ""
+    }
+}
+
+enum ComposerCommandDismissalAction: Equatable, Sendable {
+    case dismissCommands
+    case hideFlyoutOnly
+}
+
+enum ComposerCommandDismissalRouting {
+    nonisolated static func action(for flyout: ComposerFlyout?) -> ComposerCommandDismissalAction {
+        flyout == .commands ? .dismissCommands : .hideFlyoutOnly
+    }
+}
+
+enum ComposerReturnRouting {
+    nonisolated static func shortcut(for modifiers: EventModifiers) -> ComposerReturnShortcut? {
+        let relevant = modifiers.intersection([.shift, .option, .command, .control])
+        return switch relevant {
+        case []: .enter
+        case [.command]: .commandEnter
+        case [.shift]: .shiftEnter
+        default: nil
+        }
+    }
+
+    nonisolated static func behavior(
+        for action: ComposerReturnAction,
+        primary: StreamingBehavior
+    ) -> StreamingBehavior? {
+        switch action {
+        case .primary:
+            primary
+        case .alternate:
+            primary == .steer ? .followUp : .steer
+        case .newline:
+            nil
+        }
+    }
 }
 
 enum ComposerPresentation {
@@ -23,12 +237,18 @@ struct ComposerView: View {
     @Binding var flyout: ComposerFlyout?
     let presentation: ComposerPresentation
     let controls: ComposerControlsModel?
+    let commands: ComposerCommandModel?
     let controlsMode: ComposerControlsMode
+    let focusRequest: Int
+    let interactionPreferences: ComposerInteractionPreferences
     let onSend: () -> Void
 
+    @Environment(\.composerProviderDockWidth) private var providerDockWidth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isEditorFocused: Bool
     @State private var attachmentMessage: String?
+    @State private var commandQuery = ""
+    @State private var suppressedCommandDraft: String?
     @State private var isDropTargeted = false
     static let editorPadding: CGFloat = 16
     /// SwiftUI's padding plus the line-fragment padding NSTextView adds inside it.
@@ -42,7 +262,10 @@ struct ComposerView: View {
         flyout: Binding<ComposerFlyout?> = .constant(nil),
         presentation: ComposerPresentation,
         controls: ComposerControlsModel? = nil,
+        commands: ComposerCommandModel? = nil,
         controlsMode: ComposerControlsMode = .newSession,
+        focusRequest: Int = 0,
+        interactionPreferences: ComposerInteractionPreferences = .shared,
         onSend: @escaping () -> Void
     ) {
         _draft = draft
@@ -50,7 +273,10 @@ struct ComposerView: View {
         _flyout = flyout
         self.presentation = presentation
         self.controls = controls
+        self.commands = commands
         self.controlsMode = controlsMode
+        self.focusRequest = focusRequest
+        self.interactionPreferences = interactionPreferences
         self.onSend = onSend
     }
 
@@ -84,13 +310,30 @@ struct ComposerView: View {
         composerCard
             .animation(shelfAnimation, value: flyout)
             .onExitCommand {
-                flyout = nil
+                switch ComposerCommandDismissalRouting.action(for: flyout) {
+                case .dismissCommands:
+                    dismissCommands()
+                case .hideFlyoutOnly:
+                    flyout = nil
+                }
             }
             // The composer is the only thing to type into on either screen, so
             // it takes focus as soon as it can accept a keystroke.
-            .onAppear { isEditorFocused = isAvailable }
+            .task(id: focusRequest) {
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                isEditorFocused = isAvailable
+            }
             .onChange(of: isAvailable) { _, isAvailable in
-                if isAvailable { isEditorFocused = true }
+                if isAvailable {
+                    isEditorFocused = true
+                    observeDraftForCommands(draft)
+                } else {
+                    dismissCommands()
+                }
+            }
+            .onChange(of: draft) { _, draft in
+                observeDraftForCommands(draft)
             }
     }
 
@@ -106,14 +349,24 @@ struct ComposerView: View {
                 ComposerAttachmentsView(attachments: attachments, onRemove: remove)
             }
 
-            HStack(spacing: 4) {
-                attachButton
-
-                footerControls
-
-                Spacer()
-
-                primaryAction
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) {
+                    attachButton
+                    footerControls.fixedSize()
+                    Spacer(minLength: 8)
+                    actionControls
+                }
+                VStack(spacing: 6) {
+                    HStack(spacing: 4) {
+                        attachButton
+                        footerControls
+                        Spacer(minLength: 0)
+                    }
+                    HStack(spacing: 4) {
+                        Spacer(minLength: 0)
+                        actionControls
+                    }
+                }
             }
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
@@ -132,7 +385,7 @@ struct ComposerView: View {
         // paint over card content, and the model flyout is card content.
         .background {
             Rectangle()
-                .fill(.white)
+                .fill(TenXPalette.surfaceElevated)
                 .overlay {
                     Rectangle()
                         .stroke(borderColor, lineWidth: 1)
@@ -140,6 +393,9 @@ struct ComposerView: View {
         }
         .overlay(alignment: .bottomLeading) {
             projectShelfOverlay
+        }
+        .overlay(alignment: .topLeading) {
+            commandBrowserOverlay
         }
         .overlay {
             if isDropTargeted {
@@ -189,6 +445,29 @@ struct ComposerView: View {
         }
     }
 
+    @ViewBuilder
+    private var commandBrowserOverlay: some View {
+        if flyout == .commands, let commands, let controls {
+            CommandBrowserView(
+                model: commands,
+                controls: controls,
+                query: $commandQuery,
+                onEffect: applyCommandEffect,
+                onDismiss: dismissCommands,
+                restoreEditorFocus: restoreEditorFocus)
+            .background {
+                CommandBrowserKeyboardMonitor(route: commands.route) { action in
+                    handleCommandKeyAction(action, model: commands)
+                    return true
+                }
+            }
+            .frame(height: CommandBrowserMetrics.maximumHeight)
+            .offset(y: -CommandBrowserMetrics.maximumHeight)
+            .transition(shelfTransition)
+            .zIndex(2)
+        }
+    }
+
     private var shelfTransition: AnyTransition {
         if reduceMotion { return .identity }
         return .asymmetric(
@@ -228,14 +507,10 @@ struct ComposerView: View {
                     .padding(Self.editorPadding)
                     .focused($isEditorFocused)
                     .disabled(!isAvailable)
-                    .onKeyPress(keys: [.return], phases: .down) { press in
-                        Self.handleReturn(
-                            modifiers: press.modifiers,
-                            canSend: canSend,
-                            send: onSend)
-                    }
+                    .onKeyPress(keys: ComposerCommandKeyRouting.keys, phases: .down, action: handleEditorKey)
                     .accessibilityLabel("Session prompt")
                     .accessibilityHint(composerModeLabel)
+                    .background(ComposerTextViewConfigurator())
             }
             .frame(minHeight: Self.minEditorHeight, maxHeight: Self.maxEditorHeight)
             // Without this the clamp is a range the parent can fill, and any
@@ -285,6 +560,174 @@ struct ComposerView: View {
     private func remove(_ id: ComposerAttachment.ID) {
         attachments.removeAll { $0.id == id }
         attachmentMessage = nil
+    }
+
+    private func observeDraftForCommands(_ draft: String) {
+        if suppressedCommandDraft == draft {
+            suppressedCommandDraft = nil
+            syncCommandQuery()
+            return
+        }
+        guard isAvailable, let commands else {
+            if flyout == .commands { flyout = nil }
+            commandQuery = ""
+            return
+        }
+        if commands.updateDraft(draft) {
+            flyout = .commands
+            syncCommandQuery()
+        } else if flyout == .commands {
+            flyout = nil
+            commandQuery = ""
+        }
+    }
+
+    private func handleEditorKey(_ press: KeyPress) -> KeyPress.Result {
+        if flyout == .commands, let commands, commands.isPresented {
+            if let commandAction = ComposerCommandKeyRouting.route(
+                press.key,
+                modifiers: press.modifiers
+            ) {
+                guard CommandBrowserKeyboardCapturePolicy.shouldCapture(
+                    commandAction,
+                    route: commands.route
+                ) else { return .ignored }
+                handleCommandKeyAction(commandAction, model: commands)
+                return .handled
+            }
+        }
+
+        guard press.key == .return else { return .ignored }
+        guard let shortcut = ComposerReturnRouting.shortcut(for: press.modifiers) else {
+            return .ignored
+        }
+        let action = interactionPreferences.action(for: shortcut)
+        guard action != .newline else { return .ignored }
+        if canSend { submit(action) }
+        return .handled
+    }
+
+    private func handleCommandKeyAction(
+        _ action: ComposerCommandKeyAction,
+        model: ComposerCommandModel
+    ) {
+        switch action {
+        case .move(let move):
+            if case .subcommands = model.route {
+                model.moveSubcommandSelection(move)
+            } else {
+                model.moveSelection(move)
+            }
+        case .cycle(let cycle):
+            let previousRoute = model.route
+            let didSwitch = model.cycleSource(cycle)
+            if didSwitch {
+                syncCommandQuery()
+                if ComposerCommandSourceSwitchFocusRouting.shouldRestoreEditorFocus(
+                    didSwitch: didSwitch,
+                    previousRoute: previousRoute,
+                    currentRoute: model.route)
+                {
+                    restoreEditorFocus()
+                }
+            }
+        case .sourceIndex(let index):
+            let previousRoute = model.route
+            let didSwitch = model.selectVisibleSource(at: index)
+            if didSwitch {
+                syncCommandQuery()
+                if ComposerCommandSourceSwitchFocusRouting.shouldRestoreEditorFocus(
+                    didSwitch: didSwitch,
+                    previousRoute: previousRoute,
+                    currentRoute: model.route)
+                {
+                    restoreEditorFocus()
+                }
+            }
+        case .activate:
+            if Self.commandActivationAction(
+                presentation: presentation,
+                model: model) == .sendUnchangedDraft
+            {
+                onSend()
+                dismissCommands()
+                return
+            }
+            Task {
+                let effect = await model.activate(attachments: attachments)
+                applyCommandEffect(effect)
+            }
+        case .complete:
+            applyCommandEffect(model.complete())
+        case .back:
+            applyCommandEffect(model.back())
+        }
+    }
+
+    private func applyCommandEffect(_ effect: CommandBrowserEffect) {
+        switch effect {
+        case .none, .keepDraft:
+            break
+        case .dismiss:
+            flyout = nil
+            commandQuery = ""
+        case .replaceDraft(let text):
+            suppressedCommandDraft = text
+            draft = text
+            if commands?.isPresented == false {
+                flyout = nil
+                commandQuery = ""
+            }
+        case .executed:
+            if case .newSession = presentation {
+                draft = ""
+                attachments = []
+            }
+            flyout = nil
+            commandQuery = ""
+        }
+        syncCommandQuery()
+        if ComposerCommandFocusRouting.shouldRestoreEditorFocus(
+            effect: effect,
+            isPresented: commands?.isPresented ?? false,
+            route: commands?.route ?? .root)
+        {
+            restoreEditorFocus()
+        }
+    }
+
+    private func dismissCommands() {
+        _ = commands?.dismiss()
+        if flyout == .commands { flyout = nil }
+        commandQuery = ""
+        restoreEditorFocus()
+    }
+
+    private func restoreEditorFocus() {
+        isEditorFocused = isAvailable
+    }
+
+    private func syncCommandQuery() {
+        commandQuery = ComposerCommandQueryRouting.query(
+            draft: draft,
+            route: commands?.route ?? .root)
+    }
+
+    private static func commandActivationAction(
+        presentation: ComposerPresentation,
+        model: ComposerCommandModel
+    ) -> ComposerCommandActivationAction {
+        let isNewSession: Bool
+        switch presentation {
+        case .newSession:
+            isNewSession = true
+        case .active:
+            isNewSession = false
+        }
+        return ComposerCommandActivationRouting.action(
+            isNewSession: isNewSession,
+            hasVisibleRows: !model.visibleRows.isEmpty,
+            hasSelection: model.selectedRowID != nil)
     }
 
     /// Images are staged; anything else becomes a path in the message, which is
@@ -353,57 +796,106 @@ struct ComposerView: View {
             : "Could not attach \(skipped.count) images. The limit is \(limit)."
     }
 
-    /// One button, because there is only ever one obvious next move: send what
-    /// is typed, or stop the run there is nothing to add to.
-    private var primaryAction: some View {
-        let isStop = stoppableController != nil
-        let isEnabled = isStop || canSend
-        return Button {
-            if let controller = stoppableController {
-                Task { await controller.abort() }
-            } else {
-                // The warning describes an attach that is over once the prompt
-                // goes out, so it must not outlive the message it was about.
-                attachmentMessage = nil
-                onSend()
+    @ViewBuilder
+    private var actionControls: some View {
+        if let controller = streamingController {
+            providerDockSlot
+            behaviorMenu(controller)
+            sendButton
+            stopButton(controller)
+        } else {
+            providerDockSlot
+            sendButton
+            if case .active(let controller) = presentation, controller.runtimeState == .loading {
+                stopButton(controller)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var providerDockSlot: some View {
+        if providerDockWidth > 0 {
+            Color.clear
+                .frame(width: providerDockWidth, height: ProviderAccountStackGeometry.minimumHitTarget)
+                .anchorPreference(key: ComposerProviderDockAnchorKey.self, value: .bounds) { $0 }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var sendButton: some View {
+        Button {
+            submit(.primary)
             isEditorFocused = true
         } label: {
-            Group {
-                if isStop {
-                    // A square, not stop.fill: the symbol's rounded corners are
-                    // the only radius in a composer built from straight edges.
-                    Rectangle().frame(width: 9, height: 9)
-                } else {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
-                }
-            }
-                .foregroundStyle(isEnabled
-                    ? Color.white
+            Image(systemName: "arrow.up")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(canSend
+                    ? TenXPalette.onEmphasis
                     : TenXPalette.color(TenXPalette.mutedTextHex))
                 .frame(width: 28, height: 28)
-                .background(isEnabled
+                .background(canSend
                     ? TenXPalette.color(TenXPalette.nearBlackHex)
                     : TenXPalette.color(TenXPalette.hoverNeutralHex))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .help(isStop ? "Stop the response" : sendLabel)
-        .accessibilityLabel(isStop ? "Stop response" : sendLabel)
+        .disabled(!canSend)
+        .help(sendLabel)
+        .accessibilityLabel(sendLabel)
     }
 
-    /// Stop takes over only when there is nothing staged to send: with text or
-    /// an image in the composer the button still has to send it, or Steer and
-    /// Follow up are dead.
-    private var stoppableController: SessionController? {
+    private func stopButton(_ controller: SessionController) -> some View {
+        Button {
+            Task { await controller.abort() }
+            isEditorFocused = true
+        } label: {
+            Rectangle()
+                .frame(width: 9, height: 9)
+                .foregroundStyle(TenXPalette.onEmphasis)
+                .frame(width: 28, height: 28)
+                .background(TenXPalette.color(TenXPalette.nearBlackHex))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Stop the response")
+        .accessibilityLabel("Stop response")
+    }
+
+    private func behaviorMenu(_ controller: SessionController) -> some View {
+        Menu {
+            Button("Steer") { controller.selectStreamingBehavior(.steer) }
+            Button("Follow up") { controller.selectStreamingBehavior(.followUp) }
+        } label: {
+            Text(controller.streamingBehavior == .followUp ? "Follow up" : "Steer")
+                .font(TenXTypography.body(size: 11, weight: .medium))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Composer send action")
+        .accessibilityValue(controller.streamingBehavior == .followUp ? "Follow up" : "Steer")
+    }
+
+    private var streamingController: SessionController? {
         guard case .active(let controller) = presentation,
-              controller.runtimeState == .streaming,
-              attachments.isEmpty,
-              draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+              controller.runtimeState == .streaming
         else { return nil }
         return controller
+    }
+
+    private func submit(_ action: ComposerReturnAction) {
+        attachmentMessage = nil
+        switch presentation {
+        case .newSession:
+            onSend()
+        case .active(let controller):
+            let defaultPrimary: StreamingBehavior = interactionPreferences.defaultSendAction == .steer
+                ? .steer
+                : .followUp
+            let primary = controller.streamingBehavior ?? defaultPrimary
+            let behavior = ComposerReturnRouting.behavior(for: action, primary: primary)
+            Task { await controller.sendPrompt(behaviorOverride: behavior) }
+        }
     }
 
     @ViewBuilder
@@ -414,7 +906,7 @@ struct ComposerView: View {
                 projectURL: projectURL,
                 isPresented: Binding(
                     get: { flyout == .project },
-                    set: { flyout = $0 ? .project : nil }))
+                    set: { setFlyout($0 ? .project : nil) }))
 
             if let controls {
                 ComposerSessionControlsView(
@@ -422,27 +914,29 @@ struct ComposerView: View {
                     mode: controlsMode,
                     isPresented: Binding(
                         get: { flyout == .model },
-                        set: { flyout = $0 ? .model : nil }))
+                        set: { setFlyout($0 ? .model : nil) }))
             }
 
         case .active(let controller):
-            if controller.runtimeState == .streaming {
-                behaviorButton("Steer", behavior: .steer, controller: controller)
-                behaviorButton("Follow up", behavior: .followUp, controller: controller)
-            }
             if let controls {
                 ComposerSessionControlsView(
                     model: controls,
                     mode: controlsMode,
                     isPresented: Binding(
                         get: { flyout == .model },
-                        set: { flyout = $0 ? .model : nil }))
+                        set: { setFlyout($0 ? .model : nil) }))
             } else {
                 Text(controller.modelName)
                     .font(TenXTypography.body(size: 10, weight: .medium))
                 Text(controller.thinkingLevel)
                     .font(TenXTypography.body(size: 10, weight: .medium))
             }
+            ContextUsageControl(
+                usage: controller.contextUsage,
+                breakdown: controller.contextBreakdown,
+                isLoading: controller.isContextLoading,
+                errorMessage: controller.contextErrorMessage,
+                onRefresh: { await controller.refreshContextDetails() })
             if controller.queuedMessageCount > 0 {
                 Text("\(controller.queuedMessageCount) queued")
                     .font(TenXTypography.body(size: 10, weight: .medium))
@@ -451,31 +945,12 @@ struct ComposerView: View {
         }
     }
 
-    private func behaviorButton(
-        _ title: String,
-        behavior: StreamingBehavior,
-        controller: SessionController
-    ) -> some View {
-        Button(title) {
-            controller.selectStreamingBehavior(behavior)
+    private func setFlyout(_ next: ComposerFlyout?) {
+        if next == .project || next == .model {
+            _ = commands?.dismiss()
+            commandQuery = ""
         }
-        .buttonStyle(GhostActionStyle(color: behaviorColor(behavior, controller: controller)))
-        .accessibilityLabel("Composer mode, \(title)")
-        .accessibilityValue(controller.streamingBehavior == behavior ? "Selected" : "Not selected")
-    }
-
-    private func behaviorColor(
-        _ behavior: StreamingBehavior,
-        controller: SessionController
-    ) -> Color {
-        let isSelected: Bool
-        switch (behavior, controller.streamingBehavior) {
-        case (.steer, .steer?), (.followUp, .followUp?):
-            isSelected = true
-        default:
-            isSelected = false
-        }
-        return TenXPalette.color(isSelected ? TenXPalette.cyanHex : TenXPalette.nearBlackHex)
+        flyout = next
     }
 
     private var isAvailable: Bool {

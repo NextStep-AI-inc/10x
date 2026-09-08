@@ -129,6 +129,7 @@ public enum RpcFrame: Sendable, Equatable {
     case response(RpcResponse)
     case chunk(RpcChunk)
     case extensionUIRequest(ExtensionUIRequest)
+    case providerAccountChanged(ProviderAccountChangedEvent)
     /// Everything else: session events, notices, command updates, and any frame
     /// type a newer omp introduces.
     case event(type: String, payload: JSONValue)
@@ -162,6 +163,8 @@ public enum RpcFrame: Sendable, Equatable {
                 throw RpcFrameError.malformedFrame(type: type, underlying: "missing id or method")
             }
             return .extensionUIRequest(ExtensionUIRequest(id: id, method: method, payload: value))
+        case "provider_account_changed":
+            return .providerAccountChanged(try ProviderAccountChangedEvent(object: object))
         default:
             return .event(type: type, payload: value)
         }

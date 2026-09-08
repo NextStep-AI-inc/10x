@@ -173,6 +173,6 @@ actor SessionSearchService: SessionSearching {
                 .appending(path: "Library/Application Support", directoryHint: .isDirectory)
         return applicationSupport
             .appending(path: "10x", directoryHint: .isDirectory)
-            .appending(path: "SearchIndex-v1.sqlite")
+            .appending(path: "SearchIndex-v2.sqlite")
     }
 }
