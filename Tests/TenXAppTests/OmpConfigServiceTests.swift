@@ -61,6 +61,63 @@ import Testing
 }
 
 @MainActor
+@Test func pendingWriteWhileSaveInFlight() async throws {
+    let runner = GatedConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "autoResume"))
+
+    let saveTask = Task { await model.save(definition, value: .bool(true)) }
+    while await runner.setCallCount == 0 {
+        await Task.yield()
+    }
+    #expect(model.hasPendingWrite(for: "autoResume"))
+
+    await runner.releaseFirstSet()
+    _ = await saveTask.value
+    #expect(!model.hasPendingWrite(for: "autoResume"))
+}
+
+@MainActor
+@Test func pendingWriteClearsAfterWriteChainDrains() async throws {
+    let runner = FakeConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "autoResume"))
+
+    async let first = model.save(definition, value: .bool(false))
+    async let second = model.save(definition, value: .bool(true))
+    _ = await (first, second)
+
+    #expect(!model.hasPendingWrite(for: "autoResume"))
+}
+
+@MainActor
+@Test func pendingWriteStillTrueWhenEarlierSaveCompletes() async throws {
+    let runner = DualGatedConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "autoResume"))
+
+    let slow = Task { await model.save(definition, value: .bool(false)) }
+    while await runner.setCallCount == 0 {
+        await Task.yield()
+    }
+    let fast = Task { await model.save(definition, value: .bool(true)) }
+
+    await runner.releaseSet(at: 0)
+    while await runner.setCallCount == 1 {
+        await Task.yield()
+    }
+    _ = await slow.value
+    #expect(model.hasPendingWrite(for: "autoResume"))
+
+    await runner.releaseSet(at: 1)
+    _ = await fast.value
+    #expect(!model.hasPendingWrite(for: "autoResume"))
+}
+
+@MainActor
 @Test func restoringAnUnsetDefaultClearsTheDisplayedValue() async throws {
     let runner = FakeConfigRunner()
     let model = SettingsViewModel(service: OmpConfigService(runner: runner))
@@ -141,6 +198,61 @@ import Testing
 
     #expect(kill(pid, 0) == -1)
     #expect(errno == ESRCH)
+}
+
+private actor GatedConfigRunner: OmpConfigRunning {
+    private var firstSetContinuation: CheckedContinuation<Void, Never>?
+    private(set) var setCallCount = 0
+
+    func run(arguments: [String]) async throws -> Data {
+        if arguments == ["config", "list", "--json"] {
+            return Data(#"{"autoResume":{"value":false,"type":"boolean","description":"Automatically resume"},"shellPath":{"value":"20","type":"string","description":""}}"#.utf8)
+        }
+        if arguments == ["config", "path"] {
+            return Data("/tmp/omp/config.json\n".utf8)
+        }
+        if arguments.count >= 4, arguments[0] == "config", arguments[1] == "set" {
+            setCallCount += 1
+            if setCallCount == 1 {
+                await withCheckedContinuation { continuation in
+                    firstSetContinuation = continuation
+                }
+            }
+            return Data()
+        }
+        return Data()
+    }
+
+    func releaseFirstSet() {
+        firstSetContinuation?.resume()
+        firstSetContinuation = nil
+    }
+}
+
+private actor DualGatedConfigRunner: OmpConfigRunning {
+    private var setContinuations: [CheckedContinuation<Void, Never>] = []
+    private(set) var setCallCount = 0
+
+    func run(arguments: [String]) async throws -> Data {
+        if arguments == ["config", "list", "--json"] {
+            return Data(#"{"autoResume":{"value":false,"type":"boolean","description":"Automatically resume"},"shellPath":{"value":"20","type":"string","description":""}}"#.utf8)
+        }
+        if arguments == ["config", "path"] {
+            return Data("/tmp/omp/config.json\n".utf8)
+        }
+        if arguments.count >= 4, arguments[0] == "config", arguments[1] == "set" {
+            setCallCount += 1
+            await withCheckedContinuation { continuation in
+                setContinuations.append(continuation)
+            }
+            return Data()
+        }
+        return Data()
+    }
+
+    func releaseSet(at index: Int) {
+        setContinuations[index].resume()
+    }
 }
 
 private actor OrderedDelayConfigRunner: OmpConfigRunning {

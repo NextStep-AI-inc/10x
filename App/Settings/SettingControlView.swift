@@ -81,7 +81,12 @@ struct SettingControlView: View {
             } else if let known = SettingMetadata.knownArrayValues[definition.key] {
                 KnownSetArrayEditor(definition: definition, model: model, knownValues: known)
             } else if SettingMetadata.catalogFedArrays.contains(definition.key) {
-                KnownSetArrayEditor(definition: definition, model: model, knownValues: catalogValues)
+                KnownSetArrayEditor(
+                    definition: definition,
+                    model: model,
+                    knownValues: KnownSetArrayEditor.catalogValues(
+                        for: definition.key, models: model.catalogModels),
+                    alwaysShowAdd: true)
             } else {
                 arrayEditor
             }
@@ -123,17 +128,6 @@ struct SettingControlView: View {
                 .buttonStyle(GhostActionStyle())
         }
         .frame(maxWidth: 290)
-    }
-
-    private var catalogValues: [String] {
-        switch definition.key {
-        case "enabledModels":
-            // enabledModels → provider/modelID selectors; modelProviderOrder and
-            // enabled/disabledProviders → bare provider IDs (OMP rank lookup).
-            KnownSetArrayEditor.modelSelectors(from: model.catalogModels)
-        default:
-            KnownSetArrayEditor.providerIDs(from: model.catalogModels)
-        }
     }
 
     private var arrayEditor: some View {

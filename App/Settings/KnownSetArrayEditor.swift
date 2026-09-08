@@ -9,13 +9,20 @@ struct KnownSetArrayEditor: View {
     let definition: SettingDefinition
     let model: SettingsViewModel
     let knownValues: [String]
+    var alwaysShowAdd = false
 
     @State private var items: [String]
 
-    init(definition: SettingDefinition, model: SettingsViewModel, knownValues: [String]) {
+    init(
+        definition: SettingDefinition,
+        model: SettingsViewModel,
+        knownValues: [String],
+        alwaysShowAdd: Bool = false
+    ) {
         self.definition = definition
         self.model = model
         self.knownValues = knownValues
+        self.alwaysShowAdd = alwaysShowAdd
         // ponytail: non-string items are dropped from editing; OMP schema is string[] for all
         // four known-set keys and the catalog-fed sets.
         _items = State(initialValue: (definition.value?.arrayValue ?? []).compactMap(\.stringValue))
@@ -58,7 +65,7 @@ struct KnownSetArrayEditor: View {
                 .font(.system(size: 10))
             }
             let remaining = Self.remaining(known: knownValues, items: items)
-            if !remaining.isEmpty || knownValues.isEmpty {
+            if !remaining.isEmpty || knownValues.isEmpty || alwaysShowAdd {
                 InlineDropdown(
                     options: remaining.map { SettingOption($0) },
                     current: "",
@@ -76,6 +83,7 @@ struct KnownSetArrayEditor: View {
         .frame(maxWidth: 290)
         .task { await model.loadCatalogIfNeeded() }
         .onChange(of: definition.value) { _, newValue in
+            guard !model.hasPendingWrite(for: definition.key) else { return }
             if Self.shouldResync(items: items, incoming: newValue) {
                 items = (newValue?.arrayValue ?? []).compactMap(\.stringValue)
             }
@@ -119,5 +127,16 @@ struct KnownSetArrayEditor: View {
 
     nonisolated static func providerIDs(from models: [ComposerModelInfo]) -> [String] {
         Array(Set(models.map(\.provider))).sorted()
+    }
+
+    /// enabledModels → provider/modelID selectors; modelProviderOrder and
+    /// enabled/disabledProviders → bare provider IDs (OMP rank lookup).
+    nonisolated static func catalogValues(for key: String, models: [ComposerModelInfo]) -> [String] {
+        switch key {
+        case "enabledModels":
+            modelSelectors(from: models)
+        default:
+            providerIDs(from: models)
+        }
     }
 }

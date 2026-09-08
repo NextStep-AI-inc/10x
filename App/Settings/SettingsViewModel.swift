@@ -19,6 +19,7 @@ final class SettingsViewModel {
     // ponytail: per-key write chain serializes saves/restores; a failed write returns
     // false but does not block subsequent writes on the same key.
     @ObservationIgnored private var writeChains: [String: Task<Bool, Never>] = [:]
+    @ObservationIgnored private var pendingWrites: [String: Int] = [:]
     private(set) var catalogModels: [ComposerModelInfo] = []
 
     init(service: OmpConfigService, catalog: OmpModelCatalogService? = nil) {
@@ -54,6 +55,7 @@ final class SettingsViewModel {
     @discardableResult
     func save(_ definition: SettingDefinition, value: JSONValue) async -> Bool {
         let key = definition.key
+        pendingWrites[key, default: 0] += 1
         let prior = writeChains[key]
         let task = Task<Bool, Never> {
             _ = await prior?.value
@@ -66,6 +68,7 @@ final class SettingsViewModel {
     @discardableResult
     func restoreDefault(_ definition: SettingDefinition) async -> Bool {
         let key = definition.key
+        pendingWrites[key, default: 0] += 1
         let prior = writeChains[key]
         let task = Task<Bool, Never> {
             _ = await prior?.value
@@ -79,6 +82,10 @@ final class SettingsViewModel {
         keyErrors[key]
     }
 
+    func hasPendingWrite(for key: String) -> Bool {
+        (pendingWrites[key] ?? 0) > 0
+    }
+
     @discardableResult
     func prepareForFocus(_ target: SettingsFocusTarget?) -> Bool {
         guard target == .preferredIDE else { return false }
@@ -87,28 +94,35 @@ final class SettingsViewModel {
     }
 
     private func performSave(_ definition: SettingDefinition, value: JSONValue) async -> Bool {
-        keyErrors[definition.key] = nil
+        let key = definition.key
+        keyErrors[key] = nil
         do {
-            try await service.set(key: definition.key, value: value)
-            catalog.update(key: definition.key, value: value)
+            try await service.set(key: key, value: value)
+            pendingWrites[key, default: 0] -= 1
+            catalog.update(key: key, value: value)
             return true
         } catch OmpConfigServiceError.invalidShellPath {
-            keyErrors[definition.key] = "Choose an executable shell file, such as /bin/zsh."
+            pendingWrites[key, default: 0] -= 1
+            keyErrors[key] = "Choose an executable shell file, such as /bin/zsh."
             return false
         } catch {
-            keyErrors[definition.key] = error.localizedDescription
+            pendingWrites[key, default: 0] -= 1
+            keyErrors[key] = error.localizedDescription
             return false
         }
     }
 
     private func performRestoreDefault(_ definition: SettingDefinition) async -> Bool {
-        keyErrors[definition.key] = nil
+        let key = definition.key
+        keyErrors[key] = nil
         do {
-            let value = try await service.reset(key: definition.key)
-            catalog.update(key: definition.key, value: value)
+            let value = try await service.reset(key: key)
+            pendingWrites[key, default: 0] -= 1
+            catalog.update(key: key, value: value)
             return true
         } catch {
-            keyErrors[definition.key] = error.localizedDescription
+            pendingWrites[key, default: 0] -= 1
+            keyErrors[key] = error.localizedDescription
             return false
         }
     }

@@ -75,6 +75,7 @@ struct ObjectArraySettingEditor: View {
             save()
         }
         .onChange(of: definition.value) { _, newValue in
+            guard !model.hasPendingWrite(for: definition.key) else { return }
             if Self.shouldResync(entries: entries, incoming: newValue) {
                 entries = Self.interceptorEntries(from: newValue ?? .array([]))
             }
