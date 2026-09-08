@@ -11,6 +11,7 @@ public final class DaemonServer {
     public static let defaultSocketPath = NSHomeDirectory() + "/Library/Application Support/10x/computer.sock"
 
     private let engine: DesktopEngine
+    private lazy var preview = PreviewStreamer(engine: engine) { [weak self] event in self?.broadcast(event) }
     let registry = SessionRegistry()
     private let socketPath: String
     private let acceptQueue = DispatchQueue(label: "tenx-computer.accept")
@@ -305,6 +306,9 @@ public final class DaemonServer {
                 x: args?["x"]?.doubleValue ?? 0,
                 y: args?["y"]?.doubleValue ?? 0
             ))
+            if let windowID = args?["window_id"]?.intValue {
+                preview.actionOccurred(session: session, windowID: CGWindowID(windowID))
+            }
         case "computer_status":
             events.append(.statusChanged(session: session.raw, status: args?["status"]?.stringValue ?? ""))
         default:
