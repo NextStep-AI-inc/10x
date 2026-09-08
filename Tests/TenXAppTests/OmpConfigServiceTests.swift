@@ -198,6 +198,33 @@ import Testing
 }
 
 @MainActor
+@Test func restoreDefaultQueuesNoEcho() async throws {
+    let runner = FakeConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "autoResume"))
+    let restored: JSONValue = .bool(false)
+
+    _ = await model.restoreDefault(definition)
+    #expect(!model.isOwnEcho(for: "autoResume", value: restored))
+}
+
+@MainActor
+@Test func restoreDefaultClearsStrandedSaveEchoes() async throws {
+    let runner = FakeConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    await model.load()
+    let definition = try #require(model.catalog.definition(key: "autoResume"))
+    let saved: JSONValue = .bool(true)
+    let restored: JSONValue = .bool(false)
+
+    _ = await model.save(definition, value: saved)
+    _ = await model.restoreDefault(definition)
+    #expect(!model.isOwnEcho(for: "autoResume", value: saved))
+    #expect(!model.isOwnEcho(for: "autoResume", value: restored))
+}
+
+@MainActor
 @Test func failedSaveQueuesNoEcho() async throws {
     let runner = FakeConfigRunner()
     let model = SettingsViewModel(service: OmpConfigService(runner: runner))
@@ -332,6 +359,9 @@ private actor FakeConfigRunner: OmpConfigRunning {
         }
         if arguments == ["config", "reset", "shellPath", "--json"] {
             return Data(#"{"key":"shellPath"}"#.utf8)
+        }
+        if arguments == ["config", "reset", "autoResume", "--json"] {
+            return Data(#"{"key":"autoResume","value":false}"#.utf8)
         }
         return Data()
     }

@@ -104,11 +104,12 @@ final class SettingsViewModel {
         (pendingWrites[key] ?? 0) > 0
     }
 
-    /// Consumes one queued echo of our own write. Editors call this from
+    /// Consumes one queued echo of our own save. Editors call this from
     /// onChange(of: definition.value): SwiftUI delivers the value change on a
     /// later render pass than the synchronous performSave block, so
     /// hasPendingWrite is already false when our own echo arrives — the echo
     /// queue is what actually distinguishes our writes from external changes.
+    /// Saves queue echoes; restores clear the queue so editors resync to the default.
     func isOwnEcho(for key: String, value: JSONValue?) -> Bool {
         guard let value, var queue = ownEchoes[key],
               let index = queue.firstIndex(of: value) else { return false }
@@ -149,9 +150,7 @@ final class SettingsViewModel {
         keyErrors[key] = nil
         do {
             let value = try await service.reset(key: key)
-            if let value {
-                ownEchoes[key, default: []].append(value)
-            }
+            ownEchoes[key] = nil
             catalog.update(key: key, value: value)
             pendingWrites[key, default: 0] -= 1
             return true
