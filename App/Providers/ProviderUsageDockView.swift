@@ -25,6 +25,11 @@ struct ProviderUsageDockRoutingEligibility {
     }
 }
 
+struct ProviderUsageDockInspection: Equatable {
+    let providerID: String
+    let accountID: String?
+}
+
 struct ProviderUsageDockPresentation {
     static func expandedProvider(
         _ provider: ProviderUsageProvider,
@@ -39,9 +44,66 @@ struct ProviderUsageDockPresentation {
     }
 
     static func selectorProviders(
-        _ providers: [ProviderUsageProvider]
+        _ providers: [ProviderUsageProvider],
+        inspectedProviderID: String?
     ) -> [ProviderUsageProvider] {
-        providers
+        providers.filter { $0.id == inspectedProviderID }
+    }
+
+    static func peekAccount(
+        in provider: ProviderUsageProvider,
+        inspectedAccountID: String?
+    ) -> ProviderUsageAccount? {
+        guard provider.accounts.count > 1 else { return nil }
+        let inspectedIndex = inspectedAccountID.flatMap { id in
+            provider.accounts.firstIndex(where: { $0.id == id })
+        }
+        if let inspectedIndex, inspectedIndex + 1 < provider.accounts.count {
+            return provider.accounts[inspectedIndex + 1]
+        }
+        if let inspectedIndex, inspectedIndex > 0 {
+            return provider.accounts[inspectedIndex - 1]
+        }
+        return provider.accounts.first(where: { $0.id != inspectedAccountID })
+    }
+
+    static func expandedPeekProvider(
+        _ provider: ProviderUsageProvider,
+        inspectedAccount: ProviderUsageAccount
+    ) -> ProviderUsageProvider {
+        let peek = peekAccount(in: provider, inspectedAccountID: inspectedAccount.id)
+        return ProviderUsageProvider(
+            id: provider.id,
+            name: provider.name,
+            accounts: [inspectedAccount] + [peek].compactMap { $0 },
+            capability: provider.capability,
+            foregroundAccountRef: inspectedAccount.accountRef)
+    }
+
+    static func inspectionTargets(
+        in providers: [ProviderUsageProvider]
+    ) -> [ProviderUsageDockInspection] {
+        providers.flatMap { provider in
+            if !provider.accounts.isEmpty {
+                return provider.accounts.map {
+                    ProviderUsageDockInspection(providerID: provider.id, accountID: $0.id)
+                }
+            }
+            return [ProviderUsageDockInspection(providerID: provider.id, accountID: nil)]
+        }
+    }
+
+    static func stepInspection(
+        _ delta: Int,
+        from current: ProviderUsageDockInspection,
+        in providers: [ProviderUsageProvider]
+    ) -> ProviderUsageDockInspection {
+        let targets = inspectionTargets(in: providers)
+        guard !targets.isEmpty else { return current }
+        let index = targets.firstIndex(of: current) ?? 0
+        var nextIndex = (index + delta) % targets.count
+        if nextIndex < 0 { nextIndex += targets.count }
+        return targets[nextIndex]
     }
 }
 
@@ -316,8 +378,9 @@ struct ProviderUsageDockView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollIndicators(.hidden)
-            } else if provider.capability == .accountRouting,
-                      let account = inspectedAccount(in: provider) {
+            } else if let account = inspectedAccount(in: provider)
+                        ?? Self.foregroundAccount(provider)
+                        ?? provider.accounts.first {
                 accountDetails(provider: provider, account: account)
             } else {
                 providerDetails(provider)
@@ -446,27 +509,88 @@ struct ProviderUsageDockView: View {
     }
 
     private var expandedProviderSelector: some View {
-        HStack(alignment: .bottom, spacing: Self.compactWheelSpacing) {
-            ForEach(ProviderUsageDockPresentation.selectorProviders(providers)) { provider in
-                expandedProviderButton(compactSelectorProvider(provider))
+        let targets = ProviderUsageDockPresentation.inspectionTargets(in: providers)
+        return HStack(alignment: .center, spacing: 8) {
+            if targets.count > 1 {
+                inspectionArrow(
+                    systemName: "chevron.left",
+                    label: "Previous",
+                    delta: -1)
+            }
+
+            ForEach(ProviderUsageDockPresentation.selectorProviders(
+                providers,
+                inspectedProviderID: interaction.inspectedProviderID)
+            ) { provider in
+                expandedSelectorStack(provider)
+            }
+
+            if targets.count > 1 {
+                inspectionArrow(
+                    systemName: "chevron.right",
+                    label: "Next",
+                    delta: 1)
             }
         }
     }
 
-    private func compactSelectorProvider(
-        _ provider: ProviderUsageProvider
-    ) -> ProviderUsageProvider {
-        guard provider.capability == .accountRouting,
-              let account = provider.id == interaction.inspectedProviderID
-                ? inspectedAccount(in: provider) ?? Self.foregroundAccount(provider)
-                : Self.foregroundAccount(provider)
-        else { return provider }
-        return ProviderUsageProvider(
-            id: provider.id,
-            name: provider.name,
-            accounts: [account],
-            capability: provider.capability,
-            foregroundAccountRef: account.accountRef)
+    @ViewBuilder
+    private func expandedSelectorStack(_ provider: ProviderUsageProvider) -> some View {
+        if let account = inspectedAccount(in: provider)
+            ?? Self.foregroundAccount(provider)
+            ?? provider.accounts.first {
+            accountStack(
+                provider: ProviderUsageDockPresentation.expandedPeekProvider(
+                    provider,
+                    inspectedAccount: account),
+                isGrayscale: false,
+                diameter: ProviderUsageRingGeometry.diameter,
+                focus: $expandedFocusedSelectorID,
+                visualFocusAccountID: visualFocusAccountID,
+                isSource: false,
+                layout: .peekRight
+            ) { selected in
+                guard let fullAccount = provider.accounts.first(where: { $0.id == selected.id })
+                else { return }
+                inspect(provider: provider, account: fullAccount)
+            }
+        } else {
+            expandedProviderButton(provider)
+        }
+    }
+
+    private func inspectionArrow(
+        systemName: String,
+        label: String,
+        delta: Int
+    ) -> some View {
+        Button {
+            stepInspection(delta)
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(GhostActionStyle(horizontalPadding: 0))
+        .accessibilityLabel(label)
+    }
+
+    private func stepInspection(_ delta: Int) {
+        guard let providerID = interaction.inspectedProviderID else { return }
+        let next = ProviderUsageDockPresentation.stepInspection(
+            delta,
+            from: ProviderUsageDockInspection(
+                providerID: providerID,
+                accountID: interaction.inspectedAccountID),
+            in: providers)
+        guard let provider = providers.first(where: { $0.id == next.providerID }) else { return }
+        if let accountID = next.accountID,
+           let account = provider.accounts.first(where: { $0.id == accountID }) {
+            inspect(provider: provider, account: account)
+        } else {
+            inspectProvider(provider)
+        }
     }
 
     private func compactProviderButton(_ provider: ProviderUsageProvider) -> some View {
@@ -531,6 +655,7 @@ struct ProviderUsageDockView: View {
         focus: FocusState<String?>.Binding,
         visualFocusAccountID: String? = nil,
         isSource: Bool,
+        layout: ProviderAccountStackLayout = .fanUp,
         onSelect: @escaping (ProviderUsageAccount) -> Void
     ) -> some View {
         let stack = ProviderAccountStackView(
@@ -538,10 +663,8 @@ struct ProviderUsageDockView: View {
             generatingCounts: effectiveGeneratingCounts,
             isGrayscale: isGrayscale,
             diameter: diameter,
-            // The compact dock (isSource: true) collapses at rest and fans
-            // on hover; the panel's inline selector (isSource: false) always
-            // has room, so it always shows every account.
             alwaysExpanded: !isSource,
+            layout: layout,
             focusedAccountID: focus,
             visualFocusAccountID: visualFocusAccountID,
             onSelect: onSelect)
@@ -706,6 +829,10 @@ struct ProviderUsageDockView: View {
     }
 
     private func inspectProvider(_ provider: ProviderUsageProvider) {
+        if let account = Self.foregroundAccount(provider) ?? provider.accounts.first {
+            inspect(provider: provider, account: account)
+            return
+        }
         applyAnimation {
             interaction.inspectProvider(providerID: provider.id)
         }
