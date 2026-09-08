@@ -990,14 +990,12 @@ struct ComposerView: View {
             }
         }
 
-        if !feedbackMessages.isEmpty {
-            ComposerWarningControl(
-                messages: feedbackMessages,
-                isPresented: Binding(
-                    get: { flyout == .warning },
-                    set: { setFlyout($0 ? .warning : nil) }),
-                onRestoreFocus: restoreEditorFocus)
-        }
+        ComposerWarningControl(
+            messages: feedbackMessages,
+            isPresented: Binding(
+                get: { flyout == .warning },
+                set: { setFlyout($0 ? .warning : nil) }),
+            onRestoreFocus: restoreEditorFocus)
     }
 
     private func setFlyout(_ next: ComposerFlyout?) {

@@ -81,6 +81,7 @@ struct SendActionControl: View {
             panelContent: { rows },
             triggerContent: { openTrigger })
             .focusable()
+            .focusEffectDisabled()
             .focused($isPanelFocused)
             .onKeyPress(
                 keys: [.upArrow, .downArrow, .return, .escape],

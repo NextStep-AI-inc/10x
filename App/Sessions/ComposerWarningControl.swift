@@ -6,10 +6,11 @@ struct ComposerWarningControl: View {
     var onRestoreFocus: () -> Void = {}
 
     @State private var anchor: FlyoutWindowAnchor?
+    @State private var contentHeight: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var desiredPanelSize: CGSize {
-        CGSize(width: 360, height: messages.count > 1 ? 180 : 120)
+        CGSize(width: 360, height: contentHeight ?? CGFloat(messages.count) * 44)
     }
 
     var body: some View {
@@ -28,6 +29,11 @@ struct ComposerWarningControl: View {
                 }
             }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: isPresented)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: contentHeight)
+            .frame(width: 32, height: 28)
+            .opacity(messages.isEmpty ? 0 : 1)
+            .allowsHitTesting(!messages.isEmpty)
+            .accessibilityHidden(messages.isEmpty)
             .onChange(of: messages) { _, messages in
                 if messages.isEmpty { isPresented = false }
             }
@@ -97,6 +103,17 @@ struct ComposerWarningControl: View {
                             .accessibilityElement(children: .combine)
                         }
                     }
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: FlyoutContentHeightKey.self,
+                                value: geometry.size.height)
+                        }
+                    }
+                }
+                .onPreferenceChange(FlyoutContentHeightKey.self) { height in
+                    guard height > 0 else { return }
+                    contentHeight = height
                 }
                 .frame(
                     width: resolvedPlacement.panelFrame.width,
@@ -112,7 +129,9 @@ struct ComposerWarningControl: View {
         Button(action: closeAndRestoreFocus) {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10, weight: .medium))
                 Text(messages.count.formatted())
+                    .font(TenXTypography.mono(size: 10, weight: .semibold))
             }
             .frame(height: 28)
         }

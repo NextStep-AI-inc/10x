@@ -6,6 +6,14 @@ enum FlyoutDirection: Equatable, Sendable {
     case below
 }
 
+struct FlyoutContentHeightKey: PreferenceKey {
+    nonisolated(unsafe) static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct FlyoutPlacement: Equatable, Sendable {
     let direction: FlyoutDirection
     let panelFrame: CGRect

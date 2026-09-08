@@ -16,9 +16,12 @@ struct ContextUsageControl: View {
     var onRestoreFocus: () -> Void = {}
 
     @State private var anchor: FlyoutWindowAnchor?
+    @State private var contentHeight: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private static let desiredPanelSize = CGSize(width: 334, height: 470)
+    private var desiredPanelSize: CGSize {
+        CGSize(width: 334, height: contentHeight ?? 470)
+    }
 
     private var summary: ContextUsageSummary? {
         ContextUsageSummary(usage: usage, breakdown: breakdown)
@@ -40,6 +43,7 @@ struct ContextUsageControl: View {
                 }
             }
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: isPresented)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: contentHeight)
             .onExitCommand {
                 guard isPresented else { return }
                 closeAndRestoreFocus()
@@ -99,6 +103,17 @@ struct ContextUsageControl: View {
                         onRefresh: onRefresh,
                         onCompact: onCompact)
                         .frame(width: resolvedPlacement.panelFrame.width)
+                        .background {
+                            GeometryReader { geometry in
+                                Color.clear.preference(
+                                    key: FlyoutContentHeightKey.self,
+                                    value: geometry.size.height)
+                            }
+                        }
+                }
+                .onPreferenceChange(FlyoutContentHeightKey.self) { height in
+                    guard height > 0 else { return }
+                    contentHeight = height
                 }
                 .frame(
                     width: resolvedPlacement.panelFrame.width,
@@ -129,7 +144,7 @@ struct ContextUsageControl: View {
         anchor.map {
             FlyoutPlacement.resolve(
                 triggerFrame: $0.triggerFrame,
-                desiredPanelSize: Self.desiredPanelSize,
+                desiredPanelSize: desiredPanelSize,
                 usableBounds: $0.usableBounds,
                 preferredDirection: .above)
         }
@@ -138,7 +153,7 @@ struct ContextUsageControl: View {
     private var resolvedPlacement: FlyoutPlacement {
         placement ?? FlyoutPlacement(
             direction: .above,
-            panelFrame: CGRect(origin: .zero, size: Self.desiredPanelSize),
+            panelFrame: CGRect(origin: .zero, size: desiredPanelSize),
             triggerOffsetX: 0,
             isHeightConstrained: false)
     }
