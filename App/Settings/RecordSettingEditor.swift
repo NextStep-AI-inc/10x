@@ -19,15 +19,19 @@ struct RecordEntry: Equatable, Identifiable {
     let id: UUID
     var key: String
     var value: String
+    var unrecognizedRaw: JSONValue?
 
-    init(id: UUID = UUID(), key: String, value: String) {
+    var isUnrecognized: Bool { unrecognizedRaw != nil }
+
+    init(id: UUID = UUID(), key: String, value: String, unrecognizedRaw: JSONValue? = nil) {
         self.id = id
         self.key = key
         self.value = value
+        self.unrecognizedRaw = unrecognizedRaw
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.key == rhs.key && lhs.value == rhs.value
+        lhs.key == rhs.key && lhs.value == rhs.value && lhs.unrecognizedRaw == rhs.unrecognizedRaw
     }
 }
 
@@ -121,19 +125,30 @@ struct RecordSettingEditor: View {
                 accessibilityLabelText: "\(entry.wrappedValue.key) model",
                 onSelect: { entry.wrappedValue.value = $0; save() })
         case .number, .text, .stringList:
-            TextField(valueKind == .stringList ? "a, b, c" : "Value", text: entry.projectedValue.value)
-                .textFieldStyle(.plain)
-                .font(TenXTypography.mono(size: 11))
-                .padding(.vertical, 5)
-                .overlay(alignment: .bottom) {
-                    Rectangle().fill(TenXPalette.color(TenXPalette.nearBlackHex)).frame(height: 1)
-                }
-                .focused($focusedField, equals: .value(entry.wrappedValue.id))
-                .onSubmit { save() }
-                .accessibilityLabel(
-                    entry.wrappedValue.key.isEmpty
-                        ? "Entry value"
-                        : "\(entry.wrappedValue.key) value")
+            if entry.wrappedValue.isUnrecognized {
+                Text(Self.unrecognizedTypeHint(for: entry.wrappedValue.unrecognizedRaw))
+                    .font(TenXTypography.mono(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(
+                        entry.wrappedValue.key.isEmpty
+                            ? "Non-string entry value"
+                            : "\(entry.wrappedValue.key) value, \(Self.unrecognizedTypeHint(for: entry.wrappedValue.unrecognizedRaw))")
+            } else {
+                TextField(valueKind == .stringList ? "a, b, c" : "Value", text: entry.projectedValue.value)
+                    .textFieldStyle(.plain)
+                    .font(TenXTypography.mono(size: 11))
+                    .padding(.vertical, 5)
+                    .overlay(alignment: .bottom) {
+                        Rectangle().fill(TenXPalette.color(TenXPalette.nearBlackHex)).frame(height: 1)
+                    }
+                    .focused($focusedField, equals: .value(entry.wrappedValue.id))
+                    .onSubmit { save() }
+                    .accessibilityLabel(
+                        entry.wrappedValue.key.isEmpty
+                            ? "Entry value"
+                            : "\(entry.wrappedValue.key) value")
+            }
         }
     }
 
@@ -157,7 +172,7 @@ struct RecordSettingEditor: View {
             guard seenKeys.insert(key).inserted else { return .duplicateKeys }
 
             let trimmedValue = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedValue.isEmpty else { continue }
+            guard entry.unrecognizedRaw != nil || !trimmedValue.isEmpty else { continue }
             if kind == .number, numberJSON(from: trimmedValue) == nil {
                 return .invalidNumber
             }
@@ -190,6 +205,8 @@ struct RecordSettingEditor: View {
                 RecordEntry(key: key, value: (raw.arrayValue ?? []).compactMap(\.stringValue).joined(separator: ", "))
             case .number:
                 RecordEntry(key: key, value: rawValueText(from: raw))
+            case .text where raw.stringValue == nil:
+                RecordEntry(key: key, value: "", unrecognizedRaw: raw)
             default:
                 RecordEntry(key: key, value: raw.stringValue ?? "")
             }
@@ -204,20 +221,24 @@ struct RecordSettingEditor: View {
             let key = entry.key.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !key.isEmpty else { continue }
             let trimmedValue = entry.value.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedValue.isEmpty else { continue }
-            switch kind {
-            case .number:
-                if let json = numberJSON(from: trimmedValue) {
-                    object[key] = json
+            if kind == .text, let raw = entry.unrecognizedRaw {
+                object[key] = raw
+            } else {
+                guard !trimmedValue.isEmpty else { continue }
+                switch kind {
+                case .number:
+                    if let json = numberJSON(from: trimmedValue) {
+                        object[key] = json
+                    }
+                case .stringList:
+                    object[key] = .array(
+                        trimmedValue.split(separator: ",")
+                            .map { $0.trimmingCharacters(in: .whitespaces) }
+                            .filter { !$0.isEmpty }
+                            .map(JSONValue.string))
+                case .text, .policy, .model:
+                    object[key] = .string(trimmedValue)
                 }
-            case .stringList:
-                object[key] = .array(
-                    trimmedValue.split(separator: ",")
-                        .map { $0.trimmingCharacters(in: .whitespaces) }
-                        .filter { !$0.isEmpty }
-                        .map(JSONValue.string))
-            case .text, .policy, .model:
-                object[key] = .string(trimmedValue)
             }
         }
         return .object(object)
@@ -257,5 +278,16 @@ struct RecordSettingEditor: View {
         if let int = raw.intValue { return String(int) }
         if let double = raw.doubleValue { return String(double) }
         return raw.stringValue ?? ""
+    }
+
+    nonisolated static func unrecognizedTypeHint(for value: JSONValue?) -> String {
+        switch value {
+        case .object: "object"
+        case .array: "array"
+        case .int, .double: "number"
+        case .bool: "bool"
+        case .null: "null"
+        default: "value"
+        }
     }
 }

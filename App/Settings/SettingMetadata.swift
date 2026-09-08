@@ -572,11 +572,11 @@ enum SettingMetadata {
     /// the schema documents no keys beyond what config list already reports.
     static let descriptions: [String: String] = [
         "modelRoles": "Which model OMP uses for each internal job (plan, advisor, smol, …). Values are provider/model-id with an optional :effort suffix.",
-        "modelTags": "Free-form tags attached to model selectors, used by routing rules.",
+        "modelTags": "Display metadata for model roles (name, color, hidden flag), keyed by role id.",
         "cycleOrder": "Model roles the cycle keybinding rotates through, in order.",
         "enabledModels": "Models offered in the composer picker. Empty means all available models.",
         "modelProviderOrder": "Provider priority when the same model is reachable through several providers.",
-        "enabledProviders": "Providers OMP may use. Empty means all connected providers.",
+        "enabledProviders": "Foreign tool config directories OMP loads (e.g. cursor, codex, claude). Empty means only native OMP config is used.",
         "disabledProviders": "Providers OMP must not use, even if connected.",
         "shellPath": "Shell OMP uses for bash tool calls when none is inherited.",
         "extensions": "Extension identifiers OMP loads at startup.",
@@ -599,6 +599,6 @@ enum SettingMetadata {
 
     /// Array keys whose values come from the live model/provider catalog.
     static let catalogFedArrays: Set<String> = [
-        "enabledModels", "modelProviderOrder", "enabledProviders", "disabledProviders",
+        "enabledModels", "modelProviderOrder", "disabledProviders",
     ]
 }

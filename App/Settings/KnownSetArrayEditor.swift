@@ -24,7 +24,7 @@ struct KnownSetArrayEditor: View {
         self.knownValues = knownValues
         self.alwaysShowAdd = alwaysShowAdd
         // ponytail: non-string items are dropped from editing; OMP schema is string[] for all
-        // four known-set keys and the catalog-fed sets.
+        // known-set and catalog-fed array keys.
         _items = State(initialValue: (definition.value?.arrayValue ?? []).compactMap(\.stringValue))
     }
 
@@ -130,13 +130,15 @@ struct KnownSetArrayEditor: View {
     }
 
     /// enabledModels → provider/modelID selectors; modelProviderOrder and
-    /// enabled/disabledProviders → bare provider IDs (OMP rank lookup).
+    /// disabledProviders → bare provider IDs (OMP rank lookup).
     nonisolated static func catalogValues(for key: String, models: [ComposerModelInfo]) -> [String] {
         switch key {
         case "enabledModels":
             modelSelectors(from: models)
-        default:
+        case "modelProviderOrder", "disabledProviders":
             providerIDs(from: models)
+        default:
+            []
         }
     }
 }

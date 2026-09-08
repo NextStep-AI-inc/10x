@@ -110,4 +110,25 @@ struct RecordSettingEditorTests {
         #expect(!RecordSettingEditor.shouldResync(
             entries: entries, incoming: .object(["openai": .double(4.0)]), kind: .number))
     }
+
+    @Test func objectValueRoundTripsThroughTextKindEditor() {
+        let incoming: JSONValue = .object([
+            "default": .object([
+                "name": .string("Default"),
+                "color": .string("blue"),
+                "hidden": .bool(false),
+            ]),
+        ])
+        let entries = RecordSettingEditor.entries(from: incoming, kind: .text)
+        let serialized = RecordSettingEditor.jsonObject(from: entries, kind: .text)
+        #expect(serialized == incoming)
+    }
+
+    @Test func preservedRawDoesNotTriggerResyncWhenIncomingMatches() {
+        let incoming: JSONValue = .object([
+            "default": .object(["name": .string("Default")]),
+        ])
+        let entries = RecordSettingEditor.entries(from: incoming, kind: .text)
+        #expect(!RecordSettingEditor.shouldResync(entries: entries, incoming: incoming, kind: .text))
+    }
 }

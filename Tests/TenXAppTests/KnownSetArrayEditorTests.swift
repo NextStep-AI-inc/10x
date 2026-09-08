@@ -50,10 +50,10 @@ struct KnownSetArrayEditorTests {
             == ["p1/m1", "p2/m2"])
         #expect(KnownSetArrayEditor.catalogValues(for: "modelProviderOrder", models: models)
             == ["p1", "p2"])
-        #expect(KnownSetArrayEditor.catalogValues(for: "enabledProviders", models: models)
-            == ["p1", "p2"])
         #expect(KnownSetArrayEditor.catalogValues(for: "disabledProviders", models: models)
             == ["p1", "p2"])
+        #expect(KnownSetArrayEditor.catalogValues(for: "enabledProviders", models: models)
+            == [])
     }
 
     @Test func shouldResyncReturnsFalseForOwnSaveEcho() {
