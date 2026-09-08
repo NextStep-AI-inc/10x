@@ -1,18 +1,20 @@
 # Tool-reported file review acceptance status
 
-Status: BLOCKED at native acceptance. The arm64 Release build passed and the isolated package passed ad hoc signature verification. The Mac remained locked at the final native-access check. This package has not been launched.
+Status: **DONE_WITH_CONCERNS** for native acceptance. Parent accepted the corrected behavior in the signed arm64 Release app at `/tmp/10x-review-multifile-build/10x-review.app`, source `7b608387656ed56620ec5b259a8f979a12d81d81`, bundle ID `com.nextstep.tenx.reviewqa`, executable SHA-256 `a90d468d6eb4dbc5eedd29c088bd271c075db8fba3dd951d18366affae5b12a9`. The app was quit with Command-Q, and a process check confirmed no Review instance remained. This is not an integrated-build, ready-for-merge, merge, or deployment claim.
 
-## Verified
+## Reproduction and correction
 
-- Source commit: `9cdefa7842a9947cd76f48ae1035ebcd398e2f3a`.
-- Fourteen focused extraction, deduplication, projection, disclosure/navigation, and approved snapshot checks passed.
-- Build command, build-log hash, package path, bundle identifier, and unsigned/packaged executable hashes are recorded in `manifest.json`.
-- No full suite was repeated. The six previously reproduced baseline activity snapshot failures remain recorded by PRs #32/#34.
+An actual OMP 18.1.10 Cursor-Grok-4.6-Fast turn produced a multi-file edit whose aggregate diff reproduced the bug as `Changed file`; `native-multifile-before-fix.jpg` and `.ax.txt` retain that red evidence. The root cause was extraction of the aggregate `details.diff` before the authoritative `details.perFileResults`. Shared extraction now parses every per-file diff with its matching path. The two added regressions failed before the correction and passed afterward; the final focused compatibility run passed 14 tests. Exact commands and logs remain in `.superpowers/sdd/turn-file-review/report.md`.
 
-## Remaining
+## Verified natively
 
-In an owned disposable project, drive edit/write tools, repeated edits, a multi-file patch, and a shell-created file alongside a pre-existing change. Confirm the scoped list and click paths from Slim mode.
+- Reopening the actual saved first turn displayed three unique tool-reported files: `editable-alpha.txt`, `editable-beta.txt`, and `generated-note.txt`. `shell-only.txt`, which was created by shell rather than an edit/write tool, was correctly excluded.
+- The latest alpha link opened the two-file edit showing alpha `first → final` and beta `original → final`. The beta link opened that same correct multi-file tool. The write link opened the generated review note. Parent clicked each path in actual Slim mode and inspected `native-corrected-file-list.jpg`, `native-slim-latest-multifile-edit.jpg`, and `native-slim-write-details.jpg`.
+- A second actual provider turn in the corrected build performed one multi-file edit from alpha `final → live` and beta `final → live`. `native-live-multifile-list.jpg` and its accessibility transcript prove two filenames and the correct explanatory copy.
+- `native-edit-write-results.json` preserves the neutral actual provider results, including authoritative `perFileResults`. `native-final-files.json` and `native-baseline.json` prove the repository remained on its original HEAD and branch, the pre-existing dirty/untracked files retained their hashes, and no commit occurred.
 
-Stacked on PR #37. Preserve the later controller-owned disclosure and passive visible scroll targets from PR #35.
+## Evidence and limits
 
-Keep this PR draft until its native and integration gates pass. No merge or deployment.
+`manifest.json` retains the original Release build and log metadata as historical evidence, identifies the corrected signed package as the current native build, and hashes every added `native-*` artifact plus `multifile-package.json`. The six previously reproduced baseline activity snapshot failures remain unchanged; no additional suite was run.
+
+Final integration must include PR #37 and retain PR #35's later controller-owned disclosure and passive visible scroll targets. That combined stack has not been built or accepted. No ready, merge, or deployment action occurred.

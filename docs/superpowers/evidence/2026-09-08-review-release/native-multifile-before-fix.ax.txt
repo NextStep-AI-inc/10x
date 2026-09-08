@@ -1,0 +1,7 @@
+				55 container Edit Changed file, +2 −2, Complete, Total 14.2 seconds
+					56 button Description: Edit Changed file, +2 −2, Complete, Total 14.2 seconds, Help: Expands tool details, Value: Collapsed
+					57 text Changed file · +2 −2 Complete Total 14.2s
+				72 text Acceptance edits are in /tmp/10x-session-recovery-home/projects/review-native only. No commit, no branch change. Edits • editable-alpha.txt: alpha original → alpha first (single edit), then alpha first → alpha final in the multi-file edit • editable-beta.txt: beta original → beta final (same multi-file edit) • generated-note.txt: created via write (review note) • shell-only.txt: created via shell (shell note) • excluded-dirty.txt and excluded-untracked.txt: left untouched git • Branch: qa-review-base • Unstaged: editable-alpha.txt, editable-beta.txt, plus pre-existing excluded-dirty.txt • Untracked: generated-note.txt, shell-only.txt, plus pre-existing excluded-untracked.txt • Diff for the editable files is original → final on the second line of each; nothing staged Completed, 22.2s Tool-reported files (3) Completed edit and write tools in this turn. Shell commands and other workspace changes are not included.
+				73 button Show tool details for /tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt
+				74 button Show tool details for Changed file
+				75 button Show tool details for /tmp/10x-session-recovery-home/projects/review-native/generated-note.txt
