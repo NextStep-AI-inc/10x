@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct ComputerUseSettingsSection: View {
@@ -25,6 +26,8 @@ struct ComputerUseSettingsSection: View {
             Divider()
             daemonRow
             Divider()
+            otherHarnessesRow
+            Divider()
             stopAllRow
         }
     }
@@ -42,9 +45,7 @@ struct ComputerUseSettingsSection: View {
     private var installRow: some View {
         settingsRow(
             title: "tenx-computer",
-            detail: model.isInstalled
-                ? "Installed at \(ComputerUseInstaller.installPath)"
-                : "Not installed — required for computer tools in OMP sessions")
+            detail: installDetail)
         {
             Button(model.isInstalling ? "Installing…" : (model.isInstalled ? "Reinstall" : "Install")) {
                 Task { await model.installOrReinstall() }
@@ -52,19 +53,20 @@ struct ComputerUseSettingsSection: View {
             .buttonStyle(GhostActionStyle())
             .disabled(model.isInstalling)
         } footer: {
-            if !model.installLog.isEmpty {
-                Text(model.installLog)
-                    .font(TenXTypography.mono(size: 9))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    .textSelection(.enabled)
-            }
+            logDisclosure(text: model.installLog)
         }
+    }
+
+    private var installDetail: String {
+        if let result = model.installResultDetail { return result }
+        if model.isInstalled { return "Installed at \(ComputerUseInstaller.installPath)" }
+        return "Not installed. Required for computer tools in agent sessions."
     }
 
     private var selfcheckRow: some View {
         settingsRow(
             title: "Selfcheck",
-            detail: "Probe permissions and input on this Mac")
+            detail: model.selfcheckResultDetail ?? "Probe permissions and input on this Mac")
         {
             Button(model.isRunningSelfcheck ? "Running…" : "Run selfcheck") {
                 Task { await model.runSelfcheck() }
@@ -72,12 +74,59 @@ struct ComputerUseSettingsSection: View {
             .buttonStyle(GhostActionStyle())
             .disabled(model.isRunningSelfcheck || !model.isInstalled)
         } footer: {
-            if !model.selfcheckOutput.isEmpty {
-                Text(model.selfcheckOutput)
-                    .font(TenXTypography.mono(size: 9))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    .textSelection(.enabled)
+            logDisclosure(text: model.selfcheckOutput)
+        }
+    }
+
+    private var otherHarnessesRow: some View {
+        settingsRow(
+            title: "Other harnesses",
+            detail: "Copy MCP config for Cursor, Claude Code, or Codex")
+        {
+            EmptyView()
+        } footer: {
+            DisclosureGroup("Config snippets") {
+                VStack(alignment: .leading, spacing: 14) {
+                    harnessSnippet(
+                        title: "Cursor",
+                        location: "~/.cursor/mcp.json or .cursor/mcp.json in a project",
+                        content: ComputerUseInstaller.cursorMCPSnippet(binaryPath: model.binaryPath))
+                    harnessSnippet(
+                        title: "Claude Code",
+                        location: ".mcp.json in a project root",
+                        content: ComputerUseInstaller.claudeCodeMCPSnippet(binaryPath: model.binaryPath))
+                    harnessSnippet(
+                        title: "Codex",
+                        location: "~/.codex/config.toml",
+                        content: ComputerUseInstaller.codexMCPSnippet(binaryPath: model.binaryPath))
+                }
+                .padding(.top, 8)
             }
+            .font(TenXTypography.body(size: 11))
+            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        }
+    }
+
+    private func harnessSnippet(title: String, location: String, content: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                    .font(TenXTypography.body(size: 12, weight: .semibold))
+                Spacer()
+                Button("Copy") { copy(content) }
+                    .buttonStyle(GhostActionStyle())
+            }
+            Text(location)
+                .font(TenXTypography.body(size: 10))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            Text(content)
+                .font(TenXTypography.mono(size: 9))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+                .clipShape(RoundedRectangle(cornerRadius: 4))
         }
     }
 
@@ -99,8 +148,8 @@ struct ComputerUseSettingsSection: View {
         settingsRow(
             title: "Daemon",
             detail: model.supervision.isConnected
-                ? "Connected — starts on first MCP use when idle"
-                : "Not running — starts on first MCP use")
+                ? "Connected. Starts on first MCP use when idle."
+                : "Not running. Starts on first MCP use.")
     }
 
     private var stopAllRow: some View {
@@ -116,9 +165,29 @@ struct ComputerUseSettingsSection: View {
     private func permissionDetail(_ granted: Bool?) -> String {
         switch granted {
         case true: "Granted"
-        case false: "Not granted — open System Settings to allow tenx-computer"
+        case false: "Not granted. Open System Settings to allow tenx-computer."
         case nil: "Unknown until the daemon starts"
         }
+    }
+
+    @ViewBuilder
+    private func logDisclosure(text: String) -> some View {
+        if !text.isEmpty {
+            DisclosureGroup("Details") {
+                Text(text)
+                    .font(TenXTypography.mono(size: 9))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .textSelection(.enabled)
+                    .padding(.top, 4)
+            }
+            .font(TenXTypography.body(size: 11))
+            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        }
+    }
+
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
     }
 
     private func settingsRow<Footer: View>(

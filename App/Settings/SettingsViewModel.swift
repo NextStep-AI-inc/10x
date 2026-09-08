@@ -14,7 +14,6 @@ final class SettingsViewModel {
 
     var sections: [SettingsSection] { catalog.sections(query: query) }
     var settingCount: Int { catalog.definitions.count }
-    var hasComputerUseSetting: Bool { catalog.hasComputerUseSetting }
 
     @ObservationIgnored private let service: OmpConfigService
 

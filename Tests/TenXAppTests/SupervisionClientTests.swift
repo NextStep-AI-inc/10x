@@ -88,6 +88,14 @@ final class SupervisionClientTests: XCTestCase {
         XCTAssertEqual(client.permissions?.accessibility, false)
     }
 
+    func test_disconnect_clearsPermissions() {
+        let client = makeClient()
+        client.apply(.permissions(screenRecording: true, accessibility: true))
+        client.resetConnectionState()
+        XCTAssertFalse(client.isConnected)
+        XCTAssertNil(client.permissions)
+    }
+
     func test_sessionEnded_removesOnlyThatSession() {
         let client = makeClient()
         client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))

@@ -15,10 +15,13 @@ final class ComputerUseSetupModel {
 
     private(set) var isInstalling = false
     private(set) var installLog = ""
+    private(set) var installResultDetail: String?
     private(set) var isRunningSelfcheck = false
     private(set) var selfcheckOutput = ""
+    private(set) var selfcheckResultDetail: String?
 
     var isInstalled: Bool { installer.isInstalled }
+    var binaryPath: String { installer.binaryPath }
 
     init(
         supervision: SupervisionClient,
@@ -40,10 +43,12 @@ final class ComputerUseSetupModel {
         guard !isInstalling else { return }
         isInstalling = true
         installLog = ""
+        installResultDetail = nil
         defer { isInstalling = false }
 
         guard let scriptURL = Self.locateInstallScript() else {
             installLog = "[ComputerUse:Setup] install script not found"
+            installResultDetail = "Install failed."
             return
         }
 
@@ -55,8 +60,12 @@ final class ComputerUseSetupModel {
             installLog = output
             try installer.ensureMounted()
             installLog += "\nMCP mount: updated \(installer.ompConfigPath)"
+        } catch let error as ComputerUseInstallerError {
+            installLog = "[ComputerUse:Setup] MCP mount failed — \(error.localizedDescription)"
+            installResultDetail = error.localizedDescription
         } catch {
             installLog = "[ComputerUse:Setup] Install failed — \(error.localizedDescription)"
+            installResultDetail = "Install failed."
         }
     }
 
@@ -64,10 +73,12 @@ final class ComputerUseSetupModel {
         guard !isRunningSelfcheck else { return }
         isRunningSelfcheck = true
         selfcheckOutput = ""
+        selfcheckResultDetail = nil
         defer { isRunningSelfcheck = false }
 
         guard isInstalled else {
             selfcheckOutput = "tenx-computer is not installed"
+            selfcheckResultDetail = "Selfcheck failed."
             return
         }
 
@@ -76,8 +87,10 @@ final class ComputerUseSetupModel {
                 executable: URL(fileURLWithPath: installer.binaryPath),
                 arguments: ["selfcheck"],
                 timeout: 30)
+            selfcheckResultDetail = "Selfcheck passed."
         } catch {
             selfcheckOutput = "[ComputerUse:Setup] Selfcheck failed — \(error.localizedDescription)"
+            selfcheckResultDetail = "Selfcheck failed."
         }
     }
 

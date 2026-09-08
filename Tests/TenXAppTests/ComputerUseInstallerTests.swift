@@ -37,4 +37,18 @@ final class ComputerUseInstallerTests: XCTestCase {
         try installer.ensureMounted()
         XCTAssertEqual(first, try String(contentsOfFile: configPath))
     }
+
+    func test_mcpMount_malformedJson_throwsAndLeavesFileUntouched() throws {
+        let dir = NSTemporaryDirectory() + "tenx-install-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let configPath = dir + "/mcp.json"
+        let malformed = "{ not valid json"
+        try malformed.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let installer = ComputerUseInstaller(binaryPath: "/x/tenx-computer", ompConfigPath: configPath)
+        XCTAssertThrowsError(try installer.ensureMounted()) { error in
+            XCTAssertTrue(error is ComputerUseInstallerError)
+        }
+        XCTAssertEqual(try String(contentsOfFile: configPath), malformed)
+    }
 }

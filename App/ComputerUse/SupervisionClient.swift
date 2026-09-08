@@ -120,7 +120,7 @@ public final class SupervisionClient: @unchecked Sendable {
                     await MainActor.run { self.apply(event) }
                 }
             } catch {
-                await MainActor.run { self.isConnected = false }
+                await MainActor.run { self.resetConnectionState() }
                 // ponytail: fixed 2s retry — the daemon appears on first MCP use
                 // and events are state-rebuildable, so no backoff sophistication.
                 try? await Task.sleep(for: .seconds(2))
@@ -128,6 +128,11 @@ public final class SupervisionClient: @unchecked Sendable {
         }
         // Identity-guarded: a stop()/start() race must not clear the new loop's client.
         if let published { clientBox.with { if $0 === published { $0 = nil } } }
+    }
+
+    func resetConnectionState() {
+        isConnected = false
+        permissions = nil
     }
 
     /// Pure reducer — the tested surface.

@@ -59,7 +59,7 @@ import Testing
 @Test func continuousSettingsSnapshot() async throws {
     let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
     await model.load()
-    try assertSnapshot(SettingsView(model: model), name: "continuous-settings")
+    try assertSnapshot(SettingsView(model: model), name: "continuous-settings", size: CGSize(width: 900, height: 900))
 }
 
 @MainActor
@@ -70,7 +70,7 @@ import Testing
             .frame(width: 600)
             .frame(maxHeight: .infinity, alignment: .topLeading),
         name: "computer-use-settings",
-        size: CGSize(width: 760, height: 520))
+        size: CGSize(width: 760, height: 680))
 }
 
 @MainActor
