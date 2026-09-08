@@ -28,9 +28,3 @@ public protocol MCPToolProviding {
     var tools: [MCPTool] { get }
     func callTool(name: String, arguments: JSONValue) throws -> MCPResult
 }
-
-// TEMPORARY (Task 2): moves to MCP/MCPResources.swift in Task 6.
-public protocol MCPResourceProviding {
-    func listResources() -> [JSONValue]
-    func readResource(uri: String) -> JSONValue?
-}
