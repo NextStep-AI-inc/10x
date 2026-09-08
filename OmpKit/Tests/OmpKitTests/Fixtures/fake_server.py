@@ -4,21 +4,31 @@
   chunked   — get_state answered as a 3-part rpc_chunk sequence
   late-error— prompt acked ok, then error response with the same id
   silent    — ready, then never answers anything (timeout testing)
+  slow-exit — basic behavior, then waits briefly after stdin closes
+  slow-turn — prompt starts an agent turn that finishes after two seconds
+  background-exit — starts a turn, then exits one second after accepting event subscription
+  pending-streaming — reports an active turn while a pending app open is archived
   noisy     — like basic, but emits unknown frames + setWidget before each response
-  host-tool-events — emits correlated host_tool_call and host_tool_cancel on get_state
-
-Pass --computer-contract to emulate the complete computer-use safety contract.
+  transcript-burst — one assistant message streamed as 1,000 growing snapshots
+  transcript-burst-extensions — transcript-burst plus deterministic confirm requests
+  reconciliation-double-boundary — emits two reconciliation boundaries with a gap
+  extension-timeout — emits a short-lived confirm request and surfaces stale responses
+  delayed-prompt-success — delays a prompt success response so controller replacement can race it
+  delayed-prompt-failure — delays a prompt failure response so controller replacement can race it
+  activity-lifecycle — scripted provider/config/runtime events for controller activity tests
+  provider-account-failover — emits a provider account event before a normal response
+  line-flood N S — ready, then N notice lines carrying S filler bytes each, then exit 0
+  event-flood N S — like basic, but get_state is preceded by N notice events of S bytes
 """
 import base64
 import json
+import os
 import subprocess
 import sys
-import threading
 import time
 
-args = sys.argv[1:]
-mode = next((argument for argument in args if not argument.startswith("--")), "basic")
-computer_contract = "--computer-contract" in args
+mode = sys.argv[1] if len(sys.argv) > 1 else "basic"
+command_log = sys.argv[2] if mode == "command-log" and len(sys.argv) > 2 else None
 W = sys.stdout
 
 
@@ -26,6 +36,13 @@ def emit(obj):
     # Compact separators match real omp output byte-for-byte.
     W.write(json.dumps(obj, separators=(",", ":")) + "\n")
     W.flush()
+
+
+def log_command(command_type):
+    if command_log is None:
+        return
+    with open(command_log, "a", encoding="utf-8") as handle:
+        handle.write((command_type or "parse") + "\n")
 
 
 if mode == "never-ready":
@@ -41,6 +58,16 @@ if mode == "premature-chunk":
           "byteLength": 1048576, "data": "eA=="})
     time.sleep(30)
     raise SystemExit(0)
+if mode == "close-before-ready":
+    while not os.path.exists(sys.argv[2]):
+        time.sleep(0.001)
+    os.close(sys.stdin.fileno())
+    os.close(W.fileno())
+    while not os.path.exists(sys.argv[3]):
+        time.sleep(0.001)
+    sys.stderr.write("close-before-ready\n")
+    sys.stderr.flush()
+    raise SystemExit(24)
 
 limits = 999999 if mode == "wrong-limits" else 1048576
 emit({"type": "ready", "protocolVersion": 1, "supportedProtocolVersions": [1, 2],
@@ -52,77 +79,95 @@ if mode == "burst-exit":
     for index in range(200):
         emit({"type": "notice", "index": index})
     raise SystemExit(0)
-if mode == "backlog-overflow":
-    for index in range(2000):
-        emit({"type": "notice", "backlog": index})
-    time.sleep(30)
+if mode == "line-flood":
+    flood_count, flood_size = int(sys.argv[2]), int(sys.argv[3])
+    flood_payload = "y" * flood_size
+    for index in range(flood_count):
+        emit({"type": "notice", "index": index, "payload": flood_payload})
     raise SystemExit(0)
-if mode == "byte-backlog-overflow":
-    payload = "x" * 900000
-    for index in range(12):
-        emit({"type": "notice", "byteBacklog": index, "payload": payload})
-    sys.stderr.write("byte-backlog-complete\n")
+if mode == "stderr-held-open-exit":
+    child = r"""
+import os, sys, time
+holding, release, released = sys.argv[1], sys.argv[2], sys.argv[3]
+open(holding, "w", encoding="utf-8").close()
+while not os.path.exists(release):
+    time.sleep(0.001)
+os.close(sys.stdout.fileno())
+os.close(sys.stderr.fileno())
+open(released, "w", encoding="utf-8").close()
+"""
+    subprocess.Popen(
+        [sys.executable, "-u", "-c", child, sys.argv[2], sys.argv[3], sys.argv[4]])
+    while not os.path.exists(sys.argv[2]):
+        time.sleep(0.001)
+    sys.stderr.write("x" * 262144 + "final-stderr-marker\n")
     sys.stderr.flush()
-    time.sleep(30)
-    raise SystemExit(0)
-if mode == "near-limit-line":
-    emit({"type": "notice", "payload": "x" * 1000000})
-    raise SystemExit(0)
+    raise SystemExit(31)
+if mode == "continuous-inherited-output-exit":
+    root = sys.argv[2]
+    writer = r"""
+import os, sys, time
+stream_name, root = sys.argv[1], sys.argv[2]
+descriptor = sys.stdout.fileno() if stream_name == "stdout" else sys.stderr.fileno()
+start = os.path.join(root, stream_name + "-start")
+primed = os.path.join(root, stream_name + "-primed")
+stop = os.path.join(root, stream_name + "-stop")
+stopped = os.path.join(root, stream_name + "-stopped")
+with open(os.path.join(root, stream_name + "-pid"), "w", encoding="utf-8") as handle:
+    handle.write(str(os.getpid()))
+while not os.path.exists(start):
+    time.sleep(0.001)
+os.set_blocking(descriptor, False)
+marker = ("late-" + stream_name + "-marker\n").encode()
+while True:
+    try:
+        os.write(descriptor, marker)
+        break
+    except BlockingIOError:
+        time.sleep(0.001)
+open(primed, "w", encoding="utf-8").close()
+payload = (stream_name[0] * 65536).encode()
+while not os.path.exists(stop):
+    try:
+        os.write(descriptor, payload)
+    except BlockingIOError:
+        time.sleep(0.001)
+os.close(sys.stdout.fileno())
+os.close(sys.stderr.fileno())
+open(stopped, "w", encoding="utf-8").close()
+"""
+    subprocess.Popen([sys.executable, "-u", "-c", writer, "stdout", root])
+    subprocess.Popen([sys.executable, "-u", "-c", writer, "stderr", root])
+    while not all(os.path.exists(os.path.join(root, name + "-pid"))
+                  for name in ("stdout", "stderr")):
+        time.sleep(0.001)
+    emit({"type": "parent-final"})
+    sys.stderr.write("parent-final-stderr\n")
+    sys.stderr.flush()
+    open(os.path.join(root, "parent-exiting"), "w", encoding="utf-8").close()
+    raise SystemExit(37)
 if mode == "grandchild":
     heartbeat = sys.argv[2]
     child = """
-import os, signal, sys, time
+import sys, time
 path = sys.argv[1]
-with open(path + ".pid", "w") as handle:
-    handle.write(str(os.getpid()))
-signal.signal(signal.SIGTERM, signal.SIG_IGN)
 while True:
     with open(path, "ab") as handle:
         handle.write(b"x")
     time.sleep(0.02)
 """
-    subprocess.Popen(
-        [sys.executable, "-u", "-c", child, heartbeat],
-        start_new_session=True)
-if mode == "leader-exit-grandchild":
-    heartbeat = sys.argv[2]
-    child = """
-import os, signal, sys, time
-path = sys.argv[1]
-with open(path + ".pid", "w") as handle:
-    handle.write(str(os.getpid()))
-signal.signal(signal.SIGTERM, signal.SIG_IGN)
-while True:
-    with open(path, "ab") as handle:
-        handle.write(b"x")
-    time.sleep(0.02)
-"""
-    subprocess.Popen(
-        [sys.executable, "-u", "-c", child, heartbeat],
-        start_new_session=True)
+    subprocess.Popen([sys.executable, "-u", "-c", child, heartbeat])
 
 STATE = {"model": {"id": "fake", "provider": "test"}, "isStreaming": False,
          "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
-if computer_contract:
-    STATE["computerUse"] = {"enabled": False, "foregroundPolicy": "require-handoff"}
+if mode == "unique-session-file":
+    session_id = f"fake-{os.getpid()}"
+    STATE["sessionId"] = session_id
+    STATE["sessionFile"] = f"/tmp/{session_id}.jsonl"
+if mode in ("activity-lifecycle", "pending-streaming"):
+    STATE = {"model": {"id": "initial-model", "provider": "initial-provider"},
+             "isStreaming": True, "sessionId": "fake-session", "sessionFile": "/tmp/fake.jsonl"}
 reverse_commands = []
-failed_disable_count = 0
-
-
-def delayed_process_exit():
-    time.sleep(0.8)
-    sys.stderr.write("multi-owner-delayed-exit\n")
-    sys.stderr.flush()
-    # A timer thread cannot reliably interrupt the blocking stdin iterator via
-    # SystemExit, so terminate the whole fixture process directly.
-    import os
-    os._exit(9)
-
-
-def expired_deadline_exit():
-    time.sleep(0.5)
-    import os
-    os._exit(7)
 
 for line in sys.stdin:
     line = line.strip()
@@ -131,9 +176,11 @@ for line in sys.stdin:
     try:
         cmd = json.loads(line)
     except json.JSONDecodeError:
+        log_command("parse")
         emit({"type": "response", "command": "parse", "success": False, "error": "malformed"})
         continue
     cid, ctype = cmd.get("id"), cmd.get("type")
+    log_command(ctype)
     if mode == "silent" and ctype != "negotiate_protocol":
         continue
     if ctype == "negotiate_protocol":
@@ -143,32 +190,17 @@ for line in sys.stdin:
         else:
             emit({"id": cid, "type": "response", "command": "negotiate_protocol",
                   "success": True, "data": {"protocolVersion": 2}})
-        if mode == "rpc-reassembled-byte-overflow":
-            for event_index in range(2):
-                payload = json.dumps(
-                    {"type": "notice", "eventIndex": event_index,
-                     "payload": "x" * 1100000},
-                    separators=(",", ":")).encode()
-                size = 262144
-                parts = [payload[i:i + size] for i in range(0, len(payload), size)]
-                for i, part in enumerate(parts):
-                    emit({"type": "rpc_chunk", "chunkId": f"event-{event_index}",
-                          "index": i, "count": len(parts), "byteLength": len(payload),
-                          "data": base64.b64encode(part).decode()})
-            time.sleep(30)
-            raise SystemExit(0)
-        if mode == "expired-deadline-exit":
-            threading.Thread(target=expired_deadline_exit, daemon=True).start()
-        if mode == "leader-exit-grandchild":
-            time.sleep(0.15)
-            sys.stderr.write("leader-exit-grandchild\n")
-            sys.stderr.flush()
-            raise SystemExit(7)
         if mode == "crash-after-negotiation":
             time.sleep(0.2)
             sys.stderr.write("crash-after-negotiation\n")
             sys.stderr.flush()
             raise SystemExit(7)
+        if mode == "crash-after-trigger":
+            while not os.path.exists(sys.argv[2]):
+                time.sleep(0.01)
+            sys.stderr.write("crash-after-trigger\n")
+            sys.stderr.flush()
+            raise SystemExit(9)
         continue
     if mode == "reverse":
         reverse_commands.append((cid, ctype))
@@ -182,67 +214,62 @@ for line in sys.stdin:
         emit({"type": "response", "command": "parse", "success": False,
               "error": "malformed input"})
         continue
-    if ctype in {"set_computer_use", "get_computer_use", "probe_computer_use"} and not computer_contract:
-        emit({"type": "response", "command": ctype, "success": False,
-              "error": f"Unknown command: {ctype}"})
-    elif ctype == "set_computer_use":
-        if mode == "multi-owner-delayed-exit" and cmd.get("enabled") is not True:
-            failed_disable_count += 1
-            emit({"id": cid, "type": "response", "command": ctype,
-                  "success": False, "error": "disable failed before shared delayed exit"})
-            if failed_disable_count == 2:
-                threading.Thread(target=delayed_process_exit, daemon=True).start()
-            continue
-        if mode == "delayed-exit-on-disable" and cmd.get("enabled") is not True:
-            emit({"id": cid, "type": "response", "command": ctype,
-                  "success": False, "error": "disable failed before delayed exit"})
-            time.sleep(0.8)
-            sys.stderr.write("delayed-exit-on-disable\n")
-            sys.stderr.flush()
-            raise SystemExit(9)
-        STATE["computerUse"] = {
-            "enabled": cmd.get("enabled") is True,
-            "foregroundPolicy": cmd.get("foregroundPolicy"),
-        }
-        emit({"id": cid, "type": "response", "command": ctype, "success": True,
-              "data": STATE["computerUse"]})
-    elif ctype == "get_computer_use":
-        emit({"id": cid, "type": "response", "command": ctype, "success": True,
-              "data": STATE["computerUse"]})
-    elif ctype == "probe_computer_use":
-        emit({"id": cid, "type": "response", "command": ctype, "success": True, "data": {
-            "capabilities": {
-                "backend": "fake",
-                "capturePermission": "granted",
-                "inputPermission": "granted",
-                "axPermission": "granted",
-            },
-            "captureSucceeded": True,
-            "backgroundInputSucceeded": True,
-        }})
-    elif ctype == "set_host_tools":
-        tool_names = [tool.get("name") for tool in cmd.get("tools", []) if isinstance(tool, dict)]
-        if mode == "host-tools-wrong":
-            tool_names = ["wrong_tool"]
-        elif mode == "host-tools-mixed":
-            tool_names = ["agent_desktop", 7]
-        elif mode == "host-tools-malformed":
-            emit({"id": cid, "type": "response", "command": ctype, "success": True,
-                  "data": {}})
-            continue
-        emit({"id": cid, "type": "response", "command": ctype, "success": True,
-              "data": {"toolNames": tool_names}})
-    elif ctype == "idless_error":
+    if mode == "reject-new-session" and ctype == "new_session":
+        emit({"id": cid, "type": "response", "command": ctype,
+              "success": False, "error": "new session rejected"})
+        continue
+    if mode == "crash-after-switch" and ctype == "switch_session":
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+        time.sleep(0.2)
+        sys.stderr.write("crash-after-switch\n")
+        sys.stderr.flush()
+        raise SystemExit(8)
+    if mode == "crash-after-switch-trigger" and ctype == "switch_session":
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+        while not os.path.exists(sys.argv[2]):
+            time.sleep(0.01)
+        sys.stderr.write("crash-after-switch-trigger\n")
+        sys.stderr.flush()
+        raise SystemExit(10)
+    if mode == "block-new-session" and ctype == "new_session":
+        open(sys.argv[3], "w", encoding="utf-8").close()
+        while not os.path.exists(sys.argv[2]):
+            time.sleep(0.01)
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+        continue
+    if ctype == "idless_error":
         emit({"type": "response", "command": ctype, "success": False,
               "error": "idless failure"})
     elif ctype == "get_state":
+        if mode == "close-stdout-before-exit":
+            os.close(sys.stdin.fileno())
+            os.close(W.fileno())
+            open(sys.argv[2], "w", encoding="utf-8").close()
+            while not os.path.exists(sys.argv[3]):
+                time.sleep(0.01)
+            sys.stderr.write("close-stdout-before-exit\n")
+            sys.stderr.flush()
+            raise SystemExit(23)
+        if mode == "block-get-state":
+            open(sys.argv[3], "w", encoding="utf-8").close()
+            while not os.path.exists(sys.argv[2]):
+                time.sleep(0.01)
         if mode == "noisy":
             emit({"type": "notice", "level": "info", "message": "before response", "source": "fake"})
-        if mode == "host-tool-events":
-            emit({"type": "host_tool_call", "id": "host-1", "toolCallId": "tool-1",
-                  "toolName": "agent_desktop",
-                  "arguments": {"action": "launch", "application": "TextEdit"}})
-            emit({"type": "host_tool_cancel", "id": "cancel-1", "targetId": "host-1"})
+        if mode == "event-flood":
+            flood_count, flood_size = int(sys.argv[2]), int(sys.argv[3])
+            flood_payload = "z" * flood_size
+            for index in range(flood_count):
+                emit({"type": "notice", "index": index, "payload": flood_payload})
+        if mode == "provider-account-failover":
+            emit({
+                "type": "provider_account_changed",
+                "providerId": "openai-codex",
+                "accountRef": "acct_failover",
+                "reason": "automaticFailover",
+                "sequence": 4,
+                "future": {"ignored": True},
+            })
         if mode == "chunked":
             large_state = {**STATE, "padding": "x" * 1048576}
             payload = json.dumps(
@@ -272,36 +299,140 @@ for line in sys.stdin:
         else:
             emit({"id": cid, "type": "response", "command": "get_state", "success": True, "data": STATE})
     elif ctype == "prompt":
-        if mode == "legacy-agent-invoked":
-            prompt_data = {"agentInvoked": True}
-        elif mode == "legacy-agent-missing":
-            prompt_data = {}
-        elif mode == "legacy-command-error":
-            emit({"id": cid, "type": "response", "command": "prompt", "success": False,
-                  "error": "legacy command rejected"})
+        if mode == "delayed-prompt-success":
+            time.sleep(0.3)
+            emit({"id": cid, "type": "response", "command": "prompt", "success": True,
+                  "data": {"agentInvoked": True}})
             continue
-        else:
-            prompt_data = {"agentInvoked": False}
+        if mode == "delayed-prompt-failure":
+            time.sleep(0.3)
+            emit({"id": cid, "type": "response", "command": "prompt", "success": False,
+                  "error": "delayed prompt failure"})
+            continue
         emit({"id": cid, "type": "response", "command": "prompt", "success": True,
-              "data": prompt_data})
-        if mode == "trailing-exit-after-prompt":
-            for index in range(200):
-                emit({"type": "notice", "trailing": True, "index": index})
-            raise SystemExit(0)
+              "data": {"agentInvoked": True}})
+        if mode == "activity-lifecycle":
+            emit({"type": "agent_start"})
+            time.sleep(0.2)
+            emit({"type": "config_update", "model": {
+                "id": "updated-model", "provider": "updated-provider"}})
+            time.sleep(0.2)
+            emit({"type": "config_update", "thinkingLevel": "medium"})
+            time.sleep(0.2)
+            emit({"type": "config_update", "model": {"id": "provider-less-model"}})
+            time.sleep(0.2)
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+            continue
+        if mode == "slow-turn":
+            emit({"type": "agent_start"})
+            time.sleep(2)
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+            continue
         if mode == "burst":
             for index in range(100):
                 emit({"type": "message_update", "index": index})
+        elif mode in ("transcript-burst", "transcript-burst-extensions"):
+            def assistant_message(text):
+                return {
+                    "id": "burst-message",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": text}],
+                    "api": "test",
+                    "provider": "test",
+                    "model": "fake",
+                    "stopReason": "stop",
+                    "timestamp": 0,
+                    "usage": {
+                        "input": 0,
+                        "output": 0,
+                        "cacheRead": 0,
+                        "cacheWrite": 0,
+                        "totalTokens": 0,
+                        "cost": {
+                            "input": 0,
+                            "output": 0,
+                            "cacheRead": 0,
+                            "cacheWrite": 0,
+                            "total": 0,
+                        },
+                    },
+                }
+
+            emit({"type": "agent_start"})
+            emit({"type": "message_start", "message": assistant_message("")})
+            text = ""
+            for _ in range(1000):
+                text += "x"
+                emit({
+                    "type": "message_update",
+                    "message": assistant_message(text),
+                    "assistantMessageEvent": {
+                        "type": "text_delta",
+                        "contentIndex": 0,
+                        "delta": "x",
+                        "partial": assistant_message(text),
+                    },
+                })
+                if mode == "transcript-burst-extensions" and len(text) % 200 == 0:
+                    emit({
+                        "type": "extension_ui_request",
+                        "id": f"confirm-{len(text)}",
+                        "method": "confirm",
+                        "title": f"Approve {len(text)}",
+                        "message": "Continue?",
+                    })
+                time.sleep(0.002)
+            emit({"type": "message_end", "message": assistant_message(text)})
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+        elif mode == "reconciliation-double-boundary":
+            emit({"type": "agent_start"})
+            emit({"type": "message_end", "message": {
+                "id": "boundary-message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "done"}],
+                "timestamp": 0,
+            }})
+            # Well clear of the controller's 50 ms reconciliation debounce, so
+            # the two boundaries stay two loads even when the suite is loaded.
+            time.sleep(0.5)
+            emit({"type": "agent_end", "messages": [], "isTerminal": True})
+        elif mode == "extension-timeout":
+            emit({"type": "extension_ui_request", "id": "timeout-confirm", "method": "confirm",
+                  "title": "Approve timeout", "message": "Continue?", "timeout": 120})
         if mode == "late-error":
             emit({"id": cid, "type": "response", "command": "prompt", "success": False,
                   "error": "late scheduling failure"})
-        else:
+        elif mode not in (
+            "transcript-burst",
+            "transcript-burst-extensions",
+            "reconciliation-double-boundary",
+        ):
             emit({"type": "agent_start"})
             emit({"type": "agent_end", "messages": [], "isTerminal": True})
     elif ctype == "bad_command_test":
         emit({"id": cid, "type": "response", "command": "bad_command_test",
               "success": False, "error": "nope", "code": "test_code"})
+    elif ctype == "extension_ui_response" and mode == "extension-timeout":
+        emit({"type": "message_update", "message": {"id": "leaked-timeout-response",
+              "role": "assistant", "content": [{"type": "text", "text": "stale timeout leaked"}]}})
+    elif mode == "block-subagent-subscription" and ctype == "set_subagent_subscription":
+        # Bounded: a busy wait never sees stdin close, so an unreleased gate would
+        # outlive the test that deleted its trigger directory.
+        deadline = time.monotonic() + 30
+        while not os.path.exists(sys.argv[2]) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+    elif mode in ("background-exit", "pending-streaming") and ctype == "set_subagent_subscription":
+        emit({"id": cid, "type": "response", "command": ctype, "success": True})
+        emit({"type": "agent_start"})
+        if mode == "pending-streaming":
+            continue
+        time.sleep(1)
+        sys.stderr.write("background-exit\n")
+        sys.stderr.flush()
+        raise SystemExit(7)
     else:
         emit({"id": cid, "type": "response", "command": ctype or "parse", "success": True})
 
-if mode == "expired-deadline-exit":
-    time.sleep(0.5)
+if mode in ("slow-exit", "pending-streaming"):
+    time.sleep(0.6)

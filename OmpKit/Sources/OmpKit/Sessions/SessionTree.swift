@@ -8,15 +8,33 @@ import Foundation
 public enum SessionTree {
     /// The active path, root first. Returns an empty array for a header-only file.
     public static func activePath(of file: ParsedSessionFile) -> [SessionEntry] {
-        activePath(entries: file.entries, leafId: nil)
+        activePath(entries: file.entries, leafId: nil, checkCancellation: {})
+    }
+
+    public static func cancellableActivePath(of file: ParsedSessionFile) throws -> [SessionEntry] {
+        try activePath(
+            entries: file.entries,
+            leafId: nil,
+            checkCancellation: Task.checkCancellation)
     }
 
     public static func activePath(
         entries: [SessionEntry], leafId: String?
     ) -> [SessionEntry] {
+        activePath(entries: entries, leafId: leafId, checkCancellation: {})
+    }
+
+    private static func activePath(
+        entries: [SessionEntry],
+        leafId: String?,
+        checkCancellation: () throws -> Void
+    ) rethrows -> [SessionEntry] {
         guard !entries.isEmpty else { return [] }
         var byId: [String: SessionEntry] = [:]
-        for entry in entries { byId[entry.base.id] = entry }
+        for (index, entry) in entries.enumerated() {
+            if index.isMultiple(of: 64) { try checkCancellation() }
+            byId[entry.base.id] = entry
+        }
 
         let leaf: SessionEntry?
         if let leafId {
@@ -31,10 +49,12 @@ public enum SessionTree {
         var seen: Set<String> = []
         var cursor: SessionEntry? = leaf
         while let current = cursor, !seen.contains(current.base.id) {
+            if path.count.isMultiple(of: 64) { try checkCancellation() }
             seen.insert(current.base.id)
             path.append(current)
             cursor = current.base.parentId.flatMap { byId[$0] }
         }
+        try checkCancellation()
         return path.reversed()
     }
 

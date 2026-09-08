@@ -1,8 +1,45 @@
 import Foundation
 
-enum TranscriptReference: Equatable, Hashable {
+enum TranscriptReference: Equatable, Hashable, Sendable {
     case file(path: String, line: Int?)
     case web(url: String, label: String?)
+
+    var inlineURL: URL? {
+        switch self {
+        case .web(let value, _):
+            URL(string: value)
+        case .file(let path, let line):
+            Self.fileURL(path: path, line: line)
+        }
+    }
+
+    init?(inlineURL: URL) {
+        if inlineURL.scheme == "http" || inlineURL.scheme == "https" {
+            self = .web(url: inlineURL.absoluteString, label: nil)
+            return
+        }
+        guard inlineURL.scheme == "tenx-file",
+              let components = URLComponents(
+                url: inlineURL,
+                resolvingAgainstBaseURL: false),
+              let path = components.queryItems?
+                .first(where: { $0.name == "path" })?
+                .value,
+              !path.isEmpty
+        else { return nil }
+        let line = components.queryItems?
+            .first(where: { $0.name == "line" })?
+            .value
+            .flatMap(Int.init)
+        self = .file(path: path, line: line)
+    }
+
+    static func parseInline(
+        _ candidate: String,
+        label: String? = nil
+    ) -> TranscriptReference? {
+        parse(candidate, label: label, allowsRelativeFile: true)
+    }
 
     static func extract(from text: String) -> [TranscriptReference] {
         var located: [LocatedReference] = []
@@ -36,7 +73,7 @@ enum TranscriptReference: Equatable, Hashable {
             guard let destinationEnd = text[destinationStart...].firstIndex(of: ")") else { break }
             let label = String(text[text.index(after: openLabel)..<closeLabel])
             let destination = String(text[destinationStart..<destinationEnd])
-            if let reference = parse(destination, label: label.isEmpty ? nil : label) {
+            if let reference = parse(destination, label: label.isEmpty ? nil : label, allowsRelativeFile: true) {
                 result.append(LocatedReference(offset: openLabel, reference: reference))
             }
             cursor = text.index(after: destinationEnd)
@@ -51,7 +88,7 @@ enum TranscriptReference: Equatable, Hashable {
             let contentStart = text.index(after: open)
             guard let close = text[contentStart...].firstIndex(of: "`") else { break }
             let content = String(text[contentStart..<close])
-            if let reference = parse(content, label: nil) {
+            if let reference = parse(content, label: nil, allowsRelativeFile: true) {
                 result.append(LocatedReference(offset: open, reference: reference))
             }
             cursor = text.index(after: close)
@@ -74,23 +111,62 @@ enum TranscriptReference: Equatable, Hashable {
             var token = String(text[start..<cursor])
             token = token.trimmingCharacters(in: CharacterSet(charactersIn: "([{\"'"))
             token = token.trimmingCharacters(in: CharacterSet(charactersIn: ".,;!?)]}\"'"))
-            if let reference = parse(token, label: nil) {
+            if let reference = parse(token, label: nil, allowsRelativeFile: false) {
+                if case .file = reference,
+                   hasWhitespacePathContinuation(after: cursor, in: text)
+                {
+                    continue
+                }
                 result.append(LocatedReference(offset: start, reference: reference))
             }
         }
         return result
     }
 
-    private static func parse(_ candidate: String, label: String?) -> TranscriptReference? {
+    private static func hasWhitespacePathContinuation(
+        after index: String.Index,
+        in text: String
+    ) -> Bool {
+        var cursor = index
+        while cursor < text.endIndex, text[cursor].isWhitespace {
+            cursor = text.index(after: cursor)
+        }
+        let start = cursor
+        while cursor < text.endIndex, !text[cursor].isWhitespace {
+            cursor = text.index(after: cursor)
+        }
+        guard start < cursor else { return false }
+        let token = String(text[start..<cursor])
+            .trimmingCharacters(in: CharacterSet(charactersIn: ".,;!?)]}\"'"))
+        guard !token.hasPrefix("/") else { return false }
+        return isRelativeFilePath(lineSuffix(in: token).path)
+    }
+
+    private static func parse(
+        _ candidate: String,
+        label: String?,
+        allowsRelativeFile: Bool
+    ) -> TranscriptReference? {
         let value = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasPrefix("https://") || value.hasPrefix("http://") {
             guard let url = URL(string: value), url.host != nil else { return nil }
             return .web(url: value, label: label)
         }
-        guard value.hasPrefix("/") else { return nil }
-
         let suffix = lineSuffix(in: value)
+        guard !suffix.path.contains("://"),
+              URLComponents(string: suffix.path)?.scheme == nil
+        else { return nil }
+        guard suffix.path.hasPrefix("/") || (allowsRelativeFile && isRelativeFilePath(suffix.path)) else {
+            return nil
+        }
         return .file(path: suffix.path, line: suffix.line)
+    }
+
+    private static func isRelativeFilePath(_ path: String) -> Bool {
+        if path.hasPrefix("./") || path.hasPrefix("../") { return true }
+        let fileExtension = URL(filePath: path).pathExtension
+        return fileExtension.contains(where: \.isLetter)
+            && fileExtension.allSatisfy { $0.isLetter || $0.isNumber || $0 == "_" || $0 == "-" }
     }
 
     private static func lineSuffix(in path: String) -> (path: String, line: Int?) {
@@ -101,5 +177,17 @@ enum TranscriptReference: Equatable, Hashable {
         }
         return (String(path[..<colon]), line)
     }
-}
 
+    private static func fileURL(path: String, line: Int?) -> URL? {
+        var components = URLComponents()
+        components.scheme = "tenx-file"
+        components.host = "reference"
+        components.queryItems = [URLQueryItem(name: "path", value: path)]
+        if let line {
+            components.queryItems?.append(URLQueryItem(
+                name: "line",
+                value: String(line)))
+        }
+        return components.url
+    }
+}

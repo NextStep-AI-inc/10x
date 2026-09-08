@@ -1,17 +1,12 @@
 import Foundation
 import OmpKit
 
-struct ExtensionSelectOption: Equatable {
+struct ExtensionSelectOption: Equatable, Sendable {
     let label: String
     let detail: String?
 }
 
-enum ExtensionUIState: Identifiable, Equatable {
-    case computerHandoff(
-        id: String,
-        target: String,
-        action: ComputerForegroundAction,
-        reason: String)
+enum ExtensionUIState: Identifiable, Equatable, Sendable {
     case confirm(id: String, title: String, message: String, timeout: Int?)
     case select(id: String, title: String, options: [ExtensionSelectOption], timeout: Int?)
     case input(id: String, title: String, placeholder: String?, timeout: Int?)
@@ -26,8 +21,7 @@ enum ExtensionUIState: Identifiable, Equatable {
 
     var id: String {
         switch self {
-        case .computerHandoff(let id, _, _, _),
-             .confirm(let id, _, _, _),
+        case .confirm(let id, _, _, _),
              .select(let id, _, _, _),
              .input(let id, _, _, _),
              .editor(let id, _, _, _),
@@ -39,6 +33,24 @@ enum ExtensionUIState: Identifiable, Equatable {
              .setEditorText(let id, _),
              .openURL(let id, _, _):
             return id
+        }
+    }
+
+    var requiresUserInput: Bool {
+        switch self {
+        case .confirm, .select, .input, .editor, .openURL:
+            true
+        case .cancel, .notification, .status, .widget, .title, .setEditorText:
+            false
+        }
+    }
+
+    var isQuestionInput: Bool {
+        switch self {
+        case .select, .input, .editor:
+            true
+        default:
+            false
         }
     }
 }

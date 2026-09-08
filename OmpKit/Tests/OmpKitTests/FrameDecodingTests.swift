@@ -101,45 +101,27 @@ let noticeLine = #"{"type":"notice","level":"info","message":"xd://: mounted","s
     #expect(literalPayload["message"]?.stringValue == #"\uD800"#)
 }
 
-@Test func agentDesktopHostToolFramesRemainCorrelated() throws {
-    let line = #"{"type":"host_tool_call","id":"host-1","toolCallId":"tool-1","toolName":"agent_desktop","arguments":{"action":"launch","application":"TextEdit"}}"#
-    guard case .hostToolCall(let call) = try RpcFrame.decode(line: Data(line.utf8)) else {
-        Issue.record("Expected host tool call")
-        return
+@Test func invalidUTF8AndLoneSurrogatesUseTheFinalRepairCandidate() throws {
+    var line = Data(#"{"type":"notice","message":"before "#.utf8)
+    line.append(0xFF)
+    line.append(contentsOf: Data(#" \uD800 after"}"#.utf8))
+
+    guard case .event(_, let payload) = try RpcFrame.decode(line: line) else {
+        Issue.record("not an event"); return
     }
-    #expect(call.id == "host-1")
-    #expect(call.toolCallID == "tool-1")
-    #expect(call.name == "agent_desktop")
-    #expect(call.arguments["application"]?.stringValue == "TextEdit")
+
+    #expect(payload["message"]?.stringValue == "before � � after")
 }
 
-@Test func hostToolCallAcceptsTheEstablishedNameAlias() throws {
-    let line = #"{"type":"host_tool_call","id":"host-1","toolCallId":"tool-1","name":"agent_desktop","arguments":{"action":"launch"}}"#
-    guard case .hostToolCall(let call) = try RpcFrame.decode(line: Data(line.utf8)) else {
-        Issue.record("Expected host tool call")
-        return
-    }
-    #expect(call.name == "agent_desktop")
-}
+@Test func irreparableJSONReportsTheOriginalDecodeError() {
+    let line = Data(#"{"type":"notice","message":"unterminated"#.utf8)
+    var directError: String?
+    var repairedError: String?
 
-@Test func hostToolCancelKeepsItsOwnAndTargetCorrelationIDs() throws {
-    let line = #"{"type":"host_tool_cancel","id":"cancel-1","targetId":"host-1"}"#
-    guard case .hostToolCancel(let id, let targetID) = try RpcFrame.decode(line: Data(line.utf8)) else {
-        Issue.record("Expected host tool cancel")
-        return
-    }
-    #expect(id == "cancel-1")
-    #expect(targetID == "host-1")
-}
+    do { _ = try JSONDecoder().decode(JSONValue.self, from: line) }
+    catch { directError = String(describing: error) }
+    do { _ = try JSONValue.decode(from: line) }
+    catch { repairedError = String(describing: error) }
 
-@Test func computerForegroundHandoffKeepsTypedAndUnknownExtensionPayloads() throws {
-    let handoff = #"{"type":"extension_ui_request","id":"handoff-1","method":"computer_foreground_handoff","target":"42","action":"window-raise","reason":"Needs visible consent","futureField":{"preserve":true}}"#
-    guard case .extensionUIRequest(let request) = try RpcFrame.decode(line: Data(handoff.utf8)) else {
-        Issue.record("Expected extension UI request")
-        return
-    }
-    #expect(request.computerForegroundHandoff == ComputerForegroundHandoffRequest(
-        id: "handoff-1", target: "42", action: .windowRaise, reason: "Needs visible consent"
-    ))
-    #expect(request.payload["futureField"]?["preserve"]?.boolValue == true)
+    #expect(repairedError == directError)
 }

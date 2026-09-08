@@ -6,6 +6,29 @@ public enum StreamingBehavior: String, Sendable {
     case followUp
 }
 
+/// One image carried alongside a prompt.
+///
+/// Mirrors `ImageContent` from `@oh-my-pi/pi-ai`: base64 payload plus its MIME
+/// type. The optional `detail` and `providerFile` fields are not sent — omp
+/// falls back to the provider default when they are absent.
+public struct PromptImage: Sendable, Equatable {
+    public let base64Data: String
+    public let mimeType: String
+
+    public init(base64Data: String, mimeType: String) {
+        self.base64Data = base64Data
+        self.mimeType = mimeType
+    }
+
+    var payload: JSONValue {
+        .object([
+            "type": .string("image"),
+            "data": .string(base64Data),
+            "mimeType": .string(mimeType),
+        ])
+    }
+}
+
 /// How much subagent traffic omp should forward. Defaults to `off` server-side.
 public enum SubagentSubscriptionLevel: String, Sendable {
     case off
@@ -13,104 +36,11 @@ public enum SubagentSubscriptionLevel: String, Sendable {
     case events
 }
 
-/// Controls whether computer input may target a background window.
-public enum ComputerForegroundPolicy: String, Sendable, Codable, Equatable {
-    case allow
-    case requireHandoff = "require-handoff"
-}
-
-/// The computer-use settings reported by supported omp servers.
-public struct ComputerUseRPCState: Sendable, Equatable {
-    public let enabled: Bool
-    public let foregroundPolicy: ComputerForegroundPolicy
-
-    public init(enabled: Bool, foregroundPolicy: ComputerForegroundPolicy) {
-        self.enabled = enabled
-        self.foregroundPolicy = foregroundPolicy
-    }
-
-    public init?(json: JSONValue?) {
-        guard let enabled = json?["enabled"]?.boolValue,
-              let rawPolicy = json?["foregroundPolicy"]?.stringValue,
-              let foregroundPolicy = ComputerForegroundPolicy(rawValue: rawPolicy)
-        else { return nil }
-        self.init(enabled: enabled, foregroundPolicy: foregroundPolicy)
-    }
-}
-
-public enum ComputerPermissionState: String, Sendable, Equatable {
-    case granted
-    case denied
-    case unavailable
-    case unknown
-}
-
-/// Platform permissions required to execute a computer-use request.
-public struct ComputerCapabilities: Sendable, Equatable {
-    public let backend: String
-    public let capture: ComputerPermissionState
-    public let input: ComputerPermissionState
-    public let accessibility: ComputerPermissionState
-
-    public init(
-        backend: String,
-        capture: ComputerPermissionState,
-        input: ComputerPermissionState,
-        accessibility: ComputerPermissionState
-    ) {
-        self.backend = backend
-        self.capture = capture
-        self.input = input
-        self.accessibility = accessibility
-    }
-
-    public init?(json: JSONValue?) {
-        guard let backend = json?["backend"]?.stringValue else { return nil }
-        self.init(
-            backend: backend,
-            capture: ComputerPermissionState(
-                rawValue: json?["capturePermission"]?.stringValue ?? ""
-            ) ?? .unknown,
-            input: ComputerPermissionState(
-                rawValue: json?["inputPermission"]?.stringValue ?? ""
-            ) ?? .unknown,
-            accessibility: ComputerPermissionState(
-                rawValue: json?["axPermission"]?.stringValue ?? ""
-            ) ?? .unknown
-        )
-    }
-
-    public var isReady: Bool {
-        capture == .granted && input == .granted && accessibility == .granted
-    }
-
-    public static let unknown = ComputerCapabilities(
-        backend: "unknown", capture: .unknown, input: .unknown, accessibility: .unknown
-    )
-}
-
-/// The result of a computer-use capability probe.
-public struct ComputerProbeResult: Sendable, Equatable {
-    public let capabilities: ComputerCapabilities
-    public let captureSucceeded: Bool
-    public let backgroundInputSucceeded: Bool?
-
-    public init?(json: JSONValue?) {
-        guard let capabilities = ComputerCapabilities(json: json?["capabilities"]),
-              let captureSucceeded = json?["captureSucceeded"]?.boolValue
-        else { return nil }
-        self.capabilities = capabilities
-        self.captureSucceeded = captureSucceeded
-        self.backgroundInputSucceeded = json?["backgroundInputSucceeded"]?.boolValue
-    }
-}
-
 /// One outbound stdin frame.
 ///
-/// Request commands carry a generated id so responses can be correlated.
-/// Reply frames (`extension_ui_response`, `host_tool_update`, and
-/// `host_tool_result`) instead echo an existing UI or host-tool correlation id
-/// and receive no response of their own.
+/// Commands carry a generated request id so responses can be correlated;
+/// `extension_ui_response` is the exception — its `id` echoes the UI request
+/// being answered, and it gets no response of its own.
 public struct RpcCommand: Sendable, Equatable {
     public let type: String
     public let fields: [String: JSONValue]
@@ -124,9 +54,9 @@ public struct RpcCommand: Sendable, Equatable {
     public func encodedLine(id: String) throws -> Data {
         var object = fields
         object["type"] = .string(type)
-        // Reply frames address an existing host/UI request, so they keep the
-        // correlation id already in `fields` instead of taking a new request id.
-        if !Self.replyTypes.contains(type) {
+        // extension_ui_response addresses a pending UI request, so it keeps the
+        // id already in `fields` instead of taking a new request id.
+        if type != Self.extensionUIResponseType {
             object["id"] = .string(id)
         }
         let encoder = JSONEncoder()
@@ -137,11 +67,6 @@ public struct RpcCommand: Sendable, Equatable {
     }
 
     private static let extensionUIResponseType = "extension_ui_response"
-    private static let replyTypes: Set<String> = [
-        extensionUIResponseType,
-        "host_tool_update",
-        "host_tool_result",
-    ]
 
     // MARK: - Protocol
 
@@ -149,10 +74,29 @@ public struct RpcCommand: Sendable, Equatable {
         RpcCommand(type: "negotiate_protocol", fields: ["protocolVersion": .int(version)])
     }
 
+    // MARK: - Login
+
+    public static func getLoginProviders() -> RpcCommand {
+        RpcCommand(type: "get_login_providers")
+    }
+
+    public static func login(providerID: String) -> RpcCommand {
+        RpcCommand(type: "login", fields: ["providerId": .string(providerID)])
+    }
+
     // MARK: - Prompting
 
-    public static func prompt(message: String, streamingBehavior: StreamingBehavior?) -> RpcCommand {
+    public static func prompt(
+        message: String,
+        images: [PromptImage] = [],
+        streamingBehavior: StreamingBehavior?
+    ) -> RpcCommand {
         var fields: [String: JSONValue] = ["message": .string(message)]
+        // Omitted rather than sent empty: omp treats a missing `images` as no
+        // images, and an empty array is one more shape to keep working.
+        if !images.isEmpty {
+            fields["images"] = .array(images.map(\.payload))
+        }
         if let streamingBehavior {
             fields["streamingBehavior"] = .string(streamingBehavior.rawValue)
         }
@@ -179,62 +123,6 @@ public struct RpcCommand: Sendable, Equatable {
         RpcCommand(type: "set_subagent_subscription", fields: ["level": .string(level.rawValue)])
     }
 
-    public static func setComputerUse(
-        enabled: Bool,
-        foregroundPolicy: ComputerForegroundPolicy
-    ) -> RpcCommand {
-        RpcCommand(type: "set_computer_use", fields: [
-            "enabled": .bool(enabled),
-            "foregroundPolicy": .string(foregroundPolicy.rawValue),
-        ])
-    }
-
-    public static func getComputerUse() -> RpcCommand {
-        RpcCommand(type: "get_computer_use")
-    }
-
-    public static func probeComputerUse(
-        target: String? = nil,
-        verificationText: String? = nil
-    ) -> RpcCommand {
-        var fields: [String: JSONValue] = [:]
-        if let target { fields["target"] = .string(target) }
-        if let verificationText { fields["verificationText"] = .string(verificationText) }
-        return RpcCommand(type: "probe_computer_use", fields: fields)
-    }
-
-    public static func setHostTools(_ tools: [HostToolDefinition]) -> RpcCommand {
-        RpcCommand(type: "set_host_tools", fields: [
-            "tools": .array(tools.map {
-                .object([
-                    "name": .string($0.name),
-                    "description": .string($0.description),
-                    "parameters": $0.parameters,
-                ])
-            }),
-        ])
-    }
-
-    public static func hostToolUpdate(id: String, partialResult: JSONValue) -> RpcCommand {
-        RpcCommand(type: "host_tool_update", fields: [
-            "id": .string(id),
-            "partialResult": partialResult,
-        ])
-    }
-
-    public static func hostToolResult(
-        id: String,
-        result: JSONValue,
-        isError: Bool? = nil
-    ) -> RpcCommand {
-        var fields: [String: JSONValue] = [
-            "id": .string(id),
-            "result": result,
-        ]
-        if let isError { fields["isError"] = .bool(isError) }
-        return RpcCommand(type: "host_tool_result", fields: fields)
-    }
-
     // MARK: - Model and thinking
 
     public static func setModel(provider: String, modelId: String) -> RpcCommand {
@@ -250,6 +138,10 @@ public struct RpcCommand: Sendable, Equatable {
 
     public static func setThinkingLevel(_ level: String) -> RpcCommand {
         RpcCommand(type: "set_thinking_level", fields: ["level": .string(level)])
+    }
+
+    public static func setFastMode(enabled: Bool) -> RpcCommand {
+        RpcCommand(type: "set_fast_mode", fields: ["enabled": .bool(enabled)])
     }
 
     // MARK: - Session
@@ -303,9 +195,5 @@ public struct RpcCommand: Sendable, Equatable {
         var fields = body
         fields["id"] = .string(id)
         return RpcCommand(type: extensionUIResponseType, fields: fields)
-    }
-
-    public static func computerForegroundHandoffResponse(id: String, approved: Bool) -> RpcCommand {
-        extensionUIResponse(id: id, body: ["approved": .bool(approved)])
     }
 }

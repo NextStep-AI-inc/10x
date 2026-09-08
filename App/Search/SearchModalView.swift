@@ -3,6 +3,7 @@ import OmpKit
 
 struct SearchModalView: View {
     let sessions: [SessionMetadata]
+    let service: any SessionSearching
     let onOpen: (SearchResult) -> Void
     let onClose: () -> Void
 
@@ -11,18 +12,20 @@ struct SearchModalView: View {
 
     init(
         sessions: [SessionMetadata],
+        service: any SessionSearching,
         onOpen: @escaping (SearchResult) -> Void,
         onClose: @escaping () -> Void
     ) {
         self.sessions = sessions
+        self.service = service
         self.onOpen = onOpen
         self.onClose = onClose
-        _model = State(initialValue: SearchModalModel(sessions: sessions))
+        _model = State(initialValue: SearchModalModel(sessions: sessions, service: service))
     }
 
     var body: some View {
         ZStack {
-            Color.white.opacity(0.94)
+            TenXPalette.color(TenXPalette.canvasHex).opacity(0.94)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onClose)
@@ -33,7 +36,7 @@ struct SearchModalView: View {
                 resultBody
             }
             .frame(width: 780, height: 520)
-            .background(.white)
+            .background(TenXPalette.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay {
                 RoundedRectangle(cornerRadius: 6)
@@ -45,6 +48,7 @@ struct SearchModalView: View {
             await Task.yield()
             isSearchFocused = true
         }
+        .onDisappear { model.cancelSearch() }
         .onChange(of: sessions) { _, sessions in model.updateSessions(sessions) }
         .onExitCommand(perform: onClose)
         .accessibilityElement(children: .contain)
@@ -80,7 +84,7 @@ struct SearchModalView: View {
                     ProgressView()
                         .controlSize(.small)
                 } else if !model.query.isEmpty {
-                    Text("\(model.visibleResults.count) results")
+                    Text("\(model.visibleResults.count) \(model.visibleResults.count == 1 ? "result" : "results")")
                         .font(TenXTypography.mono(size: 10))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 }
@@ -186,7 +190,7 @@ struct SearchModalView: View {
         .background(result.id == model.selectedResultID
             ? TenXPalette.color(TenXPalette.hoverNeutralHex)
             : .clear)
-        .simultaneousGesture(TapGesture(count: 2).onEnded { onOpen(result) })
+        .simultaneousGesture(TapGesture(count: 2).onEnded { open(result) })
         .accessibilityLabel("\(result.kind.label), \(result.title)")
     }
 
@@ -221,6 +225,10 @@ struct SearchModalView: View {
 
     private func openSelection() {
         guard let selectedResult else { return }
-        onOpen(selectedResult)
+        open(selectedResult)
+    }
+
+    private func open(_ result: SearchResult) {
+        onOpen(result.withOpeningQuery(model.query))
     }
 }

@@ -2,69 +2,32 @@ import Testing
 import Foundation
 @testable import OmpKit
 
-private final class ConfigurationCapture: @unchecked Sendable {
-    private let lock = NSLock()
-    private var values: [RpcClientConfiguration] = []
+actor ActivationGate {
+    private var entered = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
 
-    func append(_ value: RpcClientConfiguration) {
-        lock.lock()
-        values.append(value)
-        lock.unlock()
+    func markEntered() {
+        entered = true
+        let waiters = self.waiters
+        self.waiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 
-    func snapshot() -> [RpcClientConfiguration] {
-        lock.lock()
-        defer { lock.unlock() }
-        return values
+    func waitUntilEntered() async {
+        guard !entered else { return }
+        await withCheckedContinuation { waiters.append($0) }
     }
-}
 
-private func capturingManager(
-    _ capture: ConfigurationCapture, mode: String = "basic"
-) -> SessionProcessManager {
-    SessionProcessManager(clientFactory: { configuration in
-        capture.append(configuration)
-        var fake = configuration
-        fake.executable = "/usr/bin/env"
-        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
-        fake.rawArgv = true
-        fake.cwd = nil
-        return RpcClient(configuration: fake)
-    })
-}
+    func waitUntilReleased() async {
+        await withCheckedContinuation { releaseWaiters.append($0) }
+    }
 
-private func fakeManager(mode: String = "basic") -> SessionProcessManager {
-    SessionProcessManager(clientFactory: { configuration in
-        var c = configuration
-        c.executable = "/usr/bin/env"
-        c.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
-        c.rawArgv = true
-        return RpcClient(configuration: c)
-    })
-}
-
-private func computerContractManager(mode: String = "basic") -> SessionProcessManager {
-    SessionProcessManager(clientFactory: { configuration in
-        var updated = configuration
-        updated.executable = "/usr/bin/env"
-        updated.extraArguments = [
-            "python3", fixtureURL("fake_server.py").path, mode, "--computer-contract",
-        ]
-        updated.rawArgv = true
-        return RpcClient(configuration: updated)
-    })
-}
-
-private func grandchildManager(mode: String, heartbeat: URL) -> SessionProcessManager {
-    SessionProcessManager(clientFactory: { configuration in
-        var updated = configuration
-        updated.executable = "/usr/bin/env"
-        updated.extraArguments = [
-            "python3", fixtureURL("fake_server.py").path, mode, heartbeat.path,
-        ]
-        updated.rawArgv = true
-        return RpcClient(configuration: updated)
-    })
+    func release() {
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
 }
 
 @Test func openIsIdempotentPerPath() async throws {
@@ -121,16 +84,242 @@ private func grandchildManager(mode: String, heartbeat: URL) -> SessionProcessMa
     await manager.closeAll()
 }
 
-@Test func openNewForwardsWorkingDirectoryAndUsesUniqueFallbackKeys() async throws {
+@Test func managerForwardsExtraArgumentsOnOpen() async throws {
     let capture = ConfigurationCapture()
-    let manager = capturingManager(capture, mode: "no-session-file")
+    let manager = SessionProcessManager(
+        extraArguments: ["-e", "/fake/ext/index.ts"],
+        clientFactory: { configuration in
+            capture.append(configuration)
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+            fake.rawArgv = true
+            fake.cwd = nil
+            return RpcClient(configuration: fake)
+        })
+
+    _ = try await manager.open(sessionPath: "/tmp/extra-args.jsonl", cwd: "/tmp/project")
+
+    #expect(capture.snapshot().first?.extraArguments == ["-e", "/fake/ext/index.ts"])
+    await manager.closeAll()
+}
+
+@Test func managerDefaultsToNoninteractiveRPCMode() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture)
+
+    _ = try await manager.open(sessionPath: "/tmp/noninteractive.jsonl", cwd: "/tmp/project")
+
+    #expect(capture.snapshot().first?.supportsUserInteraction == false)
+    await manager.closeAll()
+}
+
+@Test func interactiveManagerForwardsCapabilityToOpenNewAndWarmClients() async throws {
+    let openCapture = ConfigurationCapture()
+    let openManager = interactiveCapturingManager(openCapture)
+    _ = try await openManager.open(sessionPath: "/tmp/interactive.jsonl", cwd: "/tmp/project")
+    #expect(openCapture.snapshot().first?.supportsUserInteraction == true)
+    await openManager.closeAll()
+
+    let newCapture = ConfigurationCapture()
+    let newManager = interactiveCapturingManager(newCapture)
+    _ = try await newManager.openNew(projectDirectory: "/tmp/project")
+    #expect(newCapture.snapshot().first?.supportsUserInteraction == true)
+    await newManager.closeAll()
+
+    let warmCapture = ConfigurationCapture()
+    let warmManager = interactiveCapturingManager(warmCapture)
+    _ = try await warmManager.warm(projectDirectory: "/tmp/project")
+    #expect(warmCapture.snapshot().first?.supportsUserInteraction == true)
+    await warmManager.closeAll()
+}
+
+private func interactiveCapturingManager(
+    _ capture: ConfigurationCapture
+) -> SessionProcessManager {
+    SessionProcessManager(
+        supportsUserInteraction: true,
+        clientFactory: { configuration in
+            capture.append(configuration)
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+            fake.rawArgv = true
+            fake.cwd = nil
+            return RpcClient(configuration: fake)
+        })
+}
+
+@Test func openNewForwardsProviderModelThinkingFlags() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture)
+    _ = try await manager.openNew(
+        projectDirectory: "/tmp/project",
+        provider: "anthropic",
+        model: "claude-opus-4-8",
+        thinking: "high")
+    let configuration = capture.snapshot().first
+    #expect(configuration?.provider == "anthropic")
+    #expect(configuration?.model == "claude-opus-4-8")
+    #expect(configuration?.thinking == "high")
+    #expect(configuration?.resolvedArguments == [
+        "--mode", "rpc", "--no-title",
+        "--provider", "anthropic",
+        "--model", "claude-opus-4-8",
+        "--thinking", "high",
+        "--session-dir", expectedFreshSessionDirectory(for: "/tmp/project"),
+    ])
+    await manager.closeAll()
+}
+
+@Test func coldOpenNewStartsFreshAndPersisted() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ProcessManager-\(UUID().uuidString)", isDirectory: true)
+    let commandLog = root.appendingPathComponent("commands.log")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    FileManager.default.createFile(atPath: commandLog.path, contents: nil)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(
+        capture,
+        mode: "command-log",
+        modeArguments: [commandLog.path])
+    _ = try await manager.openNew(projectDirectory: root.path)
+
+    let configuration = capture.snapshot().first
+    #expect(configuration?.noSession == false)
+    #expect(configuration?.resolvedArguments == [
+        "--mode", "rpc", "--no-title",
+        "--session-dir",
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".omp/agent/sessions")
+            .appendingPathComponent(SessionPathEncoding.bucketName(forCwd: root.path))
+            .path,
+    ])
+    let commands = try String(contentsOf: commandLog, encoding: .utf8)
+        .split(separator: "\n")
+        .map(String.init)
+    #expect(commands == ["negotiate_protocol", "get_state"])
+    await manager.closeAll()
+}
+
+@Test func openNewRejectsAnUnpersistedSession() async {
+    let clients = ClientCapture()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "no-session-file"]
+        fake.rawArgv = true
+        fake.cwd = nil
+        let client = RpcClient(configuration: fake)
+        clients.append(client)
+        return client
+    })
+    await #expect(throws: SessionProcessManagerError.self) {
+        _ = try await manager.openNew(projectDirectory: "/tmp/project")
+    }
+    #expect(await clients.snapshot().first?.exitCode != nil)
+}
+
+@Test func twoColdSessionsInOneProjectKeepDistinctRuntimeOwners() async throws {
+    let capture = ConfigurationCapture()
+    let manager = capturingManager(capture, mode: "unique-session-file")
     let first = try await manager.openNew(projectDirectory: "/tmp/project")
     let second = try await manager.openNew(projectDirectory: "/tmp/project")
+
     #expect(first.sessionPath != second.sessionPath)
-    let configurations = capture.snapshot()
-    #expect(configurations.count == 2)
-    #expect(configurations.allSatisfy { $0.cwd?.path == "/tmp/project" })
-    #expect(configurations.allSatisfy { $0.resumeSessionPath == nil })
+    #expect(first.client !== second.client)
+    #expect(await manager.handle(for: first.sessionPath)?.client === first.client)
+    #expect(await manager.handle(for: second.sessionPath)?.client === second.client)
+    #expect(capture.snapshot().allSatisfy { configuration in
+        configuration.noSession == false
+            && configuration.extraArguments == [
+                "--session-dir",
+                expectedFreshSessionDirectory(for: "/tmp/project"),
+            ]
+    })
+    await manager.closeAll()
+}
+
+@Test func duplicateNewSessionPathPreservesTheExistingOwner() async throws {
+    let clients = ClientCapture()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+        fake.rawArgv = true
+        fake.cwd = nil
+        let client = RpcClient(configuration: fake)
+        clients.append(client)
+        return client
+    })
+
+    let first = try await manager.openNew(projectDirectory: "/tmp/project")
+    do {
+        _ = try await manager.openNew(projectDirectory: "/tmp/project")
+        Issue.record("Expected duplicate session path to be rejected")
+    } catch let error as SessionProcessManagerError {
+        #expect(error == .duplicateSessionPath("/tmp/fake.jsonl"))
+    }
+
+    let spawned = clients.snapshot()
+    #expect(spawned.count == 2)
+    #expect(await manager.handle(for: first.sessionPath)?.client === first.client)
+    #expect(await first.client.exitCode == nil)
+    #expect(await spawned[1].exitCode != nil)
+    await manager.closeAll()
+}
+
+@Test func joinedOpenSharesDuplicateActivationFailure() async throws {
+    let gate = ActivationGate()
+    let clients = ClientCapture()
+    let manager = SessionProcessManager(
+        clientFactory: { configuration in
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+            fake.rawArgv = true
+            fake.cwd = nil
+            let client = RpcClient(configuration: fake)
+            clients.append(client)
+            return client
+        },
+        beforeWarmActivation: {
+            await gate.markEntered()
+            await gate.waitUntilReleased()
+        },
+        beforeWarmRegistration: nil)
+
+    _ = try await manager.warm(projectDirectory: "/tmp/project")
+    let owner = Task { () throws -> SessionProcessManager.Handle in
+        try await manager.open(sessionPath: "/tmp/fake.jsonl", cwd: "/tmp/project")
+    }
+    await gate.waitUntilEntered()
+    let joined = Task { () throws -> SessionProcessManager.Handle in
+        try await manager.open(sessionPath: "/tmp/fake.jsonl", cwd: "/tmp/project")
+    }
+    let claimant = try await manager.openNew(projectDirectory: "/tmp/project")
+    await gate.release()
+
+    do {
+        _ = try await owner.value
+        Issue.record("Expected owner to reject duplicate session path")
+    } catch let error as SessionProcessManagerError {
+        #expect(error == .duplicateSessionPath("/tmp/fake.jsonl"))
+    }
+    do {
+        _ = try await joined.value
+        Issue.record("Expected joined open to reject duplicate session path")
+    } catch let error as SessionProcessManagerError {
+        #expect(error == .duplicateSessionPath("/tmp/fake.jsonl"))
+    }
+
+    #expect(await manager.handle(for: claimant.sessionPath)?.client === claimant.client)
+    let captured = clients.snapshot()
+    #expect(captured.count == 2)
+    #expect(await captured[0].exitCode != nil)
+    #expect(await captured[1].exitCode == nil)
     await manager.closeAll()
 }
 
@@ -140,6 +329,62 @@ private func grandchildManager(mode: String, heartbeat: URL) -> SessionProcessMa
     #expect(await manager.handle(for: "/tmp/gone.jsonl") != nil)
     await manager.close(sessionPath: "/tmp/gone.jsonl")
     #expect(await manager.handle(for: "/tmp/gone.jsonl") == nil)
+}
+
+@Test func closeCancelsAnInflightOpenBeforeItCanRegisterAHandle() async throws {
+    let capture = ConfigurationCapture()
+    let completion = CompletionFlag()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        capture.append(configuration)
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "never-ready"]
+        fake.rawArgv = true
+        fake.cwd = nil
+        fake.startupTimeout = .milliseconds(800)
+        return RpcClient(configuration: fake)
+    })
+    let openTask = Task {
+        defer { completion.markCompleted() }
+        return try? await manager.open(sessionPath: "/tmp/opening.jsonl", cwd: "/tmp")
+    }
+    while capture.snapshot().isEmpty { await Task.yield() }
+
+    await manager.close(sessionPath: "/tmp/opening.jsonl")
+    try await Task.sleep(for: .milliseconds(200))
+
+    #expect(completion.isCompleted())
+    #expect(await manager.handle(for: "/tmp/opening.jsonl") == nil)
+    _ = await openTask.value
+}
+
+@Test func closeOfAnInflightOpenDoesNotDiscardANewerOpenForTheSamePath() async throws {
+    let capture = ConfigurationCapture()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        capture.append(configuration)
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        let mode = capture.snapshot().count == 1 ? "never-ready" : "basic"
+        fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, mode]
+        fake.rawArgv = true
+        fake.cwd = nil
+        fake.startupTimeout = .milliseconds(800)
+        return RpcClient(configuration: fake)
+    })
+    let path = "/tmp/reopened.jsonl"
+    let staleOpen = Task { try? await manager.open(sessionPath: path, cwd: "/tmp") }
+    while capture.snapshot().isEmpty { await Task.yield() }
+
+    let closeTask = Task { await manager.close(sessionPath: path) }
+    try await Task.sleep(for: .milliseconds(20))
+    let reopened = try? await manager.open(sessionPath: path, cwd: "/tmp")
+    await closeTask.value
+
+    #expect(await staleOpen.value == nil)
+    #expect(reopened != nil)
+    #expect(capture.snapshot().count == 2)
+    #expect(await manager.handle(for: path)?.client === reopened?.client)
+    await manager.closeAll()
 }
 
 @Test func distinctPathsGetDistinctChildren() async throws {
@@ -166,26 +411,6 @@ private func grandchildManager(mode: String, heartbeat: URL) -> SessionProcessMa
     await manager.closeAll()
 }
 
-@Test func reopenedPathGetsANewGenerationAndOldExitKeepsItsGeneration() async throws {
-    let manager = fakeManager(mode: "crash-after-negotiation")
-    let exits = manager.unexpectedExits
-    let first = try await manager.open(
-        sessionPath: "/tmp/reopened-generation.jsonl",
-        cwd: "/tmp")
-
-    let oldExit = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
-        for await exit in exits { return exit }
-        return nil
-    } ?? nil
-    let second = try await manager.open(
-        sessionPath: first.sessionPath,
-        cwd: "/tmp")
-
-    #expect(oldExit?.generation == first.generation)
-    #expect(second.generation != first.generation)
-    await manager.closeAll()
-}
-
 @Test func managerDoesNotConsumeApplicationEvents() async throws {
     let manager = fakeManager(mode: "burst")
     let handle = try await manager.open(sessionPath: "/tmp/burst.jsonl", cwd: "/tmp")
@@ -207,6 +432,74 @@ private func grandchildManager(mode: String, heartbeat: URL) -> SessionProcessMa
     await manager.closeAll()
 }
 
+@Test func managerPreservesThousandGrowingMessageSnapshots() async throws {
+    let manager = fakeManager(mode: "transcript-burst")
+    let handle = try await manager.open(sessionPath: "/tmp/transcript-burst.jsonl", cwd: "/tmp")
+    let stream = handle.client.events
+
+    let acknowledgement = try await handle.client.send(
+        .prompt(message: "burst", streamingBehavior: nil))
+    #expect(acknowledgement.success)
+
+    let result = await withTimeout(.seconds(10)) { () -> (
+        eventTypes: [String], updates: [String], final: String?, terminalAgentEnds: Int,
+        malformedUpdates: Int
+    ) in
+        var eventTypes: [String] = []
+        var updates: [String] = []
+        var final: String?
+        var terminalAgentEnds = 0
+        var malformedUpdates = 0
+
+        for await frame in stream {
+            guard case .event(let type, let payload) = frame else { continue }
+            eventTypes.append(type)
+            switch type {
+            case "message_update":
+                let message = payload["message"]
+                let event = payload["assistantMessageEvent"]
+                let usage = message?["usage"]
+                let cost = usage?["cost"]
+                let isContractComplete = event?["type"]?.stringValue == "text_delta"
+                    && event?["contentIndex"]?.intValue == 0
+                    && event?["delta"]?.stringValue == "x"
+                    && event?["partial"] == message
+                    && ["input", "output", "cacheRead", "cacheWrite", "totalTokens"]
+                        .allSatisfy { usage?[$0]?.intValue == 0 }
+                    && ["input", "output", "cacheRead", "cacheWrite", "total"]
+                        .allSatisfy { cost?[$0]?.doubleValue == 0 }
+                if !isContractComplete { malformedUpdates += 1 }
+                updates.append(message?["content"]?.arrayValue?.first?["text"]?.stringValue ?? "")
+            case "message_end":
+                final = payload["message"]?["content"]?.arrayValue?.first?["text"]?.stringValue
+            case "agent_end":
+                guard payload["isTerminal"]?.boolValue == true else { continue }
+                terminalAgentEnds += 1
+                return (eventTypes, updates, final, terminalAgentEnds, malformedUpdates)
+            default:
+                break
+            }
+        }
+        return (eventTypes, updates, final, terminalAgentEnds, malformedUpdates)
+    }
+
+    #expect(result != nil)
+    let frames = result ?? (eventTypes: [], updates: [], final: nil, terminalAgentEnds: 0, malformedUpdates: 0)
+    #expect(frames.eventTypes.first == "agent_start")
+    #expect(frames.eventTypes.dropFirst().first == "message_start")
+    #expect(frames.eventTypes.dropFirst(2).dropLast(2).allSatisfy { $0 == "message_update" })
+    #expect(frames.eventTypes.suffix(2) == ["message_end", "agent_end"])
+    #expect(frames.terminalAgentEnds == 1)
+    #expect(frames.updates.count == 1_000)
+    #expect(frames.malformedUpdates == 0)
+    #expect(frames.updates.allSatisfy { !$0.isEmpty })
+    #expect(zip(frames.updates, frames.updates.dropFirst()).allSatisfy { previous, current in
+        current.count > previous.count && current.hasPrefix(previous)
+    })
+    #expect(frames.final == frames.updates.last)
+    await manager.closeAll()
+}
+
 @Test func deliberateCloseDoesNotReportAnExit() async throws {
     let manager = fakeManager()
     _ = try await manager.open(sessionPath: "/tmp/quiet.jsonl", cwd: "/tmp")
@@ -221,469 +514,75 @@ private func grandchildManager(mode: String, heartbeat: URL) -> SessionProcessMa
     #expect(path == nil)
 }
 
-@Test func handleVendsAComputerRPCAdapterWithoutExposingTheClientToConsumers() async throws {
-    let manager = computerContractManager()
-    let handle = try await manager.open(sessionPath: "/tmp/computer.jsonl", cwd: "/tmp")
-
-    let initial = try await handle.computerUseRPC.state()
-    let availability = try await handle.computerUseRPC.availability()
-    let enabled = try await handle.computerUseRPC.setComputerUse(
-        enabled: true, policy: .requireHandoff)
-    let probe = try await handle.computerUseRPC.probeComputerUse(
-        target: "window-1", verificationText: "ready")
-
-    #expect(initial == ComputerUseRPCState(enabled: false, foregroundPolicy: .requireHandoff))
-    #expect(availability == ComputerUseAvailability(json: .object([
-        "model": .object(["id": .string("fake")]),
-        "computerUse": .object([
-            "enabled": .bool(false),
-            "foregroundPolicy": .string("require-handoff"),
-        ]),
-    ])))
-    #expect(enabled == ComputerUseRPCState(enabled: true, foregroundPolicy: .requireHandoff))
-    #expect(probe.capabilities.isReady)
-    await manager.closeAll()
-}
-
-@Test func legacyComputerCommandRequiresTheServerToDeclineAgentInvocation() async throws {
-    let manager = computerContractManager()
-    let handle = try await manager.open(sessionPath: "/tmp/legacy.jsonl", cwd: "/tmp")
-
-    try await handle.computerUseRPC.setLegacyComputerUse(enabled: true)
-
-    await manager.closeAll()
-}
-
-@Test(arguments: ["legacy-agent-invoked", "legacy-agent-missing", "legacy-command-error"])
-func legacyComputerCommandRejectsAnyUnverifiedResponse(mode: String) async throws {
-    let manager = computerContractManager(mode: mode)
-    let handle = try await manager.open(sessionPath: "/tmp/legacy-\(mode).jsonl", cwd: "/tmp")
-
-    await #expect(throws: (any Error).self) {
-        try await handle.computerUseRPC.setLegacyComputerUse(enabled: true)
-    }
-
-    await manager.closeAll()
-}
-
-@Test(arguments: ["host-tools-wrong", "host-tools-malformed", "host-tools-mixed"])
-func hostToolRegistrationRequiresTheExactAcknowledgement(mode: String) async throws {
-    let manager = computerContractManager(mode: mode)
-    let handle = try await manager.open(sessionPath: "/tmp/host-tools-\(mode).jsonl", cwd: "/tmp")
-
-    await #expect(throws: (any Error).self) {
-        try await handle.computerUseRPC.setHostTools([
-            HostToolDefinition(name: "agent_desktop", description: "test", parameters: .object([:])),
-        ])
-    }
-
-    await manager.closeAll()
-}
-
-@Test func deadlineForceCloseRetainsTheHandleUntilTheChildActuallyExits() async throws {
-    let manager = computerContractManager(mode: "silent")
-    let handle = try await manager.open(sessionPath: "/tmp/hung-close.jsonl", cwd: "/tmp")
-    let started = ContinuousClock.now
-
-    let confirmed = await manager.forceClose(
-        sessionPath: handle.sessionPath,
-        deadline: started)
-
-    #expect(confirmed == false)
-    #expect(await manager.handle(for: handle.sessionPath) != nil)
-    try await Task.sleep(for: .milliseconds(150))
-    #expect(await handle.client.exitCode == nil)
-
-    let retryConfirmed = await manager.forceClose(
-        sessionPath: handle.sessionPath,
-        deadline: ContinuousClock.now.advanced(by: .seconds(1)))
-    #expect(retryConfirmed)
-    #expect(await manager.handle(for: handle.sessionPath) == nil)
-}
-
-@Test func naturalLeaderExitWaitsForGrandchildDeathBeforeReportingManagerExit() async throws {
-    let heartbeat = FileManager.default.temporaryDirectory
-        .appending(path: "ompkit-manager-natural-\(UUID().uuidString)")
-    defer { terminateFixtureChild(heartbeat: heartbeat) }
-    let manager = grandchildManager(mode: "leader-exit-grandchild", heartbeat: heartbeat)
+@Test func eventBacklogOverflowIsReportedAsAnUnexpectedExitWithItsDiagnostic() async throws {
+    let hooks: RpcClientTestHooks = {
+        var hooks = RpcClientTestHooks()
+        hooks.eventQueueLimits = BoundedRecordQueueLimits(
+            memoryBytes: 8_192, memoryRecords: 4, spillBytes: 65_536)
+        return hooks
+    }()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3", fixtureURL("fake_server.py").path, "event-flood", "400", "4096",
+        ]
+        fake.rawArgv = true
+        return RpcClient(configuration: fake, testHooks: hooks)
+    })
+    let handle = try await manager.open(sessionPath: "/tmp/flood.jsonl", cwd: "/tmp")
     let exits = manager.unexpectedExits
-    let handle = try await manager.open(
-        sessionPath: "/tmp/leader-exit-grandchild.jsonl",
-        cwd: "/tmp")
-    #expect(await waitForFixtureChild(heartbeat: heartbeat) != nil)
 
-    let event = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
+    // Nobody reads `events`; the flood overflows the small budget and the
+    // client stops the session itself.
+    _ = try? await handle.client.send(.getState(), timeout: .seconds(30))
+
+    let exit = await withTimeout(.seconds(10)) { () -> SessionProcessManager.UnexpectedExit? in
         for await exit in exits { return exit }
         return nil
     } ?? nil
-    let countAtEvent = (try? Data(contentsOf: heartbeat))?.count ?? 0
-    try await Task.sleep(for: .milliseconds(200))
-    let countAfterEvent = (try? Data(contentsOf: heartbeat))?.count ?? 0
-
-    #expect(event?.sessionPath == handle.sessionPath)
-    #expect(event?.code == 7)
-    #expect(countAtEvent == countAfterEvent)
-    #expect(await manager.handle(for: handle.sessionPath) == nil)
+    #expect(exit?.sessionPath == "/tmp/flood.jsonl")
+    #expect(exit?.stderrTail.hasPrefix("[OmpKit:RpcClient] The event backlog exceeded its") == true)
+    #expect(await manager.handle(for: "/tmp/flood.jsonl") == nil)
+    await manager.closeAll()
 }
 
-@Test func forceCloseFalseKeepsTheHandleUntilDetachedDescendantsAreConfirmedDead() async throws {
-    let heartbeat = FileManager.default.temporaryDirectory
-        .appending(path: "ompkit-manager-force-\(UUID().uuidString)")
-    defer { terminateFixtureChild(heartbeat: heartbeat) }
-    let manager = grandchildManager(mode: "grandchild", heartbeat: heartbeat)
-    let handle = try await manager.open(
-        sessionPath: "/tmp/force-close-grandchild.jsonl",
-        cwd: "/tmp")
-    #expect(await waitForFixtureChild(heartbeat: heartbeat) != nil)
-
-    let confirmed = await manager.forceClose(
-        sessionPath: handle.sessionPath,
-        deadline: ContinuousClock.now)
-
-    #expect(confirmed == false)
-    #expect(await manager.handle(for: handle.sessionPath) != nil)
-    let countBeforeRetry = (try? Data(contentsOf: heartbeat))?.count ?? 0
-    try await Task.sleep(for: .milliseconds(100))
-    let countAfterSkippedClose = (try? Data(contentsOf: heartbeat))?.count ?? 0
-    #expect(countAfterSkippedClose > countBeforeRetry)
-
-    let retryConfirmed = await manager.forceClose(
-        sessionPath: handle.sessionPath,
-        deadline: ContinuousClock.now.advanced(by: .seconds(3)))
-    let countAtConfirmation = (try? Data(contentsOf: heartbeat))?.count ?? 0
-    try await Task.sleep(for: .milliseconds(200))
-    let countAfterConfirmation = (try? Data(contentsOf: heartbeat))?.count ?? 0
-
-    #expect(retryConfirmed)
-    #expect(countAtConfirmation == countAfterConfirmation)
-    #expect(await manager.handle(for: handle.sessionPath) == nil)
+private final class ManagerBox: @unchecked Sendable {
+    var manager: SessionProcessManager?
 }
 
-@Test func incompleteLiveTreeObservationWithholdsExitUntilAnchoredRecovery() async throws {
-    let processes = CertificationProcessTable()
-    let manager = SessionProcessManager(clientFactory: { configuration in
-        var updated = configuration
-        updated.executable = "/usr/bin/env"
-        updated.extraArguments = [
-            "python3", fixtureURL("fake_server.py").path, "crash-after-negotiation",
-        ]
-        updated.rawArgv = true
-        updated.cwd = nil
-        return RpcClient(
-            configuration: updated,
-            beforeHandlingLine: { _ in },
-            processOperations: processes.operations)
-    })
+@Test func exitNoticedBeforeAReopenIsNotReportedAgainstTheReplacement() async throws {
+    // "background-exit" exits one second after `set_subagent_subscription`,
+    // which only the app sends, so the first child dies on request and the
+    // second one stays alive.
+    let box = ManagerBox()
+    let manager = SessionProcessManager(
+        clientFactory: { configuration in
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "background-exit"]
+            fake.rawArgv = true
+            return RpcClient(configuration: fake)
+        },
+        beforeWarmActivation: nil,
+        beforeWarmRegistration: nil,
+        beforeExitReport: {
+            _ = try? await box.manager?.open(sessionPath: "/tmp/reopened.jsonl", cwd: "/tmp")
+        })
+    box.manager = manager
+    let first = try await manager.open(sessionPath: "/tmp/reopened.jsonl", cwd: "/tmp")
     let exits = manager.unexpectedExits
-    let handle = try await manager.open(
-        sessionPath: "/tmp/incomplete-certification.jsonl",
-        cwd: "/tmp")
+    _ = try await first.client.send(.setSubagentSubscription(level: .progress))
 
-    processes.setListsAreComplete(false)
-    #expect(await waitUntil { processes.incompleteReadCount > 0 })
-    #expect(await waitForClientExit(handle.client))
-    processes.removeLeader()
-    try await Task.sleep(for: .milliseconds(100))
-    #expect(await manager.handle(for: handle.sessionPath) != nil)
-
-    processes.setListsAreComplete(true)
-    #expect(await waitUntil { processes.didObserveCompleteDescendantAnchor })
-    processes.removeDescendant()
-    let event = await withTimeout(.seconds(5)) { () -> SessionProcessManager.UnexpectedExit? in
-        for await exit in exits { return exit }
-        return nil
-    } ?? nil
-
-    #expect(event?.generation == handle.generation)
-    #expect(await manager.handle(for: handle.sessionPath) == nil)
-}
-
-@Test func expiredForceCloseRetainsHandleUntilCertificationIsReanchored() async throws {
-    let processes = CertificationProcessTable()
-    let manager = SessionProcessManager(clientFactory: { configuration in
-        var updated = configuration
-        updated.executable = "/usr/bin/env"
-        updated.extraArguments = [
-            "python3", fixtureURL("fake_server.py").path, "expired-deadline-exit",
-        ]
-        updated.rawArgv = true
-        updated.cwd = nil
-        return RpcClient(
-            configuration: updated,
-            beforeHandlingLine: { _ in },
-            processOperations: processes.operations)
-    })
-    let exits = manager.unexpectedExits
-    let capturedExits = UnexpectedExitCapture()
-    let observer = Task {
-        for await exit in exits { await capturedExits.append(exit) }
+    let reported = await withTimeout(.seconds(6)) { () -> Bool in
+        for await _ in exits { return true }
+        return false
     }
-    defer { observer.cancel() }
-    let handle = try await manager.open(
-        sessionPath: "/tmp/expired-force-close.jsonl",
-        cwd: "/tmp")
-
-    let confirmed = await manager.forceClose(
-        sessionPath: handle.sessionPath,
-        deadline: ContinuousClock.now)
-    #expect(!confirmed)
-    processes.removeLeader()
-    processes.removeDescendant()
-    #expect(await waitForClientExit(handle.client))
-    try await Task.sleep(for: .milliseconds(100))
-
-    #expect(await manager.handle(for: handle.sessionPath) != nil)
-    #expect(await capturedExits.count == 0)
-
-    let readsBeforeRecovery = processes.completeLeaderAnchorReadCount
-    processes.restoreLeader()
-    #expect(await waitUntil {
-        processes.completeLeaderAnchorReadCount >= readsBeforeRecovery + 2
-    })
-    processes.removeLeader()
-    #expect(await waitForCapturedExit(capturedExits))
-    #expect(await capturedExits.first?.generation == handle.generation)
-    #expect(await manager.handle(for: handle.sessionPath) == nil)
-}
-
-@Test func oneTerminationObservationLetsManagerReportDelayedNaturalExit() async throws {
-    let processes = DelayedDeadProcessTable(deadSnapshotClockStep: .milliseconds(300))
-    let manager = SessionProcessManager(clientFactory: { configuration in
-        var updated = configuration
-        updated.executable = "/usr/bin/env"
-        updated.extraArguments = [
-            "python3", fixtureURL("fake_server.py").path, "basic",
-        ]
-        updated.rawArgv = true
-        updated.cwd = nil
-        return RpcClient(
-            configuration: updated,
-            beforeHandlingLine: { _ in },
-            processOperations: processes.operations,
-            trackerDidPoll: { processes.didCompletePoll(until: $0) })
-    })
-    let exits = manager.unexpectedExits
-    let capturedExits = UnexpectedExitCapture()
-    let observer = Task {
-        for await exit in exits { await capturedExits.append(exit) }
-    }
-    defer { observer.cancel() }
-    let handle = try await manager.open(
-        sessionPath: "/tmp/single-termination-observation.jsonl",
-        cwd: "/tmp")
-    processes.armTermination()
-
-    #expect(await waitForClientExit(handle.client))
-    #expect(await waitForCapturedExit(capturedExits))
-    #expect(await capturedExits.first?.generation == handle.generation)
-    #expect(await manager.handle(for: handle.sessionPath) == nil)
-}
-
-private func waitForFixtureChild(heartbeat: URL) async -> pid_t? {
-    let pidFile = URL(fileURLWithPath: heartbeat.path + ".pid")
-    return await withTimeout(.seconds(2)) {
-        while !Task.isCancelled {
-            if let text = try? String(contentsOf: pidFile, encoding: .utf8),
-               let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)),
-               ((try? Data(contentsOf: heartbeat))?.isEmpty == false) {
-                return pid
-            }
-            try? await Task.sleep(for: .milliseconds(20))
-        }
-        return nil
-    } ?? nil
-}
-
-private func terminateFixtureChild(heartbeat: URL) {
-    let pidFile = URL(fileURLWithPath: heartbeat.path + ".pid")
-    if let text = try? String(contentsOf: pidFile, encoding: .utf8),
-       let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines)) {
-        kill(pid, SIGKILL)
-    }
-    try? FileManager.default.removeItem(at: heartbeat)
-    try? FileManager.default.removeItem(at: pidFile)
-}
-
-private final class CertificationProcessTable: @unchecked Sendable {
-    private let lock = NSLock()
-    private var leaderPID: pid_t?
-    private var isLeaderVisible = true
-    private var isDescendantVisible = true
-    private var listsAreComplete = true
-    private var incompleteReads = 0
-    private var observedCompleteDescendantAnchor = false
-    private var completeLeaderAnchorReads = 0
-
-    var operations: ProcessOperations {
-        ProcessOperations(
-            snapshot: { [self] pid in snapshot(pid) },
-            childPIDs: { [self] parent in listChildren(of: parent) },
-            groupPIDs: { [self] group in listGroup(group) },
-            signalProcess: { _, _ in },
-            signalGroup: { _, _ in })
-    }
-
-    func setListsAreComplete(_ isComplete: Bool) {
-        lock.withLock { listsAreComplete = isComplete }
-    }
-
-    func removeLeader() { lock.withLock { isLeaderVisible = false } }
-    func restoreLeader() { lock.withLock { isLeaderVisible = true } }
-    func removeDescendant() { lock.withLock { isDescendantVisible = false } }
-
-    var incompleteReadCount: Int { lock.withLock { incompleteReads } }
-    var didObserveCompleteDescendantAnchor: Bool {
-        lock.withLock { observedCompleteDescendantAnchor }
-    }
-    var completeLeaderAnchorReadCount: Int {
-        lock.withLock { completeLeaderAnchorReads }
-    }
-
-    private func snapshot(_ pid: pid_t) -> ProcessSnapshot? {
-        lock.withLock {
-            if leaderPID == nil { leaderPID = pid }
-            guard let leaderPID else { return nil }
-            if pid == leaderPID, isLeaderVisible {
-                return ProcessSnapshot(
-                    identity: .init(pid: pid, startSeconds: 1, startMicroseconds: 0),
-                    parentPID: 1,
-                    processGroupID: leaderPID)
-            }
-            let descendantPID = leaderPID + 100_000
-            if pid == descendantPID, isDescendantVisible {
-                return ProcessSnapshot(
-                    identity: .init(pid: pid, startSeconds: 1, startMicroseconds: 0),
-                    parentPID: leaderPID,
-                    processGroupID: leaderPID)
-            }
-            return nil
-        }
-    }
-
-    private func listChildren(of parent: pid_t) -> ProcessPIDList {
-        lock.withLock {
-            guard let leaderPID else { return .init(pids: [], isComplete: false) }
-            if !listsAreComplete { incompleteReads += 1 }
-            let pids = parent == leaderPID && isDescendantVisible
-                ? [leaderPID + 100_000] : []
-            return .init(pids: pids, isComplete: listsAreComplete)
-        }
-    }
-
-    private func listGroup(_ group: pid_t) -> ProcessPIDList {
-        lock.withLock {
-            guard let leaderPID, group == leaderPID else {
-                return .init(pids: [], isComplete: false)
-            }
-            if !listsAreComplete { incompleteReads += 1 }
-            if listsAreComplete, isLeaderVisible { completeLeaderAnchorReads += 1 }
-            if listsAreComplete, !isLeaderVisible, isDescendantVisible {
-                observedCompleteDescendantAnchor = true
-            }
-            var pids: [pid_t] = []
-            if isLeaderVisible { pids.append(leaderPID) }
-            if isDescendantVisible { pids.append(leaderPID + 100_000) }
-            return .init(pids: pids, isComplete: listsAreComplete)
-        }
-    }
-}
-
-private actor UnexpectedExitCapture {
-    private var values: [SessionProcessManager.UnexpectedExit] = []
-
-    func append(_ value: SessionProcessManager.UnexpectedExit) { values.append(value) }
-    var count: Int { values.count }
-    var first: SessionProcessManager.UnexpectedExit? { values.first }
-}
-
-private final class DelayedDeadProcessTable: @unchecked Sendable {
-    private let lock = NSLock()
-    private let deadSnapshotClockStep: Duration
-    private var leaderPID: pid_t?
-    private var isLeaderVisible = true
-    private var isTerminationArmed = false
-    private var remainingDelayedDeadSnapshots = 0
-    private var clockOffset = Duration.zero
-
-    init(deadSnapshotClockStep: Duration) {
-        self.deadSnapshotClockStep = deadSnapshotClockStep
-    }
-
-    func armTermination() {
-        lock.withLock { isTerminationArmed = true }
-    }
-
-    func didCompletePoll(until deadline: ContinuousClock.Instant) {
-        let pid: pid_t? = lock.withLock {
-            if isTerminationArmed {
-                isTerminationArmed = false
-                isLeaderVisible = false
-                return leaderPID
-            }
-            if !isLeaderVisible,
-               remainingDelayedDeadSnapshots == 0,
-               ContinuousClock.now.duration(to: deadline) > .seconds(1) {
-                remainingDelayedDeadSnapshots = 4
-            }
-            return nil
-        }
-        if let pid { kill(pid, SIGKILL) }
-    }
-
-    var operations: ProcessOperations {
-        return ProcessOperations(
-            snapshot: { [self, deadSnapshotClockStep] pid in
-                lock.withLock { () -> ProcessSnapshot? in
-                    if leaderPID == nil { leaderPID = pid }
-                    guard pid == leaderPID, isLeaderVisible else {
-                        if remainingDelayedDeadSnapshots > 0 {
-                            remainingDelayedDeadSnapshots -= 1
-                            clockOffset += deadSnapshotClockStep
-                        }
-                        return nil
-                    }
-                    return ProcessSnapshot(
-                        identity: .init(pid: pid, startSeconds: 1, startMicroseconds: 0),
-                        parentPID: 1,
-                        processGroupID: pid)
-                }
-            },
-            childPIDs: { _ in .init(pids: [], isComplete: true) },
-            groupPIDs: { [self] group in
-                lock.withLock {
-                    return .init(
-                        pids: isLeaderVisible && group == leaderPID ? [group] : [],
-                        isComplete: true)
-                }
-            },
-            signalProcess: { _, _ in },
-            signalGroup: { _, _ in },
-            now: { [self] in
-                ContinuousClock.now.advanced(by: lock.withLock { clockOffset })
-            })
-    }
-}
-
-private func waitForClientExit(_ client: RpcClient) async -> Bool {
-    for _ in 0..<150 {
-        if await client.exitCode != nil { return true }
-        try? await Task.sleep(for: .milliseconds(20))
-    }
-    return false
-}
-
-private func waitUntil(_ condition: @escaping @Sendable () -> Bool) async -> Bool {
-    for _ in 0..<150 {
-        if condition() { return true }
-        try? await Task.sleep(for: .milliseconds(20))
-    }
-    return false
-}
-
-private func waitForCapturedExit(_ capture: UnexpectedExitCapture) async -> Bool {
-    for _ in 0..<150 {
-        if await capture.count > 0 { return true }
-        try? await Task.sleep(for: .milliseconds(20))
-    }
-    return false
+    // nil: the wait timed out without a report, which is the required outcome.
+    #expect(reported == nil)
+    let replacement = await manager.handle(for: "/tmp/reopened.jsonl")
+    #expect(replacement != nil)
+    #expect(replacement?.client !== first.client)
+    #expect(await replacement?.client.exitCode == nil)
+    await manager.closeAll()
 }

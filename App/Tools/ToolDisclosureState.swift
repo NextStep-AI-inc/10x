@@ -3,16 +3,34 @@ import SwiftUI
 
 @Observable
 final class ToolDisclosureState: @unchecked Sendable {
-    private var choices: [String: Bool] = [:]
+    private(set) var mode: ToolDetailMode
+    // Per-row boxes: toggling one card must not invalidate the whole transcript.
+    @ObservationIgnored private var choices: [String: DisclosureChoice] = [:]
+    @ObservationIgnored private var groupChoices: [String: DisclosureChoice] = [:]
 
-    func isExpanded(for presentation: ToolPresentation) -> Bool {
-        isExpanded(
-            id: presentation.id,
-            defaultValue: Self.defaultExpanded(for: presentation))
+    init(mode: ToolDetailMode = .standard) {
+        self.mode = mode
     }
 
-    func isExpanded(id: String, defaultValue: Bool) -> Bool {
-        choices[id] ?? defaultValue
+    /// A new mode discards per-card and per-group choices from the old one, so
+    /// switching to Slim actually collapses groups instead of leaving them open.
+    func setMode(_ mode: ToolDetailMode) {
+        guard mode != self.mode else { return }
+        self.mode = mode
+        for choice in choices.values { choice.value = nil }
+        for choice in groupChoices.values { choice.value = nil }
+    }
+
+    func isExpanded(for presentation: ToolPresentation) -> Bool {
+        isExpanded(id: presentation.id, traits: presentation.disclosureTraits)
+    }
+
+    func isExpanded(for presentation: SubagentPresentation) -> Bool {
+        isExpanded(id: presentation.id, traits: presentation.disclosureTraits)
+    }
+
+    func isExpanded(id: String, traits: ToolDisclosureTraits) -> Bool {
+        choice(for: id, in: &choices).value ?? mode.isExpandedByDefault(traits)
     }
 
     func setExpanded(_ isExpanded: Bool, for presentation: ToolPresentation) {
@@ -20,20 +38,31 @@ final class ToolDisclosureState: @unchecked Sendable {
     }
 
     func setExpanded(_ isExpanded: Bool, id: String) {
-        choices[id] = isExpanded
+        choice(for: id, in: &choices).value = isExpanded
     }
 
-    func collapseAll(ids: [String]) {
-        for id in ids { choices[id] = false }
+    func isGroupExpanded(id: String) -> Bool {
+        choice(for: id, in: &groupChoices).value ?? mode.opensGroupsByDefault
     }
 
-    func expand(ids: [String]) {
-        for id in ids { choices[id] = true }
+    func setGroupExpanded(_ isExpanded: Bool, id: String) {
+        choice(for: id, in: &groupChoices).value = isExpanded
     }
 
-    nonisolated static func defaultExpanded(for presentation: ToolPresentation) -> Bool {
-        presentation.phase != .complete || ToolCardRegistry.kind(for: presentation.name) == .edit
+    private func choice(
+        for id: String,
+        in choices: inout [String: DisclosureChoice]
+    ) -> DisclosureChoice {
+        if let choice = choices[id] { return choice }
+        let choice = DisclosureChoice()
+        choices[id] = choice
+        return choice
     }
+}
+
+@Observable
+private final class DisclosureChoice: @unchecked Sendable {
+    var value: Bool?
 }
 
 private struct ToolDisclosureStateKey: EnvironmentKey {

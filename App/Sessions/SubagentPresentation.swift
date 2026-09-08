@@ -1,7 +1,7 @@
 import Foundation
 import OmpKit
 
-enum SubagentStatus: String, Equatable {
+enum SubagentStatus: String, Equatable, Sendable {
     case pending
     case started
     case running
@@ -23,7 +23,7 @@ enum SubagentStatus: String, Equatable {
     var isError: Bool { self == .failed || self == .aborted }
 }
 
-struct SubagentRecentTool: Equatable, Identifiable {
+struct SubagentRecentTool: Equatable, Identifiable, Sendable {
     let name: String
     let arguments: JSONValue?
     let endMilliseconds: Double?
@@ -31,7 +31,7 @@ struct SubagentRecentTool: Equatable, Identifiable {
     var id: String { "\(name)-\(endMilliseconds ?? 0)" }
 }
 
-struct SubagentPresentation: Identifiable, Equatable {
+struct SubagentPresentation: Identifiable, Equatable, Sendable {
     let id: String
     var index: Int
     var agent: String

@@ -1,0 +1,47 @@
+Redaction verification against omp-account-wire-frames.jsonl
+Generated 2026-08-27, task 12 of the provider-account-extension plan.
+
+Method: two OAuth rows seeded directly into an isolated AuthStorage sqlite
+db (AuthStorage.upsertCredential, real public API, no OMP fork) under a
+scratch PI_CODING_AGENT_DIR. access/refresh/accountId all carry the marker
+string "TASK12-SECRET-MARKER-9f3ab2". A real `omp --mode rpc --no-title
+--no-session --model sonnet -e OmpExtension/index.ts` process was spawned
+against that dir and driven end to end over the real extension_ui_request /
+extension_ui_response channel: hello, list_accounts, pin_account (against
+account A), remove_account (against account B). Every frame in both
+directions was captured verbatim to omp-account-wire-frames.jsonl (12
+frames, includes unrelated interleaved OMP traffic — a "setWidget"
+extension UI request and an "available_commands_update" frame — captured
+and checked too, not filtered out).
+
+$ grep -c "TASK12-SECRET-MARKER-9f3ab2" omp-account-wire-frames.jsonl
+0
+
+$ for term in "sk-secret" "accessToken" "refreshToken" '"access"' '"refresh"' \
+    "apiKey" '"credentialId"' "fake-access" "fake-refresh"; do
+    grep -c -- "$term" omp-account-wire-frames.jsonl
+  done
+sk-secret: 0
+accessToken: 0
+refreshToken: 0
+"access": 0
+"refresh": 0
+apiKey: 0
+"credentialId": 0
+fake-access: 0
+fake-refresh: 0
+
+$ grep -oE '"[^"]*/(Users|tmp|private)/[^"]*"' omp-account-wire-frames.jsonl
+(no matches)
+
+Result: zero occurrences of the marker, zero occurrences of any
+secret/token-shaped field name or value, zero occurrences of the internal
+"credentialId" key (SafeAccount never carries it — accountRef is a sha256
+hash, not the row id), zero filesystem paths of any kind in any frame this
+capture observed. This channel's scope is the account command/response
+traffic only (extension_ui_request/response frames whose title is
+"tenx.provider-accounts.v1", plus whatever unrelated traffic happened to be
+interleaved on the same connection) — it does not cover get_state's
+sessionFile/systemPrompt fields, which are pre-existing OMP fields this
+plan does not touch and which the prior (superseded) evidence already
+documented as carrying paths.

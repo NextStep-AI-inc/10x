@@ -16,6 +16,7 @@ struct BrandWordmark: View {
             }
         }
         .frame(width: width)
+        .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
         .accessibilityLabel("10x")
     }
 
@@ -23,6 +24,10 @@ struct BrandWordmark: View {
         guard let url = Bundle.main.url(forResource: "10x-wordmark", withExtension: "svg") else {
             return nil
         }
-        return NSImage(contentsOf: url)
+        let image = NSImage(contentsOf: url)
+        // The asset is a single-color mark. Drawn as a template it takes the
+        // foreground style instead of staying near-black on a dark canvas.
+        image?.isTemplate = true
+        return image
     }()
 }

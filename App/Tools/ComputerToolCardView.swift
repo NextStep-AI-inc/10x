@@ -18,8 +18,7 @@ struct ComputerToolCardView: View {
         if let computer = ComputerToolPresentation(presentation) {
             ToolCardScaffold(
                 presentation: presentation,
-                title: "Computer",
-                subtitle: computer.target
+                cardContent: presentation.content
             ) {
                 summary(computer)
                 imageEvidence(computer)
@@ -29,7 +28,7 @@ struct ComputerToolCardView: View {
                 rawDetailsDisclosure(computer)
             }
         } else {
-            GenericToolCardView(presentation: presentation)
+            ToolCardView(presentation: presentation)
         }
     }
 
@@ -110,22 +109,11 @@ struct ComputerToolCardView: View {
         switch evidence {
         case .output(let value):
             evidenceSection(title: "Output") {
-                BoundedToolOutputView(
-                    text: value,
-                    lineLimit: 8,
-                    font: TenXTypography.mono(size: 10),
-                    color: TenXPalette.color(presentation.isError
-                        ? TenXPalette.signalRedHex
-                        : TenXPalette.nearBlackHex),
-                    isDisclosureAlwaysAvailable: true)
+                boundedMonoText(value)
             }
         case .returnValue(let value):
             evidenceSection(title: "Return value") {
-                BoundedToolOutputView(
-                    text: value,
-                    lineLimit: 6,
-                    font: TenXTypography.mono(size: 10),
-                    isDisclosureAlwaysAvailable: true)
+                boundedMonoText(value)
             }
         }
     }
@@ -150,7 +138,7 @@ struct ComputerToolCardView: View {
     private func codeDisclosure(_ computer: ComputerToolPresentation) -> some View {
         if !computer.code.isEmpty {
             DisclosureGroup("Computer code", isExpanded: $isCodeExpanded) {
-                CodeBlockView(language: "javascript", code: computer.code)
+                CodeBlockView(source: SourcePresentation(language: "javascript", text: computer.code))
                     .padding(.top, 6)
             }
             .font(TenXTypography.body(size: 11, weight: .medium))
@@ -162,15 +150,23 @@ struct ComputerToolCardView: View {
     private func rawDetailsDisclosure(_ computer: ComputerToolPresentation) -> some View {
         if let details = computer.rawDetails {
             DisclosureGroup("Raw details", isExpanded: $isRawDetailsExpanded) {
-                BoundedToolOutputView(
-                    text: formatted(details),
-                    lineLimit: 12,
-                    font: TenXTypography.mono(size: 10),
-                    isDisclosureAlwaysAvailable: true)
+                boundedMonoText(formatted(details))
                     .padding(.top, 6)
             }
             .font(TenXTypography.body(size: 11, weight: .medium))
             .tint(TenXPalette.color(TenXPalette.cyanHex))
+        }
+    }
+
+    private func boundedMonoText(_ value: String) -> some View {
+        ProgressiveTextView(text: value, accessibilityNoun: "output characters") { text in
+            Text(text)
+                .font(TenXTypography.mono(size: 10))
+                .foregroundStyle(TenXPalette.color(presentation.isError
+                    ? TenXPalette.signalRedHex
+                    : TenXPalette.nearBlackHex))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

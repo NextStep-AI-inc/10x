@@ -2,13 +2,32 @@ import AppKit
 import Foundation
 import Observation
 import OmpKit
+import os
 import UserNotifications
 
 @MainActor
 @Observable
-final class SessionController {
+final class SessionController: ComposerSessionControlling, ComposerCommandSession, ProviderAccountSession {
+    typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
     private(set) var items: [TranscriptItem] = []
-    private(set) var runtimeState: SessionRuntimeState = .loading
+    let viewport = TranscriptViewportState()
+    private(set) var pendingSubmissions: [PendingUserSubmission] = []
+    private var consumedSubmissionEchoIndices: Set<Int> = []
+    private(set) var isTitleLoading = false
+    private var initialPromptTitle: String?
+    private var initialAttachments: [ComposerAttachment] = []
+    private var wasStoppedByUser = false
+    private(set) var transcriptSearchRequest: TranscriptSearchRequest?
+    private(set) var runtimeState: SessionRuntimeState = .loading {
+        didSet {
+            guard runtimeState != oldValue else { return }
+            // One place, so every path that ends a run also stops the clock.
+            turnStartedAt = runtimeState == .streaming ? (turnStartedAt ?? Date()) : nil
+        }
+    }
+
+    /// When the current run began, for the working indicator's elapsed time.
+    private(set) var turnStartedAt: Date?
     private(set) var title = "Untitled session"
     private(set) var headerMetadata = SessionHeaderMetadata(
         branch: "",
@@ -16,38 +35,137 @@ final class SessionController {
         worktreePath: nil)
     private(set) var modelName = "Model"
     private(set) var thinkingLevel = "Thinking"
+    private(set) var liveComposerSelection = ComposerLiveSelection(
+        provider: nil,
+        modelID: nil,
+        thinkingLevel: nil,
+        fastModeEnabled: false)
     private(set) var contextPercentage: Int?
+    private(set) var contextUsage: SessionContextUsage?
+    private(set) var contextBreakdown: SessionContextBreakdown?
+    private(set) var isContextLoading = false
+    private(set) var contextErrorMessage: String?
+    private var contextRefreshTask: Task<Void, Never>?
+    private var contextEventFence: RpcEventConsumptionFence?
+    private var contextReportText: String?
+    private var contextRevision: UInt64 = 0
     private(set) var queuedMessageCount = 0
     private(set) var sessionPath: String?
     private(set) var extensionSheetRequest: ExtensionUIState?
+    private(set) var hasPendingUserInput = false
     private(set) var isRecoveryPresented = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
     private(set) var computerUse: ComputerUseController
+    let id: UUID
+    private(set) var providerID: String?
+    private(set) var activeProviderAccounts: [String: String] = [:]
+    private(set) var providerAccountSequence = 0
+    private(set) var commandCatalogState: ComposerCommandCatalogState = .loading
     var draft = ""
-    var streamingBehavior: StreamingBehavior? = .steer
+    var attachments: [ComposerAttachment] = []
+    var streamingBehavior: StreamingBehavior? = ComposerInteractionPreferences.shared.defaultSendAction == .steer ? .steer : .followUp
+    let createdAt = Date()
+    /// Installed by `AppModel` so an idle-retention review runs whenever this
+    /// controller's runtime activity changes; see
+    /// `AppModel.reviewIdleSessionRetention()`.
+    @ObservationIgnored var onActivityChange: (@MainActor () -> Void)?
 
     private let processManager: SessionProcessManager
-    private let terminateProcess: (@Sendable (ContinuousClock.Instant) async -> Bool)?
-    private let timelineLoader = SessionTimelineLoader()
-    private var projectURL: URL?
+    private let historyLoader: HistoryLoader
+    private let harnessNoticePreferences: HarnessNoticePreferenceStore?
+    private let harnessNoticeSummarizer: (any HarnessNoticeSummarizing)?
+    private weak var accountCoordinator: ProviderAccountCoordinator?
+    private let accountChannelRegistry: ProviderAccountChannelRegistry?
+    private let titleGenerator: OmpSessionTitleGenerator?
+    private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
-    private var reducer = TranscriptReducer()
+    private var processor: TranscriptEventProcessor?
+    private var installedSnapshotRevision: UInt64 = 0
     private var extensionRouter = ExtensionUIRouter()
     private var eventTask: Task<Void, Never>?
+    private var snapshotTask: Task<Void, Never>?
+    private var controlTask: Task<Void, Never>?
     private var reconciliationTask: Task<Void, Never>?
+    private var titleGenerationTask: Task<Void, Never>?
+    private var openingTask: Task<SessionProcessManager.Handle, any Error>?
+    private var openingTaskToken: UInt64?
+    private var openingCloseTask: Task<Void, Never>?
+    private var reconciliationGeneration: UInt64 = 0
+    private var pipelineGeneration: UInt64 = 0
+    private var titleGenerationGeneration: UInt64 = 0
+    private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
+    private var extensionResponsesInFlight: Set<String> = []
+    nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
+    private let commandContinuation: AsyncStream<ComposerCommandCatalogState>.Continuation
+    /// This controller's one write handle onto the marker-filtered frame
+    /// source feeding the current pipeline's `ProviderAccountExtensionChannel`
+    /// (built in `attachAccountChannel`). Recreated every `finishOpening` (a
+    /// fresh channel per live process) and finished in `stopEventPipeline`
+    /// — ending it is this controller's drop signal to the channel:
+    /// `ProviderAccountExtensionChannel` treats stream-end as
+    /// `handleStreamEnded()`, failing anything in flight with
+    /// `.unavailable` rather than hanging. See
+    /// `forwardToAccountChannelIfMarked`, the sole producer.
+    private var accountChannelContinuation: AsyncStream<RpcFrame>.Continuation?
+    @ObservationIgnored private var isSendInFlight = false
+    @ObservationIgnored private weak var attachedComposerControls: ComposerControlsModel?
+    @ObservationIgnored private var pendingSlashAttachments: PendingSlashAttachments?
+    private static let transcriptLog = OSLog(
+        subsystem: Bundle.main.bundleIdentifier ?? "TenXApp",
+        category: .pointsOfInterest)
+
+    private enum AttachmentDisposition {
+        case clearImmediately
+        case waitForAgent
+    }
+
+    private struct PendingSlashAttachments {
+        let ids: Set<ComposerAttachment.ID>
+        let generation: UInt64
+        var lifecycleObserved: Bool
+        var awaitingResponse: Bool
+    }
+
+    private struct PipelineContext {
+        let generation: UInt64
+        let handle: SessionProcessManager.Handle?
+        let processor: TranscriptEventProcessor?
+    }
+
+    private enum ControllerError: Error {
+        case runtimeUnavailable
+    }
 
     init(
         processManager: SessionProcessManager,
-        supervision: SupervisionClient,
+        supervision: SupervisionClient = SupervisionClient(
+            socketPath: NSTemporaryDirectory() + "unused-\(UUID().uuidString).sock"),
         computerUse: ComputerUseController? = nil,
-        terminateProcess: (@Sendable (ContinuousClock.Instant) async -> Bool)? = nil
+        id: UUID = UUID(),
+        activityRegistry: SessionActivityRegistry? = nil,
+        accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
+        titleGenerator: OmpSessionTitleGenerator? = nil,
+        historyLoader: HistoryLoader? = nil,
+        harnessNoticePreferences: HarnessNoticePreferenceStore? = nil,
+        harnessNoticeSummarizer: (any HarnessNoticeSummarizing)? = nil
     ) {
         self.processManager = processManager
-        self.terminateProcess = terminateProcess
         self.computerUse = computerUse ?? ComputerUseController(supervision: supervision)
+        self.id = id
+        self.accountCoordinator = activityRegistry
+        self.accountChannelRegistry = accountChannelRegistry
+        self.titleGenerator = titleGenerator
+        self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
+        self.harnessNoticePreferences = harnessNoticePreferences
+        self.harnessNoticeSummarizer = harnessNoticeSummarizer
+        let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        self.commandUpdates = commandUpdates.stream
+        self.commandContinuation = commandUpdates.continuation
+        activityRegistry?.register(self)
     }
 
     init(
@@ -60,19 +178,75 @@ final class SessionController {
         headerMetadata: SessionHeaderMetadata = SessionHeaderMetadata(
             branch: "",
             repo: "",
-        worktreePath: nil),
+            worktreePath: nil),
         supervision: SupervisionClient = SupervisionClient(
-            socketPath: NSTemporaryDirectory() + "preview-\(UUID().uuidString).sock")
+            socketPath: NSTemporaryDirectory() + "preview-\(UUID().uuidString).sock"),
+        id: UUID = UUID(),
+        providerID: String? = nil,
+        activityRegistry: SessionActivityRegistry? = nil,
+        titleGenerator: OmpSessionTitleGenerator? = nil,
+        historyLoader: HistoryLoader? = nil
     ) {
         self.processManager = processManager
-        terminateProcess = nil
-        computerUse = ComputerUseController(supervision: supervision)
+        self.computerUse = ComputerUseController(supervision: supervision)
+        self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
+        self.harnessNoticePreferences = nil
+        self.harnessNoticeSummarizer = nil
         self.items = previewItems
         self.runtimeState = runtimeState
         self.title = title
         self.modelName = modelName
         self.thinkingLevel = thinkingLevel
         self.headerMetadata = headerMetadata
+        self.id = id
+        self.providerID = providerID
+        self.accountCoordinator = activityRegistry
+        // Preview controllers never run a live pipeline (no `finishOpening`
+        // ever executes), so there is never a channel to attach — this
+        // initializer has no parameter for one, unlike the live initializer
+        // above.
+        self.accountChannelRegistry = nil
+        self.titleGenerator = titleGenerator
+        let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
+            bufferingPolicy: .bufferingNewest(1))
+        self.commandUpdates = commandUpdates.stream
+        self.commandContinuation = commandUpdates.continuation
+        activityRegistry?.register(self)
+    }
+
+    deinit {
+        commandContinuation.finish()
+    }
+
+    var currentProviderAccountRef: String? {
+        providerID.flatMap { activeProviderAccounts[$0] }
+    }
+
+    /// Whether closing this controller's runtime would lose nothing: the
+    /// session is idle with no turn starting, no unsent input or attachments,
+    /// no queued or unconfirmed prompts, no request from the runtime awaiting
+    /// an answer, and no in-flight work of its own. `AppModel` combines this
+    /// with recency and provider-account bookkeeping before reclaiming an
+    /// inactive session; a reclaimed session reopens from its persisted history.
+    var isEligibleForIdleEviction: Bool {
+        guard runtimeState == .idle,
+              openingTask == nil,
+              !isSendInFlight,
+              titleGenerationTask == nil,
+              draft.isEmpty,
+              attachments.isEmpty,
+              initialAttachments.isEmpty,
+              pendingSlashAttachments == nil,
+              pendingSubmissions.isEmpty,
+              queuedMessageCount == 0,
+              !hasPendingUserInput,
+              extensionSheetRequest == nil,
+              extensionRouter.inlineRequests.isEmpty,
+              extensionRouter.sheetRequest == nil,
+              extensionTimeoutTasks.isEmpty,
+              extensionResponsesInFlight.isEmpty
+        else { return false }
+        return true
     }
 
     var isComposerAvailable: Bool {
@@ -84,116 +258,517 @@ final class SessionController {
         }
     }
 
-    func ownsProcess(from manager: SessionProcessManager, generation: UUID) -> Bool {
-        processManager === manager && handle?.generation == generation
+    var availableCommands: [AvailableSlashCommand] {
+        guard case .available(let commands) = commandCatalogState else { return [] }
+        return commands
     }
 
-    func usesProcessManager(_ manager: SessionProcessManager) -> Bool {
-        processManager === manager
+    var activityState: SessionActivityState {
+        if hasPendingUserInput { return .needsInput }
+        switch runtimeState {
+        case .loading, .streaming: return .working
+        case .idle: return wasStoppedByUser ? .stopped : .ready
+        case .failed: return .failed
+        case .stopped: return wasStoppedByUser ? .stopped : .failed
+        }
     }
 
-    func processSessionPath(from manager: SessionProcessManager) -> String? {
-        guard processManager === manager else { return nil }
-        return handle?.sessionPath
+    func focusSearchResult(_ request: TranscriptSearchRequest?) {
+        transcriptSearchRequest = request
+        if request != nil { viewport.isFollowingLatest = false }
     }
 
     func openExisting(_ metadata: SessionMetadata) async {
+        let priorSessionPath = stopAndDetachCurrentSession()
+        publishCommandCatalog(.loading)
+        let openingGeneration = pipelineGeneration
+        let pendingOpeningCloseTask = openingCloseTask
+        if let priorSessionPath {
+            await processManager.close(sessionPath: priorSessionPath)
+            guard pipelineGeneration == openingGeneration else { return }
+        }
+        await pendingOpeningCloseTask?.value
+        guard pipelineGeneration == openingGeneration else { return }
+        let openingContext = PipelineContext(
+            generation: openingGeneration,
+            handle: nil,
+            processor: nil)
         title = metadata.title.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled session"
         let projectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
         self.projectURL = projectURL
         fallbackThreadStartDate = metadata.created
-        headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
+        let headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
+        guard pipelineGeneration == openingGeneration else { return }
+        self.headerMetadata = headerMetadata
         runtimeState = .loading
+        reportActivity()
 
+        let sessionPath = metadata.path
+        let cwd = metadata.cwd
+        let (openingToken, openTask) = beginOpening { [processManager] in
+            try await processManager.open(sessionPath: sessionPath, cwd: cwd)
+        }
         do {
-            let handle = try await processManager.open(
-                sessionPath: metadata.path,
-                cwd: metadata.cwd)
-            try await finishOpening(handle)
+            let handle = try await openTask.value
+            clearOpeningTask(token: openingToken)
+            guard pipelineGeneration == openingGeneration else {
+                return
+            }
+            await finishOpening(handle, failureFunction: "openExisting")
         } catch {
-            fail(error, function: "openExisting")
+            clearOpeningTask(token: openingToken)
+            fail(error, function: "openExisting", context: openingContext)
         }
     }
 
-    func openNew(projectURL: URL) async {
+    enum ComposerFastModeApplyOutcome: Sendable {
+        case notRequested
+        case applied
+        case unsupported
+        case failed
+    }
+
+    @discardableResult
+    func openNew(
+        projectURL: URL,
+        selection: ComposerSpawnSelection? = nil
+    ) async -> ComposerFastModeApplyOutcome {
+        let failureOutcome: ComposerFastModeApplyOutcome = selection?.fastModeEnabled == true
+            ? .failed
+            : .notRequested
+        let priorSessionPath = stopAndDetachCurrentSession()
+        publishCommandCatalog(.loading)
+        let openingGeneration = pipelineGeneration
+        let pendingOpeningCloseTask = openingCloseTask
+        if let priorSessionPath {
+            await processManager.close(sessionPath: priorSessionPath)
+            guard pipelineGeneration == openingGeneration else { return failureOutcome }
+        }
+        await pendingOpeningCloseTask?.value
+        guard pipelineGeneration == openingGeneration else { return failureOutcome }
+        let openingContext = PipelineContext(
+            generation: openingGeneration,
+            handle: nil,
+            processor: nil)
         self.projectURL = projectURL
         fallbackThreadStartDate = Date()
         title = "New session"
-        headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
+        let headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
+        guard pipelineGeneration == openingGeneration else { return failureOutcome }
+        self.headerMetadata = headerMetadata
         runtimeState = .loading
+        reportActivity()
 
+        let projectPath = projectURL.path
+        let provider = selection?.provider
+        let model = selection?.modelID
+        let thinking = selection?.thinking
+        let (openingToken, openTask) = beginOpening { [processManager] in
+            try await processManager.openNew(
+                projectDirectory: projectPath,
+                provider: provider,
+                model: model,
+                thinking: thinking)
+        }
         do {
-            let handle = try await processManager.openNew(projectDirectory: projectURL.path)
-            try await finishOpening(handle)
+            let handle = try await openTask.value
+            clearOpeningTask(token: openingToken)
+            guard pipelineGeneration == openingGeneration else {
+                return failureOutcome
+            }
+            await finishOpening(handle, failureFunction: "openNew")
+            guard self.handle?.client === handle.client, isComposerAvailable else {
+                return failureOutcome
+            }
+            guard selection?.fastModeEnabled == true else { return .notRequested }
+            do {
+                let supported = try await setFastMode(true)
+                return supported ? .applied : .unsupported
+            } catch {
+                return .failed
+            }
         } catch {
-            fail(error, function: "openNew")
+            clearOpeningTask(token: openingToken)
+            fail(error, function: "openNew", context: openingContext)
+            return failureOutcome
         }
     }
 
-    func sendPrompt() async {
-        guard let handle,
-              isComposerAvailable,
-              !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return }
+    func bindComposerControls(_ controls: ComposerControlsModel?) {
+        attachedComposerControls = controls
+        controls?.applyLiveSelection(liveComposerSelection)
+    }
 
+    func setModel(provider: String, modelID: String) async throws {
+        guard let handle else { throw RpcClientError.notStarted }
+        let context = currentPipelineContext()
+        let response = try await handle.client.send(.setModel(provider: provider, modelId: modelID))
+        guard isCurrent(context) else { return }
+        if let data = response.data {
+            applyModelPayload(data)
+            publishLiveComposerSelection()
+        } else {
+            await refreshState()
+        }
+    }
+
+    func setThinkingLevel(_ level: String) async throws {
+        guard let handle else { throw RpcClientError.notStarted }
+        let context = currentPipelineContext()
+        _ = try await handle.client.send(.setThinkingLevel(level))
+        guard isCurrent(context) else { return }
+        thinkingLevel = level.capitalized
+        liveComposerSelection.thinkingLevel = level
+        publishLiveComposerSelection()
+    }
+
+    /// `ProviderAccountSession` conformance. Called from two places in
+    /// `ProviderAccountCoordinator`: `applyDirectly`, the fallback `apply()`
+    /// uses when no `ProviderAccountRouting` backend is installed (the live
+    /// app always installs one in `AppModel.init`, so that call site is
+    /// test-only in practice); and `restoreRemovalMutation`, unconditionally,
+    /// to re-pin a session back to an account being removed after a partial
+    /// reassignment failure — reachable in production via
+    /// `ProvidersView` → `ProviderManagementViewModel.removeAccount` →
+    /// `ProviderAccountCoordinator.removeAccount`'s reassignment-failure
+    /// branch, regardless of tier or backend.
+    ///
+    /// It used to send `set_session_provider_account`, an RPC command that
+    /// existed only in the abandoned fork's `omp` and was never implemented
+    /// by any `omp` a user actually runs — so this call already failed the
+    /// same way before Task 10 (a wire round-trip that always errored) as it
+    /// does now (an immediate throw). Both callers already catch and degrade
+    /// on failure (`applyDirectly` reports `.failed`;
+    /// `restoreRemovalMutation` falls back to `synchronizeState`), so this
+    /// throwing is not a behavior change, just a faster, honest one.
+    func setProviderAccount(
+        providerID: String,
+        accountRef: String
+    ) async throws -> SetSessionProviderAccountResult {
+        throw RpcClientError.commandFailed(
+            command: "set_session_provider_account",
+            error: "[Sessions:SessionController.setProviderAccount] No RPC transport for direct account pinning — {providerID: \(providerID), accountRef: \(accountRef)}",
+            code: "unsupported_command")
+    }
+
+    /// Returns `false` only when Fast mode is unsupported (`active == false`).
+    /// Transport / OMP command failures throw.
+    func setFastMode(_ enabled: Bool) async throws -> Bool {
+        guard let handle else { throw RpcClientError.notStarted }
+        let context = currentPipelineContext()
+        let response = try await handle.client.send(.setFastMode(enabled: enabled))
+        guard isCurrent(context) else { return false }
+        if response.data?["active"]?.boolValue == false {
+            liveComposerSelection.fastModeEnabled = false
+            publishLiveComposerSelection()
+            return false
+        }
+        liveComposerSelection.fastModeEnabled = enabled
+        publishLiveComposerSelection()
+        return true
+    }
+
+    func sendPrompt(behaviorOverride: StreamingBehavior? = nil) async {
+        if let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
+            let accepted = await send(text: initial.message.visibleText, behavior: nil,
+                attachmentDisposition: .clearImmediately, failureFunction: "sendPrompt",
+                suppliedAttachments: initialAttachments)
+            if accepted {
+                initialAttachments = []
+            } else {
+                markInitialSubmissionFailed()
+            }
+            return
+        }
+        await send(
+            text: draft,
+            behavior: runtimeState == .streaming ? (behaviorOverride ?? streamingBehavior) : nil,
+            attachmentDisposition: .clearImmediately,
+            failureFunction: "sendPrompt")
+    }
+
+    func prepareInitialSubmission(text: String, attachments: [ComposerAttachment], projectURL: URL? = nil) {
+        draft = ""
+        self.attachments = []
+        initialAttachments = attachments
+        self.projectURL = projectURL
+        initialPromptTitle = text.split(whereSeparator: \.isNewline).first.map { String($0.prefix(80)) }
+            ?? "New session"
+        isTitleLoading = true
+        pendingSubmissions = [PendingUserSubmission(
+            text: text, attachments: attachments, minimumUserIndex: 0, state: .starting)]
+    }
+
+    func markInitialSubmissionFailed() {
+        if let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
+            let initialText = initial.message.visibleText
+            if draft.isEmpty {
+                draft = initialText
+            } else if draft != initialText {
+                draft = [initialText, draft].joined(separator: "\n\n")
+            }
+            let initialAttachmentIDs = Set(initialAttachments.map(\.id))
+            attachments = initialAttachments + attachments.filter {
+                !initialAttachmentIDs.contains($0.id)
+            }
+        }
+        for index in pendingSubmissions.indices where pendingSubmissions[index].state == .starting {
+            pendingSubmissions[index].state = .unconfirmed
+        }
+        finishTitleLoading()
+    }
+
+    private var userMessages: [TranscriptMessage] {
+        items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item, message.role == .user else { return nil }
+            return message
+        }
+    }
+
+    func sendSlashCommand(_ text: String) async {
+        await send(
+            text: text,
+            behavior: runtimeState == .streaming ? .followUp : nil,
+            attachmentDisposition: .waitForAgent,
+            failureFunction: "sendSlashCommand")
+    }
+
+    @discardableResult
+    private func send(
+        text: String,
+        behavior requestedBehavior: StreamingBehavior?,
+        attachmentDisposition: AttachmentDisposition,
+        failureFunction: String,
+        suppliedAttachments: [ComposerAttachment]? = nil
+    ) async -> Bool {
+        let staged = suppliedAttachments ?? attachments
+        let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !staged.isEmpty
+        guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return false }
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {
-            guard let streamingBehavior else { return }
-            behavior = streamingBehavior
+            guard let requestedBehavior else { return false }
+            behavior = requestedBehavior
         } else {
             behavior = nil
         }
+        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else { return false }
+        defer { accountCoordinator?.endManagedTurn(sessionID: id) }
 
-        let message = draft
+        wasStoppedByUser = false
+        let stagedIDs = Set(staged.map(\.id))
+        let receiptID: String?
+        if attachmentDisposition == .clearImmediately {
+            if let index = pendingSubmissions.firstIndex(where: { $0.state == .starting }) {
+                pendingSubmissions[index].state = .sending
+                receiptID = pendingSubmissions[index].id
+            } else {
+                let receipt = PendingUserSubmission(
+                    text: text, attachments: staged, minimumUserIndex: userMessages.count, state: .sending)
+                pendingSubmissions.append(receipt)
+                receiptID = receipt.id
+            }
+        } else {
+            receiptID = nil
+        }
+        let context = currentPipelineContext()
+        isSendInFlight = true
+        defer { isSendInFlight = false }
+
+        // The composer answers the keystroke, not the round trip: the draft
+        // clears and the run reads as started before omp has replied. The
+        // processor is moved first so a snapshot already in flight cannot
+        // publish the old idle state back over this one.
+        if suppliedAttachments == nil { draft = "" }
+        if attachmentDisposition == .clearImmediately {
+            if suppliedAttachments == nil { attachments = [] }
+        } else {
+            pendingSlashAttachments = PendingSlashAttachments(
+                ids: stagedIDs,
+                generation: context.generation,
+                lifecycleObserved: false,
+                awaitingResponse: true)
+        }
+        runtimeState = .streaming
+        reportActivity()
+        await context.processor?.setRuntimeState(.streaming)
+        guard isCurrent(context) else { return true }
+
         do {
-            _ = try await handle.client.send(.prompt(
-                message: message,
+            let response = try await handle.client.send(.prompt(
+                message: text,
+                images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
-            draft = ""
-            reducer.runtimeState = .streaming
-            syncReducerState()
+            guard isCurrent(context) else { return true }
+            if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }),
+               let behavior {
+                pendingSubmissions[index].state = .queued(behavior)
+            }
+            await applyAttachmentDisposition(
+                attachmentDisposition,
+                response: response,
+                stagedIDs: stagedIDs,
+                context: context)
+            startTitleGenerationIfNeeded(
+                prompt: text,
+                behavior: behavior,
+                handle: handle,
+                context: context)
         } catch {
-            fail(error, function: "sendPrompt")
+            // A failed acknowledgment can leave delivery uncertain. Preserve
+            // the receipt and draft without automatically retrying the prompt.
+            if isCurrent(context) {
+                if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }) {
+                    pendingSubmissions[index].state = .unconfirmed
+                }
+                finishTitleLoading()
+                if attachmentDisposition == .waitForAgent {
+                    pendingSlashAttachments = nil
+                }
+                guard draft.isEmpty else {
+                    fail(error, function: failureFunction, context: context)
+                    return true
+                }
+                draft = text
+                if attachmentDisposition == .clearImmediately {
+                    attachments = staged
+                }
+            }
+            fail(error, function: failureFunction, context: context)
+        }
+        return true
+    }
+
+    private func applyAttachmentDisposition(
+        _ disposition: AttachmentDisposition,
+        response: RpcResponse,
+        stagedIDs: Set<ComposerAttachment.ID>,
+        context: PipelineContext
+    ) async {
+        guard disposition == .waitForAgent else { return }
+        switch response.data?["agentInvoked"]?.boolValue {
+        case true:
+            removeAttachments(withIDs: stagedIDs)
+            pendingSlashAttachments = nil
+        case false:
+            pendingSlashAttachments = nil
+            runtimeState = .idle
+            reportActivity()
+            await context.processor?.setRuntimeState(.idle)
+        case nil:
+            guard var pending = pendingSlashAttachments,
+                  pending.generation == context.generation
+            else { return }
+            if pending.lifecycleObserved {
+                removeAttachments(withIDs: pending.ids)
+                pendingSlashAttachments = nil
+            } else {
+                pending.awaitingResponse = false
+                pendingSlashAttachments = pending
+            }
+        }
+    }
+
+    private func removeAttachments(withIDs ids: Set<ComposerAttachment.ID>) {
+        guard !ids.isEmpty else { return }
+        attachments.removeAll { ids.contains($0.id) }
+    }
+
+    private func startTitleGenerationIfNeeded(
+        prompt: String,
+        behavior: StreamingBehavior?,
+        handle: SessionProcessManager.Handle,
+        context: PipelineContext
+    ) {
+        guard behavior == nil, titleGenerationTask == nil else { return }
+        guard title == "New session" || title == "Untitled session",
+              let titleGenerator,
+              let provider = liveComposerSelection.provider,
+              let modelID = liveComposerSelection.modelID
+        else {
+            finishTitleLoading()
+            return
+        }
+
+        titleGenerationGeneration &+= 1
+        let generation = titleGenerationGeneration
+        titleGenerationTask = Task { [weak self, titleGenerator] in
+            let generatedTitle = await titleGenerator.generate(
+                prompt: prompt,
+                provider: provider,
+                modelID: modelID)
+            guard let self else { return }
+            defer {
+                if self.titleGenerationGeneration == generation {
+                    self.titleGenerationTask = nil
+                    self.finishTitleLoading()
+                }
+            }
+            guard let generatedTitle,
+                  self.isCurrent(context),
+                  self.title == "New session" || self.title == "Untitled session"
+            else { return }
+            do {
+                _ = try await handle.client.send(.setSessionName(generatedTitle))
+                guard self.isCurrent(context) else { return }
+                self.title = generatedTitle
+            } catch {
+                return
+            }
         }
     }
 
     func abort() async {
+        if runtimeState == .loading {
+            let path = stopAndDetachCurrentSession()
+            wasStoppedByUser = true
+            runtimeState = .stopped(code: nil, stderrTail: "")
+            markInitialSubmissionFailed()
+            reportActivity()
+            if let path { await processManager.close(sessionPath: path) }
+            return
+        }
         guard let handle, runtimeState == .streaming else { return }
+        let context = currentPipelineContext()
         do {
             _ = try await handle.client.send(.abort())
+            wasStoppedByUser = true
         } catch {
-            fail(error, function: "abort")
+            fail(error, function: "abort", context: context)
         }
-    }
-
-    /// Releases computer authorization before the session process is replaced
-    /// or discarded. It is idempotent so navigation races share one cleanup.
-    func teardown() async {
-        eventTask?.cancel()
-        eventTask = nil
-        reconciliationTask?.cancel()
-        reconciliationTask = nil
-        for task in extensionTimeoutTasks.values { task.cancel() }
-        extensionTimeoutTasks.removeAll()
-        await computerUse.stopComputerUse()
-        if let sessionPath {
-            await processManager.close(sessionPath: sessionPath)
-        }
-        handle = nil
     }
 
     func restart() async {
         guard let projectURL, let sessionPath else { return }
-        await teardown()
+        stopEventPipeline()
+        publishCommandCatalog(.loading)
+        let openingGeneration = pipelineGeneration
+        let pendingOpeningCloseTask = openingCloseTask
+        await processManager.close(sessionPath: sessionPath)
+        guard pipelineGeneration == openingGeneration else { return }
+        await pendingOpeningCloseTask?.value
+        guard pipelineGeneration == openingGeneration else { return }
+        let openingContext = PipelineContext(
+            generation: openingGeneration,
+            handle: nil,
+            processor: nil)
         runtimeState = .loading
+        reportActivity()
         isRecoveryPresented = false
+        let projectPath = projectURL.path
+        let (openingToken, openTask) = beginOpening { [processManager] in
+            try await processManager.open(sessionPath: sessionPath, cwd: projectPath)
+        }
         do {
-            let handle = try await processManager.open(
-                sessionPath: sessionPath,
-                cwd: projectURL.path)
-            try await finishOpening(handle)
+            let handle = try await openTask.value
+            clearOpeningTask(token: openingToken)
+            guard pipelineGeneration == openingGeneration else {
+                return
+            }
+            await finishOpening(handle, failureFunction: "restart")
         } catch {
-            fail(error, function: "restart")
+            clearOpeningTask(token: openingToken)
+            fail(error, function: "restart", context: openingContext)
         }
     }
 
@@ -201,34 +776,106 @@ final class SessionController {
         streamingBehavior = behavior
     }
 
-    func respond(to state: ExtensionUIState, with response: ExtensionUIResponse) async {
-        guard let handle else { return }
+    func respond(to state: ExtensionUIState, with response: ExtensionUIResponse) async -> Bool {
+        let context = currentPipelineContext()
+        guard context.handle != nil else { return false }
+        return await respond(to: state, with: response, context: context)
+    }
+
+    private func respond(
+        to state: ExtensionUIState,
+        with response: ExtensionUIResponse,
+        context: PipelineContext
+    ) async -> Bool {
+        guard let handle = context.handle,
+              isCurrent(context),
+              extensionRouter.containsRequest(id: state.id)
+        else { return false }
+        guard extensionResponsesInFlight.insert(state.id).inserted else { return false }
+        defer { extensionResponsesInFlight.remove(state.id) }
         do {
             try await handle.client.sendRaw(.extensionUIResponse(id: state.id, body: response.body))
-            removeExtensionRequest(id: state.id)
+            guard isCurrent(context) else { return false }
+            await removeExtensionRequest(id: state.id)
+            return true
         } catch {
-            fail(error, function: "respondToExtensionUI")
+            os_log(
+                .error,
+                log: Self.transcriptLog,
+                "[SessionController:respondToExtensionUI] Response write failed")
+            return false
         }
     }
 
+    func rename(to name: String) async throws {
+        titleGenerationGeneration &+= 1
+        titleGenerationTask?.cancel()
+        if let titleGenerationTask {
+            await titleGenerationTask.value
+        }
+        self.titleGenerationTask = nil
+
+        guard let handle else { throw ControllerError.runtimeUnavailable }
+        _ = try await handle.client.send(.setSessionName(name))
+        title = name
+        isTitleLoading = false
+    }
+
     func openURL(_ url: URL, requestID: String) {
+        let context = currentPipelineContext()
         NSWorkspace.shared.open(url)
-        removeExtensionRequest(id: requestID)
+        Task { [weak self] in
+            await self?.removeExtensionRequest(id: requestID, context: context)
+        }
     }
 
     func copyURL(_ url: URL, requestID: String) {
+        let context = currentPipelineContext()
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(url.absoluteString, forType: .string)
-        removeExtensionRequest(id: requestID)
+        Task { [weak self] in
+            await self?.removeExtensionRequest(id: requestID, context: context)
+        }
     }
 
-    func handleUnexpectedExit(code: Int32?, stderrTail: String) async {
-        await computerUse.stopComputerUse()
+    func handleUnexpectedExit(code: Int32?, stderrTail: String) {
+        stopEventPipeline()
+        Task { await computerUse.stopComputerUse() }
         runtimeState = .stopped(code: code, stderrTail: stderrTail)
-        reducer.runtimeState = runtimeState
         isRecoveryPresented = true
         logText = stderrTail.isEmpty ? "OMP exited without stderr output." : stderrTail
+        reportActivity()
+    }
+
+    func stopActivityTracking() {
+        stopEventPipeline()
+        accountCoordinator?.unregister(sessionID: id)
+    }
+
+    func close() async {
+        await computerUse.stopComputerUse()
+        await dispose()?.value
+    }
+
+    @discardableResult
+    func dispose() -> Task<Void, Never>? {
+        let sessionPath = stopAndDetachCurrentSession()
+        let openingCloseTask = openingCloseTask
+        self.sessionPath = nil
+        items = []
+        pendingSubmissions = []
+        consumedSubmissionEchoIndices = []
+        isTitleLoading = false
+        runtimeState = .stopped(code: nil, stderrTail: "")
+        accountCoordinator?.unregister(sessionID: id)
+        guard let sessionPath else {
+            return openingCloseTask
+        }
+        return Task { [processManager] in
+            await openingCloseTask?.value
+            await processManager.close(sessionPath: sessionPath)
+        }
     }
 
     func dismissRecovery() {
@@ -243,33 +890,68 @@ final class SessionController {
         isLogPresented = false
     }
 
-    private func finishOpening(_ handle: SessionProcessManager.Handle) async throws {
+    private func finishOpening(
+        _ handle: SessionProcessManager.Handle,
+        failureFunction: String
+    ) async {
+        stopEventPipeline()
+        providerAccountSequence = 0
         self.handle = handle
         sessionPath = handle.sessionPath
+        let openingContext = currentPipelineContext()
 
-        let state = try await handle.client.send(.getState())
-        applyState(state.data)
-        var didLoadHistory = false
-        var didHistoryLoadFail = false
-        if let sessionPath {
-            do {
-                if let history = try await timelineLoader.load(path: sessionPath) {
-                    reducer.load(history: history)
-                    didLoadHistory = true
+        do {
+            let state = try await handle.client.send(.getState())
+            guard isCurrent(openingContext) else { return }
+            applyState(state.data)
+            var loadedHistory: TranscriptHistory?
+            var didHistoryLoadFail = false
+            if let sessionPath {
+                do {
+                    loadedHistory = try await historyLoader(sessionPath)
+                } catch {
+                    didHistoryLoadFail = true
                 }
-            } catch {
-                didHistoryLoadFail = true
             }
+            guard isCurrent(openingContext) else { return }
+            let initialContent: TranscriptInitialContent
+            if let history = loadedHistory {
+                initialContent = .history(history)
+            } else {
+                initialContent = .messages(try await loadMessages(client: handle.client))
+            }
+            guard isCurrent(openingContext) else { return }
+            let processor = TranscriptEventProcessor()
+            await processor.setOnDroppedHarnessMessages { [weak self, weak processor] dropped in
+                Task { @MainActor [weak self, weak processor] in
+                    guard let processor else { return }
+                    self?.handleDroppedHarnessMessages(dropped, from: processor)
+                }
+            }
+            self.processor = processor
+            let processorContext = currentPipelineContext()
+            let initialSnapshot = await processor.load(
+                initialContent,
+                threadStartDate: fallbackThreadStartDate,
+                hasReconciliationWarning: didHistoryLoadFail,
+                runtimeState: runtimeState)
+            install(snapshot: initialSnapshot)
+            guard isCurrent(processorContext) else { return }
+            let eventFence = RpcEventConsumptionFence()
+            startEventPipeline(
+                processor: processor,
+                client: handle.client,
+                eventFence: eventFence)
+            await loadInitialCommandCatalog(
+                client: handle.client,
+                context: processorContext,
+                eventFence: eventFence)
+            guard isCurrent(processorContext) else { return }
+            _ = try? await handle.client.send(.setSubagentSubscription(level: .progress))
+            guard isCurrent(processorContext) else { return }
+        } catch {
+            fail(error, function: failureFunction, context: openingContext)
         }
-        if !didLoadHistory {
-            reducer.load(messages: try await loadMessages(client: handle.client))
-        }
-        reducer.ensureThreadStart(date: fallbackThreadStartDate)
-        reducer.setReconciliationWarning(isPresented: didHistoryLoadFail)
-        reducer.runtimeState = runtimeState
-        syncReducerState()
-        _ = try? await handle.client.send(.setSubagentSubscription(level: .progress))
-        consumeEvents(from: handle.client)
     }
 
     private func loadMessages(client: RpcClient) async throws -> [JSONValue] {
@@ -291,30 +973,380 @@ final class SessionController {
         }
     }
 
-    private func consumeEvents(from client: RpcClient) {
-        eventTask?.cancel()
-        eventTask = Task { [weak self] in
-            for await frame in client.events {
-                guard let self, !Task.isCancelled else { return }
-                switch frame {
-                case .extensionUIRequest(let request):
-                    self.consumeExtensionUI(request)
-                case .hostToolCall, .hostToolCancel:
-                    break
-                default:
-                    self.reducer.consume(frame)
+    private func loadInitialCommandCatalog(
+        client: RpcClient,
+        context: PipelineContext,
+        eventFence: RpcEventConsumptionFence
+    ) async {
+        let commandCatalog: ComposerCommandCatalogState
+        do {
+            let receipt = try await client.sendWithEventFence(.getAvailableCommands())
+            guard await eventFence.wait(through: receipt.precedingEventCount) else { return }
+            guard isCurrent(context) else { return }
+            let response = receipt.response
+            guard response.success, let data = response.data else {
+                throw AvailableSlashCommandDecodingError.invalidSnapshot
+            }
+            commandCatalog = .available(try AvailableSlashCommandDecoder.decodeSnapshot(data))
+        } catch {
+            guard isCurrent(context) else { return }
+            commandCatalog = .unavailable
+        }
+        guard isCurrent(context) else { return }
+        publishCommandCatalog(commandCatalog)
+    }
+
+    private func startEventPipeline(
+        processor: TranscriptEventProcessor,
+        client: RpcClient,
+        eventFence: RpcEventConsumptionFence
+    ) {
+        guard currentPipelineContext(for: processor) != nil else { return }
+        attachAccountChannel(client: client)
+        contextEventFence = eventFence
+        eventTask = Task.detached { [weak self, processor, events = client.events, eventFence] in
+            for await frame in events {
+                guard !Task.isCancelled else { break }
+                if await self?.consumeContextReport(frame, processor: processor) != true {
+                    await processor.consume(frame)
                 }
-                self.routeToolEvent(frame)
-                self.syncReducerState()
-                self.applyEventMetadata(frame)
-                self.reconcileAfterBoundary(frame)
+                if case .event("available_commands_update", _) = frame {
+                    await self?.consumeCommandCatalogUpdate(frame, processor: processor)
+                }
+                await self?.routeToolEvent(frame)
+                await eventFence.didConsumeEvent()
+            }
+            await eventFence.finish()
+            await processor.stop()
+        }
+        snapshotTask = Task { [weak self, processor] in
+            for await snapshot in processor.snapshots {
+                guard !Task.isCancelled else { return }
+                self?.install(snapshot: snapshot)
+            }
+        }
+        controlTask = Task { [weak self, processor] in
+            for await frame in processor.controlEvents {
+                guard !Task.isCancelled else { return }
+                await self?.handleControl(frame, processor: processor)
             }
         }
     }
 
-    private func reconcileAfterBoundary(_ frame: RpcFrame) {
-        guard case .event(let type, let payload) = frame else { return }
-        let isBoundary = switch type {
+    private func handleDroppedHarnessMessages(
+        _ dropped: [HarnessMessageDescriptor],
+        from source: TranscriptEventProcessor
+    ) {
+        guard let preferences = harnessNoticePreferences, preferences.isEnabled,
+              let processor, processor === source
+        else { return }
+        for descriptor in dropped where descriptor.byteCount >= preferences.threshold {
+            let label = Self.harnessNoticeLabel(descriptor)
+            let noticeID = UUID().uuidString
+            let summarizer = harnessNoticeSummarizer
+            Task { [weak self] in
+                await processor.appendNotice(id: noticeID, level: "info", message: label)
+                guard let summarizer, self?.processor === processor else { return }
+                let summary = await summarizer.summarize(descriptor)
+                guard let summary else { return }
+                await processor.updateNotice(id: noticeID, message: "\(label): \(summary)")
+            }
+        }
+    }
+
+    private static func harnessNoticeLabel(_ descriptor: HarnessMessageDescriptor) -> String {
+        let size = descriptor.byteCount < 1_000
+            ? "\(descriptor.byteCount) chars"
+            : String(format: "%.1f KB", Double(descriptor.byteCount) / 1_000)
+        return "Hidden \(descriptor.kindLabel) message (\(size))"
+    }
+
+    /// Builds this pipeline's `ProviderAccountExtensionChannel` and
+    /// publishes it to `accountChannelRegistry`, keyed by `id`, for the
+    /// coordinator's tiered routing backend to find later
+    /// (`ProviderAccountTieredRoutingBackend`, `ProviderAccountExtensionBackend.swift`).
+    /// No-ops when no registry was injected (previews, and the many
+    /// existing tests that construct a controller without one).
+    ///
+    /// `client` is captured by value in `respond` — never `self?.handle` —
+    /// so a reply this channel already has in flight always lands on the
+    /// process it was actually issued to, even if `self.handle` has since
+    /// moved on to a newer one (a fast restart racing a slow extension
+    /// reply). The channel itself is torn down and re-created every
+    /// `finishOpening`, so this is a belt-and-suspenders guarantee, not the
+    /// only one.
+    private func attachAccountChannel(client: RpcClient) {
+        guard let accountChannelRegistry else { return }
+        let (events, continuation) = AsyncStream<RpcFrame>.makeStream()
+        accountChannelContinuation = continuation
+        let channel = ProviderAccountExtensionChannel(
+            events: events,
+            respond: { [client] requestID, body in
+                try await client.sendRaw(.extensionUIResponse(id: requestID, body: body))
+            })
+        accountChannelRegistry.attach(
+            sessionID: id,
+            channel: channel,
+            sessionFile: sessionPath.map { URL(filePath: $0) })
+    }
+
+    /// The account channel's sole frame source. `ExtensionUIRouter.parse`
+    /// already returns `nil` for the `tenx.provider-accounts.v1` marker (see
+    /// its doc comment) — this is what runs in the gap that leaves, right
+    /// where `consumeExtensionUI` would otherwise silently drop the frame.
+    /// Not a second consumer of `client.events`: `handleControl` (this
+    /// method's only caller) is fed by `processor.controlEvents`, itself
+    /// fed by the pipeline's one `client.events` reader in
+    /// `startEventPipeline` — every frame still passes through that single
+    /// point exactly once, and this only redirects the ones the sheet path
+    /// was already discarding.
+    private func forwardToAccountChannelIfMarked(_ request: ExtensionUIRequest) {
+        guard request.payload["title"]?.stringValue == ExtensionUIRouter.providerAccountChannelTitle
+        else { return }
+        accountChannelContinuation?.yield(.extensionUIRequest(request))
+    }
+
+    private func consumeCommandCatalogUpdate(
+        _ frame: RpcFrame,
+        processor: TranscriptEventProcessor
+    ) {
+        guard let context = currentPipelineContext(for: processor) else { return }
+        guard isCurrent(context) else { return }
+        applyEventMetadata(frame)
+    }
+
+    private func stopEventPipeline() {
+        let detachedProcessor = processor
+        let hadActivePipeline = handle != nil || detachedProcessor != nil || openingTask != nil
+        let openingTaskToClose = openingTask
+        let previousOpeningCloseTask = openingCloseTask
+        contextRefreshTask?.cancel()
+        contextRefreshTask = nil
+        contextEventFence = nil
+        contextRevision &+= 1
+        contextUsage = nil
+        contextPercentage = nil
+        contextBreakdown = nil
+        contextReportText = nil
+        contextErrorMessage = nil
+        isContextLoading = false
+        eventTask?.cancel()
+        snapshotTask?.cancel()
+        controlTask?.cancel()
+        reconciliationTask?.cancel()
+        titleGenerationTask?.cancel()
+        titleGenerationGeneration &+= 1
+        openingTask = nil
+        openingTaskToken = nil
+        eventTask = nil
+        snapshotTask = nil
+        controlTask = nil
+        reconciliationTask = nil
+        titleGenerationTask = nil
+        if previousOpeningCloseTask != nil || openingTaskToClose != nil {
+            openingCloseTask = Task { [processManager] in
+                await previousOpeningCloseTask?.value
+                guard let openingTaskToClose else { return }
+                do {
+                    let handle = try await openingTaskToClose.value
+                    await processManager.close(sessionPath: handle.sessionPath)
+                } catch {
+                    return
+                }
+            }
+        } else {
+            openingCloseTask = nil
+        }
+        reconciliationGeneration &+= 1
+        pipelineGeneration &+= 1
+        extensionTimeoutTasks.values.forEach { $0.cancel() }
+        extensionTimeoutTasks.removeAll()
+        extensionResponsesInFlight.removeAll()
+        extensionRouter = ExtensionUIRouter()
+        extensionSheetRequest = nil
+        hasPendingUserInput = false
+        pendingSlashAttachments = nil
+        // Ends the account channel's frame source — its listener loop sees
+        // the stream finish and calls `handleStreamEnded()`, failing
+        // anything in flight with `.unavailable` (the coordinator's signal
+        // to degrade to the stock tier) instead of hanging forever on a
+        // pipeline that no longer exists.
+        accountChannelContinuation?.finish()
+        accountChannelContinuation = nil
+        accountChannelRegistry?.detach(sessionID: id)
+        handle = nil
+        processor = nil
+        installedSnapshotRevision = 0
+        if hadActivePipeline {
+            publishCommandCatalog(.unavailable)
+        }
+        if let detachedProcessor {
+            Task.detached { await detachedProcessor.stop() }
+        }
+    }
+
+    private func stopAndDetachCurrentSession() -> String? {
+        let sessionPath = handle?.sessionPath ?? sessionPath
+        stopEventPipeline()
+        return sessionPath
+    }
+
+    private func currentPipelineContext() -> PipelineContext {
+        PipelineContext(
+            generation: pipelineGeneration,
+            handle: handle,
+            processor: processor)
+    }
+
+    private func beginOpening(
+        _ operation: @escaping @Sendable () async throws -> SessionProcessManager.Handle
+    ) -> (UInt64, Task<SessionProcessManager.Handle, any Error>) {
+        nextOpeningTaskToken &+= 1
+        let token = nextOpeningTaskToken
+        let task = Task { try await operation() }
+        openingTask = task
+        openingTaskToken = token
+        return (token, task)
+    }
+
+    private func clearOpeningTask(token: UInt64) {
+        guard openingTaskToken == token else { return }
+        openingTask = nil
+        openingTaskToken = nil
+    }
+
+    private func isCurrent(_ context: PipelineContext) -> Bool {
+        guard context.generation == pipelineGeneration else { return false }
+        guard handle?.client === context.handle?.client else { return false }
+        return processor?.id == context.processor?.id
+    }
+
+    private func currentPipelineContext(for processor: TranscriptEventProcessor) -> PipelineContext? {
+        guard self.processor?.id == processor.id else { return nil }
+        return currentPipelineContext()
+    }
+
+    private func handleControl(_ frame: RpcFrame, processor: TranscriptEventProcessor) async {
+        guard let context = currentPipelineContext(for: processor) else { return }
+        let snapshot = await processor.currentSnapshot()
+        guard isCurrent(context),
+              Self.accepts(
+                snapshot: snapshot,
+                activeProcessorID: self.processor?.id)
+        else { return }
+
+        if case .extensionUIRequest(let request) = frame {
+            await consumeExtensionUI(request, processor: processor, context: context)
+            return
+        }
+
+        if case .event("available_commands_update", _) = frame {
+            return
+        }
+
+        if case .providerAccountChanged(let event) = frame {
+            guard isCurrent(context) else { return }
+            handleProviderAccountChange(event)
+            return
+        }
+
+        guard isCurrent(context) else { return }
+        applyEventMetadata(frame)
+        if isReconciliationBoundary(frame) {
+            let snapshot = await processor.currentSnapshot()
+            guard isCurrent(context) else { return }
+            install(snapshot: snapshot)
+            reconcileAfterBoundary(frame, processor: processor, context: context)
+        }
+    }
+
+    private func reconcileAfterBoundary(
+        _ frame: RpcFrame,
+        processor: TranscriptEventProcessor,
+        context: PipelineContext
+    ) {
+        guard isCurrent(context), isReconciliationBoundary(frame), let sessionPath else { return }
+
+        reconciliationGeneration &+= 1
+        let generation = reconciliationGeneration
+        let processorID = processor.id
+        reconciliationTask?.cancel()
+        reconciliationTask = Task { [weak self, historyLoader, processor, processorID, generation] in
+            guard self != nil, !Task.isCancelled else { return }
+            do {
+                try await Task.sleep(for: .milliseconds(50))
+                guard let history = try await historyLoader(sessionPath),
+                      !Task.isCancelled,
+                      self?.canApplyReconciliation(
+                        processorID: processorID,
+                        generation: generation) == true
+                else { return }
+                await processor.reconcile(history, hasWarning: false, generation: generation)
+            } catch {
+                guard !Task.isCancelled,
+                      self?.canApplyReconciliation(
+                        processorID: processorID,
+                        generation: generation) == true
+                else { return }
+                await processor.reconcile(
+                    TranscriptHistory(items: await processor.currentSnapshot().items),
+                    hasWarning: true,
+                    generation: generation)
+            }
+        }
+    }
+
+    private func canApplyReconciliation(
+        processorID: UUID,
+        generation: UInt64
+    ) -> Bool {
+        processor?.id == processorID && reconciliationGeneration == generation
+    }
+
+#if DEBUG
+    func testingCapturedControlConsumer(
+        _ frame: RpcFrame
+    ) -> (@MainActor () async -> Void)? {
+        guard let processor,
+              currentPipelineContext(for: processor) != nil
+        else { return nil }
+        return { [weak self, processor] in
+            if case .event("available_commands_update", _) = frame {
+                self?.consumeCommandCatalogUpdate(frame, processor: processor)
+                return
+            }
+            await self?.handleControl(frame, processor: processor)
+        }
+    }
+
+    func testingCapturedExtensionRemoval(id: String) -> @MainActor () async -> Void {
+        let context = currentPipelineContext()
+        return { [weak self] in
+            await self?.removeExtensionRequest(id: id, context: context)
+        }
+    }
+
+    func testingCapturedBoundaryReconciler(frame: RpcFrame) -> @MainActor () -> Void {
+        let context = currentPipelineContext()
+        let capturedProcessor = processor
+        return { [weak self] in
+            guard let self, let capturedProcessor else { return }
+            self.reconcileAfterBoundary(
+                frame,
+                processor: capturedProcessor,
+                context: context)
+        }
+    }
+
+    /// Waits for the reconciliation scheduled by the latest boundary, if any.
+    func testingAwaitReconciliation() async {
+        await reconciliationTask?.value
+    }
+#endif
+
+    private func isReconciliationBoundary(_ frame: RpcFrame) -> Bool {
+        guard case .event(let type, let payload) = frame else { return false }
+        return switch type {
         case "message_end", "turn_end", "prompt_result":
             true
         case "agent_end":
@@ -322,65 +1354,186 @@ final class SessionController {
         default:
             false
         }
-        guard isBoundary, let sessionPath else { return }
-
-        reconciliationTask?.cancel()
-        reconciliationTask = Task { [weak self, timelineLoader] in
-            guard let self, !Task.isCancelled else { return }
-            do {
-                guard let history = try await timelineLoader.load(path: sessionPath),
-                      !Task.isCancelled
-                else { return }
-                self.reducer.reconcile(history: history)
-                self.reducer.setReconciliationWarning(isPresented: false)
-                self.syncReducerState()
-            } catch {
-                self.reducer.setReconciliationWarning(isPresented: true)
-                self.syncReducerState()
-            }
-        }
     }
 
     private func applyState(_ data: JSONValue?) {
         guard let data else {
             runtimeState = .idle
+            reportActivity()
             return
         }
-        title = data["sessionName"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
-        modelName = Self.modelLabel(data["model"]) ?? modelName
-        thinkingLevel = data["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
-        contextPercentage = Self.contextPercent(data["contextUsage"])
+        if let name = data["sessionName"]?.stringValue, !name.isEmpty {
+            title = name
+            if !Self.isPlaceholderTitle(name) { isTitleLoading = false }
+        }
+        if let model = data["model"] {
+            applyModelPayload(model)
+        }
+        if let thinking = data["thinkingLevel"]?.stringValue {
+            thinkingLevel = thinking.capitalized
+            liveComposerSelection.thinkingLevel = thinking
+        }
+        if let fastEnabled = data["fastModeEnabled"]?.boolValue
+            ?? data["fastModeActive"]?.boolValue
+        {
+            liveComposerSelection.fastModeEnabled = fastEnabled
+        }
+        applyContextUsage(data["contextUsage"])
         queuedMessageCount = data["queuedMessageCount"]?.intValue ?? 0
         runtimeState = data["isStreaming"]?.boolValue == true ? .streaming : .idle
+        activeProviderAccounts = Self.activeProviderAccountRefs(from: data)
         if let reportedPath = data["sessionFile"]?.stringValue {
             sessionPath = reportedPath
         }
+        publishLiveComposerSelection()
+        accountCoordinator?.register(self)
+        reportActivity()
     }
 
     private func applyEventMetadata(_ frame: RpcFrame) {
         guard case .event(let type, let payload) = frame else { return }
+        if ["agent_start", "message_end", "turn_end", "agent_end", "auto_compaction_start",
+            "auto_compaction_end", "model_changed", "config_update"].contains(type) {
+            contextRevision &+= 1
+            contextBreakdown = nil
+            scheduleContextRefresh()
+        }
         switch type {
         case "session_info_update":
-            title = payload["title"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? title
+            if let name = payload["title"]?.stringValue, !name.isEmpty {
+                title = name
+                if !Self.isPlaceholderTitle(name) { isTitleLoading = false }
+            }
         case "config_update":
-            modelName = Self.modelLabel(payload["model"]) ?? modelName
-            thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
+            if let model = payload["model"] {
+                applyModelPayload(model)
+            }
+            if let thinking = payload["thinkingLevel"]?.stringValue {
+                thinkingLevel = thinking.capitalized
+                liveComposerSelection.thinkingLevel = thinking
+            }
+            publishLiveComposerSelection()
+            reportActivity()
         case "thinking_level_changed":
-            thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
+            if let thinking = payload["thinkingLevel"]?.stringValue {
+                thinkingLevel = thinking.capitalized
+                liveComposerSelection.thinkingLevel = thinking
+                publishLiveComposerSelection()
+            }
         case "model_changed":
             Task { [weak self] in await self?.refreshState() }
+        case "available_commands_update":
+            do {
+                publishCommandCatalog(.available(
+                    try AvailableSlashCommandDecoder.decodeSnapshot(payload)))
+            } catch {
+                publishCommandCatalog(.unavailable)
+            }
+        case "agent_start", "turn_start":
+            wasStoppedByUser = false
+            guard var pendingSlashAttachments,
+                  pendingSlashAttachments.generation == pipelineGeneration
+            else { break }
+            if pendingSlashAttachments.awaitingResponse {
+                pendingSlashAttachments.lifecycleObserved = true
+                self.pendingSlashAttachments = pendingSlashAttachments
+            } else {
+                removeAttachments(withIDs: pendingSlashAttachments.ids)
+                self.pendingSlashAttachments = nil
+            }
+        case "prompt_result":
+            pendingSlashAttachments = nil
         default:
             break
         }
     }
 
-    private func refreshState() async {
+    private func publishCommandCatalog(_ state: ComposerCommandCatalogState) {
+        commandCatalogState = state
+        commandContinuation.yield(state)
+    }
+
+    private func applyContextUsage(_ value: JSONValue?) {
+        let updated = SessionContextUsage(value: value)
+        if contextUsage?.tokens != updated?.tokens || contextUsage?.contextWindow != updated?.contextWindow {
+            contextBreakdown = nil
+        }
+        contextUsage = updated
+        contextPercentage = Self.contextPercent(value)
+    }
+
+    private func scheduleContextRefresh() {
+        contextRefreshTask?.cancel()
+        contextRefreshTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(150)) }
+            catch { return }
+            await self?.refreshContextUsage()
+        }
+    }
+
+    private func refreshContextUsage() async {
         guard let handle else { return }
+        let context = currentPipelineContext()
+        let revision = contextRevision
         do {
-            applyState(try await handle.client.send(.getState()).data)
-            reducer.runtimeState = runtimeState
+            let response = try await handle.client.send(.getState(), timeout: .seconds(5))
+            guard isCurrent(context), revision == contextRevision, !Task.isCancelled else { return }
+            if !isContextLoading { contextErrorMessage = nil }
+            applyContextUsage(response.data?["contextUsage"])
         } catch {
-            fail(error, function: "refreshState")
+            // A usage read must not interrupt the session or its working indicator.
+            guard isCurrent(context), !Task.isCancelled else { return }
+            contextErrorMessage = "Couldn’t refresh context usage."
+        }
+    }
+
+    func refreshContextDetails() async {
+        guard !isContextLoading else { return }
+        guard let handle, let eventFence = contextEventFence else {
+            contextErrorMessage = "Context usage is unavailable while the session is disconnected."
+            return
+        }
+        let context = currentPipelineContext()
+        isContextLoading = true
+        contextErrorMessage = nil
+        contextBreakdown = nil
+        contextReportText = nil
+        defer {
+            if isCurrent(context) {
+                isContextLoading = false
+                contextReportText = nil
+            }
+        }
+        await refreshContextUsage()
+        guard isCurrent(context), !Task.isCancelled else { return }
+        guard availableCommands.contains(where: { $0.name == "context" && $0.source == .builtin }) else {
+            contextErrorMessage = "Detailed context usage is unavailable in this runtime."
+            return
+        }
+        let revision = contextRevision
+        do {
+            // The advertised builtin is local and never invokes a model. Keep this
+            // read outside sendPrompt so drafts, receipts and activity stay intact.
+            let receipt = try await handle.client.sendWithEventFence(
+                .prompt(message: "/context", streamingBehavior: nil), timeout: .seconds(5))
+            guard await eventFence.wait(through: receipt.precedingEventCount),
+                  isCurrent(context), !Task.isCancelled else { return }
+            guard revision == contextRevision else {
+                contextErrorMessage = "Context changed while loading. Try again."
+                return
+            }
+            guard receipt.response.success,
+                  receipt.response.data?["agentInvoked"]?.boolValue == false,
+                  let report = contextReportText,
+                  let breakdown = SessionContextBreakdown(report: report)
+            else {
+                contextErrorMessage = "The context breakdown is unavailable."
+                return
+            }
+            contextBreakdown = breakdown
+        } catch {
+            guard isCurrent(context), !Task.isCancelled else { return }
+            contextErrorMessage = "Couldn’t load the context breakdown."
         }
     }
 
@@ -441,40 +1594,96 @@ final class SessionController {
         return nil
     }
 
-    private func syncReducerState() {
-        items = reducer.items
-        runtimeState = reducer.runtimeState
+    private func consumeContextReport(_ frame: RpcFrame, processor: TranscriptEventProcessor) -> Bool {
+        guard self.processor?.id == processor.id, isContextLoading,
+              case .event("command_output", let payload) = frame,
+              let text = payload["text"]?.stringValue,
+              text.hasPrefix("Context") else { return false }
+        contextReportText = text
+        return true
     }
 
-    private func consumeExtensionUI(_ request: ExtensionUIRequest) {
-        guard let state = ExtensionUIRouter.parse(request) else { return }
+    private func refreshState() async {
+        guard let handle else { return }
+        let context = currentPipelineContext()
+        do {
+            let data = try await handle.client.send(.getState()).data
+            guard isCurrent(context) else { return }
+            applyState(data)
+            await context.processor?.setRuntimeState(runtimeState)
+        } catch {
+            fail(error, function: "refreshState", context: context)
+        }
+    }
+
+    private func applyModelPayload(_ value: JSONValue) {
+        if let label = Self.modelLabel(value) {
+            modelName = label
+        }
+        liveComposerSelection.provider = value["provider"]?.stringValue
+            ?? liveComposerSelection.provider
+        liveComposerSelection.modelID = value["id"]?.stringValue
+            ?? value["modelId"]?.stringValue
+            ?? liveComposerSelection.modelID
+        providerID = Self.providerID(from: value)
+        reportActivity()
+    }
+
+    func handleProviderAccountChange(_ event: ProviderAccountChangedEvent) {
+        guard event.sequence > providerAccountSequence else { return }
+        providerAccountSequence = event.sequence
+        activeProviderAccounts[event.providerID] = event.accountRef
+        accountCoordinator?.session(id, didChangeAccount: event)
+    }
+
+    private func publishLiveComposerSelection() {
+        attachedComposerControls?.applyLiveSelection(liveComposerSelection)
+    }
+
+    private func consumeExtensionUI(
+        _ request: ExtensionUIRequest,
+        processor: TranscriptEventProcessor,
+        context: PipelineContext
+    ) async {
+        guard isCurrent(context) else { return }
+        guard let state = ExtensionUIRouter.parse(request) else {
+            forwardToAccountChannelIfMarked(request)
+            return
+        }
         extensionRouter.consume(request)
+        refreshPendingUserInput()
 
         switch state {
-        case .computerHandoff, .confirm, .select:
-            reducer.upsertExtensionUI(state)
-            scheduleTimeout(for: state)
+        case .confirm, .select:
+            await processor.upsertExtensionUI(state)
+            guard isCurrent(context) else { return }
+            scheduleTimeout(for: state, context: context)
         case .input, .editor:
-            extensionSheetRequest = state
-            scheduleTimeout(for: state)
+            await processor.upsertExtensionUI(state)
+            guard isCurrent(context) else { return }
+            scheduleTimeout(for: state, context: context)
         case .cancel(_, let targetID):
-            removeExtensionRequest(id: targetID)
+            await removeExtensionRequest(id: targetID, context: context)
         case .notification(_, let message, let level):
-            reducer.appendNotice(level: level, message: message)
+            await processor.appendNotice(level: level, message: message)
+            guard isCurrent(context) else { return }
             postNotification(message: message)
         case .title(_, let updatedTitle):
+            guard isCurrent(context) else { return }
             title = updatedTitle
         case .setEditorText(_, let text):
+            guard isCurrent(context) else { return }
             draft = text
             extensionRouter.clearEditorText()
         case .openURL:
-            reducer.upsertExtensionUI(state)
+            await processor.upsertExtensionUI(state)
+            guard isCurrent(context) else { return }
         case .status, .widget:
             break
         }
     }
 
-    private func scheduleTimeout(for state: ExtensionUIState) {
+    private func scheduleTimeout(for state: ExtensionUIState, context: PipelineContext) {
         let timeout: Int?
         switch state {
         case .confirm(_, _, _, let value),
@@ -485,21 +1694,36 @@ final class SessionController {
             timeout = nil
         }
         guard let timeout, timeout > 0 else { return }
+        guard isCurrent(context) else { return }
         extensionTimeoutTasks[state.id]?.cancel()
         extensionTimeoutTasks[state.id] = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(timeout)) }
             catch { return }
             guard let self else { return }
-            await self.respond(to: state, with: .cancelled(timedOut: true))
+            _ = await self.respond(
+                to: state,
+                with: .cancelled(timedOut: true),
+                context: context)
         }
     }
 
-    private func removeExtensionRequest(id: String) {
+    private func removeExtensionRequest(id: String) async {
+        let context = currentPipelineContext()
+        await removeExtensionRequest(id: id, context: context)
+    }
+
+    private func removeExtensionRequest(id: String, context: PipelineContext) async {
+        guard isCurrent(context) else { return }
         extensionTimeoutTasks.removeValue(forKey: id)?.cancel()
         extensionRouter.removeRequest(id: id)
-        reducer.removeExtensionUI(id: id)
+        refreshPendingUserInput()
+        await context.processor?.removeExtensionUI(id: id)
+        guard isCurrent(context) else { return }
         if extensionSheetRequest?.id == id { extensionSheetRequest = nil }
-        syncReducerState()
+    }
+
+    private func refreshPendingUserInput() {
+        hasPendingUserInput = extensionRouter.hasPendingUserInput
     }
 
     private func postNotification(message: String) {
@@ -513,9 +1737,72 @@ final class SessionController {
         UNUserNotificationCenter.current().add(request)
     }
 
-    private func fail(_ error: any Error, function: String) {
-        runtimeState = .failed("[Session:\(function)] Session command failed: \(error)")
-        reducer.runtimeState = runtimeState
+    private func fail(
+        _ error: any Error,
+        function: String,
+        context: PipelineContext
+    ) {
+        guard isCurrent(context) else { return }
+        let diagnostic = "[Session:\(function)] Session command failed: \(error)"
+        runtimeState = .failed(diagnostic)
+        logText = diagnostic
+        isRecoveryPresented = true
+        publishCommandCatalog(.unavailable)
+        reportActivity()
+        let state = runtimeState
+        let failedProcessor = context.processor
+        Task { await failedProcessor?.setRuntimeState(state) }
+    }
+
+    nonisolated static func accepts(
+        snapshot: TranscriptSnapshot,
+        activeProcessorID: UUID?
+    ) -> Bool {
+        snapshot.processorID == activeProcessorID
+    }
+
+    private func install(snapshot: TranscriptSnapshot) {
+        guard Self.accepts(snapshot: snapshot, activeProcessorID: processor?.id),
+              snapshot.revision > installedSnapshotRevision
+        else { return }
+        installedSnapshotRevision = snapshot.revision
+        items = snapshot.items
+        if !pendingSubmissions.isEmpty {
+            pendingSubmissions = PendingUserSubmission.reconcile(
+                pendingSubmissions, messages: userMessages, consumedIndices: &consumedSubmissionEchoIndices)
+        }
+        runtimeState = snapshot.runtimeState
+        os_signpost(
+            .event,
+            log: Self.transcriptLog,
+            name: "TranscriptSnapshotInstalled",
+            "revision %{public}llu",
+            snapshot.revision)
+        reportActivity()
+    }
+
+    private static func isPlaceholderTitle(_ title: String) -> Bool {
+        title == "New session" || title == "Untitled session"
+    }
+
+    private func finishTitleLoading() {
+        isTitleLoading = false
+        if title == "New session" || title == "Untitled session", let initialPromptTitle {
+            title = initialPromptTitle
+        }
+    }
+
+    private func reportActivity() {
+        accountCoordinator?.update(
+            sessionID: id,
+            providerID: providerID,
+            isGenerating: runtimeState == .streaming)
+        if runtimeState == .idle {
+            Task { [weak accountCoordinator] in
+                await accountCoordinator?.sessionDidBecomeIdle(id)
+            }
+        }
+        onActivityChange?()
     }
 
     private static func modelLabel(_ value: JSONValue?) -> String? {
@@ -525,18 +1812,86 @@ final class SessionController {
             ?? value?["name"]?.stringValue
     }
 
+    static func providerID(from value: JSONValue?) -> String? {
+        guard let providerID = value?["provider"]?.stringValue,
+              !providerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return providerID
+    }
+
+    static func activeProviderAccountRefs(from value: JSONValue?) -> [String: String] {
+        guard let accounts = value?["activeProviderAccounts"]?.objectValue else { return [:] }
+        return accounts.reduce(into: [:]) { refs, entry in
+            if let accountRef = entry.value.stringValue {
+                refs[entry.key] = accountRef
+            }
+        }
+    }
+
     static func contextPercent(_ value: JSONValue?) -> Int? {
-        if let percentage = value?["percentage"]?.doubleValue ?? value?["percent"]?.doubleValue {
+        if let percent = value?["percent"]?.doubleValue, percent.isFinite {
+            return clampedPercent(percent)
+        }
+        if let percentage = value?["percentage"]?.doubleValue, percentage.isFinite {
             return clampedPercent(percentage <= 1 ? percentage * 100 : percentage)
         }
         guard let used = value?["tokens"]?.doubleValue ?? value?["used"]?.doubleValue,
               let limit = value?["contextWindow"]?.doubleValue ?? value?["limit"]?.doubleValue,
-              limit > 0
+              used.isFinite, limit.isFinite, limit > 0
         else { return nil }
         return clampedPercent(used / limit * 100)
     }
 
     private static func clampedPercent(_ percentage: Double) -> Int {
         Int(min(100, max(0, percentage)).rounded())
+    }
+
+    private static func makeHistoryLoader() -> HistoryLoader {
+        let loader = SessionTimelineLoader()
+        return { path in try await loader.load(path: path) }
+    }
+}
+
+private actor RpcEventConsumptionFence {
+    private struct Waiter {
+        let target: UInt64
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
+    private var consumedEventCount: UInt64 = 0
+    private var nextWaiterID: UInt64 = 0
+    private var waiters: [UInt64: Waiter] = [:]
+    private var isFinished = false
+
+    func didConsumeEvent() {
+        consumedEventCount &+= 1
+        resumeSatisfiedWaiters()
+    }
+
+    func wait(through target: UInt64) async -> Bool {
+        if consumedEventCount >= target { return true }
+        if isFinished { return false }
+        return await withCheckedContinuation { continuation in
+            nextWaiterID &+= 1
+            waiters[nextWaiterID] = Waiter(target: target, continuation: continuation)
+        }
+    }
+
+    func finish() {
+        guard !isFinished else { return }
+        isFinished = true
+        let pending = waiters.values
+        waiters.removeAll()
+        pending.forEach { $0.continuation.resume(returning: false) }
+    }
+
+    private func resumeSatisfiedWaiters() {
+        let satisfiedIDs = waiters.compactMap { id, waiter in
+            waiter.target <= consumedEventCount ? id : nil
+        }
+        for id in satisfiedIDs {
+            waiters.removeValue(forKey: id)?.continuation.resume(returning: true)
+        }
     }
 }

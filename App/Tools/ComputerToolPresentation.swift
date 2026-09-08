@@ -3,6 +3,46 @@ import ImageIO
 import OmpKit
 import UniformTypeIdentifiers
 
+enum ComputerPermissionState: String, Equatable, Sendable {
+    case granted
+    case denied
+    case unavailable
+    case unknown
+}
+
+struct ComputerCapabilities: Equatable, Sendable {
+    let backend: String
+    let capture: ComputerPermissionState
+    let input: ComputerPermissionState
+    let accessibility: ComputerPermissionState
+
+    init(
+        backend: String,
+        capture: ComputerPermissionState,
+        input: ComputerPermissionState,
+        accessibility: ComputerPermissionState
+    ) {
+        self.backend = backend
+        self.capture = capture
+        self.input = input
+        self.accessibility = accessibility
+    }
+
+    init?(json: JSONValue?) {
+        guard let backend = json?["backend"]?.stringValue else { return nil }
+        self.backend = backend
+        capture = ComputerPermissionState(rawValue: json?["capturePermission"]?.stringValue ?? "") ?? .unknown
+        input = ComputerPermissionState(rawValue: json?["inputPermission"]?.stringValue ?? "") ?? .unknown
+        accessibility = ComputerPermissionState(rawValue: json?["axPermission"]?.stringValue ?? "") ?? .unknown
+    }
+
+    static let unknown = ComputerCapabilities(
+        backend: "unknown",
+        capture: .unknown,
+        input: .unknown,
+        accessibility: .unknown)
+}
+
 struct ComputerImage: Identifiable, Equatable {
     let id: String
     let data: Data

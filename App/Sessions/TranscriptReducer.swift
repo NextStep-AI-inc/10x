@@ -1,86 +1,133 @@
 import Foundation
 import OmpKit
 
+enum TranscriptMutation: Equatable, Sendable {
+    case none
+    case coalesced
+    case immediate
+}
+
 struct TranscriptReducer {
+    private enum InflightItemIdentity: Hashable {
+        case message(String)
+        case tool(String)
+    }
+
     var items: [TranscriptItem] = []
     var runtimeState: SessionRuntimeState = .idle
 
+    var hasPendingPersistence: Bool { !pendingPersistenceIDs.isEmpty }
+
     private var inflightMessageID: String?
-    private var pendingPersistenceIDs: Set<String> = []
+    private var inflightItemIDs: [InflightItemIdentity] = []
+    private var pendingPersistenceIDs: Set<InflightItemIdentity> = []
     private var pendingMessageFingerprints: [String: String] = [:]
     private var nextSyntheticID = 1
     private var toolReducer = ToolEventReducer()
     private var subagentReducer = SubagentEventReducer()
+    private var droppedHarnessMessages: [HarnessMessageDescriptor] = []
+    private var droppedHarnessMessageSignatures: Set<String> = []
 
-    mutating func consume(_ frame: RpcFrame) {
-        guard case .event(let type, let payload) = frame else { return }
+    @discardableResult
+    mutating func consume(_ frame: RpcFrame) -> TranscriptMutation {
+        guard case .event(let type, let payload) = frame else { return .none }
 
         switch type {
         case "agent_start", "turn_start":
             runtimeState = .streaming
+            return .immediate
         case "agent_end":
             if payload["isTerminal"]?.boolValue != false {
                 runtimeState = .idle
             }
+            return .immediate
         case "prompt_result":
             runtimeState = .idle
+            return .immediate
         case "message_start":
-            guard let message = payload["message"] else { return }
-            if consumeToolResult(message) { return }
+            guard let message = payload["message"] else { return .none }
+            guard TranscriptMessage.isDisplayable(message) else {
+                recordDroppedHarnessMessage(message)
+                return .none
+            }
+            if Self.isMalformedToolResult(message) { return .none }
+            if let mutation = consumeToolResult(message) { return mutation }
             let id = messageID(message)
+            if Self.isCompleteAtStart(message) {
+                return appendCompleteMessage(id: id, raw: message)
+                    ? .immediate
+                    : .none
+            }
             inflightMessageID = id
-            replaceOrAppend(.message(TranscriptMessage(
-                id: id,
-                raw: message,
-                isFinal: false)))
+            _ = replaceInflightMessage(id: id, raw: message, isFinal: false)
+            return .immediate
         case "message_update":
-            guard let message = payload["message"] else { return }
+            guard let message = payload["message"] else { return .none }
+            guard TranscriptMessage.isDisplayable(message) else { return .none }
+            if Self.isCompleteAtStart(message) {
+                return appendCompleteMessage(id: messageID(message), raw: message)
+                    ? .immediate
+                    : .none
+            }
             let id = inflightMessageID ?? messageID(message)
             inflightMessageID = id
-            replaceOrAppend(.message(TranscriptMessage(
-                id: id,
-                raw: message,
-                isFinal: false)))
+            return replaceInflightMessage(id: id, raw: message, isFinal: false) ? .coalesced : .none
         case "message_end":
-            guard let message = payload["message"] else { return }
-            if consumeToolResult(message) { return }
+            guard let message = payload["message"] else { return .none }
+            guard TranscriptMessage.isDisplayable(message) else {
+                recordDroppedHarnessMessage(message)
+                return .none
+            }
+            if Self.isMalformedToolResult(message) { return .none }
+            if let mutation = consumeToolResult(message) { return mutation }
+            if Self.isCompleteAtStart(message) {
+                return appendCompleteMessage(id: messageID(message), raw: message)
+                    ? .immediate
+                    : .none
+            }
             let id = inflightMessageID ?? messageID(message)
-            let finalMessage = TranscriptMessage(
-                id: id,
-                raw: message,
-                isFinal: true)
-            replaceOrAppend(.message(finalMessage))
-            pendingPersistenceIDs.insert(id)
-            pendingMessageFingerprints[id] = Self.fingerprint(finalMessage)
+            _ = replaceInflightMessage(id: id, raw: message, isFinal: true)
+            for item in items {
+                guard let identity = Self.inflightIdentity(for: item),
+                      inflightItemIDs.contains(identity),
+                      case .message(let finalMessage) = item
+                else { continue }
+                pendingPersistenceIDs.insert(.message(finalMessage.id))
+                pendingMessageFingerprints[finalMessage.id] = Self.fingerprint(finalMessage)
+            }
             inflightMessageID = nil
+            inflightItemIDs = []
+            return .immediate
         case "notice":
             let id = syntheticID(prefix: "notice")
             items.append(.notice(
                 id: id,
                 level: payload["level"]?.stringValue ?? "info",
                 message: payload["message"]?.stringValue ?? ""))
+            return .immediate
         case "auto_retry_start":
-            appendAnnotation(
+            return appendAnnotation(
                 kind: .retry,
                 title: "Retrying response",
                 detail: retryDetail(payload),
                 tone: .warning)
         case "auto_retry_end":
             if payload["success"]?.boolValue == false {
-                appendAnnotation(
+                return appendAnnotation(
                     kind: .retry,
                     title: "Response retry failed",
                     detail: payload["finalError"]?.stringValue,
                     tone: .error)
             }
+            return .none
         case "retry_fallback_applied":
-            appendAnnotation(
+            return appendAnnotation(
                 kind: .model,
                 title: "Fallback to \(Self.modelLabel(payload["to"]?.stringValue))",
                 detail: payload["role"]?.stringValue.flatMap(Self.nonDefaultRole),
                 tone: .warning)
         case "retry_fallback_succeeded":
-            appendAnnotation(
+            return appendAnnotation(
                 kind: .model,
                 title: "Fallback succeeded with \(Self.modelLabel(payload["model"]?.stringValue))",
                 detail: payload["role"]?.stringValue.flatMap(Self.nonDefaultRole),
@@ -89,65 +136,97 @@ struct TranscriptReducer {
             let thinking = payload["resolved"]?.stringValue
                 ?? payload["thinkingLevel"]?.stringValue
                 ?? "inherit"
-            appendAnnotation(
+            return appendAnnotation(
                 kind: .thinking,
                 title: "Thinking set to \(thinking.capitalized)",
                 detail: payload["configured"]?.stringValue?.capitalized,
                 tone: .neutral)
         case "auto_compaction_end":
             if payload["aborted"]?.boolValue == true {
-                appendAnnotation(
+                return appendAnnotation(
                     kind: .compaction,
                     title: "Context compaction stopped",
                     detail: payload["errorMessage"]?.stringValue,
                     tone: payload["willRetry"]?.boolValue == true ? .warning : .error)
             } else if payload["skipped"]?.boolValue != true {
-                appendAnnotation(
+                return appendAnnotation(
                     kind: .compaction,
                     title: "Context compacted",
                     detail: Self.compactionDetail(payload["result"]),
                     tone: .neutral)
             }
+            return .none
         case "tool_execution_start", "tool_execution_update", "tool_execution_end":
+            guard payload["toolCallId"]?.stringValue != nil else { return .none }
             toolReducer.consume(type: type, payload: payload)
             guard let id = payload["toolCallId"]?.stringValue,
                   let presentation = toolReducer.presentations.first(where: { $0.id == id })
-            else { return }
-            replaceOrAppend(.tool(presentation))
+            else { return .none }
+            var changed = replaceOrAppend(.tool(presentation))
             if type == "tool_execution_end", let result = payload["result"] {
-                pendingPersistenceIDs.insert(id)
+                pendingPersistenceIDs.insert(.tool(id))
                 subagentReducer.attachResult(parentToolCallID: id, result: result)
                 for subagent in subagentReducer.presentations where
                     subagent.parentToolCallID == id {
-                    replaceOrAppend(.subagent(subagent))
+                    changed = replaceOrAppend(.subagent(subagent)) || changed
                 }
             }
+            if type == "tool_execution_update" {
+                return changed ? .coalesced : .none
+            }
+            if type == "tool_execution_end" {
+                return changed ? .immediate : .none
+            }
+            return .immediate
         case "subagent_lifecycle", "subagent_progress":
+            guard let body = payload["payload"] else { return .none }
+            if type == "subagent_progress",
+               !canConsumeSubagentProgress(body) {
+                return .none
+            }
             subagentReducer.consume(type: type, payload: payload)
-            guard let body = payload["payload"],
-                  let presentation = Self.subagent(
+            guard let presentation = Self.subagent(
                     matching: body,
                     in: subagentReducer.presentations)
-            else { return }
-            replaceOrAppend(.subagent(presentation))
+            else { return .none }
+            let changed = replaceOrAppend(.subagent(presentation))
+            if type == "subagent_progress" {
+                return changed ? .coalesced : .none
+            }
+            return .immediate
         default:
-            items.append(.rawEvent(
-                id: syntheticID(prefix: "event"),
-                type: type,
-                payload: payload))
+            return .none
         }
     }
 
-    mutating func load(messages: [JSONValue]) {
+    @discardableResult
+    mutating func load(messages: [JSONValue]) -> TranscriptMutation {
+        let previous = items
+        let previousTools: [String: ToolPresentation] = Dictionary(previous.compactMap { item in
+            guard case .tool(let tool) = item else { return nil }
+            return (tool.id, tool)
+        }, uniquingKeysWith: { existing, _ in existing })
+        let fallbackDate = Date()
         items = []
         for (index, message) in messages.enumerated() {
-            if let result = Self.toolResultPresentation(message) {
-                if let itemIndex = items.firstIndex(where: { $0.id == result.id }),
-                   case .tool(var existing) = items[itemIndex] {
-                    existing.result = message
-                    existing.phase = result.phase
-                    existing.endDate = result.endDate
-                    items[itemIndex] = .tool(existing)
+            let toolResultID = Self.toolResultID(message)
+            let currentToolIndex = toolResultID.flatMap { id in
+                items.firstIndex { item in
+                    guard case .tool(let tool) = item else { return false }
+                    return tool.id == id
+                }
+            }
+            let currentTool = currentToolIndex.flatMap { itemIndex -> ToolPresentation? in
+                guard case .tool(let tool) = items[itemIndex] else { return nil }
+                return tool
+            }
+            if let result = Self.toolResultPresentation(
+                message,
+                existingTool: currentTool
+                    ?? toolResultID.flatMap { previousTools[$0] },
+                fallbackDate: fallbackDate) {
+                if let itemIndex = currentToolIndex {
+                    items[itemIndex] = .tool(result)
                 } else {
                     items.append(.tool(result))
                 }
@@ -157,38 +236,53 @@ struct TranscriptReducer {
                 continue
             }
 
-            let visibleText = Self.visibleMessageText(message)
-            if Self.shouldKeepMessage(message, visibleText: visibleText) {
-                items.append(.message(TranscriptMessage(
-                    id: message["id"]?.stringValue ?? "history-\(index)",
-                    raw: message,
-                    isFinal: true)))
+            if !TranscriptMessage.isDisplayable(message) {
+                recordDroppedHarnessMessage(message)
             }
-            items.append(contentsOf: Self.toolCallPresentations(message).map(TranscriptItem.tool))
+            items.append(contentsOf: TranscriptMessageNormalizer.items(
+                id: message["id"]?.stringValue ?? "history-\(index)",
+                raw: message,
+                isFinal: true,
+                existingTools: previousTools,
+                fallbackDate: fallbackDate))
         }
         inflightMessageID = nil
+        inflightItemIDs = []
         pendingPersistenceIDs = []
         pendingMessageFingerprints = [:]
+        return previous == items ? .none : .immediate
     }
 
-    mutating func load(history: TranscriptHistory) {
+    @discardableResult
+    mutating func load(history: TranscriptHistory) -> TranscriptMutation {
+        let previous = items
         items = history.items
+        for descriptor in history.dropped
+        where droppedHarnessMessageSignatures.insert(descriptor.signature).inserted {
+            droppedHarnessMessages.append(descriptor)
+        }
         inflightMessageID = nil
+        inflightItemIDs = []
         pendingPersistenceIDs = []
         pendingMessageFingerprints = [:]
+        return previous == items ? .none : .immediate
     }
 
-    mutating func ensureThreadStart(date: Date?) {
+    @discardableResult
+    mutating func ensureThreadStart(date: Date?) -> TranscriptMutation {
         guard !items.contains(where: {
             if case .threadStart = $0 { return true }
             return false
-        }) else { return }
+        }) else { return .none }
         items.insert(.threadStart(id: "thread-start-fallback", date: date), at: 0)
+        return .immediate
     }
 
-    mutating func setReconciliationWarning(isPresented: Bool) {
+    @discardableResult
+    mutating func setReconciliationWarning(isPresented: Bool) -> TranscriptMutation {
+        let previous = items
         items.removeAll { $0.id == "reconciliation-warning" }
-        guard isPresented else { return }
+        guard isPresented else { return previous == items ? .none : .immediate }
         items.append(.annotation(TranscriptAnnotation(
             id: "reconciliation-warning",
             kind: .notice,
@@ -196,21 +290,38 @@ struct TranscriptReducer {
             detail: "Live updates remain visible.",
             timestamp: nil,
             tone: .warning)))
+        return previous == items ? .none : .immediate
     }
 
-    mutating func reconcile(history: TranscriptHistory) {
+    @discardableResult
+    mutating func reconcile(history: TranscriptHistory) -> TranscriptMutation {
+        let previous = items
         let persistedIDs = Set(history.items.map(\.id))
+        let persistedInflightItemIDs = Set(history.items.compactMap(Self.inflightIdentity))
         let resolvedMessageIDs = pendingMessageIDsPersisted(in: history)
-        let resolvedIDs = persistedIDs.union(resolvedMessageIDs)
-        pendingPersistenceIDs.subtract(resolvedIDs)
-        for id in resolvedIDs {
+        let resolvedInflightItemIDs = persistedInflightItemIDs.union(resolvedMessageIDs)
+        pendingPersistenceIDs.subtract(resolvedInflightItemIDs)
+        for identity in resolvedInflightItemIDs {
+            guard case .message(let id) = identity else { continue }
             pendingMessageFingerprints.removeValue(forKey: id)
         }
+        let persistedAnnotations = Set(history.items.compactMap(Self.annotationSignature))
         let transient = items.filter { item in
-            guard !persistedIDs.contains(item.id) else { return false }
-            if pendingPersistenceIDs.contains(item.id) { return true }
+            if let identity = Self.inflightIdentity(for: item) {
+                guard !persistedInflightItemIDs.contains(identity) else { return false }
+                if pendingPersistenceIDs.contains(identity) { return true }
+            } else {
+                guard !persistedIDs.contains(item.id) else { return false }
+            }
             switch item {
-            case .notice, .annotation, .subagent, .extensionUI, .rawEvent:
+            case .annotation:
+                // A model, thinking, mode, or compaction change is replayed from
+                // the session file under its own id. Keeping the live copy as
+                // well would leave the transcript holding two of the same note,
+                // the second one stranded at the bottom.
+                guard let signature = Self.annotationSignature(item) else { return true }
+                return !persistedAnnotations.contains(signature)
+            case .notice, .subagent, .extensionUI:
                 return true
             case .tool(let presentation):
                 return presentation.phase == .running
@@ -221,32 +332,20 @@ struct TranscriptReducer {
             }
         }
         items = history.items + transient
-        if !items.contains(where: {
-            guard case .message(let message) = $0 else { return false }
-            return message.id == inflightMessageID
+        if !inflightItemIDs.contains(where: { identity in
+            items.contains { Self.inflightIdentity(for: $0) == identity }
         }) {
             inflightMessageID = nil
+            inflightItemIDs = []
         }
+        return previous == items ? .none : .immediate
     }
 
-    private static func toolCallPresentations(_ message: JSONValue) -> [ToolPresentation] {
-        let timestamp = message["timestamp"]?.doubleValue.map {
-            Date(timeIntervalSince1970: $0 / 1_000)
-        } ?? Date()
-        return message["content"]?.arrayValue?.compactMap { block in
-            guard block["type"]?.stringValue == "toolCall",
-                  let id = block["id"]?.stringValue ?? block["toolCallId"]?.stringValue,
-                  let name = block["name"]?.stringValue ?? block["toolName"]?.stringValue
-            else { return nil }
-            return ToolPresentation(
-                id: id,
-                name: name,
-                arguments: block["arguments"] ?? block["args"] ?? .object([:]),
-                result: nil,
-                phase: .running,
-                startDate: timestamp,
-                endDate: nil)
-        } ?? []
+    /// Identity for the same change arriving twice: once as a live event and
+    /// once from the session file, under two different ids.
+    private static func annotationSignature(_ item: TranscriptItem) -> String? {
+        guard case .annotation(let annotation) = item else { return nil }
+        return "\(annotation.kind)|\(annotation.title)"
     }
 
     private static func subagent(
@@ -259,78 +358,151 @@ struct TranscriptReducer {
         return presentations.first { $0.index == index }
     }
 
-    private static func visibleMessageText(_ message: JSONValue) -> String {
-        if let content = message["content"]?.stringValue { return content }
-        return message["content"]?.arrayValue?.compactMap { block in
-            guard block["type"]?.stringValue == "text" else { return nil }
-            return block["text"]?.stringValue
-        }.joined(separator: "\n") ?? ""
+    private func canConsumeSubagentProgress(_ body: JSONValue) -> Bool {
+        guard body["progress"] != nil else { return false }
+        if body["progress"]?["id"]?.stringValue != nil { return true }
+        guard let index = body["index"]?.intValue else { return false }
+        return subagentReducer.presentations.contains { $0.index == index }
     }
 
-    private static func shouldKeepMessage(_ message: JSONValue, visibleText: String) -> Bool {
-        if message["role"]?.stringValue == "user" || !visibleText.isEmpty { return true }
-        guard message["role"]?.stringValue == "assistant",
-              let stopReason = message["stopReason"]?.stringValue?.lowercased()
-        else { return false }
-        return stopReason == "error" || stopReason == "aborted"
-    }
-
-    private mutating func consumeToolResult(_ message: JSONValue) -> Bool {
-        guard let incoming = Self.toolResultPresentation(message) else { return false }
-        pendingPersistenceIDs.insert(incoming.id)
-        if let index = items.firstIndex(where: { $0.id == incoming.id }),
-           case .tool(var existing) = items[index] {
-            existing.result = message
-            existing.phase = incoming.phase
-            existing.endDate = incoming.endDate
-            items[index] = .tool(existing)
+    private mutating func consumeToolResult(_ message: JSONValue) -> TranscriptMutation? {
+        let existingIndex = Self.toolResultID(message).flatMap { id in
+            items.firstIndex { item in
+                guard case .tool(let tool) = item else { return false }
+                return tool.id == id
+            }
+        }
+        let existingTool = existingIndex.flatMap { index -> ToolPresentation? in
+            guard case .tool(let tool) = items[index] else { return nil }
+            return tool
+        }
+        guard let incoming = Self.toolResultPresentation(message, existingTool: existingTool) else { return nil }
+        pendingPersistenceIDs.insert(.tool(incoming.id))
+        let changed: Bool
+        if let index = existingIndex {
+            changed = items[index] != .tool(incoming)
+            if changed {
+                items[index] = .tool(incoming)
+            }
         } else {
             items.append(.tool(incoming))
+            changed = true
         }
-        return true
+        return changed ? .immediate : TranscriptMutation.none
     }
 
-    private static func toolResultPresentation(_ message: JSONValue) -> ToolPresentation? {
+    private static func toolResultID(_ message: JSONValue) -> String? {
         guard message["role"]?.stringValue == "toolResult",
               let id = message["toolCallId"]?.stringValue
         else { return nil }
+        return id
+    }
+
+    private static func isMalformedToolResult(_ message: JSONValue) -> Bool {
+        message["role"]?.stringValue == "toolResult"
+            && message["toolCallId"]?.stringValue == nil
+    }
+
+    private static func isCompleteAtStart(_ message: JSONValue) -> Bool {
+        switch message["role"]?.stringValue {
+        case "custom", "hookMessage": true
+        default: false
+        }
+    }
+
+    private static func toolResultPresentation(
+        _ message: JSONValue,
+        existingTool: ToolPresentation? = nil,
+        fallbackDate: Date = Date()
+    ) -> ToolPresentation? {
+        guard let id = toolResultID(message) else { return nil }
         let timestamp = message["timestamp"]?.doubleValue.map {
             Date(timeIntervalSince1970: $0 / 1_000)
-        } ?? Date()
+        }
+        let startDate = timestamp ?? existingTool?.startDate ?? fallbackDate
+        let endDate = timestamp ?? existingTool?.endDate ?? fallbackDate
+        if var existingTool {
+            existingTool.update(
+                result: .some(message),
+                phase: message["isError"]?.boolValue == true ? .failed : .complete,
+                endDate: .some(endDate))
+            return existingTool
+        }
         return ToolPresentation(
             id: id,
             name: message["toolName"]?.stringValue ?? "Unknown tool",
             arguments: .object([:]),
             result: message,
             phase: message["isError"]?.boolValue == true ? .failed : .complete,
-            startDate: timestamp,
-            endDate: timestamp)
+            startDate: startDate,
+            endDate: endDate)
     }
 
-    mutating func upsertExtensionUI(_ state: ExtensionUIState) {
-        replaceOrAppend(.extensionUI(state))
+    @discardableResult
+    mutating func upsertExtensionUI(_ state: ExtensionUIState) -> TranscriptMutation {
+        replaceOrAppend(.extensionUI(state)) ? .immediate : .none
     }
 
-    mutating func removeExtensionUI(id: String) {
+    @discardableResult
+    mutating func removeExtensionUI(id: String) -> TranscriptMutation {
+        let previous = items
         items.removeAll { item in
             if case .extensionUI(let state) = item { return state.id == id }
             return false
         }
+        return previous == items ? .none : .immediate
     }
 
-    mutating func appendNotice(level: String, message: String) {
-        items.append(.notice(
-            id: syntheticID(prefix: "notice"),
-            level: level,
-            message: message))
+    @discardableResult
+    mutating func appendNotice(level: String, message: String) -> TranscriptMutation {
+        appendNotice(id: syntheticID(prefix: "notice"), level: level, message: message)
     }
 
+    /// Caller-chosen id, so the caller can rewrite the notice in place later
+    /// (harness-message notices swap in their summary).
+    @discardableResult
+    mutating func appendNotice(id: String, level: String, message: String) -> TranscriptMutation {
+        items.append(.notice(id: id, level: level, message: message))
+        return .immediate
+    }
+
+    @discardableResult
+    mutating func updateNotice(id: String, message: String) -> TranscriptMutation {
+        guard let index = items.firstIndex(where: { $0.id == id }),
+              case .notice(let noticeID, let level, _) = items[index]
+        else { return .none }
+        items[index] = .notice(id: noticeID, level: level, message: message)
+        return .immediate
+    }
+
+    /// Drained by the processor after each consume/load; the controller turns
+    /// descriptors into notices. The reducer stays settings-free.
+    mutating func drainDroppedHarnessMessages() -> [HarnessMessageDescriptor] {
+        let drained = droppedHarnessMessages
+        droppedHarnessMessages = []
+        return drained
+    }
+
+    private mutating func recordDroppedHarnessMessage(_ message: JSONValue) {
+        let text = TranscriptMessage.visibleText(from: message)
+        guard !text.isEmpty else { return }
+        let descriptor = HarnessMessageDescriptor(
+            role: message["role"]?.stringValue,
+            customType: message["customType"]?.stringValue,
+            byteCount: text.count,
+            text: text)
+        guard droppedHarnessMessageSignatures.insert(descriptor.signature).inserted
+        else { return }
+        droppedHarnessMessages.append(descriptor)
+    }
+
+    @discardableResult
     private mutating func appendAnnotation(
         kind: TranscriptAnnotation.Kind,
         title: String,
         detail: String?,
         tone: TranscriptAnnotation.Tone
-    ) {
+    ) -> TranscriptMutation {
         items.append(.annotation(TranscriptAnnotation(
             id: syntheticID(prefix: "annotation"),
             kind: kind,
@@ -338,6 +510,7 @@ struct TranscriptReducer {
             detail: detail,
             timestamp: Date(),
             tone: tone)))
+        return .immediate
     }
 
     private func retryDetail(_ payload: JSONValue) -> String? {
@@ -381,21 +554,21 @@ struct TranscriptReducer {
 
     private mutating func pendingMessageIDsPersisted(
         in history: TranscriptHistory
-    ) -> Set<String> {
+    ) -> Set<InflightItemIdentity> {
         var persistedCounts: [String: Int] = [:]
         for item in history.items {
             guard case .message(let message) = item else { continue }
             persistedCounts[Self.fingerprint(message), default: 0] += 1
         }
 
-        var resolved: Set<String> = []
+        var resolved: Set<InflightItemIdentity> = []
         for item in items {
             guard case .message = item,
                   let fingerprint = pendingMessageFingerprints[item.id],
                   let count = persistedCounts[fingerprint],
                   count > 0
             else { continue }
-            resolved.insert(item.id)
+            resolved.insert(.message(item.id))
             persistedCounts[fingerprint] = count - 1
         }
         return resolved
@@ -407,12 +580,66 @@ struct TranscriptReducer {
             message.role.rawValue,
             timestamp,
             message.stopReason ?? "",
-            message.visibleText,
+            reconciliationText(message.visibleText),
         ].joined(separator: "\u{1F}")
+    }
+
+    private static func reconciliationText(_ text: String) -> String {
+        text.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     private mutating func messageID(_ message: JSONValue) -> String {
         message["id"]?.stringValue ?? syntheticID(prefix: "message")
+    }
+
+    private mutating func replaceInflightMessage(
+        id: String,
+        raw: JSONValue,
+        isFinal: Bool
+    ) -> Bool {
+        let previous = items
+        let existingTools = Dictionary(items.compactMap { item -> (String, ToolPresentation)? in
+            guard case .tool(let tool) = item else { return nil }
+            return (tool.id, tool)
+        }, uniquingKeysWith: { existing, _ in existing })
+        let previousDocuments = Dictionary(items.compactMap { item -> (TranscriptRenderLineageKey, ContentDocument)? in
+            guard case .message(let message) = item else { return nil }
+            return (message.renderLineageKey, message.document)
+        }, uniquingKeysWith: { existing, _ in existing })
+        let normalized = TranscriptMessageNormalizer.items(
+            id: id,
+            raw: raw,
+            isFinal: isFinal,
+            existingTools: existingTools,
+            previousDocuments: previousDocuments)
+        let normalizedIDs = Set(normalized.compactMap(Self.inflightIdentity))
+        let insertionIndex = items.firstIndex { item in
+            guard let identity = Self.inflightIdentity(for: item) else { return false }
+            return inflightItemIDs.contains(identity)
+        } ?? items.endIndex
+
+        items.removeAll { item in
+            guard let identity = Self.inflightIdentity(for: item) else { return false }
+            return inflightItemIDs.contains(identity) || normalizedIDs.contains(identity)
+        }
+        items.insert(contentsOf: normalized, at: min(insertionIndex, items.endIndex))
+        inflightItemIDs = normalized.compactMap(Self.inflightIdentity)
+        return previous != items
+    }
+
+    private mutating func appendCompleteMessage(id: String, raw: JSONValue) -> Bool {
+        let normalized = TranscriptMessageNormalizer.items(
+            id: id,
+            raw: raw,
+            isFinal: true)
+        var changed = false
+        for item in normalized {
+            changed = replaceOrAppend(item) || changed
+            guard case .message(let message) = item else { continue }
+            pendingPersistenceIDs.insert(.message(message.id))
+            pendingMessageFingerprints[message.id] = Self.fingerprint(message)
+        }
+        return changed
     }
 
     private mutating func syntheticID(prefix: String) -> String {
@@ -420,11 +647,44 @@ struct TranscriptReducer {
         return "\(prefix)-\(nextSyntheticID)"
     }
 
-    private mutating func replaceOrAppend(_ item: TranscriptItem) {
-        if let index = items.firstIndex(where: { $0.id == item.id }) {
+    private mutating func replaceOrAppend(_ item: TranscriptItem) -> Bool {
+        if let index = items.firstIndex(where: { Self.hasSameKindIdentity($0, item) }) {
+            guard items[index] != item else { return false }
             items[index] = item
         } else {
             items.append(item)
+        }
+        return true
+    }
+
+    private static func inflightIdentity(for item: TranscriptItem) -> InflightItemIdentity? {
+        switch item {
+        case .message(let message):
+            return .message(message.id)
+        case .tool(let tool):
+            return .tool(tool.id)
+        case .threadStart, .annotation, .subagent, .notice, .extensionUI:
+            return nil
+        }
+    }
+
+    private static func hasSameKindIdentity(_ lhs: TranscriptItem, _ rhs: TranscriptItem) -> Bool {
+        switch (lhs, rhs) {
+        case (.threadStart(let lhsID, _), .threadStart(let rhsID, _)),
+             (.notice(let lhsID, _, _), .notice(let rhsID, _, _)):
+            return lhsID == rhsID
+        case (.message(let lhsMessage), .message(let rhsMessage)):
+            return lhsMessage.id == rhsMessage.id
+        case (.annotation(let lhsAnnotation), .annotation(let rhsAnnotation)):
+            return lhsAnnotation.id == rhsAnnotation.id
+        case (.subagent(let lhsSubagent), .subagent(let rhsSubagent)):
+            return lhsSubagent.id == rhsSubagent.id
+        case (.tool(let lhsTool), .tool(let rhsTool)):
+            return lhsTool.id == rhsTool.id
+        case (.extensionUI(let lhsState), .extensionUI(let rhsState)):
+            return lhsState.id == rhsState.id
+        default:
+            return false
         }
     }
 }
