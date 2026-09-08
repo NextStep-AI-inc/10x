@@ -81,18 +81,11 @@ struct SettingControlView: View {
             if definition.key == "modelRoles" {
                 ModelRolesEditor(definition: definition, model: model)
             } else {
-                recordJSONField
+                RecordSettingEditor(
+                    definition: definition,
+                    model: model,
+                    valueKind: RecordSettingEditor.valueKind(for: definition.key))
             }
-        }
-    }
-
-    private var recordJSONField: some View {
-        editableField(prompt: "JSON object") {
-            guard let data = draftText.data(using: .utf8),
-                  let value = try? JSONDecoder().decode(JSONValue.self, from: data),
-                  value.objectValue != nil
-            else { return }
-            await model.save(definition, value: value)
         }
     }
 
