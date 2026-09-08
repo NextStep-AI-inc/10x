@@ -10,6 +10,12 @@ struct ProcessSerialNumber {
     var low: UInt32 = 0
 }
 
+struct BackgroundFocusToken {
+    let previous: ProcessSerialNumber
+    let target: ProcessSerialNumber
+    let wid: CGWindowID
+}
+
 enum SkyLight {
     private static let eventRecordLength = 248
     private static let eventRecordLengthByte: UInt8 = 0xf8
@@ -163,6 +169,14 @@ enum SkyLight {
     }
 
     static func activateWithoutRaise(pid: pid_t, wid: CGWindowID) throws {
+        let token = try acquireBackgroundFocus(pid: pid, wid: wid)
+        _ = token
+    }
+
+    /// Focus the target window for synthetic input WITHOUT raising it, remembering
+    /// the user's front process so `releaseBackgroundFocus` can hand focus back.
+    /// Holding synthetic focus across user typing misroutes their real keystrokes.
+    static func acquireBackgroundFocus(pid: pid_t, wid: CGWindowID) throws -> BackgroundFocusToken {
         let spi = try required()
         var previous = ProcessSerialNumber()
         let frontResolved = withUnsafeMutableBytes(of: &previous) { previousBytes in
@@ -172,33 +186,41 @@ enum SkyLight {
         guard frontResolved else {
             throw ComputerError("background_unavailable: window \(wid) could not resolve the front process for background input")
         }
-        guard var target = processPSN(spi: spi, pid: pid, wid: wid) else {
+        guard let target = processPSN(spi: spi, pid: pid, wid: wid) else {
             throw ComputerError("background_unavailable: window \(wid) could not resolve its process serial number for background input")
         }
+        try postFocusRecord(spi: spi, to: previous, wid: wid, marker: 0x02, errorContext: "previous front process")
+        try postFocusRecord(spi: spi, to: target, wid: wid, marker: 0x01, errorContext: "target window")
+        Thread.sleep(forTimeInterval: 0.05)
+        return BackgroundFocusToken(previous: previous, target: target, wid: wid)
+    }
+
+    /// Reverse of acquireBackgroundFocus: defocus the target, refocus the user's
+    /// front process. Best-effort — a failed restore must not mask the action's result.
+    static func releaseBackgroundFocus(_ token: BackgroundFocusToken) {
+        guard let spi = try? required() else { return }
+        try? postFocusRecord(spi: spi, to: token.target, wid: token.wid, marker: 0x02, errorContext: "target window")
+        try? postFocusRecord(spi: spi, to: token.previous, wid: token.wid, marker: 0x01, errorContext: "previous front process")
+    }
+
+    private static func postFocusRecord(spi: RequiredSPI, to psn: ProcessSerialNumber, wid: CGWindowID, marker: UInt8, errorContext: String) throws {
+        var psn = psn
         var record = [UInt8](repeating: 0, count: eventRecordLength)
         record[0x04] = eventRecordLengthByte
         record[0x08] = eventRecordKind
         withUnsafeBytes(of: wid.littleEndian) { bytes in
             record.replaceSubrange(windowIDOffset..<(windowIDOffset + 4), with: bytes)
         }
-        record[focusMarkerOffset] = 0x02
-        let defocused = withUnsafeMutableBytes(of: &previous) { previousBytes in
+        record[focusMarkerOffset] = marker
+        let posted = withUnsafeMutableBytes(of: &psn) { psnBytes in
             record.withUnsafeBufferPointer { recordBytes in
-                guard let previousBase = previousBytes.baseAddress, let recordBase = recordBytes.baseAddress else { return false }
-                return spi.postRecord(previousBase, recordBase) == 0
+                guard let psnBase = psnBytes.baseAddress, let recordBase = recordBytes.baseAddress else { return false }
+                return spi.postRecord(psnBase, recordBase) == 0
             }
         }
-        record[focusMarkerOffset] = 0x01
-        let focused = withUnsafeMutableBytes(of: &target) { targetBytes in
-            record.withUnsafeBufferPointer { recordBytes in
-                guard let targetBase = targetBytes.baseAddress, let recordBase = recordBytes.baseAddress else { return false }
-                return spi.postRecord(targetBase, recordBase) == 0
-            }
+        guard posted else {
+            throw ComputerError("background_unavailable: window \(wid) rejected the SkyLight focus-without-raise record (\(errorContext))")
         }
-        guard defocused, focused else {
-            throw ComputerError("background_unavailable: window \(wid) rejected the SkyLight focus-without-raise record")
-        }
-        Thread.sleep(forTimeInterval: 0.05)
     }
 
     private static func processPSN(spi: RequiredSPI, pid: pid_t, wid: CGWindowID) -> ProcessSerialNumber? {

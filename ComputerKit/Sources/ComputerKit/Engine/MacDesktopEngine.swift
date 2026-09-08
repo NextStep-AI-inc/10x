@@ -12,7 +12,6 @@ import UniformTypeIdentifiers
 public final class MacDesktopEngine: DesktopEngine {
     private static let localEventFilter: UInt32 = 0x01 | 0x02 | 0x04
 
-    private var lastFocusedWid: CGWindowID?
     private let eventSource: CGEventSource = {
         let source = CGEventSource(stateID: .hidSystemState)!
         CGEventSourceSetLocalEventsSuppressionInterval(source, 0)
@@ -142,8 +141,22 @@ public final class MacDesktopEngine: DesktopEngine {
         let pid = window.pid
         let wid = window.id
         switch action {
+        case .type, .key:
+            let siblings = try listWindows().filter { $0.pid == pid }.count
+            if siblings > 1 {
+                throw ComputerError(
+                    "background_unavailable: window \(wid) is one of \(siblings) windows in its application; background keystrokes go to whichever window is key"
+                )
+            }
+        default:
+            break
+        }
+        // Hold synthetic keyboard focus only for the duration of this action —
+        // keeping it would misroute the user's real keystrokes (observed live).
+        let focusToken = try SkyLight.acquireBackgroundFocus(pid: pid, wid: wid)
+        defer { SkyLight.releaseBackgroundFocus(focusToken) }
+        switch action {
         case .click(let point, let button):
-            try ensureBackgroundFocus(pid: pid, wid: wid)
             let group = clickGroupID()
             let (downType, upType, cgButton, buttonNumber) = buttonTypes(button)
             try postMouse(
@@ -156,7 +169,6 @@ public final class MacDesktopEngine: DesktopEngine {
                 x: point.x, y: point.y, phase: 3, clickState: 1, buttonNumber: buttonNumber, group: group
             )
         case .doubleClick(let point):
-            try ensureBackgroundFocus(pid: pid, wid: wid)
             let group = clickGroupID()
             for clickState in 1...2 {
                 try postMouse(
@@ -171,7 +183,6 @@ public final class MacDesktopEngine: DesktopEngine {
                 if clickState < 2 { Thread.sleep(forTimeInterval: 0.08) }
             }
         case .drag(let from, let to):
-            try ensureBackgroundFocus(pid: pid, wid: wid)
             let group = clickGroupID()
             try postMouse(
                 pid: pid, wid: wid, window: window, type: .leftMouseDown, button: .left,
@@ -193,7 +204,6 @@ public final class MacDesktopEngine: DesktopEngine {
                 x: to.x, y: to.y, phase: 3, clickState: 1, buttonNumber: 0, group: group
             )
         case .scroll(let deltaX, let deltaY):
-            try ensureBackgroundFocus(pid: pid, wid: wid)
             let group = clickGroupID()
             let center = CGPoint(x: window.bounds.width / 2, y: window.bounds.height / 2)
             try postMouse(
@@ -219,7 +229,6 @@ public final class MacDesktopEngine: DesktopEngine {
             )
             try postStamped(event, pid: pid, windowID: wid, keyboard: false)
         case .type(let text):
-            try prepareBackgroundKeyboard(window: window)
             for scalar in text {
                 var unichar = Array(String(scalar).utf16)
                 try postKeyboard(CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true)?.applyingUnicode(&unichar), pid: pid, windowID: wid)
@@ -228,7 +237,6 @@ public final class MacDesktopEngine: DesktopEngine {
                 Thread.sleep(forTimeInterval: 0.008)
             }
         case .key(let chord):
-            try prepareBackgroundKeyboard(window: window)
             let (modifiers, keyCode) = try KeyChord.parse(chord)
             for modifier in modifiers {
                 try postKeyboard(CGEvent(keyboardEventSource: eventSource, virtualKey: modifier, keyDown: true), pid: pid, windowID: wid)
@@ -243,23 +251,6 @@ public final class MacDesktopEngine: DesktopEngine {
                 Thread.sleep(forTimeInterval: 0.008)
             }
         }
-    }
-
-    private func ensureBackgroundFocus(pid: pid_t, wid: CGWindowID) throws {
-        guard lastFocusedWid != wid else { return }
-        try SkyLight.activateWithoutRaise(pid: pid, wid: wid)
-        lastFocusedWid = wid
-    }
-
-    private func prepareBackgroundKeyboard(window: WindowInfo) throws {
-        let siblings = try listWindows().filter { $0.pid == window.pid }.count
-        if siblings > 1 {
-            throw ComputerError(
-                "background_unavailable: window \(window.id) is one of \(siblings) windows in its application; background keystrokes go to whichever window is key"
-            )
-        }
-        try SkyLight.activateWithoutRaise(pid: window.pid, wid: window.id)
-        lastFocusedWid = window.id
     }
 
     private func postMouse(
