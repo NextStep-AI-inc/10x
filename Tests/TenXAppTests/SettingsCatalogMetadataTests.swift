@@ -22,8 +22,7 @@ struct SettingsCatalogMetadataTests {
         #expect(catalog.definition(key: "modelRoles")?.description == "OMP text")
     }
 
-    // Task 11: remove .disabled once SettingMetadata.descriptions is populated.
-    @Test(.disabled("Task 11 fills SettingMetadata.descriptions"))
+    @Test
     func curatedDescriptionFillsGap() {
         let catalog = SettingsCatalog.build(from: .object(["modelRoles": entry(type: "record")]))
         #expect(catalog.definition(key: "modelRoles")?.description.isEmpty == false)

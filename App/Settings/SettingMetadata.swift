@@ -570,7 +570,24 @@ enum SettingMetadata {
     /// Gap-fill text for keys whose omp config list entry ships no description.
     /// OMP's own runtime description always wins when present. Hand-written;
     /// the schema documents no keys beyond what config list already reports.
-    static let descriptions: [String: String] = [:]
+    static let descriptions: [String: String] = [
+        "modelRoles": "Which model OMP uses for each internal job (plan, advisor, smol, …). Values are provider/model-id with an optional :effort suffix.",
+        "modelTags": "Free-form tags attached to model selectors, used by routing rules.",
+        "cycleOrder": "Model roles the cycle keybinding rotates through, in order.",
+        "enabledModels": "Models offered in the composer picker. Empty means all available models.",
+        "modelProviderOrder": "Provider priority when the same model is reachable through several providers.",
+        "enabledProviders": "Providers OMP may use. Empty means all connected providers.",
+        "disabledProviders": "Providers OMP must not use, even if connected.",
+        "shellPath": "Shell OMP uses for bash tool calls when none is inherited.",
+        "extensions": "Extension identifiers OMP loads at startup.",
+        "disabledExtensions": "Extensions to skip loading.",
+        "statusLine.leftSegments": "Status line segments rendered left of the prompt, in order.",
+        "statusLine.rightSegments": "Status line segments rendered right of the prompt, in order.",
+        "task.agentModelOverrides": "Per-agent model overrides; beats modelRoles for that agent.",
+        "task.agentAdvisor": "Per-agent advisor participation (on/off-style values).",
+        "task.agentPrewalk": "Per-agent prewalk configuration.",
+        "model.toolCallLoopGuard.exemptTools": "Tools exempt from the repeated-tool-call loop guard.",
+    ]
 
     /// Closed value sets for array settings, where OMP's source enumerates them.
     static let knownArrayValues: [String: [String]] = [
