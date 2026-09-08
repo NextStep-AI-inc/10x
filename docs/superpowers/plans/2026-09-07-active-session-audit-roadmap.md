@@ -14,19 +14,19 @@ Source inspection and existing test coverage are recorded separately from execut
 
 ## 2. Interrupt and acknowledge
 
-- [ ] **STOP:** Main has independent Stop beside Send and Cmd-Period. Verify staged text/images, actual runtime settling, open flyouts, and focused pending decisions; change only if the real flow fails.
+- [x] **STOP:** Main has independent Stop beside Send and Cmd-Period. Verify staged text/images, actual runtime settling, open flyouts, and focused pending decisions; change only if the real flow fails.
 - [x] **QUEUE:** Main has per-message sending/queued/unconfirmed receipts with echo reconciliation. Refresh the authoritative queue count after acceptance and consumption, without allowing older replies to overwrite newer state. Verify multiple follow-ups, steering, rejection, and exactly one echo per accepted message.
 
 ## 3. Readable turns
 
-- [ ] **ORDER:** Main normalizes contiguous text segments around inline tools for live and reopened history, retaining message identity and render lineage. Verify real provider live/completion/reopen order and parallel completions. Existing fixtures cover text/tool/text, duplicate IDs, repeated snapshots, and reconciliation.
-- [ ] **TURNS:** Keep existing tool grouping and disclosure. Add stable turn boundaries, completed duration/status, and activity derived from the active turn/tool set. Verify long quiet intervals, streaming text, concurrent tools, errors, completion, and preserved disclosure state.
+- [x] **ORDER:** Main normalizes contiguous text segments around inline tools for live and reopened history, retaining message identity and render lineage. Verify real provider live/completion/reopen order and parallel completions. Existing fixtures cover text/tool/text, duplicate IDs, repeated snapshots, and reconciliation.
+- [x] **TURNS:** Keep existing tool grouping and disclosure. Add stable turn boundaries, completed duration/status, and activity derived from the active turn/tool set. Verify long quiet intervals, streaming text, concurrent tools, errors, completion, and preserved disclosure state.
 
 ## 4. Awareness and review
 
 - [ ] **SIGNALS:** Main's rail already exposes working, needs-input, failure, stopped, and unread completion. Use the same session status for the header/turn/composer and provide a way to reach a pending request while reading older content. Verify switching between two sessions and non-overlapping states.
 - [ ] **REVIEW:** Add a compact per-turn changed-file index linking to existing edit details. State its scope/completeness, deduplicate repeated paths, and avoid summed per-edit line totals. Exercise edit-tool and shell-generated files alongside pre-existing/concurrent changes. A tool-derived index may explicitly exclude shell writes; an observed git delta must not claim authorship. A full git review pane is a later product choice.
-- [ ] **CONTEXT:** Main has a usage meter/details, unknown/loading/failure states, and boundary refresh. Add an honest compaction action with availability/progress/failure feedback using supported runtime behavior. Verify usage before/after compaction and provider limitations; account quota remains distinct.
+- [x] **CONTEXT:** Main has a usage meter/details, unknown/loading/failure states, and boundary refresh. Add an honest compaction action with availability/progress/failure feedback using supported runtime behavior. Verify usage before/after compaction and provider limitations; account quota remains distinct.
 - [ ] **TITLES:** Main has persisted automatic titles, rename, search, and previous/next shortcuts. Remember the last valid session route and refresh git metadata after relevant changes. Verify duplicate titles, missing projects, relaunch, and branch metadata without changing the user's checkout.
 
 ## 5. Input and permission decisions
@@ -55,7 +55,28 @@ Source inspection and existing test coverage are recorded separately from execut
 
 - Baseline OmpKit suite: 217 tests passed before application changes (`/tmp/10x-recovery-ompkit-baseline.log`).
 - SAVE / OPEN / ERROR acceptance is recorded in the [Release evidence](../evidence/2026-09-07-session-continuity-recovery/README.md), including real warm/cold persistence and fixture-driven rejection. PR #32 stays draft on the documented baseline/base gates.
-- QUEUE is verified in [PR #33](https://github.com/NextStep-AI-inc/10x/pull/33): native follow-up and steering counts, consumption, rejected-input retention, one persisted echo, and reopened history. [Release evidence](https://github.com/NextStep-AI-inc/10x/blob/codex/active-session-queue/docs/superpowers/evidence/2026-09-07-stop-and-queue/README.md). STOP remains open: OMP background jobs can restart after abort; the bounded app shutdown/Restart correction is in [PR #36](https://github.com/NextStep-AI-inc/10x/pull/36), with focused pending-decision QA still required.
+- QUEUE is verified in [PR #33](https://github.com/NextStep-AI-inc/10x/pull/33): native follow-up and steering counts, consumption, rejected-input retention, one persisted echo, and reopened history. [Release evidence](https://github.com/NextStep-AI-inc/10x/blob/codex/active-session-queue/docs/superpowers/evidence/2026-09-07-stop-and-queue/README.md). STOP is now verified in [PR #36](https://github.com/NextStep-AI-inc/10x/pull/36): actual background/foreground work stops, staged text/images remain, and Command-period works from model and pending-input fields.
 - Image history restoration is verified in [PR #34](https://github.com/NextStep-AI-inc/10x/pull/34): saved pixels, one new image prompt/receipt, and quit/relaunch/reopen all passed in Release. Unsent disk drafts remain INPUT.
-- ORDER / TURNS are in [PR #35](https://github.com/NextStep-AI-inc/10x/pull/35): 28 projection/activity/render tests plus 23 snapshot/search/disclosure/viewport checks pass; actual Release QA is in progress. The two new summary/activity references were visually reviewed before promotion.
+- ORDER / TURNS passed final native acceptance in [PR #35](https://github.com/NextStep-AI-inc/10x/pull/35): actual parallel completion and reopened source order, quiet intervals, session switching, disclosure, search, Jump to latest, and sending while reading older content. Final production `b4bf0b0`, 33 affected regression checks, with approved summary snapshots and earlier focused checks.
 - Keep each item unchecked until this run has evidence for its full stated scope, or explicitly record the remaining limitation beside it.
+
+
+## Implementation rollup, September 8
+
+This is a progress record, not a claim that the entire stack is ready to merge. Native checks paused when the Mac locked; code review and focused tests continued. All PRs remain draft pending their stated acceptance and integration gates.
+
+| Audit item | PRs | Current evidence | Remaining |
+| --- | --- | --- | --- |
+| SAVE / OPEN / ERROR | [32](https://github.com/NextStep-AI-inc/10x/pull/32) | Real warm/cold disk persistence, reopen, and distinct recovery paths verified | Stack integration |
+| STOP | [36](https://github.com/NextStep-AI-inc/10x/pull/36) | Real background/foreground termination, preserved staged input, pending/model keyboard focus verified | Stack integration |
+| QUEUE | [33](https://github.com/NextStep-AI-inc/10x/pull/33) | Follow-up/steering acceptance, decrement, rejection, and exactly one echo verified | Stack integration |
+| ORDER / TURNS | [35](https://github.com/NextStep-AI-inc/10x/pull/35) | Final native acceptance and 33 affected regressions passed | Stack integration |
+| SIGNALS | [37](https://github.com/NextStep-AI-inc/10x/pull/37) | Shared attention control, explicit jump, focus correction; 31 focused checks and approved snapshots | Native arrival/two-session acceptance |
+| REVIEW | [38](https://github.com/NextStep-AI-inc/10x/pull/38) | Scoped tool-reported file list/navigation; 14 focused checks and approved snapshot | Native edit/write/multi-file navigation |
+| CONTEXT | [39](https://github.com/NextStep-AI-inc/10x/pull/39) | Actual OMP snapcompact, controlled native busy/Stop/failure/unsupported, controller regressions | Final capture/QA close after unlock; integration. PNG and short timeout are regression-only |
+| TITLES | [42](https://github.com/NextStep-AI-inc/10x/pull/42), [44](https://github.com/NextStep-AI-inc/10x/pull/44) | Last-valid-route regressions passed; fallback persistence/git refresh in implementation | Final review and native naming/metadata/route checks |
+| PERMISSIONS | [37](https://github.com/NextStep-AI-inc/10x/pull/37), [45](https://github.com/NextStep-AI-inc/10x/pull/45) | Existing one-call card behavior retained; global-default scope plan committed | Scope copy and native request matrix. RPC has no active effective-policy field or Always Allow |
+| INPUT | [34](https://github.com/NextStep-AI-inc/10x/pull/34), [42](https://github.com/NextStep-AI-inc/10x/pull/42), [43](https://github.com/NextStep-AI-inc/10x/pull/43) | Image history verified in Release; draft lifecycle and file/IME/error focused checks passed | Review corrections at disk-write/command-menu boundaries; native relaunch/picker/IME |
+| DETAILS | [41](https://github.com/NextStep-AI-inc/10x/pull/41) | Reliable tool timing, running output tail, preferred editor, child links; focused checks and Release build passed | Native output/editor/child navigation |
+
+The original six activity snapshot failures were reproduced at the baseline and remain explicit. Build/cache execution approval and Mac-lock limitations are recorded separately from code failures. No merge, deployment, actual user-policy change, or main-checkout edit has been performed.
