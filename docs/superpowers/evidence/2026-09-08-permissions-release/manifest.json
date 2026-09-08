@@ -1,0 +1,27 @@
+{
+  "name": "permissions",
+  "sourceCommit": "ab4f9c95b885ef9e10ba5098e925c22c3dd19606",
+  "command": [
+    "xcodebuild",
+    "build",
+    "-project",
+    "10x.xcodeproj",
+    "-scheme",
+    "10x",
+    "-configuration",
+    "Release",
+    "-destination",
+    "generic/platform=macOS",
+    "-derivedDataPath",
+    "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj",
+    "ARCHS=arm64",
+    "CODE_SIGNING_ALLOWED=NO"
+  ],
+  "log": "/tmp/10x-permissions-final-release.log",
+  "logSHA256": "94bf2c39373cb316737833c0dd86c36244cea15d3d0a3d8e314fcce40a1ae1e8",
+  "app": "/tmp/10x-permissions-final-build/10x-permissions.app",
+  "bundleIdentifier": "com.nextstep.tenx.permissionsqa",
+  "unsignedExecutableSHA256": "86713e6f77938eadccad970e64baaa56ed16623c7ff177a53912de965b62971c",
+  "packagedExecutableSHA256": "bbdbcdf09bcaffe0cb42af2a505c9fa0c1559e5c6463118bb2618f30e6714690",
+  "nativeLaunched": false
+}
