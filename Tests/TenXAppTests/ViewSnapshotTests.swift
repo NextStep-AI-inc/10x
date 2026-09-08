@@ -2716,6 +2716,17 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
+@Test func composerIndependentWarningsSnapshot() throws {
+    try assertSnapshot(
+        ComposerFeedbackView(messages: ComposerFeedback.messages(
+            attachment: "Could not attach architecture.png. The limit is 8 images.",
+            model: "Models couldn’t be loaded."))
+            .padding(24),
+        name: "composer-independent-warnings",
+        size: CGSize(width: 560, height: 110))
+}
+
+@MainActor
 @Test func composerFooterFastAbsentSnapshot() async throws {
     let cursor = ComposerModelInfo(
         modelID: "gpt-5",
