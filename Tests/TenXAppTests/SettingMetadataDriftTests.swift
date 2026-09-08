@@ -5,11 +5,14 @@ import Testing
 
 /// Opt-in drift check for the hand-curated SettingMetadata table against the
 /// installed omp binary. Every probe fails by construction, so the user's
-/// config is never mutated. Run with OMP_DRIFT_TESTS=1.
+/// config is never mutated. Run with:
+/// `TEST_RUNNER_OMP_DRIFT_TESTS=1 xcodebuild ... -only-testing:TenXAppTests/SettingMetadataDriftTests test`
+/// (macOS test hosts require the `TEST_RUNNER_` prefix; see docs/testing.md.)
 ///
 /// Mechanism (verified against OMP 18.1.10):
 /// - `omp config set <enum-key> <sentinel>` exits 1, stderr lists "Valid values: …"
 /// - `omp config set <unknown-key> x` exits 1 with "Unknown setting"
+@Suite(.serialized)
 struct SettingMetadataDriftTests {
     struct Result { let exitCode: Int32; let stdout: String; let stderr: String }
 
@@ -29,11 +32,25 @@ struct SettingMetadataDriftTests {
         let stderr = Pipe()
         process.standardOutput = stdout
         process.standardError = stderr
+        let drain = DispatchGroup()
+        var stdoutData = Data()
+        var stderrData = Data()
+        drain.enter()
+        DispatchQueue.global().async {
+            stdoutData = stdout.fileHandleForReading.readDataToEndOfFile()
+            drain.leave()
+        }
+        drain.enter()
+        DispatchQueue.global().async {
+            stderrData = stderr.fileHandleForReading.readDataToEndOfFile()
+            drain.leave()
+        }
         try process.run()
         process.waitUntilExit()
+        drain.wait()
         return Result(exitCode: process.terminationStatus,
-                      stdout: String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self),
-                      stderr: String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self))
+                      stdout: String(decoding: stdoutData, as: UTF8.self),
+                      stderr: String(decoding: stderrData, as: UTF8.self))
     }
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["OMP_DRIFT_TESTS"] == "1"))
@@ -53,8 +70,11 @@ struct SettingMetadataDriftTests {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: ", ")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
-            #expect(listed == options.map(\.value),
-                    "\(key): OMP has \(listed), curated table has \(options.map(\.value))")
+            let curatedValues = options.map(\.value)
+            #expect(listed.count == Set(listed).count,
+                    "\(key): OMP Valid values list has duplicates: \(listed)")
+            #expect(listed.sorted() == curatedValues.sorted(),
+                    "\(key): OMP has \(listed), curated table has \(curatedValues)")
         }
     }
 
