@@ -15,9 +15,19 @@ final class SettingsViewModel {
     var settingCount: Int { catalog.definitions.count }
 
     @ObservationIgnored private let service: OmpConfigService
+    @ObservationIgnored private let catalogService: OmpModelCatalogService?
+    private(set) var catalogModels: [ComposerModelInfo] = []
 
-    init(service: OmpConfigService) {
+    init(service: OmpConfigService, catalog: OmpModelCatalogService? = nil) {
         self.service = service
+        self.catalogService = catalog
+    }
+
+    func loadCatalogIfNeeded() async {
+        guard catalogModels.isEmpty, let catalogService else { return }
+        if let snapshot = try? await catalogService.load() {
+            catalogModels = snapshot.models
+        }
     }
 
     @discardableResult

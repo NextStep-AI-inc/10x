@@ -33,8 +33,10 @@ struct AppDependencies: Sendable {
         self.startupTiming = startupTiming
         self.makeProcessManager = makeProcessManager
         self.makeSettingsModel = makeSettingsModel ?? { executableURL in
-            SettingsViewModel(service: OmpConfigService(
-                runner: OmpConfigProcessRunner(executableURL: executableURL)))
+            SettingsViewModel(
+                service: OmpConfigService(
+                    runner: OmpConfigProcessRunner(executableURL: executableURL)),
+                catalog: OmpModelCatalogService(executableURL: executableURL))
         }
         self.makeProviderModel = makeProviderModel
         self.makeComposerControls = makeComposerControls
@@ -50,8 +52,10 @@ struct AppDependencies: Sendable {
             SessionProcessManager(executable: executable)
         },
         makeSettingsModel: { executableURL in
-            SettingsViewModel(service: OmpConfigService(
-                runner: OmpConfigProcessRunner(executableURL: executableURL)))
+            SettingsViewModel(
+                service: OmpConfigService(
+                    runner: OmpConfigProcessRunner(executableURL: executableURL)),
+                catalog: OmpModelCatalogService(executableURL: executableURL))
         },
         makeProviderModel: { executableURL in
             ProviderManagementViewModel(
