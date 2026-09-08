@@ -45,12 +45,12 @@ struct SessionMapWalkthroughView: View {
             .focused($isWalkthroughFocused)
             .onKeyPress(keys: [.leftArrow, .rightArrow], phases: .down) { press in
                 guard isWalkthroughFocused else { return .ignored }
-                if press.key == .leftArrow, stepIndex > 0 {
-                    select(stepIndex - 1)
+                if press.key == .leftArrow {
+                    if stepIndex > 0 { select(stepIndex - 1) }
                     return .handled
                 }
-                if press.key == .rightArrow, stepIndex < flow.steps.count - 1 {
-                    select(stepIndex + 1)
+                if press.key == .rightArrow {
+                    if stepIndex < flow.steps.count - 1 { select(stepIndex + 1) }
                     return .handled
                 }
                 return .ignored
@@ -64,8 +64,23 @@ struct SessionMapWalkthroughView: View {
     }
 
     private func select(_ index: Int) {
-        guard flow.steps.indices.contains(index) else { return }
-        focus.flowStepIndex = index
-        focus.selectedNodeID = flow.steps[index].node
+        guard let updatedFocus = Self.focus(
+            afterSelecting: index,
+            in: flow,
+            from: focus
+        ) else { return }
+        focus = updatedFocus
+    }
+
+    static func focus(
+        afterSelecting index: Int,
+        in flow: SessionMapFlow,
+        from focus: SessionMapFocus
+    ) -> SessionMapFocus? {
+        guard flow.steps.indices.contains(index) else { return nil }
+        var updatedFocus = focus
+        updatedFocus.flowStepIndex = index
+        updatedFocus.selectedNodeID = flow.steps[index].node
+        return updatedFocus
     }
 }

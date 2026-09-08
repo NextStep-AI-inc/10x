@@ -29,6 +29,30 @@ import Testing
     ) == focus)
 }
 
+@MainActor
+@Test func sessionMapWalkthroughSelectionUpdatesStepAndNodeTogether() throws {
+    let document = try SessionMapFixtures.document(SessionMapFixtures.planningXML)
+    let flow = try #require(document.flow)
+    let focus = SessionMapFocus(
+        selectedNodeID: flow.steps[0].node,
+        hoveredNodeID: "writer",
+        focusedNodeID: nil,
+        flowStepIndex: 0)
+
+    let updated = try #require(SessionMapWalkthroughView.focus(
+        afterSelecting: 1,
+        in: flow,
+        from: focus))
+
+    #expect(updated.flowStepIndex == 1)
+    #expect(updated.selectedNodeID == flow.steps[1].node)
+    #expect(updated.hoveredNodeID == focus.hoveredNodeID)
+    #expect(SessionMapWalkthroughView.focus(
+        afterSelecting: flow.steps.endIndex,
+        in: flow,
+        from: focus) == nil)
+}
+
 @Test func sessionMapRemovedFlowStepResetsSelection() throws {
     let previous = try SessionMapFixtures.document(SessionMapFixtures.chainXML)
     let updated = try SessionMapFixtures.document("""
