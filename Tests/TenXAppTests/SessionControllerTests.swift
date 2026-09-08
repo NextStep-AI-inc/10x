@@ -222,6 +222,74 @@ import Testing
     await manager.closeAll()
 }
 
+@Test func successfulCompactionClosesWhenAuthoritativeHistoryIsUnavailable() async throws {
+    let knownRecovery =
+        "Context was compacted, but saved history couldn’t be reloaded. Restart to reload saved history."
+    for loader in [CompactionReloadFailure.nilHistory, .thrownError] {
+        let manager = contextFakeManager(mode: "compact-success")
+        let historyLoader = FailingCompactionHistoryLoader(failure: loader)
+        let controller = SessionController(
+            processManager: manager,
+            historyLoader: { path in try await historyLoader.load(path: path) })
+        await controller.openNew(projectURL: try temporaryDirectory())
+        controller.draft = "Preserved after known success"
+
+        await controller.compactContext()
+
+        #expect(isStopped(controller.runtimeState), "loader: \(loader)")
+        #expect(controller.draft == "Preserved after known success")
+        #expect(controller.contextCompactionRecoveryMessage == knownRecovery)
+        #expect(controller.contextCompactionRecoveryMessage?.contains("unknown") == false)
+        #expect(controller.canRestartAfterDismissal)
+        #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+        await manager.closeAll()
+    }
+}
+
+@Test func cancellationAfterCompactionSuccessClosesWithKnownSuccessRecovery() async throws {
+    let manager = contextFakeManager(mode: "compact-success")
+    let loader = CancellableCompactionHistoryLoader()
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { path in try await loader.load(path: path) })
+    await controller.openNew(projectURL: try temporaryDirectory())
+    let operation = Task { await controller.compactContext() }
+    #expect(await loader.waitForCompactedHistoryRequest())
+
+    operation.cancel()
+    await operation.value
+
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.contextCompactionRecoveryMessage ==
+        "Context was compacted, but saved history couldn’t be reloaded. Restart to reload saved history.")
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
+@Test func cancellationWhileCompactionResultIsPendingClosesWithUnknownRecovery() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLog = directory.appending(path: "commands.log")
+    let manager = contextFakeManager(mode: "compact-hang", commandLog: commandLog)
+    let controller = SessionController(
+        processManager: manager,
+        contextCompactionTimeout: .seconds(5))
+    await controller.openNew(projectURL: directory)
+    let operation = Task { await controller.compactContext() }
+    #expect(await eventually {
+        (try? String(contentsOf: commandLog, encoding: .utf8).contains("compact")) == true
+    })
+
+    operation.cancel()
+    await operation.value
+
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.contextCompactionRecoveryMessage ==
+        "The compaction result is unknown. Restart to reload saved history.")
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
 @Test func knownCompactionFailuresStayUsableAndUnsupportedDisablesTheAction() async throws {
     let failureManager = contextFakeManager(mode: "compact-failure")
     let failed = SessionController(processManager: failureManager)
@@ -1271,6 +1339,57 @@ private actor CompactionHistoryLoader {
         return TranscriptHistory(items: [
             messageItem(id: "compacted-history", text: "Authoritative compacted history"),
         ])
+    }
+}
+
+private enum CompactionReloadFailure: CustomStringConvertible {
+    case nilHistory
+    case thrownError
+
+    var description: String {
+        switch self {
+        case .nilHistory: "nil history"
+        case .thrownError: "thrown error"
+        }
+    }
+}
+
+private actor FailingCompactionHistoryLoader {
+    private var requestCount = 0
+    private let failure: CompactionReloadFailure
+
+    init(failure: CompactionReloadFailure) {
+        self.failure = failure
+    }
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount > 1 else { return nil }
+        switch failure {
+        case .nilHistory: return nil
+        case .thrownError: throw ControlledHistoryError.failed
+        }
+    }
+}
+
+private actor CancellableCompactionHistoryLoader {
+    private var requestCount = 0
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount > 1 else { return nil }
+        while true {
+            try await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    func waitForCompactedHistoryRequest(timeout: Duration = .seconds(5)) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout.seconds)
+        while Date() < deadline {
+            if requestCount > 1 { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return requestCount > 1
     }
 }
 

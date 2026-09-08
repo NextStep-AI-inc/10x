@@ -144,6 +144,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         case runtimeUnavailable
         case operationBusy
         case eventFenceClosed
+        case compactedHistoryUnavailable
     }
 
     static let defaultContextCompactionTimeout: Duration = .seconds(600)
@@ -1647,7 +1648,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             guard await eventFence.wait(through: receipt.precedingEventCount) else {
                 throw ControllerError.eventFenceClosed
             }
-            guard isCurrent(context), !Task.isCancelled else { return }
+            guard isCurrent(context) else { return }
             guard receipt.response.success else {
                 if receipt.response.code?.lowercased().contains("unsupported") == true {
                     isContextCompactionUnsupported = true
@@ -1658,38 +1659,82 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 }
                 return
             }
+        } catch {
+            guard isCurrent(context) else { return }
+            await closeAfterUncertainCompaction(error: error, context: context)
+            return
+        }
 
-            if let sessionPath, let processor = context.processor {
-                do {
-                    if let history = try await historyLoader(sessionPath) {
-                        guard isCurrent(context), !Task.isCancelled else { return }
-                        reconciliationGeneration &+= 1
-                        let generation = reconciliationGeneration
-                        await processor.reconcile(history, hasWarning: false, generation: generation)
-                        guard isCurrent(context), reconciliationGeneration == generation else { return }
-                        install(snapshot: await processor.currentSnapshot())
-                    }
-                } catch {
-                    guard isCurrent(context), !Task.isCancelled else { return }
-                    contextCompactionErrorMessage =
-                        "Context was compacted, but saved history couldn’t be reloaded."
-                }
-            }
-            guard isCurrent(context), !Task.isCancelled else { return }
+        do {
+            guard !Task.isCancelled else { throw CancellationError() }
+            guard let sessionPath, let processor = context.processor,
+                  let history = try await historyLoader(sessionPath)
+            else { throw ControllerError.compactedHistoryUnavailable }
+            guard isCurrent(context) else { return }
+            guard !Task.isCancelled else { throw CancellationError() }
+            reconciliationGeneration &+= 1
+            let generation = reconciliationGeneration
+            await processor.reconcile(history, hasWarning: false, generation: generation)
+            guard isCurrent(context), reconciliationGeneration == generation else { return }
+            guard !Task.isCancelled else { throw CancellationError() }
+            install(snapshot: await processor.currentSnapshot())
+            guard isCurrent(context) else { return }
+        } catch {
+            guard isCurrent(context) else { return }
+            await closeAfterKnownSuccessfulCompaction(error: error, context: context)
+            return
+        }
+
+        do {
+            guard !Task.isCancelled else { throw CancellationError() }
             let state = try await handle.client.send(.getState(), timeout: .seconds(5))
-            guard isCurrent(context), !Task.isCancelled else { return }
+            guard isCurrent(context) else { return }
+            guard !Task.isCancelled else { throw CancellationError() }
             contextRevision &+= 1
             contextBreakdown = nil
             contextErrorMessage = nil
             applyState(state.data)
         } catch {
             guard isCurrent(context) else { return }
-            await closeAfterUncertainCompaction(error: error, context: context)
+            await closeAfterKnownSuccessfulCompactionStateFailure(error: error, context: context)
         }
     }
 
     private func closeAfterUncertainCompaction(
         error: any Error,
+        context: PipelineContext
+    ) async {
+        await closeAfterCompaction(
+            recoveryMessage: "The compaction result is unknown. Restart to reload saved history.",
+            diagnostic: "Compaction status unknown: \(error)",
+            context: context)
+    }
+
+    private func closeAfterKnownSuccessfulCompaction(
+        error: any Error,
+        context: PipelineContext
+    ) async {
+        await closeAfterCompaction(
+            recoveryMessage:
+                "Context was compacted, but saved history couldn’t be reloaded. Restart to reload saved history.",
+            diagnostic: "Compaction succeeded but freshness reload failed: \(error)",
+            context: context)
+    }
+
+    private func closeAfterKnownSuccessfulCompactionStateFailure(
+        error: any Error,
+        context: PipelineContext
+    ) async {
+        await closeAfterCompaction(
+            recoveryMessage:
+                "Context was compacted, but refreshed session state couldn’t be loaded. Restart to reload saved history.",
+            diagnostic: "Compaction succeeded but state refresh failed: \(error)",
+            context: context)
+    }
+
+    private func closeAfterCompaction(
+        recoveryMessage: String,
+        diagnostic: String,
         context: PipelineContext
     ) async {
         guard isCurrent(context) else { return }
@@ -1700,9 +1745,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         wasStoppedByUser = false
         runtimeState = .stopped(code: nil, stderrTail: "")
         queuedMessageCount = 0
-        contextCompactionRecoveryMessage =
-            "The compaction result is unknown. Restart to reload saved history."
-        logText = "[Session:compactContext] Compaction status unknown: \(error)"
+        contextCompactionRecoveryMessage = recoveryMessage
+        logText = "[Session:compactContext] \(diagnostic)"
         isRecoveryPresented = true
         reportActivity()
 
