@@ -65,8 +65,7 @@ struct SessionHeaderView: View {
 
     private var computerItem: (label: String, isControlling: Bool)? {
         guard controller.computerUse.isEnabled else { return nil }
-        let names = controller.computerUse.windowAppNames
-        let label = names.first ?? "Computer"
+        let label = controller.computerUse.focusWindowLabel ?? "Computer"
         return (label, controller.computerUse.phase == .controlling)
     }
 }

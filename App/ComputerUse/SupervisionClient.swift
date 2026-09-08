@@ -72,7 +72,12 @@ public final class SupervisionClient: @unchecked Sendable {
                 defer { continuation.resume() }
                 guard let client = try? DaemonClient(socketPath: path) else { return }
                 try? client.send(.object(["role": .string("supervision")]))
-                while true {
+                // Drain handshake (ack → replay → permissions) so the command
+                // isn't racing a socket the daemon still considers mid-handshake.
+                // Wall-clock cap: a chatty daemon (preview heartbeat) must not
+                // hold Stop hostage — delivery doesn't require seeing permissions.
+                let deadline = Date().addingTimeInterval(3)
+                while Date() < deadline {
                     guard let line = try? client.receive(timeout: 2) else { break }
                     if line["type"] == .string("permissions") { break }
                 }

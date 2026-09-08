@@ -3,12 +3,14 @@ import CoreGraphics
 import Foundation
 
 struct OverlayState: Equatable {
-    var app: String
-    var frame: CGRect
+    /// System-owned tag identity: "Harness · session label", falling back to
+    /// the claimed window's app name when the session set no label.
+    var identity: String
+    var frame: CGRect // Quartz top-left screen coords, as reported by CGWindowList
     var status: String?
     var cursor: CGPoint?
     var cursorKind: String?
-    var cursorAt: Date?
+    var isOnscreen: Bool
 }
 
 /// Pure reducer behind the on-screen overlay. One state per claimed window.
@@ -16,17 +18,22 @@ struct OverlayState: Equatable {
 final class OverlayModel {
     private(set) var overlays: [Int: OverlayState] = [:] // windowID -> state
     private var sessionStatus: [Int: String] = [:]
+    private var sessionIdentity: [Int: String] = [:]
     private var windowSession: [Int: Int] = [:]
 
     func apply(_ event: SupervisionEvent) {
         switch event {
-        case .windowClaimed(let session, _, let windowID, let app, _, let bounds):
+        case .sessionStarted(let session, let harness, let label, _):
+            sessionIdentity[session] = label.map { "\(harness) · \($0)" } ?? harness
+        case .windowClaimed(let session, let harness, let windowID, let app, _, let bounds):
             windowSession[windowID] = session
+            // No session label → fall back to the app name for readability.
+            let identity = sessionIdentity[session] ?? (app.isEmpty ? harness : "\(harness) · \(app)")
             overlays[windowID] = OverlayState(
-                app: app,
+                identity: identity,
                 frame: Self.parseBounds(bounds) ?? .zero,
                 status: sessionStatus[session],
-                cursor: nil, cursorKind: nil, cursorAt: nil)
+                cursor: nil, cursorKind: nil, isOnscreen: true)
         case .windowReleased(_, let windowID, _):
             overlays.removeValue(forKey: windowID)
             windowSession.removeValue(forKey: windowID)
@@ -35,37 +42,53 @@ final class OverlayModel {
             guard overlays[windowID] != nil, let x, let y else { return }
             overlays[windowID]?.cursor = CGPoint(x: x, y: y)
             overlays[windowID]?.cursorKind = kind
-            overlays[windowID]?.cursorAt = Date()
         case .statusChanged(let session, let status):
             sessionStatus[session] = status
             for (windowID, owner) in windowSession where owner == session {
                 overlays[windowID]?.status = status
             }
         case .sessionEnded(let session, _):
-            for (windowID, owner) in windowSession where owner == session {
-                overlays.removeValue(forKey: windowID)
-                windowSession.removeValue(forKey: windowID)
-            }
-            sessionStatus.removeValue(forKey: session)
-        case .stopped:
-            overlays.removeAll()
-            windowSession.removeAll()
-            sessionStatus.removeAll()
+            removeSession(session)
+        case .stopped(_, let session):
+            // nil = global shut-off; otherwise only that session's overlays.
+            if let session { removeSession(session) } else { removeAll() }
         default:
             break
         }
     }
 
     /// Reposition overlays as windows move (called on a 0.5s timer).
-    func pollBounds(_ boundsProvider: (Int) -> CGRect?) {
-        for windowID in overlays.keys {
-            if let bounds = boundsProvider(windowID) {
+    /// Provider returns nil when the window is gone, otherwise the current
+    /// Quartz bounds plus whether the window is onscreen (minimized or
+    /// another Space → overlay hides but survives).
+    func pollBounds(_ boundsProvider: (Int) -> (CGRect, Bool)?) {
+        for windowID in Array(overlays.keys) {
+            if let (bounds, isOnscreen) = boundsProvider(windowID) {
                 overlays[windowID]?.frame = bounds
+                overlays[windowID]?.isOnscreen = isOnscreen
             } else {
-                overlays.removeValue(forKey: windowID) // window closed
+                // ponytail: screen-recording revocation also yields "gone" —
+                // the overlay returns on the next claim. Ceiling noted.
+                overlays.removeValue(forKey: windowID)
                 windowSession.removeValue(forKey: windowID)
             }
         }
+    }
+
+    func removeAll() {
+        overlays.removeAll()
+        windowSession.removeAll()
+        sessionStatus.removeAll()
+        sessionIdentity.removeAll()
+    }
+
+    private func removeSession(_ session: Int) {
+        for (windowID, owner) in windowSession where owner == session {
+            overlays.removeValue(forKey: windowID)
+            windowSession.removeValue(forKey: windowID)
+        }
+        sessionStatus.removeValue(forKey: session)
+        sessionIdentity.removeValue(forKey: session)
     }
 
     static func parseBounds(_ string: String) -> CGRect? {

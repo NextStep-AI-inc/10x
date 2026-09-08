@@ -1,20 +1,30 @@
 import SwiftUI
 
 /// Drawn inside a click-through panel exactly over the claimed window.
+/// The panel is the window frame plus `sideInset` on every side plus
+/// `tagHeadroom` above — the tag lives in that headroom, the frame and
+/// cursor are offset down/into the window's rect within the panel.
 struct ComputerUseOverlayView: View {
+    static let tagHeadroom: CGFloat = 24
+    static let sideInset: CGFloat = 6
+
     let state: OverlayState
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             TwoCornerFrame()
                 .stroke(TenXPalette.color(TenXPalette.cyanHex), lineWidth: 1.5)
+                .padding(EdgeInsets(
+                    top: Self.tagHeadroom, leading: Self.sideInset,
+                    bottom: Self.sideInset, trailing: Self.sideInset))
 
             tag
-                .offset(x: -1, y: -22)
+                .padding(.top, 3)
+                .padding(.leading, Self.sideInset - 1)
 
             if let cursor = state.cursor {
                 CursorDot(kind: state.cursorKind)
-                    .position(cursor)
+                    .position(x: cursor.x + Self.sideInset, y: cursor.y + Self.tagHeadroom)
                     .transition(.scale.combined(with: .opacity))
             }
         }
@@ -23,7 +33,7 @@ struct ComputerUseOverlayView: View {
 
     private var tag: some View {
         HStack(spacing: 6) {
-            Text(state.app)
+            Text(state.identity)
                 .font(TenXTypography.mono(size: 9, weight: .semibold))
             if let status = state.status, !status.isEmpty {
                 Text(status)

@@ -311,10 +311,9 @@ final class AppModel {
             object: nil,
             queue: .main)
         { [weak self] _ in
-            Task { @MainActor in
-                self?.overlayController.stop()
-                self?.supervision.stopAll()
-            }
+            // Delivered on the main queue — a Task hop can lose the race with exit.
+            MainActor.assumeIsolated { self?.overlayController.stop() }
+            self?.supervision.stopAll()
         })
     }
 }
