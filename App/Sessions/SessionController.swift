@@ -735,7 +735,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         isStopping = true
         wasStoppedByUser = true
         runtimeState = .stopped(code: nil, stderrTail: "")
-        _ = TranscriptReducer.interruptRunningTools(in: &items, at: stoppedAt)
+        _ = TranscriptReducer.settleActiveTurnAfterStop(in: &items, at: stoppedAt)
         isRecoveryPresented = true
         queuedMessageCount = 0
         markInitialSubmissionFailed()

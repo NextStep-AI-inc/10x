@@ -282,6 +282,34 @@ struct TranscriptReducer {
     }
 
     @discardableResult
+    static func settleActiveTurnAfterStop(
+        in items: inout [TranscriptItem],
+        at date: Date
+    ) -> Bool {
+        guard let activeTurn = TranscriptTurnProjection.sections(
+            from: items,
+            runtimeState: .stopped(code: nil, stderrTail: "")).last
+        else { return false }
+        let activeIDs = Set(activeTurn.items.map(\.viewID))
+        let previous = items
+        items = items.compactMap { item in
+            guard activeIDs.contains(item.viewID) else { return item }
+            switch item {
+            case .message(let message):
+                return .message(message.settledAfterStop(at: date))
+            case .tool(var tool) where tool.phase == .running:
+                tool.update(phase: .interrupted, endDate: .some(date))
+                return .tool(tool)
+            case .extensionUI(let state) where state.requiresUserInput:
+                return nil
+            default:
+                return item
+            }
+        }
+        return previous != items
+    }
+
+    @discardableResult
     mutating func load(history: TranscriptHistory) -> TranscriptMutation {
         let previous = items
         items = history.items

@@ -28,6 +28,11 @@ import Testing
             return tool.id == "running-tool" && tool.phase == .running
         }
     })
+    #expect(await eventually {
+        controller.message(for: "live-assistant")?.isFinal == false
+            && controller.extensionUIIDs == ["pending-decision"]
+    })
+    let olderAssistant = try #require(controller.message(for: "older-assistant"))
 
     let stagedImage = ComposerAttachment(
         name: "staged.png",
@@ -61,6 +66,18 @@ import Testing
         guard case .tool(let tool) = item else { return false }
         return tool.id == "running-tool" && tool.phase == .interrupted && tool.endDate != nil
     })
+    let stoppedAssistant = try #require(controller.message(for: "live-assistant"))
+    #expect(stoppedAssistant.visibleText == "Working before Stop")
+    #expect(stoppedAssistant.isFinal)
+    #expect(stoppedAssistant.stopReason == "aborted")
+    #expect(stoppedAssistant.raw["completedAt"] != nil)
+    #expect(controller.message(for: "older-assistant") == olderAssistant)
+    #expect(controller.extensionUIIDs.isEmpty)
+    let stoppedTurn = try #require(TranscriptTurnProjection.sections(
+        from: controller.items,
+        runtimeState: controller.runtimeState).last)
+    #expect(stoppedTurn.state == .stopped)
+    #expect(stoppedTurn.items.map(\.id).contains("live-assistant"))
     #expect(await manager.handle(for: sessionPath) == nil)
     #expect(await eventually { stopFixtureChildrenHaveExited(in: directory) })
 
@@ -1466,11 +1483,15 @@ private extension Duration {
 }
 
 private extension SessionController {
-    func visibleText(for id: String) -> String? {
+    func message(for id: String) -> TranscriptMessage? {
         items.compactMap { item -> TranscriptMessage? in
             guard case .message(let message) = item, message.id == id else { return nil }
             return message
-        }.first?.visibleText
+        }.first
+    }
+
+    func visibleText(for id: String) -> String? {
+        message(for: id)?.visibleText
     }
 
     var extensionUIIDs: [String] {

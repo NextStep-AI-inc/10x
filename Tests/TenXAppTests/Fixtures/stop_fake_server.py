@@ -113,7 +113,25 @@ for raw_line in sys.stdin:
             "type": "response",
             "command": command_type,
             "success": True,
-            "data": {"messages": [], "nextCursor": None},
+            "data": {
+                "messages": [
+                    {
+                        "id": "older-user",
+                        "role": "user",
+                        "content": [{"type": "text", "text": "Older question"}],
+                        "timestamp": 1788847100000,
+                    },
+                    {
+                        "id": "older-assistant",
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Older answer"}],
+                        "timestamp": 1788847101000,
+                        "completedAt": 1788847102000,
+                        "stopReason": "stop",
+                    },
+                ],
+                "nextCursor": None,
+            },
         })
     elif command_type == "prompt":
         emit({
@@ -125,10 +143,44 @@ for raw_line in sys.stdin:
         })
         emit({"type": "agent_start"})
         emit({
+            "type": "message_start",
+            "message": {
+                "id": "live-user",
+                "role": "user",
+                "content": [{"type": "text", "text": command.get("message", "")}],
+                "timestamp": 1788847200000,
+            },
+        })
+        emit({
+            "type": "message_end",
+            "message": {
+                "id": "live-user",
+                "role": "user",
+                "content": [{"type": "text", "text": command.get("message", "")}],
+                "timestamp": 1788847200000,
+            },
+        })
+        emit({
+            "type": "message_start",
+            "message": {
+                "id": "live-assistant",
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Working before Stop"}],
+                "timestamp": 1788847201000,
+            },
+        })
+        emit({
             "type": "tool_execution_start",
             "toolCallId": "running-tool",
             "toolName": "bash",
             "args": {"command": "sleep 10"},
+        })
+        emit({
+            "type": "extension_ui_request",
+            "id": "pending-decision",
+            "method": "confirm",
+            "title": "Continue?",
+            "message": "This decision must become inaccessible after Stop.",
         })
         touch("prompt-started")
     elif command_type == "abort":
