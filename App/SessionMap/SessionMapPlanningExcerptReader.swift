@@ -36,11 +36,9 @@ enum SessionMapPlanningExcerptReader {
                 break
             }
             let source: String
-            let sourceHash: String
             var wasReadTruncated = false
             if let captured = observation.captured {
                 source = captured
-                sourceHash = sha256(captured)
             } else {
                 guard let url = containedURL(path: observation.path, projectURL: projectURL) else {
                     diagnostics.append(diagnostic(
@@ -58,7 +56,6 @@ enum SessionMapPlanningExcerptReader {
                         continue
                     }
                     source = fileSource.text
-                    sourceHash = fileSource.hash
                     wasReadTruncated = fileSource.wasTruncated
                 } catch {
                     diagnostics.append(diagnostic(
@@ -82,7 +79,7 @@ enum SessionMapPlanningExcerptReader {
                 file: observation.path,
                 ref: observation.ref,
                 text: text,
-                hash: sourceHash))
+                hash: sha256(text)))
             usedBytes += text.utf8.count
         }
         return SessionMapPlanningExcerptResult(excerpts: excerpts, diagnostics: diagnostics)
@@ -113,12 +110,10 @@ enum SessionMapPlanningExcerptReader {
                 nil
             }
             if byPath[path] == nil { order.append(path) }
-            let previous = byPath[path]
-            if let captured = captured.flatMap({ $0.isEmpty ? nil : $0 }) {
-                byPath[path] = Observation(path: path, ref: tool.id, captured: captured)
-            } else if previous?.captured == nil {
-                byPath[path] = Observation(path: path, ref: tool.id, captured: nil)
-            }
+            byPath[path] = Observation(
+                path: path,
+                ref: tool.id,
+                captured: captured.flatMap { $0.isEmpty ? nil : $0 })
         }
         return order.compactMap { byPath[$0] }
     }
@@ -137,7 +132,6 @@ enum SessionMapPlanningExcerptReader {
     private struct BoundedText {
         let text: String
         let wasTruncated: Bool
-        let hash: String
     }
 
     private static func boundedUTF8(at url: URL) throws -> BoundedText? {
@@ -146,7 +140,7 @@ enum SessionMapPlanningExcerptReader {
         let data = try handle.read(upToCount: maxFileBytes + 4) ?? Data()
         if data.count <= maxFileBytes {
             return String(data: data, encoding: .utf8).map {
-                BoundedText(text: $0, wasTruncated: false, hash: sha256($0))
+                BoundedText(text: $0, wasTruncated: false)
             }
         }
         var end = maxFileBytes
@@ -154,8 +148,7 @@ enum SessionMapPlanningExcerptReader {
             if let source = String(data: data.prefix(end), encoding: .utf8) {
                 return BoundedText(
                     text: source,
-                    wasTruncated: true,
-                    hash: sha256(source))
+                    wasTruncated: true)
             }
             end -= 1
         }

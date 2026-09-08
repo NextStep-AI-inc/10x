@@ -152,14 +152,59 @@ import Testing
         phase: .complete,
         startDate: .distantPast,
         endDate: .distantPast)
+    let failedTodo = ToolPresentation(
+        id: "todo-failed",
+        name: "todo",
+        arguments: .object(["todos": .array([
+            .object(["content": .string("Failed update"), "status": .string("completed")]),
+        ])]),
+        result: .object(["error": .string("Could not update todos")]),
+        phase: .failed,
+        startDate: .distantPast,
+        endDate: .distantPast)
+    let acknowledgedTodo = ToolPresentation(
+        id: "todo-acknowledged",
+        name: "todo",
+        arguments: .object(["todos": .array([
+            .object(["content": .string("Requested only"), "status": .string("completed")]),
+        ])]),
+        result: .object(["output": .string("ok")]),
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantPast)
+    let returnedTodo = ToolPresentation(
+        id: "todo-returned",
+        name: "todo",
+        arguments: .object(["todos": .array([
+            .object(["content": .string("Requested only"), "status": .string("completed")]),
+        ])]),
+        result: .object(["details": .object(["todos": .array([
+            .object(["content": .string("Confirmed task"), "status": .string("completed")]),
+        ])])]),
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantPast)
 
     let source = SessionMapSourceAdapter.make(
-        items: [.tool(edit), .tool(task), .tool(staleTodoArguments)],
+        items: [
+            .tool(edit),
+            .tool(task),
+            .tool(staleTodoArguments),
+            .tool(failedTodo),
+            .tool(acknowledgedTodo),
+            .tool(returnedTodo),
+        ],
         sessionKey: "session",
         lineage: "lineage")
 
-    #expect(source.statusEvidence == [SessionMapStatusEvidence(
-        sourceRef: "task-1",
-        status: .done,
-        target: .label("Build map source"))])
+    #expect(source.statusEvidence == [
+        SessionMapStatusEvidence(
+            sourceRef: "task-1",
+            status: .done,
+            target: .label("Build map source")),
+        SessionMapStatusEvidence(
+            sourceRef: "todo-returned",
+            status: .done,
+            target: .label("Confirmed task")),
+    ])
 }

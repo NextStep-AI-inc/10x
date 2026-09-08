@@ -42,6 +42,86 @@ import Testing
     #expect(before.excerpts.first?.hash != after.excerpts.first?.hash)
 }
 
+@Test func sessionMapPlanningExcerptLatestEditSupersedesCapturedWrite() throws {
+    let project = try planningDirectory()
+    defer { try? FileManager.default.removeItem(at: project) }
+    let path = project.appending(path: "PLAN.md")
+    let write = planningTool(
+        id: "write-plan",
+        name: "write",
+        path: path.path,
+        content: "old captured plan")
+    try Data("current edited plan".utf8).write(to: path)
+    let edit = planningTool(id: "edit-plan", name: "edit", path: path.path)
+
+    let result = SessionMapPlanningExcerptReader.read(
+        items: [.tool(write), .tool(edit)],
+        projectURL: project)
+
+    #expect(result.excerpts.first?.text == "current edited plan")
+    #expect(result.excerpts.first?.ref == "edit-plan")
+}
+
+@Test func sessionMapPlanningExcerptHashCoversOnlyRetainedCapturedBytes() throws {
+    let project = try planningDirectory()
+    defer { try? FileManager.default.removeItem(at: project) }
+    let path = project.appending(path: "PLAN.md")
+    let prefix = String(repeating: "🧭", count: 512)
+    let first = SessionMapPlanningExcerptReader.read(
+        items: [.tool(planningTool(
+            id: "write-plan",
+            name: "write",
+            path: path.path,
+            content: prefix + "first tail"))],
+        projectURL: project)
+    let second = SessionMapPlanningExcerptReader.read(
+        items: [.tool(planningTool(
+            id: "write-plan",
+            name: "write",
+            path: path.path,
+            content: prefix + "second tail"))],
+        projectURL: project)
+
+    #expect(first.excerpts.first?.text == prefix)
+    #expect(first.excerpts.first?.hash == second.excerpts.first?.hash)
+}
+
+@Test func sessionMapPlanningExcerptHashUsesRemainingTotalBudget() throws {
+    let project = try planningDirectory()
+    defer { try? FileManager.default.removeItem(at: project) }
+    let fixed = [
+        planningTool(
+            id: "first",
+            name: "write",
+            path: project.appending(path: "first.md").path,
+            content: String(repeating: "a", count: 2_048)),
+        planningTool(
+            id: "second",
+            name: "write",
+            path: project.appending(path: "second.md").path,
+            content: String(repeating: "b", count: 1_500)),
+    ]
+    let retained = String(repeating: "c", count: 548)
+    let first = SessionMapPlanningExcerptReader.read(
+        items: (fixed + [planningTool(
+            id: "third",
+            name: "write",
+            path: project.appending(path: "third.md").path,
+            content: retained + "first tail")]).map(TranscriptItem.tool),
+        projectURL: project)
+    let second = SessionMapPlanningExcerptReader.read(
+        items: (fixed + [planningTool(
+            id: "third",
+            name: "write",
+            path: project.appending(path: "third.md").path,
+            content: retained + "second tail")]).map(TranscriptItem.tool),
+        projectURL: project)
+
+    #expect(first.excerpts.last?.text == retained)
+    #expect(first.excerpts.last?.hash == second.excerpts.last?.hash)
+    #expect(first.excerpts.reduce(0) { $0 + $1.text.utf8.count } == 4_096)
+}
+
 @Test func sessionMapPlanningExcerptOmitsMissingAndSymlinkEscapes() throws {
     let project = try planningDirectory()
     let outside = try planningDirectory()

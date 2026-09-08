@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import OmpKit
 
 enum SessionMapSourceAdapter {
     static func make(
@@ -142,6 +143,9 @@ enum SessionMapSourceAdapter {
         guard tool.result != nil, tool.phase != .running else { return [] }
         let name = tool.name.lowercased()
         if name == "todo" {
+            guard tool.phase == .complete, hasReturnedTodoSnapshot(tool.result) else {
+                return []
+            }
             return ToolContentExtractor.todos(tool).compactMap { todo in
                 statusEvidence(
                     sourceRef: tool.id,
@@ -160,6 +164,13 @@ enum SessionMapSourceAdapter {
             sourceRef: tool.id,
             target: .label(task.title),
             status: authoritativeStatus).map { [$0] } ?? []
+    }
+
+    private static func hasReturnedTodoSnapshot(_ result: JSONValue?) -> Bool {
+        result?["details"]?["phases"]?.arrayValue != nil
+            || result?["phases"]?.arrayValue != nil
+            || result?["details"]?["todos"]?.arrayValue != nil
+            || result?["todos"]?.arrayValue != nil
     }
 
     private static func statusEvidence(
