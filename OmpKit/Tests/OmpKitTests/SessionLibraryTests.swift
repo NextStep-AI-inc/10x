@@ -74,6 +74,80 @@ private final class DirectoryEnumerationRecorder: Sendable {
     #expect(byId["s1"]?.cwd == "/tmp/a")   // from the header, not the bucket name
 }
 
+@Test func readsMetadataForAReportedChildWithoutListingIt() async throws {
+    let root = makeTempRoot("reported-child")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let child = root.appendingPathComponent("-tmp-project/parent-session/worker.jsonl")
+    try writeSession(at: child, id: "worker", cwd: "/tmp/actual-project", lastMessage: completeLast)
+    let library = SessionLibrary(root: root)
+
+    let metadata = await library.metadataForReportedChildSession(path: child.path)
+
+    #expect(metadata?.path == child.path)
+    #expect(metadata?.sessionId == "worker")
+    #expect(metadata?.cwd == "/tmp/actual-project")
+    #expect(await library.listAll().isEmpty)
+}
+
+@Test func reportedChildRejectsMissingOutsideDirectoryExtensionAndDepthBoundaries() async throws {
+    let container = makeTempRoot("reported-child-boundaries")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let root = container.appendingPathComponent("sessions")
+    let outside = container.appendingPathComponent("outside/worker.jsonl")
+    let directory = root.appendingPathComponent("-bucket/parent/directory.jsonl")
+    let wrongExtension = root.appendingPathComponent("-bucket/parent/worker.txt")
+    let tooDeep = root.appendingPathComponent("-bucket/parent/deeper/worker.jsonl")
+    try writeSession(at: outside, id: "outside", cwd: "/outside", lastMessage: completeLast)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try writeSession(at: wrongExtension, id: "wrong", cwd: "/wrong", lastMessage: completeLast)
+    try writeSession(at: tooDeep, id: "deep", cwd: "/deep", lastMessage: completeLast)
+    let library = SessionLibrary(root: root)
+    let missing = root.appendingPathComponent("-bucket/parent/missing.jsonl")
+
+    for path in [missing.path, outside.path, directory.path, wrongExtension.path, tooDeep.path] {
+        #expect(await library.metadataForReportedChildSession(path: path) == nil)
+    }
+}
+
+@Test func reportedChildRejectsSymlinkedFilesAndDirectories() async throws {
+    let container = makeTempRoot("reported-child-symlinks")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let root = container.appendingPathComponent("sessions")
+    let outsideFile = container.appendingPathComponent("outside/file/worker.jsonl")
+    let outsideParent = container.appendingPathComponent("outside/parent")
+    let outsideBucket = container.appendingPathComponent("outside/bucket")
+    try writeSession(at: outsideFile, id: "file-link", cwd: "/outside", lastMessage: completeLast)
+    try writeSession(
+        at: outsideParent.appendingPathComponent("worker.jsonl"),
+        id: "parent-link", cwd: "/outside", lastMessage: completeLast)
+    try writeSession(
+        at: outsideBucket.appendingPathComponent("parent/worker.jsonl"),
+        id: "bucket-link", cwd: "/outside", lastMessage: completeLast)
+
+    let linkedFile = root.appendingPathComponent("-file/parent/worker.jsonl")
+    try FileManager.default.createDirectory(
+        at: linkedFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: linkedFile, withDestinationURL: outsideFile)
+
+    let linkedParent = root.appendingPathComponent("-parent/parent")
+    try FileManager.default.createDirectory(
+        at: linkedParent.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: linkedParent, withDestinationURL: outsideParent)
+
+    let linkedBucket = root.appendingPathComponent("-bucket")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: linkedBucket, withDestinationURL: outsideBucket)
+
+    let library = SessionLibrary(root: root)
+    for path in [
+        linkedFile.path,
+        linkedParent.appendingPathComponent("worker.jsonl").path,
+        linkedBucket.appendingPathComponent("parent/worker.jsonl").path,
+    ] {
+        #expect(await library.metadataForReportedChildSession(path: path) == nil)
+    }
+}
+
 @Test func classifiesTrailingToolCallAsInterrupted() {
     let message = try! JSONDecoder().decode(
         JSONValue.self,

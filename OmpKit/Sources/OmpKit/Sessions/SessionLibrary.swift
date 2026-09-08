@@ -151,6 +151,13 @@ public actor SessionLibrary {
         list(in: archiveRoot)
     }
 
+    /// Reads one child transcript reported by omp without adding child
+    /// sessions to the ordinary library listing.
+    public func metadataForReportedChildSession(path: String) -> SessionMetadata? {
+        guard let transcript = reportedChildTranscriptURL(path) else { return nil }
+        return scan(transcript)
+    }
+
     private func list(in collectionRoot: URL) -> [SessionMetadata] {
         let fileManager = FileManager.default
         guard let buckets = try? fileManager.contentsOfDirectory(
@@ -347,6 +354,43 @@ public actor SessionLibrary {
         guard case .valid(let transcript) = validateSessionPath(url.path, under: collectionRoot)
         else { return nil }
         return transcript.url
+    }
+
+    private func reportedChildTranscriptURL(_ path: String) -> URL? {
+        let lexicalRoot = root.standardizedFileURL
+        let candidate = URL(filePath: path).standardizedFileURL
+        let rootComponents = lexicalRoot.pathComponents
+        let candidateComponents = candidate.pathComponents
+        guard candidate.pathExtension == "jsonl",
+              candidateComponents.starts(with: rootComponents),
+              candidateComponents.count == rootComponents.count + 3
+        else { return nil }
+
+        let fileKeys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey]
+        guard let fileValues = try? candidate.resourceValues(forKeys: fileKeys),
+              fileValues.isRegularFile == true,
+              fileValues.isSymbolicLink != true
+        else { return nil }
+
+        let parent = candidate.deletingLastPathComponent()
+        let bucket = parent.deletingLastPathComponent()
+        let directoryKeys: Set<URLResourceKey> = [.isDirectoryKey, .isSymbolicLinkKey]
+        guard let parentValues = try? parent.resourceValues(forKeys: directoryKeys),
+              parentValues.isDirectory == true,
+              parentValues.isSymbolicLink != true,
+              let bucketValues = try? bucket.resourceValues(forKeys: directoryKeys),
+              bucketValues.isDirectory == true,
+              bucketValues.isSymbolicLink != true
+        else { return nil }
+
+        let resolvedRoot = lexicalRoot.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedCandidate = candidate.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedRootComponents = resolvedRoot.pathComponents
+        let resolvedCandidateComponents = resolvedCandidate.pathComponents
+        guard resolvedCandidateComponents.starts(with: resolvedRootComponents),
+              resolvedCandidateComponents.count == resolvedRootComponents.count + 3
+        else { return nil }
+        return resolvedCandidate
     }
 
     private func invalidateCache(paths: [String]) {

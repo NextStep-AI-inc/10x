@@ -2364,7 +2364,16 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         modelRole: "review",
         isFallback: false,
         currentTool: "read",
-        recentTools: [],
+        recentTools: [
+            SubagentRecentTool(
+                name: "read",
+                arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+                endMilliseconds: 1_000),
+            SubagentRecentTool(
+                name: "grep",
+                arguments: .object(["query": .string("subagent")]),
+                endMilliseconds: 2_000),
+        ],
         recentOutput: ["Checked transcript mapping", "Reviewing compact activity"],
         toolCount: 6,
         requests: 2,
@@ -2373,7 +2382,9 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         durationMilliseconds: 4_200,
         result: nil)
     try assertSnapshot(
-        SubagentCardView(presentation: presentation).frame(width: 720),
+        SubagentCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
+            .frame(width: 720),
         name: "activity-subagent",
         size: CGSize(width: 800, height: 330))
 }
@@ -5046,7 +5057,16 @@ private actor SnapshotMediaGate {
         modelRole: "review",
         isFallback: false,
         currentTool: "read",
-        recentTools: [],
+        recentTools: [
+            SubagentRecentTool(
+                name: "read",
+                arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+                endMilliseconds: 1_000),
+            SubagentRecentTool(
+                name: "grep",
+                arguments: .object(["query": .string("subagent")]),
+                endMilliseconds: 2_000),
+        ],
         recentOutput: ["Checked transcript mapping", "Reviewing compact activity"],
         toolCount: 6,
         requests: 2,
@@ -5055,7 +5075,9 @@ private actor SnapshotMediaGate {
         durationMilliseconds: 4_200,
         result: nil)
     try assertSnapshot(
-        SubagentCardView(presentation: presentation).frame(width: 720),
+        SubagentCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
+            .frame(width: 720),
         name: "activity-subagent-dark", appearance: .dark,
         size: CGSize(width: 800, height: 330))
 }
