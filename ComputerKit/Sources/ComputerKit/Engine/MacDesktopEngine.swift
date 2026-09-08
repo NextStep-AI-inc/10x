@@ -1,8 +1,11 @@
 import AppKit
 import ApplicationServices
 import CoreGraphics
+import Darwin
 import Foundation
+import ImageIO
 import ScreenCaptureKit
+import UniformTypeIdentifiers
 
 /// The real engine. Every method converts failures into ComputerError so MCP
 /// clients get actionable text instead of crashes.
@@ -35,6 +38,15 @@ public final class MacDesktopEngine: DesktopEngine {
     }
 
     public func screenshot(windowID: CGWindowID) throws -> Screenshot {
+        if Thread.isMainThread {
+            return try DispatchQueue.global(qos: .userInitiated).sync {
+                try captureScreenshot(windowID: windowID)
+            }
+        }
+        return try captureScreenshot(windowID: windowID)
+    }
+
+    private func captureScreenshot(windowID: CGWindowID) throws -> Screenshot {
         guard preflightPermissions().screenRecording else { throw ComputerError("permission_missing: screen_recording") }
         let semaphore = DispatchSemaphore(value: 0)
         let resultBox = SyncBox<Result<Screenshot, Error>>()
@@ -48,15 +60,14 @@ public final class MacDesktopEngine: DesktopEngine {
                 let filter = SCContentFilter(desktopIndependentWindow: window)
                 let configuration = SCStreamConfiguration()
                 configuration.showsCursor = false
+                configuration.width = Int(filter.contentRect.width * CGFloat(filter.pointPixelScale))
+                configuration.height = Int(filter.contentRect.height * CGFloat(filter.pointPixelScale))
                 let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-                let rep = NSBitmapImageRep(cgImage: image)
-                guard let png = rep.representation(using: .png, properties: [:]) else {
-                    throw ComputerError("screenshot_encode_failed")
-                }
+                let png = try encodePNG(from: image)
                 resultBox.set(.success(Screenshot(
                     pngData: png,
                     pixelSize: CGSize(width: image.width, height: image.height),
-                    scale: Double(image.width) / max(1, Double(window.frame.width))
+                    scale: Double(filter.pointPixelScale)
                 )))
             } catch let error as ComputerError {
                 resultBox.set(.failure(error))
@@ -72,32 +83,47 @@ public final class MacDesktopEngine: DesktopEngine {
     public func launch(app: String) throws -> WindowInfo {
         guard preflightPermissions().accessibility else { throw ComputerError("permission_missing: accessibility") }
         guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app)
-            ?? ["/Applications", "/System/Applications", NSHomeDirectory() + "/Applications"]
+            ?? ["/Applications", "/System/Applications", "/System/Applications/Utilities", NSHomeDirectory() + "/Applications"]
                 .lazy.map({ URL(fileURLWithPath: $0).appendingPathComponent(app + ".app") })
                 .first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
             throw ComputerError("app_not_found: \(app)")
         }
-        let existingPIDs = Set(try listWindows().map(\.pid))
+        let bundleID = Bundle(url: appURL)?.bundleIdentifier
+        let preLaunchWindowIDs: Set<CGWindowID>
+        if let bundleID,
+           let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            preLaunchWindowIDs = Set(try listWindows().filter { $0.pid == running.processIdentifier }.map(\.id))
+        } else {
+            preLaunchWindowIDs = []
+        }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = false
         let semaphore = DispatchSemaphore(value: 0)
-        let launchedBox = SyncBox<NSRunningApplication>()
-        NSWorkspace.shared.openApplication(at: appURL, configuration: NSWorkspace.OpenConfiguration()) { running, _ in
-            if let running { launchedBox.set(running) }
+        let resultBox = SyncBox<Result<NSRunningApplication, Error>>()
+        NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { running, error in
+            if let error {
+                resultBox.set(.failure(ComputerError("launch_failed: \(error.localizedDescription)")))
+            } else if let running {
+                resultBox.set(.success(running))
+            } else {
+                resultBox.set(.failure(ComputerError("launch_failed: \(app)")))
+            }
             semaphore.signal()
         }
         _ = semaphore.wait(timeout: .now() + 10)
-        guard let launched = launchedBox.get() else { throw ComputerError("launch_failed: \(app)") }
+        guard let launched = try resultBox.take()?.get() else {
+            throw ComputerError("launch_failed: \(app)")
+        }
 
-        // Wait for the app to present a window (up to 5s).
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
             let windows = try listWindows()
-            if let window = windows.first(where: { $0.pid == launched.processIdentifier && !existingPIDs.contains($0.pid) })
-                ?? windows.first(where: { $0.pid == launched.processIdentifier }) {
+            if let window = windows.first(where: { $0.pid == launched.processIdentifier && !preLaunchWindowIDs.contains($0.id) }) {
                 return window
             }
             Thread.sleep(forTimeInterval: 0.2)
         }
-        throw ComputerError("launch_no_window: \(app)")
+        throw ComputerError("launch_no_new_window: \(app)")
     }
 
     public func act(_ action: ComputerAction, window: WindowInfo) throws {
@@ -111,8 +137,8 @@ public final class MacDesktopEngine: DesktopEngine {
             let location = globalPoint(point)
             let (downType, upType, cgButton): (CGEventType, CGEventType, CGMouseButton) = button == .right
                 ? (.rightMouseDown, .rightMouseUp, .right) : (.leftMouseDown, .leftMouseUp, .left)
-            try post(CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: location, mouseButton: cgButton), to: pid)
-            try post(CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: location, mouseButton: cgButton), to: pid)
+            try post(CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: location, mouseButton: cgButton), to: pid, windowID: window.id)
+            try post(CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: location, mouseButton: cgButton), to: pid, windowID: window.id)
         case .doubleClick(let point):
             let location = globalPoint(point)
             for state in 1...2 {
@@ -120,40 +146,67 @@ public final class MacDesktopEngine: DesktopEngine {
                 let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: location, mouseButton: .left)
                 down?.setIntegerValueField(.mouseEventClickState, value: Int64(state))
                 up?.setIntegerValueField(.mouseEventClickState, value: Int64(state))
-                try post(down, to: pid)
-                try post(up, to: pid)
+                try post(down, to: pid, windowID: window.id)
+                try post(up, to: pid, windowID: window.id)
             }
         case .drag(let from, let to):
             let start = globalPoint(from), end = globalPoint(to)
-            try post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left), to: pid)
-            try post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: end, mouseButton: .left), to: pid)
-            try post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left), to: pid)
+            try post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: start, mouseButton: .left), to: pid, windowID: window.id)
+            let steps = 6
+            for step in 1...steps {
+                let t = CGFloat(step) / CGFloat(steps)
+                let point = CGPoint(x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t)
+                try post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseDragged, mouseCursorPosition: point, mouseButton: .left), to: pid, windowID: window.id)
+            }
+            try post(CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left), to: pid, windowID: window.id)
         case .scroll(let deltaX, let deltaY):
-            try post(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: Int32(-deltaY), wheel2: Int32(-deltaX), wheel3: 0), to: pid)
+            try post(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: clampScrollWheel(-deltaY), wheel2: clampScrollWheel(-deltaX), wheel3: 0), to: pid, windowID: window.id)
         case .type(let text):
             for scalar in text {
                 var unichar = Array(String(scalar).utf16)
-                try post(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)?.applyingUnicode(&unichar), to: pid)
-                try post(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)?.applyingUnicode(&unichar), to: pid)
+                try post(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)?.applyingUnicode(&unichar), to: pid, windowID: window.id)
+                try post(CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)?.applyingUnicode(&unichar), to: pid, windowID: window.id)
             }
         case .key(let chord):
-            let (flags, keyCode) = try KeyChord.parse(chord)
-            let down = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true)
-            let up = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false)
-            down?.flags = flags
-            up?.flags = flags
-            try post(down, to: pid)
-            try post(up, to: pid)
+            let (modifiers, keyCode) = try KeyChord.parse(chord)
+            for modifier in modifiers {
+                try post(CGEvent(keyboardEventSource: nil, virtualKey: modifier, keyDown: true), to: pid, windowID: window.id)
+            }
+            try post(CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true), to: pid, windowID: window.id)
+            try post(CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false), to: pid, windowID: window.id)
+            for modifier in modifiers.reversed() {
+                try post(CGEvent(keyboardEventSource: nil, virtualKey: modifier, keyDown: false), to: pid, windowID: window.id)
+            }
         }
     }
 
-    private func post(_ event: CGEvent?, to pid: pid_t) throws {
+    private func post(_ event: CGEvent?, to pid: pid_t, windowID: CGWindowID) throws {
         guard let event else { throw ComputerError("event_create_failed") }
+        if kill(pid, 0) == -1, errno == ESRCH {
+            throw ComputerError("window_gone: \(windowID)")
+        }
         // ponytail: background delivery only, by design — the agent never steals
         // focus. Ceiling: some apps ignore posted-to-pid events. Upgrade path:
         // CGEventPostToPSN / Skylight private APIs (see pi-natives skylight.rs).
         event.postToPid(pid)
     }
+
+    private func clampScrollWheel(_ value: Double) -> Int32 {
+        guard value.isFinite else { return 0 }
+        return Int32(min(Double(Int32.max), max(Double(Int32.min), value)))
+    }
+}
+
+private func encodePNG(from image: CGImage) throws -> Data {
+    let data = NSMutableData()
+    guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+        throw ComputerError("screenshot_encode_failed")
+    }
+    CGImageDestinationAddImage(destination, image, nil)
+    guard CGImageDestinationFinalize(destination) else {
+        throw ComputerError("screenshot_encode_failed")
+    }
+    return data as Data
 }
 
 private extension CGEvent {
