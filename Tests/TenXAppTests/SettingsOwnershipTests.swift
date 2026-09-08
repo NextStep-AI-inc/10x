@@ -10,9 +10,13 @@ import Testing
         let ideMatches = TenXSettingsCategory.allCases.filter {
             $0.matches(query: "Cursor", preferredIDEName: "Cursor")
         }
+        let mapMatches = TenXSettingsCategory.allCases.filter {
+            $0.matches(query: "writer model", preferredIDEName: nil)
+        }
 
         #expect(composerMatches == [.composer])
         #expect(ideMatches == [.general])
+        #expect(mapMatches == [.map])
     }
 
     @Test func preferredIDEFocusClearsSearchForNativeNavigation() {
@@ -29,7 +33,7 @@ import Testing
         #expect(await model.load() == false)
         #expect(model.settingCount == 0)
         #expect(model.loadError != nil)
-        #expect(TenXSettingsCategory.allCases == [.general, .composer])
+        #expect(TenXSettingsCategory.allCases == [.general, .composer, .map])
     }
 }
 

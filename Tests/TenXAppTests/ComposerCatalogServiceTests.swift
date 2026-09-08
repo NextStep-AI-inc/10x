@@ -34,6 +34,7 @@ private let modelsResponse = RpcResponse(
                 "name": .string("Claude Opus 4.8"),
                 "provider": .string("anthropic"),
                 "api": .string("anthropic-messages"),
+                "input": .array([.string("text"), .string("image")]),
                 "thinking": .object([
                     "efforts": .array([.string("low"), .string("high")]),
                     "requiresEffort": .bool(false),
@@ -44,6 +45,7 @@ private let modelsResponse = RpcResponse(
                 "name": .string("Claude Sonnet 4.5"),
                 "provider": .string("anthropic"),
                 "api": .string("anthropic-messages"),
+                "input": .string("unknown-shape"),
                 "thinking": .object([
                     "efforts": .array([]),
                     "requiresEffort": .bool(false),
@@ -102,6 +104,8 @@ private let oldCommandsResponse = RpcResponse(
 
     #expect(snapshot.selected?.modelID == "claude-opus-4-8")
     #expect(snapshot.models.count == 2)
+    #expect(snapshot.models[0].acceptsImages)
+    #expect(!snapshot.models[1].acceptsImages)
     #expect(snapshot.thinkingLevel == "high")
     #expect(snapshot.fastModeEnabled == false)
     #expect(snapshot.fastModeActive == true)

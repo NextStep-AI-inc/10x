@@ -6,6 +6,7 @@ enum UIFixtureRoute: String, CaseIterable, Sendable {
     case mapDense = "map-dense"
     case mapEmpty = "map-empty"
     case mapInvalid = "map-invalid"
+    case settingsMap = "settings-map"
     case flyerFitting = "flyer-fitting"
     case flyerOverflow = "flyer-overflow"
     case flyerStack = "flyer-stack"

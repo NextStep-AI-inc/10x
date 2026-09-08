@@ -66,6 +66,7 @@ struct SettingsView: View {
         .task {
             if model.settingCount == 0 { await model.load() }
         }
+        .onDisappear { Task { await model.shutdownSessionMapCatalog() } }
         .onChange(of: availableOMPCategories) { _, categories in
             guard !categories.isEmpty, !categories.contains(selectedOMPCategory) else { return }
             selectedOMPCategory = categories[0]
@@ -73,7 +74,7 @@ struct SettingsView: View {
         .onChange(of: focusTarget, initial: true) { _, target in
             if model.prepareForFocus(target) {
                 selectedOwner = .tenX
-                selectedTenXCategory = .general
+                selectedTenXCategory = target == .sessionMap ? .map : .general
                 isSearchFocused = false
             }
         }
@@ -314,7 +315,7 @@ struct SettingsView: View {
     ) -> some View {
         ForEach(categories) { category in
             VStack(alignment: .leading, spacing: 0) {
-                sectionHeader(category.title, count: category == .general ? 1 : 4)
+                sectionHeader(category.title, count: nativeSettingCount(category))
                 Rectangle()
                     .fill(TenXPalette.color(TenXPalette.cyanHex))
                     .frame(height: 2)
@@ -331,6 +332,17 @@ struct SettingsView: View {
                         }
                 case .composer:
                     ComposerInteractionSettingRows(preferences: composerPreferences)
+                case .map:
+                    SessionMapSettingRows(
+                        presentation: SessionMapSettingRows.Presentation(
+                            preferences: model.sessionMapPreferences,
+                            catalog: model.sessionMapModels,
+                            roles: model.sessionMapRoles),
+                        isLoading: model.isSessionMapCatalogLoading,
+                        errorMessage: model.sessionMapCatalogError)
+                        .id(SettingsFocusTarget.sessionMap)
+                        .task { await model.loadSessionMapCatalog(projectURL: nil) }
+                        .onAppear { focusSessionMapIfNeeded(proxy: proxy) }
                 }
             }
         }
@@ -346,6 +358,14 @@ struct SettingsView: View {
         }
         .padding(.top, 26)
         .padding(.bottom, 8)
+    }
+
+    private func nativeSettingCount(_ category: TenXSettingsCategory) -> Int {
+        switch category {
+        case .general: 1
+        case .composer: 4
+        case .map: 3
+        }
     }
 
     private var availableOMPCategories: [SettingsCategory] {
@@ -382,6 +402,16 @@ struct SettingsView: View {
             proxy.scrollTo(SettingsFocusTarget.preferredIDE, anchor: .center)
             focusedControl = .preferredIDE
             await Task.yield()
+            onFocusConsumed()
+        }
+    }
+
+    private func focusSessionMapIfNeeded(proxy: ScrollViewProxy) {
+        guard focusTarget == .sessionMap else { return }
+        isSearchFocused = false
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo(SettingsFocusTarget.sessionMap, anchor: .center)
             onFocusConsumed()
         }
     }

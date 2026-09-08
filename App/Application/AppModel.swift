@@ -592,6 +592,13 @@ final class AppModel {
         route = .session(selected.metadata.path)
     }
 
+    func installSessionMapSettingsFixture(projectURL: URL) {
+        selectedProjectURL = projectURL
+        settingsModel = dependencies.makeSettingsModel(
+            URL(filePath: "/tmp/session-map-fixture-omp"))
+        openSettings(focus: .sessionMap)
+    }
+
     func installFlyerFixtureHandlers(
         onAction: @escaping (Flyer.Key, String) -> Void,
         onDismiss: @escaping (Flyer.Key) -> Void = { _ in }

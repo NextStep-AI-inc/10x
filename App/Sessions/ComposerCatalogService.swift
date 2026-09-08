@@ -386,7 +386,8 @@ actor ComposerCatalogService {
             provider: provider,
             api: object["api"]?.stringValue,
             thinkingEfforts: thinking?["efforts"]?.arrayValue?.compactMap(\.stringValue) ?? [],
-            requiresEffort: thinking?["requiresEffort"]?.boolValue ?? false)
+            requiresEffort: thinking?["requiresEffort"]?.boolValue ?? false,
+            acceptsImages: object["input"]?.arrayValue?.contains(.string("image")) == true)
     }
 
     private func consume(_ frame: RpcFrame, startupID: UUID, project: ProjectRequest) {

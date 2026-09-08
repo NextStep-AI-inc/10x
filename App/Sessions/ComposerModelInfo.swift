@@ -8,6 +8,25 @@ struct ComposerModelInfo: Equatable, Sendable, Identifiable {
     let api: String?
     let thinkingEfforts: [String]
     let requiresEffort: Bool
+    let acceptsImages: Bool
+
+    init(
+        modelID: String,
+        name: String,
+        provider: String,
+        api: String?,
+        thinkingEfforts: [String],
+        requiresEffort: Bool,
+        acceptsImages: Bool = false
+    ) {
+        self.modelID = modelID
+        self.name = name
+        self.provider = provider
+        self.api = api
+        self.thinkingEfforts = thinkingEfforts
+        self.requiresEffort = requiresEffort
+        self.acceptsImages = acceptsImages
+    }
 
     /// Stable ForEach / selection key across multi-provider catalogs.
     var id: String { "\(provider)/\(modelID)" }

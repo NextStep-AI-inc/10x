@@ -54,6 +54,19 @@ struct SessionMapFixtureScene: View {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let defaults = try isolatedDefaults(route: route, buildSHA: buildSHA)
         let model = fixtureModel(root: root, defaults: defaults)
+        if route == .settingsMap {
+            let sessions = try fixtureSessions(route: route, root: root, model: model)
+            model.installSessionMapFixture(sessions, selectedPath: sessions[0].metadata.path)
+            model.installSessionMapSettingsFixture(projectURL: root)
+            return Configuration(
+                model: model,
+                route: route,
+                title: "10x | \(route.rawValue) | \(String(buildSHA.prefix(12)))",
+                colorScheme: appearance,
+                reduceMotionOverride: reduceMotionOverride,
+                reduceTransparencyOverride: reduceTransparencyOverride,
+                marqueeMetricsObserver: nil)
+        }
         let sessions = try fixtureSessions(route: route, root: root, model: model)
         model.installSessionMapFixture(sessions, selectedPath: sessions[0].metadata.path)
         let metricsObserver = route.isFlyer
@@ -101,6 +114,12 @@ struct SessionMapFixtureScene: View {
                 databaseURL: root.appending(path: "search.sqlite")),
             recentProjectStore: RecentProjectStore(defaults: defaults),
             makeProcessManager: { _ in SessionProcessManager() },
+            makeSettingsModel: { _ in
+                SettingsViewModel(
+                    service: OmpConfigService(runner: SessionMapFixtureConfigRunner()),
+                    sessionMapCatalog: SessionMapFixtureCatalog(),
+                    sessionMapPreferences: SessionMapPreferenceStore(defaults: defaults))
+            },
             makeProviderModel: { _ in
                 preconditionFailure("UI fixture does not load provider accounts")
             },
@@ -298,6 +317,7 @@ struct SessionMapFixtureScene: View {
         case (.mapDense, false): SessionMapFixtures.denseXML
         case (.mapEmpty, false), (.mapInvalid, false): SessionMapFixtures.emptyXML
         case (.mapDense, true), (.mapInvalid, true): SessionMapFixtures.layoutStressXML
+        case (.settingsMap, _): SessionMapFixtures.emptyXML
         case (.flyerFitting, false), (.flyerOverflow, false),
              (.flyerStack, false), (.flyerRecovery, false): SessionMapFixtures.planningXML
         case (_, true): SessionMapFixtures.graphStatesXML
@@ -380,6 +400,52 @@ struct SessionMapFixtureScene: View {
         }
     }
 
+}
+
+private actor SessionMapFixtureCatalog: ComposerCatalogLoading {
+    nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState> { $0.finish() }
+
+    func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
+        ComposerCatalogSnapshot(
+            models: [
+                ComposerModelInfo(
+                    modelID: "writer-text",
+                    name: "Fixture Writer",
+                    provider: "fixture-text",
+                    api: nil,
+                    thinkingEfforts: [],
+                    requiresEffort: false),
+                ComposerModelInfo(
+                    modelID: "map-vision",
+                    name: "Fixture Vision",
+                    provider: "fixture-image",
+                    api: nil,
+                    thinkingEfforts: ["low", "high"],
+                    requiresEffort: false,
+                    acceptsImages: true),
+            ],
+            selected: nil,
+            thinkingLevel: nil,
+            fastModeEnabled: false,
+            fastModeActive: false)
+    }
+
+    func shutdown() async {}
+}
+
+private struct SessionMapFixtureConfigRunner: OmpConfigRunning {
+    func run(arguments: [String]) async throws -> Data {
+        switch arguments {
+        case ["config", "list", "--json"]:
+            Data("""
+            {"modelRoles":{"value":{"smol":"fixture-image/map-vision:high","vision":"fixture-image/map-vision:low"},"type":"record","description":"Model roles"}}
+            """.utf8)
+        case ["config", "path"]:
+            Data("/tmp/session-map-fixture-config.json\n".utf8)
+        default:
+            Data()
+        }
+    }
 }
 
 @MainActor

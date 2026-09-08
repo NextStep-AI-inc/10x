@@ -8,6 +8,7 @@ enum SettingsOwner: String {
 enum TenXSettingsCategory: String, CaseIterable, Identifiable {
     case general
     case composer
+    case map
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
@@ -25,6 +26,8 @@ enum TenXSettingsCategory: String, CaseIterable, Identifiable {
                 "Composer", "default send action", "Steer", "Follow up",
                 "keyboard shortcuts", "Enter", "Command-Enter", "Shift-Enter", "New line",
             ].contains { $0.localizedCaseInsensitiveContains(query) }
+        case .map:
+            SessionMapSettingRows.matches(query: query)
         }
     }
 }

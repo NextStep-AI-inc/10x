@@ -51,7 +51,7 @@ struct SessionMapSourceEntry: Equatable, Sendable {
     }
 }
 
-struct SessionMapCursor: Equatable, Sendable {
+struct SessionMapCursor: Codable, Equatable, Sendable {
     let lineage: String
     let entryID: String?
 }
