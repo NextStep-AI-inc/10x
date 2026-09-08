@@ -118,6 +118,8 @@ public final class SupervisionClient: @unchecked Sendable {
                 for window in ended.windows { frames.removeValue(forKey: window.windowID) }
             }
         case .windowClaimed(let session, _, let windowID, let app, let title, let bounds):
+            // Idempotent: the daemon's subscribe replay can overlap a live event.
+            guard sessions[session]?.windows.contains(where: { $0.windowID == windowID }) != true else { break }
             sessions[session]?.windows.append(ClaimedWindowState(windowID: windowID, app: app, title: title, bounds: bounds))
         case .windowReleased(let session, let windowID, _):
             sessions[session]?.windows.removeAll { $0.windowID == windowID }

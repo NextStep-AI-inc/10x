@@ -23,6 +23,14 @@ final class SupervisionClientTests: XCTestCase {
         XCTAssertEqual(client.sessions[1]?.windows.first?.app, "Safari")
     }
 
+    func test_windowClaimed_isIdempotent() {
+        let client = makeClient()
+        client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))
+        client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
+        client.apply(.windowClaimed(session: 1, harness: "omp", windowID: 10, app: "Safari", title: "Apple", bounds: "0,0 800x600"))
+        XCTAssertEqual(client.sessions[1]?.windows.count, 1)
+    }
+
     func test_windowReleased_removesWindow() {
         let client = makeClient()
         client.apply(.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil))

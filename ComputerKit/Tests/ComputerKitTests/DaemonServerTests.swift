@@ -44,8 +44,9 @@ final class DaemonServerTests: XCTestCase {
         let client = try DaemonClient(socketPath: socketPath)
         try client.send(.object(["role": .string("supervision")]))
         _ = try client.receive() // handshake ack
-        let permissions = try expectEvent(client)
-        XCTAssertEqual(permissions["type"], .string("permissions"))
+        // Replay events (sessionStarted/windowClaimed for pre-existing state)
+        // may precede the permissions event — skip until it.
+        _ = try expectEventType(client, "permissions")
         return client
     }
 
@@ -497,6 +498,36 @@ final class DaemonServerTests: XCTestCase {
         client.close()
         wait(for: [threw], timeout: 2)
         client.close() // idempotent
+    }
+
+    func test_supervisionHandshake_replaysExistingSessionsAndClaims() throws {
+        let safari = WindowInfo(id: 10, appName: "Safari", title: "Apple", bounds: .init(x: 1, y: 2, width: 800, height: 600), pid: 100)
+        engine.windows = [safari]
+        // An MCP session with a claim exists BEFORE any supervision subscriber.
+        let mcp = try DaemonClient(socketPath: socketPath)
+        try mcp.send(.object(["role": .string("mcp"), "label": .string("Fix login")]))
+        _ = try rpc(mcp, [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("omp")])]),
+        ])
+        let claim = try rpc(mcp, [
+            "jsonrpc": .string("2.0"), "id": .number(2), "method": .string("tools/call"),
+            "params": .object(["name": .string("computer_claim"), "arguments": .object(["window_id": .number(10)])]),
+        ])
+        XCTAssertEqual(claim["result"]?["isError"], .bool(false))
+
+        // Late-attaching subscriber receives the replay before live events.
+        let supervision = try DaemonClient(socketPath: socketPath)
+        try supervision.send(.object(["role": .string("supervision")]))
+        _ = try supervision.receive() // ack
+        let started = try expectEventType(supervision, "sessionStarted")
+        XCTAssertEqual(started["harness"], .string("omp"))
+        XCTAssertEqual(started["label"], .string("Fix login"))
+        XCTAssertNotNil(started["pid"]?.intValue)
+        let claimed = try expectEventType(supervision, "windowClaimed")
+        XCTAssertEqual(claimed["windowID"]?.intValue, 10)
+        XCTAssertEqual(claimed["app"], .string("Safari"))
+        XCTAssertEqual(claimed["bounds"], .string("1,2 800x600"))
     }
 
     func test_socketPathTooLong_rejected() {

@@ -185,10 +185,18 @@ public final class DaemonServer {
             }
             if message["role"]?.stringValue == "supervision" {
                 client.role = .supervision
+                let replay = replayEvents()
                 lock.unlock()
                 let permissions = engine.preflightPermissions()
                 let ack = try? JSONEncoder().encode(JSONValue.object(["role": .string("supervision"), "ok": .bool(true)])) + Data([0x0A])
                 if let ack { enqueueSupervisionWrite(fd, ack) }
+                // Late-attaching subscribers (10x opened while another harness is
+                // mid-control) get the current state as a replay of synthetic events.
+                for event in replay {
+                    if let line = try? event.jsonLine().data(using: .utf8) {
+                        enqueueSupervisionWrite(fd, line + Data([0x0A]))
+                    }
+                }
                 broadcast(.permissions(screenRecording: permissions.screenRecording, accessibility: permissions.accessibility))
             } else {
                 let label = message["label"]?.stringValue
@@ -409,6 +417,27 @@ public final class DaemonServer {
             break
         }
         return ToolEventResult(events: events, previewAction: previewAction, previewStop: previewStop)
+    }
+
+    /// Current registry state as synthetic events, replayed to a new supervision
+    /// subscriber so late attachers see pre-existing sessions and claims.
+    private func replayEvents() -> [SupervisionEvent] {
+        registry.allSessions.values.filter(\.isActive).sorted { $0.id.raw < $1.id.raw }.flatMap { info -> [SupervisionEvent] in
+            var events: [SupervisionEvent] = [
+                .sessionStarted(session: info.id.raw, harness: info.harness, label: info.label, pid: info.peerPID),
+            ]
+            events += registry.claimedWindows(for: info.id).map { window in
+                .windowClaimed(
+                    session: info.id.raw, harness: info.harness, windowID: Int(window.id),
+                    app: window.appName, title: window.title,
+                    bounds: "\(Int(window.bounds.minX)),\(Int(window.bounds.minY)) \(Int(window.bounds.width))x\(Int(window.bounds.height))"
+                )
+            }
+            if let status = info.status {
+                events.append(.statusChanged(session: info.id.raw, status: status))
+            }
+            return events
+        }
     }
 
     private func broadcast(_ event: SupervisionEvent) {
