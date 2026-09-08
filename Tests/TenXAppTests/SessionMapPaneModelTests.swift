@@ -35,3 +35,17 @@ import Testing
     #expect(model.focus.focusedNodeID == "view")
     #expect(model.focus.flowStepIndex == 1)
 }
+
+@MainActor
+@Test func sessionMapSaveFailureRemainsPresentableUntilNextAttempt() throws {
+    let document = try SessionMapFixtures.document(SessionMapFixtures.planningXML)
+    let model = SessionMapPaneModel(displayedDocument: document, state: .ready)
+
+    model.retainFailure(message: "The updated map could not be saved.")
+
+    #expect(model.displayedDocument == document)
+    #expect(model.state == .stale)
+    #expect(model.retainedFailureMessage == "The updated map could not be saved.")
+    model.transition(to: .writing)
+    #expect(model.retainedFailureMessage == nil)
+}

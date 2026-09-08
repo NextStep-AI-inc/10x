@@ -114,7 +114,7 @@ final class SessionMapPaneModel {
 
     func transition(to state: SessionMapPaneState) {
         self.state = state
-        if state == .ready { retainedFailureMessage = nil }
+        if state == .ready || state == .writing { retainedFailureMessage = nil }
     }
 
     func retainFailure(message: String) {

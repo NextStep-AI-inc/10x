@@ -100,9 +100,12 @@ enum SessionMapDigestBuilder {
             canonicalFacts,
             canonicalManifest,
         ].map { "\($0.utf8.count):\($0)" }.joined()
+        let cacheStateInput = [source.lineage, canonicalManifest, canonicalFacts, planning]
+            .map { "\($0.utf8.count):\($0)" }.joined()
         return SessionMapDigest(
             text: text,
             hash: sha256(hashInput),
+            cacheStateHash: sha256(cacheStateInput),
             facts: facts,
             knownRefs: source.knownRefs,
             cursor: SessionMapCursor(

@@ -81,6 +81,38 @@ import Testing
 }
 
 @MainActor
+@Test func sessionMapCatalogRefreshesWhenProjectChanges() async {
+    let catalog = SessionMapSettingsCatalogStub(models: [sessionMapCatalogModel("first")])
+    let model = sessionMapSettingsModel(catalog: catalog)
+
+    await model.loadSessionMapCatalog(projectURL: URL(filePath: "/tmp/first"))
+    await catalog.setModels([sessionMapCatalogModel("second")])
+    await model.loadSessionMapCatalog(projectURL: URL(filePath: "/tmp/second"))
+
+    #expect(await catalog.loadCount == 2)
+    #expect(model.sessionMapModels.map(\.id) == ["p/second"])
+}
+
+@MainActor
+@Test func concurrentSessionMapCatalogLoadsForSameProjectJoin() async {
+    let catalog = SessionMapSettingsCatalogStub(models: [sessionMapCatalogModel("writer")])
+    let model = sessionMapSettingsModel(catalog: catalog)
+    await catalog.blockNextLoad()
+    let project = URL(filePath: "/tmp/project")
+
+    let first = Task { await model.loadSessionMapCatalog(projectURL: project) }
+    await catalog.waitUntilLoadIsBlocked()
+    let second = Task { await model.loadSessionMapCatalog(projectURL: project) }
+    await Task.yield()
+    await catalog.releaseBlockedLoad()
+    await first.value
+    await second.value
+
+    #expect(await catalog.loadCount == 1)
+    #expect(model.sessionMapModels.map(\.id) == ["p/writer"])
+}
+
+@MainActor
 @Test func closingSettingsLoadCannotPublishOverReloadedCatalog() async throws {
     let catalog = SessionMapSettingsCatalogStub(models: [sessionMapCatalogModel("old")])
     let model = sessionMapSettingsModel(catalog: catalog)

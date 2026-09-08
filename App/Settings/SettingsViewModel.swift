@@ -22,6 +22,10 @@ final class SettingsViewModel {
     @ObservationIgnored private let service: OmpConfigService
     @ObservationIgnored private let sessionMapCatalog: (any ComposerCatalogLoading)?
     @ObservationIgnored private var sessionMapCatalogGeneration = 0
+    @ObservationIgnored private var sessionMapCatalogProjectURL: URL?
+    @ObservationIgnored private var sessionMapCatalogLoadingProjectURL: URL?
+    @ObservationIgnored private var sessionMapCatalogTask: Task<Void, Never>?
+    @ObservationIgnored private var loadTask: Task<Bool, Never>?
 
     init(
         service: OmpConfigService,
@@ -40,35 +44,50 @@ final class SettingsViewModel {
         return values.compactMapValues(\.stringValue)
     }
 
-    func loadSessionMapCatalog(projectURL: URL?) async {
-        guard sessionMapModels.isEmpty,
-              !isSessionMapCatalogLoading,
-              let sessionMapCatalog
-        else { return }
+    @discardableResult
+    func loadSessionMapCatalog(projectURL: URL?) async -> Bool {
+        let projectURL = projectURL?.standardizedFileURL
+        if sessionMapCatalogProjectURL == projectURL, !sessionMapModels.isEmpty { return true }
+        if sessionMapCatalogLoadingProjectURL == projectURL, let task = sessionMapCatalogTask {
+            await task.value
+            return sessionMapCatalogProjectURL == projectURL
+        }
+        guard let sessionMapCatalog else { return false }
         sessionMapCatalogGeneration += 1
         let generation = sessionMapCatalogGeneration
         isSessionMapCatalogLoading = true
+        sessionMapCatalogLoadingProjectURL = projectURL
         sessionMapCatalogError = nil
-        defer {
-            if sessionMapCatalogGeneration == generation {
-                isSessionMapCatalogLoading = false
+        let task = Task { @MainActor [weak self] in
+            do {
+                let models = try await sessionMapCatalog.load(projectURL: projectURL).models
+                guard let self, self.sessionMapCatalogGeneration == generation else { return }
+                self.sessionMapModels = models
+                self.sessionMapCatalogProjectURL = projectURL
+            } catch is CancellationError {
+                return
+            } catch {
+                guard let self, self.sessionMapCatalogGeneration == generation else { return }
+                self.sessionMapCatalogError = "Models couldn’t be loaded."
             }
         }
-        do {
-            let models = try await sessionMapCatalog.load(projectURL: projectURL).models
-            guard sessionMapCatalogGeneration == generation else { return }
-            sessionMapModels = models
-        } catch is CancellationError {
-            return
-        } catch {
-            guard sessionMapCatalogGeneration == generation else { return }
-            sessionMapCatalogError = "Models couldn’t be loaded."
+        sessionMapCatalogTask = task
+        await task.value
+        if sessionMapCatalogGeneration == generation {
+            sessionMapCatalogTask = nil
+            sessionMapCatalogLoadingProjectURL = nil
+            isSessionMapCatalogLoading = false
         }
+        return sessionMapCatalogProjectURL == projectURL
     }
 
     func shutdownSessionMapCatalog() async {
         sessionMapCatalogGeneration += 1
         sessionMapModels = []
+        sessionMapCatalogProjectURL = nil
+        sessionMapCatalogLoadingProjectURL = nil
+        sessionMapCatalogTask?.cancel()
+        sessionMapCatalogTask = nil
         sessionMapCatalogError = nil
         isSessionMapCatalogLoading = false
         await sessionMapCatalog?.shutdown()
@@ -76,7 +95,17 @@ final class SettingsViewModel {
 
     @discardableResult
     func load() async -> Bool {
-        guard !isLoading else { return loadError == nil && !configPath.isEmpty }
+        if let loadTask { return await loadTask.value }
+        let task = Task { @MainActor [weak self] in
+            await self?.performLoad() ?? false
+        }
+        loadTask = task
+        let result = await task.value
+        loadTask = nil
+        return result
+    }
+
+    private func performLoad() async -> Bool {
         isLoading = true
         loadError = nil
         defer { isLoading = false }

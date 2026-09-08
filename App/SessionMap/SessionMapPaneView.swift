@@ -196,7 +196,14 @@ struct SessionMapPaneView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            if let message = model.retainedFailureMessage {
+                Text(message)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .accessibilityIdentifier("session-map-save-error")
+            }
+            HStack(spacing: 6) {
             if model.displayedDocument != nil {
                 Menu("Regenerate") {
                     Button("Since caught up") { model.regenerate(.sinceCaughtUp) }
@@ -214,6 +221,7 @@ struct SessionMapPaneView: View {
             } else if case .failed = model.state, model.displayedDocument != nil {
                 Button("Try again") { model.regenerate(.sinceCaughtUp) }
                     .buttonStyle(GhostActionStyle())
+            }
             }
         }
         .padding(.horizontal, 16)

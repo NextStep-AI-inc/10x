@@ -95,6 +95,21 @@ import Testing
     #expect(failed.loadError != nil)
 }
 
+@MainActor
+@Test func concurrentSettingsLoadsJoinOneConfigRequest() async {
+    let runner = BlockingConfigRunner()
+    let model = SettingsViewModel(service: OmpConfigService(runner: runner))
+    let first = Task { await model.load() }
+    await runner.waitUntilBothCommandsStarted()
+    let second = Task { await model.load() }
+    await Task.yield()
+    await runner.release()
+
+    #expect(await first.value)
+    #expect(await second.value)
+    #expect(await runner.calls.count == 2)
+}
+
 @Test func configErrorsNeverIncludeTheSecretValue() async {
     let service = OmpConfigService(runner: FailingConfigRunner())
     do {
@@ -149,6 +164,30 @@ private actor FakeConfigRunner: OmpConfigRunning {
 private struct FailingConfigRunner: OmpConfigRunning {
     func run(arguments: [String]) async throws -> Data {
         throw FakeFailure()
+    }
+}
+
+private actor BlockingConfigRunner: OmpConfigRunning {
+    private(set) var calls: [[String]] = []
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func run(arguments: [String]) async throws -> Data {
+        calls.append(arguments)
+        await withCheckedContinuation { continuations.append($0) }
+        if arguments == ["config", "list", "--json"] {
+            return Data(#"{"autoResume":{"value":false,"type":"boolean","description":"Automatically resume"}}"#.utf8)
+        }
+        return Data("/tmp/omp/config.json\n".utf8)
+    }
+
+    func waitUntilBothCommandsStarted() async {
+        while calls.count < 2 { await Task.yield() }
+    }
+
+    func release() {
+        let pending = continuations
+        continuations.removeAll()
+        for continuation in pending { continuation.resume() }
     }
 }
 

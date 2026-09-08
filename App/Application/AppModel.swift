@@ -580,6 +580,12 @@ final class AppModel {
         sessionMapPaneModels[controller.id]?.transition(to: .writing)
         sessionMapGenerationTasks[controller.id] = Task { @MainActor [weak self, weak controller] in
             guard let self, let controller else { return }
+            if let generator = self.sessionMapGenerators[controller.id] {
+                await generator.invalidate(
+                    sessionKey: self.sessionMapSessionKey(for: controller),
+                    lineage: self.sessionMapSessionKey(for: controller),
+                    revision: revision)
+            }
             await self.generateSessionMap(
                 for: controller, scope: scope, force: force, revision: revision)
         }
@@ -595,17 +601,27 @@ final class AppModel {
               let paneModel = sessionMapPaneModels[controller.id]
         else { return }
         guard let executableURL = await sessionMapExecutableURL() else {
+            guard isCurrentSessionMapGeneration(controller, revision: revision) else { return }
             paneModel.transition(to: .needsModel)
             return
         }
+        guard isCurrentSessionMapGeneration(controller, revision: revision) else { return }
         let settings = settingsModel ?? dependencies.makeSettingsModel(executableURL)
         if settingsModel == nil { settingsModel = settings }
         guard await settings.load() else {
+            guard isCurrentSessionMapGeneration(controller, revision: revision) else { return }
             paneModel.transition(to: .needsModel)
             return
         }
+        guard isCurrentSessionMapGeneration(controller, revision: revision) else { return }
         let resolvedProjectURL = sessionMapProjectURL(for: controller)
-        await settings.loadSessionMapCatalog(projectURL: resolvedProjectURL)
+        guard await settings.loadSessionMapCatalog(projectURL: resolvedProjectURL),
+              isCurrentSessionMapGeneration(controller, revision: revision)
+        else {
+            guard isCurrentSessionMapGeneration(controller, revision: revision) else { return }
+            paneModel.transition(to: .needsModel)
+            return
+        }
         let selection = settings.sessionMapPreferences.writerSelection
         guard let model = SessionMapModelResolver.resolve(
             selection: selection,
@@ -619,6 +635,9 @@ final class AppModel {
 
         let sessionKey = sessionMapSessionKey(for: controller)
         let priorRecord = try? await dependencies.sessionMapStore.load(sessionKey: sessionKey)
+        guard isCurrentSessionMapGeneration(controller, revision: revision),
+              sessionMapSessionKey(for: controller) == sessionKey
+        else { return }
         let source = SessionMapSourceAdapter.make(
             items: controller.items,
             sessionKey: sessionKey,
@@ -635,6 +654,7 @@ final class AppModel {
             generator = dependencies.makeSessionMapGenerator(executableURL, projectURL)
             sessionMapGenerators[controller.id] = generator
         }
+        guard isCurrentSessionMapGeneration(controller, revision: revision) else { return }
         let result = await generator.generate(SessionMapGenerationInput(
             sessionKey: sessionKey,
             lineage: source.lineage,
@@ -679,7 +699,9 @@ final class AppModel {
                 return
             }
             do {
+                guard isCurrentSessionMapGeneration(controller, revision: revision) else { return }
                 try await dependencies.sessionMapStore.save(record, sessionKey: sessionKey)
+                guard isCurrentSessionMapGeneration(controller, revision: revision) else { return }
                 paneModel.transition(to: .ready)
             } catch {
                 paneModel.retainFailure(
@@ -734,11 +756,26 @@ final class AppModel {
         return location.installation?.executableURL
     }
 
+    private func isCurrentSessionMapGeneration(
+        _ controller: SessionController,
+        revision: UInt64
+    ) -> Bool {
+        !Task.isCancelled
+            && managedSessions[controller.id] === controller
+            && sessionMapGenerationRevisions[controller.id] == revision
+    }
+
     private func sessionMapSessionKey(for controller: SessionController) -> String {
-        if let indexed = managedSessionPaths.first(where: { $0.value == controller.id })?.key {
+        if let sessionPath = controller.sessionPath { return sessionPath }
+        if let indexed = managedSessionPaths
+            .filter({ $0.value == controller.id })
+            .map(\.key)
+            .sorted()
+            .first
+        {
             return indexed
         }
-        return controller.sessionPath ?? "new:\(controller.id.uuidString)"
+        return "new:\(controller.id.uuidString)"
     }
 
     private func sessionMapProjectURL(for controller: SessionController) -> URL? {
@@ -916,7 +953,7 @@ final class AppModel {
                 self.removeManagedSession(controller)
                 return
             }
-            self.indexManagedSessionPath(for: controller)
+            await self.indexManagedSessionPath(for: controller)
             guard self.activeSession === controller else { return }
             self.attachComposerSources(to: controller)
         }
@@ -965,7 +1002,7 @@ final class AppModel {
                 self.removeManagedSession(controller)
                 return
             }
-            self.indexManagedSessionPath(for: controller)
+            await self.indexManagedSessionPath(for: controller)
             await self.sessionActivityRegistry.prepareForFirstPrompt(
                 sessionID: controller.id,
                 primarySnapshot: primarySnapshot)
@@ -1511,14 +1548,29 @@ final class AppModel {
         return controller
     }
 
-    private func indexManagedSessionPath(for controller: SessionController) {
+    private func indexManagedSessionPath(for controller: SessionController) async {
         guard managedSessions[controller.id] === controller,
               let sessionPath = controller.sessionPath
+        else { return }
+        await migrateSessionMapRecordForCanonicalization(
+            controllerID: controller.id,
+            canonicalSessionPath: sessionPath)
+        guard managedSessions[controller.id] === controller,
+              controller.sessionPath == sessionPath
         else { return }
         managedSessionPaths[sessionPath] = controller.id
         if let exit = pendingUnexpectedExits.removeValue(forKey: sessionPath) {
             handleUnexpectedExit(exit, controller: controller)
         }
+    }
+
+    func migrateSessionMapRecordForCanonicalization(
+        controllerID: UUID,
+        canonicalSessionPath: String
+    ) async {
+        try? await dependencies.sessionMapStore.migrate(
+            from: "new:\(controllerID.uuidString)",
+            to: canonicalSessionPath)
     }
 
     private func receiveUnexpectedExit(_ exit: SessionProcessManager.UnexpectedExit) {

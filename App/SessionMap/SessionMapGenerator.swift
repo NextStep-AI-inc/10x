@@ -89,6 +89,12 @@ actor SessionMapGenerator {
             digestHash: input.digest.hash,
             writer: input.model,
             sourceManifest: input.digest.sourceFingerprintManifest)
+        if let latest = latestRequests[input.sessionKey],
+           latest.lineage == input.lineage,
+           latest.revision > input.revision
+        {
+            return obsolete(input: input, priorDocument: nil, priorXML: nil)
+        }
         latestRequests[input.sessionKey] = token
 
         let context = SessionMapValidationContext(
@@ -135,8 +141,7 @@ actor SessionMapGenerator {
             guard isCurrent(token, for: input.sessionKey) else {
                 return obsolete(input: input, priorDocument: priorDocument, priorXML: priorXML)
             }
-            var validation = SessionMapDocumentParser.parse(
-                Data(candidate.utf8), context: validationContext)
+            var validation = validateCandidate(candidate, context: validationContext)
             diagnostics += validation.warnings + validation.fatal
             if validation.document == nil || !validation.fatal.isEmpty {
                 let repaired = try await completion(
@@ -150,8 +155,7 @@ actor SessionMapGenerator {
                 guard isCurrent(token, for: input.sessionKey) else {
                     return obsolete(input: input, priorDocument: priorDocument, priorXML: priorXML)
                 }
-                validation = SessionMapDocumentParser.parse(
-                    Data(repaired.utf8), context: validationContext)
+                validation = validateCandidate(repaired, context: validationContext)
                 diagnostics += validation.warnings + validation.fatal
             }
             guard let document = validation.document, validation.fatal.isEmpty else {
@@ -309,6 +313,24 @@ actor SessionMapGenerator {
         latestRequests[sessionKey] == token
     }
 
+    private func validateCandidate(
+        _ candidate: String,
+        context: SessionMapValidationContext
+    ) -> SessionMapValidation {
+        let validation = SessionMapDocumentParser.parse(Data(candidate.utf8), context: context)
+        guard let document = validation.document,
+              SessionMapXMLSerializer.serialize(document, facts: context.facts).utf8.count
+                > SessionMapLimits.xmlBytes
+        else { return validation }
+        return SessionMapValidation(
+            document: nil,
+            warnings: validation.warnings,
+            fatal: validation.fatal + [SessionMapDiagnostic(
+                code: "limitExceeded",
+                elementID: nil,
+                detail: "Canonical XML exceeds \(SessionMapLimits.xmlBytes) bytes.")])
+    }
+
     private func cacheKey(input: SessionMapGenerationInput, priorXML: String?) -> String {
         let scope = switch input.scope {
         case .sinceCaughtUp: "sinceCaughtUp"
@@ -316,7 +338,7 @@ actor SessionMapGenerator {
         case .wholeSession: "wholeSession"
         }
         let fields = [
-            "session-map-v1", input.lineage, input.digest.hash,
+            "session-map-v2", input.lineage, input.digest.cacheStateHash,
             sha256(priorXML ?? ""), scope, input.model.provider, input.model.modelID,
             input.model.effort ?? "",
         ]

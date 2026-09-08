@@ -54,7 +54,15 @@ func sessionMapRPCFailureReapsChild(caseName: String) async throws {
     do {
         _ = try await fixture.rpc.complete(prompt: "Build", images: [], model: fixture.model)
         Issue.record("Expected \(caseName) to fail")
-    } catch {}
+    } catch {
+        switch caseName {
+        case "timeout": #expect(error as? SessionMapRPCError == .deadlineExceeded)
+        case "eof": #expect(error as? SessionMapRPCError == .streamEnded)
+        case "provider-error":
+            #expect(error as? SessionMapRPCError == .provider("fixture provider unavailable"))
+        default: Issue.record("Unexpected fixture case \(caseName)")
+        }
+    }
     let pid = try await waitForPID(at: fixture.pidFile)
     #expect(kill(pid, 0) == -1)
 }

@@ -9,6 +9,11 @@ enum SessionMapRPCError: Error, Equatable {
 }
 
 struct SessionMapRPC: Sendable {
+    private actor DeadlineState {
+        private(set) var hasExpired = false
+        func expire() { hasExpired = true }
+    }
+
     typealias ClientFactory = @Sendable (RpcClientConfiguration) -> RpcClient
 
     private let executableURL: URL
@@ -71,7 +76,8 @@ struct SessionMapRPC: Sendable {
         prompt: String,
         images: [PromptImage]
     ) async throws -> String {
-        try await withThrowingTaskGroup(of: String.self) { group in
+        let deadlineState = DeadlineState()
+        return try await withThrowingTaskGroup(of: String.self) { group in
             group.addTask {
                 let output = Task { try await Self.terminalOutput(from: client.events) }
                 do {
@@ -81,11 +87,17 @@ struct SessionMapRPC: Sendable {
                     return try await output.value
                 } catch {
                     output.cancel()
+                    if error as? SessionMapRPCError == .streamEnded,
+                       await deadlineState.hasExpired
+                    {
+                        throw SessionMapRPCError.deadlineExceeded
+                    }
                     throw error
                 }
             }
             group.addTask {
                 try await Task.sleep(for: deadline)
+                await deadlineState.expire()
                 await client.shutdown()
                 throw SessionMapRPCError.deadlineExceeded
             }

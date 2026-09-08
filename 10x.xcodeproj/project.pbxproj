@@ -35,6 +35,7 @@
 		0F857D1B061773313D4761D96F7495EB /* SearchModalModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20D35C6C67F5F0451C060614D296474 /* SearchModalModel.swift */; };
 		0FB311CB19F5B760705ADD225B593363 /* ComposerCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC401EACACBD59AF101F4168D6767F18 /* ComposerCatalogService.swift */; };
 		1035B3F3C2D5A60B697FF1481C00A320 /* ViewSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFEFC461F4D54A58DD7B0FDB4D9B755 /* ViewSnapshotTests.swift */; };
+		104F7E05E0BF429DC73BA1C6F7112838 /* AppModelSessionMapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B3D04C5DA0A437F13E8C7536D04914 /* AppModelSessionMapTests.swift */; };
 		106BA924E08810EECA7E472B8CD45060 /* ExtensionUIRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08DB11A869FEF85B09424595F2F49EB8 /* ExtensionUIRouterTests.swift */; };
 		114E61293A71ADD6FAE5FDADD7247958 /* SettingsCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A87EB3BC3A4E6795E06B7178A561E74 /* SettingsCategory.swift */; };
 		11ABFF2D6BB0182D7B4DDDD8AA514091 /* TranscriptMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02A1CA4BE39825909AC005CAB2260DE2 /* TranscriptMessageTests.swift */; };
@@ -480,6 +481,7 @@
 		20C8F6172588FE2E521FCAD55A8CFA6C /* SettingsCatalog.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsCatalog.swift; path = App/Settings/SettingsCatalog.swift; sourceTree = "<group>"; };
 		2121F6AE73A3AAF078706124264FC19D /* ProviderAccountConnectionRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountConnectionRowView.swift; path = App/Providers/ProviderAccountConnectionRowView.swift; sourceTree = "<group>"; };
 		214D8A464AFFD39114EA532C70AA69D7 /* AdvisoryContentParser.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AdvisoryContentParser.swift; path = App/Sessions/AdvisoryContentParser.swift; sourceTree = "<group>"; };
+		21B3D04C5DA0A437F13E8C7536D04914 /* AppModelSessionMapTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppModelSessionMapTests.swift; path = Tests/TenXAppTests/AppModelSessionMapTests.swift; sourceTree = "<group>"; };
 		21DA0FA5724995E92EBC22D6CBA61548 /* SessionMapModelResolverTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapModelResolverTests.swift; path = Tests/TenXAppTests/SessionMapModelResolverTests.swift; sourceTree = "<group>"; };
 		22A7A802AEFDD87347E88F5CE13F9499 /* ProviderUsageDetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageDetailView.swift; path = App/Providers/ProviderUsageDetailView.swift; sourceTree = "<group>"; };
 		232D48B6C9FE88E2A942ED5CD80FAC55 /* OmpUsageRunning.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpUsageRunning.swift; path = App/Providers/OmpUsageRunning.swift; sourceTree = "<group>"; };
@@ -1121,6 +1123,7 @@
 				36407A74C23D18EB7385FCD5936E5913 /* AdvisoryContentParserTests.swift */,
 				5365A56E06B384ED01F176781B986C50 /* AppMenuStateTests.swift */,
 				849385C1F391C8C380E2DD9DD8C72A0E /* AppModelNavigationTests.swift */,
+				21B3D04C5DA0A437F13E8C7536D04914 /* AppModelSessionMapTests.swift */,
 				C4076C1DABB039E7A6E9337D8499EF73 /* AppModelStartupTests.swift */,
 				3B359C25C1853CA0C9D8303FB93D8799 /* AppModelUpdateTests.swift */,
 				48746C37C1E70B8DAEF2236EA7775B7F /* AppRouteTests.swift */,
@@ -1658,6 +1661,7 @@
 				BB2017770AC3C9FEE0DCA167FDE25EED /* AdvisoryContentParserTests.swift in Sources */,
 				586B36675B07BC04D1669E266E80ECD7 /* AppMenuStateTests.swift in Sources */,
 				9D13855A49EC85E300FF8E98D301118C /* AppModelNavigationTests.swift in Sources */,
+				104F7E05E0BF429DC73BA1C6F7112838 /* AppModelSessionMapTests.swift in Sources */,
 				06320066BDA69CC5942317043A672F6D /* AppModelStartupTests.swift in Sources */,
 				F9CED5BCC51213FE16D5697F66757D21 /* AppModelUpdateTests.swift in Sources */,
 				0D344CE46865C9A36FC65D0C49B64849 /* AppRouteTests.swift in Sources */,

@@ -17,10 +17,10 @@ enum SessionMapPrompt {
 
         <session_map_data>
         <previous_validated_xml>
-        \(bounded(previousXML ?? "(none)", bytes: SessionMapLimits.xmlBytes))
+        \(escaped(previousXML ?? "(none)", bytes: SessionMapLimits.xmlBytes))
         </previous_validated_xml>
         <current_digest>
-        \(bounded(digest.text, bytes: SessionMapDigestBuilder.maxBytes))
+        \(escaped(digest.text, bytes: SessionMapDigestBuilder.maxBytes))
         </current_digest>
         </session_map_data>
         """
@@ -41,16 +41,31 @@ enum SessionMapPrompt {
         The prior answer was rejected. Repair it once and return one complete replacement.
         <repair_data>
         <diagnostics>
-        \(bounded(details, bytes: 4 * 1024))
+        \(escaped(details, bytes: 4 * 1024))
         </diagnostics>
         <rejected_xml>
-        \(bounded(rejectedXML, bytes: SessionMapLimits.xmlBytes))
+        \(escaped(rejectedXML, bytes: SessionMapLimits.xmlBytes))
         </rejected_xml>
         </repair_data>
         """
     }
 
-    private static func bounded(_ value: String, bytes: Int) -> String {
-        SessionMapDigestBuilder.utf8Prefix(value, maxBytes: bytes)
+    private static func escaped(_ value: String, bytes: Int) -> String {
+        var result = ""
+        var used = 0
+        for character in value {
+            let unit = switch character {
+            case "&": "&amp;"
+            case "<": "&lt;"
+            case ">": "&gt;"
+            case "\"": "&quot;"
+            case "'": "&apos;"
+            default: String(character)
+            }
+            guard used + unit.utf8.count <= bytes else { break }
+            result += unit
+            used += unit.utf8.count
+        }
+        return result
     }
 }

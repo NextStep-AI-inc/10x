@@ -59,6 +59,7 @@ struct SessionMapCursor: Codable, Equatable, Sendable {
 struct SessionMapDigest: Equatable, Sendable {
     let text: String
     let hash: String
+    let cacheStateHash: String
     let facts: [String: SessionMapFact]
     let knownRefs: Set<String>
     let cursor: SessionMapCursor
