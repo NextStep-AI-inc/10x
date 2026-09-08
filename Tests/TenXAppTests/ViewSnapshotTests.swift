@@ -425,7 +425,9 @@ import Testing
             model: model,
             registry: registry,
             store: store,
-            providerModel: providerModel),
+            providerModel: providerModel,
+            harnessNoticeStore: HarnessNoticePreferenceStore(defaults: defaults),
+            availableModels: []),
         name: "continuous-settings")
 }
 

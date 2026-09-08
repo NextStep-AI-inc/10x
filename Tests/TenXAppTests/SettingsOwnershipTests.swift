@@ -13,6 +13,15 @@ import Testing
 
         #expect(composerMatches == [.composer])
         #expect(ideMatches == [.general])
+
+        let hiddenMatches = TenXSettingsCategory.allCases.filter {
+            $0.matches(query: "hidden", preferredIDEName: nil)
+        }
+        let noticeMatches = TenXSettingsCategory.allCases.filter {
+            $0.matches(query: "notice", preferredIDEName: nil)
+        }
+        #expect(hiddenMatches == [.general])
+        #expect(noticeMatches == [.general])
     }
 
     @Test func preferredIDEFocusClearsSearchForNativeNavigation() {

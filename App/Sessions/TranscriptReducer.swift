@@ -25,6 +25,8 @@ struct TranscriptReducer {
     private var nextSyntheticID = 1
     private var toolReducer = ToolEventReducer()
     private var subagentReducer = SubagentEventReducer()
+    private var droppedHarnessMessages: [HarnessMessageDescriptor] = []
+    private var droppedHarnessMessageSignatures: Set<String> = []
 
     @discardableResult
     mutating func consume(_ frame: RpcFrame) -> TranscriptMutation {
@@ -44,7 +46,10 @@ struct TranscriptReducer {
             return .immediate
         case "message_start":
             guard let message = payload["message"] else { return .none }
-            guard TranscriptMessage.isDisplayable(message) else { return .none }
+            guard TranscriptMessage.isDisplayable(message) else {
+                recordDroppedHarnessMessage(message)
+                return .none
+            }
             if Self.isMalformedToolResult(message) { return .none }
             if let mutation = consumeToolResult(message) { return mutation }
             let id = messageID(message)
@@ -69,7 +74,10 @@ struct TranscriptReducer {
             return replaceInflightMessage(id: id, raw: message, isFinal: false) ? .coalesced : .none
         case "message_end":
             guard let message = payload["message"] else { return .none }
-            guard TranscriptMessage.isDisplayable(message) else { return .none }
+            guard TranscriptMessage.isDisplayable(message) else {
+                recordDroppedHarnessMessage(message)
+                return .none
+            }
             if Self.isMalformedToolResult(message) { return .none }
             if let mutation = consumeToolResult(message) { return mutation }
             if Self.isCompleteAtStart(message) {
@@ -228,6 +236,9 @@ struct TranscriptReducer {
                 continue
             }
 
+            if !TranscriptMessage.isDisplayable(message) {
+                recordDroppedHarnessMessage(message)
+            }
             items.append(contentsOf: TranscriptMessageNormalizer.items(
                 id: message["id"]?.stringValue ?? "history-\(index)",
                 raw: message,
@@ -246,6 +257,10 @@ struct TranscriptReducer {
     mutating func load(history: TranscriptHistory) -> TranscriptMutation {
         let previous = items
         items = history.items
+        for descriptor in history.dropped
+        where droppedHarnessMessageSignatures.insert(descriptor.signature).inserted {
+            droppedHarnessMessages.append(descriptor)
+        }
         inflightMessageID = nil
         inflightItemIDs = []
         pendingPersistenceIDs = []
@@ -440,11 +455,45 @@ struct TranscriptReducer {
 
     @discardableResult
     mutating func appendNotice(level: String, message: String) -> TranscriptMutation {
-        items.append(.notice(
-            id: syntheticID(prefix: "notice"),
-            level: level,
-            message: message))
+        appendNotice(id: syntheticID(prefix: "notice"), level: level, message: message)
+    }
+
+    /// Caller-chosen id, so the caller can rewrite the notice in place later
+    /// (harness-message notices swap in their summary).
+    @discardableResult
+    mutating func appendNotice(id: String, level: String, message: String) -> TranscriptMutation {
+        items.append(.notice(id: id, level: level, message: message))
         return .immediate
+    }
+
+    @discardableResult
+    mutating func updateNotice(id: String, message: String) -> TranscriptMutation {
+        guard let index = items.firstIndex(where: { $0.id == id }),
+              case .notice(let noticeID, let level, _) = items[index]
+        else { return .none }
+        items[index] = .notice(id: noticeID, level: level, message: message)
+        return .immediate
+    }
+
+    /// Drained by the processor after each consume/load; the controller turns
+    /// descriptors into notices. The reducer stays settings-free.
+    mutating func drainDroppedHarnessMessages() -> [HarnessMessageDescriptor] {
+        let drained = droppedHarnessMessages
+        droppedHarnessMessages = []
+        return drained
+    }
+
+    private mutating func recordDroppedHarnessMessage(_ message: JSONValue) {
+        let text = TranscriptMessage.visibleText(from: message)
+        guard !text.isEmpty else { return }
+        let descriptor = HarnessMessageDescriptor(
+            role: message["role"]?.stringValue,
+            customType: message["customType"]?.stringValue,
+            byteCount: text.count,
+            text: text)
+        guard droppedHarnessMessageSignatures.insert(descriptor.signature).inserted
+        else { return }
+        droppedHarnessMessages.append(descriptor)
     }
 
     @discardableResult

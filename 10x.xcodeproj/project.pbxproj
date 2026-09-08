@@ -38,6 +38,7 @@
 		16227F7A3F65DE75B91ABF6F77D31CFF /* FileReferenceResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */; };
 		175942C869C877CD39AA31473861FA1B /* ProviderManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C62FABF4DCE1A61B0AF5B1A62E89D4A /* ProviderManaging.swift */; };
 		17E4CC50D2CBB20C3ACC2D8EB9E721BA /* OnboardingInstallLogBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DBC57C8FAC7040E884E8E191B76538 /* OnboardingInstallLogBuffer.swift */; };
+		18343B774420448C021D354F48B4774D /* HarnessNoticeSummarizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51B0A7BFC138996A545AD785F9B4094E /* HarnessNoticeSummarizerTests.swift */; };
 		186684E4CE12CB2B29E9FDDDDBFA1EF7 /* SettingsOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55726728AC7CE94931331D9D19BF57A6 /* SettingsOwnershipTests.swift */; };
 		1954B339DE6721B7C932C909D4274CF5 /* ExtensionUIRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA28DA0E2B373FCE0E1CCB026D76B4C0 /* ExtensionUIRouter.swift */; };
 		19B092A0F92B14CB8A0B346CE9F0F476 /* RendererSaturationFixtureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C43005FA517CE145F81242173B66582 /* RendererSaturationFixtureTests.swift */; };
@@ -81,6 +82,7 @@
 		30093F8555F6AB9BFAC4B772C5F5664D /* SearchResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DFBA50E93FE68B650E3DA47C2736F1D /* SearchResult.swift */; };
 		30D96D97BDCE292CEC0FD047C404BB91 /* 10x-wordmark.svg in Resources */ = {isa = PBXBuildFile; fileRef = 108FB7C260AC219C42872EE47BFAF018 /* 10x-wordmark.svg */; };
 		32AB7620DAA31EB21914CA5C98086A8C /* SplashUpdateDriverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31044C28FED174AFD0FB14452ADC8C73 /* SplashUpdateDriverTests.swift */; };
+		32B00D21CF0B5739516FC39BE445D797 /* HarnessMessageDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAF342540D98CB0535A709A3C658805F /* HarnessMessageDescriptor.swift */; };
 		334062408B2F48A01286325880DB7B03 /* ToolCardRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6B78F06918C6490DCC1F2AE35935690 /* ToolCardRegistryTests.swift */; };
 		33B200F61E67EFA05EEFB807F0F4ABAB /* ToolContentExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30792BD1DA4BEEB76B9E4309B28E6E30 /* ToolContentExtractor.swift */; };
 		3571BA37AA76FACBBDAEEB8E0BCED4A3 /* ComposerControlsPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFE8BF1F950DDF0BA45B43F6C14DD2E3 /* ComposerControlsPresentation.swift */; };
@@ -104,6 +106,7 @@
 		45DED5FCE518B5B385EA79AF6CBE4042 /* ProviderPrimaryPreferenceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CF8FF0C9FE7937A2C35DA9F771A31D9 /* ProviderPrimaryPreferenceStoreTests.swift */; };
 		48012D1628CF8ADDF5E2B43C7BC00397 /* ToolEventReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EFC9F571B31A95C4E963E3CE6F5F5FA /* ToolEventReducer.swift */; };
 		488860D2FBFEFEF9B7CAAE3F85C00219 /* RecentProjectStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36CB95BC646298C16585D2058D8AD89 /* RecentProjectStoreTests.swift */; };
+		4916E4C19F00F7116336E3E673441989 /* HarnessNoticeSummarizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA089F23079FD6CFE4AE6E2062C70B84 /* HarnessNoticeSummarizer.swift */; };
 		49259C8C91367B8E0C436F350E3AF43F /* TranscriptMessageNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 548BFE6280AA74D02BF4DFC7B8FF7EAF /* TranscriptMessageNormalizer.swift */; };
 		4945885CCA5AA51E5A5A722CFAA29D28 /* ProviderUsageDockFocusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D34678F2BAF33A703AA6950F45CF117 /* ProviderUsageDockFocusTests.swift */; };
 		4A0AFD9E671813F38CFA3A1472066F2D /* SessionSearchDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6ED0B06D0ACA3A31602C718C4FDF22F6 /* SessionSearchDocument.swift */; };
@@ -114,6 +117,7 @@
 		4E8AF2206E8908E9F0D15D5EB609537A /* SourceSurfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9905325FEE3AD4AAEED343B367C5015 /* SourceSurfaceTests.swift */; };
 		4ED931FCA5B0F7F51869FC1D55C8C904 /* SessionDeletionConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FAEB9B26382BB231DDC6996D7BFAA7F /* SessionDeletionConfirmationView.swift */; };
 		4FA2D7FA94C4EDB745AA07FAFBE547B5 /* ModelPickerContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 028D1854CBAB80FD366ABE7341D98040 /* ModelPickerContent.swift */; };
+		4FE1B50FD6A217E796B7C06E57A720EA /* HarnessNoticeSettingRowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14F68CA118145EF0CEBFE40A985A63DB /* HarnessNoticeSettingRowTests.swift */; };
 		51C0D52B312905D58FC68023AC30FD89 /* BrandWordmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC82A22B2AB1B4AF8D75C32BD1574437 /* BrandWordmark.swift */; };
 		52942D72C7B66BC6E47E0901FD9F6387 /* ProgressiveRevealButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E587E284C2E5C055AD1BB5E6654E60F /* ProgressiveRevealButton.swift */; };
 		52A780991B123C29F5E7B88B165F0D88 /* FileReferenceLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 69EC4224D86689BF1A5D2D37996F7381 /* FileReferenceLabel.swift */; };
@@ -139,6 +143,7 @@
 		61C051649E204A2EE7664AC8C4A0DA77 /* ChooseProjectFlyout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A78207AC2A26009BADC702EE948558E8 /* ChooseProjectFlyout.swift */; };
 		631B10F07438F97D5EE8A299D7158D16 /* ProviderUsageSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB5CFF097EC6F595636C69F1E48D0CC /* ProviderUsageSnapshotTests.swift */; };
 		64A4E836C35EA37AB58FCEEE8C95AAAA /* SelectionChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B5FCBA8B2DDB72648FEBC845CDC5A46 /* SelectionChip.swift */; };
+		65414EF1A1136D02DDC0283235890F65 /* HarnessNoticeSettingRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB7510E17828677AAC4BBA406265B47D /* HarnessNoticeSettingRowView.swift */; };
 		65898B3E30608FB3E26DD9FFDA39C095 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6730739B6C833D443EA8AA8AB4A0366E /* SplashView.swift */; };
 		65DC62C6D0F7EB723921D03406C9DD81 /* SessionSearchDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA6077566BEB40A20AFAD16332D256D /* SessionSearchDatabase.swift */; };
 		66AE4E460C5D40AD5E46026015C6F7AE /* RailExpansionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3595A63E87CF76E9DE8DFE8808F05075 /* RailExpansionModelTests.swift */; };
@@ -187,6 +192,7 @@
 		863B086C0CC8C25B98573EAFFB38D488 /* SessionRenameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9184DBB95AC7035C9F4A0743F26739A2 /* SessionRenameTests.swift */; };
 		8643EFA0E39D3171C3AF42EBCADFE7DC /* TranscriptEventProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65DD34C599234CF61AA2F47A8B625865 /* TranscriptEventProcessor.swift */; };
 		87A436DC02ED8261421CA7C051047F6E /* TranscriptReferenceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6195C2D3E49373746BC1BFFF0C425DF /* TranscriptReferenceView.swift */; };
+		87A8EFE3BF032D3F1E9A6DACF9B7A2B4 /* HarnessNoticePreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B0F820770B90C34CEC4528C006CEF4F /* HarnessNoticePreferenceStore.swift */; };
 		894B808999E573D9E7F72E872D62ADFE /* ProjectSessionGrouper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00FE4C175F423D7BAF5DC3250CF8F47E /* ProjectSessionGrouper.swift */; };
 		89D5AE7906E0826CFC6EB9AFBBE47501 /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 1684556654321E9FA4F3E82E46DA2FB6 /* libsqlite3.tbd */; };
 		89FA250152F1160917A74C0AFA0541A8 /* ProviderAccountUsageBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D3D7E93CA9E76D7BC5C488160249CAF /* ProviderAccountUsageBackend.swift */; };
@@ -290,6 +296,7 @@
 		D49F3D45D00DDDBEDA3AA67479E3D2AB /* FileTypeIconDescriptor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF689137EB44FEDE196BEF9C8124750A /* FileTypeIconDescriptor.swift */; };
 		D4E5038D0568B6657A26310A8AD7A465 /* TranscriptReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FA98D2888CA1FD1E608B2B6A56A7D90 /* TranscriptReducerTests.swift */; };
 		D54DD3884DA49FC540ABF86BB9FB8D4C /* ExtensionUIState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7323EF9BF7E6DC8E9FA4EAD6E50822E3 /* ExtensionUIState.swift */; };
+		D56C2F1CAC246D2FF39DBCA057F16335 /* HarnessNoticePreferenceStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F09A56181CE669AA995DBD927EED92 /* HarnessNoticePreferenceStoreTests.swift */; };
 		D5730C17BF4631CBE1CF9E33227D4F8F /* ProgressiveTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9312CABDA54EC7E3EC2CF40B4476CAFC /* ProgressiveTextView.swift */; };
 		D69987337438D8374E42DAEB0B96AE02 /* SessionControllerComposerControlsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81E5DA519ACF24ECFEA60EEA9E6B4A7 /* SessionControllerComposerControlsTests.swift */; };
 		D7103652AE6AAB3D698C79E3F454A00E /* PendingUserSubmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45FDB528AD898BA202869FE39D1C9A5 /* PendingUserSubmission.swift */; };
@@ -402,6 +409,7 @@
 		12ECD71D809F3BFA5A44D4E666A4D65B /* ComposerInteractionRoutingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerInteractionRoutingTests.swift; path = Tests/TenXAppTests/ComposerInteractionRoutingTests.swift; sourceTree = "<group>"; };
 		1358E8B1E1F95D30DD0AE9DB03D31DE2 /* SourceSurface.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourceSurface.swift; path = App/Design/SourceSurface.swift; sourceTree = "<group>"; };
 		144FEB107522651ECAFD41008C930D94 /* SessionRuntimeState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionRuntimeState.swift; path = App/Sessions/SessionRuntimeState.swift; sourceTree = "<group>"; };
+		14F68CA118145EF0CEBFE40A985A63DB /* HarnessNoticeSettingRowTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessNoticeSettingRowTests.swift; path = Tests/TenXAppTests/HarnessNoticeSettingRowTests.swift; sourceTree = "<group>"; };
 		153320A3E0CBC5F87098D9794539D14E /* IDEPreferenceStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IDEPreferenceStore.swift; path = App/FileReferences/IDEPreferenceStore.swift; sourceTree = "<group>"; };
 		15FAF36FD7A1147DA961C820B00A63E2 /* FavoriteModelStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FavoriteModelStoreTests.swift; path = Tests/TenXAppTests/FavoriteModelStoreTests.swift; sourceTree = "<group>"; };
 		1684556654321E9FA4F3E82E46DA2FB6 /* libsqlite3.tbd */ = {isa = PBXFileReference; includeInIndex = 1; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
@@ -469,6 +477,7 @@
 		4A35E8A634BF91C74F76FAFB5DB3EA35 /* TranscriptEventProcessorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptEventProcessorTests.swift; path = Tests/TenXAppTests/TranscriptEventProcessorTests.swift; sourceTree = "<group>"; };
 		4A87EB3BC3A4E6795E06B7178A561E74 /* SettingsCategory.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsCategory.swift; path = App/Settings/SettingsCategory.swift; sourceTree = "<group>"; };
 		4A981545D5E9E9723EB649A5D1490BA6 /* RailMapLayout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailMapLayout.swift; path = App/Shell/RailMapLayout.swift; sourceTree = "<group>"; };
+		4B0F820770B90C34CEC4528C006CEF4F /* HarnessNoticePreferenceStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessNoticePreferenceStore.swift; path = App/Settings/HarnessNoticePreferenceStore.swift; sourceTree = "<group>"; };
 		4B5FCBA8B2DDB72648FEBC845CDC5A46 /* SelectionChip.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SelectionChip.swift; path = App/Design/SelectionChip.swift; sourceTree = "<group>"; };
 		4C932DCE27B19D1788E2CFCECD3CA151 /* ComposerInteractionSettingRows.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerInteractionSettingRows.swift; path = App/Settings/ComposerInteractionSettingRows.swift; sourceTree = "<group>"; };
 		4CC1AB249190EC264C4FEB172080EC0F /* ProgressiveReveal.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProgressiveReveal.swift; path = App/Design/ProgressiveReveal.swift; sourceTree = "<group>"; };
@@ -478,6 +487,7 @@
 		4F284392DF7E6DF2AD2E527E583F3AF1 /* OnboardingRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingRowView.swift; path = App/Onboarding/OnboardingRowView.swift; sourceTree = "<group>"; };
 		4FAEB9B26382BB231DDC6996D7BFAA7F /* SessionDeletionConfirmationView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionDeletionConfirmationView.swift; path = App/Sessions/SessionDeletionConfirmationView.swift; sourceTree = "<group>"; };
 		51A57C0E807C4A8A640794119722D0A6 /* SessionController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionController.swift; path = App/Sessions/SessionController.swift; sourceTree = "<group>"; };
+		51B0A7BFC138996A545AD785F9B4094E /* HarnessNoticeSummarizerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessNoticeSummarizerTests.swift; path = Tests/TenXAppTests/HarnessNoticeSummarizerTests.swift; sourceTree = "<group>"; };
 		526667F3C26993A531F8787F4D47074F /* OmpConfigRunning.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpConfigRunning.swift; path = App/Settings/OmpConfigRunning.swift; sourceTree = "<group>"; };
 		526E1CBFAF1745824F470D25BC432443 /* UnifiedDiff.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UnifiedDiff.swift; path = App/Tools/UnifiedDiff.swift; sourceTree = "<group>"; };
 		533EF9D2B535A8AE3F73882EB8E6AFB2 /* ProviderAccountRefTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountRefTests.swift; path = Tests/TenXAppTests/ProviderAccountRefTests.swift; sourceTree = "<group>"; };
@@ -623,6 +633,7 @@
 		B3731B0F5988DEBA30A2D9CEDFF9DE28 /* ToolDisclosureStateTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolDisclosureStateTests.swift; path = Tests/TenXAppTests/ToolDisclosureStateTests.swift; sourceTree = "<group>"; };
 		B3BDA8110B9C4CBAF62E1870E6F96D17 /* ToolDisclosureState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolDisclosureState.swift; path = App/Tools/ToolDisclosureState.swift; sourceTree = "<group>"; };
 		B3EF186EA996949E598D53D7B5E831D4 /* SessionSearchService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionSearchService.swift; path = App/Search/SessionSearchService.swift; sourceTree = "<group>"; };
+		B4F09A56181CE669AA995DBD927EED92 /* HarnessNoticePreferenceStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessNoticePreferenceStoreTests.swift; path = Tests/TenXAppTests/HarnessNoticePreferenceStoreTests.swift; sourceTree = "<group>"; };
 		B5BC802B6FA8A14B2340D5488B41C746 /* ComposerTextViewConfigurator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerTextViewConfigurator.swift; path = App/Sessions/ComposerTextViewConfigurator.swift; sourceTree = "<group>"; };
 		B6195C2D3E49373746BC1BFFF0C425DF /* TranscriptReferenceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptReferenceView.swift; path = App/Sessions/TranscriptReferenceView.swift; sourceTree = "<group>"; };
 		B6670CE700ABFA86FC05FC86F62099E0 /* StartupTestFixtures.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StartupTestFixtures.swift; path = Tests/TenXAppTests/StartupTestFixtures.swift; sourceTree = "<group>"; };
@@ -653,6 +664,8 @@
 		C8FD7B6822B9E218995023EE339B135B /* TranscriptReferenceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptReferenceTests.swift; path = Tests/TenXAppTests/TranscriptReferenceTests.swift; sourceTree = "<group>"; };
 		CA28DA0E2B373FCE0E1CCB026D76B4C0 /* ExtensionUIRouter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExtensionUIRouter.swift; path = App/ExtensionUI/ExtensionUIRouter.swift; sourceTree = "<group>"; };
 		CA9407F3BE2F5BA554237039EB83D44D /* UpdateSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateSnapshotTests.swift; path = Tests/TenXAppTests/UpdateSnapshotTests.swift; sourceTree = "<group>"; };
+		CAF342540D98CB0535A709A3C658805F /* HarnessMessageDescriptor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessMessageDescriptor.swift; path = App/Sessions/HarnessMessageDescriptor.swift; sourceTree = "<group>"; };
+		CB7510E17828677AAC4BBA406265B47D /* HarnessNoticeSettingRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessNoticeSettingRowView.swift; path = App/Settings/HarnessNoticeSettingRowView.swift; sourceTree = "<group>"; };
 		CC8FFC4D54E7F29830A3C8EB967DD8C1 /* DiffRenderPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DiffRenderPresentation.swift; path = App/Tools/DiffRenderPresentation.swift; sourceTree = "<group>"; };
 		CCB9EED15D3CD21901773164F4B8AFC6 /* ProviderConnectionRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderConnectionRowView.swift; path = App/Providers/ProviderConnectionRowView.swift; sourceTree = "<group>"; };
 		CCD51B51845667C84FE0956EBE30D561 /* ResponseMetadataView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ResponseMetadataView.swift; path = App/Sessions/ResponseMetadataView.swift; sourceTree = "<group>"; };
@@ -670,6 +683,7 @@
 		D7651ABB34DCD41F0E1384304EA0C22A /* AppTerminationDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppTerminationDelegate.swift; path = App/Application/AppTerminationDelegate.swift; sourceTree = "<group>"; };
 		D977E9429CDAF38DBD2772F2C6C1EE32 /* OmpInstallation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpInstallation.swift; path = App/Setup/OmpInstallation.swift; sourceTree = "<group>"; };
 		D9C54F021D2994F213DDA8C16F629707 /* src */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = src; path = OmpExtension/src; sourceTree = "<group>"; };
+		DA089F23079FD6CFE4AE6E2062C70B84 /* HarnessNoticeSummarizer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessNoticeSummarizer.swift; path = App/Sessions/HarnessNoticeSummarizer.swift; sourceTree = "<group>"; };
 		DD729CAB9885A8FF527B8F91A75CFD6C /* OmpCommandRunner.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpCommandRunner.swift; path = App/Application/OmpCommandRunner.swift; sourceTree = "<group>"; };
 		DE409C70FAB360D56D15AAA1236B5BAB /* RailScrollNavigation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailScrollNavigation.swift; path = App/Shell/RailScrollNavigation.swift; sourceTree = "<group>"; };
 		DF689137EB44FEDE196BEF9C8124750A /* FileTypeIconDescriptor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileTypeIconDescriptor.swift; path = App/FileReferences/FileTypeIconDescriptor.swift; sourceTree = "<group>"; };
@@ -845,6 +859,8 @@
 				3E2127525FB7770198393A6DDF01EB64 /* ContentRenderSlice.swift */,
 				F140F1B49E31B955FF6C00CC13A6614C /* ContextUsageControl.swift */,
 				1E174B497A5B0CF79696A9F557C5F9D1 /* FavoriteModelStore.swift */,
+				CAF342540D98CB0535A709A3C658805F /* HarnessMessageDescriptor.swift */,
+				DA089F23079FD6CFE4AE6E2062C70B84 /* HarnessNoticeSummarizer.swift */,
 				191525CE30166ED42663A3F444EDC923 /* MessageBlockView.swift */,
 				172EECE87F09A0B1731B9CFB378E4A3C /* MessageBubbleView.swift */,
 				D21953D8D17C2A107E43258CBB3E6E4E /* MessageContentParser.swift */,
@@ -888,6 +904,8 @@
 				0AA35380583228F17DF74F94A11056A7 /* TranscriptViewportState.swift */,
 				D571A76482D84C6FB84D70F08D008F62 /* TurnActivityView.swift */,
 				4C932DCE27B19D1788E2CFCECD3CA151 /* ComposerInteractionSettingRows.swift */,
+				4B0F820770B90C34CEC4528C006CEF4F /* HarnessNoticePreferenceStore.swift */,
+				CB7510E17828677AAC4BBA406265B47D /* HarnessNoticeSettingRowView.swift */,
 				526667F3C26993A531F8787F4D47074F /* OmpConfigRunning.swift */,
 				0104A1E5E91274724142DEEABC01240F /* OmpConfigService.swift */,
 				F07ECBFB6BDAE4C811DB1D7ABEBF18F7 /* PreferredIDESettingRowView.swift */,
@@ -991,6 +1009,9 @@
 				A744A46D4A05E422ABBB17B804E1C47F /* FileReferenceActionPresentationTests.swift */,
 				57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */,
 				6B9D28101EEB3E94C7B933DB50FDDF71 /* FileTypeIconTests.swift */,
+				B4F09A56181CE669AA995DBD927EED92 /* HarnessNoticePreferenceStoreTests.swift */,
+				14F68CA118145EF0CEBFE40A985A63DB /* HarnessNoticeSettingRowTests.swift */,
+				51B0A7BFC138996A545AD785F9B4094E /* HarnessNoticeSummarizerTests.swift */,
 				F704B536389AAF360BC1D53826D583AD /* IDEPreferenceStoreTests.swift */,
 				7640229E9B50A3716E51A25E0D4D66B0 /* InteractionPresentationTests.swift */,
 				E85949BDAE9F5A41A912C50F05954C28 /* MessageBubbleViewTests.swift */,
@@ -1337,6 +1358,8 @@
 				E2736F9132278EA98ED4DF7C1E50358F /* ContentRenderSlice.swift in Sources */,
 				CF2C11C20DC1C42DA91E1246CA0FF8E7 /* ContextUsageControl.swift in Sources */,
 				6904A9034231319FEECAE9C01C960E83 /* FavoriteModelStore.swift in Sources */,
+				32B00D21CF0B5739516FC39BE445D797 /* HarnessMessageDescriptor.swift in Sources */,
+				4916E4C19F00F7116336E3E673441989 /* HarnessNoticeSummarizer.swift in Sources */,
 				9CA3690A25C24E73BE98E4D87DDEEC9B /* MessageBlockView.swift in Sources */,
 				D9A3A45C8608807D61347280DF5782DD /* MessageBubbleView.swift in Sources */,
 				F8B515929F282BD9333D5C1137D72662 /* MessageContentParser.swift in Sources */,
@@ -1380,6 +1403,8 @@
 				017739EF32A32FF41286FF216B1F99E1 /* TranscriptViewportState.swift in Sources */,
 				4C9BD66E04D2373E1B21CD7174E3FABE /* TurnActivityView.swift in Sources */,
 				EF0066478CCF49BB53F24CF84435D002 /* ComposerInteractionSettingRows.swift in Sources */,
+				87A8EFE3BF032D3F1E9A6DACF9B7A2B4 /* HarnessNoticePreferenceStore.swift in Sources */,
+				65414EF1A1136D02DDC0283235890F65 /* HarnessNoticeSettingRowView.swift in Sources */,
 				8B8208069E8A64682CEE4A6B8EDE0E64 /* OmpConfigRunning.swift in Sources */,
 				C7557B01139A822D1614DE967328DBD8 /* OmpConfigService.swift in Sources */,
 				B24374A9E4F25605FD62C639DD68F6CE /* PreferredIDESettingRowView.swift in Sources */,
@@ -1470,6 +1495,9 @@
 				2107C4790B8E51BF7F50A6F86DFFCE25 /* FileReferenceActionPresentationTests.swift in Sources */,
 				16227F7A3F65DE75B91ABF6F77D31CFF /* FileReferenceResolverTests.swift in Sources */,
 				12A20BCCB60CC63CC14BE7F3C5A7CE49 /* FileTypeIconTests.swift in Sources */,
+				D56C2F1CAC246D2FF39DBCA057F16335 /* HarnessNoticePreferenceStoreTests.swift in Sources */,
+				4FE1B50FD6A217E796B7C06E57A720EA /* HarnessNoticeSettingRowTests.swift in Sources */,
+				18343B774420448C021D354F48B4774D /* HarnessNoticeSummarizerTests.swift in Sources */,
 				2A9831E4F0D6FFE0ED7EA8E7C3C82DB0 /* IDEPreferenceStoreTests.swift in Sources */,
 				72D9A844D0ABDAE24C6ADCD4AC1ACF2A /* InteractionPresentationTests.swift in Sources */,
 				E35B5E09ED9858397770C064E6C977A4 /* MessageBubbleViewTests.swift in Sources */,

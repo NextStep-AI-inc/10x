@@ -3,6 +3,13 @@ import OmpKit
 
 struct TranscriptHistory: Equatable, Sendable {
     let items: [TranscriptItem]
+    /// Hidden messages encountered while mapping, for the notice pipeline.
+    let dropped: [HarnessMessageDescriptor]
+
+    init(items: [TranscriptItem], dropped: [HarnessMessageDescriptor] = []) {
+        self.items = items
+        self.dropped = dropped
+    }
 }
 
 enum TranscriptHistoryMapper {
@@ -31,7 +38,7 @@ enum TranscriptHistoryMapper {
             mapper.consume(entry)
         }
         try checkCancellation()
-        return TranscriptHistory(items: mapper.items)
+        return TranscriptHistory(items: mapper.items, dropped: mapper.dropped)
     }
 
     private struct Mapper {
@@ -40,6 +47,20 @@ enum TranscriptHistoryMapper {
         var currentMode: String?
         var sessionInit: SessionInitMetadata?
         var hasConversation = false
+        private(set) var dropped: [HarnessMessageDescriptor] = []
+        private var droppedSignatures: Set<String> = []
+
+        private mutating func recordDropped(_ message: JSONValue) {
+            let text = TranscriptMessage.visibleText(from: message)
+            guard !text.isEmpty else { return }
+            let descriptor = HarnessMessageDescriptor(
+                role: message["role"]?.stringValue,
+                customType: message["customType"]?.stringValue,
+                byteCount: text.count,
+                text: text)
+            guard droppedSignatures.insert(descriptor.signature).inserted else { return }
+            dropped.append(descriptor)
+        }
 
         mutating func consume(_ entry: SessionEntry) {
             switch entry {
@@ -111,6 +132,9 @@ enum TranscriptHistoryMapper {
                 isFinal: true,
                 existingTools: existingTools,
                 fallbackDate: fallbackDate)
+            if !TranscriptMessage.isDisplayable(message) {
+                recordDropped(message)
+            }
             if normalized.contains(where: { item in
                 switch item {
                 case .message, .tool:

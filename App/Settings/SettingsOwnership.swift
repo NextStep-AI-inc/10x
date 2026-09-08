@@ -20,6 +20,7 @@ enum TenXSettingsCategory: String, CaseIterable, Identifiable {
             PreferredIDESettingRowView.matches(
                 query: query,
                 applicationName: preferredIDEName)
+            || HarnessNoticeSettingRowView.matches(query: query)
         case .composer:
             [
                 "Composer", "default send action", "Steer", "Follow up",

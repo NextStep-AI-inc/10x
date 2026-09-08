@@ -22,6 +22,7 @@ actor TranscriptEventProcessor {
     private var timerGeneration: UInt64 = 0
     private var reconciliationGeneration: UInt64 = 0
     private var isStopped = false
+    private var onDroppedHarnessMessages: (@Sendable ([HarnessMessageDescriptor]) -> Void)?
     private var pendingMessageUpdate: PendingMessageUpdate?
     #if DEBUG
     private var messageUpdateReductionCount = 0
@@ -68,6 +69,10 @@ actor TranscriptEventProcessor {
         reducer.setReconciliationWarning(isPresented: hasReconciliationWarning)
         reducer.runtimeState = runtimeState
         revision = 1
+        let dropped = reducer.drainDroppedHarnessMessages()
+        if !dropped.isEmpty {
+            onDroppedHarnessMessages?(dropped)
+        }
         return currentSnapshot()
     }
 
@@ -105,6 +110,11 @@ actor TranscriptEventProcessor {
             }
             controlContinuation.yield(frame)
         }
+
+        let dropped = reducer.drainDroppedHarnessMessages()
+        if !dropped.isEmpty {
+            onDroppedHarnessMessages?(dropped)
+        }
     }
 
     func setRuntimeState(_ state: SessionRuntimeState) {
@@ -136,6 +146,22 @@ actor TranscriptEventProcessor {
         publish(combinedMutation(
             pending,
             reducer.appendNotice(level: level, message: message)))
+    }
+
+    func setOnDroppedHarnessMessages(
+        _ handler: @escaping @Sendable ([HarnessMessageDescriptor]) -> Void
+    ) {
+        onDroppedHarnessMessages = handler
+    }
+
+    func appendNotice(id: String, level: String, message: String) {
+        guard !isStopped else { return }
+        publish(reducer.appendNotice(id: id, level: level, message: message))
+    }
+
+    func updateNotice(id: String, message: String) {
+        guard !isStopped else { return }
+        publish(reducer.updateNotice(id: id, message: message))
     }
 
     func reconcile(

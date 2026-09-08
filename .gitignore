@@ -9,3 +9,4 @@ dist/
 
 # Snapshot output awaiting review; promote with mv, never commit.
 *.actual.png
+.worktrees/

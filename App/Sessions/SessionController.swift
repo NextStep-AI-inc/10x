@@ -72,6 +72,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
+    private let harnessNoticePreferences: HarnessNoticePreferenceStore?
+    private let harnessNoticeSummarizer: (any HarnessNoticeSummarizing)?
     private weak var accountCoordinator: ProviderAccountCoordinator?
     private let accountChannelRegistry: ProviderAccountChannelRegistry?
     private let titleGenerator: OmpSessionTitleGenerator?
@@ -142,7 +144,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         activityRegistry: SessionActivityRegistry? = nil,
         accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
-        historyLoader: HistoryLoader? = nil
+        historyLoader: HistoryLoader? = nil,
+        harnessNoticePreferences: HarnessNoticePreferenceStore? = nil,
+        harnessNoticeSummarizer: (any HarnessNoticeSummarizing)? = nil
     ) {
         self.processManager = processManager
         self.id = id
@@ -150,6 +154,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.accountChannelRegistry = accountChannelRegistry
         self.titleGenerator = titleGenerator
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
+        self.harnessNoticePreferences = harnessNoticePreferences
+        self.harnessNoticeSummarizer = harnessNoticeSummarizer
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
         self.commandUpdates = commandUpdates.stream
@@ -176,6 +182,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     ) {
         self.processManager = processManager
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
+        self.harnessNoticePreferences = nil
+        self.harnessNoticeSummarizer = nil
         self.items = previewItems
         self.runtimeState = runtimeState
         self.title = title
@@ -904,6 +912,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             }
             guard isCurrent(openingContext) else { return }
             let processor = TranscriptEventProcessor()
+            await processor.setOnDroppedHarnessMessages { [weak self, weak processor] dropped in
+                Task { @MainActor [weak self, weak processor] in
+                    guard let processor else { return }
+                    self?.handleDroppedHarnessMessages(dropped, from: processor)
+                }
+            }
             self.processor = processor
             let processorContext = currentPipelineContext()
             let initialSnapshot = await processor.load(
@@ -1008,6 +1022,34 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
     }
 
+    private func handleDroppedHarnessMessages(
+        _ dropped: [HarnessMessageDescriptor],
+        from source: TranscriptEventProcessor
+    ) {
+        guard let preferences = harnessNoticePreferences, preferences.isEnabled,
+              let processor, processor === source
+        else { return }
+        for descriptor in dropped where descriptor.byteCount >= preferences.threshold {
+            let label = Self.harnessNoticeLabel(descriptor)
+            let noticeID = UUID().uuidString
+            let summarizer = harnessNoticeSummarizer
+            Task { [weak self] in
+                await processor.appendNotice(id: noticeID, level: "info", message: label)
+                guard let summarizer, self?.processor === processor else { return }
+                let summary = await summarizer.summarize(descriptor)
+                guard let summary else { return }
+                await processor.updateNotice(id: noticeID, message: "\(label): \(summary)")
+            }
+        }
+    }
+
+    private static func harnessNoticeLabel(_ descriptor: HarnessMessageDescriptor) -> String {
+        let size = descriptor.byteCount < 1_000
+            ? "\(descriptor.byteCount) chars"
+            : String(format: "%.1f KB", Double(descriptor.byteCount) / 1_000)
+        return "Hidden \(descriptor.kindLabel) message (\(size))"
+    }
+
     /// Builds this pipeline's `ProviderAccountExtensionChannel` and
     /// publishes it to `accountChannelRegistry`, keyed by `id`, for the
     /// coordinator's tiered routing backend to find later
@@ -1061,6 +1103,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard isCurrent(context) else { return }
         applyEventMetadata(frame)
     }
+
     private func stopEventPipeline() {
         let detachedProcessor = processor
         let hadActivePipeline = handle != nil || detachedProcessor != nil || openingTask != nil

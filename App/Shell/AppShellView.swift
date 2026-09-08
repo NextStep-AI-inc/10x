@@ -199,6 +199,8 @@ struct AppShellView: View {
                     onFocusConsumed: model.consumeSettingsFocus,
                     onBack: { model.leaveSettings() },
                     providerModel: model.providerModel,
+                    harnessNoticeStore: model.harnessNoticePreferenceStore,
+                    availableModels: model.composerControls?.models ?? [],
                     accountCoordinator: model.sessionActivityRegistry)
             } else {
                 Text("OMP settings unavailable")
