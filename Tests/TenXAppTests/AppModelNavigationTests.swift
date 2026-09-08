@@ -132,6 +132,9 @@ import OmpKit
     model.startNewSession(prompt: "Start")
     await waitForManagedSession("/tmp/fake.jsonl", in: model)
     let controller = try #require(model.activeSession)
+    await waitUntil("/tmp/fake.jsonl to become idle") {
+        model.managedController(for: "/tmp/fake.jsonl")?.runtimeState == .idle
+    }
     controller.draft = "leave me alone"
 
     await model.beginComputerUse()
@@ -140,6 +143,7 @@ import OmpKit
     #expect(recorded.customType == "computer-use")
     #expect(recorded.content == SessionController.computerUseCueContent)
     #expect(recorded.display == false)
+    #expect(recorded.triggerTurn == nil)
     #expect(recorded.deliverAs == "nextTurn")
     #expect(controller.draft == "leave me alone")
     if let manager = model.processManager { await manager.closeAll() }

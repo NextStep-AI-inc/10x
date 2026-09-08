@@ -29,12 +29,17 @@ import Testing
     fixture.controller.draft = "start streaming"
     await fixture.controller.sendPrompt()
     #expect(await computerUseCueEventually { fixture.controller.runtimeState == .streaming })
+    fixture.controller.draft = "keep this draft while streaming"
 
     await fixture.controller.sendComputerUseCue()
 
     let recorded = try fixture.recordedCustom()
+    #expect(recorded.customType == "computer-use")
+    #expect(recorded.content == SessionController.computerUseCueContent)
+    #expect(recorded.display == false)
+    #expect(recorded.triggerTurn == nil)
     #expect(recorded.deliverAs == "steer")
-    #expect(fixture.controller.draft == "")
+    #expect(fixture.controller.draft == "keep this draft while streaming")
     await fixture.cleanup()
 }
 

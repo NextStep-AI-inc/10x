@@ -555,7 +555,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             os_log(
                 .error,
                 log: Self.transcriptLog,
-                "[SessionController:sendComputerUseCue] Custom command failed")
+                "[SessionController:sendComputerUseCue] Custom command failed: %{public}@",
+                String(describing: error))
         }
     }
 
