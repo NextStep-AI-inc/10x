@@ -26,7 +26,7 @@ Source inspection and existing test coverage are recorded separately from execut
 
 - [ ] **SIGNALS:** Main's rail already exposes working, needs-input, failure, stopped, and unread completion. Use the same session status for the header/turn/composer and provide a way to reach a pending request while reading older content. Verify switching between two sessions and non-overlapping states.
 - [ ] **REVIEW:** Add a compact per-turn changed-file index linking to existing edit details. State its scope/completeness, deduplicate repeated paths, and avoid summed per-edit line totals. Exercise edit-tool and shell-generated files alongside pre-existing/concurrent changes. A tool-derived index may explicitly exclude shell writes; an observed git delta must not claim authorship. A full git review pane is a later product choice.
-- [ ] **CONTEXT:** Main has a usage meter/details, unknown/loading/failure states, and boundary refresh. Add an honest compaction action with availability/progress/failure feedback using supported runtime behavior. Verify usage before/after compaction and provider limitations; account quota remains distinct.
+- [x] **CONTEXT:** Main has a usage meter/details, unknown/loading/failure states, and boundary refresh. Add an honest compaction action with availability/progress/failure feedback using supported runtime behavior. Verify usage before/after compaction and provider limitations; account quota remains distinct.
 - [ ] **TITLES:** Main has persisted automatic titles, rename, search, and previous/next shortcuts. Remember the last valid session route and refresh git metadata after relevant changes. Verify duplicate titles, missing projects, relaunch, and branch metadata without changing the user's checkout.
 
 ## 5. Input and permission decisions
@@ -56,3 +56,5 @@ Source inspection and existing test coverage are recorded separately from execut
 - Baseline OmpKit suite: 217 tests passed before application changes (`/tmp/10x-recovery-ompkit-baseline.log`).
 - No current-main live acceptance is claimed yet.
 - Keep each item unchecked until this run has evidence for its full stated scope, or explicitly record the remaining limitation beside it.
+
+- CONTEXT: implemented and verified on the feature branch; [PR #39 evidence](../evidence/2026-09-08-context-compaction/README.md) records actual native compaction, controlled failure/Stop, and the final lock-related capture/cleanup limit.

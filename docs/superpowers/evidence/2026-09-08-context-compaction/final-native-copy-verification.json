@@ -1,0 +1,11 @@
+{
+  "productionCommit": "d20ff7ca2d1e9a8821c85f4bffd8ee0d8e457b1b",
+  "bundleID": "com.nextstep.tenx.contextfinalqa",
+  "observedVia": "native accessibility tree",
+  "explanation": "Compresses older conversation to free context space.",
+  "compactButtonDisabled": true,
+  "unsupportedMessageCount": 1,
+  "unsupportedMessage": "Context compaction isn\u2019t supported by this runtime.",
+  "finalScreenshotSaved": false,
+  "reason": "Mac locked before final capture and shutdown"
+}

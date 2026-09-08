@@ -1,0 +1,56 @@
+{
+  "runtime": "OMP 18.1.10",
+  "syntheticHistory": true,
+  "userEntryCount": 80,
+  "stagedDraftAbsentFromHistory": true,
+  "beforeEstimatedTokens": 94526,
+  "afterEstimatedTokens": 71401,
+  "contextWindow": 200000,
+  "compaction": {
+    "id": "30dde1a8",
+    "timestamp": "2026-09-08T07:20:40.863Z",
+    "firstKeptEntryId": "7c9fee7a",
+    "tokensBefore": 0,
+    "tokensAfter": 71401,
+    "method": "snapcompact",
+    "fromExtension": false
+  },
+  "controls": {
+    "busy": [
+      "get_state",
+      "get_available_commands",
+      "set_subagent_subscription",
+      "get_state",
+      "prompt",
+      "compact"
+    ],
+    "failure": [
+      "get_state",
+      "get_available_commands",
+      "set_subagent_subscription",
+      "get_state",
+      "prompt",
+      "compact"
+    ],
+    "unsupported": [
+      "get_state",
+      "get_available_commands",
+      "set_subagent_subscription",
+      "get_state",
+      "prompt",
+      "switch_session",
+      "get_state",
+      "get_available_commands",
+      "set_subagent_subscription",
+      "get_state",
+      "prompt",
+      "compact",
+      "get_state",
+      "get_available_commands",
+      "set_subagent_subscription",
+      "get_state",
+      "prompt",
+      "compact"
+    ]
+  }
+}
