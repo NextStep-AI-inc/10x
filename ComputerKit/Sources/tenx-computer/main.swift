@@ -73,7 +73,7 @@ func runProbe(outPath: String) throws {
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
     app.finishLaunching()
-    let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 320, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+    let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 320, height: 120), styleMask: [.titled, .miniaturizable], backing: .buffered, defer: false)
     window.title = "tenx-computer probe"
     let field = NSTextField(frame: NSRect(x: 20, y: 40, width: 280, height: 30))
     field.stringValue = ""
