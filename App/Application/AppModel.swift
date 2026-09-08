@@ -805,15 +805,12 @@ final class AppModel {
         await activeComputerUse.stopComputerUse()
     }
 
-    /// ⇧⌘C — point the active session at the computer tools. The MCP mount is
-    /// user-level, so every omp session already has the tools; the command is the
-    /// agent's cue to use them.
+    /// ⇧⌘C — silently arm the active session with the computer-use capability
+    /// notice. The MCP mount is user-level, so every omp session already has the
+    /// tools; the hidden steer is the agent's cue to use them.
     func beginComputerUse() async {
-        guard let activeSession, activeSession.isComposerAvailable else { return }
-        let prompt = "Use the computer: claim a window with computer_claim (or launch one with computer_launch), then work there. Set computer_status so I can follow along."
-        let existing = activeSession.draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        activeSession.draft = existing.isEmpty ? prompt : "\(existing)\n\n\(prompt)"
-        await activeSession.sendPrompt()
+        guard let activeSession else { return }
+        await activeSession.sendComputerUseCue()
     }
 
     func openSession(forDaemonSession daemonSessionID: Int) {

@@ -533,6 +533,32 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             failureFunction: "sendSlashCommand")
     }
 
+    static let computerUseCueContent =
+        "Computer use is available: you have the tenx-computer MCP tools (computer_windows, computer_claim, computer_launch, computer_screenshot, computer_act, computer_release, computer_status). When the task benefits from a GUI, claim or launch a window and work there; set computer_status so the user can follow along."
+
+    func sendComputerUseCue() async {
+        guard let handle else { return }
+        switch runtimeState {
+        case .idle, .streaming:
+            break
+        case .loading, .stopped, .failed:
+            return
+        }
+        let deliverAs = runtimeState == .streaming ? "steer" : "nextTurn"
+        do {
+            _ = try await handle.client.send(.custom(
+                customType: "computer-use",
+                content: Self.computerUseCueContent,
+                display: false,
+                deliverAs: deliverAs))
+        } catch {
+            os_log(
+                .error,
+                log: Self.transcriptLog,
+                "[SessionController:sendComputerUseCue] Custom command failed")
+        }
+    }
+
     @discardableResult
     private func send(
         text: String,

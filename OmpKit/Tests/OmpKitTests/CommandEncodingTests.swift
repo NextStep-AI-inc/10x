@@ -145,3 +145,25 @@ private func json(_ data: Data) throws -> [String: Any] {
     #expect(login["type"] as? String == "login")
     #expect(login["providerId"] as? String == "openai-codex")
 }
+
+@Test func customCommandEncodesDeliverAsAndOmitsAbsentOptionals() throws {
+    let full = try json(try RpcCommand.custom(
+        customType: "computer-use",
+        content: "cue",
+        display: false,
+        deliverAs: "nextTurn",
+        triggerTurn: true).encodedLine(id: "req_custom"))
+    #expect(full["type"] as? String == "custom")
+    #expect(full["customType"] as? String == "computer-use")
+    #expect(full["content"] as? String == "cue")
+    #expect(full["display"] as? Bool == false)
+    #expect(full["deliverAs"] as? String == "nextTurn")
+    #expect(full["triggerTurn"] as? Bool == true)
+
+    let minimal = try json(try RpcCommand.custom(
+        customType: "computer-use",
+        content: "cue").encodedLine(id: "req_custom_min"))
+    #expect(minimal["display"] as? Bool == false)
+    #expect(minimal["deliverAs"] == nil)
+    #expect(minimal["triggerTurn"] == nil)
+}

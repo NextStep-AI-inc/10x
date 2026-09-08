@@ -265,6 +265,7 @@
 		A9748D7F38DB4B1395D99589D425048E /* ProviderManagementServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82A9E71E8FAAD3DB09E8B5D80EC6D3C8 /* ProviderManagementServiceTests.swift */; };
 		A99FD1E7A846993E23CDB4030BCB1CC2 /* ProviderUsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E807E71640D125B6C6A96E3154162B7 /* ProviderUsageSnapshot.swift */; };
 		A9A0E87AB5633D6DA6F262EE11E08C68 /* PendingUserSubmissionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 858E692783D96DFED18DD3954012213B /* PendingUserSubmissionTests.swift */; };
+		A9B33EC47F68999883AE96B593BB10CF /* SessionControllerComputerUseCueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 621FFCC395500DF8932A03E5C48F44D3 /* SessionControllerComputerUseCueTests.swift */; };
 		AB714F626D4A8FC11A938954229D29C8 /* ProviderUsageDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9319E4E7CCAD5F4188FC30AB93456D7 /* ProviderUsageDockView.swift */; };
 		ABB30B69985AC6AF1B08C2989C6D8EC1 /* ProviderAccountSwitchConfirmationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40228569430A12666591C24D49E223DD /* ProviderAccountSwitchConfirmationView.swift */; };
 		AC6D6ABD1B3EB3D12CAC184082A7205A /* AppRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 962089969C661B3172D5ED6DC78219BE /* AppRoute.swift */; };
@@ -571,6 +572,7 @@
 		6108C35D468F1E41E0A39809EE7DBF1F /* TranscriptReference.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptReference.swift; path = App/Sessions/TranscriptReference.swift; sourceTree = "<group>"; };
 		61BC2F097A3439B18D2A37EED250BD94 /* ComposerAttachment.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerAttachment.swift; path = App/Sessions/ComposerAttachment.swift; sourceTree = "<group>"; };
 		61DE789082B8E3E9DF0189841BCBC9D6 /* ComposerControlsModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerControlsModel.swift; path = App/Sessions/ComposerControlsModel.swift; sourceTree = "<group>"; };
+		621FFCC395500DF8932A03E5C48F44D3 /* SessionControllerComputerUseCueTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionControllerComputerUseCueTests.swift; path = Tests/TenXAppTests/SessionControllerComputerUseCueTests.swift; sourceTree = "<group>"; };
 		65841ABCE4117B72C23FFB03E277002D /* OnboardingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingView.swift; path = App/Onboarding/OnboardingView.swift; sourceTree = "<group>"; };
 		6585FF60EAB13C3F4E67F70552BCF81E /* FileTypeIcons */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = FileTypeIcons; path = App/Resources/FileTypeIcons; sourceTree = "<group>"; };
 		6591DBF910CAB9E12B80C3616F099278 /* ComposerModelInfo.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerModelInfo.swift; path = App/Sessions/ComposerModelInfo.swift; sourceTree = "<group>"; };
@@ -1179,6 +1181,7 @@
 				090441E3D1C05BF9A5EA2F6AD93E088F /* SessionContextUsageTests.swift */,
 				7BE2386BE3F48EE843454A4E3526B773 /* SessionControllerCommandTests.swift */,
 				C81E5DA519ACF24ECFEA60EEA9E6B4A7 /* SessionControllerComposerControlsTests.swift */,
+				621FFCC395500DF8932A03E5C48F44D3 /* SessionControllerComputerUseCueTests.swift */,
 				5E699BA1F243D00C345CEA4956EBD7AA /* SessionControllerQuestionTests.swift */,
 				8FCE005EDE56CD93F1447FFBE253CC50 /* SessionControllerTests.swift */,
 				8CA6C5484CCCD828D9CBA15E3C79078D /* SessionHeaderMetadataTests.swift */,
@@ -1707,6 +1710,7 @@
 				059D4F804B9A2C2BA586328BE08F9B75 /* SessionContextUsageTests.swift in Sources */,
 				02DFC7FCA4426E3156722441A8C7090C /* SessionControllerCommandTests.swift in Sources */,
 				D69987337438D8374E42DAEB0B96AE02 /* SessionControllerComposerControlsTests.swift in Sources */,
+				A9B33EC47F68999883AE96B593BB10CF /* SessionControllerComputerUseCueTests.swift in Sources */,
 				29AF6B9E8DB1C42824E2B8BC257EFFF1 /* SessionControllerQuestionTests.swift in Sources */,
 				1C537CAEC7398A7946038A0217946A49 /* SessionControllerTests.swift in Sources */,
 				741D91F33918CCC7B84410E97C7AEFA1 /* SessionHeaderMetadataTests.swift in Sources */,

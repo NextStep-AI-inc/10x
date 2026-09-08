@@ -110,6 +110,42 @@ import OmpKit
 }
 
 @MainActor
+@Test func beginComputerUseSendsOneCustomCueAndLeavesDraftUntouched() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-computer-use-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let customRecordURL = container.appendingPathComponent("custom.jsonl")
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(
+        in: container,
+        mode: "basic",
+        arguments: [],
+        environment: ["OMP_FAKE_CUSTOM_RECORD": customRecordURL.path])
+    let library = SessionLibrary(root: container.appendingPathComponent("sessions"))
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: library))
+    await model.bootstrap()
+    model.chooseProject(project)
+    model.startNewSession(prompt: "Start")
+    await waitForManagedSession("/tmp/fake.jsonl", in: model)
+    let controller = try #require(model.activeSession)
+    controller.draft = "leave me alone"
+
+    await model.beginComputerUse()
+
+    let recorded = try decodeRecordedComputerUseCustom(from: customRecordURL)
+    #expect(recorded.customType == "computer-use")
+    #expect(recorded.content == SessionController.computerUseCueContent)
+    #expect(recorded.display == false)
+    #expect(recorded.deliverAs == "nextTurn")
+    #expect(controller.draft == "leave me alone")
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@MainActor
 @Test func openArchivedSessionsSelectsArchivedRoute() {
     let model = AppModel()
 
@@ -1127,7 +1163,8 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
 func makeNavigationExecutable(
     in directory: URL,
     mode: String = "basic",
-    arguments: [String] = []
+    arguments: [String] = [],
+    environment: [String: String] = [:]
 ) throws -> URL {
     let repository = URL(filePath: #filePath)
         .deletingLastPathComponent()
@@ -1137,8 +1174,12 @@ func makeNavigationExecutable(
         .appendingPathComponent("OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py")
     let executable = directory.appendingPathComponent("fake-omp")
     let extraArguments = arguments.map { " \"\($0)\"" }.joined()
+    let exportLines = environment.map { key, value in
+        "export \(key)=\(value.replacingOccurrences(of: "\"", with: "\\\""))"
+    }.joined(separator: "\n")
     let wrapper = """
     #!/bin/sh
+    \(exportLines)
     exec /usr/bin/python3 "\(fixture.path)" "\(mode)"\(extraArguments)
     """
     try Data(wrapper.utf8).write(to: executable)
@@ -1146,6 +1187,20 @@ func makeNavigationExecutable(
         [.posixPermissions: 0o755],
         ofItemAtPath: executable.path)
     return executable
+}
+
+private struct RecordedComputerUseCustom: Decodable, Equatable {
+    let customType: String?
+    let content: String?
+    let display: Bool?
+    let deliverAs: String?
+    let triggerTurn: Bool?
+}
+
+private func decodeRecordedComputerUseCustom(from url: URL) throws -> RecordedComputerUseCustom {
+    let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
+    let line = try #require(lines.last.map(String.init))
+    return try JSONDecoder().decode(RecordedComputerUseCustom.self, from: Data(line.utf8))
 }
 
 /// Models a session under the now-installed `ProviderAccountTieredRoutingBackend`

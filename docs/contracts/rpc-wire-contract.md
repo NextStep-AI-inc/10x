@@ -30,6 +30,7 @@ export type RpcCommand =
 
 	// Prompting
 	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
+	| { id?: string; type: "custom"; customType: string; content: string; display?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" | "aside"; triggerTurn?: boolean }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "abort" }
@@ -97,6 +98,7 @@ Compact table (every variant carries optional `id?: string` for response correla
 |---|---|
 | `negotiate_protocol` | `protocolVersion: number` (server only accepts `2`) |
 | `prompt` | `message: string`, `images?: ImageContent[]`, `streamingBehavior?: "steer" \| "followUp"` |
+| `custom` | `customType: string`, `content: string`, `display?: boolean`, `deliverAs?: "steer" \| "followUp" \| "nextTurn" \| "aside"`, `triggerTurn?: boolean` |
 | `steer` | `message: string`, `images?: ImageContent[]` |
 | `follow_up` | `message: string`, `images?: ImageContent[]` |
 | `abort` | — |
@@ -161,6 +163,7 @@ export type RpcResponse =
 
 	// Prompting (async - events follow)
 	| { id?: string; type: "response"; command: "prompt"; success: true; data?: { agentInvoked: boolean } }
+	| { id?: string; type: "response"; command: "custom"; success: true; data?: { delivered: boolean } }
 	| { id?: string; type: "response"; command: "steer"; success: true }
 	| { id?: string; type: "response"; command: "follow_up"; success: true }
 	| { id?: string; type: "response"; command: "abort"; success: true }

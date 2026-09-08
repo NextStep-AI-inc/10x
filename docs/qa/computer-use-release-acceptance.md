@@ -28,8 +28,10 @@ Background providers), which was deleted in Plan 2 Task 5.
 1. **Fresh state.** No daemon, no claims: menu bar icon absent.
    VERIFIED 2026-09-07 — app launched against an idle daemon showed no menu
    bar extra and no overlays.
-2. **⇧⌘C in a 10x session.** Agent claims or launches a window. Header
-   metadata item, rail badge, overlay frame + tag, menu bar listing.
+2. **⇧⌘C in a 10x session.** Silently arms the session with a hidden
+   capability notice — nothing appears in the chat. When the task calls for
+   it, the agent claims or launches a window. Header metadata item, rail
+   badge, overlay frame + tag, menu bar listing.
    PARTIAL — overlay frame + tag and menu bar insertion verified live with a
    synthetic MCP session (labelled harness "acceptance"); header item and
    rail badge are unit- and snapshot-tested but need one live agent session
