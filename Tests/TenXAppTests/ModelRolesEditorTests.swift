@@ -32,4 +32,16 @@ struct ModelRolesEditorTests {
         let options = ModelRolesEditor.modelOptions(from: models)
         #expect(options == [SettingOption("cursor/composer-2.5-fast", label: "Composer 2.5 Fast", detail: "cursor")])
     }
+
+    @Test func removedParsedRoleIsDeletedOnSave() {
+        let value: JSONValue = .object([
+            "plan": .string("anthropic/claude-fable-5:max"),
+            "vision": .string("anthropic/claude-opus-4-8:xhigh"),
+        ])
+        var entries = ModelRolesEditor.entries(from: value)
+        entries.removeAll { $0.role == "vision" }
+        let object = ModelRolesEditor.jsonObject(from: entries, preserving: value)
+        #expect(object["vision"] == nil)
+        #expect(object["plan"] == .string("anthropic/claude-fable-5:max"))
+    }
 }

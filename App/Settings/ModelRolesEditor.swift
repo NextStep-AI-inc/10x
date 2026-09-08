@@ -83,6 +83,12 @@ struct ModelRolesEditor: View {
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
         }
         .task { await model.loadCatalogIfNeeded() }
+        .onChange(of: definition.value) { _, newValue in
+            let serialized = Self.jsonObject(from: entries, preserving: newValue ?? .object([:]))
+            if serialized != newValue {
+                entries = Self.entries(from: newValue ?? .object([:]))
+            }
+        }
     }
 
     private func defaultValue(for role: String) -> ModelRoleValue {
