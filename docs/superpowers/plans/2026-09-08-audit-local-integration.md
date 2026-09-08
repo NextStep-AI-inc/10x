@@ -56,10 +56,10 @@ Pinned merge inputs:
 
 ## Task 3: Verify the combined code
 
-- [ ] Run `swift test --package-path OmpKit` and record nonzero totals and explicit skips.
-- [ ] Run `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj ARCHS=arm64 CODE_SIGNING_ALLOWED=NO` against the combined source.
-- [ ] Attribute failed tests using baseline evidence. Correct integration-caused failures with focused red/green checks; re-run only affected tests after each correction.
-- [ ] Build arm64 Release using the same project/scheme/cache and `-configuration Release -destination 'generic/platform=macOS'`; package a separate integration QA app, record source and executable hashes, and verify its signature.
+- [x] Run `swift test --package-path OmpKit` and record nonzero totals and explicit skips.
+- [x] Run `xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS' -derivedDataPath /Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj ARCHS=arm64 CODE_SIGNING_ALLOWED=NO` against the combined source.
+- [x] Attribute failed tests using baseline evidence. Correct integration-caused failures with focused red/green checks; re-run only affected tests after each correction.
+- [x] Build arm64 Release using the same project/scheme/cache and `-configuration Release -destination 'generic/platform=macOS'`; package a separate integration QA app, record source and executable hashes, and verify its signature.
 
 ## Task 4: Accept the combined native flow
 

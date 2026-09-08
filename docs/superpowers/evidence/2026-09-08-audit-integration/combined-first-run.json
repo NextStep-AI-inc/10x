@@ -1,0 +1,131 @@
+{
+  "sourceCommit": "fa22abbb1263bcc3cfd78edbfefb21053c7f664f",
+  "testCount": 1591,
+  "issueCount": 20,
+  "behavioralFailures": 0,
+  "snapshotFailures": 20,
+  "log": "/tmp/10x-integration-full-app-tests.log",
+  "logSHA256": "7dc85c6f6fcac63bf9c9440fc4b49211676ff2a5a7b388fcbe78e76eeaaad1f5",
+  "snapshots": [
+    {
+      "name": "chat-full-1440.actual.png",
+      "actualSHA256": "8c6ced58242db173b80d89e0a67b35ea83c2d4144e017c1361b89c500d41ac70",
+      "referenceSHA256": "31a703b8ccb0d92168d3b06411b4b874c4f6e84b65c3fb0118fc893d2a56f886",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "developer-tool-flow.actual.png",
+      "actualSHA256": "1bba31f7e1875e3a31a5096a18a707bd861984f50836ebd024ef081d6a875f7b",
+      "referenceSHA256": "20415c82e680554c55ff4d88742ce6b90df96bfcfd716790787158b6581d5c4c",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "composer-sends-attachment-mid-run.actual.png",
+      "actualSHA256": "4165a183d406334f73a20f7db600bb0050e675d6611a6e7bbb29db37cea2ca55",
+      "referenceSHA256": "4144d0780e99bde8f4010b4b6b21a34c29d6f7ae536fd12ec1f69b1274f7114b",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "chat-full-900.actual.png",
+      "actualSHA256": "fab31fab7b807117481e4f7d7123a3021031e95985e339754011362f17ee2632",
+      "referenceSHA256": "349e2d840a85030f55dfd87105609f891400cdb31fecc54847cd014d62f64f0a",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "active-session-header.actual.png",
+      "actualSHA256": "823ca931e56a0bd59b2f991ccf1751f651633f14d4be21ec624470f01e763ed5",
+      "referenceSHA256": "1bef59acf3a672fd2c0e2560defd7b50c7aa28d7653d6b6c3ea9168166810fbc",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "activity-structured-diff-dark.actual.png",
+      "actualSHA256": "84c7a70a4ea19966293226cd981b7ecd53a26c812e62c970b4d781d546fb4c2c",
+      "referenceSHA256": "1bfb38db068830264ab857c6d23cdf615e26e3cfc6cd8d7c77486e68fea8eafb",
+      "matchesCurrentMainActual": true
+    },
+    {
+      "name": "activity-running-error.actual.png",
+      "actualSHA256": "82a00ca2a562aa7b26f2d6669553599e038a021340ab8a96a0999a2bb7c0fa45",
+      "referenceSHA256": "35db6e564f33a36d2b3d5d3c3296524697c5b173c1eae6a9178e009fe30d9951",
+      "matchesCurrentMainActual": true
+    },
+    {
+      "name": "activity-running-error-dark.actual.png",
+      "actualSHA256": "648841ad4d2e5018fe2af6d6e23df86e5452c9fe8bb39cef0e34571a42158134",
+      "referenceSHA256": "eff19cc3b51cdfbdd55fefec439129927147bdd5cd388abc8d9645a5949e1af8",
+      "matchesCurrentMainActual": true
+    },
+    {
+      "name": "composer-stop-control-dark.actual.png",
+      "actualSHA256": "3d5f119b453fe00cab70c4df52a28c68fbc38471910d50bf5bac789bb025f0d5",
+      "referenceSHA256": "f78e7e55eba03e9999d3f52cea53ed5295bd4b9bf97d7bc0a526ef6e1da0dd10",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "chat-full-900-slim.actual.png",
+      "actualSHA256": "1602b799b429322d6a94717d29529d834e235f661338a704c242697766640785",
+      "referenceSHA256": "232e7e502192da6b487699b1072a9ffc7848d33799cc6a9a9971a96af97d1240",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "rich-transcript-wide-dark.actual.png",
+      "actualSHA256": "2b7b465b30bec34b6d1d850b187dd1c04b66e8a85e33586cb7f488655940287d",
+      "referenceSHA256": "59910af268a46005b83256a8f1237c515b62955bbbce4af168ccada86a24eefb",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "composer-stop-control.actual.png",
+      "actualSHA256": "a37936e313ad6eeef8d15a5d45480533699fb48ed5eedd1808e432353bf2377e",
+      "referenceSHA256": "9fc623902b3736106f90acef6e3f79e4cf8bdef095399a4f9e4491ee0867cb6a",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "active-session-header-dark.actual.png",
+      "actualSHA256": "ec2fe70cc1608adf8f08287ee97aa7a218cdf98e350f94f9aee2d04e83261c13",
+      "referenceSHA256": "a2735c731dfb0d1c4798ac6ab999b53a2ad098fc9326cc5b74633afa7baca12e",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "developer-tool-flow-dark.actual.png",
+      "actualSHA256": "3bd369bc4d59ebce220fd9ccb74579de553165b8909f0ea95eeb048ad9c440b1",
+      "referenceSHA256": "dde3ffc05db2bc0366213e96a356740e51eff1fccba0db48b3963d52e33e60db",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "rich-transcript-wide.actual.png",
+      "actualSHA256": "20cc39dd143e1d83fb78fb56d608ea743cb129c50fe6df5bd11dc12dfbd1b8ba",
+      "referenceSHA256": "1ed5337ca9b80c2f227756f854c757a23130a8ba1af8f65392e56d62afb6211a",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "activity-structured-diff.actual.png",
+      "actualSHA256": "c4b16d8f7041bb08f5f63d442facf6e9bd1b2e76234e20383c758e028b2c844e",
+      "referenceSHA256": "15cc9ef1ac8b5eb01585de21709bb0c11c611c57ff08b498b97dab052a9c3196",
+      "matchesCurrentMainActual": true
+    },
+    {
+      "name": "rich-transcript-compact.actual.png",
+      "actualSHA256": "438612ae9b397c94b1dc7bf86efdccba781d2e56bd1c93854c0a1b8bb5fe1e37",
+      "referenceSHA256": "0a754d9de6a8c73ab7d986ef1480064eb04da90b0aac86fc117881b9a02e69ca",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "continuous-settings.actual.png",
+      "actualSHA256": "e22dc111d5956baa7b14e45f5e533422e72e19e64fb3cf9a0d2be157ff2707fd",
+      "referenceSHA256": "108bd0ad82a32a6608635da2b79971805532f5f65eff6411a1d29c862f2c73e7",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "continuous-settings-dark.actual.png",
+      "actualSHA256": "4aea33fcb370cd8d928747d8051eac5d7bcafc5cda15c002532f9d997d373527",
+      "referenceSHA256": "51cf5cee689b7e2dafb05e8428e77ab27c0debb6af72efe14a2a3fee10bcbae2",
+      "matchesCurrentMainActual": null
+    },
+    {
+      "name": "composer-command-browser-streaming-steer.actual.png",
+      "actualSHA256": "8e30ae0542c5c19fff1e4186a218c368a2f0f6334e6afff882c0e7c72f7abe60",
+      "referenceSHA256": "d2a3c4e6388c05ad751e4fea209fbecbea3b6804fc3336765ca7d72c7092c035",
+      "matchesCurrentMainActual": null
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+[
+  {
+    "check": "OmpKit",
+    "log": "/tmp/10x-integration-ompkit-tests.log",
+    "logSHA256": "dd095b9a0f6353062b52d5b04209aa4bf41a00f1c7f9179ed0b460265b80597d",
+    "summary": [
+      "\udbc1\ude5f  Test realManagerCreatesDistinctPersistentSessionsInOneProject() skipped.",
+      "\udbc1\ude5f  Test realOmpReadyStateRoundTrip() skipped.",
+      "\udbc1\ude5f  Test realSessionLibraryParses() skipped.",
+      "\udbc4\udc5b  Test run with 222 tests in 0 suites passed after 6.698 seconds."
+    ]
+  },
+  {
+    "check": "App full suite",
+    "log": "/tmp/10x-integration-full-app-tests.log",
+    "logSHA256": "7dc85c6f6fcac63bf9c9440fc4b49211676ff2a5a7b388fcbe78e76eeaaad1f5",
+    "summary": [
+      "2026-09-08 13:45:43.108 appintentsmetadataprocessor[43530:13213127] warning: Metadata extraction skipped. No AppIntents.framework dependency found.",
+      "2026-09-08 13:46:29.239 appintentsmetadataprocessor[44355:13220535] warning: Metadata extraction skipped. No AppIntents.framework dependency found.",
+      "\udbc1\ude5f Test curatedEnumOptionsMatchOmp() skipped.",
+      "\udbc1\ude5f Test curatedKeysStillExist() skipped.",
+      "\udbc2\udc84 Test run with 1591 tests in 43 suites failed after 20.281 seconds with 20 issues.",
+      "** TEST FAILED **"
+    ]
+  },
+  {
+    "check": "Reviewed snapshots",
+    "log": "/tmp/10x-integration-reviewed-snapshots.log",
+    "logSHA256": "a68e246e8102c7807c742b65eb5ea3a035bbf218f23c0e19469e0077ce038d88",
+    "summary": [
+      "\udbc4\udc5b Test run with 16 tests in 0 suites passed after 1.206 seconds.",
+      "** TEST SUCCEEDED **"
+    ]
+  }
+]

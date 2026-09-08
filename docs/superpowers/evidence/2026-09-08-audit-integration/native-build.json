@@ -1,0 +1,11 @@
+{
+  "app": "/tmp/10x-integration-build/10x-integration.app",
+  "bundleID": "com.nextstep.tenx.integrationqa",
+  "branch": "codex/active-session-audit-integration",
+  "sourceCommit": "fa22abbb1263bcc3cfd78edbfefb21053c7f664f",
+  "executableSHA256": "e73d9fa47da9d5ad284ccd44ffdc22426eaaac27c2d517c397fcf379fef8e97e",
+  "releaseLog": "/tmp/10x-integration-release.log",
+  "releaseLogSHA256": "216795cd957aaabac8b7bed917f716535f74fe13ff83a7fda69b1ea9fc7c4e1b",
+  "signature": "ad-hoc; deep strict verification passed",
+  "profile": "/tmp/10x-session-recovery-home"
+}
