@@ -46,3 +46,7 @@ Result: 10 tests passed in 0.305 seconds. Log: `/tmp/10x-input-focused-final.log
 
 - In the packaged app, select one image and one ordinary file with the caret inside existing text. Confirm the image remains staged, the path appears at the caret with surrounding text intact, and focus returns.
 - With an available CJK input method, press Return while a candidate is marked, then press ordinary Return after composition commits.
+
+## Parent native acceptance, September 8
+
+Final source `2b4723f79e91eb4c390e7d880a5259c98fdc7220` switches the picker from a nested blocking modal loop to asynchronous completion. Native path insertion, focus, Undo/Redo, image staging, and independent warnings passed. Eleven focused checks and arm64 Release build passed. Live CJK remains pending approval; native drag/drop was not separately repeated. See `docs/superpowers/evidence/2026-09-08-input-release/README.md` for proof and integration limits.

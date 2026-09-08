@@ -1,0 +1,29 @@
+Test Suite 'Selected tests' started at 2026-09-08 13:21:00.228.
+Test Suite 'TenXAppTests.xctest' started at 2026-09-08 13:21:00.229.
+Test Suite 'TenXAppTests.xctest' passed at 2026-09-08 13:21:00.229.
+Test Suite 'Selected tests' passed at 2026-09-08 13:21:00.229.
+􀟈 Test run started.
+􀟈 Test composerIndependentWarningsSnapshot() started.
+􀟈 Test fileInsertionUpdatesTheSwiftUIEditorBinding() started.
+􀟈 Test composerEditorRejectsAnEditorAfterItsMarkerLeavesTheView() started.
+􀟈 Test composerEditorInsertsLongFilePathsAtTheCurrentSelectionAndSupportsUndo() started.
+􀟈 Test composerFeedbackKeepsAttachmentAndModelFailuresIndependent() started.
+􀟈 Test anAttachmentEncodesIntoThePromptContractShape() started.
+􀟈 Test agentSlashCommandClearsOnlyAcceptedAttachmentIdentities() started.
+􀟈 Test onlyImageFilesAreTreatedAsAttachable() started.
+􀟈 Test markedTextReturnCommitsCompositionBeforeAnOrdinaryReturnRoutes() started.
+􀟈 Test commandFlyoutReturnDefersToMarkedTextBeforeActivation() started.
+􀟈 Test composerReturnRoutingRecognizesOnlyConfiguredShortcuts() started.
+􁁛 Test composerFeedbackKeepsAttachmentAndModelFailuresIndependent() passed after 0.001 seconds.
+􁁛 Test composerReturnRoutingRecognizesOnlyConfiguredShortcuts() passed after 0.001 seconds.
+􁁛 Test onlyImageFilesAreTreatedAsAttachable() passed after 0.001 seconds.
+􁁛 Test composerEditorRejectsAnEditorAfterItsMarkerLeavesTheView() passed after 0.011 seconds.
+􁁛 Test composerIndependentWarningsSnapshot() passed after 0.030 seconds.
+􁁛 Test composerEditorInsertsLongFilePathsAtTheCurrentSelectionAndSupportsUndo() passed after 0.042 seconds.
+􁁛 Test anAttachmentEncodesIntoThePromptContractShape() passed after 0.043 seconds.
+􁁛 Test markedTextReturnCommitsCompositionBeforeAnOrdinaryReturnRoutes() passed after 0.048 seconds.
+􁁛 Test commandFlyoutReturnDefersToMarkedTextBeforeActivation() passed after 0.053 seconds.
+􁁛 Test fileInsertionUpdatesTheSwiftUIEditorBinding() passed after 0.175 seconds.
+􁁛 Test agentSlashCommandClearsOnlyAcceptedAttachmentIdentities() passed after 1.930 seconds.
+􁁛 Test run with 11 tests in 0 suites passed after 1.930 seconds.
+** TEST SUCCEEDED **

@@ -1,6 +1,6 @@
 {
   "name": "input",
-  "sourceCommit": "a07dee103e9b249e34623c0ed924b9873fccae42",
+  "sourceCommit": "2b4723f79e91eb4c390e7d880a5259c98fdc7220",
   "command": [
     "xcodebuild",
     "build",
@@ -17,11 +17,55 @@
     "ARCHS=arm64",
     "CODE_SIGNING_ALLOWED=NO"
   ],
-  "log": "/tmp/10x-input-final-release.log",
-  "logSHA256": "509034ee089d34eb120c7eeddd0d0735ec72b3bb1aa8bcd72dd3c98d63d78897",
-  "app": "/tmp/10x-input-final-build/10x-input.app",
+  "log": "/tmp/10x-input-async-panel-release.log",
+  "logSHA256": "b94442686fa1f9e260b5962c6dcf88850201a56a028f2d936d551d3ca5e1359e",
+  "app": "/tmp/10x-input-async-panel-build/10x-input.app",
   "bundleIdentifier": "com.nextstep.tenx.inputqa",
-  "unsignedExecutableSHA256": "bd5a1892f810e5fd6c95a2c4211aa72d69a45d915e379b484b6e1de04efceb13",
-  "packagedExecutableSHA256": "be0e8e8434ffed33ac69e9169c6a2c1b97aa18282f3b3b4793b6606f7f78b917",
-  "nativeLaunched": false
+  "unsignedExecutableSHA256": "e6a50fd4f9606bff913bfaa6706bd9f1f730eb16623cb164a21f994b3c66b618",
+  "packagedExecutableSHA256": "c2c966158dfe33a1e351a1e1abcd2ac4208843d9443f2f5620d1d47ea8ce435f",
+  "nativeLaunched": true,
+  "historicalRelease": {
+    "sourceCommit": "a07dee103e9b249e34623c0ed924b9873fccae42",
+    "command": [
+      "xcodebuild",
+      "build",
+      "-project",
+      "10x.xcodeproj",
+      "-scheme",
+      "10x",
+      "-configuration",
+      "Release",
+      "-destination",
+      "generic/platform=macOS",
+      "-derivedDataPath",
+      "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj",
+      "ARCHS=arm64",
+      "CODE_SIGNING_ALLOWED=NO"
+    ],
+    "log": "/tmp/10x-input-final-release.log",
+    "logSHA256": "509034ee089d34eb120c7eeddd0d0735ec72b3bb1aa8bcd72dd3c98d63d78897",
+    "app": "/tmp/10x-input-final-build/10x-input.app",
+    "bundleIdentifier": "com.nextstep.tenx.inputqa",
+    "unsignedExecutableSHA256": "bd5a1892f810e5fd6c95a2c4211aa72d69a45d915e379b484b6e1de04efceb13",
+    "packagedExecutableSHA256": "be0e8e8434ffed33ac69e9169c6a2c1b97aa18282f3b3b4793b6606f7f78b917",
+    "nativeLaunched": false
+  },
+  "nativeClosed": true,
+  "nativeEvidence": {
+    "README.md": "cb5016b91c981503027059f3a0766ecb98b6b31b4955ee87717ee65e292aeb69",
+    "async-panel-package.json": "75e4bb5a463ada37058871c9633b93df1abd7b07ee4f264f2501d31c0297f8d0",
+    "focused-tests.txt": "cd69dd1f7f5e1aa3210a8cb42d1208c5bce34ebb3b7c867c9665478861a35940",
+    "input-control.py": "7e35ac37ab812d844dee0e02f0aa18c7183b29dc570f7f77a2fc63f8f8eca6a9",
+    "native-dual-warnings.ax.txt": "8d46611cec7aebc5f30d8a9357998469bc59074c0a33ccb7cfcf87c0c22f87d1",
+    "native-dual-warnings.jpg": "75e687dfa21755a41f254d25ba607f9859706702b045a5c8b7ef4a85e11218b9",
+    "native-failed-modal-trace.txt": "ed705d2b86977bce59af91fac54f8cffe1f2c4db1c57ea18f5bf74cabfe9a688",
+    "native-file-and-image.ax.txt": "71d4b9e53711f324430bb4f7c6196964f5e78d4960f15cd0626db9ee2873a941",
+    "native-file-and-image.jpg": "2880b81e3b9db34b433c3bb484cdb794ba7dbd4d75fbeed9b7f560d9d754beb9",
+    "native-mid-caret-file.ax.txt": "1f9e2879d0a12d589c3e32a38d56444cfb69efcb6b7f2781c64f15691c3a35bb",
+    "native-mid-caret-file.jpg": "f6770cb877edead174b70340bea9ab5cb54a55ea42089efd0eeda7c513473ca4",
+    "native-redo.ax.txt": "0d1fc6a2589a8983eb1a92cbb1647279fb76c29335850c60a1ec4d5e8e61c8ca",
+    "native-undo.ax.txt": "2458dfd0c4333238be632b1a88f4059148a47bb378ac7ac4cdae1cf1e2439c65",
+    "native-verification.json": "6426ca1772ff44e6f0ef5b0cf30e9a213d97f2808236d80e8305cac725aeadd5",
+    "native-warning-cleared.ax.txt": "0d1fc6a2589a8983eb1a92cbb1647279fb76c29335850c60a1ec4d5e8e61c8ca"
+  }
 }

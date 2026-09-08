@@ -1,0 +1,75 @@
+Window: "10x", App: 10x Input QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: details, Help: Starts a new session in details
+					11 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					12 button Description: titles-native, Help: Starts a new session in titles-native
+					13 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					14 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					15 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					16 button Description: input-native, Help: Starts a new session in input-native
+					17 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					18 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					19 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Unknown, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					20 button Description: review-native, Help: Starts a new session in review-native
+					21 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					22 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					23 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					24 button Description: context-busy, Help: Starts a new session in context-busy
+					25 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					26 button Description: context-failure, Help: Starts a new session in context-failure
+					27 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					28 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					29 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					30 button Description: context, Help: Starts a new session in context
+					31 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					32 button Description: continuity, Help: Starts a new session in continuity
+					33 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					34 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					35 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					36 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					37 button Description: queue, Help: Starts a new session in queue
+					38 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					39 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					40 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					41 button Description: queue-reject, Help: Starts a new session in queue-reject
+					42 button Description: Reject queued input, queue-reject, Pending, Help: Reject queued input, Secondary Actions: Rename Session
+					43 button Description: failure, Help: Starts a new session in failure
+					44 button Description: Recover unavailable project, failure, Ready, Help: Recover unavailable project, Secondary Actions: Rename Session
+			45 button Description: Show later rail items, ID: chevron.down
+			46 button Description: Archived sessions, ID: archivebox
+		47 scroll area Secondary Actions: Scroll Up, Scroll Down
+			48 text entry area (settable) Description: Session prompt, Help: New session prompt, Value: BEFORE | 
+/private/tmp/10x-session-recovery-home/projects/input-native/folder with spaces for attachment acceptance/long nested folder preserving caret position and text on both sides/deliberate insertion notes.txt
+AFTER
+			49 scroll bar (settable, float) 0.7608652114868164
+				50 value indicator (settable, float) 0.7608652114868164
+				51 increment arrow button
+				52 decrement arrow button
+				53 increment page button
+				54 decrement page button
+		55 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		56 button Description: Choose project, Help: Shows project menu, Value: input-native
+		57 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
+		58 button Description: Start session, ID: arrow.up
+		59 text Models couldn’t be loaded.
+	60 close button
+	61 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	62 minimize button
+63 menu bar
+	64 10x Input QA
+	65 File
+	66 Edit
+	67 View
+	68 Navigate
+	69 Session
+	70 Window
+	71 Help
+
+The focused UI element is 48 text entry area (settable) Description: Session prompt, Help: New session prompt, Value: BEFORE | 
+/private/tmp/10x-session-recovery-home/projects/input-native/folder with spaces for attachment acceptance/long nested folder preserving caret position and text on both sides/deliberate insertion notes.txt
+AFTER
