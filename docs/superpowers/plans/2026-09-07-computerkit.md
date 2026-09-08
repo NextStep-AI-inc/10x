@@ -1002,8 +1002,9 @@ public final class ComputerTools: MCPToolProviding {
     }
 
     private func windowIDArgument(_ arguments: JSONValue) throws -> CGWindowID {
-        guard let id = arguments["window_id"]?.intValue else { throw MCPError.invalidParams("requires window_id") }
-        return CGWindowID(id)
+        guard let id = arguments["window_id"]?.intValue,
+              let windowID = CGWindowID(exactly: id) else { throw MCPError.invalidParams("requires window_id") }
+        return windowID
     }
 
     private func windowArgument(_ arguments: JSONValue, mustBeClaimed: Bool) throws -> WindowInfo {
@@ -1146,8 +1147,9 @@ public final class ScreenshotResources: MCPResourceProviding {
     public func readResource(uri: String) -> JSONValue? {
         guard uri.hasPrefix("computer://window/"), uri.hasSuffix("/screenshot"),
               let id = Int(uri.dropFirst("computer://window/".count).dropLast("/screenshot".count)),
-              registry.owner(of: CGWindowID(id)) != nil,
-              let shot = try? engine.screenshot(windowID: CGWindowID(id)) else { return nil }
+              let windowID = CGWindowID(exactly: id),
+              registry.owner(of: windowID) != nil,
+              let shot = try? engine.screenshot(windowID: windowID) else { return nil }
         return .object([
             "uri": .string(uri),
             "mimeType": .string("image/png"),
@@ -2002,12 +2004,13 @@ public final class MacDesktopEngine: DesktopEngine {
         }
         return list.compactMap { entry in
             guard let id = entry[kCGWindowNumber as String] as? Int,
+                  let windowID = CGWindowID(exactly: id),
                   let pid = entry[kCGWindowOwnerPID as String] as? Int32,
                   let boundsDict = entry[kCGWindowBounds as String] as? [String: Any],
                   let bounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary),
                   (entry[kCGWindowLayer as String] as? Int) == 0 else { return nil }
             return WindowInfo(
-                id: CGWindowID(id),
+                id: windowID,
                 appName: entry[kCGWindowOwnerName as String] as? String ?? "?",
                 title: entry[kCGWindowName as String] as? String ?? "",
                 bounds: bounds,
