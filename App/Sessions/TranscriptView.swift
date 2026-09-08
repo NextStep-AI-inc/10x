@@ -1,5 +1,22 @@
 import SwiftUI
 
+enum TranscriptRenderRow: Identifiable, Equatable {
+    case presentation(TranscriptPresentationRow)
+    case summary(id: String, state: TranscriptTurnState, duration: TimeInterval?)
+
+    var id: String {
+        switch self {
+        case .presentation(let row): row.id
+        case .summary(let id, _, _): id
+        }
+    }
+
+    var isGroupedTool: Bool {
+        guard case .presentation(let row) = self else { return false }
+        return row.isGroupedTool
+    }
+}
+
 enum TranscriptScrollIntent: Equatable {
     case automatic
     case explicit
@@ -9,8 +26,8 @@ struct TranscriptView: View {
     static let contentMaxWidth: CGFloat = 860
 
     let controller: SessionController
-    @State private var disclosureState = ToolDisclosureState()
     @State private var isUserScrolling = false
+    @State private var hasRestoredReadingPosition = false
     @State private var searchResolution: TranscriptSearchResolution?
     @State private var consumedSearchNonce: UUID?
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
@@ -18,11 +35,16 @@ struct TranscriptView: View {
         ToolDetailPreferenceStore?
 
     var body: some View {
-        @Bindable var viewport = controller.viewport
+        let viewport = controller.viewport
+        let disclosureState = controller.toolDisclosureState
         let allPresentationRows = Self.followObservation(for: controller.items)
-        let presentationRows = TranscriptPresentationRow.visibleRows(
-            from: allPresentationRows,
+        let renderRows = Self.renderRows(
+            for: controller.items,
+            runtimeState: controller.runtimeState,
             isGroupExpanded: disclosureState.isGroupExpanded)
+        let orderedScrollTargetIDs = renderRows.map(\.id)
+            + controller.pendingSubmissions.map(\.id)
+            + (isAwaitingOutput ? [TurnActivityView.transcriptID] : [])
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -36,19 +58,24 @@ struct TranscriptView: View {
                         Spacer()
                         ToolDetailModeControl(mode: disclosureState.mode, onSelect: select)
                     }
-                    ForEach(presentationRows, id: \.id) { row in
+                    ForEach(renderRows, id: \.id) { row in
                         VStack(alignment: .leading, spacing: 8) {
-                            if searchResolution?.rowID == row.id, let request = controller.transcriptSearchRequest,
-                               let excerpt = searchResolution?.excerpt {
-                                TranscriptPlainTextView(text: excerpt,
-                                    font: TenXTypography.body(size: 12),
-                                    color: TenXPalette.color(TenXPalette.nearBlackHex),
-                                    highlightedQuery: request.query)
-                                    .padding(8)
-                                    .background(TenXPalette.color(TenXPalette.yellowHex).opacity(0.12))
-                                    .accessibilityLabel("Search match: " + excerpt)
+                            if case .presentation(let presentationRow) = row {
+                                if searchResolution?.rowID == presentationRow.id,
+                                   let request = controller.transcriptSearchRequest,
+                                   let excerpt = searchResolution?.excerpt {
+                                    TranscriptPlainTextView(text: excerpt,
+                                        font: TenXTypography.body(size: 12),
+                                        color: TenXPalette.color(TenXPalette.nearBlackHex),
+                                        highlightedQuery: request.query)
+                                        .padding(8)
+                                        .background(TenXPalette.color(TenXPalette.yellowHex).opacity(0.12))
+                                        .accessibilityLabel("Search match: " + excerpt)
+                                }
+                                rowView(presentationRow)
+                            } else if case .summary(_, let state, let duration) = row {
+                                TranscriptTurnSummaryView(state: state, duration: duration)
                             }
-                            rowView(row)
                         }
                             .background(searchResolution?.rowID == row.id
                                 ? TenXPalette.color(TenXPalette.yellowHex).opacity(0.05) : .clear)
@@ -79,7 +106,15 @@ struct TranscriptView: View {
             }
             .environment(\.toolDisclosureState, disclosureState)
             .scrollIndicators(.hidden)
-            .scrollPosition(id: $viewport.anchorID, anchor: .top)
+            .onScrollTargetVisibilityChange(
+                idType: String.self,
+                threshold: 0.1
+            ) { visibleIDs in
+                viewport.observeVisibleTargets(
+                    visibleIDs,
+                    orderedIDs: orderedScrollTargetIDs,
+                    isUserScrolling: isUserScrolling)
+            }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(viewport.isFollowingLatest ? .bottom : nil, for: .sizeChanges)
             .onScrollPhaseChange { _, phase in
@@ -103,6 +138,12 @@ struct TranscriptView: View {
                 searchResolution = nil
                 focusSearchResult(proxy, rows: allPresentationRows)
             }
+            .task {
+                await restoreReadingPosition(
+                    proxy,
+                    rows: allPresentationRows,
+                    visibleIDs: Set(orderedScrollTargetIDs))
+            }
             // The indicator is not an item, so its arrival needs its own follow
             // or it appears below the fold on the send that created it.
             .onChange(of: isAwaitingOutput) { _, isAwaiting in
@@ -118,7 +159,7 @@ struct TranscriptView: View {
                 disclosureState.setMode(mode)
             }
             .overlay(alignment: .bottom) {
-                scrollToBottomButton(proxy, lastID: presentationRows.last?.id)
+                scrollToBottomButton(proxy, lastID: renderRows.last?.id)
             }
         }
     }
@@ -163,14 +204,42 @@ struct TranscriptView: View {
         consumedSearchNonce = request.nonce
         searchResolution = resolution
         controller.viewport.isFollowingLatest = false
-        if let groupID = resolution.groupID { disclosureState.setGroupExpanded(true, id: groupID) }
-        disclosureState.setExpanded(true, id: request.entryID)
+        if let groupID = resolution.groupID {
+            controller.toolDisclosureState.setGroupExpanded(true, id: groupID)
+        }
+        controller.toolDisclosureState.setExpanded(true, id: request.entryID)
         Task { @MainActor in
             await Task.yield()
             guard controller.transcriptSearchRequest?.nonce == request.nonce else { return }
             controller.viewport.anchorID = resolution.rowID
             proxy.scrollTo(resolution.rowID, anchor: .center)
         }
+    }
+
+    private func restoreReadingPosition(
+        _ proxy: ScrollViewProxy,
+        rows: [TranscriptPresentationRow],
+        visibleIDs: Set<String>
+    ) async {
+        guard !hasRestoredReadingPosition else { return }
+        hasRestoredReadingPosition = true
+
+        let viewport = controller.viewport
+        let hiddenTargetGroupID = viewport.anchorID.flatMap { anchorID in
+            Self.groupID(containing: anchorID, in: rows)
+        }
+        guard let targetID = TranscriptViewportState.restorationTarget(
+            anchorID: viewport.anchorID,
+            isFollowingLatest: viewport.isFollowingLatest,
+            hasSearchRequest: controller.transcriptSearchRequest != nil,
+            visibleIDs: visibleIDs,
+            hiddenTargetGroupID: hiddenTargetGroupID)
+        else { return }
+
+        await Task.yield()
+        guard controller.transcriptSearchRequest == nil,
+              !viewport.isFollowingLatest else { return }
+        proxy.scrollTo(targetID, anchor: .top)
     }
 
     private func scroll(
@@ -200,7 +269,7 @@ struct TranscriptView: View {
         if controller.pendingSubmissions.contains(where: { $0.state == .starting }) { return true }
         return TurnActivityView.isAwaitingOutput(
             runtimeState: controller.runtimeState,
-            lastItem: controller.items.last)
+            items: controller.items)
     }
 
     private static let bottomID = "transcript-bottom"
@@ -209,6 +278,34 @@ struct TranscriptView: View {
         for items: [TranscriptItem]
     ) -> [TranscriptPresentationRow] {
         TranscriptPresentationRow.rows(from: items)
+    }
+
+    nonisolated static func groupID(
+        containing rowID: String,
+        in rows: [TranscriptPresentationRow]
+    ) -> String? {
+        guard let row = rows.first(where: { $0.id == rowID }),
+              case .groupedTool(let groupID, _) = row else { return nil }
+        return groupID
+    }
+
+    nonisolated static func renderRows(
+        for items: [TranscriptItem],
+        runtimeState: SessionRuntimeState,
+        isGroupExpanded: (String) -> Bool
+    ) -> [TranscriptRenderRow] {
+        TranscriptTurnProjection.sections(from: items, runtimeState: runtimeState).flatMap { section in
+            var rows = TranscriptPresentationRow.visibleRows(
+                from: TranscriptPresentationRow.rows(from: section.items),
+                isGroupExpanded: isGroupExpanded)
+                .map(TranscriptRenderRow.presentation)
+            guard let state = section.state, state.hasSummary else { return rows }
+            rows.append(.summary(
+                id: "summary:\(section.id)",
+                state: state,
+                duration: section.duration))
+            return rows
+        }
     }
 
     nonisolated static func shouldFollowBottom(
@@ -223,7 +320,7 @@ struct TranscriptView: View {
 
     private func select(_ mode: ToolDetailMode) {
         detailPreference?.select(mode)
-        let update = { disclosureState.setMode(mode) }
+        let update = { controller.toolDisclosureState.setMode(mode) }
         if isReduceMotionEnabled { update() }
         else { withAnimation(.easeInOut(duration: 0.14), update) }
     }

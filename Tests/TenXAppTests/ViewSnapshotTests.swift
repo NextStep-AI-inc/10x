@@ -3921,6 +3921,60 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
 }
 
 @MainActor
+@Test func turnStatusSummarySnapshot() throws {
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            TranscriptTurnSummaryView(state: .completed, duration: 6.4)
+            TranscriptTurnSummaryView(state: .stopped, duration: nil)
+            TranscriptTurnSummaryView(state: .failed, duration: nil)
+            TurnActivityView(startedAt: nil)
+        }
+        .padding(24),
+        name: "turn-status-summary",
+        size: CGSize(width: 560, height: 180))
+}
+
+@MainActor
+@Test func transcriptRunningToolHasOneActivitySnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [
+            .message(TranscriptMessage(
+                id: "running-user",
+                raw: .object([
+                    "role": .string("user"),
+                    "content": .string("Inspect the transcript."),
+                ]),
+                timestamp: timestamp,
+                isFinal: true)),
+            .tool(ToolPresentation(
+                id: "running-tool",
+                name: "read",
+                arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+                result: nil,
+                phase: .running,
+                startDate: timestamp.addingTimeInterval(1),
+                endDate: timestamp.addingTimeInterval(2.5))),
+            .tool(ToolPresentation(
+                id: "completed-tool",
+                name: "grep",
+                arguments: .object(["query": .string("TranscriptTurnProjection")]),
+                result: snapshotTextResult("One match"),
+                phase: .complete,
+                startDate: timestamp.addingTimeInterval(2),
+                endDate: timestamp.addingTimeInterval(2.2))),
+        ],
+        runtimeState: .streaming,
+        title: "Readable turns")
+    try assertSnapshot(
+        TranscriptView(controller: controller)
+            .environment(snapshotEmptyIDEStore),
+        name: "transcript-running-tool-single-activity",
+        size: CGSize(width: 700, height: 340))
+}
+
+@MainActor
 @Test func composerStopsARunWithNothingToSendSnapshot() throws {
     try assertSnapshot(
         ComposerView(

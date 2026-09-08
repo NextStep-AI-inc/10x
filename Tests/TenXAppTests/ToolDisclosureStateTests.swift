@@ -120,6 +120,29 @@ import Testing
     #expect(!state.isGroupExpanded(id: updatedGroupID))
 }
 
+@MainActor
+@Test func sessionsRetainIndependentDisclosureChoicesAcrossViewRecreation() {
+    let manager = SessionProcessManager()
+    let first = SessionController(
+        processManager: manager, previewItems: [], runtimeState: .idle)
+    let second = SessionController(
+        processManager: manager, previewItems: [], runtimeState: .idle)
+    let groupID = "tool-group-one"
+
+    let firstViewState = first.toolDisclosureState
+    firstViewState.setGroupExpanded(false, id: groupID)
+
+    #expect(!first.toolDisclosureState.isGroupExpanded(id: groupID))
+    #expect(second.toolDisclosureState.isGroupExpanded(id: groupID))
+
+    let recreatedViewState = first.toolDisclosureState
+    recreatedViewState.setMode(.standard)
+
+    #expect(recreatedViewState === firstViewState)
+    #expect(!recreatedViewState.isGroupExpanded(id: groupID))
+    #expect(second.toolDisclosureState.isGroupExpanded(id: groupID))
+}
+
 @Test func unrelatedDisclosureChangesDoNotInvalidateObservedRows() {
     let state = ToolDisclosureState()
     let groupInvalidations = LockedCounter()

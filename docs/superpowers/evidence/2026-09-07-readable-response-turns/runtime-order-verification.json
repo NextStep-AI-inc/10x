@@ -1,0 +1,29 @@
+{
+  "runtime": "OMP 18.1.10",
+  "provider": "Cursor Grok 4.6 Fast",
+  "sourceCallOrder": [
+    {
+      "id": "call-1918d810-cf15-4aa7-82c9-85d70b165eaf-1\nfc_ozR9DFE-6jKPYy-a37b8ecc4c1ebae3_0",
+      "command": "printf PARALLEL-SLOW; sleep 12"
+    },
+    {
+      "id": "call-1918d810-cf15-4aa7-82c9-85d70b165eaf-2\nfc_ozR9DFE-6jKPYy-a37b8ecc4c1ebae3_1",
+      "command": "printf PARALLEL-FAST; sleep 2"
+    }
+  ],
+  "resultPersistenceOrder": [
+    {
+      "id": "call-1918d810-cf15-4aa7-82c9-85d70b165eaf-2\nfc_ozR9DFE-6jKPYy-a37b8ecc4c1ebae3_1",
+      "completedAtMilliseconds": 1788845395185,
+      "entryTimestamp": "2026-09-08T05:30:06.512Z"
+    },
+    {
+      "id": "call-1918d810-cf15-4aa7-82c9-85d70b165eaf-1\nfc_ozR9DFE-6jKPYy-a37b8ecc4c1ebae3_0",
+      "completedAtMilliseconds": 1788845405184,
+      "entryTimestamp": "2026-09-08T05:30:06.513Z"
+    }
+  ],
+  "fastFinishedBeforeSlowMilliseconds": 9999,
+  "nativeDisplayOrder": "SLOW then FAST, preserved live and reopened",
+  "rawTranscriptCommitted": false
+}
