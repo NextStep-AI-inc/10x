@@ -1,0 +1,27 @@
+{
+  "name": "input",
+  "sourceCommit": "a07dee103e9b249e34623c0ed924b9873fccae42",
+  "command": [
+    "xcodebuild",
+    "build",
+    "-project",
+    "10x.xcodeproj",
+    "-scheme",
+    "10x",
+    "-configuration",
+    "Release",
+    "-destination",
+    "generic/platform=macOS",
+    "-derivedDataPath",
+    "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj",
+    "ARCHS=arm64",
+    "CODE_SIGNING_ALLOWED=NO"
+  ],
+  "log": "/tmp/10x-input-final-release.log",
+  "logSHA256": "509034ee089d34eb120c7eeddd0d0735ec72b3bb1aa8bcd72dd3c98d63d78897",
+  "app": "/tmp/10x-input-final-build/10x-input.app",
+  "bundleIdentifier": "com.nextstep.tenx.inputqa",
+  "unsignedExecutableSHA256": "bd5a1892f810e5fd6c95a2c4211aa72d69a45d915e379b484b6e1de04efceb13",
+  "packagedExecutableSHA256": "be0e8e8434ffed33ac69e9169c6a2c1b97aa18282f3b3b4793b6606f7f78b917",
+  "nativeLaunched": false
+}
