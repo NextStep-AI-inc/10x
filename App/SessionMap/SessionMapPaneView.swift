@@ -165,7 +165,7 @@ struct SessionMapPaneView: View {
             stateMessage("Nothing new", detail: "The session has no new work to map.")
         case .needsGeneration:
             stateAction("Create a map from this session.", title: "Create map") {
-                model.regenerate(.sinceCaughtUp)
+                model.generate(.sinceCaughtUp)
             }
         case .writing:
             VStack(alignment: .leading, spacing: 10) {
@@ -209,7 +209,7 @@ struct SessionMapPaneView: View {
             }
             Spacer()
             if model.state == .stale {
-                Button("Update") { model.regenerate(.sinceCaughtUp) }
+                Button("Update") { model.generate(.sinceCaughtUp) }
                     .buttonStyle(GhostActionStyle())
             } else if case .failed = model.state, model.displayedDocument != nil {
                 Button("Try again") { model.regenerate(.sinceCaughtUp) }

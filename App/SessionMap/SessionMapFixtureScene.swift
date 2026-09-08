@@ -53,7 +53,11 @@ struct SessionMapFixtureScene: View {
             ?? isolatedRoot(route: route, buildSHA: buildSHA)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let defaults = try isolatedDefaults(route: route, buildSHA: buildSHA)
-        let model = fixtureModel(root: root, defaults: defaults)
+        let model = fixtureModel(
+            root: root,
+            defaults: defaults,
+            usesLiveMapWriter: route.usesLiveMapWriter,
+            sourceSHA: buildSHA)
         if route == .settingsMap {
             let sessions = try fixtureSessions(route: route, root: root, model: model)
             model.installSessionMapFixture(sessions, selectedPath: sessions[0].metadata.path)
@@ -100,13 +104,27 @@ struct SessionMapFixtureScene: View {
             .appending(path: "10x-session-map-fixture-startup-failure", directoryHint: .isDirectory)
         let defaults = UserDefaults(suiteName: "com.nextstep.tenx.sessionmap.fixture.failure")
             ?? UserDefaults.standard
-        return fixtureModel(root: root, defaults: defaults)
+        return fixtureModel(
+            root: root,
+            defaults: defaults,
+            usesLiveMapWriter: false,
+            sourceSHA: "startup-failure")
     }
 
     @MainActor
-    private static func fixtureModel(root: URL, defaults: UserDefaults) -> AppModel {
+    private static func fixtureModel(
+        root: URL,
+        defaults: UserDefaults,
+        usesLiveMapWriter: Bool,
+        sourceSHA: String
+    ) -> AppModel {
+        let callRecorder = SessionMapFixtureCallRecorder(
+            url: root.appending(path: "session-map-writer-calls.txt"),
+            sourceSHA: sourceSHA)
         let dependencies = AppDependencies(
-            ompLocator: OmpExecutableLocator(),
+            ompLocator: usesLiveMapWriter
+                ? OmpExecutableLocator()
+                : SessionMapFixtureLocator(),
             sessionLibrary: SessionLibrary(
                 root: root.appending(path: "sessions", directoryHint: .isDirectory),
                 archiveRoot: root.appending(path: "archived-sessions", directoryHint: .isDirectory)),
@@ -114,8 +132,15 @@ struct SessionMapFixtureScene: View {
                 databaseURL: root.appending(path: "search.sqlite")),
             recentProjectStore: RecentProjectStore(defaults: defaults),
             makeProcessManager: { _ in SessionProcessManager() },
-            makeSettingsModel: { _ in
-                SettingsViewModel(
+            makeSettingsModel: { executableURL in
+                if usesLiveMapWriter {
+                    return SettingsViewModel(
+                        service: OmpConfigService(
+                            runner: OmpConfigProcessRunner(executableURL: executableURL)),
+                        sessionMapCatalog: ComposerCatalogService(executableURL: executableURL),
+                        sessionMapPreferences: SessionMapPreferenceStore(defaults: defaults))
+                }
+                return SettingsViewModel(
                     service: OmpConfigService(runner: SessionMapFixtureConfigRunner()),
                     sessionMapCatalog: SessionMapFixtureCatalog(),
                     sessionMapPreferences: SessionMapPreferenceStore(defaults: defaults))
@@ -130,7 +155,21 @@ struct SessionMapFixtureScene: View {
                 ProviderAccountCoordinator(
                     primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
             },
-            makeUpdateChecker: { _ in InertFixtureUpdateChecker() })
+            makeUpdateChecker: { _ in InertFixtureUpdateChecker() },
+            sessionMapStore: SessionMapStore(
+                directory: root.appending(path: "SessionMap", directoryHint: .isDirectory)),
+            makeSessionMapGenerator: { executableURL, projectURL in
+                guard usesLiveMapWriter else {
+                    return SessionMapGenerator { _, _, _ in
+                        throw SessionMapFixtureWriterError.disabled
+                    }
+                }
+                let rpc = SessionMapRPC(executableURL: executableURL, projectURL: projectURL)
+                return SessionMapGenerator { prompt, images, model in
+                    await callRecorder.recordCall()
+                    return try await rpc.complete(prompt: prompt, images: images, model: model)
+                }
+            })
         return AppModel(
             dependencies: dependencies,
             preferenceDefaults: defaults,
@@ -157,6 +196,10 @@ struct SessionMapFixtureScene: View {
         let projectB = root.appending(path: "SessionMapSupport", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: projectA, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: projectB, withIntermediateDirectories: true)
+        try Data("struct FixtureWriter {}\n".utf8).write(
+            to: projectA.appending(path: "Writer.swift"), options: .atomic)
+        try Data("struct FixtureRenderer {}\n".utf8).write(
+            to: projectB.appending(path: "Renderer.swift"), options: .atomic)
         let first = try fixtureDocument(route: route, isSecondary: false)
         let second = try fixtureDocument(route: route, isSecondary: true)
         let controllerA = fixtureController(
@@ -311,6 +354,9 @@ struct SessionMapFixtureScene: View {
             }
             return (nil, .failed(message: "The fixture document was rejected."))
         }
+        if !isSecondary && route == .mapWriterLive {
+            return (nil, .needsGeneration)
+        }
         let xml: String = switch (route, isSecondary) {
         case (.mapPlanning, false): SessionMapFixtures.planningXML
         case (.mapImplementing, false): SessionMapFixtures.implementingXML
@@ -318,6 +364,8 @@ struct SessionMapFixtureScene: View {
         case (.mapEmpty, false), (.mapInvalid, false): SessionMapFixtures.emptyXML
         case (.mapDense, true), (.mapInvalid, true): SessionMapFixtures.layoutStressXML
         case (.settingsMap, _): SessionMapFixtures.emptyXML
+        case (.mapWriterLive, false): SessionMapFixtures.emptyXML
+        case (.mapWriterLive, true): SessionMapFixtures.graphStatesXML
         case (.flyerFitting, false), (.flyerOverflow, false),
              (.flyerStack, false), (.flyerRecovery, false): SessionMapFixtures.planningXML
         case (_, true): SessionMapFixtures.graphStatesXML
@@ -400,6 +448,33 @@ struct SessionMapFixtureScene: View {
         }
     }
 
+}
+
+private actor SessionMapFixtureCallRecorder {
+    let url: URL
+    let sourceSHA: String
+    private var count = 0
+
+    init(url: URL, sourceSHA: String) {
+        self.url = url
+        self.sourceSHA = sourceSHA
+    }
+
+    func recordCall() {
+        count += 1
+        let evidence = "sourceSHA=\(sourceSHA)\ncalls=\(count)\n"
+        try? Data(evidence.utf8).write(to: url, options: .atomic)
+    }
+}
+
+private enum SessionMapFixtureWriterError: Error { case disabled }
+
+private struct SessionMapFixtureLocator: OmpLocating {
+    func locate(preferredURL: URL?) async throws -> OmpLocation {
+        .found(OmpInstallation(
+            executableURL: URL(filePath: "/tmp/session-map-fixture-omp"),
+            version: "fixture"))
+    }
 }
 
 private actor SessionMapFixtureCatalog: ComposerCatalogLoading {

@@ -205,6 +205,9 @@ final class AppModel {
     @ObservationIgnored private var hasStartedWarmRetention = false
     @ObservationIgnored private var managedSessions: [UUID: SessionController] = [:]
     @ObservationIgnored private var sessionMapPaneModels: [UUID: SessionMapPaneModel] = [:]
+    @ObservationIgnored private var sessionMapGenerators: [UUID: SessionMapGenerator] = [:]
+    @ObservationIgnored private var sessionMapGenerationTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var sessionMapGenerationRevisions: [UUID: UInt64] = [:]
     @ObservationIgnored private var managedSessionPaths: [String: UUID] = [:]
     /// Managed session ids in visit order, oldest first. Only sessions that
     /// are inactive, idle and holding nothing unsaved are ever reclaimed from
@@ -551,9 +554,198 @@ final class AppModel {
             state: .needsGeneration,
             paneWidth: displayedWidth,
             isVisible: isSessionMapVisible,
-            onClose: { [weak self] in self?.setSessionMapVisible(false) })
+            onGenerate: { [weak self, weak controller] scope, force in
+                guard let controller else { return }
+                self?.startSessionMapGeneration(
+                    for: controller, scope: scope, force: force)
+            },
+            onClose: { [weak self] in self?.setSessionMapVisible(false) },
+            onOpenSettings: { [weak self] in self?.openSettings(focus: .sessionMap) })
         sessionMapPaneModels[controller.id] = paneModel
+        Task { @MainActor [weak self, weak controller, weak paneModel] in
+            guard let self, let controller, let paneModel else { return }
+            await self.loadSessionMapRecord(for: controller, into: paneModel)
+        }
         return paneModel
+    }
+
+    private func startSessionMapGeneration(
+        for controller: SessionController,
+        scope: SessionMapGenerationScope,
+        force: Bool
+    ) {
+        sessionMapGenerationTasks[controller.id]?.cancel()
+        let revision = (sessionMapGenerationRevisions[controller.id] ?? 0) &+ 1
+        sessionMapGenerationRevisions[controller.id] = revision
+        sessionMapPaneModels[controller.id]?.transition(to: .writing)
+        sessionMapGenerationTasks[controller.id] = Task { @MainActor [weak self, weak controller] in
+            guard let self, let controller else { return }
+            await self.generateSessionMap(
+                for: controller, scope: scope, force: force, revision: revision)
+        }
+    }
+
+    private func generateSessionMap(
+        for controller: SessionController,
+        scope: SessionMapGenerationScope,
+        force: Bool,
+        revision: UInt64
+    ) async {
+        guard managedSessions[controller.id] === controller,
+              let paneModel = sessionMapPaneModels[controller.id]
+        else { return }
+        guard let executableURL = await sessionMapExecutableURL() else {
+            paneModel.transition(to: .needsModel)
+            return
+        }
+        let settings = settingsModel ?? dependencies.makeSettingsModel(executableURL)
+        if settingsModel == nil { settingsModel = settings }
+        guard await settings.load() else {
+            paneModel.transition(to: .needsModel)
+            return
+        }
+        let resolvedProjectURL = sessionMapProjectURL(for: controller)
+        await settings.loadSessionMapCatalog(projectURL: resolvedProjectURL)
+        let selection = settings.sessionMapPreferences.writerSelection
+        guard let model = SessionMapModelResolver.resolve(
+            selection: selection,
+            catalog: settings.sessionMapModels,
+            roles: settings.sessionMapRoles),
+            let projectURL = resolvedProjectURL
+        else {
+            paneModel.transition(to: .needsModel)
+            return
+        }
+
+        let sessionKey = sessionMapSessionKey(for: controller)
+        let priorRecord = try? await dependencies.sessionMapStore.load(sessionKey: sessionKey)
+        let source = SessionMapSourceAdapter.make(
+            items: controller.items,
+            sessionKey: sessionKey,
+            lineage: sessionKey)
+        let previousManifest = force ? [:] : (priorRecord?.sourceFingerprintManifest ?? [:])
+        let digest = SessionMapDigestBuilder.build(
+            source: source,
+            previousManifest: previousManifest,
+            scope: scope)
+        let generator: SessionMapGenerator
+        if let existing = sessionMapGenerators[controller.id] {
+            generator = existing
+        } else {
+            generator = dependencies.makeSessionMapGenerator(executableURL, projectURL)
+            sessionMapGenerators[controller.id] = generator
+        }
+        let result = await generator.generate(SessionMapGenerationInput(
+            sessionKey: sessionKey,
+            lineage: source.lineage,
+            revision: revision,
+            digest: digest,
+            priorRecord: priorRecord,
+            scope: scope,
+            model: model,
+            projectURL: projectURL,
+            force: force))
+
+        guard sessionMapGenerationRevisions[controller.id] == revision,
+              managedSessions[controller.id] === controller,
+              sessionMapSessionKey(for: controller) == sessionKey,
+              settings.sessionMapPreferences.writerSelection == selection,
+              SessionMapModelResolver.resolve(
+                selection: selection,
+                catalog: settings.sessionMapModels,
+                roles: settings.sessionMapRoles) == model
+        else { return }
+        let currentSource = SessionMapSourceAdapter.make(
+            items: controller.items,
+            sessionKey: sessionKey,
+            lineage: sessionKey)
+        let currentDigest = SessionMapDigestBuilder.build(
+            source: currentSource,
+            previousManifest: previousManifest,
+            scope: scope)
+        guard currentDigest.hash == digest.hash,
+              currentDigest.sourceFingerprintManifest == digest.sourceFingerprintManifest,
+              result.disposition != .obsolete
+        else { return }
+
+        if let document = result.document {
+            paneModel.replaceDocument(document, state: .ready)
+        }
+        switch result.disposition {
+        case .generated:
+            guard let record = result.record else {
+                paneModel.transition(to: .failed(
+                    message: "[SessionMap:AppModel.generateSessionMap] The validated map record is missing."))
+                return
+            }
+            do {
+                try await dependencies.sessionMapStore.save(record, sessionKey: sessionKey)
+                paneModel.transition(to: .ready)
+            } catch {
+                paneModel.retainFailure(
+                    message: "[SessionMap:AppModel.generateSessionMap] The validated map remains in memory because its record could not be saved.")
+            }
+        case .cached:
+            paneModel.transition(to: .ready)
+        case .retainedLastGood, .factsFallback:
+            paneModel.transition(to: .failed(
+                message: "[SessionMap:AppModel.generateSessionMap] The map writer did not return a valid map."))
+        case .obsolete:
+            break
+        }
+    }
+
+    private func loadSessionMapRecord(
+        for controller: SessionController,
+        into paneModel: SessionMapPaneModel
+    ) async {
+        let sessionKey = sessionMapSessionKey(for: controller)
+        guard let record = try? await dependencies.sessionMapStore.load(sessionKey: sessionKey),
+              managedSessions[controller.id] === controller,
+              paneModel.state != .writing,
+              let projectURL = sessionMapProjectURL(for: controller)
+        else { return }
+        let source = SessionMapSourceAdapter.make(
+            items: controller.items,
+            sessionKey: sessionKey,
+            lineage: sessionKey)
+        let digest = SessionMapDigestBuilder.build(
+            source: source,
+            previousManifest: record.sourceFingerprintManifest,
+            scope: .sinceCaughtUp)
+        let validation = SessionMapDocumentParser.parse(
+            Data(record.xml.utf8),
+            context: SessionMapValidationContext(
+                knownRefs: digest.knownRefs,
+                facts: digest.facts,
+                previous: nil,
+                projectURL: projectURL,
+                statusEvidence: digest.statusEvidence))
+        guard let document = validation.document, validation.fatal.isEmpty else { return }
+        let isCurrent = record.sourceFingerprintManifest == digest.sourceFingerprintManifest
+        paneModel.replaceDocument(document, state: isCurrent ? .ready : .stale)
+    }
+
+    private func sessionMapExecutableURL() async -> URL? {
+        if let installation { return installation.executableURL }
+        guard let location = try? await dependencies.ompLocator.locate(preferredURL: nil) else {
+            return nil
+        }
+        return location.installation?.executableURL
+    }
+
+    private func sessionMapSessionKey(for controller: SessionController) -> String {
+        if let indexed = managedSessionPaths.first(where: { $0.value == controller.id })?.key {
+            return indexed
+        }
+        return controller.sessionPath ?? "new:\(controller.id.uuidString)"
+    }
+
+    private func sessionMapProjectURL(for controller: SessionController) -> URL? {
+        if let projectURL = controller.projectURL { return projectURL }
+        let key = sessionMapSessionKey(for: controller)
+        guard let metadata = sessions.first(where: { $0.path == key }) else { return nil }
+        return URL(filePath: metadata.cwd, directoryHint: .isDirectory)
     }
 
     /// Installs preview controllers into the real navigation graph without opening an
@@ -579,7 +771,13 @@ final class AppModel {
                 state: entry.state,
                 paneWidth: requestedSessionMapPaneWidth,
                 isVisible: isSessionMapVisible,
-                onClose: { [weak self] in self?.setSessionMapVisible(false) })
+                onGenerate: { [weak self, weak controller = entry.controller] scope, force in
+                    guard let controller else { return }
+                    self?.startSessionMapGeneration(
+                        for: controller, scope: scope, force: force)
+                },
+                onClose: { [weak self] in self?.setSessionMapVisible(false) },
+                onOpenSettings: { [weak self] in self?.openSettings(focus: .sessionMap) })
         }
         guard let selected = entries.first(where: { $0.metadata.path == selectedPath }) else {
             route = .newSession
@@ -1343,6 +1541,9 @@ final class AppModel {
     }
 
     private func removeManagedSession(_ controller: SessionController) {
+        sessionMapGenerationTasks.removeValue(forKey: controller.id)?.cancel()
+        sessionMapGenerators.removeValue(forKey: controller.id)
+        sessionMapGenerationRevisions.removeValue(forKey: controller.id)
         controller.stopActivityTracking()
         managedSessions.removeValue(forKey: controller.id)
         sessionMapPaneModels.removeValue(forKey: controller.id)
@@ -1358,6 +1559,10 @@ final class AppModel {
 
     private func discardManagedSessions() {
         detachComposerSources()
+        for task in sessionMapGenerationTasks.values { task.cancel() }
+        sessionMapGenerationTasks.removeAll()
+        sessionMapGenerators.removeAll()
+        sessionMapGenerationRevisions.removeAll()
         for path in managedSessionPaths.keys {
             flyerCenter.removeSession(path)
         }

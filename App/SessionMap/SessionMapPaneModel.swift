@@ -62,8 +62,9 @@ final class SessionMapPaneModel {
     var focus: SessionMapFocus
     private(set) var paneWidth: CGFloat
     private(set) var isVisible: Bool
+    private(set) var retainedFailureMessage: String?
 
-    private let onRegenerate: (SessionMapGenerationScope) -> Void
+    private let onGenerate: (SessionMapGenerationScope, Bool) -> Void
     private let onCaughtUp: () -> Void
     private let onClose: () -> Void
     private let onOpenSettings: () -> Void
@@ -81,6 +82,7 @@ final class SessionMapPaneModel {
         paneWidth: CGFloat = 440,
         isVisible: Bool = false,
         onRegenerate: @escaping (SessionMapGenerationScope) -> Void = { _ in },
+        onGenerate: ((SessionMapGenerationScope, Bool) -> Void)? = nil,
         onCaughtUp: @escaping () -> Void = {},
         onClose: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {},
@@ -92,7 +94,8 @@ final class SessionMapPaneModel {
         self.focus = focus
         self.paneWidth = paneWidth
         self.isVisible = isVisible
-        self.onRegenerate = onRegenerate
+        retainedFailureMessage = nil
+        self.onGenerate = onGenerate ?? { scope, _ in onRegenerate(scope) }
         self.onCaughtUp = onCaughtUp
         self.onClose = onClose
         self.onOpenSettings = onOpenSettings
@@ -106,10 +109,17 @@ final class SessionMapPaneModel {
         }
         displayedDocument = document
         self.state = state
+        if state == .ready { retainedFailureMessage = nil }
     }
 
     func transition(to state: SessionMapPaneState) {
         self.state = state
+        if state == .ready { retainedFailureMessage = nil }
+    }
+
+    func retainFailure(message: String) {
+        retainedFailureMessage = message
+        state = .stale
     }
 
     func synchronizePresentation(paneWidth: CGFloat, isVisible: Bool) {
@@ -117,7 +127,8 @@ final class SessionMapPaneModel {
         self.isVisible = isVisible
     }
 
-    func regenerate(_ scope: SessionMapGenerationScope) { onRegenerate(scope) }
+    func generate(_ scope: SessionMapGenerationScope) { onGenerate(scope, false) }
+    func regenerate(_ scope: SessionMapGenerationScope) { onGenerate(scope, true) }
     func caughtUp() { onCaughtUp() }
     func close() {
         isVisible = false

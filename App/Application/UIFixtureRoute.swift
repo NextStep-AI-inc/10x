@@ -7,6 +7,7 @@ enum UIFixtureRoute: String, CaseIterable, Sendable {
     case mapEmpty = "map-empty"
     case mapInvalid = "map-invalid"
     case settingsMap = "settings-map"
+    case mapWriterLive = "map-writer-live"
     case flyerFitting = "flyer-fitting"
     case flyerOverflow = "flyer-overflow"
     case flyerStack = "flyer-stack"
@@ -22,6 +23,8 @@ enum UIFixtureRoute: String, CaseIterable, Sendable {
             false
         }
     }
+
+    var usesLiveMapWriter: Bool { self == .mapWriterLive }
 
     static func resolve(environment: [String: String]) throws -> UIFixtureRoute? {
         guard let value = environment[environmentKey], !value.isEmpty else { return nil }

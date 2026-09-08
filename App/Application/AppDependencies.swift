@@ -15,6 +15,8 @@ struct AppDependencies: Sendable {
     let makeUpdateChecker: @MainActor @Sendable (
         @escaping @MainActor () async -> Void) -> any UpdateChecking
     let makeSessionTitleGenerator: @Sendable (URL) -> OmpSessionTitleGenerator?
+    let sessionMapStore: SessionMapStore
+    let makeSessionMapGenerator: @Sendable (URL, URL) -> SessionMapGenerator
 
     @MainActor
     init(
@@ -37,7 +39,9 @@ struct AppDependencies: Sendable {
         },
         makeUpdateChecker: (@MainActor @Sendable (
             @escaping @MainActor () async -> Void) -> any UpdateChecking)? = nil,
-        makeSessionTitleGenerator: @escaping @Sendable (URL) -> OmpSessionTitleGenerator? = { _ in nil }
+        makeSessionTitleGenerator: @escaping @Sendable (URL) -> OmpSessionTitleGenerator? = { _ in nil },
+        sessionMapStore: SessionMapStore? = nil,
+        makeSessionMapGenerator: (@Sendable (URL, URL) -> SessionMapGenerator)? = nil
     ) {
         self.ompLocator = ompLocator
         self.sessionLibrary = sessionLibrary
@@ -61,6 +65,14 @@ struct AppDependencies: Sendable {
             return controller
         }
         self.makeSessionTitleGenerator = makeSessionTitleGenerator
+        self.sessionMapStore = sessionMapStore ?? SessionMapStore(
+            directory: Self.defaultSessionMapDirectory())
+        self.makeSessionMapGenerator = makeSessionMapGenerator ?? { executableURL, projectURL in
+            let rpc = SessionMapRPC(executableURL: executableURL, projectURL: projectURL)
+            return SessionMapGenerator { prompt, images, model in
+                try await rpc.complete(prompt: prompt, images: images, model: model)
+            }
+        }
     }
 
     @MainActor static let live = AppDependencies(
@@ -110,4 +122,15 @@ struct AppDependencies: Sendable {
         makeSessionTitleGenerator: { executableURL in
             OmpSessionTitleGenerator(executableURL: executableURL)
         })
+
+    private static func defaultSessionMapDirectory() -> URL {
+        let base = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appending(path: "Library/Application Support", directoryHint: .isDirectory)
+        return base
+            .appending(path: "10x", directoryHint: .isDirectory)
+            .appending(path: "SessionMap", directoryHint: .isDirectory)
+    }
 }
