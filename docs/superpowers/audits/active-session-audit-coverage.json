@@ -1,0 +1,542 @@
+[
+  {
+    "id": "HDR-01",
+    "title": "Session header omits the spec's entire right zone (state, model, thinking, context %, overflow, Stop)",
+    "group": "CONTEXT",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "HDR-02",
+    "title": "contextPercentage is computed but never rendered, and is only refreshed at open or model change",
+    "group": "CONTEXT",
+    "disposition": "Retained; P2 priority in synthesis"
+  },
+  {
+    "id": "HDR-03",
+    "title": "No compaction affordance despite OmpKit and the wire contract supporting it",
+    "group": "CONTEXT",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "HDR-04",
+    "title": "Stop is unreachable once anything is typed and has no keyboard route",
+    "group": "STOP",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "HDR-05",
+    "title": "Titles never auto-generate (--no-title) and there is no rename, so the header reads 'New session' indefinitely",
+    "group": "TITLES",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "HDR-06",
+    "title": "Header git metadata is resolved once at open and never refreshed",
+    "group": "TITLES",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "HDR-07",
+    "title": "Extension setStatus / setWidget are dropped instead of feeding the header status area the spec promises",
+    "group": "SIGNALS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "HDR-08",
+    "title": "Open in IDE exists only per file reference; no project-level 'Open in editor' in the header",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "HDR-09",
+    "title": "Git actions: PR/publish are spec-excluded, but commit and changed-file awareness are not",
+    "group": "REVIEW",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "HDR-10",
+    "title": "Keyboard reach matches the spec table but stops there: no stop, session prev/next, model-picker toggle, or customization",
+    "group": "TITLES",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "HDR-11",
+    "title": "Pane model: single canvas vs sidebar + right panel + drawer",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "HDR-12",
+    "title": "Spec's fixed top-right Search / New Session controls are not shipped; header padding may be a leftover reservation",
+    "group": "OPTIONAL",
+    "disposition": "Unverified question"
+  },
+  {
+    "id": "HDR-13",
+    "title": "Strength: provider usage rings with live active-session counts, full-text Cmd+K search, and a four-item wordmark menu",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "TOOL-01",
+    "title": "Tool cards are not interleaved with assistant prose in execution order",
+    "group": "ORDER",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TOOL-02",
+    "title": "No turn- or thread-level changed-files summary; review is only per edit card",
+    "group": "REVIEW",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TOOL-03",
+    "title": "No grouped activity summaries or 'Worked for Ns' turn disclosure",
+    "group": "TURNS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TOOL-04",
+    "title": "Running tool card duration is frozen between events",
+    "group": "DETAILS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TOOL-05",
+    "title": "Console surface previews the head of the output, so a running command hides its newest lines",
+    "group": "DETAILS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TOOL-06",
+    "title": "Diff 'Open file' bypasses the IDE preference and disappears for multi-file relative diffs",
+    "group": "DETAILS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TOOL-07",
+    "title": "Subagent card drops recent tools and the child session link it already receives",
+    "group": "DETAILS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TOOL-08",
+    "title": "No terminal access from the session",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "TOOL-09",
+    "title": "Files browser and file preview panel (spec-excluded)",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "TOOL-10",
+    "title": "Plan proposals and follow-up banner have no 10x counterpart; omp equivalent unclear",
+    "group": "OPTIONAL",
+    "disposition": "Unverified question"
+  },
+  {
+    "id": "TOOL-11",
+    "title": "Diff surface lacks per-file collapse, expand-all, and split layout",
+    "group": "DETAILS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TOOL-12",
+    "title": "Structured diff rendering is stronger than T3's transcript diff",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "TOOL-13",
+    "title": "Explicit routing for every canonical omp tool plus bounded MCP/custom fallbacks",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "APR-01",
+    "title": "No per-session approval mode control; omp RPC has no command for it",
+    "group": "PERMISSIONS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "APR-02",
+    "title": "Pending approvals are invisible outside the open transcript (rail, header, notifications)",
+    "group": "SIGNALS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "APR-03",
+    "title": "Composer gives no 'blocked on you' cue while a request is pending",
+    "group": "SIGNALS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "APR-04",
+    "title": "Card arrival moves keyboard focus to Run; a Return typed mid-message may approve",
+    "group": "PERMISSIONS",
+    "disposition": "Unverified question"
+  },
+  {
+    "id": "APR-05",
+    "title": "No scope options: spec promises Always Allow, the card ships Run/Cancel, the wire is a boolean",
+    "group": "PERMISSIONS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "APR-06",
+    "title": "Timed requests expire silently: no countdown on the card, no transcript trace of the default",
+    "group": "PERMISSIONS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "APR-07",
+    "title": "Multiple pending requests all render, all bind Return, and the latest steals focus; no 1/N ordering",
+    "group": "PERMISSIONS",
+    "disposition": "Unverified question"
+  },
+  {
+    "id": "APR-08",
+    "title": "Agent questions are single-select only: no multi-select, free-text 'other', or multi-question flow",
+    "group": "INPUT",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "APR-09",
+    "title": "input/editor requests open a window-modal sheet that blocks Stop, the rail, and other sessions",
+    "group": "PERMISSIONS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "APR-10",
+    "title": "setStatus / setWidget frames are parsed then dropped; spec assigns them to the header",
+    "group": "SIGNALS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "APR-11",
+    "title": "An approval that lands while scrolled up sits below the fold behind a generic 'Jump to latest' pill",
+    "group": "SIGNALS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "APR-12",
+    "title": "Strength: wire-exact responses, cancel-frame handling, reconciliation-safe cards, keyboard defaults",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "APR-13",
+    "title": "No provider-supplied caution on approval options (prompt-injection warning)",
+    "group": "PERMISSIONS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "ORD-01",
+    "title": "Cursor-shaped turns render as one prose blob with every tool card trailing (content-part order is discarded)",
+    "group": "ORDER",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "ORD-02",
+    "title": "Tool card order is not demonstrably non-chronological; same-step parallel calls explain apparent inversions",
+    "group": "CORRECTIONS",
+    "disposition": "Unsupported tool-order claim rejected"
+  },
+  {
+    "id": "ORD-03",
+    "title": "The transcript spec's hierarchy places activity after response content, so the collapsed layout is spec-conformant for one-step turns",
+    "group": "TURNS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "ORD-04",
+    "title": "\"Working…\" indicator is keyed on items.last, so it mis-signals once tools trail a still-streaming message, and thinking-only stretches show nothing",
+    "group": "TURNS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "ORD-05",
+    "title": "Response metadata line sits above the whole turn with \"Streaming\"; T3 withholds metadata until the turn settles and places it after trailing tools",
+    "group": "TURNS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "ORD-06",
+    "title": "No per-turn fold or grouped activity summaries (\"Worked for 32s\", \"Read 2 files and ran 1 command\")",
+    "group": "TURNS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "ORD-07",
+    "title": "10x shows the running tool's live output inline; T3 reduces it to a one-line \"Running <program>\" row",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "ORD-08",
+    "title": "User message has no affordances (no timestamp, no copy); T3's \"Revert to this message\" is session-branching and spec-excluded",
+    "group": "DETAILS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "ORD-09",
+    "title": "Neither app renders a streaming caret; 10x signals streaming only via a metadata label",
+    "group": "OPTIONAL",
+    "disposition": "Unverified question"
+  },
+  {
+    "id": "ORD-10",
+    "title": "Code block actions: 10x Scroll/Wrap + Copy vs T3 Wrap lines toggle + Copy code with copied state and persisted preference",
+    "group": "DETAILS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "ORD-11",
+    "title": "Inline file references link and open in the IDE; T3 adds a typed file chip visual",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "ORD-12",
+    "title": "Thread start line exists in 10x; T3 relies on breadcrumb title instead",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "TL-01",
+    "title": "`.failed` runtime state renders nothing: composer goes dead with no message or recovery action",
+    "group": "ERROR",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-02",
+    "title": "Session header does not implement its own spec: no running state, model, thinking, context %, or Stop",
+    "group": "CONTEXT",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-03",
+    "title": "Elapsed time disappears once output starts and there is no post-turn 'Worked for Ns' summary",
+    "group": "TURNS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-04",
+    "title": "Stop control is hidden whenever the composer has draft text or an attachment",
+    "group": "STOP",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-05",
+    "title": "Rail shows no live per-session state; the only cross-session signal is a provider count in the usage dock",
+    "group": "SIGNALS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-06",
+    "title": "Sessions never get a title: --no-title is hard-coded and set_session_name is never sent",
+    "group": "TITLES",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-07",
+    "title": "Own-send does not follow when the viewport is scrolled up (observation 5) — by rule, not by accident",
+    "group": "DETAILS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-08",
+    "title": "No turn-complete notification or unread marker; the one notification path never requests authorization",
+    "group": "SIGNALS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-09",
+    "title": "Provider/auth failure is an inline red sentence with no banner, no cause, and no recovery action",
+    "group": "ERROR",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-10",
+    "title": "Abort rendering is adequate but loses the turn's duration and leaves running tool cards un-resolved",
+    "group": "DETAILS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "TL-11",
+    "title": "Process-exit recovery card is a strength; 'Restart session' on an ephemeral (--no-session) session is untested",
+    "group": "SAVE",
+    "disposition": "Unverified question"
+  },
+  {
+    "id": "TL-12",
+    "title": "First-token silence: 10x's 'Working…' row plus optimistic streaming state is on par with T3",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "TL-13",
+    "title": "Quit while a turn is running has no confirmation gate",
+    "group": "OPTIONAL",
+    "disposition": "Unverified question"
+  },
+  {
+    "id": "COMP-01",
+    "title": "\"N queued\" never updates after a mid-turn Steer/Follow up send, so a Follow up vanishes with no acknowledgement",
+    "group": "QUEUE",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "COMP-02",
+    "title": "No way to stop a run while a draft or attachment is staged; the spec'd header Stop does not exist",
+    "group": "STOP",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "COMP-03",
+    "title": "No permission/approval mode control anywhere in the active session",
+    "group": "PERMISSIONS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "COMP-04q",
+    "title": "Does omp apply a tools.approvalMode config write to an already-running rpc child?",
+    "group": "PERMISSIONS",
+    "disposition": "Unverified question"
+  },
+  {
+    "id": "COMP-05",
+    "title": "Context usage is computed but never rendered",
+    "group": "CONTEXT",
+    "disposition": "Retained; P2 priority in synthesis"
+  },
+  {
+    "id": "COMP-06",
+    "title": "Drafts and attachments live only in memory per controller; nothing survives relaunch",
+    "group": "INPUT",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "COMP-07",
+    "title": "No slash-command menu even though omp exposes get_available_commands",
+    "group": "INPUT",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "COMP-08",
+    "title": "No @file mentions; dropped non-image files become raw absolute paths and the attach panel accepts images only",
+    "group": "INPUT",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "COMP-09",
+    "title": "Attachment scope, limits, and validation messaging are thinner than T3 and the error slot hides model errors behind attach warnings",
+    "group": "INPUT",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "COMP-10",
+    "title": "Keyboard affordances: no ArrowUp prompt recall, no ⌘S stash, no ⌘Return start, no refocus on window activation",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "COMP-11",
+    "title": "Model picker lacks provider tabs, favorites, ⌘1-9 jumps, and custom models",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "COMP-12",
+    "title": "No resting/collapsed composer on scroll",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "COMP-13q",
+    "title": "Does plain Return send mid-IME composition (CJK input)?",
+    "group": "INPUT",
+    "disposition": "Unverified question"
+  },
+  {
+    "id": "COMP-14",
+    "title": "Strength: explicit Steer vs Follow up choice with an honest placeholder",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "COMP-15",
+    "title": "Strength: one composer-anchored flyout for model, effort and Fast, with live rollback on RPC failure",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  },
+  {
+    "id": "PERSIST-01",
+    "title": "First new session per warm project per launch is never persisted (warm --no-session client)",
+    "group": "SAVE",
+    "disposition": "Runtime mechanism rechecked; app relaunch pending"
+  },
+  {
+    "id": "PERSIST-02",
+    "title": "Warm existing-session checkout fails in the tested runtime; saved fixture remains unchanged",
+    "group": "OPEN",
+    "disposition": "Historical claim rejected; replaced by OPEN"
+  },
+  {
+    "id": "PERSIST-03",
+    "title": "Restart Session after a crash cannot resume an ephemeral session (placeholder path passed to -r)",
+    "group": "SAVE",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "PERSIST-04",
+    "title": "Sessions never get a title: rail rows are 'Untitled session', header stays 'New session'",
+    "group": "TITLES",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "PERSIST-05",
+    "title": "Rail shows no per-session running / attention state",
+    "group": "SIGNALS",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "PERSIST-06",
+    "title": "No keyboard navigation between sessions",
+    "group": "TITLES",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "PERSIST-07",
+    "title": "Relaunch lands on New Session; nothing remembers which session was open",
+    "group": "TITLES",
+    "disposition": "Merged source-derived candidate"
+  },
+  {
+    "id": "PERSIST-08",
+    "title": "Rail ordering and capacity: created-order, 5 visible per project, no pin/settle/snooze",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "PERSIST-09",
+    "title": "No worktree-per-session or explicit checkout choice when starting a session",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "PERSIST-10",
+    "title": "Pull-request linking and PR-driven settlement (spec-excluded)",
+    "group": "OPTIONAL",
+    "disposition": "Deferred product choice"
+  },
+  {
+    "id": "PERSIST-11",
+    "title": "Strength: 10x's store is omp's own, archive is conflict-safe, and parallel sessions reuse controllers",
+    "group": "KEEP",
+    "disposition": "Retained strength; limits apply"
+  }
+]

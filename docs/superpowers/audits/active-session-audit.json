@@ -1,0 +1,507 @@
+{
+  "title": "10x vs T3 Code",
+  "date": "7 September 2026",
+  "baseline": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+  "t3_source": "569a8cd2c3303f55fd869687eb31359b5658cc78",
+  "headline": "10x has the stronger individual tool surfaces. T3 makes a whole turn easier to follow, interrupt, and review. Preserve 10x’s visual identity and repair session reliability before adding more workspace chrome.",
+  "recommendation": "Start with warm-session persistence and failed-open recovery, then Stop and send acknowledgement, then transcript order. Add a compact layer for turn status and changed files around the existing tool cards.",
+  "scope_note": "Audit only. 10x source is fixed at 59a4ae8; T3 captures came from t3@0.0.39 and source analysis from 569a8cd2. This is a comparison of those baselines, not a claim about every current provider or later build.",
+  "evidence_note": "The lead 10x image is a current, read-only capture of the recovered Release process showing earlier turns. T3 images are historical captures from the prior audit. Other 10x images are reference renders of real view code with synthetic fixtures. None of those reference renders proves a live interaction.",
+  "verified": [
+    "Recovered all seven dimension reports and 13 completed challenge reviews. The original synthesis and three persistence reviews had failed; this report supplies the synthesis and a new runtime check.",
+    "Restored and byte-checked all 32 supplied files. All 32 original 10x reference images examined match this checkout’s reference-image files. The image manifest records source and derivative hashes.",
+    "Captured the still-running audit Release window without sending another turn or changing its project. Its header still reads New session; the accessibility tree contains the historical prose followed by separate tool cards.",
+    "Ran four isolated RPC cases against omp 18.1.10 with zero model calls. New sessions under --no-session have no file path. Switching an existing fixture under that flag fails; the persisting control loads its message and saves a rename.",
+    "Rechecked the key 10x call paths for warm checkout, Stop, failures, queue/context updates, and transcript projection against the frozen source. The report’s recommendations remain proposals."
+  ],
+  "not_verified": [
+    "No fresh model-driven turn or quit/relaunch test in either application. The current native capture shows recovered session content; it is not a fresh end-to-end test. The Release build was recovered, not rebuilt here.",
+    "No live approval decision in either app. The earlier 10x run used yolo mode; T3’s Cursor Supervised test produced an Ask-mode response, not the expected approval panel. Files named approval-pending are not proof of approval UI.",
+    "Hover, keyboard focus, Escape dismissal, multiple concurrent approvals, IME input, notifications, long-transcript performance, accessibility operation, and dark-mode application behavior were not exercised.",
+    "T3 source-only capabilities, including some changed-file and context controls, were not all exercised in t3@0.0.39. The original shared scratch directory invalidates model-quality, speed, and edit-success comparisons.",
+    "Application builds, typechecks, and test suites were not rerun for this documentation-only continuation. Public publication and cleanup of the recovered apps and servers were not performed.",
+    "The HTML report was not visually inspected: the browser URL policy rejected its local-file URL. The workspace file preview was queued for this task; that does not establish that the page rendered. Static asset, link, and source-reference checks were completed."
+  ],
+  "for_you": [
+    "Open the local HTML report to assess its layout, then review the proposed implementation order. The automated browser could not preview the local-file URL. No destructive test on your working sessions is required.",
+    "For the first implementation slice, use a disposable project to verify new-session persistence and existing-session open across quit/relaunch, then test Stop while text or an image is staged.",
+    "Before an approval redesign, test focus and Return/Escape behavior with your normal typing workflow and confirm the permission scope the runtime can actually enforce."
+  ],
+  "comparison": [
+    [
+      "Session continuity",
+      "Warm new-session checkout remains ephemeral; warm existing-session checkout fails in the tested runtime.",
+      "Historical thread rows persist in the UI; source uses durable orchestration events and projections.",
+      "Repair 10x first. No fresh T3 restart test."
+    ],
+    [
+      "Reading a turn",
+      "Cursor messages can gather all prose into one item and put the tool cards after it.",
+      "Captured prose alternates with compact work summaries under a Worked for disclosure.",
+      "Preserve content-part order; add optional turn grouping."
+    ],
+    [
+      "Tool inspection",
+      "Dedicated source, console, structured diff, media, progress, and data views.",
+      "Compact transcript work rows; larger inspection surfaces live in panels.",
+      "Keep 10x’s tool depth and improve navigation around it."
+    ],
+    [
+      "Working state",
+      "Working row is conditional; no finished-turn duration or per-session live rail indicator.",
+      "Captured elapsed turn label and Working/Failed sidebar states.",
+      "Make the active turn and background attention visible."
+    ],
+    [
+      "Interruption",
+      "The only Stop button becomes Send when a draft or attachment is staged.",
+      "A Stop control is visible in the historical running capture. Draft-state details are source-derived.",
+      "Keep an independent Stop action in 10x."
+    ],
+    [
+      "Follow-ups",
+      "Explicit Steer/Follow up is useful; the queue count has no send/consume refresh path.",
+      "The captured/source desktop flow uses mid-turn steering and projected user-message acknowledgement.",
+      "Keep 10x’s distinction; acknowledge accepted input."
+    ],
+    [
+      "Context and title",
+      "Title plus git metadata in the header; context usage is parsed but unrendered; no rename action.",
+      "Breadcrumb title and composer controls; context meter/compaction are documented and source-derived.",
+      "Choose placement deliberately; supply missing information."
+    ],
+    [
+      "Reviewing changes",
+      "Detailed diffs live inside separate edit cards; no aggregate changed-file index.",
+      "Historical working-tree Diff panel; source also has per-turn changed-file trees.",
+      "Add a scoped changed-file summary before a full explorer."
+    ],
+    [
+      "Approvals",
+      "Inline confirm/select cards and input sheets; no active-session mode or attention indicator.",
+      "Captured Runtime mode menu; source has a pinned pending-request surface and sidebar priority.",
+      "Expose attention first; validate runtime scope before mode controls."
+    ],
+    [
+      "Composer context",
+      "Model/effort/Fast share one flyout; image attachments and raw dropped file paths.",
+      "Provider picker; documented commands, mentions, prompt recall, stash, and broader attachments.",
+      "Prioritize draft recovery and deliberate file/command insertion."
+    ],
+    [
+      "Workspace surfaces",
+      "One centered canvas, provider usage dock, searchable session library.",
+      "Sidebar, optional right panel, terminal drawer, editor/git entry points.",
+      "Adopt only the surfaces that reduce a demonstrated context switch."
+    ]
+  ],
+  "findings": [
+    {
+      "id": "SAVE",
+      "priority": "P0",
+      "title": "New sessions created from a warm child are not persisted",
+      "basis": "Current runtime probe + current source trace; historical UI observation",
+      "behavior": "Startup warms recent projects with noSession=true. The first new session that consumes a warm child sends new_session into an in-memory runtime. get_state has no sessionFile, so 10x substitutes a new:<project>:<uuid> path and presents an active chat without durable session storage. The cold path does not set this flag. This is not a claim that every new session is affected: it is the first checkout of each retained warm child. The primary is retained until used; the secondary expires after five minutes.",
+      "impact": "The user can do work in a chat that has no file-backed route back from the session library. Leaving the session or quitting can lose access to its transcript. P0 here means loss of newly created work in a supported path, not corruption of existing saved history.",
+      "recommendation": "Make the warm child persist-capable, or use a fresh persisting child for checkout. Do not rely on new_session or switch_session to promote an in-memory process. Reject placeholder session identities at the app boundary and make any failure visible. A file path alone is not proof the first turn reached disk.",
+      "acceptance": "On the real runtime, start a new chat as the first action in a warmed disposable project, complete a turn, verify its JSONL and rail entry, leave and return, then quit/relaunch and recover the same content. Cover the cold path too. Update the startup spec’s promotion assumption and test fixture.",
+      "refs": [
+        "10x:OmpKit/Sources/OmpKit/SessionProcessManager.swift:237",
+        "10x:OmpKit/Sources/OmpKit/SessionProcessManager.swift:321",
+        "10x:OmpKit/Sources/OmpKit/RpcClient.swift:44",
+        "10x:App/Application/AppModel.swift:958",
+        "10x:docs/superpowers/specs/2026-08-25-startup-splash-preload-design.md:183"
+      ],
+      "evidence": "verify-warm-persistence.output.txt: new-session cases. The runtime probe did not send a model prompt; the absence of a durable path and the in-memory runtime mode are freshly verified."
+    },
+    {
+      "id": "OPEN",
+      "priority": "P1",
+      "title": "Opening an existing session through a warm child fails",
+      "basis": "Current runtime probe; historical P0 claim corrected",
+      "behavior": "The first existing-session open in a warm project checks out the same --no-session child and sends switch_session(path). In omp 18.1.10 that child uses MemorySessionStorage. It cannot read the existing disk file and returns File not found. The persisting control loads the identical fixture correctly and saves its rename.",
+      "impact": "An existing chat can fail to open through a startup optimization. 10x then routes the error into the unrendered failed state described below. The saved fixture remained byte-identical. The historical claim that the chat loads normally and silently stops saving later turns is rejected for the tested runtime.",
+      "recommendation": "Use the same persist-capable checkout correction as SAVE, or bypass warm checkout for existing sessions. Retry must reopen from retained project/session metadata rather than assuming a valid active handle already exists.",
+      "acceptance": "Open an existing disposable session as the first action after launch; confirm prior messages load, append a turn, relaunch, and confirm both old and new content remain. Exercise a missing-file failure and recover without restarting the app.",
+      "refs": [
+        "10x:OmpKit/Sources/OmpKit/SessionProcessManager.swift:153",
+        "10x:OmpKit/Sources/OmpKit/SessionProcessManager.swift:443",
+        "10x:App/Sessions/SessionController.swift:130"
+      ],
+      "evidence": "verify-warm-persistence.output.txt: switch-existing cases. The new result supersedes PERSIST-02’s historical severity and mechanism."
+    },
+    {
+      "id": "STOP",
+      "priority": "P1",
+      "title": "Stop disappears while the user prepares the next message",
+      "basis": "Current code trace + historical reference render; draft-state click not re-run",
+      "behavior": "stoppableController requires a streaming session, no attachments, and a whitespace-only draft. Typing a character or adding an image replaces the only abort action with Send. The header has no Stop control and the app has no second abort call site. Clearing the staged input is the workaround.",
+      "impact": "The exact moment someone prepares a correction is also a moment they may need to stop the current run. Requiring them to clear that correction makes the two actions compete.",
+      "recommendation": "Keep a small independent Stop action while a turn is active and give it a dedicated shortcut such as Command-period. Preserve Send for Steer/Follow up. Do not casually map Escape to abort: Escape also dismisses the flyout and cancels approval requests.",
+      "acceptance": "In a running turn, stage text, then an image, and stop from the visible control and shortcut without losing the draft. Verify the shortcut with a flyout and a pending approval. The run must actually settle, not merely change its button.",
+      "refs": [
+        "10x:App/Sessions/ComposerView.swift:356",
+        "10x:App/Sessions/ComposerView.swift:400",
+        "10x:App/Sessions/ActiveSessionView.swift:10",
+        "10x:App/Shell/BrandActionsMenuView.swift:112",
+        "10x:docs/superpowers/specs/2026-08-24-10x-omp-macos-gui-design.md:163"
+      ],
+      "evidence": "10x-composer-stop-control.png shows the reference empty-draft Stop state. It does not demonstrate Stop after typing. t3-turn-05.jpg shows T3’s running control."
+    },
+    {
+      "id": "ERROR",
+      "priority": "P1",
+      "title": "Some session failures disable the composer without a recovery surface",
+      "basis": "Current source trace; failing UI path not freshly driven",
+      "behavior": "fail() stores .failed(message), while isComposerAvailable becomes false. ActiveSessionView presents the recovery card only for .stopped plus isRecoveryPresented. Open failures and rejected/timed-out prompt commands can therefore leave a disabled composer without displaying the failure payload. Process exits are different: they use the existing stopped/recovery path.",
+      "impact": "The user cannot tell whether the app is waiting, disconnected, or unable to open the session. Prompt text can be restored by the catch path, but it is not actionable while the composer stays disabled.",
+      "recommendation": "Render failed state explicitly with a plain explanation, a context-appropriate retry, and diagnostic details behind an action. Retain project/session metadata for failures before a handle or sessionPath exists. A generic Restart button would be a no-op in those cases. Keep the existing process-exit card.",
+      "acceptance": "Drive failed existing open, failed new open, prompt rejection, and child exit separately. Each must show the cause and a working recovery action while preserving text. Verify a retry actually reconnects and accepts another message.",
+      "refs": [
+        "10x:App/Sessions/SessionController.swift:121",
+        "10x:App/Sessions/SessionController.swift:289",
+        "10x:App/Sessions/SessionController.swift:344",
+        "10x:App/Sessions/SessionController.swift:903",
+        "10x:App/Sessions/ActiveSessionView.swift:16",
+        "10x:Tests/TenXAppTests/AppModelNavigationTests.swift:393",
+        "t3:apps/web/src/components/chat/ThreadErrorBanner.tsx:1"
+      ],
+      "evidence": "10x-runtime-recovery.png illustrates the separate stopped-state design; it is not evidence that failed state is handled. t3-thread-claude-auth-failed.jpg is a historical provider-error capture."
+    },
+    {
+      "id": "ORDER",
+      "priority": "P1",
+      "title": "Cursor-shaped turns lose the order between prose and tools",
+      "basis": "Current code/AX inspection + historical source analysis; provider-specific priority",
+      "behavior": "A single assistant message can contain text, toolCall, text, toolCall, and more text. 10x’s content document joins the text blocks; the reducer and history mapper append separate tool items after the message. Cursor can put a whole agent turn into this shape, so narration about later work appears above the cards for earlier work. Providers that produce one message per model step are not shown to have the same problem.",
+      "impact": "All content can be present yet the transcript tells the wrong sequence. This is P1 for the tested Cursor workflow and a provider-parity priority judgment for other configurations. It is not evidence of unordered tool start events or data loss.",
+      "recommendation": "Project contiguous text segments and the existing tool IDs into content-part order in both live and reopened history. Preserve the original message identity used by reconciliation. Sorting tools by timestamp will not fix an already-flattened prose item. Show response metadata once at the appropriate turn boundary, not for every projected segment.",
+      "acceptance": "Use a deterministic text/tool/text/tool/text fixture and a real Cursor turn; inspect live streaming, completion, and reopen. The same sequence must survive all three. Cover parallel tool completions and repeated snapshots without duplicated cards or broken reconciliation.",
+      "refs": [
+        "10x:App/Sessions/TranscriptMessage.swift:157",
+        "10x:App/Sessions/TranscriptReducer.swift:44",
+        "10x:App/Sessions/TranscriptReducer.swift:133",
+        "10x:App/Sessions/TranscriptReducer.swift:205",
+        "10x:App/Sessions/TranscriptHistoryMapper.swift:62",
+        "t3:apps/web/src/components/chat/MessagesTimeline.logic.ts:1035"
+      ],
+      "evidence": "t3-turn1-worked-expanded.jpg shows prose/work/prose grouping. The current 10x accessibility tree still contains the earlier narration as one prose item followed by tool items. No new model turn was run."
+    },
+    {
+      "id": "QUEUE",
+      "priority": "P1",
+      "title": "A mid-turn follow-up has no reliable visible acknowledgement",
+      "basis": "Current code trace + historical observation; queue operation not freshly exercised",
+      "behavior": "Sending clears the composer and calls prompt with the chosen streaming behavior. queuedMessageCount is assigned only when applyState runs at opening or a model refresh; sending and consuming queued messages do not refresh it. The existing N queued label can stay absent, or stale if it was previously populated. This does not establish that the runtime lost the message.",
+      "impact": "The user may resend a follow-up because its draft disappeared without a visible accepted/queued state. Steer and Follow up are useful distinct actions, but their consequences need to be legible.",
+      "recommendation": "Show an acknowledgement tied to the accepted message and reconcile against authoritative queue state after acceptance and consumption. Preserve text on rejection. Avoid incrementing a local count without a decrement/refresh path, and avoid duplicate transcript echoes when the runtime later emits the message.",
+      "acceptance": "Send one and then multiple follow-ups during a tool run. Verify each appears once, an accurate count rises and returns to zero, and the correct next turn consumes it. Test immediate steering and rejected sends separately.",
+      "refs": [
+        "10x:App/Sessions/ComposerView.swift:446",
+        "10x:App/Sessions/SessionController.swift:289",
+        "10x:App/Sessions/SessionController.swift:751",
+        "10x:App/Sessions/SessionController.swift:789",
+        "t3:apps/web/src/components/ChatView.logic.ts:1010"
+      ],
+      "evidence": "The stale counter is a source-confirmed wiring issue. The earlier follow-up observation had no saved live frame; the report does not call it a fresh visual reproduction."
+    }
+  ],
+  "improvements": [
+    {
+      "id": "SIGNALS",
+      "priority": "P1",
+      "title": "Make a session’s state visible beyond its open transcript",
+      "behavior": "10x reports only provider-level generation counts to its activity registry. Historical/source evidence shows no live rail state for working, waiting for input, approval, failure, or unread completion. T3’s captured sidebar makes Working and Failed visible; its source prioritizes approval and input above routine activity.",
+      "recommendation": "Use one session-level status model for the rail, header/turn status, and composer. Show waiting for the user before generic working state. Preserve 10x’s quiet rail; a short label or attention marker can carry the state without adopting T3’s entire sidebar. Pending approvals must remain reachable when the transcript is scrolled up or another session is selected.",
+      "acceptance": "Run two sessions, put one into a pending request, switch away, and return from the visible attention cue. Verify working, failed, completed/unread, and cancelled states do not overlap misleadingly. Request notification permission only when offering notifications.",
+      "refs": [
+        "10x:App/Sessions/SessionActivityRegistry.swift:7",
+        "10x:App/Sessions/SessionController.swift:939",
+        "10x:App/Shell/FloatingRailView.swift:186",
+        "t3:apps/web/src/components/Sidebar.logic.ts:488"
+      ]
+    },
+    {
+      "id": "REVIEW",
+      "priority": "P1",
+      "title": "Give every completed turn a scoped view of what changed",
+      "behavior": "10x has strong per-edit diff views, including line numbers and context folding, but the user must find and inspect separate cards. T3’s historical working-tree panel provides a review surface; its source additionally has a per-turn changed-file tree. The V1 exclusion of a file explorer does not explicitly exclude a changed-file summary.",
+      "recommendation": "Start with a compact changed-file index linking to existing edit details. Clearly label its scope and completeness. Tool-derived changes can miss shell writes and must not be described as the entire working tree; repeated edits can double-count naive addition/deletion totals. A later git-backed review pane should distinguish turn changes from pre-existing and concurrent work.",
+      "acceptance": "Complete a multi-file turn containing both an edit tool and a shell-generated file, with pre-existing changes in the repo. Verify the summary states what it covers and does not attribute unrelated work to the agent. Open each linked diff without losing the reading position.",
+      "refs": [
+        "10x:App/Tools/ToolContentExtractor.swift:972",
+        "10x:App/Tools/DiffView.swift:30",
+        "10x:App/Tools/ToolCardRegistry.swift:58",
+        "10x:docs/superpowers/specs/2026-08-24-10x-omp-macos-gui-design.md:50",
+        "t3:apps/web/src/components/DiffPanel.tsx:216",
+        "t3:apps/web/src/components/chat/ChangedFilesTree.tsx:25"
+      ]
+    },
+    {
+      "id": "TURNS",
+      "priority": "P2",
+      "title": "Keep detailed cards but let readers scan a whole turn",
+      "behavior": "T3’s Worked for disclosure and generated work summaries reduce repeated tool chrome. 10x favors one card per operation and often expands completed edits. Its waiting indicator inspects the last item, which is an unreliable proxy for activity when a single message continues updating above trailing tools.",
+      "recommendation": "Add a stable turn boundary, elapsed time, completion state, and optional disclosure over routine activity. Keep exceptional results and errors easy to find. Derive working state from the active turn and tools rather than the last rendered item. Use truthful Working wording; T3’s literal Thinking label is reference evidence, not a required copy choice.",
+      "acceptance": "Inspect a long turn with quiet waiting, streaming text, parallel tools, edits, errors, and completion. The activity signal remains truthful, the final answer is easy to locate, and expanded details survive updates.",
+      "refs": [
+        "10x:App/Sessions/TurnActivityView.swift:15",
+        "10x:App/Sessions/ResponseMetadataView.swift:56",
+        "t3:apps/web/src/components/chat/MessagesTimeline.logic.ts:1200",
+        "t3:apps/web/src/components/chat/MessagesTimeline.tsx:1721"
+      ]
+    },
+    {
+      "id": "CONTEXT",
+      "priority": "P2",
+      "title": "Expose context usage and an honest compaction action",
+      "behavior": "10x parses contextPercentage but no view reads it. Its state-refresh path also leaves usage stale after a turn. The header spec requests context percentage; T3 places its meter and compaction entry in the composer instead. That is a placement choice, not proof 10x should duplicate all composer controls in the header.",
+      "recommendation": "Add a small usage display with used/limit details and refresh it at authoritative state boundaries. Wire compaction only when the runtime supports it and explain unavailable states. Reconcile the header spec with the chosen placement before adding duplicate model and effort controls.",
+      "acceptance": "Observe usage changing across turns and after compaction. Verify unknown usage, provider limitations, and a failed compaction. Keep provider account quota visibly distinct from session context usage.",
+      "refs": [
+        "10x:App/Sessions/SessionController.swift:35",
+        "10x:App/Sessions/SessionController.swift:751",
+        "10x:App/Sessions/SessionController.swift:789",
+        "t3:apps/web/src/components/chat/ContextWindowMeter.tsx:18",
+        "t3:docs/user/composer.md:109"
+      ]
+    },
+    {
+      "id": "TITLES",
+      "priority": "P2",
+      "title": "Make sessions identifiable and easy to return to",
+      "behavior": "The current capture still says New session after earlier completed turns. RpcClient always adds --no-title, and the app exposes no rename action even though the protocol supports one. The rail/search are a useful base, but source analysis also found no last-open-session restoration and only a small created-order list per project.",
+      "recommendation": "Provide a reliable initial title and an explicit rename action; choose whether automatic naming or a first-prompt fallback is appropriate. Refresh git metadata after relevant changes. Remember the last valid session route after persistence is corrected. Add session navigation shortcuts before a large rail redesign.",
+      "acceptance": "Create, rename, leave, search for, and reopen a session; relaunch and return to the right chat. Verify duplicate titles, a missing project, and changed branch metadata without changing the underlying checkout.",
+      "refs": [
+        "10x:OmpKit/Sources/OmpKit/RpcClient.swift:44",
+        "10x:App/Sessions/SessionHeaderView.swift:6",
+        "10x:App/Startup/RecentProjectStore.swift:25",
+        "t3:docs/user/thread-sidebar.md:1"
+      ]
+    },
+    {
+      "id": "PERMISSIONS",
+      "priority": "P1",
+      "title": "Separate permission visibility from permission scope",
+      "behavior": "10x already has wire-shaped confirm/select cards and input/editor sheets. It lacks an active-session mode control and the V1 Always Allow action. The documented RPC union has no per-session approval-mode command; a confirm response is a boolean. T3’s captured menu lists four runtime modes, but their behavior depends on the provider.",
+      "recommendation": "First make a pending decision visible and explain the current effective policy. Validate whether configuration changes affect running children and what scope the runtime can enforce before offering a mode switch or Always Allow. A global config write must not masquerade as a per-session choice. Keep timed-out decisions traceable, and examine multiple requests and modal input separately.",
+      "acceptance": "Exercise confirm, select, input, cancellation, timeout, and multiple pending requests. Check where focus lands while typing, whether Return could approve unintentionally, and how to reach Stop. These are open interaction questions, not confirmed accidental-approval bugs.",
+      "refs": [
+        "10x:App/ExtensionUI/ApprovalCardView.swift:1",
+        "10x:App/Sessions/ActiveSessionView.swift:44",
+        "10x:docs/contracts/rpc-wire-contract.md:29",
+        "10x:docs/superpowers/specs/2026-08-24-10x-omp-macos-gui-design.md:184",
+        "t3:docs/user/permission-modes.md:1"
+      ]
+    },
+    {
+      "id": "INPUT",
+      "priority": "P2",
+      "title": "Preserve input and make context insertion deliberate",
+      "behavior": "10x’s explicit Steer/Follow up choice and single model/effort/Fast flyout are worth keeping. Source analysis found drafts/attachments only in controller memory, no slash-command discovery or @file insertion UI, image-only attachment selection, and attachment warnings sharing a one-line error slot with model errors. T3 documents command/skill insertion, prompt recall/stash, and broader file attachments.",
+      "recommendation": "Prioritize recoverable drafts and clear accepted/rejected input. Add command/file insertion using the existing runtime capabilities where available. Keep attachment and model errors independently visible. Adopt limits only when the actual transport requires them; do not copy T3’s arbitrary product limits into 10x.",
+      "acceptance": "Switch sessions and relaunch with an unsent draft and image. Test an invalid image, multiple warnings, a failed model change, a long path, and a command/file inserted while typing. Verify CJK composition before changing Return behavior.",
+      "refs": [
+        "10x:App/Sessions/ComposerView.swift:121",
+        "10x:App/Sessions/ComposerAttachment.swift:44",
+        "10x:App/Sessions/ComposerControlsModel.swift:155",
+        "t3:docs/user/composer.md:1"
+      ]
+    },
+    {
+      "id": "DETAILS",
+      "priority": "P2",
+      "title": "Address focused tool and reading issues after the core flow",
+      "behavior": "The recovered source review found running durations that only change on events, console previews that favor old output, diff Open file behavior inconsistent with IDE preference, missing child-session links/recent tools in subagent cards, and no explicit own-send follow while scrolled up. These remain source-derived candidates, not freshly exercised bugs.",
+      "recommendation": "Give running operations a current tail and elapsed time, route file opens through the shared preference, and expose known child links. Preserve user-controlled scroll position while defining a deliberate own-send policy. Add copy feedback, user-message actions, and remembered wrap preference only after the larger reading flow works.",
+      "acceptance": "Use a long-running command with continuously appended output, a multi-file relative diff, and a real subagent. Send while scrolled up and confirm the chosen follow policy. Check collapsed and expanded states, long labels, small windows, and keyboard access.",
+      "refs": [
+        "10x:App/Tools/ToolEventReducer.swift:12",
+        "10x:App/Tools/DiffView.swift:30",
+        "10x:App/Sessions/TranscriptView.swift:1"
+      ]
+    }
+  ],
+  "strengths": [
+    [
+      "Tool content has purpose-built structure",
+      "10x’s reference renders show old/new diff gutters, folded context, progress, collections, media, and tool-specific output. T3’s separate Diff panel is capable too; the advantage here is the richness inside the transcript, not superiority over every T3 review surface."
+    ],
+    [
+      "The visual identity is coherent",
+      "The current native frame and reference renders share a centered canvas, restrained mono labels, cyan/red signals, near-black user messages, and open corner marks. Improve information hierarchy within that system instead of copying T3’s rounded composer and panel chrome."
+    ],
+    [
+      "Steer and Follow up express different intentions",
+      "Users can distinguish changing the running task from queuing later work. Preserve the choice and supply acknowledgement, accurate queue state, and an independent interruption action."
+    ],
+    [
+      "The compact controls already have useful depth",
+      "Model, effort, and Fast share one anchored flyout. Provider usage rings and session search provide useful entry points with little chrome. Their live interaction quality is not inferred from the reference images."
+    ],
+    [
+      "Recovery and approvals have reusable foundations",
+      "The stopped-process card and confirm/select/input plumbing already exist. Extend truthful state handling and navigation around those components rather than inventing a separate system for every failure."
+    ],
+    [
+      "Native session storage keeps the toolchain connected",
+      "Using omp’s session files lets the app share history with the runtime. The warm-client defect violates that premise, which is why correcting it is more valuable than adding another session-management layer."
+    ]
+  ],
+  "decisions": [
+    [
+      "A. Keep the single canvas and add turn-level structure (recommended)",
+      "A compact status row, grouped routine activity, and scoped changed-file links solve the largest reading problems while retaining the existing design. Large reviews still require expanding cards or an external editor."
+    ],
+    [
+      "B. Add a focused review pane after the core fixes",
+      "A git-backed Diff surface reduces context switching for multi-file work, but introduces selection, scope, concurrency, and layout behavior that needs its own plan."
+    ],
+    [
+      "C. Adopt a broad workspace with terminal/files/agents panes",
+      "This offers more of T3’s all-in-one workflow and substantially expands 10x’s scope. A file explorer and persistent source preview were explicitly excluded from V1; that exclusion needs a product decision first."
+    ]
+  ],
+  "deferred": [
+    "A terminal and a project-level Open in editor action solve different needs. Start with the cheaper external-editor entry point if tool output inspection remains adequate; choose an embedded terminal only for an observed workflow.",
+    "Session branching/revert, per-session worktrees, PR/publish flows, a files browser, and broad agent dashboards should not be smuggled into fixes for transcript order or status. Some are V1 exclusions; others require runtime capabilities and a separate design.",
+    "Provider favorites/tabs/number shortcuts, prompt stash, customizable keymaps, source split views, and collapsed-on-scroll composer are lower-priority parity choices. The audit makes no claim that copying all of them would improve this product."
+  ],
+  "corrections": [
+    [
+      "PERSIST-02: existing sessions silently lose later turns",
+      "Rejected for omp 18.1.10. A fresh switch_session probe fails before loading the fixture because the child uses in-memory storage. Existing bytes are unchanged; the normal control succeeds. Recast as OPEN, P1."
+    ],
+    [
+      "All composer-created sessions are ephemeral",
+      "Narrowed to the session that consumes a retained warm child. Subsequent cold opens do not set --no-session. The two recent projects and warm expiry rules matter."
+    ],
+    [
+      "Tool cards are non-chronological",
+      "Unsupported. Tool items enter in start-event order, and parallel completion can differ. The retained defect is loss of text/tool content-part order for Cursor-shaped messages."
+    ],
+    [
+      "Every transport error has no recovery",
+      "Too broad. Unexpected process exits have a stopped-state recovery path. Retain unrendered failed-open and rejected/timed-out-command cases; a later terminal event can also clear some mid-turn failures."
+    ],
+    [
+      "Context must be in the header to match T3",
+      "Incorrect comparison. T3 places these controls in the composer. 10x has a spec discrepancy and missing usage data, not a requirement to duplicate model/effort controls."
+    ],
+    [
+      "The named approval-pending screenshots prove approvals worked",
+      "Rejected. They show a running/completed turn or an Ask-mode reply, not a pending approval panel. The 10x approval image is a synthetic reference render."
+    ],
+    [
+      "The second edit error is an application defect",
+      "The prior test used one working directory for both agents. Their edits contaminated each other’s starting state. Use only the visible error presentation, not edit success, model quality, or timing, as comparison evidence."
+    ],
+    [
+      "The recovered report was verified, published, and cleaned up",
+      "It was a stub with a failed synthesis. No completed synthesis, fresh app test, public publication, or historical cleanup is implied by that draft text."
+    ]
+  ],
+  "roadmap": [
+    [
+      "Session continuity and recovery",
+      "SAVE, OPEN, ERROR. Make every active session have a valid persistence strategy and make failures recoverable. Verify first-action warm/cold new and existing sessions across relaunch."
+    ],
+    [
+      "Interrupt and acknowledge",
+      "STOP, QUEUE. Keep draft input while stopping; show accepted, queued, consumed, and rejected input accurately. Test through the real composer and runtime."
+    ],
+    [
+      "Readable turns",
+      "ORDER, TURNS. Preserve content-part sequence through live updates and reopen, then add stable turn boundaries and optional activity summaries. Keep the existing rich cards."
+    ],
+    [
+      "Awareness and review",
+      "SIGNALS, REVIEW, CONTEXT, TITLES. Add session attention, truthful context, identifiable chats, and a scoped changed-file index. Avoid unscoped working-tree attribution."
+    ],
+    [
+      "Input and permission decisions",
+      "PERMISSIONS, INPUT, DETAILS. Validate runtime policy scope and focus behavior, then improve draft recovery, context insertion, and specific tool details. Choose any larger workspace surfaces separately."
+    ]
+  ],
+  "method": [
+    [
+      "Historical runtime",
+      "10x Release built from 59a4ae8, isolated bundle ID com.nextstep.tenx.audit, default 1180×760 window, omp 18.1.10, Cursor Grok 4.6 Fast. T3 web runtime t3@0.0.39 used isolated application data and a 1440×900 viewport; source was checked out at 569a8cd2. This report does not claim source/runtime identity for every T3 feature."
+    ],
+    [
+      "Original tasks",
+      "Both apps received requests to add median next to mean in src/math.ts and then add clamp with a smoke test and diff. They shared the same scratch repository. No timing or model-quality conclusion is valid because the starting state was not isolated between apps."
+    ],
+    [
+      "Recovery and analysis",
+      "Seven completed dimension reports and 13 challenge reviews were recovered. The historical synthesis and three persistence review calls failed. No new agent workflow was claimed or run. The continuation reconciled duplicates, rechecked the critical source paths, ran the four-case runtime probe, and corrected the existing-session claim."
+    ],
+    [
+      "Image provenance",
+      "Historical T3 files are real browser captures, downscaled and encoded as JPEG in the earlier audit. Historical 10x PNGs are downscaled test-suite references, not live screenshots; the 32 source PNGs checked match this checkout. One new screenshot captures the still-running recovered Release window without changing it. The manifest records hashes and capture classes."
+    ],
+    [
+      "Current runtime check",
+      "verify-warm-persistence.py uses a temporary project, session fixtures, and PI_CODING_AGENT_DIR override; it makes zero model calls. It exercises new_session and switch_session with and without --no-session, checks loaded fixture messages and file bytes, and tests a rename on the normal existing-session control. It establishes RPC behavior, not app relaunch success."
+    ],
+    [
+      "Source versus experience",
+      "Source references use the fixed 10x and T3 commits. Current source review supports the key mechanisms; remaining source-derived improvement candidates still require UI acceptance tests. Layout visibility does not prove keyboard, focus, runtime, accessibility, or persistence behavior."
+    ],
+    [
+      "Delivery boundary",
+      "This is a local audit deliverable. No application fixes, new dependencies, merges, releases, deployments, public report publication, or cleanup of another session’s worktree/processes were performed. Temporary probe processes terminate within the probe."
+    ]
+  ],
+  "gallery": [
+    {
+      "title": "A whole turn and its individual events",
+      "left": "t3-turn1-worked-expanded.jpg",
+      "left_label": "T3 · historical app capture",
+      "right": "10x-recovered-window-current.png",
+      "right_label": "10x · current capture of recovered Release process",
+      "caption": "T3’s captured turn alternates prose with compact work summaries. The current 10x frame shows the separate tool-card tail of its earlier turn and a header still named New session. Different scroll positions and window sizes prevent pixel-level comparison; this pair illustrates hierarchy, not performance or equivalent starting state."
+    },
+    {
+      "title": "Running state and interruption",
+      "left": "t3-turn-05.jpg",
+      "left_label": "T3 · historical app capture",
+      "right": "10x-composer-stop-control.png",
+      "right_label": "10x · synthetic reference render",
+      "caption": "T3 shows elapsed time in the turn and sidebar plus a red Stop control. 10x’s reference shows its Steer/Follow up choice and square Stop in an empty composer. The missing Stop-with-draft case is established by code, not by this reference image."
+    },
+    {
+      "title": "Review at two levels",
+      "left": "t3-right-panel-diff.jpg",
+      "left_label": "T3 · historical app capture",
+      "right": "10x-activity-structured-diff.png",
+      "right_label": "10x · synthetic reference render",
+      "caption": "T3 puts a working-tree diff alongside the chat. 10x’s reference shows structured hunks, old/new line numbers, context folding, and Copy patch within an edit card. The opportunity is an aggregate review entry point around 10x’s existing detail view."
+    },
+    {
+      "title": "Failures need both explanation and a usable next action",
+      "left": "t3-thread-claude-auth-failed.jpg",
+      "left_label": "T3 · historical app capture",
+      "right": "10x-runtime-recovery.png",
+      "right_label": "10x · synthetic reference render",
+      "caption": "T3’s historical auth failure names the problem and a recovery path. 10x already has a stopped-process card. Its reassuring preserved-transcript copy should be limited to what the app can actually recover; the failed-open state is separate and has no corresponding rendered card."
+    },
+    {
+      "title": "Permission mode is different from an approval decision",
+      "left": "t3-runtime-mode-menu.jpg",
+      "left_label": "T3 · historical menu capture",
+      "right": "10x-approval-card.png",
+      "right_label": "10x · synthetic reference render",
+      "caption": "T3’s menu exposes runtime modes. The 10x reference is a one-off Run/Cancel question. Neither image proves a live pending-approval round trip; no Always Allow or per-session scope should be promised without a supporting runtime contract."
+    },
+    {
+      "title": "Workspace scope and compact control depth",
+      "left": "t3-terminal-drawer.jpg",
+      "left_label": "T3 · historical app capture",
+      "right": "10x-composer-with-model-flyout.png",
+      "right_label": "10x · synthetic reference render",
+      "caption": "The historical T3 view shows a terminal drawer and choices for right-panel surfaces; some entries are unavailable. 10x concentrates model, effort, and Fast in one composer flyout. These are different product scopes. A terminal or file explorer requires a deliberate decision, not automatic parity work."
+    }
+  ]
+}
