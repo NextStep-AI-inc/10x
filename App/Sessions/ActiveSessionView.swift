@@ -39,9 +39,12 @@ struct ActiveSessionView: View {
                 RuntimeRecoveryView(exitCode: nil,
                     onRestart: { Task { await controller.restart() } },
                     onOpenLog: controller.openLog, onDismiss: controller.dismissRecovery,
-                    failureDescription: controller.sessionPath == nil
-                        ? "The session could not start. Review your preserved prompt before trying again."
-                        : "The session command could not finish. Check the log before retrying; delivery may be unconfirmed.",
+                    restartLabel: controller.canRetryOpening ? "Retry opening" : "Restart session",
+                    failureDescription: controller.canRetryOpening
+                        ? "The session could not open. Retry opening it or check the log."
+                        : controller.sessionPath == nil
+                            ? "The session could not start. Review your preserved prompt before trying again."
+                            : "The session command could not finish. Check the log before retrying; delivery may be unconfirmed.",
                     canRestart: controller.sessionPath != nil,
                     onReviewPrompt: controller.sessionPath == nil ? onReviewPrompt : nil)
                     .frame(maxWidth: 780)

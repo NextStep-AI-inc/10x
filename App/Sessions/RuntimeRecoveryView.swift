@@ -5,6 +5,7 @@ struct RuntimeRecoveryView: View {
     let onRestart: () -> Void
     let onOpenLog: () -> Void
     let onDismiss: () -> Void
+    var restartLabel = "Restart session"
     var failureDescription: String? = nil
     var canRestart = true
     var onReviewPrompt: (() -> Void)? = nil
@@ -19,7 +20,7 @@ struct RuntimeRecoveryView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 HStack(spacing: 4) {
                     if canRestart {
-                        Button("Restart session", action: onRestart)
+                        Button(restartLabel, action: onRestart)
                             .buttonStyle(GhostActionStyle())
                     }
                     if let onReviewPrompt {

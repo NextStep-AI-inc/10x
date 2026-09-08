@@ -585,6 +585,34 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     await manager.closeAll()
 }
 
+@MainActor @Test func failedNewSessionAfterExistingClearsPathAndPreservesPromptForReview() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let manager = fakeManager { configuration in
+        configuration.resumeSessionPath == nil ? "crash-after-negotiation" : "basic"
+    }
+    let controller = SessionController(processManager: manager)
+    let existingPath = directory.appending(path: "existing.jsonl").path
+
+    await controller.openExisting(metadata(path: existingPath, cwd: directory.path))
+    #expect(controller.sessionPath != nil)
+    controller.prepareInitialSubmission(
+        text: "Preserve this new prompt",
+        attachments: [],
+        projectURL: directory)
+
+    await controller.openNew(projectURL: directory)
+    controller.markInitialSubmissionFailed()
+
+    #expect(controller.sessionPath == nil)
+    #expect(controller.draft == "Preserve this new prompt")
+    guard case .failed = controller.runtimeState else {
+        Issue.record("Expected the new session to report its opening failure")
+        return
+    }
+    await manager.closeAll()
+}
+
 @MainActor @Test func extensionRequestsRemainLosslessDuringBurst() async throws {
     let manager = fakeManager(mode: "transcript-burst-extensions")
     let controller = SessionController(processManager: manager)
@@ -1006,6 +1034,12 @@ private func contextFakeManager(mode: String) -> SessionProcessManager {
 }
 
 private func fakeManager(mode: String) -> SessionProcessManager {
+    fakeManager { _ in mode }
+}
+
+private func fakeManager(
+    mode: @escaping @Sendable (RpcClientConfiguration) -> String
+) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
         fake.executable = "/usr/bin/env"
@@ -1013,7 +1047,7 @@ private func fakeManager(mode: String) -> SessionProcessManager {
             "python3",
             repositoryRoot()
                 .appending(path: "OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py").path,
-            mode,
+            mode(configuration),
         ]
         fake.rawArgv = true
         fake.cwd = nil
