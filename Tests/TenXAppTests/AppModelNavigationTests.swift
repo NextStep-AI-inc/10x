@@ -227,6 +227,44 @@ import OmpKit
 }
 
 @MainActor
+@Test func reportedChildSessionUsesLibraryMetadataAndExistingOpenRoute() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-child-open-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let root = container.appendingPathComponent("sessions")
+    let child = root.appendingPathComponent("-tmp-project/parent/worker.jsonl")
+    try writeNavigationSession(at: child, id: "worker", cwd: "/tmp/reported-project")
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: StubbedOmpLocator(),
+        sessionLibrary: SessionLibrary(root: root)))
+    await model.bootstrap()
+
+    await model.openReportedChildSession(path: child.path)
+
+    #expect(model.route == .session(child.path))
+    #expect(model.selectedProjectURL?.path == "/tmp/reported-project")
+    #expect(model.sessionActionError == nil)
+    if let manager = model.processManager { await manager.closeAll() }
+}
+
+@MainActor
+@Test func missingReportedChildSessionUsesTraceableSessionError() async {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-child-missing-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    let missing = container.appendingPathComponent("sessions/-bucket/parent/missing.jsonl")
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: MissingOmpLocator(),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+
+    await model.openReportedChildSession(path: missing.path)
+
+    #expect(model.sessionActionError
+        == "[AppModel:openReportedChildSession] Could not open child session — reported file unavailable")
+    #expect(model.activeSession == nil)
+}
+
+@MainActor
 @Test func archivingANewSessionUsesTheControllerTranscriptPath() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-new-session-\(UUID().uuidString)")

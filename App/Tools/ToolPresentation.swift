@@ -26,6 +26,7 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
     private var storedResult: JSONValue?
     private var storedPhase: ToolPhase
     let startDate: Date
+    let hasReliableStartDate: Bool
     var endDate: Date?
     private(set) var content: ToolCardContent
 
@@ -56,7 +57,8 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
         result: JSONValue?,
         phase: ToolPhase,
         startDate: Date,
-        endDate: Date?
+        endDate: Date?,
+        hasReliableStartDate: Bool = true
     ) {
         self.id = id
         self.storedName = name
@@ -64,6 +66,7 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
         self.storedResult = result
         self.storedPhase = phase
         self.startDate = startDate
+        self.hasReliableStartDate = hasReliableStartDate
         self.endDate = endDate
         content = ToolContentExtractor.card(
             name: name,
@@ -74,8 +77,9 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
 
     var isError: Bool { phase == .failed }
 
-    var durationLabel: String {
-        let end = endDate ?? Date()
+    func durationLabel(at referenceDate: Date = Date()) -> String? {
+        guard hasReliableStartDate else { return nil }
+        let end = endDate ?? referenceDate
         return String(format: "%.1fs", max(0, end.timeIntervalSince(startDate)))
     }
 

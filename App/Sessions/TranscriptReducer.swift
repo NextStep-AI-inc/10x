@@ -387,7 +387,19 @@ struct TranscriptReducer {
                 return false
             }
         }
-        items = history.items + transient
+        items = history.items.map { item in
+            guard case .subagent(var persisted) = item,
+                  case .subagent(let live)? = previous.first(where: { $0.id == item.id })
+            else { return item }
+            // Completed task results omit the recent details supplied by live progress.
+            if persisted.recentTools.isEmpty {
+                persisted.recentTools = live.recentTools
+            }
+            if persisted.recentOutput.isEmpty {
+                persisted.recentOutput = live.recentOutput
+            }
+            return .subagent(persisted)
+        } + transient
         if !inflightItemIDs.contains(where: { identity in
             items.contains { Self.inflightIdentity(for: $0) == identity }
         }) {

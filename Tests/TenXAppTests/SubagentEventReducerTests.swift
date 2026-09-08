@@ -41,6 +41,40 @@ import Testing
     #expect(presentation.recentOutput == ["three", "four", "five"])
 }
 
+@Test func subagentRecentToolSummariesAreBoundedAndAllowlisted() throws {
+    var reducer = SubagentEventReducer()
+    reducer.consume(type: "subagent_progress", payload: try value("""
+        {"payload":{"index":1,"agent":"worker","task":"Inspect","progress":{"id":"agent-tools","status":"running","durationMs":2000,"recentTools":[
+          {"tool":"read","args":{"path":"/tmp/one.swift","token":"secret-one"},"endMs":1},
+          {"tool":"grep","args":{"query":"needle","password":"secret-two"},"endMs":2},
+          {"tool":"bash","args":{"command":"swift   test\\n--filter Focused","env":{"TOKEN":"secret-three"}},"endMs":3},
+          {"tool":"unknown","args":{"secret":"never render"},"endMs":4}
+        ]}}}
+        """))
+
+    let presentation = try #require(reducer.presentations.first)
+    #expect(presentation.recentToolSummaries == [
+        "grep · query: needle",
+        "bash · command: swift test --filter Focused",
+        "unknown",
+    ])
+    #expect(presentation.recentToolSummaries.joined().contains("secret") == false)
+}
+
+@Test func subagentOnlyOffersAReportedNonemptySessionPath() throws {
+    var reducer = SubagentEventReducer()
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"no-link","agent":"worker","description":"No child","status":"started","index":0}}
+        """))
+    let missing = try #require(reducer.presentations.first)
+    #expect(missing.reportedSessionPath == nil)
+
+    reducer.consume(type: "subagent_progress", payload: try value("""
+        {"payload":{"index":0,"agent":"worker","task":"No child","sessionFile":"   ","progress":{"id":"no-link","status":"running","durationMs":1}}}
+        """))
+    #expect(reducer.presentations.first?.reportedSessionPath == nil)
+}
+
 @Test func subagentCompletionKeepsProgressAndAttachesParentResult() throws {
     var reducer = SubagentEventReducer()
     reducer.consume(type: "subagent_progress", payload: try value("""

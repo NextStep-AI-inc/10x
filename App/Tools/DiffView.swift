@@ -3,15 +3,13 @@ import SwiftUI
 
 struct DiffView: View {
     let diff: UnifiedDiff
-    let fallbackPath: String?
     private let presentation: DiffRenderPresentation
     @State private var isWrapped = true
     @State private var renderState = DiffRenderState()
     @StateObject private var pageLoader: DiffPageLoader
 
-    init(diff: UnifiedDiff, fallbackPath: String?) {
+    init(diff: UnifiedDiff, fallbackPath _: String?) {
         self.diff = diff
-        self.fallbackPath = fallbackPath
         let presentation = DiffRenderPresentation(diff: diff)
         self.presentation = presentation
         _pageLoader = StateObject(wrappedValue: DiffPageLoader(
@@ -99,23 +97,11 @@ struct DiffView: View {
     private func fileView(_ file: DiffRenderFileSection) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                ProgressiveTextView(
-                    text: file.header.path,
-                    accessibilityNoun: "diff path characters"
-                ) { text in
-                    Text(text)
-                        .font(TenXTypography.mono(size: 10, weight: .semibold))
-                        .lineLimit(1)
-                }
+                TranscriptReferenceView(reference: file.header.reference)
                 Text("+\(file.header.additions) −\(file.header.removals)")
                     .font(TenXTypography.mono(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 Spacer()
-                if let path = resolvedPath(for: file.header.fileID),
-                   FileManager.default.fileExists(atPath: path) {
-                    Button("Open file") { NSWorkspace.shared.open(URL(filePath: path)) }
-                        .buttonStyle(GhostActionStyle())
-                }
             }
             ForEach(file.hunks) { hunk in
                 hunkView(hunk)
@@ -218,16 +204,15 @@ struct DiffView: View {
         }
     }
 
-    private func resolvedPath(for fileIndex: Int) -> String? {
-        let file = diff.files[fileIndex]
-        if file.path.hasPrefix("/") { return file.path }
-        guard diff.files.count == 1 else { return nil }
-        return fallbackPath
-    }
-
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+extension DiffRenderFileHeader {
+    var reference: TranscriptReference {
+        .file(path: path, line: nil)
     }
 }
 

@@ -82,6 +82,44 @@ import Testing
     #expect(!continuation.showsResponseMetadata)
 }
 
+@Test func historyMapperUsesExactPersistedToolStartForDuration() throws {
+    let entries: [SessionEntry] = [
+        .message(
+            base: historyBase("assistant", nil, 0),
+            message: try historyJSON(#"{"role":"assistant","content":[{"type":"toolCall","id":"tool-1","name":"bash","arguments":{"command":"sleep 30"}}],"stopReason":"toolUse"}"#)),
+        .unknown(
+            type: "custom",
+            base: historyBase("tool-start", "assistant", 8),
+            raw: try historyJSON(#"{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"tool-1","toolName":"bash","startedAt":"2026-08-24T20:00:08.000Z","args":{"command":"sleep 30"}}}"#)),
+        .message(
+            base: historyBase("result", "tool-start", 38),
+            message: try historyJSON(#"{"role":"toolResult","toolCallId":"tool-1","toolName":"bash","content":[{"type":"text","text":"done"}],"isError":false}"#)),
+    ]
+
+    let tool = try #require(historyTools(from: entries).first)
+
+    #expect(tool.durationLabel(at: historyDate(59)) == "30.0s")
+}
+
+@Test func historyMapperOmitsDurationWithoutAValidExactToolStart() throws {
+    let toolCall = SessionEntry.message(
+        base: historyBase("assistant", nil, 0),
+        message: try historyJSON(#"{"role":"assistant","content":[{"type":"toolCall","id":"tool-1","name":"bash","arguments":{"command":"sleep 30"}}],"stopReason":"toolUse"}"#))
+    let result = SessionEntry.message(
+        base: historyBase("result", "assistant", 38),
+        message: try historyJSON(#"{"role":"toolResult","toolCallId":"tool-1","toolName":"bash","content":[{"type":"text","text":"done"}],"isError":false}"#))
+    let malformedStart = SessionEntry.unknown(
+        type: "custom",
+        base: historyBase("tool-start", "assistant", 8),
+        raw: try historyJSON(#"{"type":"custom","customType":"tool_execution_start","data":{"toolCallId":"tool-1","startedAt":"not-a-date"}}"#))
+
+    let absent = try #require(historyTools(from: [toolCall, result]).first)
+    let malformed = try #require(historyTools(from: [toolCall, malformedStart, result]).first)
+
+    #expect(absent.durationLabel(at: historyDate(59)) == nil)
+    #expect(malformed.durationLabel(at: historyDate(59)) == nil)
+}
+
 @Test func historyMapperAnnotatesChangesAfterConversationStarts() throws {
     let header = SessionHeader(
         id: "session-2",
@@ -332,4 +370,19 @@ private func historyDate(_ second: Int) -> Date {
 
 private func historyJSON(_ source: String) throws -> JSONValue {
     try JSONDecoder().decode(JSONValue.self, from: Data(source.utf8))
+}
+
+private func historyTools(from entries: [SessionEntry]) -> [ToolPresentation] {
+    let header = SessionHeader(
+        id: "timing-session",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    return TranscriptHistoryMapper.map(header: header, path: entries).items.compactMap { item in
+        guard case .tool(let tool) = item else { return nil }
+        return tool
+    }
 }

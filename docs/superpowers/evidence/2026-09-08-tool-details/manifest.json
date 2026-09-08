@@ -1,0 +1,188 @@
+{
+  "sourceCommit": "34b5a4458c468e8e3da5d52d53b79532806b3ddd",
+  "appBundleIdentifier": "com.nextstep.tenx.detailsqa",
+  "nativeVerified": false,
+  "files": {
+    "fixture": {
+      "path": "/tmp/10x-audit-details/docs/superpowers/evidence/2026-09-08-tool-details/details-control.py",
+      "sha256": "f37dbcf5a28f699be380489194167dfcc017a330d714c3030e28edc237c71f74"
+    },
+    "releaseBuildLog": {
+      "path": "/tmp/10x-tool-details-release-build-isolated.log",
+      "sha256": "14db1d464285d36a841c1227c4bd440ad57145ae880f41f3769536d5c6a42818"
+    },
+    "packagedExecutable": {
+      "path": "/tmp/10x-details-final-build/10x-details.app/Contents/MacOS/10x",
+      "sha256": "1bd2e2ed874fb57765ed5c0a338b78a872d6cff8e8553ff2b920b3468c32e988"
+    }
+  },
+  "nativeAcceptance": {
+    "status": "passed",
+    "sourceCommit": "36e16de72ab0ea5088a6674223a0928125a4edfa",
+    "packageManifest": "final-corrections-package.json",
+    "runningSecondsObserved": [
+      9,
+      21
+    ],
+    "runningTailObserved": [
+      13,
+      22
+    ],
+    "fullOutputLinesCopied": 45,
+    "childSessionOpened": true,
+    "recentDetailsPersistThroughReconcile": true,
+    "realMultiFileEditorLinks": [
+      "editable-alpha.txt",
+      "editable-beta.txt"
+    ],
+    "preferredEditor": "Cursor",
+    "qaAppClosed": true
+  },
+  "acceptanceArtifacts": [
+    {
+      "path": "README.md",
+      "bytes": 3211,
+      "sha256": "05eb5d9cee088a4ab2d458e47ea5fd42d48e8c56194644a3bcfca448a96d6926"
+    },
+    {
+      "path": "details-control.py",
+      "bytes": 18166,
+      "sha256": "d06d596bb1f6750240e7dc64faa27506437cd4e7276c0d0cb550a0b0cf80edc6"
+    },
+    {
+      "path": "final-corrections-package.json",
+      "bytes": 860,
+      "sha256": "12aa76dce23a6b97eede2de7d4fd3f1d6851a36ff7b8d1bc4f93a10b8f34b54e"
+    },
+    {
+      "path": "fixture-verification.json",
+      "bytes": 281,
+      "sha256": "ececd06dc4498365ae7f9320afc29b7bbb2eee00a03d57dadeb6d2a83be53e86"
+    },
+    {
+      "path": "native-child-details.ax.txt",
+      "bytes": 7776,
+      "sha256": "7341fc0dc48a2858a0899b43254dfbf080763c2a5be93e09c182e38df4c272cb"
+    },
+    {
+      "path": "native-child-details.jpg",
+      "bytes": 97090,
+      "sha256": "56eccb8ecca48cd336e0b1c4e58ee98f243fa0388886a876aef88f736193662f"
+    },
+    {
+      "path": "native-child-open.ax.txt",
+      "bytes": 6173,
+      "sha256": "237a087cca5d26a90c092f352b12a1a8b244452f565c6b243d36289d788a4c6c"
+    },
+    {
+      "path": "native-child-open.jpg",
+      "bytes": 79546,
+      "sha256": "ba5701c38c5a731f15f40470344ad3003b41b7010cfc9fcbe595eefce88a7d42"
+    },
+    {
+      "path": "native-copy-full-output.ax.txt",
+      "bytes": 8767,
+      "sha256": "778ae96f01be4df83e4321b39fda94c1e73f3e0f7b6a8aa9efdaba3c18f4b5c8"
+    },
+    {
+      "path": "native-cursor-alpha-panel.ax.txt",
+      "bytes": 1263,
+      "sha256": "541ad15d38ab44cb2c224f63171396e9debe2bfeb1aa513cf1b198d654d61689"
+    },
+    {
+      "path": "native-cursor-beta-panel.ax.txt",
+      "bytes": 1338,
+      "sha256": "e63883b78001fb82845a754b0dc4c403e9ba864bf690ca46bc6488ab5ee1d4cc"
+    },
+    {
+      "path": "native-final-child-completed.ax.txt",
+      "bytes": 7730,
+      "sha256": "a4ff39214a806a0e6f85d2cdd3d8e6eeb87a35c47279997004a183d2ddbd3817"
+    },
+    {
+      "path": "native-final-child-completed.jpg",
+      "bytes": 100507,
+      "sha256": "187c7a30f6b08aba7e01ce08ad390b1d09779fab81d2f405959c0348fc51480a"
+    },
+    {
+      "path": "native-final-child-running.ax.txt",
+      "bytes": 7862,
+      "sha256": "c799e701c010bbcfea6dbad44d067720b2fd43556d29aee1b92a784a38bc57b8"
+    },
+    {
+      "path": "native-final-child-running.jpg",
+      "bytes": 103213,
+      "sha256": "318feeb751586daea938189d7f285775f4092467150f7467c7e7182b3ac7e665"
+    },
+    {
+      "path": "native-final-control.jsonl",
+      "bytes": 7089,
+      "sha256": "732e50189c6e59d542de33454228fe14aff6c49d7e2ea81ff65e4f9478ed47ce"
+    },
+    {
+      "path": "native-final-multifile-links.ax.txt",
+      "bytes": 9370,
+      "sha256": "e56d67f5096600809789c339c1c327440f8fb7e18e3a76870c5432ec393c4617"
+    },
+    {
+      "path": "native-final-multifile-links.jpg",
+      "bytes": 99556,
+      "sha256": "1902313c349d6bd3100feba293753445d8b884d8182d8c2f2944078dafc0f283"
+    },
+    {
+      "path": "native-final-parent.jsonl",
+      "bytes": 3727,
+      "sha256": "ea78a36d72fac300205a177ee95048ac5554d4a77d4dd72c596a975c2e01f17a"
+    },
+    {
+      "path": "native-first-control.jsonl",
+      "bytes": 7386,
+      "sha256": "55a255c9d85a9e0128a7d09b9bce9c75e6f048a4e5d0688abc438137ea9ec82e"
+    },
+    {
+      "path": "native-first-parent.jsonl",
+      "bytes": 3733,
+      "sha256": "8b950dd68a2176e96c7159b5b93a087ebb4b15fde4998f70d0f2363e56bab01c"
+    },
+    {
+      "path": "native-output-expanded.ax.txt",
+      "bytes": 7444,
+      "sha256": "2f5d6458afb09b44342f314c4f57c1aa6887956d884435d658f4a70e6b2c7a4e"
+    },
+    {
+      "path": "native-output-expanded.jpg",
+      "bytes": 94559,
+      "sha256": "9fd681233c9ab44dfb6289ae3cd2d33ee77b17326e999b9a1d80e784bf9a9b51"
+    },
+    {
+      "path": "native-preferred-editor.ax.txt",
+      "bytes": 5547,
+      "sha256": "e9d0495c96811d1877d826f1fda570d71501d26549ff9cf0f5726cfea68fba61"
+    },
+    {
+      "path": "native-preferred-editor.jpg",
+      "bytes": 60988,
+      "sha256": "69bb270136e0406f12aff3e79add4b50bb7064f95af020c6349b3e84e2b74b3b"
+    },
+    {
+      "path": "native-running-early.ax.txt",
+      "bytes": 6992,
+      "sha256": "d389425d5dfc8f4cebdaf4b704d474372f422e82f96c6c9f32abbd0961bf97e5"
+    },
+    {
+      "path": "native-running-early.jpg",
+      "bytes": 73542,
+      "sha256": "7d3bc80cfb97124800b454c753a932c3a030a620212a2cb4682d8adbf37d6404"
+    },
+    {
+      "path": "native-running-tail.ax.txt",
+      "bytes": 7570,
+      "sha256": "784155e0d7943df1d9936f1ac04c1cad84b6df3b56d7f8441d9246188acc633b"
+    },
+    {
+      "path": "native-running-tail.jpg",
+      "bytes": 72304,
+      "sha256": "ec48ad036bd57457c3853a0eae8d6983855ca735aed600291ce336c2fc25704e"
+    }
+  ]
+}

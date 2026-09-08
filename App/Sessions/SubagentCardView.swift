@@ -3,6 +3,7 @@ import SwiftUI
 struct SubagentCardView: View {
     let presentation: SubagentPresentation
     @Environment(\.toolDisclosureState) private var disclosureState
+    @Environment(\.openReportedSession) private var openReportedSession
     @State private var localChoice: Bool?
 
     init(presentation: SubagentPresentation) { self.presentation = presentation }
@@ -68,6 +69,17 @@ struct SubagentCardView: View {
                 Text("Working in \(currentTool)")
                     .font(TenXTypography.body(size: 11, weight: .medium))
             }
+            let recentTools = presentation.recentToolSummaries
+            if !recentTools.isEmpty {
+                Text("Recent tools")
+                    .font(TenXTypography.body(size: 11, weight: .medium))
+                ForEach(recentTools.indices, id: \.self) { index in
+                    Text(recentTools[index])
+                        .font(TenXTypography.mono(size: 10))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                        .lineLimit(1)
+                }
+            }
             ForEach(presentation.recentOutput, id: \.self) { output in
                 Text(output)
                     .font(TenXTypography.mono(size: 10))
@@ -81,6 +93,12 @@ struct SubagentCardView: View {
                     .font(TenXTypography.body(size: 12))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
+            }
+            if let sessionPath = presentation.reportedSessionPath {
+                Button("Open session") {
+                    Task { await openReportedSession(sessionPath) }
+                }
+                .buttonStyle(GhostActionStyle(horizontalPadding: 0))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -100,5 +118,29 @@ struct SubagentCardView: View {
         TenXPalette.color(presentation.status.isError
             ? TenXPalette.signalRedHex
             : TenXPalette.cyanHex)
+    }
+}
+
+struct OpenReportedSessionAction: Sendable {
+    private let action: @MainActor @Sendable (String) async -> Void
+
+    init(_ action: @escaping @MainActor @Sendable (String) async -> Void = { _ in }) {
+        self.action = action
+    }
+
+    @MainActor
+    func callAsFunction(_ path: String) async {
+        await action(path)
+    }
+}
+
+private struct OpenReportedSessionKey: EnvironmentKey {
+    static let defaultValue = OpenReportedSessionAction()
+}
+
+extension EnvironmentValues {
+    var openReportedSession: OpenReportedSessionAction {
+        get { self[OpenReportedSessionKey.self] }
+        set { self[OpenReportedSessionKey.self] = newValue }
     }
 }

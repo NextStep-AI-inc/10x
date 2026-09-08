@@ -1,0 +1,18 @@
+{
+  "sourceCommit": "36e16de72ab0ea5088a6674223a0928125a4edfa",
+  "sourceBranch": "codex/active-session-details",
+  "configuration": "Release",
+  "architecture": "arm64",
+  "app": "/tmp/10x-details-multifile-build/10x-details.app",
+  "bundleIdentifier": "com.nextstep.tenx.detailsqa",
+  "lsEnvironment": {
+    "CFFIXED_USER_HOME": "/tmp/10x-session-recovery-home",
+    "PI_CODING_AGENT_DIR": "/tmp/10x-session-recovery-home/.omp/agent"
+  },
+  "unsignedExecutableSHA256": "40ec8150e930d060f0811bdeb68b5650782a74eefe2f5ca359a5426bfc4706ab",
+  "packagedExecutableSHA256": "5159405488da8821cc2435c9dbd9d5a4acd9a53065c60fdd46c5620ad3ffc271",
+  "strictSignatureVerification": "passed",
+  "buildLog": "/tmp/10x-details-final-corrections-release.log",
+  "buildLogSHA256": "999e72c84feec0f010c3de1e1a9c2b9fdf7bd11946dde718d16b875da194a524",
+  "nativeLaunched": false
+}

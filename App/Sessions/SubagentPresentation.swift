@@ -55,6 +55,19 @@ struct SubagentPresentation: Identifiable, Equatable, Sendable {
     var durationMilliseconds: Double
     var result: JSONValue?
 
+    var reportedSessionPath: String? {
+        guard let sessionFile, !sessionFile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return sessionFile
+    }
+
+    var recentToolSummaries: [String] {
+        recentTools.suffix(3).map { tool in
+            guard let argument = Self.usefulArgument(tool.arguments) else { return tool.name }
+            return "\(tool.name) · \(argument.key): \(argument.value)"
+        }
+    }
+
     var resultText: String? {
         guard let result else { return nil }
         if let text = result.stringValue { return text }
@@ -65,5 +78,21 @@ struct SubagentPresentation: Identifiable, Equatable, Sendable {
             block["text"]?.stringValue
         }.joined(separator: "\n")
         return text.flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private static func usefulArgument(_ arguments: JSONValue?) -> (key: String, value: String)? {
+        for key in ["path", "file", "command", "query"] {
+            guard let rawValue = arguments?[key]?.stringValue else { continue }
+            let compact = rawValue
+                .split(whereSeparator: \Character.isWhitespace)
+                .joined(separator: " ")
+            guard !compact.isEmpty else { continue }
+            let limit = 120
+            let value = compact.count > limit
+                ? String(compact.prefix(limit - 1)) + "…"
+                : compact
+            return (key, value)
+        }
+        return nil
     }
 }

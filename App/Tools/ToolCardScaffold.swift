@@ -3,7 +3,7 @@ import SwiftUI
 struct ToolCardHeaderPresentation: Equatable, Sendable {
     let content: ToolCardContent
     let phase: ToolPhase
-    let duration: String
+    let duration: String?
 
     var visibleText: String {
         var value = content.verb
@@ -18,7 +18,7 @@ struct ToolCardHeaderPresentation: Equatable, Sendable {
         var parts = [leading]
         if let displayedOutcome { parts.append(displayedOutcome) }
         parts.append(phase.label)
-        parts.append(accessibleDuration)
+        if let accessibleDuration { parts.append(accessibleDuration) }
         return parts.joined(separator: ", ")
     }
 
@@ -30,7 +30,8 @@ struct ToolCardHeaderPresentation: Equatable, Sendable {
         return outcome
     }
 
-    private var accessibleDuration: String {
+    private var accessibleDuration: String? {
+        guard let duration else { return nil }
         guard duration.hasSuffix("s") else { return duration }
         return "\(duration.dropLast()) seconds"
     }
@@ -86,7 +87,9 @@ struct ToolCardScaffold<Content: View>: View {
         ToolCardHeaderPresentation(
             content: cardContent,
             phase: presentation.phase,
-            duration: ToolCardDurationPresentation.label(presentation.durationLabel))
+            duration: presentation.phase == .running
+                ? nil
+                : presentation.durationLabel().map(ToolCardDurationPresentation.label))
     }
 
     private var header: some View {
@@ -152,14 +155,27 @@ struct ToolCardScaffold<Content: View>: View {
         }
     }
 
+    @ViewBuilder
     private var statusContent: some View {
+        if presentation.phase == .running, presentation.hasReliableStartDate {
+            TimelineView(.periodic(from: presentation.startDate, by: 1)) { context in
+                statusContent(at: context.date)
+            }
+        } else {
+            statusContent(at: presentation.endDate ?? presentation.startDate)
+        }
+    }
+
+    private func statusContent(at date: Date) -> some View {
         HStack(spacing: 8) {
             Text(presentation.phase.label)
                 .foregroundStyle(accentColor)
-            Text(ToolCardDurationPresentation.label(presentation.durationLabel))
-                .font(TenXTypography.mono(size: 10))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                .help(ToolCardDurationPresentation.help)
+            if let duration = presentation.durationLabel(at: date) {
+                Text(ToolCardDurationPresentation.label(duration))
+                    .font(TenXTypography.mono(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .help(ToolCardDurationPresentation.help)
+            }
         }
         .font(TenXTypography.body(size: 10, weight: .medium))
     }

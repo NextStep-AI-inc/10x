@@ -536,6 +536,17 @@ final class AppModel {
         openSession(session)
     }
 
+    func openReportedChildSession(path: String) async {
+        guard let metadata = await dependencies.sessionLibrary
+            .metadataForReportedChildSession(path: path)
+        else {
+            sessionActionError = "[AppModel:openReportedChildSession] Could not open child session — reported file unavailable"
+            return
+        }
+        sessionActionError = nil
+        openSession(metadata)
+    }
+
     var railSessions: [SessionMetadata] {
         var result = sessions
         var paths = Set(result.map(\.path))
