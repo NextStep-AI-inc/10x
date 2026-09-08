@@ -36,6 +36,8 @@ The local integration was explicitly approved on September 8. The thirteen featu
 
 The full app suite was not rerun after replacing the 16 reviewed references. Only the affected 16 selectors were rerun, as planned. The remaining four baseline references were preserved, rather than updated to hide those failures. No production changes were needed after the combined suite or native acceptance.
 
+The gallery was then enlarged at Tanner's request: each comparison and native capture has its own full-width row, images retain their original aspect ratio, and every item explains what changed, why it matters, and where to look. At the current 1,046 px browser width, comparison images render at 946 px and native images at 996 px. All 15 content images loaded without document overflow. The original-size viewer rendered a native image at its full 1,180 px width; comparison toggling, keyboard activation, Tab containment, Escape, and focus restoration were checked. [Large comparison](progress-gallery-large-comparison.png) and [large tool screenshot](progress-gallery-large-tools.png) show the updated browser layout. Phone-sized viewports were not separately exercised for this desktop artifact update.
+
 The gallery is a self-contained HTML file. Its local preview is `http://127.0.0.1:56418/`; it uses embedded images and has no external dependencies. The preview remains available for the requested handoff. The page can also be opened directly from the file above. Its generator is `progress-gallery/build-gallery.js`.
 
 ### Original fourteen-item acceptance ledger
