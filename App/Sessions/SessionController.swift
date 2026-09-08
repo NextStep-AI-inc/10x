@@ -599,6 +599,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
             guard isCurrent(context) else { return true }
+            contextRevision &+= 1
+            scheduleContextRefresh()
             if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }),
                let behavior {
                 pendingSubmissions[index].state = .queued(behavior)
@@ -1476,6 +1478,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             guard isCurrent(context), revision == contextRevision, !Task.isCancelled else { return }
             if !isContextLoading { contextErrorMessage = nil }
             applyContextUsage(response.data?["contextUsage"])
+            queuedMessageCount = response.data?["queuedMessageCount"]?.intValue ?? 0
         } catch {
             // A usage read must not interrupt the session or its working indicator.
             guard isCurrent(context), !Task.isCancelled else { return }

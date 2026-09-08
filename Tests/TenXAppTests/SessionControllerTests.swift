@@ -75,6 +75,87 @@ import Testing
     await manager.closeAll()
 }
 
+@Test func acceptedFollowUpsRefreshQueueCountAsTheyAreConsumed() async throws {
+    try await withQueueController { controller, fixture in
+        controller.draft = "First follow-up"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        controller.draft = "Second follow-up"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+
+        #expect(await eventually { controller.queuedMessageCount == 2 })
+        try fixture.control("consume")
+        #expect(await eventually { controller.queuedMessageCount == 1 })
+        try fixture.control("consume")
+        #expect(await eventually { controller.queuedMessageCount == 0 })
+        #expect(await eventually { controller.pendingSubmissions.isEmpty })
+    }
+}
+
+@Test func acceptedSteerRefreshesQueueCountAsItIsConsumed() async throws {
+    try await withQueueController { controller, fixture in
+        controller.draft = "Steer now"
+        await controller.sendPrompt(behaviorOverride: .steer)
+
+        #expect(await eventually { controller.queuedMessageCount == 1 })
+        #expect(controller.pendingSubmissions.map(\.state) == [.queued(.steer)])
+        try fixture.control("consume")
+        #expect(await eventually { controller.queuedMessageCount == 0 })
+        #expect(await eventually { controller.pendingSubmissions.isEmpty })
+    }
+}
+
+@Test func rejectedFollowUpPreservesDraftWithoutIncreasingQueueCount() async throws {
+    try await withQueueController { controller, fixture in
+        try fixture.control("reject-next")
+        controller.draft = "Keep rejected text"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+
+        #expect(controller.draft == "Keep rejected text")
+        #expect(controller.queuedMessageCount == 0)
+        #expect(controller.pendingSubmissions.map(\.state) == [.unconfirmed])
+    }
+}
+
+@Test func lateAcceptedPromptStateCannotOverwriteNewerQueueCount() async throws {
+    try await withQueueController { controller, fixture in
+        try fixture.control("defer-next-state")
+        controller.draft = "First queued"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        #expect(await eventually { fixture.isStateDeferred })
+
+        controller.draft = "Second queued"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        #expect(await eventually { controller.queuedMessageCount == 2 })
+
+        try fixture.control("release-deferred-state")
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(controller.queuedMessageCount == 2)
+    }
+}
+
+@Test func repeatedQueuedMessagesKeepExactlyOneVisibleEchoPerSubmission() async throws {
+    try await withQueueController { controller, fixture in
+        for _ in 0..<2 {
+            controller.draft = "Repeat this"
+            await controller.sendPrompt(behaviorOverride: .followUp)
+        }
+        #expect(await eventually { controller.queuedMessageCount == 2 })
+        #expect(controller.visibleUserEchoCount("Repeat this") == 2)
+
+        try fixture.control("consume")
+        #expect(await eventually {
+            controller.queuedMessageCount == 1
+                && controller.visibleUserEchoCount("Repeat this") == 2
+        })
+        try fixture.control("consume")
+        #expect(await eventually {
+            controller.queuedMessageCount == 0
+                && controller.visibleUserEchoCount("Repeat this") == 2
+                && controller.pendingSubmissions.isEmpty
+        })
+    }
+}
+
 @Test func ompSessionTitleGeneratorUsesTheActiveModelAndParsesTaggedOutput() async throws {
     let capture = TitleCommandCapture()
     let generator = OmpSessionTitleGenerator(
@@ -1033,6 +1114,72 @@ private func contextFakeManager(mode: String) -> SessionProcessManager {
     })
 }
 
+private struct QueueFixture {
+    let directory: URL
+
+    var isStateDeferred: Bool {
+        FileManager.default.fileExists(atPath: directory.appending(path: "state-deferred").path)
+    }
+
+    func control(_ action: String) throws {
+        let process = Process()
+        process.executableURL = URL(filePath: "/usr/bin/env")
+        process.arguments = [
+            "python3",
+            repositoryRoot().appending(path:
+                "Tests/TenXAppTests/Fixtures/queue_fake_server.py").path,
+            "control",
+            directory.path,
+            action,
+        ]
+        try process.run()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else {
+            throw QueueFixtureError.controlFailed(action)
+        }
+    }
+}
+
+private enum QueueFixtureError: Error {
+    case controlFailed(String)
+}
+
+@MainActor
+private func withQueueController<T>(
+    _ body: (SessionController, QueueFixture) async throws -> T
+) async throws -> T {
+    let directory = try temporaryDirectory()
+    let fixture = QueueFixture(directory: directory)
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            repositoryRoot().appending(path:
+                "Tests/TenXAppTests/Fixtures/queue_fake_server.py").path,
+            "server",
+            directory.path,
+        ]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+    let controller = SessionController(processManager: manager)
+    do {
+        await controller.openExisting(metadata(
+            path: directory.appending(path: "session.jsonl").path,
+            cwd: directory.path))
+        let result = try await body(controller, fixture)
+        await manager.closeAll()
+        try? FileManager.default.removeItem(at: directory)
+        return result
+    } catch {
+        await manager.closeAll()
+        try? FileManager.default.removeItem(at: directory)
+        throw error
+    }
+}
+
 private func fakeManager(mode: String) -> SessionProcessManager {
     fakeManager { _ in mode }
 }
@@ -1369,6 +1516,17 @@ private extension SessionController {
             guard case .extensionUI(let state) = item else { return nil }
             return state.id
         }
+    }
+
+    func visibleUserEchoCount(_ text: String) -> Int {
+        let committed = items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item,
+                  message.role == .user,
+                  message.visibleText == text
+            else { return nil }
+            return message
+        }.count
+        return committed + pendingSubmissions.count { $0.message.visibleText == text }
     }
 }
 
