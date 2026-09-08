@@ -103,6 +103,28 @@ import Testing
         #expect(restored.record(for: owner)?.draft.text == "new")
     }
 
+    @Test func delayedOlderFlushCannotOverwriteANewerPersistedRevision() async throws {
+        let root = try recoveryTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let barrier = StoreFlushBarrier()
+        let owner = ComposerRecoveryOwner.project(root)
+        let store = ComposerRecoveryStore(
+            rootURL: root,
+            debounce: .seconds(60),
+            flushBarrier: { await barrier.suspendFirstFlush() })
+        store.setDraft(ComposerRecoveryDraft(text: "old", attachments: []), for: owner)
+
+        let olderFlush = Task { await store.flush() }
+        #expect(await barrier.waitUntilSuspended())
+        store.setDraft(ComposerRecoveryDraft(text: "new", attachments: []), for: owner)
+        #expect(await store.flush())
+        await barrier.release()
+        _ = await olderFlush.value
+
+        let restored = ComposerRecoveryStore(rootURL: root)
+        #expect(restored.record(for: owner)?.draft.text == "new")
+    }
+
     @Test func inFlightInputAndInitialOwnersRemainSeparateFromEditableDraftAndRoute() {
         let store = ComposerRecoveryStore.inMemory()
         let project = URL(filePath: "/tmp/Project", directoryHint: .isDirectory)
@@ -187,4 +209,30 @@ private func recoveryAttachment(
 private func permissions(at url: URL) throws -> Int {
     let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
     return (attributes[.posixPermissions] as? NSNumber)?.intValue ?? -1
+}
+
+private actor StoreFlushBarrier {
+    private var isSuspended = false
+    private var didRelease = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func suspendFirstFlush() async {
+        guard !isSuspended, !didRelease else { return }
+        isSuspended = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilSuspended() async -> Bool {
+        for _ in 0..<1_500 {
+            if isSuspended { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return isSuspended
+    }
+
+    func release() {
+        didRelease = true
+        continuation?.resume()
+        continuation = nil
+    }
 }

@@ -82,6 +82,7 @@ final class ComposerRecoveryStore {
     private let rootURL: URL?
     private let debounce: Duration
     private let writer: ComposerRecoveryWriter?
+    private let flushBarrier: @Sendable () async -> Void
     private var contents: Contents
     private var debounceTask: Task<Void, Never>?
     private(set) var errorMessage: String?
@@ -89,9 +90,14 @@ final class ComposerRecoveryStore {
     var allRecords: [ComposerRecoveryRecord] { contents.records }
     var lastMeaningfulRoute: ComposerRecoveryRoute? { contents.lastMeaningfulRoute }
 
-    init(rootURL: URL, debounce: Duration = .milliseconds(250)) {
+    init(
+        rootURL: URL,
+        debounce: Duration = .milliseconds(250),
+        flushBarrier: @escaping @Sendable () async -> Void = {}
+    ) {
         self.rootURL = rootURL
         self.debounce = debounce
+        self.flushBarrier = flushBarrier
         writer = ComposerRecoveryWriter(fileURL: rootURL.appending(path: Self.fileName))
         do {
             try FileManager.default.createDirectory(
@@ -122,6 +128,7 @@ final class ComposerRecoveryStore {
         rootURL = nil
         debounce = .zero
         writer = nil
+        flushBarrier = {}
         contents = Contents(formatVersion: 1, records: [], revision: 0)
     }
 
@@ -212,12 +219,19 @@ final class ComposerRecoveryStore {
         scheduleWrite()
     }
 
-    func flush() async {
+    @discardableResult
+    func flush() async -> Bool {
         debounceTask?.cancel()
         debounceTask = nil
-        guard let writer else { return }
-        let result = await writer.write(contents)
-        if let result { errorMessage = result }
+        guard let writer else {
+            errorMessage = nil
+            return true
+        }
+        let snapshot = contents
+        await flushBarrier()
+        let result = await writer.write(snapshot)
+        errorMessage = result
+        return result == nil
     }
 
     private func update(
@@ -248,7 +262,7 @@ final class ComposerRecoveryStore {
                 try await Task.sleep(for: self?.debounce ?? .zero)
                 guard !Task.isCancelled else { return }
                 let result = await writer.write(snapshot)
-                if let result { self?.errorMessage = result }
+                self?.errorMessage = result
             } catch is CancellationError {
                 return
             } catch {

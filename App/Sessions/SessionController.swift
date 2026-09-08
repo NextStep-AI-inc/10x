@@ -630,16 +630,35 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                     draft: ComposerRecoveryDraft(text: text, attachments: staged),
                     minimumUserIndex: minimumUserIndex),
                 for: recoveryOwner)
-            await recoveryStore.flush()
+            let didFlush = await recoveryStore.flush()
+            guard isCurrent(context) else { return true }
+            guard didFlush else {
+                recoveryStore.setInFlight(nil, for: recoveryOwner)
+                if let receiptID {
+                    pendingSubmissions.removeAll { $0.id == receiptID }
+                }
+                if suppliedAttachments != nil {
+                    if draft.isEmpty {
+                        draft = text
+                    } else if draft != text {
+                        draft = [text, draft].joined(separator: "\n\n")
+                    }
+                    attachments = staged + attachments.filter { !stagedIDs.contains($0.id) }
+                }
+                composerRecoveryMessage =
+                    "Couldn’t save this draft. Check storage access and try again."
+                return true
+            }
+            composerRecoveryMessage = nil
         }
 
         // The composer answers the keystroke, not the round trip: the draft
         // clears and the run reads as started before omp has replied. The
         // processor is moved first so a snapshot already in flight cannot
         // publish the old idle state back over this one.
-        if suppliedAttachments == nil { draft = "" }
+        if suppliedAttachments == nil, draft == text { draft = "" }
         if attachmentDisposition == .clearImmediately {
-            if suppliedAttachments == nil { attachments = [] }
+            if suppliedAttachments == nil { removeAttachments(withIDs: stagedIDs) }
         } else {
             pendingSlashAttachments = PendingSlashAttachments(
                 ids: stagedIDs,

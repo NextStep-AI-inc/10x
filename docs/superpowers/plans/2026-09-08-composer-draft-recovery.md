@@ -47,6 +47,13 @@ Owned files: `App/Application/AppModel.swift`, `AppRoute.swift` only if required
 - [ ] Use the controlled delayed/rejecting RPC fixture to exercise shutdown during acknowledgment and a failed first open; keep that evidence distinct from actual OMP. Verify the recovered uncertainty warning and that only an explicit Send submits it.
 - [ ] Save screenshots, hashes, nonzero test counts, and remaining limitations. Update the roadmap/PR checklist. No merge or deployment.
 
+### Required send-barrier review correction
+
+- [x] Make explicit flush failure observable at the send barrier. A failed pre-RPC recovery write retains the composer input, removes the unsent receipt, shows a recoverable save notice, and skips the prompt RPC; a successful retry clears the notice.
+- [x] Revalidate the captured pipeline immediately after the awaited write. Clear only the staged draft and attachment IDs so typing or attachments added during the write survive.
+- [x] Keep the revision guard and disk write synchronous inside the writer actor. Place the controllable asynchronous test barrier in `flush` after snapshot capture, and prove a delayed older flush cannot overwrite a newer persisted revision.
+- [x] Run the focused delayed-write, invalidated-pipeline, and unwritable-destination regressions in isolated DerivedData and record their evidence in the implementation report.
+
 ## Working rules
 
 You are not alone in the repository. The listed paths are fences; flag a required out-of-fence caller and continue independent work. Do not revert others' edits. Read the applicable TDD, writing-ui, visual-ui, and verifying-work skills. Do not add general abstractions, a recovery settings page, speculative retention policies, or a queue-replay feature. No nested agents, full application suite, push, merge, native app control, packaging, or dependency changes. Record owned changes, exact commands/counts, decisions, snapshots, and limits in `.superpowers/sdd/composer-drafts/report.md`.

@@ -1651,6 +1651,114 @@ private func recoveryUserItem(_ text: String, id: String = "user") -> Transcript
     await manager.closeAll()
 }
 
+@MainActor @Test func delayedRecoveryFlushClearsOnlyTheStagedComposerInput() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLogURL = directory.appending(path: "commands.log")
+    let barrier = RecoveryFlushBarrier()
+    let store = ComposerRecoveryStore(
+        rootURL: directory.appending(path: "Recovery"),
+        debounce: .seconds(60),
+        flushBarrier: { await barrier.suspendFirstFlush() })
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(directory))
+    await controller.openNew(projectURL: directory)
+    let submittedAttachment = controllerRecoveryAttachment(1)
+    let newerAttachment = controllerRecoveryAttachment(2)
+    controller.draft = "submitted"
+    controller.attachments = [submittedAttachment]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await barrier.waitUntilSuspended())
+    controller.draft = "newer"
+    controller.attachments.append(newerAttachment)
+    await barrier.release()
+    await send.value
+
+    #expect(controller.draft == "newer")
+    #expect(controller.attachments == [newerAttachment])
+    let commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(commands.split(separator: "\n").filter { $0 == "prompt" }.count == 1)
+    await manager.closeAll()
+}
+
+@MainActor @Test func invalidatedPipelineDuringRecoveryFlushCannotSendOrOverwriteReplacementInput() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLogURL = directory.appending(path: "commands.log")
+    let barrier = RecoveryFlushBarrier()
+    let store = ComposerRecoveryStore(
+        rootURL: directory.appending(path: "Recovery"),
+        debounce: .seconds(60),
+        flushBarrier: { await barrier.suspendFirstFlush() })
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(directory))
+    await controller.openNew(projectURL: directory)
+    controller.draft = "submitted"
+    controller.attachments = [controllerRecoveryAttachment(1)]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await barrier.waitUntilSuspended())
+    controller.handleUnexpectedExit(code: 9, stderrTail: "replacement")
+    let replacementAttachment = controllerRecoveryAttachment(2)
+    controller.draft = "replacement"
+    controller.attachments = [replacementAttachment]
+    await barrier.release()
+    await send.value
+
+    #expect(controller.draft == "replacement")
+    #expect(controller.attachments == [replacementAttachment])
+    #expect(controller.runtimeState == SessionRuntimeState.stopped(code: 9, stderrTail: "replacement"))
+    let commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(!commands.split(separator: "\n").contains("prompt"))
+    await manager.closeAll()
+}
+
+@MainActor @Test func failedRecoveryFlushRetainsInputAndSkipsPromptUntilSuccessfulRetry() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let recoveryRoot = directory.appending(path: "Recovery")
+    try FileManager.default.createDirectory(at: recoveryRoot, withIntermediateDirectories: true)
+    let recoveryFile = recoveryRoot.appending(path: ComposerRecoveryStore.fileName)
+    try FileManager.default.createDirectory(at: recoveryFile, withIntermediateDirectories: false)
+    let commandLogURL = directory.appending(path: "commands.log")
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let store = ComposerRecoveryStore(rootURL: recoveryRoot, debounce: .seconds(60))
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(directory))
+    await controller.openNew(projectURL: directory)
+    let attachment = controllerRecoveryAttachment(1)
+    controller.draft = "retain me"
+    controller.attachments = [attachment]
+
+    await controller.sendPrompt()
+
+    #expect(controller.draft == "retain me")
+    #expect(controller.attachments == [attachment])
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.composerRecoveryMessage == "Couldn’t save this draft. Check storage access and try again.")
+    var commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(!commands.split(separator: "\n").contains("prompt"))
+
+    try FileManager.default.removeItem(at: recoveryFile)
+    await controller.sendPrompt()
+
+    #expect(controller.composerRecoveryMessage == nil)
+    #expect(controller.draft.isEmpty)
+    #expect(controller.attachments.isEmpty)
+    commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(commands.split(separator: "\n").filter { $0 == "prompt" }.count == 1)
+    await manager.closeAll()
+}
+
 @MainActor @Test func rejectedSendKeepsInFlightRecoveryAlongsideNewerInput() async throws {
     let manager = fakeManager(mode: "delayed-prompt-failure")
     let store = ComposerRecoveryStore.inMemory()
@@ -1710,4 +1818,31 @@ private func controllerRecoveryAttachment(_ byte: UInt8) -> ComposerAttachment {
     ComposerAttachment(
         name: "\(byte).png", data: Data([byte]), mimeType: "image/png",
         pixelWidth: 1, pixelHeight: 1)
+}
+
+private actor RecoveryFlushBarrier {
+    private var isSuspended = false
+    private var didRelease = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func suspendFirstFlush() async {
+        guard !isSuspended, !didRelease else { return }
+        isSuspended = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilSuspended(timeout: Duration = .seconds(30)) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout.seconds)
+        while Date() < deadline {
+            if isSuspended { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return isSuspended
+    }
+
+    func release() {
+        didRelease = true
+        continuation?.resume()
+        continuation = nil
+    }
 }

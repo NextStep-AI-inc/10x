@@ -8,6 +8,7 @@ Status: DONE for Tasks 1–3. Task 4 Release-app review and native acceptance re
 - `97d7fd9` — Task 1 loss-prevention review fixes
 - `6a75fd1` — Task 2 controller, send lifecycle, new-project recovery, and warning UI
 - `543b1a0` — Task 3 meaningful-route persistence and startup restoration
+- Required review correction — explicit durable-send barrier failure and suspension safety (current correction commit)
 
 ## Implemented decisions
 
@@ -21,6 +22,9 @@ Status: DONE for Tasks 1–3. Task 4 Release-app review and native acceptance re
 - Meaningful routes are saved-session selection and explicit new-session project intent. Settings, providers, search, and archived-session views do not replace them. Restoration runs after startup data is loaded and only after workspace gates permit it; direct navigation wins while startup is delayed.
 - Restored session routes require active metadata and an existing cwd directory. Missing/archived sessions and missing project routes are cleared and fall back through the normal route gate.
 - PNG recovery retains the existing 1 MB encoded PNG ceiling. JPEG recovery allows up to 16 MB because JPEG encoding is the existing fallback for images that exceed the PNG choice threshold. Recovery merges do not truncate attachment arrays, avoiding silent loss when multiple valid records are combined.
+- The pre-RPC recovery flush now returns explicit success or failure. Failure keeps the draft and attachments, removes the unsent receipt and in-memory in-flight marker, shows “Couldn’t save this draft. Check storage access and try again.”, and does not call the prompt RPC. A successful retry clears the notice.
+- The send path revalidates its pipeline immediately after the persistence suspension. A current send clears text only when it still equals the staged snapshot and removes only staged attachment IDs, preserving input added while the disk write was pending. An invalidated pipeline does not mutate replacement composer or runtime state and does not send the prompt.
+- The controllable test barrier sits in `flush` after its immutable contents snapshot is captured. The writer keeps its synchronous actor-isolated revision check and atomic disk write, so delayed older flushes cannot reenter the writer or overwrite a newer persisted revision.
 
 ## Verification
 
@@ -44,6 +48,16 @@ Final Task 3 run used `test-without-building` with these six filters:
 - `directNavigationWinsOverDelayedStartupRouteRestoration()`
 
 Result: 6 tests passed, 0 failed in 1.257 seconds. `git diff --check` was clean before each commit.
+
+Required review correction used isolated DerivedData at `/tmp/10x-derived-draft-review`.
+
+- Red build: `/tmp/10x-drafts-barrier-red.log` failed because the controllable writer seam did not yet exist (`extra argument 'writeData' in call`).
+- Incremental test build: `/tmp/10x-drafts-barrier-build-green.log`, `** TEST BUILD SUCCEEDED **`.
+- Focused new regressions: `/tmp/10x-drafts-barrier-focused-green.log`, 3 tests passed, 0 failed. These cover input typed during the disk barrier, pipeline invalidation during the barrier, and an unwritable destination followed by successful retry.
+- Initial focused store/send regression run: `/tmp/10x-drafts-barrier-focused-regression.log`, 13 tests passed, 0 failed.
+- Ordering-review red: `/tmp/10x-drafts-ordering-red.log` failed because the replacement flush-barrier API did not yet exist.
+- Ordering-review incremental build: `/tmp/10x-drafts-ordering-build-green.log`, `** TEST BUILD SUCCEEDED **`.
+- Final focused store/send regression run: `/tmp/10x-drafts-barrier-ordering-final.log`, 14 tests passed, 0 failed. This includes the full `ComposerRecoveryStoreTests` suite, delayed old-versus-new persistence ordering, all three send-barrier cases, and the existing accepted/rejected send recovery cases.
 
 ## Skipped and limits
 
