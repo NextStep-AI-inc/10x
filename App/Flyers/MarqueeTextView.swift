@@ -135,6 +135,8 @@ struct MarqueeTextView: View {
             Text(text)
                 .font(resolvedFont)
                 .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .padding(12)
                 .frame(maxWidth: 360, alignment: .leading)
