@@ -165,7 +165,7 @@ final class DaemonServerTests: XCTestCase {
         ])
         _ = try expectEvent(supervision) // sessionStarted
 
-        let sessionID = daemon.registry.sessions.keys.first!.raw
+        let sessionID = daemon.registry.allSessions.keys.first!.raw
         try supervision.send(.object(["command": .string("stop_session"), "session": .number(Double(sessionID))]))
         let ended = try expectEvent(supervision)
         XCTAssertEqual(ended["type"], .string("sessionEnded"))
@@ -189,7 +189,7 @@ final class DaemonServerTests: XCTestCase {
             "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
             "params": .object(["clientInfo": .object(["name": .string("omp")])]),
         ])
-        let sessionID = daemon.registry.sessions.keys.first!.raw
+        let sessionID = daemon.registry.allSessions.keys.first!.raw
 
         let supervision = try connectSupervision()
         try supervision.send(.object(["command": .string("stop_session"), "session": .number(Double(sessionID))]))
@@ -209,7 +209,7 @@ final class DaemonServerTests: XCTestCase {
             "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
             "params": .object(["clientInfo": .object(["name": .string("Cursor")])]),
         ])
-        let disconnectSession = daemon.registry.sessions.keys.first { $0.raw != sessionID }!.raw
+        let disconnectSession = daemon.registry.allSessions.keys.first { $0.raw != sessionID }!.raw
         mcp2 = nil
         Thread.sleep(forTimeInterval: 0.1)
         XCTAssertNil(daemon.registry.session(SessionID(raw: disconnectSession)))

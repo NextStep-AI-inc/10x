@@ -302,7 +302,7 @@ public final class DaemonServer {
                 case "stop_all":
                     lock.lock()
                     stopAllFlag.value = true
-                    let stoppedSessions = registry.sessions.filter { $0.value.isActive }.map { (id: $0.key, harness: $0.value.harness) }
+                    let stoppedSessions = registry.allSessions.filter { $0.value.isActive }.map { (id: $0.key, harness: $0.value.harness) }
                     let releases = releaseAllEvents(reason: "shutoff")
                     registry.stopAll()
                     lock.unlock()
@@ -355,7 +355,7 @@ public final class DaemonServer {
     }
 
     private func releaseAllEvents(reason: String) -> [SupervisionEvent] {
-        registry.sessions.keys.flatMap { releaseEvents(for: $0, reason: reason) }
+        registry.allSessions.keys.flatMap { releaseEvents(for: $0, reason: reason) }
     }
 
     private struct ToolEventResult {

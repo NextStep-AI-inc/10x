@@ -36,6 +36,17 @@ final class SupervisionEventTests: XCTestCase {
         XCTAssertEqual(decoded, event)
     }
 
+    /// Wire freeze: absent optionals encode as explicit null, never omitted keys.
+    func test_sessionStarted_nilLabelAndPID_encodeAsNull() throws {
+        let event = SupervisionEvent.sessionStarted(session: 1, harness: "omp", label: nil, pid: nil)
+        let line = try event.jsonLine()
+        let object = try JSONDecoder().decode(JSONValue.self, from: Data(line.utf8))
+        XCTAssertEqual(object["label"], .null)
+        XCTAssertEqual(object["pid"], .null)
+        let decoded = try SupervisionEvent(jsonLine: line)
+        XCTAssertEqual(decoded, event)
+    }
+
     func test_permissionsEventRoundTrip() throws {
         let event = SupervisionEvent.permissions(screenRecording: true, accessibility: false)
         let decoded = try SupervisionEvent(jsonLine: try event.jsonLine())

@@ -82,8 +82,8 @@ extension SupervisionEvent: Codable {
             try container.encode(Kind.sessionStarted, forKey: .type)
             try container.encode(session, forKey: .session)
             try container.encode(harness, forKey: .harness)
-            try container.encodeIfPresent(label, forKey: .label)
-            try container.encodeIfPresent(pid, forKey: .pid)
+            if let label { try container.encode(label, forKey: .label) } else { try container.encodeNil(forKey: .label) }
+            if let pid { try container.encode(pid, forKey: .pid) } else { try container.encodeNil(forKey: .pid) }
         case .sessionEnded(let session, let harness):
             try container.encode(Kind.sessionEnded, forKey: .type)
             try container.encode(session, forKey: .session)

@@ -19,12 +19,19 @@ public struct SessionInfo: Sendable, Equatable {
 /// Claim/session bookkeeping. Thread-safe via internal lock.
 public final class SessionRegistry {
     private let lock = NSRecursiveLock()
-    public private(set) var sessions: [SessionID: SessionInfo] = [:]
+    private var sessions: [SessionID: SessionInfo] = [:]
     private var claims: [CGWindowID: SessionID] = [:]
     private var windows: [CGWindowID: WindowInfo] = [:]
     private var nextRawID = 0
 
     public init() {}
+
+    /// Locked snapshot for bulk readers (stop_all, resource listing).
+    public var allSessions: [SessionID: SessionInfo] {
+        lock.lock()
+        defer { lock.unlock() }
+        return sessions
+    }
 
     @discardableResult
     public func registerSession(clientName: String?, label: String? = nil, peerPID: Int32? = nil) -> SessionID {

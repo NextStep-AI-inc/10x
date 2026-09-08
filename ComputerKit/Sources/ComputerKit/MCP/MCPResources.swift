@@ -21,7 +21,7 @@ public final class ScreenshotResources: MCPResourceProviding {
     }
 
     public func listResources() -> [JSONValue] {
-        registry.sessions.keys.flatMap { registry.claimedWindows(for: $0) }.map { window in
+        registry.allSessions.keys.flatMap { registry.claimedWindows(for: $0) }.map { window in
             .object([
                 "uri": .string("computer://window/\(window.id)/screenshot"),
                 "name": .string("\(window.appName) — \(window.title)"),
