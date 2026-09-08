@@ -333,7 +333,7 @@ public actor SessionProcessManager {
             configuration.model = model
             configuration.thinking = thinking
             configuration.supportsUserInteraction = supportsUserInteraction
-            configuration.extraArguments = ["--session-dir", sessionDirectory]
+            configuration.extraArguments += ["--session-dir", sessionDirectory]
             let client = clientFactory(configuration)
             managed = ManagedClient(id: UUID(), client: client)
             isWarmCheckout = false
@@ -398,7 +398,7 @@ public actor SessionProcessManager {
             configuration.extraArguments = extraArguments
             configuration.supportsUserInteraction = supportsUserInteraction
             configuration.cwd = URL(filePath: project, directoryHint: .isDirectory)
-            configuration.extraArguments = ["--session-dir", sessionDirectory]
+            configuration.extraArguments += ["--session-dir", sessionDirectory]
             let client = factory(configuration)
             try await client.start()
             let managed = ManagedClient(id: UUID(), client: client)

@@ -104,6 +104,38 @@ actor ActivationGate {
     await manager.closeAll()
 }
 
+@Test(arguments: [false, true])
+func freshProcessesKeepConfiguredExtensions(isWarm: Bool) async throws {
+    let capture = ConfigurationCapture()
+    let manager = SessionProcessManager(
+        extraArguments: ["-e", "/fake/ext/index.ts"],
+        supportsUserInteraction: true,
+        clientFactory: { configuration in
+            capture.append(configuration)
+            var fake = configuration
+            fake.executable = "/usr/bin/env"
+            fake.extraArguments = ["python3", fixtureURL("fake_server.py").path, "basic"]
+            fake.rawArgv = true
+            fake.cwd = nil
+            return RpcClient(configuration: fake)
+        })
+    do {
+        if isWarm { _ = try await manager.warm(projectDirectory: "/tmp/project") }
+        _ = try await manager.openNew(projectDirectory: "/tmp/project")
+        let configuration = try #require(capture.snapshot().first)
+        #expect(configuration.extraArguments == [
+            "-e", "/fake/ext/index.ts", "--session-dir",
+            expectedFreshSessionDirectory(for: "/tmp/project"),
+        ])
+        #expect(configuration.noSession == false)
+        #expect(configuration.supportsUserInteraction)
+    } catch {
+        await manager.closeAll()
+        throw error
+    }
+    await manager.closeAll()
+}
+
 @Test func managerDefaultsToNoninteractiveRPCMode() async throws {
     let capture = ConfigurationCapture()
     let manager = capturingManager(capture)
