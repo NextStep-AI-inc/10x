@@ -6,8 +6,21 @@ enum UIFixtureRoute: String, CaseIterable, Sendable {
     case mapDense = "map-dense"
     case mapEmpty = "map-empty"
     case mapInvalid = "map-invalid"
+    case flyerFitting = "flyer-fitting"
+    case flyerOverflow = "flyer-overflow"
+    case flyerStack = "flyer-stack"
+    case flyerRecovery = "flyer-recovery"
 
     static let environmentKey = "TENX_UI_FIXTURE"
+
+    var isFlyer: Bool {
+        switch self {
+        case .flyerFitting, .flyerOverflow, .flyerStack, .flyerRecovery:
+            true
+        default:
+            false
+        }
+    }
 
     static func resolve(environment: [String: String]) throws -> UIFixtureRoute? {
         guard let value = environment[environmentKey], !value.isEmpty else { return nil }

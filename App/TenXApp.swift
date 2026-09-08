@@ -53,7 +53,13 @@ struct TenXApp: App {
 
         WindowGroup(fixtureConfiguration?.title ?? "10x", id: AppWindowID.workspace) {
             if let fixtureConfiguration {
-                SessionMapFixtureScene(configuration: fixtureConfiguration)
+                Group {
+                    if fixtureConfiguration.route.isFlyer {
+                        FlyerFixtureScene(configuration: fixtureConfiguration)
+                    } else {
+                        SessionMapFixtureScene(configuration: fixtureConfiguration)
+                    }
+                }
                     .onAppear {
                         appDelegate.shutdown = { await model.shutdown() }
                     }

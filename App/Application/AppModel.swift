@@ -73,6 +73,7 @@ final class AppModel {
     let idePreferenceStore: IDEPreferenceStore
     let toolDetailPreferenceStore: ToolDetailPreferenceStore
     let fileOpenService: FileOpenService
+    let flyerCenter = FlyerCenter()
     private(set) var providerModel: ProviderManagementViewModel?
     private(set) var composerControls: ComposerControlsModel?
     private(set) var composerCommands: ComposerCommandModel?
@@ -224,6 +225,8 @@ final class AppModel {
         }
     @ObservationIgnored private var menuUpdateCheckTask: Task<Void, Never>?
     @ObservationIgnored private var shutdownOperation: Task<Void, Never>?
+    @ObservationIgnored private var flyerActionHandler: (Flyer.Key, String) -> Void = { _, _ in }
+    @ObservationIgnored private var flyerDismissHandler: (Flyer.Key) -> Void = { _ in }
 
     var updateState: UpdateState { updateChecker.state }
 
@@ -587,6 +590,41 @@ final class AppModel {
             directoryHint: .isDirectory)
         activeSession = selected.controller
         route = .session(selected.metadata.path)
+    }
+
+    func installFlyerFixtureHandlers(
+        onAction: @escaping (Flyer.Key, String) -> Void,
+        onDismiss: @escaping (Flyer.Key) -> Void = { _ in }
+    ) {
+        flyerActionHandler = onAction
+        flyerDismissHandler = onDismiss
+    }
+
+    func installFlyerComposerFixture(
+        controls: ComposerControlsModel,
+        commands: ComposerCommandModel
+    ) {
+        composerControls = controls
+        composerCommands = commands
+        if let activeSession {
+            attachComposerSources(to: activeSession)
+        }
+    }
+
+    func prepareFlyerComposerFixture() async {
+        await composerControls?.refresh(
+            authenticatedProviderIDs: ["fixture"],
+            projectURL: selectedProjectURL)
+    }
+
+    func performFlyerAction(_ key: Flyer.Key, actionID: String) {
+        flyerActionHandler(key, actionID)
+        flyerCenter.remove(key)
+    }
+
+    func dismissFlyer(_ key: Flyer.Key) {
+        flyerDismissHandler(key)
+        flyerCenter.remove(key)
     }
 
     func openSearchResult(_ result: SearchResult) {
@@ -1307,12 +1345,16 @@ final class AppModel {
             entry.value == controller.id ? entry.key : nil
         }
         for path in paths {
+            flyerCenter.removeSession(path)
             managedSessionPaths.removeValue(forKey: path)
         }
     }
 
     private func discardManagedSessions() {
         detachComposerSources()
+        for path in managedSessionPaths.keys {
+            flyerCenter.removeSession(path)
+        }
         for controller in managedSessions.values {
             controller.stopActivityTracking()
         }

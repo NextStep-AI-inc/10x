@@ -9,6 +9,7 @@ struct TranscriptView: View {
     static let contentMaxWidth: CGFloat = 860
 
     let controller: SessionController
+    var bottomOverlayClearance: CGFloat = 0
     @State private var disclosureState = ToolDisclosureState()
     @State private var isUserScrolling = false
     @State private var searchResolution: TranscriptSearchResolution?
@@ -74,6 +75,8 @@ struct TranscriptView: View {
                 .padding(.horizontal, 42)
                 .padding(.vertical, 28)
                 .frame(maxWidth: .infinity)
+                Color.clear
+                    .frame(height: Self.resolvedBottomOverlayClearance(bottomOverlayClearance))
                 Color.clear.frame(height: 1).id(Self.bottomID)
                 }
             }
@@ -150,7 +153,7 @@ struct TranscriptView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.bottom, 12)
+            .padding(.bottom, Self.jumpToLatestBottomPadding(bottomOverlayClearance))
             .transition(.opacity)
             .accessibilityLabel("Jump to latest")
         }
@@ -219,6 +222,14 @@ struct TranscriptView: View {
     ) -> Bool {
         contentHeight <= containerHeight
             || contentOffset + containerHeight >= contentHeight - threshold
+    }
+
+    nonisolated static func resolvedBottomOverlayClearance(_ measuredHeight: CGFloat) -> CGFloat {
+        max(0, measuredHeight)
+    }
+
+    nonisolated static func jumpToLatestBottomPadding(_ measuredHeight: CGFloat) -> CGFloat {
+        resolvedBottomOverlayClearance(measuredHeight) + 12
     }
 
     private func select(_ mode: ToolDetailMode) {

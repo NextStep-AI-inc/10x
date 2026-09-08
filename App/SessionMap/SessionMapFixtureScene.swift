@@ -6,9 +6,12 @@ import SwiftUI
 struct SessionMapFixtureScene: View {
     struct Configuration {
         let model: AppModel
+        let route: UIFixtureRoute
         let title: String
         let colorScheme: ColorScheme?
         let reduceMotionOverride: Bool?
+        let reduceTransparencyOverride: Bool?
+        let marqueeMetricsObserver: (@MainActor (CGFloat, CGFloat) -> Void)?
     }
 
     let configuration: Configuration
@@ -21,6 +24,15 @@ struct SessionMapFixtureScene: View {
             .environment(
                 \.sessionMapReduceMotionOverride,
                 configuration.reduceMotionOverride)
+            .environment(
+                \.flyerReduceMotionOverride,
+                configuration.reduceMotionOverride)
+            .environment(
+                \.flyerReduceTransparencyOverride,
+                configuration.reduceTransparencyOverride)
+            .environment(
+                \.flyerMarqueeMetricsObserver,
+                configuration.marqueeMetricsObserver)
     }
 
     @MainActor
@@ -35,6 +47,8 @@ struct SessionMapFixtureScene: View {
         let appearance = try fixtureAppearance(environment["TENX_UI_FIXTURE_APPEARANCE"])
         let reduceMotionOverride = try fixtureReduceMotion(
             environment["TENX_UI_FIXTURE_REDUCE_MOTION"])
+        let reduceTransparencyOverride = try fixtureReduceTransparency(
+            environment["TENX_UI_FIXTURE_REDUCE_TRANSPARENCY"])
         let root = try isolatedRootOverride
             ?? isolatedRoot(route: route, buildSHA: buildSHA)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -42,6 +56,13 @@ struct SessionMapFixtureScene: View {
         let model = fixtureModel(root: root, defaults: defaults)
         let sessions = try fixtureSessions(route: route, root: root, model: model)
         model.installSessionMapFixture(sessions, selectedPath: sessions[0].metadata.path)
+        let metricsObserver = route.isFlyer
+            ? FlyerFixtureScene.install(
+                route: route,
+                model: model,
+                selectedPath: sessions[0].metadata.path,
+                defaults: defaults)
+            : nil
         if route == .mapPlanning {
             model.sessionMapPaneModel(
                 for: sessions[0].controller,
@@ -52,9 +73,12 @@ struct SessionMapFixtureScene: View {
         }
         return Configuration(
             model: model,
+            route: route,
             title: "10x | \(route.rawValue) | \(String(buildSHA.prefix(12)))",
             colorScheme: appearance,
-            reduceMotionOverride: reduceMotionOverride)
+            reduceMotionOverride: reduceMotionOverride,
+            reduceTransparencyOverride: reduceTransparencyOverride,
+            marqueeMetricsObserver: metricsObserver)
     }
 
     @MainActor
@@ -123,6 +147,7 @@ struct SessionMapFixtureScene: View {
             draft: "Keep the map open while I review the transcript.",
             attachmentName: "map-layout.png",
             transcriptSeed: "planning",
+            route: route,
             model: model)
         let controllerB = fixtureController(
             id: UUID(uuidString: "00000000-0000-0000-0000-000000000602")!,
@@ -131,6 +156,7 @@ struct SessionMapFixtureScene: View {
             draft: "Check the drawer behavior at the minimum window size.",
             attachmentName: "drawer-check.png",
             transcriptSeed: "implementing",
+            route: route,
             model: model)
         return [
             fixtureEntry(
@@ -158,6 +184,7 @@ struct SessionMapFixtureScene: View {
         draft: String,
         attachmentName: String,
         transcriptSeed: String,
+        route: UIFixtureRoute,
         model: AppModel
     ) -> SessionController {
         let timestamp = Date(timeIntervalSince1970: 1_788_800_000)
@@ -169,11 +196,14 @@ struct SessionMapFixtureScene: View {
             ]),
             timestamp: timestamp,
             isFinal: true)
+        let assistantDetail = route.isFlyer
+            ? "The selected session keeps its full latest response reachable while measured system notices sit above a multiline composer with an attachment. This deliberately long final assistant message verifies that scrolling to the bottom leaves the response visible instead of hiding it beneath the notice glass."
+            : "The native map keeps the architecture visible while the composer remains ready."
         let assistant = TranscriptMessage(
             id: "\(transcriptSeed)-assistant",
             raw: .object([
                 "role": .string("assistant"),
-                "content": .string("The native map keeps the architecture visible while the composer remains ready."),
+                "content": .string(assistantDetail),
             ]),
             timestamp: timestamp.addingTimeInterval(20),
             attribution: TranscriptResponseAttribution(
@@ -189,6 +219,18 @@ struct SessionMapFixtureScene: View {
                 .threadStart(id: "\(transcriptSeed)-start", date: timestamp),
                 .message(user),
                 .message(assistant),
+                .extensionUI(.select(
+                    id: "\(transcriptSeed)-fixture-question",
+                    title: "Which fixture state should remain visible during this layout check?",
+                    options: [
+                        ExtensionSelectOption(
+                            label: "Keep the current state",
+                            detail: "This is synthetic component-only fixture data."),
+                        ExtensionSelectOption(
+                            label: "Continue inspecting",
+                            detail: nil),
+                    ],
+                    timeout: nil)),
             ],
             runtimeState: .idle,
             title: title,
@@ -198,7 +240,9 @@ struct SessionMapFixtureScene: View {
                 worktreePath: project.path),
             id: id,
             activityRegistry: model.sessionActivityRegistry)
-        controller.draft = draft
+        controller.draft = route.isFlyer
+            ? "Verify the measured overlay above this multiline composer.\nKeep the attachment and recovery controls reachable."
+            : draft
         controller.attachments = [fixtureAttachment(name: attachmentName)]
         return controller
     }
@@ -251,6 +295,8 @@ struct SessionMapFixtureScene: View {
         case (.mapDense, false): SessionMapFixtures.denseXML
         case (.mapEmpty, false), (.mapInvalid, false): SessionMapFixtures.emptyXML
         case (.mapDense, true), (.mapInvalid, true): SessionMapFixtures.layoutStressXML
+        case (.flyerFitting, false), (.flyerOverflow, false),
+             (.flyerStack, false), (.flyerRecovery, false): SessionMapFixtures.planningXML
         case (_, true): SessionMapFixtures.graphStatesXML
         }
         return (try SessionMapFixtures.document(xml), .ready)
@@ -322,6 +368,15 @@ struct SessionMapFixtureScene: View {
         }
     }
 
+    private static func fixtureReduceTransparency(_ value: String?) throws -> Bool? {
+        switch value {
+        case nil, "system": nil
+        case "on": true
+        case "off": false
+        case .some(let value): throw SessionMapFixtureStartupError.invalidReduceTransparency(value)
+        }
+    }
+
 }
 
 @MainActor
@@ -338,6 +393,7 @@ private enum SessionMapFixtureStartupError: LocalizedError {
     case defaultsUnavailable
     case invalidAppearance(String)
     case invalidReduceMotion(String)
+    case invalidReduceTransparency(String)
     case invalidFixtureWasAccepted
 
     var errorDescription: String? {
@@ -350,6 +406,8 @@ private enum SessionMapFixtureStartupError: LocalizedError {
             "TENX_UI_FIXTURE_APPEARANCE must be system, light, or dark. Received \(value)."
         case .invalidReduceMotion(let value):
             "TENX_UI_FIXTURE_REDUCE_MOTION must be system, on, or off. Received \(value)."
+        case .invalidReduceTransparency(let value):
+            "TENX_UI_FIXTURE_REDUCE_TRANSPARENCY must be system, on, or off. Received \(value)."
         case .invalidFixtureWasAccepted:
             "The malformed UI fixture document was unexpectedly accepted."
         }

@@ -42,4 +42,16 @@ final class FlyerCenter {
             flyer.expiresAt.map { $0 <= date } ?? false
         }
     }
+
+    func nextExpiration(sessionKey: String?, after date: Date) -> Date? {
+        flyers.compactMap { flyer in
+            guard let expiration = flyer.expiresAt, expiration > date else { return nil }
+            switch flyer.scope {
+            case .global:
+                return expiration
+            case let .session(key):
+                return key == sessionKey ? expiration : nil
+            }
+        }.min()
+    }
 }

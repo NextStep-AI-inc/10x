@@ -19,6 +19,10 @@ private struct FlyerReduceTransparencyOverrideKey: EnvironmentKey {
     static let defaultValue: Bool? = nil
 }
 
+private struct FlyerMarqueeMetricsObserverKey: EnvironmentKey {
+    static let defaultValue: (@MainActor (CGFloat, CGFloat) -> Void)? = nil
+}
+
 extension EnvironmentValues {
     var flyerMarqueeElapsedOverride: TimeInterval? {
         get { self[FlyerMarqueeElapsedOverrideKey.self] }
@@ -34,6 +38,11 @@ extension EnvironmentValues {
         get { self[FlyerReduceTransparencyOverrideKey.self] }
         set { self[FlyerReduceTransparencyOverrideKey.self] = newValue }
     }
+
+    var flyerMarqueeMetricsObserver: (@MainActor (CGFloat, CGFloat) -> Void)? {
+        get { self[FlyerMarqueeMetricsObserverKey.self] }
+        set { self[FlyerMarqueeMetricsObserverKey.self] = newValue }
+    }
 }
 
 struct MarqueeTextView: View {
@@ -44,6 +53,7 @@ struct MarqueeTextView: View {
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.flyerMarqueeElapsedOverride) private var elapsedOverride
     @Environment(\.flyerReduceMotionOverride) private var reduceMotionOverride
+    @Environment(\.flyerMarqueeMetricsObserver) private var metricsObserver
     @Environment(\.font) private var font
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.scenePhase) private var scenePhase
@@ -140,6 +150,7 @@ struct MarqueeTextView: View {
             geometry.size.width
         } action: { width in
             viewportWidth = width
+            metricsObserver?(textWidth, width)
         }
         .overlay(alignment: .leading) {
             measurementText
@@ -166,6 +177,7 @@ struct MarqueeTextView: View {
                 geometry.size.width
             } action: { width in
                 textWidth = width
+                metricsObserver?(width, viewportWidth)
             }
     }
 

@@ -176,7 +176,7 @@ struct AppShellView: View {
             EmptyView()
         case .newSession:
             NewSessionView(model: model)
-        case .session:
+        case .session(let routePath):
             if let activeSession = model.activeSession {
                 let presentation = SessionMapPanePresentation.resolve(
                     windowWidth: shellWidth,
@@ -192,7 +192,11 @@ struct AppShellView: View {
                     sessionMapPresentation: presentation,
                     isSessionMapVisible: model.isSessionMapVisible,
                     onToggleSessionMap: model.toggleSessionMap,
-                    onResizeSessionMap: model.resizeSessionMap)
+                    onResizeSessionMap: model.resizeSessionMap,
+                    flyerCenter: model.flyerCenter,
+                    flyerSessionKey: routePath,
+                    onFlyerAction: model.performFlyerAction,
+                    onFlyerDismiss: model.dismissFlyer)
                     .environment(\.renameCurrentSession, model.requestRenameCurrentSession)
             } else {
                 Text("Session unavailable")
