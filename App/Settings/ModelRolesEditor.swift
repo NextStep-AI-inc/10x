@@ -74,7 +74,7 @@ struct ModelRolesEditor: View {
                 .font(TenXTypography.mono(size: 10))
                 .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
                 .frame(width: 70, alignment: .leading)
-            Text("\(entry.wrappedValue.role) — \(entry.wrappedValue.unrecognizedRaw ?? "")")
+            Text(entry.wrappedValue.unrecognizedRaw ?? "")
                 .font(TenXTypography.mono(size: 11))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 .lineLimit(1)
@@ -146,16 +146,11 @@ struct ModelRolesEditor: View {
     }
 
     private func showsEffortDropdown(for value: ModelRoleValue) -> Bool {
-        value.effort != nil || !effortOptions(for: value).isEmpty
+        Self.showsEffortDropdown(for: value, catalog: model.catalogModels)
     }
 
     private func effortOptions(for value: ModelRoleValue) -> [SettingOption] {
-        if let found = model.catalogModels.first(where: {
-            $0.provider == value.provider && $0.modelID == value.modelID
-        }), !found.thinkingEfforts.isEmpty {
-            return found.thinkingEfforts.map { SettingOption($0) }
-        }
-        return ModelRoleValue.efforts.map { SettingOption($0) }
+        Self.effortOptions(for: value, catalog: model.catalogModels)
     }
 
     private func sortEntries() {
@@ -213,6 +208,19 @@ struct ModelRolesEditor: View {
         }
 
         return .object(object)
+    }
+
+    nonisolated static func showsEffortDropdown(for value: ModelRoleValue, catalog: [ComposerModelInfo]) -> Bool {
+        value.effort != nil || !effortOptions(for: value, catalog: catalog).isEmpty
+    }
+
+    nonisolated static func effortOptions(for value: ModelRoleValue, catalog: [ComposerModelInfo]) -> [SettingOption] {
+        if let found = catalog.first(where: {
+            $0.provider == value.provider && $0.modelID == value.modelID
+        }) {
+            return found.thinkingEfforts.map { SettingOption($0) }
+        }
+        return ModelRoleValue.efforts.map { SettingOption($0) }
     }
 
     nonisolated static func modelOptions(from models: [ComposerModelInfo]) -> [SettingOption] {

@@ -73,6 +73,26 @@ struct ModelRolesEditorTests {
         #expect(object["vision"] == nil)
     }
 
+    @Test func catalogNonThinkingModelHasNoEffortOptions() {
+        let models = [ComposerModelInfo(modelID: "composer-2.5-fast", name: "Composer 2.5 Fast",
+                                        provider: "cursor", api: nil, thinkingEfforts: [], requiresEffort: false)]
+        let value = ModelRoleValue(provider: "cursor", modelID: "composer-2.5-fast", effort: nil)
+        #expect(ModelRolesEditor.effortOptions(for: value, catalog: models).isEmpty)
+        #expect(!ModelRolesEditor.showsEffortDropdown(for: value, catalog: models))
+    }
+
+    @Test func unknownModelFallsBackToStandardEfforts() {
+        let value = ModelRoleValue(provider: "custom", modelID: "mystery", effort: nil)
+        #expect(ModelRolesEditor.effortOptions(for: value, catalog: []).map(\.value) == ModelRoleValue.efforts)
+    }
+
+    @Test func existingEffortSuffixShowsPickerForNonThinkingCatalogModel() {
+        let models = [ComposerModelInfo(modelID: "composer-2.5-fast", name: "Composer 2.5 Fast",
+                                        provider: "cursor", api: nil, thinkingEfforts: [], requiresEffort: false)]
+        let value = ModelRoleValue(provider: "cursor", modelID: "composer-2.5-fast", effort: "high")
+        #expect(ModelRolesEditor.showsEffortDropdown(for: value, catalog: models))
+    }
+
     @Test func shouldResyncReturnsFalseForOwnSaveEcho() {
         let entries = ModelRolesEditor.entries(from: .object([
             "plan": .string("anthropic/claude-fable-5:max"),
