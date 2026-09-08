@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		006E4755358C1DA20AB58A11B0627B31 /* ComposerModelInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6591DBF910CAB9E12B80C3616F099278 /* ComposerModelInfo.swift */; };
 		037CFC6CA0112DB5B17FD340904C649A /* ComposerDefaultStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4408B3A68F48614CC61D78B4F39F8A68 /* ComposerDefaultStoreTests.swift */; };
+		043FAA293E1757099901504462103DE7 /* ObjectArraySettingEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7320C0CB7675151531784B1BC73C790 /* ObjectArraySettingEditor.swift */; };
 		048F447D7E2A63506EE6B9AB6D143940 /* StartupSplashSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF5808862D9C60706C383E28558A306D /* StartupSplashSnapshotTests.swift */; };
 		04AA57B7C73A14F53C85C5926CFE34FF /* SessionTimelineLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9139523FF7D8FFEB9D40538B255181F2 /* SessionTimelineLoader.swift */; };
 		04F60BB5EE5754248AD8BBF44F7CF519 /* FileReferenceActivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99B38E50D7808478EE8222F8C7A8A976 /* FileReferenceActivation.swift */; };
@@ -104,6 +105,7 @@
 		65DC62C6D0F7EB723921D03406C9DD81 /* SessionSearchDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA6077566BEB40A20AFAD16332D256D /* SessionSearchDatabase.swift */; };
 		66AE4E460C5D40AD5E46026015C6F7AE /* RailExpansionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3595A63E87CF76E9DE8DFE8808F05075 /* RailExpansionModelTests.swift */; };
 		68AF87BB4DAFE7AF9799E0B88A6CDA2C /* SubagentEventReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 060ED3E8FBF1564B177F4054D3547865 /* SubagentEventReducerTests.swift */; };
+		693F778BDA9E9BF9C59E3FB4A978C3A7 /* ObjectArraySettingEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCA73E176D034EE672247B9004E0D416 /* ObjectArraySettingEditorTests.swift */; };
 		69D4FC369909DAD477FBC7CD926BF06C /* RecentModelStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B15D18E5167B8BD5F6410D74F2273945 /* RecentModelStoreTests.swift */; };
 		6A1671902307CC6EF5797F52A945C02A /* SourceSurface.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1358E8B1E1F95D30DD0AE9DB03D31DE2 /* SourceSurface.swift */; };
 		6B75062C346F81353C213071E4D7C07A /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDD23F3CFB77A007437017285D69136F /* SetupView.swift */; };
@@ -426,6 +428,7 @@
 		B9319E4E7CCAD5F4188FC30AB93456D7 /* ProviderUsageDockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageDockView.swift; path = App/Providers/ProviderUsageDockView.swift; sourceTree = "<group>"; };
 		BB43F424A6A27983B5BB253D4CE75AC4 /* RailPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailPresentation.swift; path = App/Shell/RailPresentation.swift; sourceTree = "<group>"; };
 		BC82A22B2AB1B4AF8D75C32BD1574437 /* BrandWordmark.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BrandWordmark.swift; path = App/Design/BrandWordmark.swift; sourceTree = "<group>"; };
+		BCA73E176D034EE672247B9004E0D416 /* ObjectArraySettingEditorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ObjectArraySettingEditorTests.swift; path = Tests/TenXAppTests/ObjectArraySettingEditorTests.swift; sourceTree = "<group>"; };
 		BD7C0E944F514B6C9FF3C58480C88D4F /* Fonts */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = Fonts; path = App/Resources/Fonts; sourceTree = "<group>"; };
 		BECE43B1E850B47BB217DB5EAD834ADB /* ModelRolesEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ModelRolesEditor.swift; path = App/Settings/ModelRolesEditor.swift; sourceTree = "<group>"; };
 		BF79A80AACF3EB8FEE4F7A0DB3A24C6C /* ProviderUsageWheelView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageWheelView.swift; path = App/Providers/ProviderUsageWheelView.swift; sourceTree = "<group>"; };
@@ -446,6 +449,7 @@
 		D422F7E810EB9916337FD969ACB8E5A6 /* TranscriptReducer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptReducer.swift; path = App/Sessions/TranscriptReducer.swift; sourceTree = "<group>"; };
 		D51EFD581EEFD45A453F1875E53AC1AF /* ModelPickerFlyout.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ModelPickerFlyout.swift; path = App/Sessions/ModelPickerFlyout.swift; sourceTree = "<group>"; };
 		D571A76482D84C6FB84D70F08D008F62 /* TurnActivityView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TurnActivityView.swift; path = App/Sessions/TurnActivityView.swift; sourceTree = "<group>"; };
+		D7320C0CB7675151531784B1BC73C790 /* ObjectArraySettingEditor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ObjectArraySettingEditor.swift; path = App/Settings/ObjectArraySettingEditor.swift; sourceTree = "<group>"; };
 		D7651ABB34DCD41F0E1384304EA0C22A /* AppTerminationDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppTerminationDelegate.swift; path = App/Application/AppTerminationDelegate.swift; sourceTree = "<group>"; };
 		D977E9429CDAF38DBD2772F2C6C1EE32 /* OmpInstallation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpInstallation.swift; path = App/Setup/OmpInstallation.swift; sourceTree = "<group>"; };
 		DB429CB6CA35F677184202DEDDC46229 /* AppIcon.icon */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.iconcomposer.icon; name = AppIcon.icon; path = App/Resources/AppIcon.icon; sourceTree = "<group>"; };
@@ -605,6 +609,7 @@
 				5E21B6D044E0E4A6F7D0A8AA3E43E1F8 /* InlineDropdown.swift */,
 				65CBA786D1C90ECA4F18B67B8019866D /* ModelRoleValue.swift */,
 				BECE43B1E850B47BB217DB5EAD834ADB /* ModelRolesEditor.swift */,
+				D7320C0CB7675151531784B1BC73C790 /* ObjectArraySettingEditor.swift */,
 				526667F3C26993A531F8787F4D47074F /* OmpConfigRunning.swift */,
 				0104A1E5E91274724142DEEABC01240F /* OmpConfigService.swift */,
 				F07ECBFB6BDAE4C811DB1D7ABEBF18F7 /* PreferredIDESettingRowView.swift */,
@@ -690,6 +695,7 @@
 				CD958A4AA2C6C9733395C292C2B2E550 /* MessageContentParserTests.swift */,
 				EBE8DDF4894696006393C2441C71EF79 /* ModelRoleValueTests.swift */,
 				77160B44EDC7446290C7C76F87002141 /* ModelRolesEditorTests.swift */,
+				BCA73E176D034EE672247B9004E0D416 /* ObjectArraySettingEditorTests.swift */,
 				9B3C83997921E809B669E49EC2941D65 /* OmpCommandRunnerTests.swift */,
 				877A2FC56C324B52234C33EA8FA709FE /* OmpConfigServiceTests.swift */,
 				0A2A1BA39530EBB6E282C5207FC5CF52 /* OmpExecutableLocatorTests.swift */,
@@ -977,6 +983,7 @@
 				DCE7F1B6C0908C69994818F51D1981A8 /* InlineDropdown.swift in Sources */,
 				A29AAEBDC84C6F45FB78AB02F1850D79 /* ModelRoleValue.swift in Sources */,
 				90527CE460B72AC289D77FE41F0C904D /* ModelRolesEditor.swift in Sources */,
+				043FAA293E1757099901504462103DE7 /* ObjectArraySettingEditor.swift in Sources */,
 				8B8208069E8A64682CEE4A6B8EDE0E64 /* OmpConfigRunning.swift in Sources */,
 				C7557B01139A822D1614DE967328DBD8 /* OmpConfigService.swift in Sources */,
 				B24374A9E4F25605FD62C639DD68F6CE /* PreferredIDESettingRowView.swift in Sources */,
@@ -1049,6 +1056,7 @@
 				C609B7FB0E74B067B308947981F19315 /* MessageContentParserTests.swift in Sources */,
 				F1F133D1EF1326438D9AFF12790EA4A0 /* ModelRoleValueTests.swift in Sources */,
 				6BCA697032DB58F9CB093DE0496CCD8D /* ModelRolesEditorTests.swift in Sources */,
+				693F778BDA9E9BF9C59E3FB4A978C3A7 /* ObjectArraySettingEditorTests.swift in Sources */,
 				C805AACC9752F54990AFA8CF22F9D347 /* OmpCommandRunnerTests.swift in Sources */,
 				2FA2CED35BD69E6850395FDC3730D25B /* OmpConfigServiceTests.swift in Sources */,
 				DA3524B10DDF81F245041CD22C0077E7 /* OmpExecutableLocatorTests.swift in Sources */,

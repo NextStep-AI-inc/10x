@@ -76,7 +76,11 @@ struct SettingControlView: View {
                 await model.save(definition, value: .string(draftText))
             }
         case .array:
-            arrayEditor
+            if definition.key == "bashInterceptor.patterns" {
+                ObjectArraySettingEditor(definition: definition, model: model)
+            } else {
+                arrayEditor
+            }
         case .record:
             if definition.key == "modelRoles" {
                 ModelRolesEditor(definition: definition, model: model)
