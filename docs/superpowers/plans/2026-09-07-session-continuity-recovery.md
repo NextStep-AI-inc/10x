@@ -95,6 +95,17 @@ git add OmpKit/Sources/OmpKit/SessionProcessManager.swift OmpKit/Tests/OmpKitTes
 git commit -m "fix(runtime): preserve extensions on fresh session processes"
 ```
 
+### Task 1b: Respect a cancelled warm session switch
+
+Release QA at `9afb324` found that OMP can answer `switch_session` with `success: true, data: {cancelled: true}`. The manager ignored the cancellation, registered the requested path against the still-blank warm child, and `finishOpening` then replaced it with that child's unrelated path. The result was an empty transcript and a duplicate rail entry; the target file stayed intact. A real OMP probe reproduced the cancelled response and unchanged target bytes. OMP rejects a recorded CWD mismatch (including a `/private/tmp` alias) and extension hooks can also cancel. Respect that outcome rather than silently starting another process.
+
+Files: `OmpKit/Sources/OmpKit/SessionProcessManager.swift`, `OmpKit/Tests/OmpKitTests/WarmProcessManagerTests.swift`, and `OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py`.
+
+- [ ] Add a fixture mode returning a successful `switch_session` response with `cancelled: true` while retaining its warm state. Add a behavioral regression proving no handle is registered for the requested path, the cancelled warm child is closed, and an explicit subsequent open can use the normal cold-resume path. Close all children even if setup throws.
+- [ ] Run the focused test before implementation and record a nonzero expected failure.
+- [ ] In the shared `checkOut` function, inspect the response's `data.cancelled`. If true, throw the existing `RpcClientError.commandFailed(command: "switch_session", error: "The session switch was cancelled.", code: nil)`. Let the existing transition cleanup close the child and the controller present Retry opening. Do not automatically bypass an extension cancellation. Preserve compatibility with older successful replies that omit the field.
+- [ ] Run the focused test and OmpKit suite once, commit the fix, and rebuild the Release app. Verify a cancelled warm open shows Retry opening, then an explicit retry opens the original file. Also verify an ordinary runtime-created session successfully opens from a warm process.
+
 ### Task 2: Recover the same existing session after an early open failure
 
 **Files:**
