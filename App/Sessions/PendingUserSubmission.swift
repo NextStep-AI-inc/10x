@@ -32,8 +32,13 @@ final class SubmissionPresentationStore {
 
     func mode(forMessageID messageID: String, sessionPath: String) -> StreamingBehavior? {
         guard !messageID.isEmpty else { return nil }
-        let modes = modesByMessageID(sessionPath: sessionPath)
-        return modes[messageID].flatMap(StreamingBehavior.init(rawValue:))
+        return modes(forSessionPath: sessionPath)[messageID]
+    }
+
+    func modes(forSessionPath sessionPath: String) -> [String: StreamingBehavior] {
+        modesByMessageID(sessionPath: sessionPath).compactMapValues {
+            StreamingBehavior(rawValue: $0)
+        }
     }
 
     func setMode(
@@ -95,7 +100,6 @@ struct PendingUserSubmission: Identifiable, Equatable, Sendable {
     let mode: StreamingBehavior?
     var state: State
     fileprivate var isModeAmbiguous = false
-    fileprivate var observedEchoID: String?
     fileprivate var observedEchoTimestamp: Date?
 
     init(
@@ -166,9 +170,6 @@ struct PendingUserSubmission: Identifiable, Equatable, Sendable {
             }
             consumedIndices.insert(index)
             var submission = remaining.remove(at: match)
-            if submission.observedEchoID == nil {
-                submission.observedEchoID = message.id
-            }
             if submission.observedEchoTimestamp == nil {
                 submission.observedEchoTimestamp = message.timestamp
             }
@@ -187,7 +188,5 @@ struct PendingUserSubmission: Identifiable, Equatable, Sendable {
         var mode: StreamingBehavior? {
             submission.isModeAmbiguous ? nil : submission.mode
         }
-
-        var observedEchoID: String? { submission.observedEchoID }
     }
 }

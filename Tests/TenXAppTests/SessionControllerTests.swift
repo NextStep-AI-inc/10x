@@ -312,6 +312,9 @@ import Testing
         #expect(reopened.submissionMode(for: "persisted-user-1") == .followUp)
         #expect(reopened.message(for: "persisted-older-user") != nil)
         #expect(reopened.submissionMode(for: "persisted-older-user") == nil)
+
+        defaults.removePersistentDomain(forName: suiteName)
+        #expect(reopened.submissionMode(for: "persisted-user-1") == .followUp)
         await reopenedManager.closeAll()
     }
 }

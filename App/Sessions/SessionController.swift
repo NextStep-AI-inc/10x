@@ -17,6 +17,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private var consumedSubmissionEchoIndices: Set<Int> = []
     private var unresolvedSubmissionPresentations: [PendingUserSubmission] = []
     private var transientSubmissionModes: [String: StreamingBehavior] = [:]
+    private var persistedSubmissionModes: [String: StreamingBehavior] = [:]
     private(set) var isTitleLoading = false
     private var initialPromptTitle: String?
     private var initialAttachments: [ComposerAttachment] = []
@@ -383,6 +384,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     func openExisting(_ metadata: SessionMetadata) async {
         let priorSessionPath = stopAndDetachCurrentSession()
+        persistedSubmissionModes = [:]
         self.sessionPath = metadata.path
         publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
@@ -441,6 +443,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             ? .failed
             : .notRequested
         let priorSessionPath = stopAndDetachCurrentSession()
+        persistedSubmissionModes = [:]
         sessionPath = nil
         publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
@@ -599,6 +602,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     func prepareInitialSubmission(text: String, attachments: [ComposerAttachment], projectURL: URL? = nil) {
         unresolvedSubmissionPresentations = []
         transientSubmissionModes = [:]
+        persistedSubmissionModes = [:]
         draft = ""
         self.attachments = []
         initialAttachments = attachments
@@ -647,11 +651,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func submissionMode(for messageID: String) -> StreamingBehavior? {
-        if let mode = transientSubmissionModes[messageID] { return mode }
-        guard let sessionPath else { return nil }
-        return submissionPresentationStore.mode(
-            forMessageID: messageID,
-            sessionPath: sessionPath)
+        transientSubmissionModes[messageID] ?? persistedSubmissionModes[messageID]
     }
 
     func sendSlashCommand(_ text: String) async {
@@ -1076,6 +1076,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         consumedSubmissionEchoIndices = []
         unresolvedSubmissionPresentations = []
         transientSubmissionModes = [:]
+        persistedSubmissionModes = [:]
         isTitleLoading = false
         runtimeState = .stopped(code: nil, stderrTail: "")
         accountCoordinator?.unregister(sessionID: id)
@@ -2127,6 +2128,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 }
             }
         }
+        if !transientSubmissionModes.isEmpty {
+            let installedUserMessageIDs = Set(userMessages.map(\.id))
+            transientSubmissionModes = transientSubmissionModes.filter {
+                installedUserMessageIDs.contains($0.key)
+            }
+        }
         runtimeState = snapshot.runtimeState
         os_signpost(
             .event,
@@ -2141,6 +2148,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         to history: TranscriptHistory,
         sessionPath: String
     ) {
+        persistedSubmissionModes = submissionPresentationStore.modes(
+            forSessionPath: sessionPath)
         let historicalUserMessages = history.items.compactMap { item -> TranscriptMessage? in
             guard case .message(let message) = item, message.role == .user else { return nil }
             return message
@@ -2170,11 +2179,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                     mode,
                     forMessageID: match.message.id,
                     sessionPath: sessionPath)
+                persistedSubmissionModes[match.message.id] = mode
             }
-            if let liveMessageID = match.observedEchoID {
-                transientSubmissionModes.removeValue(forKey: liveMessageID)
-            }
-            transientSubmissionModes.removeValue(forKey: match.message.id)
         }
     }
 

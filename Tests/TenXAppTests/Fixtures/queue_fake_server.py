@@ -112,6 +112,7 @@ def consume():
     publish(queue.pop(steer_index if steer_index is not None else 0), persist=True)
 
 
+write_history()
 emit({
     "type": "ready",
     "protocolVersion": 1,
