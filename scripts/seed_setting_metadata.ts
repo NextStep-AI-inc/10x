@@ -105,7 +105,7 @@ ${arrayLines.join("\n")}
 
     /// Array keys whose values come from the live model/provider catalog.
     static let catalogFedArrays: Set<String> = [
-        "enabledModels", "modelProviderOrder", "enabledProviders", "disabledProviders",
+        "enabledModels", "modelProviderOrder", "disabledProviders",
     ]
 }
 `;
