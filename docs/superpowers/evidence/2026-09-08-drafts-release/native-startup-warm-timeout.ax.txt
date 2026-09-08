@@ -1,0 +1,23 @@
+Window: "Preparing your workspace", App: 10x Drafts QA.
+0 window Preparing your workspace, ID: startup, Secondary Actions: Raise
+	1 container Preparing your workspace
+		2 text BUILD 0.1.0 Preparing your workspace
+		3 container Startup preparation
+			4 unknown Preparing runtime, Ready
+			5 unknown Loading sessions, Ready
+			6 unknown Loading settings, Ready
+			7 unknown Preparing recent projects, Stopped
+			8 unknown Checking for updates, Ready
+		9 text Startup needs attention Preparing recent projects: Startup exceeded its time limit. Retry the unfinished step or continue with what is ready.
+		10 button Retry
+		11 button Continue to workspace
+		12 image 10x
+13 menu bar
+	14 10x Drafts QA
+	15 File
+	16 Edit
+	17 View
+	18 Navigate
+	19 Session
+	20 Window
+	21 Help

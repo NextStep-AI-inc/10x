@@ -69,6 +69,13 @@ struct ActiveSessionView: View {
                     .padding(.bottom, 16)
             }
 
+            if let message = controller.composerRecoveryMessage {
+                ComposerRecoveryNotice(message: message)
+                    .frame(maxWidth: 780)
+                    .padding(.horizontal, 42)
+                    .padding(.bottom, 10)
+            }
+
             ComposerView(
                 draft: Bindable(controller).draft,
                 attachments: Bindable(controller).attachments,

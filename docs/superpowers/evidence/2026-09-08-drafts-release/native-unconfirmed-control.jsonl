@@ -1,0 +1,13 @@
+{"at":"2026-09-08T18:44:52.567Z","direction":"fixture","type":"process_launch","launchOrdinal":1,"priorPromptCount":0}
+{"at":"2026-09-08T18:44:52.569Z","direction":"command","type":"negotiate_protocol","id":"req_1"}
+{"at":"2026-09-08T19:11:38.549Z","direction":"fixture","type":"process_launch","launchOrdinal":2,"priorPromptCount":0}
+{"at":"2026-09-08T19:11:38.550Z","direction":"command","type":"negotiate_protocol","id":"req_1"}
+{"at":"2026-09-08T19:11:38.551Z","direction":"command","type":"get_state","id":"req_2"}
+{"at":"2026-09-08T19:11:38.648Z","direction":"command","type":"get_available_commands","id":"req_3"}
+{"at":"2026-09-08T19:11:38.658Z","direction":"command","type":"set_subagent_subscription","id":"req_4"}
+{"at":"2026-09-08T19:13:39.916Z","direction":"command","type":"prompt","id":"req_5","messageLength":66,"imageCount":1,"promptOrdinal":1,"isReplay":false,"disposition":"withheld-unconfirmed"}
+{"at":"2026-09-08T19:15:06.857Z","direction":"fixture","type":"process_launch","launchOrdinal":3,"priorPromptCount":1}
+{"at":"2026-09-08T19:15:06.858Z","direction":"command","type":"negotiate_protocol","id":"req_1"}
+{"at":"2026-09-08T19:15:06.859Z","direction":"command","type":"get_state","id":"req_2"}
+{"at":"2026-09-08T19:15:06.860Z","direction":"command","type":"get_available_commands","id":"req_3"}
+{"at":"2026-09-08T19:15:06.861Z","direction":"command","type":"set_subagent_subscription","id":"req_4"}

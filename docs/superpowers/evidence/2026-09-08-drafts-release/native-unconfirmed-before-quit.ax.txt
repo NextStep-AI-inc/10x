@@ -1,0 +1,88 @@
+Window: "10x", App: 10x Drafts QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: details, Help: Starts a new session in details
+					11 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					12 button Description: titles-native, Help: Starts a new session in titles-native
+					13 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					14 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					15 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					16 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Failed, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					17 button Description: review-native, Help: Starts a new session in review-native
+					18 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					19 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					20 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					21 button Description: context-busy, Help: Starts a new session in context-busy
+					22 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					23 button Description: context-failure, Help: Starts a new session in context-failure
+					24 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					25 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					26 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					27 button Description: context, Help: Starts a new session in context
+					28 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					29 button Description: continuity, Help: Starts a new session in continuity
+					30 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					31 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					32 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					33 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					34 button Description: queue, Help: Starts a new session in queue
+					35 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					36 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					37 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					38 button Description: queue-reject, Help: Starts a new session in queue-reject
+					39 button Description: Reject queued input, queue-reject, Pending, Help: Reject queued input, Secondary Actions: Rename Session
+					40 button Description: failure, Help: Starts a new session in failure
+					41 button Description: Recover unavailable project, failure, Ready, Help: Recover unavailable project, Secondary Actions: Rename Session
+					42 button Description: reopen, Help: Starts a new session in reopen
+					43 button Description: Reopen saved history, reopen, Ready, Help: Reopen saved history, Secondary Actions: Rename Session
+					44 button Description: attention-edge, Help: Starts a new session in attention-edge
+			45 button Description: Show later rail items, ID: chevron.down
+			46 button Description: Archived sessions, ID: archivebox
+		47 text Value: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+		48 unknown Description: Branch, Details: detached
+		49 unknown Description: Folder, Details: draft-unconfirmed
+		50 unknown Failed
+		51 scroll area
+			52 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				53 container Description: Model expansion, Details: Standard
+					54 button Description: Expanded, Value: Not selected
+					55 button Description: Standard, Value: Selected
+					56 button Description: Slim, Value: Not selected
+				57 unknown Thread started Tuesday, September 8, 2026 at 10:45 AM
+				58 image Image attachment
+				59 text UNCONFIRMED-NATIVE-SEP08 — keep this message and image for review. Delivery not confirmed. Review before retrying.
+		60 text Session needs attention The session command could not finish. Check the log before retrying; delivery may be unconfirmed.
+		61 button Restart session
+		62 button Open log
+		63 button Dismiss
+		64 scroll area Secondary Actions: Scroll Up, Scroll Down
+			65 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: UNCONFIRMED-NATIVE-SEP08 — keep this message and image for review.
+			66 scroll bar (disabled, settable, float) 0
+		67 scroll area Attached images
+			68 container context.png
+				69 image
+				70 text context.png 600×220 · 30 KB
+				71 button Description: Remove context.png, ID: xmark
+		72 button (disabled) Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		73 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
+		74 button Description: Context window, Help: Shows context usage details, Value: 1 percent used
+		75 unknown Failed
+		76 button (disabled) Description: Send message, ID: arrow.up
+	77 close button
+	78 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	79 minimize button
+80 menu bar
+	81 10x Drafts QA
+	82 File
+	83 Edit
+	84 View
+	85 Navigate
+	86 Session
+	87 Window
+	88 Help
+
+The focused UI element is 0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise

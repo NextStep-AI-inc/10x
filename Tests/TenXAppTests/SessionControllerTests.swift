@@ -2106,3 +2106,315 @@ private func messageItem(id: String, text: String) -> TranscriptItem {
     submitting.prepareInitialSubmission(text: "Start", attachments: [])
     #expect(!submitting.isEligibleForIdleEviction)
 }
+
+@MainActor @Test func controllerHydratesItsOwnedDraftBeforeOpening() {
+    let store = ComposerRecoveryStore.inMemory()
+    let owner = ComposerRecoveryOwner.session("/tmp/recovered-session.jsonl")
+    let attachment = ComposerAttachment(
+        name: "saved.png", data: Data([1, 2, 3]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)
+    store.setDraft(
+        ComposerRecoveryDraft(text: "saved text", attachments: [attachment]),
+        for: owner)
+
+    let controller = SessionController(
+        processManager: SessionProcessManager(executable: "/usr/bin/false"),
+        recoveryStore: store,
+        recoveryOwner: owner)
+
+    #expect(controller.draft == "saved text")
+    #expect(controller.attachments == [attachment])
+    controller.draft = "edited"
+    #expect(store.record(for: owner)?.draft.text == "edited")
+}
+
+@MainActor @Test func recoveredInFlightIgnoresAnIdenticalMessageBeforeItsMinimumIndex() async throws {
+    let manager = fakeManager(mode: "basic")
+    let store = ComposerRecoveryStore.inMemory()
+    let owner = ComposerRecoveryOwner.session("/tmp/recovery-no-echo.jsonl")
+    store.setDraft(ComposerRecoveryDraft(text: "newer", attachments: []), for: owner)
+    store.setInFlight(
+        ComposerRecoveryInFlight(
+            id: UUID(),
+            draft: ComposerRecoveryDraft(text: "submitted", attachments: []),
+            minimumUserIndex: 1),
+        for: owner)
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { _ in TranscriptHistory(items: [recoveryUserItem("submitted")]) },
+        recoveryStore: store,
+        recoveryOwner: owner)
+
+    await controller.openExisting(metadata(
+        path: "/tmp/recovery-no-echo.jsonl", cwd: try temporaryDirectory().path))
+
+    #expect(controller.draft == "submitted\n\nnewer")
+    #expect(controller.composerRecoveryMessage
+        == "A previous send wasn’t confirmed. Review the conversation before sending this draft.")
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+@MainActor @Test func recoveredInFlightIsDiscardedOnlyWhenHistoryContainsItsEchoAfterTheFence() async throws {
+    let manager = fakeManager(mode: "basic")
+    let store = ComposerRecoveryStore.inMemory()
+    let owner = ComposerRecoveryOwner.session("/tmp/recovery-with-echo.jsonl")
+    store.setDraft(ComposerRecoveryDraft(text: "newer", attachments: []), for: owner)
+    store.setInFlight(
+        ComposerRecoveryInFlight(
+            id: UUID(),
+            draft: ComposerRecoveryDraft(text: "submitted", attachments: []),
+            minimumUserIndex: 1),
+        for: owner)
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { _ in TranscriptHistory(items: [
+            recoveryUserItem("submitted", id: "old"),
+            recoveryUserItem("submitted", id: "echo"),
+        ]) },
+        recoveryStore: store,
+        recoveryOwner: owner)
+
+    await controller.openExisting(metadata(
+        path: "/tmp/recovery-with-echo.jsonl", cwd: try temporaryDirectory().path))
+
+    #expect(controller.draft == "newer")
+    #expect(controller.composerRecoveryMessage == nil)
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+private func recoveryUserItem(_ text: String, id: String = "user") -> TranscriptItem {
+    .message(TranscriptMessage(
+        id: id,
+        raw: .object([
+            "id": .string(id),
+            "role": .string("user"),
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string(text),
+            ])]),
+            "timestamp": .double(0),
+        ]),
+        isFinal: true))
+}
+
+@MainActor @Test func acceptedSendClearsOnlyInFlightRecoveryAndKeepsNewerInput() async throws {
+    let manager = fakeManager(mode: "delayed-prompt-success")
+    let store = ComposerRecoveryStore.inMemory()
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(try temporaryDirectory()))
+    await controller.openNew(projectURL: try temporaryDirectory())
+    controller.draft = "submitted"
+    controller.attachments = [controllerRecoveryAttachment(1)]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await eventually { controller.runtimeState == .streaming })
+    controller.draft = "newer"
+    controller.attachments = [controllerRecoveryAttachment(2)]
+    await send.value
+
+    let owner = ComposerRecoveryOwner.session(try #require(controller.sessionPath))
+    #expect(store.record(for: owner)?.draft.text == "newer")
+    #expect(store.record(for: owner)?.draft.attachments.map(\.data) == [Data([2])])
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+@MainActor @Test func delayedRecoveryFlushClearsOnlyTheStagedComposerInput() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLogURL = directory.appending(path: "commands.log")
+    let barrier = RecoveryFlushBarrier()
+    let store = ComposerRecoveryStore(
+        rootURL: directory.appending(path: "Recovery"),
+        debounce: .seconds(60),
+        flushBarrier: { await barrier.suspendFirstFlush() })
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(directory))
+    await controller.openNew(projectURL: directory)
+    let submittedAttachment = controllerRecoveryAttachment(1)
+    let newerAttachment = controllerRecoveryAttachment(2)
+    controller.draft = "submitted"
+    controller.attachments = [submittedAttachment]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await barrier.waitUntilSuspended())
+    controller.draft = "newer"
+    controller.attachments.append(newerAttachment)
+    await barrier.release()
+    await send.value
+
+    #expect(controller.draft == "newer")
+    #expect(controller.attachments == [newerAttachment])
+    let commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(commands.split(separator: "\n").filter { $0 == "prompt" }.count == 1)
+    await manager.closeAll()
+}
+
+@MainActor @Test func invalidatedPipelineDuringRecoveryFlushCannotSendOrOverwriteReplacementInput() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLogURL = directory.appending(path: "commands.log")
+    let barrier = RecoveryFlushBarrier()
+    let store = ComposerRecoveryStore(
+        rootURL: directory.appending(path: "Recovery"),
+        debounce: .seconds(60),
+        flushBarrier: { await barrier.suspendFirstFlush() })
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(directory))
+    await controller.openNew(projectURL: directory)
+    controller.draft = "submitted"
+    controller.attachments = [controllerRecoveryAttachment(1)]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await barrier.waitUntilSuspended())
+    controller.handleUnexpectedExit(code: 9, stderrTail: "replacement")
+    let replacementAttachment = controllerRecoveryAttachment(2)
+    controller.draft = "replacement"
+    controller.attachments = [replacementAttachment]
+    await barrier.release()
+    await send.value
+
+    #expect(controller.draft == "replacement")
+    #expect(controller.attachments == [replacementAttachment])
+    #expect(controller.runtimeState == SessionRuntimeState.stopped(code: 9, stderrTail: "replacement"))
+    let commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(!commands.split(separator: "\n").contains("prompt"))
+    await manager.closeAll()
+}
+
+@MainActor @Test func failedRecoveryFlushRetainsInputAndSkipsPromptUntilSuccessfulRetry() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let recoveryRoot = directory.appending(path: "Recovery")
+    try FileManager.default.createDirectory(at: recoveryRoot, withIntermediateDirectories: true)
+    let recoveryFile = recoveryRoot.appending(path: ComposerRecoveryStore.fileName)
+    try FileManager.default.createDirectory(at: recoveryFile, withIntermediateDirectories: false)
+    let commandLogURL = directory.appending(path: "commands.log")
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let store = ComposerRecoveryStore(rootURL: recoveryRoot, debounce: .seconds(60))
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(directory))
+    await controller.openNew(projectURL: directory)
+    let attachment = controllerRecoveryAttachment(1)
+    controller.draft = "retain me"
+    controller.attachments = [attachment]
+
+    await controller.sendPrompt()
+
+    #expect(controller.draft == "retain me")
+    #expect(controller.attachments == [attachment])
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.composerRecoveryMessage == "Couldn’t save this draft. Check storage access and try again.")
+    var commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(!commands.split(separator: "\n").contains("prompt"))
+
+    try FileManager.default.removeItem(at: recoveryFile)
+    await controller.sendPrompt()
+
+    #expect(controller.composerRecoveryMessage == nil)
+    #expect(controller.draft.isEmpty)
+    #expect(controller.attachments.isEmpty)
+    commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(commands.split(separator: "\n").filter { $0 == "prompt" }.count == 1)
+    await manager.closeAll()
+}
+
+@MainActor @Test func rejectedSendKeepsInFlightRecoveryAlongsideNewerInput() async throws {
+    let manager = fakeManager(mode: "delayed-prompt-failure")
+    let store = ComposerRecoveryStore.inMemory()
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(try temporaryDirectory()))
+    await controller.openNew(projectURL: try temporaryDirectory())
+    controller.draft = "submitted"
+    let submittedAttachment = controllerRecoveryAttachment(1)
+    controller.attachments = [submittedAttachment]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await eventually { controller.runtimeState == .streaming })
+    controller.draft = "newer"
+    controller.attachments = [controllerRecoveryAttachment(2)]
+    await send.value
+
+    let owner = ComposerRecoveryOwner.session(try #require(controller.sessionPath))
+    #expect(store.record(for: owner)?.draft.text == "newer")
+    #expect(store.record(for: owner)?.inFlight?.draft.text == "submitted")
+    #expect(store.record(for: owner)?.inFlight?.draft.attachments == [submittedAttachment])
+    await manager.closeAll()
+}
+
+@MainActor @Test func delayedInitialOpenTransfersOwnershipWithoutErasingNewerInput() async throws {
+    let marker = try temporaryDirectory().appending(path: "opening")
+    let manager = delayedFakeManager(mode: "basic", markerURL: marker)
+    let store = ComposerRecoveryStore.inMemory()
+    let project = try temporaryDirectory()
+    let initialID = UUID()
+    let controller = SessionController(
+        processManager: manager,
+        id: initialID,
+        recoveryStore: store,
+        recoveryOwner: .initial(id: initialID, projectURL: project))
+    let submittedAttachment = controllerRecoveryAttachment(1)
+    controller.prepareInitialSubmission(
+        text: "submitted", attachments: [submittedAttachment], projectURL: project)
+
+    let opening = Task { await controller.openNew(projectURL: project) }
+    #expect(await eventually { FileManager.default.fileExists(atPath: marker.path) })
+    controller.draft = "typed while opening"
+    controller.attachments = [controllerRecoveryAttachment(2)]
+    _ = await opening.value
+    await controller.sendPrompt()
+
+    let owner = ComposerRecoveryOwner.session(try #require(controller.sessionPath))
+    #expect(store.initialRecords(for: project).isEmpty)
+    #expect(store.record(for: owner)?.draft.text == "typed while opening")
+    #expect(store.record(for: owner)?.draft.attachments.map(\.data) == [Data([2])])
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+private func controllerRecoveryAttachment(_ byte: UInt8) -> ComposerAttachment {
+    ComposerAttachment(
+        name: "\(byte).png", data: Data([byte]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)
+}
+
+private actor RecoveryFlushBarrier {
+    private var isSuspended = false
+    private var didRelease = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func suspendFirstFlush() async {
+        guard !isSuspended, !didRelease else { return }
+        isSuspended = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilSuspended(timeout: Duration = .seconds(30)) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout.seconds)
+        while Date() < deadline {
+            if isSuspended { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return isSuspended
+    }
+
+    func release() {
+        didRelease = true
+        continuation?.resume()
+        continuation = nil
+    }
+}

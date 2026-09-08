@@ -168,9 +168,15 @@ import OmpKit
     let file = activeRoot.appendingPathComponent("-tmp-project/open.jsonl")
     try writeNavigationSession(at: file, id: "open", cwd: "/tmp/project")
     let library = SessionLibrary(root: activeRoot, archiveRoot: archiveRoot)
+    let store = ComposerRecoveryStore.inMemory()
+    store.setDraft(
+        ComposerRecoveryDraft(text: "unsent", attachments: []),
+        for: .session(file.path))
+    store.setLastMeaningfulRoute(.session(file.path))
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: MissingOmpLocator(),
-        sessionLibrary: library))
+        sessionLibrary: library,
+        composerRecoveryStore: store))
     await model.reloadSessions()
     let session = try #require(model.sessions.first)
     model.route = .session(session.path)
@@ -181,6 +187,8 @@ import OmpKit
     #expect(model.activeSession == nil)
     #expect(model.sessions.isEmpty)
     #expect(model.archivedSessions.map(\.sessionId) == ["open"])
+    #expect(store.record(for: .session(file.path)) == nil)
+    #expect(store.lastMeaningfulRoute == nil)
 }
 
 @MainActor
@@ -189,16 +197,24 @@ import OmpKit
         .appendingPathComponent("app-model-failed-archive-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: container) }
     let library = SessionLibrary(root: container.appendingPathComponent("sessions"))
+    let store = ComposerRecoveryStore.inMemory()
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: MissingOmpLocator(),
-        sessionLibrary: library))
+        sessionLibrary: library,
+        composerRecoveryStore: store))
     let missing = navigationMetadata(
         container.appendingPathComponent("sessions/bucket/missing.jsonl").path)
+    store.setDraft(
+        ComposerRecoveryDraft(text: "keep me", attachments: []),
+        for: .session(missing.path))
+    store.setLastMeaningfulRoute(.session(missing.path))
 
     await model.archiveSession(missing)
 
     #expect(model.sessionActionError
         == "Could not archive Session. 1 session file remains unchanged.")
+    #expect(store.record(for: .session(missing.path))?.draft.text == "keep me")
+    #expect(store.lastMeaningfulRoute == .session(missing.path))
 }
 
 @MainActor
@@ -1005,10 +1021,229 @@ private func waitForManagedSession(_ path: String, in model: AppModel) async {
 }
 
 @MainActor
+@Test func newSessionDraftsRemainIsolatedAcrossProjectSwitches() throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "draft-projects-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let first = root.appending(path: "First", directoryHint: .isDirectory)
+    let second = root.appending(path: "Second", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: first, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: second, withIntermediateDirectories: true)
+    let store = ComposerRecoveryStore.inMemory()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: MissingOmpLocator(),
+        sessionLibrary: SessionLibrary(root: root.appending(path: "sessions")),
+        composerRecoveryStore: store))
+
+    model.chooseProject(first)
+    model.newSessionDraft = "first draft"
+    model.newSessionAttachments = [navigationRecoveryAttachment(1)]
+    model.chooseProject(second)
+    model.newSessionDraft = "second draft"
+    model.newSessionAttachments = [navigationRecoveryAttachment(2)]
+    model.chooseProject(first)
+
+    #expect(model.newSessionDraft == "first draft")
+    #expect(model.newSessionAttachments.map(\.data) == [Data([1])])
+    model.chooseProject(second)
+    #expect(model.newSessionDraft == "second draft")
+    #expect(model.newSessionAttachments.map(\.data) == [Data([2])])
+}
+
+@MainActor
+@Test func selectingAProjectRecoversEveryInterruptedInitialOwner() throws {
+    let project = FileManager.default.temporaryDirectory
+        .appending(path: "interrupted-project-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: project) }
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let store = ComposerRecoveryStore.inMemory()
+    for value in 0..<2 {
+        let owner = ComposerRecoveryOwner.initial(id: UUID(), projectURL: project)
+        let attachments = (0..<ComposerAttachmentEncoder.maximumCount).map {
+            navigationRecoveryAttachment(UInt8(value * 8 + $0))
+        }
+        store.setInFlight(
+            ComposerRecoveryInFlight(
+                id: UUID(),
+                draft: ComposerRecoveryDraft(text: "prompt \(value)", attachments: attachments),
+                minimumUserIndex: 0),
+            for: owner)
+    }
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: MissingOmpLocator(),
+        sessionLibrary: SessionLibrary(root: project.appending(path: "sessions")),
+        composerRecoveryStore: store))
+
+    model.chooseProject(project)
+
+    #expect(model.newSessionDraft == "prompt 0\n\nprompt 1")
+    #expect(model.newSessionAttachments.count == ComposerAttachmentEncoder.maximumCount * 2)
+    #expect(store.initialRecords(for: project).isEmpty)
+    #expect(model.newSessionRecoveryMessage != nil)
+}
+
+@MainActor
+@Test func settingsAndArchivedViewsDoNotReplaceTheMeaningfulRoute() throws {
+    let project = FileManager.default.temporaryDirectory
+        .appending(path: "route-project-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: project) }
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let store = ComposerRecoveryStore.inMemory()
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: MissingOmpLocator(),
+        sessionLibrary: SessionLibrary(root: project.appending(path: "sessions")),
+        composerRecoveryStore: store))
+
+    model.chooseProject(project)
+    model.openSettings()
+    model.openArchivedSessions()
+
+    #expect(store.lastMeaningfulRoute == .newSession(projectURL: project))
+}
+
+@MainActor
+@Test func bootstrapRestoresTheLastValidSavedSession() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "restore-session-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let project = root.appending(path: "Project", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let activeRoot = root.appending(path: "sessions", directoryHint: .isDirectory)
+    let file = activeRoot.appending(path: "bucket/session.jsonl")
+    try writeNavigationSession(at: file, id: "session", cwd: project.path)
+    let executable = try makeNavigationExecutable(in: root)
+    let store = ComposerRecoveryStore.inMemory()
+    store.setLastMeaningfulRoute(.session(file.path))
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: activeRoot),
+        composerRecoveryStore: store))
+
+    await model.bootstrap()
+
+    #expect(model.route == .session(file.path))
+    #expect(model.selectedProjectURL?.path == project.path)
+    await model.shutdown()
+}
+
+@MainActor
+@Test func bootstrapRestoresExplicitNewSessionProjectIntent() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "restore-new-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let project = root.appending(path: "Project", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: root)
+    let store = ComposerRecoveryStore.inMemory()
+    store.setLastMeaningfulRoute(.newSession(projectURL: project))
+    store.setDraft(ComposerRecoveryDraft(text: "restore me", attachments: []), for: .project(project))
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: root.appending(path: "sessions")),
+        composerRecoveryStore: store))
+
+    await model.bootstrap()
+
+    #expect(model.route == .newSession)
+    #expect(model.selectedProjectURL?.path == project.path)
+    #expect(model.newSessionDraft == "restore me")
+    await model.shutdown()
+}
+
+@MainActor
+@Test func bootstrapClearsAMissingSavedProjectAndKeepsOnboardingPrecedence() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "restore-missing-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: root)
+    let store = ComposerRecoveryStore.inMemory()
+    store.setLastMeaningfulRoute(.newSession(projectURL: root.appending(path: "Missing")))
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: root.appending(path: "sessions")),
+        composerRecoveryStore: store))
+
+    await model.bootstrap()
+
+    #expect(model.route == .onboarding(.chooseProject))
+    #expect(store.lastMeaningfulRoute == nil)
+    await model.shutdown()
+}
+
+@MainActor
+@Test func bootstrapClearsAnArchivedSessionRouteAndFallsBackToAValidProject() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "restore-archived-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let project = root.appending(path: "Project", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    let activeRoot = root.appending(path: "sessions", directoryHint: .isDirectory)
+    let archiveRoot = root.appending(path: "archived", directoryHint: .isDirectory)
+    let archivedFile = archiveRoot.appending(path: "bucket/session.jsonl")
+    try writeNavigationSession(at: archivedFile, id: "archived", cwd: project.path)
+    let executable = try makeNavigationExecutable(in: root)
+    let store = ComposerRecoveryStore.inMemory()
+    store.setLastMeaningfulRoute(.session(archivedFile.path))
+    let recentProjects = RecentProjectStore(defaults: appModelTestDefaults())
+    recentProjects.recordSelection(project)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: activeRoot, archiveRoot: archiveRoot),
+        composerRecoveryStore: store,
+        recentProjectStore: recentProjects))
+
+    await model.bootstrap()
+
+    #expect(model.route == .newSession)
+    #expect(model.selectedProjectURL?.path == project.path)
+    #expect(store.lastMeaningfulRoute == nil)
+    await model.shutdown()
+}
+
+@MainActor
+@Test func directNavigationWinsOverDelayedStartupRouteRestoration() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "restore-navigation-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let savedProject = root.appending(path: "Saved", directoryHint: .isDirectory)
+    let chosenProject = root.appending(path: "Chosen", directoryHint: .isDirectory)
+    try FileManager.default.createDirectory(at: savedProject, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: chosenProject, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: root)
+    let gate = LoadGate()
+    let store = ComposerRecoveryStore.inMemory()
+    store.setLastMeaningfulRoute(.newSession(projectURL: savedProject))
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: GatedNavigationOmpLocator(executableURL: executable, gate: gate),
+        sessionLibrary: SessionLibrary(root: root.appending(path: "sessions")),
+        composerRecoveryStore: store))
+
+    let bootstrap = Task { await model.bootstrap() }
+    await gate.waitForStart()
+    model.chooseProject(chosenProject)
+    await gate.release()
+    await bootstrap.value
+
+    #expect(model.route == .newSession)
+    #expect(model.selectedProjectURL?.path == chosenProject.path)
+    #expect(store.lastMeaningfulRoute == .newSession(projectURL: chosenProject))
+    await model.shutdown()
+}
+
+private func navigationRecoveryAttachment(_ byte: UInt8) -> ComposerAttachment {
+    ComposerAttachment(
+        name: "\(byte).png", data: Data([byte]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)
+}
+
+@MainActor
 private func navigationDependencies<Locator: OmpLocating>(
     ompLocator: Locator,
     sessionLibrary: SessionLibrary,
     sessionSearch: SessionSearchService = SessionSearchService(),
+    composerRecoveryStore: ComposerRecoveryStore = .inMemory(),
+    recentProjectStore: RecentProjectStore? = nil,
     makeProviderAccountCoordinator: @escaping @MainActor @Sendable () -> ProviderAccountCoordinator = {
         ProviderAccountCoordinator()
     },
@@ -1023,7 +1258,8 @@ private func navigationDependencies<Locator: OmpLocating>(
         ompLocator: ompLocator,
         sessionLibrary: sessionLibrary,
         sessionSearch: sessionSearch,
-        recentProjectStore: RecentProjectStore(defaults: defaults),
+        recentProjectStore: recentProjectStore ?? RecentProjectStore(defaults: defaults),
+        composerRecoveryStore: composerRecoveryStore,
         startupTiming: appModelTestTiming,
         makeProcessManager: { executable in
             SessionProcessManager(executable: executable)
@@ -1341,6 +1577,17 @@ private struct FixedOmpLocator: OmpLocating {
 
     func locate(preferredURL: URL?) async -> OmpLocation {
         .found(OmpInstallation(executableURL: executableURL, version: "test"))
+    }
+}
+
+private struct GatedNavigationOmpLocator: OmpLocating {
+    let executableURL: URL
+    let gate: LoadGate
+
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        await gate.started()
+        await gate.waitForRelease()
+        return .found(OmpInstallation(executableURL: executableURL, version: "test"))
     }
 }
 
