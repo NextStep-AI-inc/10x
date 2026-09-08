@@ -253,6 +253,14 @@ final class DaemonServerTests: XCTestCase {
         XCTAssertFalse(message.contains("Unknown resource"))
     }
 
+    func test_receive_timeout_throwsWhenNoLine() throws {
+        let client = try DaemonClient(socketPath: socketPath)
+        try client.send(.object(["role": .string("mcp")]))
+        XCTAssertThrowsError(try client.receive(timeout: 0.05)) { error in
+            XCTAssertEqual((error as? ComputerError)?.message, "receive_timeout")
+        }
+    }
+
     func test_supervisionClient_unknownEventLine_doesNotTearDownSocket() throws {
         let supervision = try DaemonClient(socketPath: socketPath)
         try supervision.send(.object(["role": .string("supervision")]))

@@ -104,11 +104,12 @@ public final class DaemonServer {
         while true {
             let clientFD = accept(serverFD, nil, nil)
             if clientFD < 0 {
-                if errno == EINTR { continue }
+                let err = errno
+                if err == EINTR { continue }
                 lock.lock()
                 let running = isRunning
                 lock.unlock()
-                if !running || errno == EBADF || errno == EINVAL { return }
+                if !running || err == EBADF || err == EINVAL { return }
                 continue
             }
             guard Self.disableSIGPIPE(clientFD) else { close(clientFD); continue }
@@ -147,10 +148,13 @@ public final class DaemonServer {
         guard let message = try? JSONDecoder().decode(JSONValue.self, from: line) else { return }
 
         lock.lock()
-        let client = clients[fd]
-        if client?.role == nil {
+        if clients[fd]?.role == nil {
+            guard let client = clients[fd] else {
+                lock.unlock()
+                return
+            }
             if message["role"]?.stringValue == "supervision" {
-                client?.role = .supervision
+                client.role = .supervision
                 lock.unlock()
                 // Ack so subscribers know events after this point are guaranteed.
                 try? write(fd, .object(["role": .string("supervision"), "ok": .bool(true)]))
@@ -158,11 +162,12 @@ public final class DaemonServer {
                 let session = registry.registerSession(clientName: nil)
                 let tools = ComputerTools(engine: engine, registry: registry, session: session)
                 let resources = ScreenshotResources(engine: engine, registry: registry)
-                client?.role = .mcp(session, MCPServer(tools: tools, resources: resources), resources)
+                client.role = .mcp(session, MCPServer(tools: tools, resources: resources), resources)
                 lock.unlock()
             }
             return
         }
+        let client = clients[fd]
         let role = client?.role
         lock.unlock()
 
@@ -320,7 +325,7 @@ public final class DaemonServer {
             do {
                 try writeRaw(fd, data + Data([0x0A]))
             } catch {
-                disconnect(fd)
+                shutdown(fd, SHUT_RDWR)
             }
         }
     }
@@ -360,6 +365,10 @@ public final class DaemonServer {
             var sent = 0
             while sent < data.count {
                 let count = Darwin.send(fd, base + sent, data.count - sent, 0)
+                if count < 0 {
+                    if errno == EINTR { continue }
+                    throw ComputerError("send failed")
+                }
                 guard count > 0 else { throw ComputerError("send failed") }
                 sent += count
             }

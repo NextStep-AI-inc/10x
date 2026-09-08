@@ -72,6 +72,10 @@ public final class DaemonClient {
             }
             var chunk = [UInt8](repeating: 0, count: 65536)
             let count = recv(fd, &chunk, chunk.count, 0)
+            if count < 0 {
+                if errno == EINTR { continue }
+                throw ComputerError("daemon_closed")
+            }
             guard count > 0 else { throw ComputerError("daemon_closed") }
             buffer.append(contentsOf: chunk[0..<count])
         }
