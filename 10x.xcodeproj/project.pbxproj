@@ -99,6 +99,7 @@
 		61C051649E204A2EE7664AC8C4A0DA77 /* ChooseProjectFlyout.swift in Sources */ = {isa = PBXBuildFile; fileRef = A78207AC2A26009BADC702EE948558E8 /* ChooseProjectFlyout.swift */; };
 		631B10F07438F97D5EE8A299D7158D16 /* ProviderUsageSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DB5CFF097EC6F595636C69F1E48D0CC /* ProviderUsageSnapshotTests.swift */; };
 		648062F5EFC0EAE0A091369DD4ED1551 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = DB429CB6CA35F677184202DEDDC46229 /* AppIcon.icon */; };
+		65414EF1A1136D02DDC0283235890F65 /* HarnessNoticeSettingRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB7510E17828677AAC4BBA406265B47D /* HarnessNoticeSettingRowView.swift */; };
 		65898B3E30608FB3E26DD9FFDA39C095 /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6730739B6C833D443EA8AA8AB4A0366E /* SplashView.swift */; };
 		65DC62C6D0F7EB723921D03406C9DD81 /* SessionSearchDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BA6077566BEB40A20AFAD16332D256D /* SessionSearchDatabase.swift */; };
 		66AE4E460C5D40AD5E46026015C6F7AE /* RailExpansionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3595A63E87CF76E9DE8DFE8808F05075 /* RailExpansionModelTests.swift */; };
@@ -424,6 +425,7 @@
 		C8FD7B6822B9E218995023EE339B135B /* TranscriptReferenceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptReferenceTests.swift; path = Tests/TenXAppTests/TranscriptReferenceTests.swift; sourceTree = "<group>"; };
 		CA28DA0E2B373FCE0E1CCB026D76B4C0 /* ExtensionUIRouter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExtensionUIRouter.swift; path = App/ExtensionUI/ExtensionUIRouter.swift; sourceTree = "<group>"; };
 		CAF342540D98CB0535A709A3C658805F /* HarnessMessageDescriptor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessMessageDescriptor.swift; path = App/Sessions/HarnessMessageDescriptor.swift; sourceTree = "<group>"; };
+		CB7510E17828677AAC4BBA406265B47D /* HarnessNoticeSettingRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HarnessNoticeSettingRowView.swift; path = App/Settings/HarnessNoticeSettingRowView.swift; sourceTree = "<group>"; };
 		CCB9EED15D3CD21901773164F4B8AFC6 /* ProviderConnectionRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderConnectionRowView.swift; path = App/Providers/ProviderConnectionRowView.swift; sourceTree = "<group>"; };
 		CCD51B51845667C84FE0956EBE30D561 /* ResponseMetadataView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ResponseMetadataView.swift; path = App/Sessions/ResponseMetadataView.swift; sourceTree = "<group>"; };
 		CCFEFC461F4D54A58DD7B0FDB4D9B755 /* ViewSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ViewSnapshotTests.swift; path = Tests/TenXAppTests/ViewSnapshotTests.swift; sourceTree = "<group>"; };
@@ -592,6 +594,7 @@
 				974783DE436CE196147C1685500F4D4E /* TranscriptView.swift */,
 				D571A76482D84C6FB84D70F08D008F62 /* TurnActivityView.swift */,
 				4B0F820770B90C34CEC4528C006CEF4F /* HarnessNoticePreferenceStore.swift */,
+				CB7510E17828677AAC4BBA406265B47D /* HarnessNoticeSettingRowView.swift */,
 				526667F3C26993A531F8787F4D47074F /* OmpConfigRunning.swift */,
 				0104A1E5E91274724142DEEABC01240F /* OmpConfigService.swift */,
 				F07ECBFB6BDAE4C811DB1D7ABEBF18F7 /* PreferredIDESettingRowView.swift */,
@@ -958,6 +961,7 @@
 				966ADF1BA155709CAB7442F91C39B498 /* TranscriptView.swift in Sources */,
 				4C9BD66E04D2373E1B21CD7174E3FABE /* TurnActivityView.swift in Sources */,
 				87A8EFE3BF032D3F1E9A6DACF9B7A2B4 /* HarnessNoticePreferenceStore.swift in Sources */,
+				65414EF1A1136D02DDC0283235890F65 /* HarnessNoticeSettingRowView.swift in Sources */,
 				8B8208069E8A64682CEE4A6B8EDE0E64 /* OmpConfigRunning.swift in Sources */,
 				C7557B01139A822D1614DE967328DBD8 /* OmpConfigService.swift in Sources */,
 				B24374A9E4F25605FD62C639DD68F6CE /* PreferredIDESettingRowView.swift in Sources */,

@@ -204,7 +204,9 @@ struct AppShellView: View {
                     focusTarget: model.settingsFocusTarget,
                     onFocusConsumed: model.consumeSettingsFocus,
                     onBack: { model.leaveSettings() },
-                    providerModel: model.providerModel)
+                    providerModel: model.providerModel,
+                    harnessNoticeStore: model.harnessNoticePreferenceStore,
+                    availableModels: model.composerControls?.models ?? [])
             } else {
                 Text("OMP settings unavailable")
                     .font(TenXTypography.body(size: 13))

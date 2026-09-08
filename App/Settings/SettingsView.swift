@@ -8,6 +8,8 @@ struct SettingsView: View {
     let onFocusConsumed: () -> Void
     let onBack: () -> Void
     let providerModel: ProviderManagementViewModel?
+    let harnessNoticeStore: HarnessNoticePreferenceStore?
+    let availableModels: [ComposerModelInfo]
     @State private var showingProviders = false
     @FocusState private var isSearchFocused: Bool
     @FocusState private var focusedControl: SettingsFocusTarget?
@@ -19,7 +21,9 @@ struct SettingsView: View {
         focusTarget: SettingsFocusTarget? = nil,
         onFocusConsumed: @escaping () -> Void = {},
         onBack: @escaping () -> Void = {},
-        providerModel: ProviderManagementViewModel? = nil
+        providerModel: ProviderManagementViewModel? = nil,
+        harnessNoticeStore: HarnessNoticePreferenceStore? = nil,
+        availableModels: [ComposerModelInfo] = []
     ) {
         self.model = model
         self.registry = registry
@@ -28,6 +32,8 @@ struct SettingsView: View {
         self.onFocusConsumed = onFocusConsumed
         self.onBack = onBack
         self.providerModel = providerModel
+        self.harnessNoticeStore = harnessNoticeStore
+        self.availableModels = availableModels
     }
 
     var body: some View {
@@ -221,6 +227,16 @@ struct SettingsView: View {
                 }
             }
 
+            if section.category == .general, let harnessNoticeStore, showsHarnessNoticeRow {
+                HarnessNoticeSettingRowView(
+                    store: harnessNoticeStore,
+                    availableModels: availableModels)
+
+                if !section.definitions.isEmpty {
+                    Divider()
+                }
+            }
+
             ForEach(section.definitions) { definition in
                 SettingRowView(definition: definition, model: model)
                 Divider()
@@ -230,10 +246,16 @@ struct SettingsView: View {
 
     private var documentSections: [SettingsSection] {
         let sections = model.sections
-        guard showsPreferredIDERow, !sections.contains(where: { $0.category == .general }) else {
+        let showsAppRows = showsPreferredIDERow || showsHarnessNoticeRow
+        guard showsAppRows, !sections.contains(where: { $0.category == .general }) else {
             return sections
         }
         return [SettingsSection(category: .general, definitions: [])] + sections
+    }
+
+    private var showsHarnessNoticeRow: Bool {
+        harnessNoticeStore != nil
+            && HarnessNoticeSettingRowView.matches(query: model.query)
     }
 
     private var showsPreferredIDERow: Bool {
