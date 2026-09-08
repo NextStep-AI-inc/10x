@@ -71,11 +71,19 @@ import Testing
 }
 
 @Test func sessionMapDoesNotMergeAmbiguousLabelsOrRestoreRemovedNodes() throws {
-    let previous = try SessionMapFixtures.document(SessionMapFixtures.identityPreviousXML)
+    let previousXML = """
+        <sessionmap headline="Previous" phase="planning"><summary>Previous.</summary><map>
+        <node id="old-repeat" label="Repeated" kind="component" status="planned"/>
+        <node id="old-unique" label="Unique" kind="service" status="planned"/>
+        <node id="removed" label="Removed" kind="concept" status="planned"/>
+        </map></sessionmap>
+        """
+    let previous = try SessionMapFixtures.document(previousXML)
     let xml = """
         <sessionmap headline="Changed" phase="implementing"><summary>Changed.</summary><map>
         <node id="new-a" label="Repeated" kind="component" status="planned"/>
         <node id="new-b" label="Repeated" kind="component" status="planned"/>
+        <node id="new-unique" label="Unique" kind="service" status="planned"/>
         </map></sessionmap>
         """
     let context = SessionMapValidationContext(
@@ -84,9 +92,32 @@ import Testing
     let result = SessionMapDocumentParser.parse(Data(xml.utf8), context: context)
     let document = try #require(result.document)
 
-    #expect(document.graph.nodes.map(\.id) == ["new-a", "new-b"])
-    #expect(!document.graph.nodes.map(\.id).contains("view"))
+    #expect(document.graph.nodes.map(\.id) == ["new-a", "new-b", "old-unique"])
+    #expect(!document.graph.nodes.map(\.id).contains("old-repeat"))
+    #expect(!document.graph.nodes.map(\.id).contains("removed"))
     #expect(result.warnings.contains { $0.code == "identityChurn" })
+}
+
+@Test func sessionMapRejectsEscapingFileStatusEvidence() throws {
+    let context = SessionMapValidationContext(
+        knownRefs: ["proof"], facts: [:], previous: nil,
+        projectURL: FileManager.default.temporaryDirectory,
+        statusEvidence: [SessionMapStatusEvidence(
+            sourceRef: "proof", status: .done, target: .file("../Outside.swift")
+        )]
+    )
+    let xml = """
+        <sessionmap headline="Invalid evidence" phase="implementing"><map>
+        <node id="view" label="View" kind="view" file="../Outside.swift" status="done" ref="proof"/>
+        </map></sessionmap>
+        """
+    let result = SessionMapDocumentParser.parse(Data(xml.utf8), context: context)
+    let node = try #require(result.document?.graph.nodes.first)
+
+    #expect(node.file == nil)
+    #expect(node.status == .planned)
+    #expect(node.ref == nil)
+    #expect(result.warnings.contains { $0.code == "unsupportedStatus" })
 }
 
 @Test func sessionMapEditCannotMarkDone() throws {
@@ -235,4 +266,61 @@ import Testing
 
     #expect(document.blocks == [.chart(kind: .line, points: [])])
     #expect(result.warnings.contains { $0.code == "factMismatch" })
+}
+
+@Test func sessionMapCapsValidSupportingChildrenAfterDroppingInvalidOnes() throws {
+    let invalidTimeline = String(repeating: "<unknown/>", count: 12)
+    let events = (1...13).map { "<event time=\"\($0)\">Event \($0).</event>" }.joined()
+    let invalidFiles = (1...12).map {
+        "<file path=\"../Outside\($0).swift\" change=\"read\"/>"
+    }.joined()
+    let files = (1...13).map { "<file path=\"App/File\($0).swift\" change=\"read\"/>" }.joined()
+    let invalidPoints = String(repeating: "<unknown/>", count: 12)
+    let points = (1...13).map { "<point fact=\"value\" label=\"Point \($0)\" value=\"1\"/>" }.joined()
+    let invalidItems = String(repeating: "<unknown/>", count: 10)
+    let items = (1...11).map { "<item done=\"false\">Item \($0).</item>" }.joined()
+    let invalidNext = String(repeating: "<unknown/>", count: 5)
+    let next = (1...6).map { "<step prompt=\"Prompt \($0).\">Step \($0).</step>" }.joined()
+    let xml = """
+        <sessionmap headline="Mixed collections" phase="planning"><summary>Mixed.</summary>
+        <section title="Row"><row><timeline/><timeline/><timeline/>
+        <text>Text.</text><stat fact="value" label="Value" value="1"/>
+        <chart kind="bar"><point fact="value" label="Value" value="1"/></chart>
+        </row></section>
+        <timeline>\(invalidTimeline)\(events)</timeline>
+        <files>\(invalidFiles)\(files)</files>
+        <chart kind="line">\(invalidPoints)\(points)</chart>
+        <checklist>\(invalidItems)\(items)</checklist>
+        <next>\(invalidNext)\(next)</next>
+        </sessionmap>
+        """
+    let context = SessionMapValidationContext(
+        knownRefs: [], facts: ["value": SessionMapFact(value: "1", number: 1)],
+        previous: nil, projectURL: FileManager.default.temporaryDirectory
+    )
+    let result = SessionMapDocumentParser.parse(Data(xml.utf8), context: context)
+    let document = try #require(result.document)
+
+    guard case let .section(_, sectionBlocks) = document.blocks[0],
+          case let .row(rowBlocks) = sectionBlocks.first
+    else {
+        Issue.record("Expected the valid row leaves to survive invalid siblings.")
+        return
+    }
+    #expect(rowBlocks.count == 3)
+    guard case let .timeline(validEvents) = document.blocks[1],
+          case let .files(validFiles) = document.blocks[2],
+          case let .chart(_, validPoints) = document.blocks[3],
+          case let .checklist(validItems) = document.blocks[4],
+          case let .next(validSteps) = document.blocks[5]
+    else {
+        Issue.record("Expected all bounded supporting collections.")
+        return
+    }
+    #expect(validEvents.count == 12)
+    #expect(validFiles.count == 12)
+    #expect(validPoints.count == 12)
+    #expect(validItems.count == 10)
+    #expect(validSteps.count == 5)
+    #expect(result.warnings.contains { $0.code == "limitExceeded" })
 }

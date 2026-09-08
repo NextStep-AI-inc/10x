@@ -375,7 +375,7 @@ private struct SessionMapDocumentBuilder {
             return .section(title: title, blocks: element.children.compactMap { parseBlock($0) })
         case "row":
             warnUnknownAttributes(element, allowed: [])
-            return .row(blocks: limitedChildren(element.children, limit: SessionMapLimits.rowLeaves, field: "row leaves").compactMap { parseBlock($0) })
+            return .row(blocks: element.children.compactMap { parseBlock($0) })
         case "text":
             warnUnknownAttributes(element, allowed: [])
             return boundedText(element, limit: SessionMapLimits.text).map(SessionMapBlock.text)
@@ -392,20 +392,32 @@ private struct SessionMapDocumentBuilder {
             return .stat(fact: fact, label: label, value: value, tone: tone(element.attributes["tone"]))
         case "timeline":
             warnUnknownAttributes(element, allowed: [])
-            return .timeline(events: limitedChildren(element.children, limit: SessionMapLimits.timelineEvents, field: "timeline events").compactMap { parseTimelineEvent($0) })
+            return .timeline(events: limitedValues(
+                element.children.compactMap { parseTimelineEvent($0) },
+                limit: SessionMapLimits.timelineEvents,
+                field: "timeline events"
+            ))
         case "files":
             warnUnknownAttributes(element, allowed: [])
-            return .files(files: limitedChildren(element.children, limit: SessionMapLimits.files, field: "files").compactMap { parseFile($0) })
+            return .files(files: element.children.compactMap { parseFile($0) })
         case "chart":
             warnUnknownAttributes(element, allowed: ["kind"])
             guard let value = element.attributes["kind"], let kind = SessionMapChartKind(rawValue: value) else {
                 warn("invalid-chart", "Chart without a valid kind was dropped.")
                 return nil
             }
-            return .chart(kind: kind, points: limitedChildren(element.children, limit: SessionMapLimits.chartPoints, field: "chart points").compactMap { parsePoint($0) })
+            return .chart(kind: kind, points: limitedValues(
+                element.children.compactMap { parsePoint($0) },
+                limit: SessionMapLimits.chartPoints,
+                field: "chart points"
+            ))
         case "checklist":
             warnUnknownAttributes(element, allowed: [])
-            return .checklist(items: limitedChildren(element.children, limit: SessionMapLimits.checklistItems, field: "checklist items").compactMap { parseChecklistItem($0) })
+            return .checklist(items: limitedValues(
+                element.children.compactMap { parseChecklistItem($0) },
+                limit: SessionMapLimits.checklistItems,
+                field: "checklist items"
+            ))
         case "callout":
             warnUnknownAttributes(element, allowed: ["title", "tone", "ref"])
             guard let title = required(element.attributes["title"], limit: SessionMapLimits.title),
@@ -417,7 +429,11 @@ private struct SessionMapDocumentBuilder {
             return .callout(title: title, tone: tone(element.attributes["tone"]), ref: validRef(element.attributes["ref"]), text: text)
         case "next":
             warnUnknownAttributes(element, allowed: [])
-            return .next(steps: limitedChildren(element.children, limit: SessionMapLimits.nextSteps, field: "next steps").compactMap { parseNextStep($0) })
+            return .next(steps: limitedValues(
+                element.children.compactMap { parseNextStep($0) },
+                limit: SessionMapLimits.nextSteps,
+                field: "next steps"
+            ))
         default:
             warn("unknown-element", "Unknown supporting element \(element.name) was dropped.")
             return nil
@@ -547,15 +563,15 @@ private struct SessionMapDocumentBuilder {
         return String(value.prefix(limit))
     }
 
-    private mutating func limitedChildren(
-        _ children: [SessionMapXMLElement],
+    private mutating func limitedValues<Value>(
+        _ values: [Value],
         limit: Int,
         field: String
-    ) -> ArraySlice<SessionMapXMLElement> {
-        if children.count > limit {
+    ) -> [Value] {
+        if values.count > limit {
             warn("limitExceeded", "Items beyond the \(field) limit of \(limit) were dropped.")
         }
-        return children.prefix(limit)
+        return Array(values.prefix(limit))
     }
 
     private mutating func warnUnknownAttributes(_ element: SessionMapXMLElement, allowed: Set<String>) {

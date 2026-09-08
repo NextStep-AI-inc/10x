@@ -165,7 +165,10 @@ private struct Validator {
             else { return false }
             switch evidence.target {
             case let .file(path):
-                return node.file == normalizedRelativePath(path)
+                guard let nodeFile = node.file,
+                      let evidenceFile = normalizedRelativePath(path)
+                else { return false }
+                return nodeFile == evidenceFile
             case let .label(label):
                 guard node.file == nil else { return false }
                 let matches = nodes.filter {
@@ -218,7 +221,11 @@ private struct Validator {
                 warn("limitExceeded", "Nested rows were dropped.")
                 return nil
             }
-            let leaves = blocks.compactMap { validateBlock($0, position: .row) }
+            let leaves = limitedValues(
+                blocks.compactMap { validateBlock($0, position: .row) },
+                limit: SessionMapLimits.rowLeaves,
+                field: "row leaves"
+            )
             guard leaves.count >= 2 else {
                 warn("limitExceeded", "Rows with fewer than two valid leaves were dropped.")
                 return nil
@@ -233,10 +240,14 @@ private struct Validator {
             return .timeline(events: events)
         case let .files(files):
             guard position != .row else { return invalidRowLeaf() }
-            return .files(files: files.compactMap { file in
-                guard let path = validatedPath(file.path) else { return nil }
-                return SessionMapFile(path: path, change: file.change, note: file.note)
-            })
+            return .files(files: limitedValues(
+                files.compactMap { file in
+                    guard let path = validatedPath(file.path) else { return nil }
+                    return SessionMapFile(path: path, change: file.change, note: file.note)
+                },
+                limit: SessionMapLimits.files,
+                field: "files"
+            ))
         case let .chart(kind, points):
             return .chart(kind: kind, points: points)
         case let .checklist(items):
@@ -254,6 +265,17 @@ private struct Validator {
     private mutating func invalidRowLeaf() -> SessionMapBlock? {
         warn("limitExceeded", "A row may contain only text, stat, or chart leaves.")
         return nil
+    }
+
+    private mutating func limitedValues<Value>(
+        _ values: [Value],
+        limit: Int,
+        field: String
+    ) -> [Value] {
+        if values.count > limit {
+            warn("limitExceeded", "Items beyond the \(field) limit of \(limit) were dropped.")
+        }
+        return Array(values.prefix(limit))
     }
 
     private mutating func validatedPath(_ path: String) -> String? {
