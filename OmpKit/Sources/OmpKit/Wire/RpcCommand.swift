@@ -103,23 +103,6 @@ public struct RpcCommand: Sendable, Equatable {
         return RpcCommand(type: "prompt", fields: fields)
     }
 
-    public static func custom(
-        customType: String,
-        content: String,
-        display: Bool = false,
-        deliverAs: String? = nil,
-        triggerTurn: Bool? = nil
-    ) -> RpcCommand {
-        var fields: [String: JSONValue] = [
-            "customType": .string(customType),
-            "content": .string(content),
-            "display": .bool(display),
-        ]
-        if let deliverAs { fields["deliverAs"] = .string(deliverAs) }
-        if let triggerTurn { fields["triggerTurn"] = .bool(triggerTurn) }
-        return RpcCommand(type: "custom", fields: fields)
-    }
-
     public static func abort() -> RpcCommand { RpcCommand(type: "abort") }
 
     public static func newSession(parentSession: String?) -> RpcCommand {

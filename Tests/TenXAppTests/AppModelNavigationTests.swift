@@ -110,19 +110,18 @@ import OmpKit
 }
 
 @MainActor
-@Test func beginComputerUseSendsOneCustomCueAndLeavesDraftUntouched() async throws {
+@Test func beginComputerUseSendsOneExtensionCueAndLeavesDraftUntouched() async throws {
     let container = URL(filePath: NSTemporaryDirectory())
         .appendingPathComponent("app-model-computer-use-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: container) }
     try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
-    let customRecordURL = container.appendingPathComponent("custom.jsonl")
     let project = container.appendingPathComponent("project")
     try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
     let executable = try makeNavigationExecutable(
         in: container,
         mode: "basic",
         arguments: [],
-        environment: ["OMP_FAKE_CUSTOM_RECORD": customRecordURL.path])
+        environment: [:])
     let library = SessionLibrary(root: container.appendingPathComponent("sessions"))
     let model = AppModel(dependencies: navigationDependencies(
         ompLocator: FixedOmpLocator(executableURL: executable),
@@ -136,15 +135,15 @@ import OmpKit
         model.managedController(for: "/tmp/fake.jsonl")?.runtimeState == .idle
     }
     controller.draft = "leave me alone"
+    let channel = AppModelComputerUseCueChannel()
+    model.accountChannelRegistry.attach(sessionID: controller.id, channel: channel, sessionFile: nil)
 
     await model.beginComputerUse()
 
-    let recorded = try decodeRecordedComputerUseCustom(from: customRecordURL)
-    #expect(recorded.customType == "computer-use")
-    #expect(recorded.content == SessionController.computerUseCueContent)
-    #expect(recorded.display == false)
-    #expect(recorded.triggerTurn == nil)
-    #expect(recorded.deliverAs == "nextTurn")
+    let sent = await channel.sentCommands()
+    #expect(sent.count == 1)
+    #expect(sent[0].command == "computer_use_cue")
+    #expect(sent[0].params.isEmpty)
     #expect(controller.draft == "leave me alone")
     if let manager = model.processManager { await manager.closeAll() }
 }
@@ -1193,18 +1192,17 @@ func makeNavigationExecutable(
     return executable
 }
 
-private struct RecordedComputerUseCustom: Decodable, Equatable {
-    let customType: String?
-    let content: String?
-    let display: Bool?
-    let deliverAs: String?
-    let triggerTurn: Bool?
-}
+private actor AppModelComputerUseCueChannel: ProviderAccountChannel {
+    private var commands: [ProviderAccountChannelCommand] = []
 
-private func decodeRecordedComputerUseCustom(from url: URL) throws -> RecordedComputerUseCustom {
-    let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
-    let line = try #require(lines.last.map(String.init))
-    return try JSONDecoder().decode(RecordedComputerUseCustom.self, from: Data(line.utf8))
+    func send(_ command: ProviderAccountChannelCommand) async throws -> JSONValue {
+        commands.append(command)
+        return .object(["delivered": .bool(true)])
+    }
+
+    func sentCommands() -> [ProviderAccountChannelCommand] {
+        commands
+    }
 }
 
 /// Models a session under the now-installed `ProviderAccountTieredRoutingBackend`

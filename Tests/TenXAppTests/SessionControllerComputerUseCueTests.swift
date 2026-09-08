@@ -4,26 +4,24 @@ import Testing
 @testable import TenXApp
 
 @MainActor
-@Test func sendComputerUseCueWhileIdleUsesNextTurnAndLeavesDraftUntouched() async throws {
+@Test func sendComputerUseCueWhileIdleSendsOneCommandAndLeavesDraftUntouched() async throws {
     let fixture = try await ComputerUseCueFixture(mode: "basic")
     defer { fixture.cleanupAfterFailure() }
     fixture.controller.draft = "keep this draft"
 
     await fixture.controller.sendComputerUseCue()
 
-    let recorded = try fixture.recordedCustom()
-    #expect(recorded.customType == "computer-use")
-    #expect(recorded.content == SessionController.computerUseCueContent)
-    #expect(recorded.display == false)
-    #expect(recorded.deliverAs == "nextTurn")
-    #expect(recorded.triggerTurn == nil)
+    let sent = await fixture.sentCommands()
+    #expect(sent.count == 1)
+    #expect(sent[0].command == "computer_use_cue")
+    #expect(sent[0].params.isEmpty)
     #expect(fixture.controller.draft == "keep this draft")
     #expect(fixture.controller.runtimeState == .idle)
     await fixture.cleanup()
 }
 
 @MainActor
-@Test func sendComputerUseCueWhileStreamingUsesSteer() async throws {
+@Test func sendComputerUseCueWhileStreamingSendsOneCommandAndLeavesDraftUntouched() async throws {
     let fixture = try await ComputerUseCueFixture(mode: "slow-turn")
     defer { fixture.cleanupAfterFailure() }
     fixture.controller.draft = "start streaming"
@@ -33,25 +31,21 @@ import Testing
 
     await fixture.controller.sendComputerUseCue()
 
-    let recorded = try fixture.recordedCustom()
-    #expect(recorded.customType == "computer-use")
-    #expect(recorded.content == SessionController.computerUseCueContent)
-    #expect(recorded.display == false)
-    #expect(recorded.triggerTurn == nil)
-    #expect(recorded.deliverAs == "steer")
+    let sent = await fixture.sentCommands()
+    #expect(sent.count == 1)
+    #expect(sent[0].command == "computer_use_cue")
     #expect(fixture.controller.draft == "keep this draft while streaming")
     await fixture.cleanup()
 }
 
 @MainActor
 @Test func sendComputerUseCueFailureIsSwallowed() async throws {
-    let fixture = try await ComputerUseCueFixture(mode: "custom-failure")
+    let fixture = try await ComputerUseCueFixture(mode: "basic", channel: FailingComputerUseCueChannel())
     defer { fixture.cleanupAfterFailure() }
     fixture.controller.draft = "unchanged"
 
     await fixture.controller.sendComputerUseCue()
 
-    #expect(try fixture.recordedCustom().deliverAs == "nextTurn")
     #expect(fixture.controller.draft == "unchanged")
     #expect(fixture.controller.runtimeState == .idle)
     #expect(!fixture.controller.isRecoveryPresented)
@@ -63,16 +57,27 @@ private final class ComputerUseCueFixture {
     let controller: SessionController
     let manager: SessionProcessManager
     let project: URL
-    let customRecordURL: URL
+    private let recordingChannel: RecordingComputerUseCueChannel?
+    private let registry: ProviderAccountChannelRegistry
     private var didCleanUp = false
 
-    init(mode: String) async throws {
+    init(mode: String, channel: (any ProviderAccountChannel)? = nil) async throws {
         let directory = try computerUseCueTemporaryDirectory()
         project = directory
-        customRecordURL = directory.appendingPathComponent("custom.jsonl")
-        manager = computerUseCueFakeManager(mode: mode, customRecordURL: customRecordURL)
-        controller = SessionController(processManager: manager)
+        manager = computerUseCueFakeManager(mode: mode)
+        registry = ProviderAccountChannelRegistry()
+        let recording = channel == nil ? RecordingComputerUseCueChannel() : nil
+        recordingChannel = recording
+        let attachedChannel = channel ?? recording!
+        controller = SessionController(
+            processManager: manager,
+            accountChannelRegistry: registry)
         await controller.openNew(projectURL: directory)
+        registry.attach(sessionID: controller.id, channel: attachedChannel, sessionFile: nil)
+    }
+
+    func sentCommands() async -> [ProviderAccountChannelCommand] {
+        await recordingChannel?.sentCommands() ?? []
     }
 
     func cleanup() async {
@@ -87,30 +92,28 @@ private final class ComputerUseCueFixture {
         Task { await manager.closeAll() }
         computerUseCueRemove(project)
     }
+}
 
-    func recordedCustom() throws -> RecordedCustomCommand {
-        try decodeRecordedCustom(from: customRecordURL)
+private actor RecordingComputerUseCueChannel: ProviderAccountChannel {
+    private var commands: [ProviderAccountChannelCommand] = []
+
+    func send(_ command: ProviderAccountChannelCommand) async throws -> JSONValue {
+        commands.append(command)
+        return .object(["delivered": .bool(true)])
+    }
+
+    func sentCommands() -> [ProviderAccountChannelCommand] {
+        commands
     }
 }
 
-private struct RecordedCustomCommand: Decodable, Equatable {
-    let customType: String?
-    let content: String?
-    let display: Bool?
-    let deliverAs: String?
-    let triggerTurn: Bool?
+private actor FailingComputerUseCueChannel: ProviderAccountChannel {
+    func send(_ command: ProviderAccountChannelCommand) async throws -> JSONValue {
+        throw ProviderAccountChannelError.unavailable
+    }
 }
 
-private func decodeRecordedCustom(from url: URL) throws -> RecordedCustomCommand {
-    let lines = try String(contentsOf: url, encoding: .utf8).split(separator: "\n")
-    let line = try #require(lines.last.map(String.init))
-    return try JSONDecoder().decode(RecordedCustomCommand.self, from: Data(line.utf8))
-}
-
-private func computerUseCueFakeManager(
-    mode: String,
-    customRecordURL: URL
-) -> SessionProcessManager {
+private func computerUseCueFakeManager(mode: String) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
         fake.executable = "/usr/bin/env"
@@ -122,7 +125,6 @@ private func computerUseCueFakeManager(
         ]
         fake.rawArgv = true
         fake.cwd = nil
-        fake.environment = ["OMP_FAKE_CUSTOM_RECORD": customRecordURL.path]
         return RpcClient(configuration: fake)
     })
 }

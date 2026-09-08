@@ -17,6 +17,9 @@ function requireString(params: unknown, key: string): string {
 	return value;
 }
 
+const COMPUTER_USE_CUE_CONTENT =
+	"Computer use is available: you have the tenx-computer MCP tools (computer_windows, computer_claim, computer_launch, computer_screenshot, computer_act, computer_release, computer_status). When the task benefits from a GUI, claim or launch a window and work there; set computer_status so the user can follow along.";
+
 export default function (pi: ExtensionAPI) {
 	// One sequencer, one queue, shared by the whole process — matches
 	// createEventSequencer's documented "monotonic per-process" contract.
@@ -111,6 +114,17 @@ export default function (pi: ExtensionAPI) {
 							pinnedAccountByProvider.delete(providerId);
 						}
 						return result;
+					}
+					case "computer_use_cue": {
+						pi.sendMessage(
+							{
+								customType: "computer-use",
+								content: COMPUTER_USE_CUE_CONTENT,
+								display: false,
+							},
+							{ deliverAs: ctx.isIdle() ? "nextTurn" : "steer" },
+						);
+						return { delivered: true };
 					}
 					default:
 						throw new Error(`Unknown command: ${command.command}`);

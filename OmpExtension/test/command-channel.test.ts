@@ -75,6 +75,68 @@ test("the extension receives a command from the client and answers it", async ()
 	expect(JSON.parse(answered.placeholder as string)).toEqual({ id: "c1", ok: true, data: "pong" });
 }, 60_000);
 
+test("computer_use_cue delivers a hidden custom message into the session", async () => {
+	const sessionDir = path.join(os.tmpdir(), `tenx-cue-${Date.now()}`);
+	const ompExecutable = Bun.which("omp") ?? path.join(os.homedir(), ".bun", "bin", "omp");
+	const child = Bun.spawn(
+		[ompExecutable, "--mode", "rpc", "--no-title", "--no-session", "-e", path.join(import.meta.dir, "..", "index.ts")],
+		{ env: { ...Bun.env, PI_CODING_AGENT_DIR: sessionDir }, stdin: "pipe", stdout: "pipe", stderr: "pipe" },
+	);
+	const enc = new TextEncoder();
+	const reader = child.stdout.getReader();
+	const dec = new TextDecoder();
+	let buf = "";
+	const frames: Record<string, unknown>[] = [];
+	const readUntil = async (match: (f: Record<string, unknown>) => boolean) => {
+		for (;;) {
+			const { value, done } = await reader.read();
+			if (done) throw new Error("omp exited early");
+			buf += dec.decode(value, { stream: true });
+			let nl: number;
+			while ((nl = buf.indexOf("\n")) >= 0) {
+				const line = buf.slice(0, nl).trim();
+				buf = buf.slice(nl + 1);
+				if (!line) continue;
+				const frame = JSON.parse(line) as Record<string, unknown>;
+				frames.push(frame);
+				if (match(frame)) return frame;
+			}
+		}
+	};
+	const answerChannel = async (opened: Record<string, unknown>, command: Record<string, unknown>) => {
+		child.stdin.write(
+			enc.encode(
+				`${JSON.stringify({
+					type: "extension_ui_response",
+					id: opened.id,
+					value: JSON.stringify(command),
+				})}\n`,
+			),
+		);
+		child.stdin.flush();
+		return readUntil(
+			f => f.type === "extension_ui_request" && f.title === MARKER && typeof f.placeholder === "string",
+		);
+	};
+
+	const opened = await readUntil(f => f.type === "extension_ui_request" && f.title === MARKER);
+	const cueReply = await answerChannel(opened, { id: "cue1", command: "computer_use_cue" });
+	expect(JSON.parse(cueReply.placeholder as string)).toEqual({ id: "cue1", ok: true, data: { delivered: true } });
+
+	child.stdin.write(enc.encode(`${JSON.stringify({ type: "get_messages", id: "msgs1" })}\n`));
+	child.stdin.flush();
+	const messagesReply = await readUntil(f => f.type === "response" && f.command === "get_messages");
+	child.kill();
+
+	expect(messagesReply.success).toBe(true);
+	const messages = (messagesReply.data as { messages?: Record<string, unknown>[] })?.messages ?? [];
+	const cue = messages.find(
+		m => m.role === "custom" && m.customType === "computer-use" && m.display === false,
+	);
+	expect(cue).toBeTruthy();
+	expect(cue?.content).toContain("tenx-computer MCP tools");
+}, 60_000);
+
 // --- drainEvents: piggybacking availability/failover frames onto the next carried reply ---
 
 test("omits the events key entirely when nothing is queued, keeping the reply byte-identical to before drainEvents existed", async () => {
