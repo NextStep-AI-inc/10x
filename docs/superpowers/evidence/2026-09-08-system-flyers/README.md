@@ -1,0 +1,65 @@
+# System flyer native evidence
+
+Status: **DONE_WITH_CONCERNS for the component slice.** The real Release overlay, controls, two complete motion cycles, focus pause, and full-text popover were exercised. Pointer-only hover, inactive scheduling, and spoken VoiceOver retain the explicit verification gaps below. Session Map tasks 7–13 remain part of the same approved implementation; this is not a claim that the full feature or PR is ready.
+
+## Provenance
+
+- Branch: `codex/session-map-plans`; draft PR [#30](https://github.com/NextStep-AI-inc/10x/pull/30).
+- Flyer value/motion/row commits: `1e34d6e`, `6102719`, `0222c97`, and `0e566e8`.
+- Initial overlay source: `84c87b89554c5e63006690a5e6813e20cfc62574`; reviewed integration correction: `8ca1506326d4d16499df09b184c31a6e1610c8f0`; native popover correction: `a5855ae9d2283a3117e4fdebf57312968efc94e6`.
+- Final Release build passed: `/tmp/10x-f59a-flyers-task4-fix2-release.log`. Isolated bundle: `/tmp/10x-f59a-session-map-release/Build/Products/Release/10x.app`, ID `com.nextstep.tenx.sessionmap.f59a`.
+- The temporary QA bundle alone is named **10x Flyer QA** to prevent native automation confusing it with other running 10x builds. Its ad-hoc signed executable SHA-256 is `00d9b05c74bbaaad34154a5c222e042a5af588cda44905a0f91411ffc3a9b2e5`; Info.plist SHA-256 is `cd37e63f51de398308a809ccab7525359f5ff68816fe4945082a08e1acc36f3a`. Tracked app naming/signing settings were not changed.
+- Visible final titles include `10x | flyer-overflow | a5855ae9d228` and `10x | flyer-recovery | a5855ae9d228`. The actual cycle/focus recordings use `8ca1506` and executable SHA-256 `db90225c71d89a667b7b3f31e9a982df6f715ad48e1bbbf7ab2b81f663d4ee93`; the only subsequent source change is two popover text modifiers, outside the recorded animation path.
+- Fixtures use synthetic data, isolated preferences/support directories, and the real shell, transcript, composer, row, and Map components. No live model call is part of this component gate.
+- Wide windows are 1440×900 points, captured by the native surface at 1229×768 pixels. Minimum windows are 760×592 including chrome, providing 760×560 content, captured at 760×592 pixels. Original native capture bytes are JPEG despite the historical `.png` filenames; [image metadata](image-metadata.json) records the actual sizes/formats. Test reference snapshots are separate native PNG renders.
+
+## Required native checks
+
+| Check | Evidence / result |
+| --- | --- |
+| Release process survives and correct window is visible | Passed on final source, with the exact fixture/SHA title and bundle above. |
+| 1440×900, light/dark, Map docked | [Light fitting row](native-current-fitting-light.png), [dark wide](native-current-dark-wide.png), and [dark Map dock](native-current-dark-map-docked.png). Light material and dark opaque override were both inspected. The full appearance × dock matrix was not repeated because the shared layout had already passed the Map slice. |
+| Minimum 760×560 content, including recovery and attachment | [Three rows plus recovery](native-current-recovery-minimum.png) and [dark reduced display](native-current-reduced-minimum.png). Recovery stays below the flyers and above the composer. At this minimum, the transcript band is small and remains scrollable. |
+| Latest content / Jump to latest clear the measured stack | Actual [Jump to latest](native-current-jump-to-latest.png) exposes the final Cancel control above the two-row stack. The rendered integration test verifies actual 0/1/3-row stack, clearance, and Jump frames, including the 12-point gap. |
+| Stack change preserves a manually scrolled viewport | [Before expiry](native-current-expiry-pending.png) → [after expiry](native-current-expiry-finished.png): Continue inspecting stays at the same y-position; the stack and Jump move down 40 points when the third row expires. Jump remains present, so the change did not force following latest. |
+| Session/global scope, replacement, dismissal, expiry through real controls | [Global replacement](native-current-global-replacement.png) and [session replacement](native-current-session-replacement.png) retain all three slots and update in place. [Pending expiry](native-current-expiry-pending.txt) becomes [two rows](native-current-expiry-finished.txt) after the scheduled deadline. [Session dismissal](native-current-session-dismissed.png) preserves the global; [global dismissal](native-current-global-dismissed.png) removes the remaining row. |
+| Map action, rail switching, draft and attachment preservation | The actual [Open Map action](native-current-open-map-action.txt) removes its fixture row and leaves the Map open with the original draft and attachment. Switching to the [second session](native-current-second-session.txt) shows only the global row and its own attachment; [returning](native-current-session-return.txt) restores the first session's row, draft, attachment, and recovery. Real catch-up checkpoint behavior belongs to Map task 13. |
+| Composer growth, pending question, command/model popovers | [Six-line draft](native-current-grown-composer.png), [real model menu](native-current-model-menu.png), and [actual app command choices](native-current-command-actions.png) remain reachable. Command Escape restores the composer; no command or question reply was sent. Synthetic provider-specific commands remained in Loading; only the available app-command branch and real model picker were verified. |
+| Keyboard focus and complete accessible description | Pointer focus is confirmed on the description's AX element; moving the pointer away retains that focus and freezes the text for 38 captured frames. Tab moves to the composer and resumes travel. [Focus clip](native-fixed-focus-pause.mp4), [observed positions](native-fixed-keyboard-observed.json). The actual accessibility **Show details** action now exposes the entire wrapped description: [final popover](native-current-full-details.png), [AX export](native-current-full-details.txt). |
+| VoiceOver spoken navigation | Not verified; prior Map fixture attempt could not establish speech/cursor observation |
+| Actual two-cycle overflow recording and playback | Passed: [30.277-second native recording](native-fixed-two-cycles.mp4), covering 30.204 seconds of actual capture. Playback was reviewed from 0:00 through 0:30, after explicitly resetting the player to zero. |
+| Start/far holds, steady travel, return and wrap | Passed in the recorded native sequence. Full leading and final text are exposed at their respective endpoints, with the appropriate edge fade; action/title positions stay fixed. Detailed times follow below. |
+| Hover/focus pause and resume at retained position | Focus pause passed as above. **Pointer-only hover remains unverified**: click/drag/key automation did not reliably establish a hover-only state; observed text continued moving in those attempts. This is neither a passing check nor a confirmed app defect. A manual hover question is pending. |
+| Resize/content reset and inactive lifecycle | The [native 8ca1506 resize sequence](native-fixed-resize.mp4) starts at the leading edge after reducing the viewport from 547 to 379 points, then travels. Actual replacement shows the new complete detail without stale offset. Inactive scheduling is **not verified**: targeted Command-Tab advanced local focus instead of proving an OS app switch. Removed rows disappear from the UI; no native timer/CPU profiler claim is made. |
+| Fitting text remains still | At 547-point viewport, actual intrinsic text width is 524 points and the complete line fits. 42 native frames over 2.933 seconds have an identical description region. That first wide observation preceded explicit native activation; pure fit/no-schedule coverage also passed. |
+| Reduce Motion / Reduce Transparency | Final dark fixture explicitly sets both overrides on: 49 frames over 3.112 seconds have one identical description image; row uses an opaque, readable surface and full text is available in the wrapped popover. [Measurements](native-current-reduced-observed.json). Production reads the real system environment; global settings were not changed for this fixture. |
+
+## Motion method
+
+Actual Release-window frames were captured through native UI screenshots with monotonic capture timestamps, then encoded at their observed intervals. No generated frames, recreated UI, or interpolated animation was used. The in-app browser was only a player for this native MP4. Temporary playback tabs/server were closed afterwards.
+
+- Actual metrics: text **524 pt**, viewport **379 pt**, overflow **145 pt**. One cycle is `2.4 + 2 × 145 / 40 = 9.65 s`; two require **19.30 s**.
+- 388 native frames cover **30.204390 s**, all **760×592**. Median interval **71.6 ms**, maximum **459.6 ms**; this is the capture cadence, not a claim of 30-fps recording. Encoding retains each frame plus one terminal repeat, at 760×592 and **30.277 s**. Maximum encoded timestamp error is **0.000499 s**. [Encoding metadata](native-fixed-two-cycles.json).
+- The complete playback was observed for 31.0 seconds in 102 sampled player frames. [Start](native-fixed-playback-start.png), [end](native-fixed-playback-end.png). An earlier attempt was paused at 0:18 and does not count as playback proof.
+- Read-only glyph matching against the actual frames measured exactly **145 pixels** of travel. Far holds appear at **2.88–3.99**, **12.57–13.55**, and **22.23–23.35 s**; leading holds at **7.72–8.86**, **17.37–18.53**, and **27.01–28.19 s**. These sampled intervals bound the approximately 1.2-second endpoint holds. Two complete leading-to-leading cycles run approximately **7.72–17.37–27.01 s**. [Observed frame positions](native-fixed-two-cycles-observed.json), [far hold](native-fixed-far-hold.png), [leading hold](native-fixed-leading-hold.png).
+- [Scheduled-expiry recording](native-current-expiry.mp4) retains 60 final-build native frames over 3.539 seconds and shows the 3→2 row transition; [metadata](native-current-expiry.json).
+
+## Native finding fixed
+
+The first **Show details** attempt inherited the row's one-line limit and visibly ellipsized the popover: [before](native-fixed-details.png). Commit `a5855ae` clears the inherited limit and allows the text's wrapped vertical size. The [final native popover](native-current-full-details.png) displays the entire description on two lines. The scoped re-review found no new Critical/Important breakage. No snapshot was promoted to hide this bug.
+
+## Test state
+
+- Earlier flyer tasks: scoped value, pure-motion, pause-clock, row, and snapshot checks passed; bounded reviews approved the font identity and monotonic time fixes.
+- Task 4: four focused tests passed after snapshot setup awaited the synthetic catalog. Both new references were inspected before promotion. The initial snapshot timing mismatch was not called a layout correction. Log: `/tmp/10x-f59a-flyers-task4-final-focused.log`.
+- Full Debug suite at `84c87b8`: **1,401 tests / 34 suites / eight issues**. Six are the existing disclosure reference mismatches documented in the [Map evidence](../2026-09-08-session-map/README.md). A SourcePageLoader gate wait timed out; its exact selector passed once in isolation (one test, 0.001 seconds). A new Map fixture regression was corrected by confining the pending question to Flyer routes; the old Map reference passed unchanged. Full log: `/tmp/10x-f59a-flyers-task4-full.log`; bundle: `/tmp/10x-f59a-flyers-task4-full.xcresult`; isolated log: `/tmp/10x-f59a-flyers-task4-source-loader-isolated.log`. The full suite is not claimed green.
+- Fix 1: **five selected tests passed in 0.568 s**, covering actual 0/1/3-row rendered geometry, global/session replacement, Flyer fixtures/references, and unchanged legacy Map references. The geometry RED was an intentional disconnected-propagation negative control after the harness compiled, not evidence that the previous production geometry was wrong. Log: `/tmp/10x-f59a-flyers-task4-fix1-focused.log`.
+- Fix 2: **10 selected tests passed in 0.546 s**, no reference changes; log `/tmp/10x-f59a-flyers-task4-fix2-focused.log`. Final Release build passed. Repeating the entire app suite for two popover modifiers was unnecessary; final Map integration still owns its planned full-suite gate.
+
+## Remaining manual checks
+
+Hover the description mid-travel, move away, and confirm pause/resume without a jump. Switch to another app and return to check inactive resume. Navigate the flyer and its actions with spoken VoiceOver. These are explicit acceptance gaps, not implied successes from accessibility labels or pure motion tests. No live question delivery, provider-specific command execution, real catch-up acknowledgement, merge, or release was tested in this component slice.
+
+## Handoff constraints
+
+No merge or release is authorized. Final base synchronization remains blocked by automatic approval review, which rejected `git merge --no-edit origin/main` with “approval required by policy, but AskForApproval is set to Never.” The denied operation has not been retried or bypassed.

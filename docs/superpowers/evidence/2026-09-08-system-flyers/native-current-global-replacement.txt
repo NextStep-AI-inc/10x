@@ -1,0 +1,70 @@
+Window: "10x | flyer-recovery | a5855ae9d228", App: 10x Flyer QA.
+0 standard window 10x | flyer-recovery | a5855ae9d228, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Failed, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapApp
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/a5855ae9d2283a3117e4fdebf57312968efc94e6/flyer-recovery/SessionMapApp
+		15 button Description: Open session map, Value: Closed
+		16 button Jump to latest
+		17 unknown Information
+		18 text Component check
+		19 unknown Description: The global fixture notice was replaced in place., Secondary Actions: Show details
+		20 button Description: Dismiss, ID: xmark
+		21 unknown Attention
+		22 text Component check
+		23 unknown Description: Session replacement and dismissal use the real row controls., Secondary Actions: Show details
+		24 button Replace fixture
+		25 button Description: Dismiss, ID: xmark
+		26 unknown Error
+		27 text Component check
+		28 unknown Description: Expiry is synthetic and component-only in this fixture., Secondary Actions: Show details
+		29 button Expire fixture
+		30 button Description: Dismiss, ID: xmark
+		31 scroll area
+			32 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				33 text Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The selected session keeps its full latest response reachable while measured system notices sit above a multiline composer with an attachment. This deliberately long final assistant message verifies that scrolling to the bottom leaves the response visible instead of hiding it beneath the notice glass. Which fixture state should remain visible during this layout check?
+				34 button Keep the current state, This is synthetic component-only fixture data.
+				35 button Continue inspecting, Select option
+				36 button Cancel, Selection
+		37 text Session process stopped OMP exited with status 9. Your transcript and draft are preserved.
+		38 button Restart session
+		39 button Open log
+		40 button Dismiss
+		41 button Review stopped prompt
+		42 scroll area Secondary Actions: Scroll Up, Scroll Down
+			43 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Verify the measured overlay above this multiline composer.
+Keep the attachment and recovery controls reachable.
+			44 scroll bar (disabled, settable, float) 0
+		45 scroll area Attached images
+			46 container map-layout.png
+				47 image
+				48 text map-layout.png 32×32 · 193 bytes
+				49 button Description: Remove map-layout.png, ID: xmark
+		50 button (disabled) Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		51 button Description: Model, Help: Shows model menu
+		52 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		53 button (disabled) Description: Send message, ID: arrow.up
+	54 close button
+	55 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	56 minimize button
+57 menu bar
+	58 10x Flyer QA
+	59 File
+	60 Edit
+	61 View
+	62 Navigate
+	63 Session
+	64 Window
+	65 Help
+
+The focused UI element is 34 button Keep the current state, This is synthetic component-only fixture data.

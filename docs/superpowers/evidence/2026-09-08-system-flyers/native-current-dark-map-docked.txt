@@ -1,0 +1,105 @@
+Window: "10x | flyer-overflow | a5855ae9d228", App: 10x Flyer QA.
+0 standard window 10x | flyer-overflow | a5855ae9d228, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapApp
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/a5855ae9d2283a3117e4fdebf57312968efc94e6/flyer-overflow/SessionMapApp
+		15 button Description: Close session map, Value: Open
+		16 unknown Information
+		17 text Catch up
+		18 unknown Description: Three background turns finished and the concise session summary is ready to inspect., Secondary Actions: Show details
+		19 button Open Map
+		20 button Description: Dismiss, ID: xmark
+		21 scroll area
+			22 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				23 container Description: Model expansion, Details: Standard
+					24 button Description: Expanded, Value: Not selected
+					25 button Description: Standard, Value: Selected
+					26 button Description: Slim, Value: Not selected
+				27 unknown Thread started Monday, September 7, 2026 at 9:53 AM
+				28 text Show the session architecture beside the real transcript. Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The selected session keeps its full latest response reachable while measured system notices sit above a multiline composer with an attachment. This deliberately long final assistant message verifies that scrolling to the bottom leaves the response visible instead of hiding it beneath the notice glass. Which fixture state should remain visible during this layout check?
+				29 button Keep the current state, This is synthetic component-only fixture data.
+				30 button Continue inspecting, Select option
+				31 button Cancel, Selection
+		32 scroll area Secondary Actions: Scroll Up, Scroll Down
+			33 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Verify the measured overlay above this multiline composer.
+Keep the attachment and recovery controls reachable.
+			34 scroll bar (settable, float) 0.7954034805297852
+				35 value indicator (settable, float) 0.7954034805297852
+				36 increment arrow button
+				37 decrement arrow button
+				38 increment page button
+				39 decrement page button
+		40 scroll area Attached images
+			41 container map-layout.png
+				42 image
+				43 text map-layout.png 32×32 · 193 bytes
+				44 button Description: Remove map-layout.png, ID: xmark
+		45 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		46 button Description: Model, Help: Shows model menu
+		47 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		48 button Description: Send message, ID: arrow.up
+		49 unknown Description: Resize session map, Details: 440 points, Secondary Actions: Increment, Decrement
+		50 text Map
+		51 button Description: Map settings, ID: gearshape
+		52 button Description: Close map, ID: xmark
+		53 scroll area Secondary Actions: Scroll Up, Scroll Down
+			54 text Session map architecture Planning Architecture Exists · Proposed · Planned · Active · Done · Failed
+			55 scroll area Architecture diagram
+				56 button Description: Session source, Exists. Connects to Map writer via bounded context., Help: Select this component to show its details.
+				57 button Help: Select this component to show its details., Description: Map writer, Proposed. Receives from Session source via bounded context. Connects to Native map document via XML.
+				58 button Help: Select this component to show its details., Description: Native map document, Planned. Receives from Map writer via XML. Connects to Map pane via native views.
+				59 button Description: Map pane, Planned. Receives from Native map document via native views., Help: Select this component to show its details.
+			60 container
+				61 text Session source Exists Collects installed transcript snapshots.
+				62 button Jump
+			63 disclosure triangle Description: Architecture relationships, Value: off
+			64 container Create a map, step 1 of 4
+				65 text Create a map 1 of 4 Collect the current session context.
+				66 button (disabled) Previous
+				67 button Next
+				68 button Jump
+			69 text Implementation
+			70 container
+				71 image circle
+				72 button Define and validate the document contract.
+				73 button Jump
+			74 container
+				75 image circle
+				76 button Lay out and render the graph.
+				77 button Jump
+			78 text The pane reads a validated native document produced from bounded session context. Open decisions Confirm the layout against dense labels and a compact window.
+			79 button Jump
+			80 scroll bar (settable, float) 0
+				81 value indicator (settable, float) 0
+				82 increment arrow button
+				83 decrement arrow button
+				84 increment page button
+				85 decrement page button
+		86 menu button Regenerate
+		87 button Caught up
+	88 close button
+	89 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	90 minimize button
+91 menu bar
+	92 10x Flyer QA
+	93 File
+	94 Edit
+	95 View
+	96 Navigate
+	97 Session
+	98 Window
+	99 Help
+
+The focused UI element is 33 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Verify the measured overlay above this multiline composer.
+Keep the attachment and recovery controls reachable.

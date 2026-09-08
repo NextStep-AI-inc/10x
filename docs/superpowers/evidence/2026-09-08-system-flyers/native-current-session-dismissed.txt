@@ -1,0 +1,59 @@
+Window: "10x | flyer-recovery | a5855ae9d228", App: 10x Flyer QA.
+0 standard window 10x | flyer-recovery | a5855ae9d228, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Failed, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Archived sessions
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapApp
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/a5855ae9d2283a3117e4fdebf57312968efc94e6/flyer-recovery/SessionMapApp
+		15 button Description: Open session map, Value: Closed
+		16 unknown Information
+		17 text Component check
+		18 unknown Description: The global fixture notice was replaced in place., Secondary Actions: Show details
+		19 button Description: Dismiss, ID: xmark
+		20 scroll area
+			21 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				22 text Which fixture state should remain visible during this layout check?
+				23 button Keep the current state, This is synthetic component-only fixture data.
+				24 button Continue inspecting, Select option
+				25 button Cancel, Selection
+		26 text Session process stopped OMP exited with status 9. Your transcript and draft are preserved.
+		27 button Restart session
+		28 button Open log
+		29 button Dismiss
+		30 button Review stopped prompt
+		31 scroll area Secondary Actions: Scroll Up, Scroll Down
+			32 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Verify the measured overlay above this multiline composer.
+Keep the attachment and recovery controls reachable.
+			33 scroll bar (disabled, settable, float) 0
+		34 scroll area Attached images
+			35 container map-layout.png
+				36 image
+				37 text map-layout.png 32×32 · 193 bytes
+				38 button Description: Remove map-layout.png, ID: xmark
+		39 button (disabled) Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		40 button Description: Model, Help: Shows model menu
+		41 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		42 button (disabled) Description: Send message, ID: arrow.up
+	43 close button
+	44 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	45 minimize button
+46 menu bar
+	47 10x Flyer QA
+	48 File
+	49 Edit
+	50 View
+	51 Navigate
+	52 Session
+	53 Window
+	54 Help
+
+The focused UI element is 23 button Keep the current state, This is synthetic component-only fixture data.

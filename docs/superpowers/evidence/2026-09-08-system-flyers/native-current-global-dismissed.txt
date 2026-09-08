@@ -1,0 +1,55 @@
+Window: "10x | flyer-recovery | a5855ae9d228", App: 10x Flyer QA.
+0 standard window 10x | flyer-recovery | a5855ae9d228, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Failed, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Archived sessions
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapApp
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/a5855ae9d2283a3117e4fdebf57312968efc94e6/flyer-recovery/SessionMapApp
+		15 button Description: Open session map, Value: Closed
+		16 scroll area
+			17 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				18 text Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The selected session keeps its full latest response reachable while measured system notices sit above a multiline composer with an attachment. This deliberately long final assistant message verifies that scrolling to the bottom leaves the response visible instead of hiding it beneath the notice glass. Which fixture state should remain visible during this layout check?
+				19 button Keep the current state, This is synthetic component-only fixture data.
+				20 button Continue inspecting, Select option
+				21 button Cancel, Selection
+		22 text Session process stopped OMP exited with status 9. Your transcript and draft are preserved.
+		23 button Restart session
+		24 button Open log
+		25 button Dismiss
+		26 button Review stopped prompt
+		27 scroll area Secondary Actions: Scroll Up, Scroll Down
+			28 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Verify the measured overlay above this multiline composer.
+Keep the attachment and recovery controls reachable.
+			29 scroll bar (disabled, settable, float) 0
+		30 scroll area Attached images
+			31 container map-layout.png
+				32 image
+				33 text map-layout.png 32×32 · 193 bytes
+				34 button Description: Remove map-layout.png, ID: xmark
+		35 button (disabled) Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		36 button Description: Model, Help: Shows model menu
+		37 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		38 button (disabled) Description: Send message, ID: arrow.up
+	39 close button
+	40 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	41 minimize button
+42 menu bar
+	43 10x Flyer QA
+	44 File
+	45 Edit
+	46 View
+	47 Navigate
+	48 Session
+	49 Window
+	50 Help
+
+The focused UI element is 19 button Keep the current state, This is synthetic component-only fixture data.

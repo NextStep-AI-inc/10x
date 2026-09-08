@@ -1,0 +1,69 @@
+Window: "10x | flyer-recovery | a5855ae9d228", App: 10x Flyer QA.
+0 standard window 10x | flyer-recovery | a5855ae9d228, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Failed, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapApp
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/a5855ae9d2283a3117e4fdebf57312968efc94e6/flyer-recovery/SessionMapApp
+		15 button Description: Open session map, Value: Closed
+		16 button Jump to latest
+		17 unknown Information
+		18 text Component check
+		19 unknown Description: The global fixture notice was replaced in place., Secondary Actions: Show details
+		20 button Description: Dismiss, ID: xmark
+		21 unknown Attention
+		22 text Component check
+		23 unknown Description: The session fixture notice was replaced in place., Secondary Actions: Show details
+		24 button Description: Dismiss, ID: xmark
+		25 unknown Error
+		26 text Component check
+		27 unknown Description: Expiry is synthetic and component-only in this fixture., Secondary Actions: Show details
+		28 button Expire fixture
+		29 button Description: Dismiss, ID: xmark
+		30 scroll area
+			31 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				32 text Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The selected session keeps its full latest response reachable while measured system notices sit above a multiline composer with an attachment. This deliberately long final assistant message verifies that scrolling to the bottom leaves the response visible instead of hiding it beneath the notice glass. Which fixture state should remain visible during this layout check?
+				33 button Keep the current state, This is synthetic component-only fixture data.
+				34 button Continue inspecting, Select option
+				35 button Cancel, Selection
+		36 text Session process stopped OMP exited with status 9. Your transcript and draft are preserved.
+		37 button Restart session
+		38 button Open log
+		39 button Dismiss
+		40 button Review stopped prompt
+		41 scroll area Secondary Actions: Scroll Up, Scroll Down
+			42 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Verify the measured overlay above this multiline composer.
+Keep the attachment and recovery controls reachable.
+			43 scroll bar (disabled, settable, float) 0
+		44 scroll area Attached images
+			45 container map-layout.png
+				46 image
+				47 text map-layout.png 32×32 · 193 bytes
+				48 button Description: Remove map-layout.png, ID: xmark
+		49 button (disabled) Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		50 button Description: Model, Help: Shows model menu
+		51 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		52 button (disabled) Description: Send message, ID: arrow.up
+	53 close button
+	54 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	55 minimize button
+56 menu bar
+	57 10x Flyer QA
+	58 File
+	59 Edit
+	60 View
+	61 Navigate
+	62 Session
+	63 Window
+	64 Help
+
+The focused UI element is 33 button Keep the current state, This is synthetic component-only fixture data.

@@ -1,0 +1,63 @@
+Window: "10x | flyer-overflow | 8ca1506326d4", App: 10x Flyer QA.
+0 standard window 10x | flyer-overflow | 8ca1506326d4, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapApp
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/8ca1506326d4d16499df09b184c31a6e1610c8f0/flyer-overflow/SessionMapApp
+		15 button Description: Open session map, Value: Closed
+		16 unknown Information
+		17 text Catch up
+		18 unknown Description: Three background turns finished and the concise session summary is ready to inspect., Secondary Actions: Show details
+			19 popover Secondary Actions: Cancel
+				20 text Three background turns finished and the concise session summary is ready to inspect.
+		21 button Open Map
+		22 button Description: Dismiss, ID: xmark
+		23 scroll area
+			24 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				25 container Description: Model expansion, Details: Standard
+					26 button Description: Expanded, Value: Not selected
+					27 button Description: Standard, Value: Selected
+					28 button Description: Slim, Value: Not selected
+				29 unknown Thread started Monday, September 7, 2026 at 9:53 AM
+				30 text Show the session architecture beside the real transcript. Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The selected session keeps its full latest response reachable while measured system notices sit above a multiline composer with an attachment. This deliberately long final assistant message verifies that scrolling to the bottom leaves the response visible instead of hiding it beneath the notice glass. Which fixture state should remain visible during this layout check?
+				31 button Keep the current state, This is synthetic component-only fixture data.
+				32 button Continue inspecting, Select option
+				33 button Cancel, Selection
+		34 scroll area Secondary Actions: Scroll Up, Scroll Down
+			35 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Verify the measured overlay above this multiline composer.
+Keep the attachment and recovery controls reachable.
+			36 scroll bar (disabled, settable, float) 0
+		37 scroll area Attached images
+			38 container map-layout.png
+				39 image
+				40 text map-layout.png 32×32 · 193 bytes
+				41 button Description: Remove map-layout.png, ID: xmark
+		42 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		43 button Description: Model, Help: Shows model menu
+		44 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		45 button Description: Send message, ID: arrow.up
+	46 close button
+	47 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	48 minimize button
+49 menu bar
+	50 10x Flyer QA
+	51 File
+	52 Edit
+	53 View
+	54 Navigate
+	55 Session
+	56 Window
+	57 Help
+
+The focused UI element is 35 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Verify the measured overlay above this multiline composer.
+Keep the attachment and recovery controls reachable.

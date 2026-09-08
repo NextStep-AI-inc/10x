@@ -1,0 +1,60 @@
+Window: "10x | flyer-overflow | a5855ae9d228", App: 10x Flyer QA.
+0 standard window 10x | flyer-overflow | a5855ae9d228, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapApp
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/a5855ae9d2283a3117e4fdebf57312968efc94e6/flyer-overflow/SessionMapApp
+		15 button Description: Open session map, Value: Closed
+		16 unknown Information
+		17 text Catch up
+		18 unknown Description: Three background turns finished and the concise session summary is ready to inspect., Secondary Actions: Show details
+		19 button Open Map
+		20 button Description: Dismiss, ID: xmark
+		21 scroll area
+			22 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				23 container Description: Model expansion, Details: Standard
+					24 button Description: Expanded, Value: Not selected
+					25 button Description: Standard, Value: Selected
+					26 button Description: Slim, Value: Not selected
+				27 unknown Thread started Monday, September 7, 2026 at 9:53 AM
+				28 text Show the session architecture beside the real transcript. Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The selected session keeps its full latest response reachable while measured system notices sit above a multiline composer with an attachment. This deliberately long final assistant message verifies that scrolling to the bottom leaves the response visible instead of hiding it beneath the notice glass. Which fixture state should remain visible during this layout check?
+				29 button Keep the current state, This is synthetic component-only fixture data.
+				30 button Continue inspecting, Select option
+				31 button Cancel, Selection
+		32 scroll area Secondary Actions: Scroll Up, Scroll Down
+			33 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Verify the measured overlay above this multiline composer.
+Keep the attachment and recovery controls reachable.
+			34 scroll bar (disabled, settable, float) 0
+		35 scroll area Attached images
+			36 container map-layout.png
+				37 image
+				38 text map-layout.png 32×32 · 193 bytes
+				39 button Description: Remove map-layout.png, ID: xmark
+		40 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		41 button Description: Model, Help: Shows model menu
+		42 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		43 button Description: Send message, ID: arrow.up
+	44 close button
+	45 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	46 minimize button
+47 menu bar
+	48 10x Flyer QA
+	49 File
+	50 Edit
+	51 View
+	52 Navigate
+	53 Session
+	54 Window
+	55 Help
+
+The focused UI element is 30 button Continue inspecting, Select option

@@ -1,0 +1,75 @@
+Window: "10x | flyer-overflow | a5855ae9d228", App: 10x Flyer QA.
+0 standard window 10x | flyer-overflow | a5855ae9d228, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 container Description: Commands, Details: All, 3 commands, Secondary Actions: Increment, Decrement, Prompts, Extensions, Skills, Commands, App, All
+			13 text COMMANDS ↑↓ move  ⌃⇥ source  ↵ open  Esc close
+			14 container Sources
+				15 button Description: All, Help: Show All commands, Value: 3 commands
+				16 button Description: App, Help: Show App commands, Value: 3 commands
+				17 button Description: Commands, Help: Show Commands commands, Value: 0 commands
+				18 button Description: Skills, Help: Show Skills commands, Value: 0 commands
+				19 button Description: Extensions, Help: Show Extensions commands, Value: 0 commands
+				20 button Description: Prompts, Help: Show Prompts commands, Value: 0 commands
+			21 container Results
+				22 text Loading session commands…
+		23 unknown Description: Branch, Details: codex/session-map-plans
+		24 unknown Description: Folder, Details: SessionMapApp
+		25 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/a5855ae9d2283a3117e4fdebf57312968efc94e6/flyer-overflow/SessionMapApp
+		26 button Description: Open session map, Value: Closed
+		27 unknown Information
+		28 text Catch up
+		29 unknown Description: Three background turns finished and the concise session summary is ready to inspect., Secondary Actions: Show details
+		30 button Open Map
+		31 button Description: Dismiss, ID: xmark
+		32 scroll area
+			33 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				34 container Description: Model expansion, Details: Standard
+					35 button Description: Expanded, Value: Not selected
+					36 button Description: Standard, Value: Selected
+					37 button Description: Slim, Value: Not selected
+				38 unknown Thread started Monday, September 7, 2026 at 9:53 AM
+				39 text Show the session architecture beside the real transcript. Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The selected session keeps its full latest response reachable while measured system notices sit above a multiline composer with an attachment. This deliberately long final assistant message verifies that scrolling to the bottom leaves the response visible instead of hiding it beneath the notice glass. Which fixture state should remain visible during this layout check?
+				40 button Keep the current state, This is synthetic component-only fixture data.
+				41 button Continue inspecting, Select option
+				42 button Cancel, Selection
+		43 scroll area Secondary Actions: Scroll Up, Scroll Down
+			44 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: /fixture
+			45 scroll bar (settable, float) 0.0440678596496582
+				46 value indicator (settable, float) 0.0440678596496582
+				47 increment arrow button
+				48 decrement arrow button
+				49 increment page button
+				50 decrement page button
+		51 scroll area Attached images
+			52 container map-layout.png
+				53 image
+				54 text map-layout.png 32×32 · 193 bytes
+				55 button Description: Remove map-layout.png, ID: xmark
+		56 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		57 button Description: Model, Help: Shows model menu
+		58 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		59 button Description: Send message, ID: arrow.up
+	60 close button
+	61 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	62 minimize button
+63 menu bar
+	64 10x Flyer QA
+	65 File
+	66 Edit
+	67 View
+	68 Navigate
+	69 Session
+	70 Window
+	71 Help
+
+The focused UI element is 44 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: /fixture

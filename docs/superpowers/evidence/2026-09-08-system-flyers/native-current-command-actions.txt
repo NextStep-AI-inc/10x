@@ -1,0 +1,73 @@
+Window: "10x | flyer-overflow | a5855ae9d228", App: 10x Flyer QA.
+0 standard window 10x | flyer-overflow | a5855ae9d228, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 container Description: Commands, Details: App, 3 commands, Secondary Actions: Increment, Decrement, Prompts, Extensions, Skills, Commands, App, All
+			13 text COMMANDS ↑↓ move  ⌃⇥ source  ↵ open  Esc close
+			14 container Sources
+				15 button Description: All, Help: Show All commands, Value: 3 commands
+				16 button Description: App, Help: Show App commands, Value: 3 commands
+				17 button Description: Commands, Help: Show Commands commands, Value: 0 commands
+				18 button Description: Skills, Help: Show Skills commands, Value: 0 commands
+				19 button Description: Extensions, Help: Show Extensions commands, Value: 0 commands
+				20 button Description: Prompts, Help: Show Prompts commands, Value: 0 commands
+			21 scroll area Results
+				22 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					23 button Description: model, Choose a model, App, 1 of 3, Value: Selected, Help: Type to filter. Up and Down move results. Control Tab changes source. Command 1 through Command 7 selects a source. Enter opens or runs. Tab completes. Escape closes.
+					24 button Description: effort, Choose reasoning effort, App, 2 of 3, Value: Not selected, Help: Type to filter. Up and Down move results. Control Tab changes source. Command 1 through Command 7 selects a source. Enter opens or runs. Tab completes. Escape closes.
+					25 button Description: fast, Toggle fast mode, App, 3 of 3, Value: Not selected, Help: Type to filter. Up and Down move results. Control Tab changes source. Command 1 through Command 7 selects a source. Enter opens or runs. Tab completes. Escape closes.
+		26 unknown Description: Branch, Details: codex/session-map-plans
+		27 unknown Description: Folder, Details: SessionMapApp
+		28 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/a5855ae9d2283a3117e4fdebf57312968efc94e6/flyer-overflow/SessionMapApp
+		29 button Description: Open session map, Value: Closed
+		30 unknown Information
+		31 text Catch up
+		32 unknown Description: Three background turns finished and the concise session summary is ready to inspect., Secondary Actions: Show details
+		33 button Open Map
+		34 button Description: Dismiss, ID: xmark
+		35 scroll area
+			36 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				37 container Description: Model expansion, Details: Standard
+					38 button Description: Expanded, Value: Not selected
+					39 button Description: Standard, Value: Selected
+					40 button Description: Slim, Value: Not selected
+				41 unknown Thread started Monday, September 7, 2026 at 9:53 AM
+				42 text Show the session architecture beside the real transcript. Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The selected session keeps its full latest response reachable while measured system notices sit above a multiline composer with an attachment. This deliberately long final assistant message verifies that scrolling to the bottom leaves the response visible instead of hiding it beneath the notice glass. Which fixture state should remain visible during this layout check?
+				43 button Keep the current state, This is synthetic component-only fixture data.
+				44 button Continue inspecting, Select option
+				45 button Cancel, Selection
+		46 scroll area Secondary Actions: Scroll Up, Scroll Down
+			47 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: /
+			48 scroll bar (disabled, settable, float) 0
+		49 scroll area Attached images
+			50 container map-layout.png
+				51 image
+				52 text map-layout.png 32×32 · 193 bytes
+				53 button Description: Remove map-layout.png, ID: xmark
+		54 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		55 button Description: Model, Help: Shows model menu
+		56 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		57 button Description: Send message, ID: arrow.up
+	58 close button
+	59 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	60 minimize button
+61 menu bar
+	62 10x Flyer QA
+	63 File
+	64 Edit
+	65 View
+	66 Navigate
+	67 Session
+	68 Window
+	69 Help
+
+The focused UI element is 47 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: /

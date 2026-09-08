@@ -1,0 +1,2390 @@
+{
+  "observedTravelPixels": 145,
+  "templateRect": [
+    360,
+    384,
+    80,
+    14
+  ],
+  "holds": [
+    {
+      "endpoint": "far",
+      "from": 2.8805591669999995,
+      "through": 3.986466041999869,
+      "duration": 1.1059068749998695,
+      "firstFrame": 39,
+      "lastFrame": 56
+    },
+    {
+      "endpoint": "far",
+      "from": 12.569084874999943,
+      "through": 13.545902583999792,
+      "duration": 0.9768177089998495,
+      "firstFrame": 170,
+      "lastFrame": 180
+    },
+    {
+      "endpoint": "far",
+      "from": 22.234082999999867,
+      "through": 23.35388829199993,
+      "duration": 1.1198052920000627,
+      "firstFrame": 287,
+      "lastFrame": 301
+    },
+    {
+      "endpoint": "leading",
+      "from": 7.715599208999891,
+      "through": 8.860369416999863,
+      "duration": 1.1447702079999713,
+      "firstFrame": 109,
+      "lastFrame": 124
+    },
+    {
+      "endpoint": "leading",
+      "from": 17.37233258399996,
+      "through": 18.53450187499984,
+      "duration": 1.1621692909998806,
+      "firstFrame": 225,
+      "lastFrame": 242
+    },
+    {
+      "endpoint": "leading",
+      "from": 27.006816916999874,
+      "through": 28.185729916999815,
+      "duration": 1.178912999999941,
+      "firstFrame": 349,
+      "lastFrame": 366
+    }
+  ],
+  "maxMatchError": 12.01875,
+  "positions": [
+    {
+      "frame": 0,
+      "seconds": 0.0,
+      "glyphX": 360,
+      "matchError": 0.0
+    },
+    {
+      "frame": 1,
+      "seconds": 0.08876766699994915,
+      "glyphX": 356,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 2,
+      "seconds": 0.21341362499981187,
+      "glyphX": 351,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 3,
+      "seconds": 0.2879796670000069,
+      "glyphX": 348,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 4,
+      "seconds": 0.42604129199986346,
+      "glyphX": 343,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 5,
+      "seconds": 0.5753310000000056,
+      "glyphX": 336,
+      "matchError": 0.0
+    },
+    {
+      "frame": 6,
+      "seconds": 0.6792811669998337,
+      "glyphX": 332,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 7,
+      "seconds": 0.7429023749998305,
+      "glyphX": 330,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 8,
+      "seconds": 0.8257647090000101,
+      "glyphX": 327,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 9,
+      "seconds": 0.8904903749998193,
+      "glyphX": 324,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 10,
+      "seconds": 0.9647762499998789,
+      "glyphX": 321,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 11,
+      "seconds": 1.0335499169998803,
+      "glyphX": 318,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 12,
+      "seconds": 1.1341954589998349,
+      "glyphX": 315,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 13,
+      "seconds": 1.2299867089998442,
+      "glyphX": 311,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 14,
+      "seconds": 1.3159787500000093,
+      "glyphX": 307,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 15,
+      "seconds": 1.3804113749999087,
+      "glyphX": 304,
+      "matchError": 0.0
+    },
+    {
+      "frame": 16,
+      "seconds": 1.447933999999892,
+      "glyphX": 302,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 17,
+      "seconds": 1.5070301669999027,
+      "glyphX": 299,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 18,
+      "seconds": 1.5878354169998783,
+      "glyphX": 296,
+      "matchError": 0.0
+    },
+    {
+      "frame": 19,
+      "seconds": 1.6497852919998113,
+      "glyphX": 294,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 20,
+      "seconds": 1.7007509169999975,
+      "glyphX": 291,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 21,
+      "seconds": 1.7660335839998442,
+      "glyphX": 288,
+      "matchError": 0.0
+    },
+    {
+      "frame": 22,
+      "seconds": 1.8278637089999392,
+      "glyphX": 287,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 23,
+      "seconds": 1.8805154589999002,
+      "glyphX": 284,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 24,
+      "seconds": 1.9415678339998703,
+      "glyphX": 282,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 25,
+      "seconds": 1.9950561669999733,
+      "glyphX": 280,
+      "matchError": 0.0
+    },
+    {
+      "frame": 26,
+      "seconds": 2.0468910419999156,
+      "glyphX": 278,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 27,
+      "seconds": 2.1068535419998224,
+      "glyphX": 275,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 28,
+      "seconds": 2.1665967089999465,
+      "glyphX": 272,
+      "matchError": 0.0
+    },
+    {
+      "frame": 29,
+      "seconds": 2.252585499999812,
+      "glyphX": 270,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 30,
+      "seconds": 2.3187913339999504,
+      "glyphX": 267,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 31,
+      "seconds": 2.3795687499998603,
+      "glyphX": 264,
+      "matchError": 0.0
+    },
+    {
+      "frame": 32,
+      "seconds": 2.4420646249998827,
+      "glyphX": 262,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 33,
+      "seconds": 2.5054517500000073,
+      "glyphX": 259,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 34,
+      "seconds": 2.5628270419999026,
+      "glyphX": 257,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 35,
+      "seconds": 2.6271315839998426,
+      "glyphX": 255,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 36,
+      "seconds": 2.6894036669998895,
+      "glyphX": 252,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 37,
+      "seconds": 2.74880683399993,
+      "glyphX": 250,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 38,
+      "seconds": 2.81503341699997,
+      "glyphX": 247,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 39,
+      "seconds": 2.8805591669999995,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 40,
+      "seconds": 2.9355277089998126,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 41,
+      "seconds": 2.994502749999985,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 42,
+      "seconds": 3.062158041999908,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 43,
+      "seconds": 3.116163416999858,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 44,
+      "seconds": 3.1790222089998426,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 45,
+      "seconds": 3.2453594999997875,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 46,
+      "seconds": 3.2995563749999275,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 47,
+      "seconds": 3.358007916999981,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 48,
+      "seconds": 3.416951916999882,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 49,
+      "seconds": 3.4727984999998007,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 50,
+      "seconds": 3.540097583999857,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 51,
+      "seconds": 3.601440624999814,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 52,
+      "seconds": 3.6874695839998313,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 53,
+      "seconds": 3.7817265839998147,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 54,
+      "seconds": 3.845749666999793,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 55,
+      "seconds": 3.9153996249998455,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 56,
+      "seconds": 3.986466041999869,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 57,
+      "seconds": 4.069137666999828,
+      "glyphX": 246,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 58,
+      "seconds": 4.146795708999969,
+      "glyphX": 248,
+      "matchError": 0.0
+    },
+    {
+      "frame": 59,
+      "seconds": 4.229926374999806,
+      "glyphX": 251,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 60,
+      "seconds": 4.30595862499997,
+      "glyphX": 255,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 61,
+      "seconds": 4.3648099169998895,
+      "glyphX": 256,
+      "matchError": 0.0
+    },
+    {
+      "frame": 62,
+      "seconds": 4.427233416999923,
+      "glyphX": 259,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 63,
+      "seconds": 4.494950999999885,
+      "glyphX": 262,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 64,
+      "seconds": 4.564478083999828,
+      "glyphX": 265,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 65,
+      "seconds": 4.643264916999964,
+      "glyphX": 268,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 66,
+      "seconds": 4.714943208999932,
+      "glyphX": 271,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 67,
+      "seconds": 4.785885666999966,
+      "glyphX": 274,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 68,
+      "seconds": 4.849960541999899,
+      "glyphX": 276,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 69,
+      "seconds": 4.920254541999893,
+      "glyphX": 279,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 70,
+      "seconds": 4.97672487499984,
+      "glyphX": 282,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 71,
+      "seconds": 5.047516874999972,
+      "glyphX": 284,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 72,
+      "seconds": 5.118725541999797,
+      "glyphX": 287,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 73,
+      "seconds": 5.183593333999859,
+      "glyphX": 290,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 74,
+      "seconds": 5.248445624999935,
+      "glyphX": 292,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 75,
+      "seconds": 5.3076995839998125,
+      "glyphX": 295,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 76,
+      "seconds": 5.374748458999908,
+      "glyphX": 298,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 77,
+      "seconds": 5.445917541999836,
+      "glyphX": 300,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 78,
+      "seconds": 5.507460833999794,
+      "glyphX": 303,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 79,
+      "seconds": 5.570769124999876,
+      "glyphX": 306,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 80,
+      "seconds": 5.650121999999974,
+      "glyphX": 308,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 81,
+      "seconds": 5.708376749999821,
+      "glyphX": 311,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 82,
+      "seconds": 5.776130249999929,
+      "glyphX": 314,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 83,
+      "seconds": 5.837369583999971,
+      "glyphX": 316,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 84,
+      "seconds": 5.904969833999872,
+      "glyphX": 319,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 85,
+      "seconds": 5.974937999999849,
+      "glyphX": 322,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 86,
+      "seconds": 6.0355169999999925,
+      "glyphX": 324,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 87,
+      "seconds": 6.109511333999922,
+      "glyphX": 327,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 88,
+      "seconds": 6.218269958999939,
+      "glyphX": 331,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 89,
+      "seconds": 6.282866999999853,
+      "glyphX": 334,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 90,
+      "seconds": 6.351238791999873,
+      "glyphX": 336,
+      "matchError": 0.0
+    },
+    {
+      "frame": 91,
+      "seconds": 6.408555999999866,
+      "glyphX": 339,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 92,
+      "seconds": 6.491685333999805,
+      "glyphX": 342,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 93,
+      "seconds": 6.551164208999835,
+      "glyphX": 344,
+      "matchError": 0.0
+    },
+    {
+      "frame": 94,
+      "seconds": 6.627670874999836,
+      "glyphX": 347,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 95,
+      "seconds": 6.697157458999893,
+      "glyphX": 350,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 96,
+      "seconds": 6.759757208999945,
+      "glyphX": 353,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 97,
+      "seconds": 6.8250377089998215,
+      "glyphX": 355,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 98,
+      "seconds": 6.898692541999975,
+      "glyphX": 358,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 99,
+      "seconds": 6.957331459000009,
+      "glyphX": 360,
+      "matchError": 0.0
+    },
+    {
+      "frame": 100,
+      "seconds": 7.0229092089999465,
+      "glyphX": 363,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 101,
+      "seconds": 7.089761291999835,
+      "glyphX": 366,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 102,
+      "seconds": 7.152950249999995,
+      "glyphX": 368,
+      "matchError": 0.0
+    },
+    {
+      "frame": 103,
+      "seconds": 7.236457416999852,
+      "glyphX": 372,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 104,
+      "seconds": 7.297176458999981,
+      "glyphX": 374,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 105,
+      "seconds": 7.384107249999884,
+      "glyphX": 378,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 106,
+      "seconds": 7.480104541999986,
+      "glyphX": 382,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 107,
+      "seconds": 7.548339583999943,
+      "glyphX": 384,
+      "matchError": 0.0
+    },
+    {
+      "frame": 108,
+      "seconds": 7.627231958999997,
+      "glyphX": 387,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 109,
+      "seconds": 7.715599208999891,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 110,
+      "seconds": 7.7850647089998235,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 111,
+      "seconds": 7.8574224169999365,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 112,
+      "seconds": 7.932796417000005,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 113,
+      "seconds": 7.997233208999969,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 114,
+      "seconds": 8.065668583999853,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 115,
+      "seconds": 8.137934499999973,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 116,
+      "seconds": 8.213423624999821,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 117,
+      "seconds": 8.283851166999899,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 118,
+      "seconds": 8.356632208999946,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 119,
+      "seconds": 8.439197333999909,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 120,
+      "seconds": 8.517106666999869,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 121,
+      "seconds": 8.605801041999833,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 122,
+      "seconds": 8.709317374999868,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 123,
+      "seconds": 8.791250124999788,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 124,
+      "seconds": 8.860369416999863,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 125,
+      "seconds": 8.934978166999993,
+      "glyphX": 388,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 126,
+      "seconds": 9.006451791999861,
+      "glyphX": 385,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 127,
+      "seconds": 9.07594591699983,
+      "glyphX": 382,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 128,
+      "seconds": 9.14659029199998,
+      "glyphX": 380,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 129,
+      "seconds": 9.221776208999799,
+      "glyphX": 377,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 130,
+      "seconds": 9.299987041999819,
+      "glyphX": 374,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 131,
+      "seconds": 9.388619041999801,
+      "glyphX": 370,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 132,
+      "seconds": 9.483769749999977,
+      "glyphX": 366,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 133,
+      "seconds": 9.575308458999963,
+      "glyphX": 362,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 134,
+      "seconds": 9.658149541999911,
+      "glyphX": 360,
+      "matchError": 0.0
+    },
+    {
+      "frame": 135,
+      "seconds": 9.749031583999981,
+      "glyphX": 356,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 136,
+      "seconds": 9.817048958999804,
+      "glyphX": 353,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 137,
+      "seconds": 9.88923179199989,
+      "glyphX": 350,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 138,
+      "seconds": 9.968825834000018,
+      "glyphX": 347,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 139,
+      "seconds": 10.034189291999908,
+      "glyphX": 345,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 140,
+      "seconds": 10.094581249999814,
+      "glyphX": 342,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 141,
+      "seconds": 10.163142041999846,
+      "glyphX": 340,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 142,
+      "seconds": 10.2324045419998,
+      "glyphX": 337,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 143,
+      "seconds": 10.300025625000009,
+      "glyphX": 333,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 144,
+      "seconds": 10.377329833999974,
+      "glyphX": 330,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 145,
+      "seconds": 10.438605041999836,
+      "glyphX": 328,
+      "matchError": 0.0
+    },
+    {
+      "frame": 146,
+      "seconds": 10.510138541999972,
+      "glyphX": 325,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 147,
+      "seconds": 10.59396395899984,
+      "glyphX": 322,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 148,
+      "seconds": 10.676978249999927,
+      "glyphX": 318,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 149,
+      "seconds": 10.75551000000001,
+      "glyphX": 316,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 150,
+      "seconds": 10.82748666699999,
+      "glyphX": 313,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 151,
+      "seconds": 10.920757458999987,
+      "glyphX": 309,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 152,
+      "seconds": 11.014633708999957,
+      "glyphX": 305,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 153,
+      "seconds": 11.106896541999886,
+      "glyphX": 301,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 154,
+      "seconds": 11.170639666999923,
+      "glyphX": 298,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 155,
+      "seconds": 11.242265499999979,
+      "glyphX": 296,
+      "matchError": 0.0
+    },
+    {
+      "frame": 156,
+      "seconds": 11.340534874999896,
+      "glyphX": 292,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 157,
+      "seconds": 11.449271583999973,
+      "glyphX": 288,
+      "matchError": 0.0
+    },
+    {
+      "frame": 158,
+      "seconds": 11.667291458999971,
+      "glyphX": 284,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 159,
+      "seconds": 11.742837999999988,
+      "glyphX": 276,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 160,
+      "seconds": 11.814022499999963,
+      "glyphX": 273,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 161,
+      "seconds": 11.892561499999836,
+      "glyphX": 270,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 162,
+      "seconds": 11.958078499999829,
+      "glyphX": 268,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 163,
+      "seconds": 12.034809583999914,
+      "glyphX": 265,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 164,
+      "seconds": 12.100968083999819,
+      "glyphX": 262,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 165,
+      "seconds": 12.169895334000001,
+      "glyphX": 259,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 166,
+      "seconds": 12.255819583999925,
+      "glyphX": 256,
+      "matchError": 0.0
+    },
+    {
+      "frame": 167,
+      "seconds": 12.339117291999981,
+      "glyphX": 252,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 168,
+      "seconds": 12.417034874999896,
+      "glyphX": 249,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 169,
+      "seconds": 12.485709458999802,
+      "glyphX": 246,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 170,
+      "seconds": 12.569084874999943,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 171,
+      "seconds": 12.651736166999909,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 172,
+      "seconds": 12.71664970900002,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 173,
+      "seconds": 12.800436125000008,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 174,
+      "seconds": 12.877106416999828,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 175,
+      "seconds": 12.945714333999902,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 176,
+      "seconds": 13.020186208999949,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 177,
+      "seconds": 13.082713125000009,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 178,
+      "seconds": 13.1880779589999,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 179,
+      "seconds": 13.342653583999956,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 180,
+      "seconds": 13.545902583999792,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 181,
+      "seconds": 14.005461708999938,
+      "glyphX": 257,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 182,
+      "seconds": 14.083407374999952,
+      "glyphX": 260,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 183,
+      "seconds": 14.156256749999942,
+      "glyphX": 262,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 184,
+      "seconds": 14.2349842089999,
+      "glyphX": 266,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 185,
+      "seconds": 14.31763741700002,
+      "glyphX": 269,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 186,
+      "seconds": 14.377244583999971,
+      "glyphX": 272,
+      "matchError": 0.0
+    },
+    {
+      "frame": 187,
+      "seconds": 14.444693541999907,
+      "glyphX": 274,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 188,
+      "seconds": 14.515393583999947,
+      "glyphX": 277,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 189,
+      "seconds": 14.584125874999911,
+      "glyphX": 280,
+      "matchError": 0.0
+    },
+    {
+      "frame": 190,
+      "seconds": 14.672720124999993,
+      "glyphX": 284,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 191,
+      "seconds": 14.741694916999899,
+      "glyphX": 286,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 192,
+      "seconds": 14.82179708399996,
+      "glyphX": 289,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 193,
+      "seconds": 14.889593124999898,
+      "glyphX": 292,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 194,
+      "seconds": 14.978513708999847,
+      "glyphX": 296,
+      "matchError": 0.0
+    },
+    {
+      "frame": 195,
+      "seconds": 15.048503458999797,
+      "glyphX": 298,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 196,
+      "seconds": 15.124616291999818,
+      "glyphX": 301,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 197,
+      "seconds": 15.196193416999886,
+      "glyphX": 304,
+      "matchError": 0.0
+    },
+    {
+      "frame": 198,
+      "seconds": 15.30190841699997,
+      "glyphX": 309,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 199,
+      "seconds": 15.38587112499983,
+      "glyphX": 312,
+      "matchError": 0.0
+    },
+    {
+      "frame": 200,
+      "seconds": 15.457502374999924,
+      "glyphX": 314,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 201,
+      "seconds": 15.538678708999884,
+      "glyphX": 317,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 202,
+      "seconds": 15.611427541999845,
+      "glyphX": 321,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 203,
+      "seconds": 15.704839083999861,
+      "glyphX": 324,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 204,
+      "seconds": 15.777179833999835,
+      "glyphX": 328,
+      "matchError": 0.0
+    },
+    {
+      "frame": 205,
+      "seconds": 15.848331083999947,
+      "glyphX": 330,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 206,
+      "seconds": 15.933567916999804,
+      "glyphX": 333,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 207,
+      "seconds": 16.016133749999803,
+      "glyphX": 337,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 208,
+      "seconds": 16.12087116699992,
+      "glyphX": 340,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 209,
+      "seconds": 16.29418979199999,
+      "glyphX": 348,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 210,
+      "seconds": 16.357054999999935,
+      "glyphX": 351,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 211,
+      "seconds": 16.425382166999857,
+      "glyphX": 353,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 212,
+      "seconds": 16.50660041700001,
+      "glyphX": 357,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 213,
+      "seconds": 16.58357629200001,
+      "glyphX": 360,
+      "matchError": 0.0
+    },
+    {
+      "frame": 214,
+      "seconds": 16.645119999999878,
+      "glyphX": 362,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 215,
+      "seconds": 16.71905737499986,
+      "glyphX": 365,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 216,
+      "seconds": 16.783009166999953,
+      "glyphX": 368,
+      "matchError": 0.0
+    },
+    {
+      "frame": 217,
+      "seconds": 16.84281237499998,
+      "glyphX": 370,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 218,
+      "seconds": 16.901729541999988,
+      "glyphX": 372,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 219,
+      "seconds": 16.969435374999886,
+      "glyphX": 375,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 220,
+      "seconds": 17.043895000000017,
+      "glyphX": 378,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 221,
+      "seconds": 17.1047492089998,
+      "glyphX": 381,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 222,
+      "seconds": 17.17356129199988,
+      "glyphX": 384,
+      "matchError": 0.0
+    },
+    {
+      "frame": 223,
+      "seconds": 17.234562959,
+      "glyphX": 385,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 224,
+      "seconds": 17.30031554199988,
+      "glyphX": 388,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 225,
+      "seconds": 17.37233258399996,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 226,
+      "seconds": 17.433631291999948,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 227,
+      "seconds": 17.501020917000016,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 228,
+      "seconds": 17.56152987500001,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 229,
+      "seconds": 17.63182133399998,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 230,
+      "seconds": 17.711143249999964,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 231,
+      "seconds": 17.770651916999835,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 232,
+      "seconds": 17.849841083999955,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 233,
+      "seconds": 17.913653166999808,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 234,
+      "seconds": 17.980035124999937,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 235,
+      "seconds": 18.041920624999793,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 236,
+      "seconds": 18.11505233399989,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 237,
+      "seconds": 18.183614791999805,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 238,
+      "seconds": 18.26130529199983,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 239,
+      "seconds": 18.327598416999912,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 240,
+      "seconds": 18.39598166699987,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 241,
+      "seconds": 18.46207487499993,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 242,
+      "seconds": 18.53450187499984,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 243,
+      "seconds": 18.59641787499981,
+      "glyphX": 388,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 244,
+      "seconds": 18.660356083999854,
+      "glyphX": 385,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 245,
+      "seconds": 18.721879375000018,
+      "glyphX": 383,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 246,
+      "seconds": 18.78945166699984,
+      "glyphX": 380,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 247,
+      "seconds": 18.855600458999863,
+      "glyphX": 378,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 248,
+      "seconds": 18.928740791999967,
+      "glyphX": 375,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 249,
+      "seconds": 18.995657124999912,
+      "glyphX": 372,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 250,
+      "seconds": 19.056256458999822,
+      "glyphX": 369,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 251,
+      "seconds": 19.12532924999995,
+      "glyphX": 367,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 252,
+      "seconds": 19.207870916999877,
+      "glyphX": 363,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 253,
+      "seconds": 19.33275549999997,
+      "glyphX": 359,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 254,
+      "seconds": 19.44693325,
+      "glyphX": 354,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 255,
+      "seconds": 19.5790996249998,
+      "glyphX": 348,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 256,
+      "seconds": 19.71363037499995,
+      "glyphX": 343,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 257,
+      "seconds": 19.845701916999882,
+      "glyphX": 338,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 258,
+      "seconds": 19.967640916999894,
+      "glyphX": 334,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 259,
+      "seconds": 20.062681333999848,
+      "glyphX": 330,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 260,
+      "seconds": 20.185319791999877,
+      "glyphX": 326,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 261,
+      "seconds": 20.271524499999824,
+      "glyphX": 320,
+      "matchError": 0.0
+    },
+    {
+      "frame": 262,
+      "seconds": 20.383197999999858,
+      "glyphX": 316,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 263,
+      "seconds": 20.468091459000018,
+      "glyphX": 312,
+      "matchError": 0.0
+    },
+    {
+      "frame": 264,
+      "seconds": 20.541591333999996,
+      "glyphX": 310,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 265,
+      "seconds": 20.62169487499981,
+      "glyphX": 307,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 266,
+      "seconds": 20.692083291999996,
+      "glyphX": 304,
+      "matchError": 0.0
+    },
+    {
+      "frame": 267,
+      "seconds": 20.758451541999822,
+      "glyphX": 302,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 268,
+      "seconds": 20.853230125000003,
+      "glyphX": 298,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 269,
+      "seconds": 20.92438854199997,
+      "glyphX": 295,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 270,
+      "seconds": 20.992598708999807,
+      "glyphX": 292,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 271,
+      "seconds": 21.061142584000017,
+      "glyphX": 289,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 272,
+      "seconds": 21.1300527499998,
+      "glyphX": 287,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 273,
+      "seconds": 21.201714458999923,
+      "glyphX": 283,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 274,
+      "seconds": 21.267468333999858,
+      "glyphX": 280,
+      "matchError": 0.0
+    },
+    {
+      "frame": 275,
+      "seconds": 21.341610833999933,
+      "glyphX": 278,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 276,
+      "seconds": 21.410287083999954,
+      "glyphX": 275,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 277,
+      "seconds": 21.475314833999843,
+      "glyphX": 272,
+      "matchError": 0.0
+    },
+    {
+      "frame": 278,
+      "seconds": 21.544013999999965,
+      "glyphX": 270,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 279,
+      "seconds": 21.616123833999968,
+      "glyphX": 267,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 280,
+      "seconds": 21.692712916999824,
+      "glyphX": 264,
+      "matchError": 0.0
+    },
+    {
+      "frame": 281,
+      "seconds": 21.757052291999806,
+      "glyphX": 262,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 282,
+      "seconds": 21.834822042000013,
+      "glyphX": 259,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 283,
+      "seconds": 21.901856208999874,
+      "glyphX": 256,
+      "matchError": 0.0
+    },
+    {
+      "frame": 284,
+      "seconds": 21.994097583999856,
+      "glyphX": 252,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 285,
+      "seconds": 22.0649832919999,
+      "glyphX": 249,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 286,
+      "seconds": 22.144581499999855,
+      "glyphX": 246,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 287,
+      "seconds": 22.234082999999867,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 288,
+      "seconds": 22.31804454199993,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 289,
+      "seconds": 22.38645437499997,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 290,
+      "seconds": 22.47038699999987,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 291,
+      "seconds": 22.53502391699981,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 292,
+      "seconds": 22.645351124999813,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 293,
+      "seconds": 22.71913500000001,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 294,
+      "seconds": 22.792334334000014,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 295,
+      "seconds": 22.880566292000005,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 296,
+      "seconds": 22.951026416999987,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 297,
+      "seconds": 23.02960899999994,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 298,
+      "seconds": 23.12321445899992,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 299,
+      "seconds": 23.210125958999853,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 300,
+      "seconds": 23.275158458999822,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 301,
+      "seconds": 23.35388829199993,
+      "glyphX": 245,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 302,
+      "seconds": 23.435211333999877,
+      "glyphX": 247,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 303,
+      "seconds": 23.504806666999823,
+      "glyphX": 251,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 304,
+      "seconds": 23.577756708999864,
+      "glyphX": 254,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 305,
+      "seconds": 23.65613341699983,
+      "glyphX": 256,
+      "matchError": 0.0
+    },
+    {
+      "frame": 306,
+      "seconds": 23.7321266249998,
+      "glyphX": 259,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 307,
+      "seconds": 23.80722308399994,
+      "glyphX": 263,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 308,
+      "seconds": 23.879668583999855,
+      "glyphX": 266,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 309,
+      "seconds": 24.097806124999888,
+      "glyphX": 274,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 310,
+      "seconds": 24.178648209000006,
+      "glyphX": 278,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 311,
+      "seconds": 24.26412912499998,
+      "glyphX": 280,
+      "matchError": 0.0
+    },
+    {
+      "frame": 312,
+      "seconds": 24.340730416999897,
+      "glyphX": 284,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 313,
+      "seconds": 24.434174333999866,
+      "glyphX": 287,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 314,
+      "seconds": 24.509144749999976,
+      "glyphX": 291,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 315,
+      "seconds": 24.600747083999916,
+      "glyphX": 295,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 316,
+      "seconds": 24.68006849999982,
+      "glyphX": 298,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 317,
+      "seconds": 24.738676791999954,
+      "glyphX": 300,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 318,
+      "seconds": 24.810008916999912,
+      "glyphX": 303,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 319,
+      "seconds": 24.880085666999918,
+      "glyphX": 306,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 320,
+      "seconds": 24.947918791999808,
+      "glyphX": 308,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 321,
+      "seconds": 25.020092416999862,
+      "glyphX": 311,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 322,
+      "seconds": 25.093057249999838,
+      "glyphX": 314,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 323,
+      "seconds": 25.16466249999986,
+      "glyphX": 316,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 324,
+      "seconds": 25.247353333999868,
+      "glyphX": 320,
+      "matchError": 0.0
+    },
+    {
+      "frame": 325,
+      "seconds": 25.314594833999873,
+      "glyphX": 323,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 326,
+      "seconds": 25.386708666999823,
+      "glyphX": 326,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 327,
+      "seconds": 25.45451658399985,
+      "glyphX": 328,
+      "matchError": 0.0
+    },
+    {
+      "frame": 328,
+      "seconds": 25.528181916999863,
+      "glyphX": 331,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 329,
+      "seconds": 25.592175124999834,
+      "glyphX": 334,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 330,
+      "seconds": 25.66446591699985,
+      "glyphX": 337,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 331,
+      "seconds": 25.728873208999868,
+      "glyphX": 339,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 332,
+      "seconds": 25.79652649999992,
+      "glyphX": 342,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 333,
+      "seconds": 25.860308250000003,
+      "glyphX": 344,
+      "matchError": 0.0
+    },
+    {
+      "frame": 334,
+      "seconds": 25.932345583999997,
+      "glyphX": 347,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 335,
+      "seconds": 26.00499037499982,
+      "glyphX": 351,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 336,
+      "seconds": 26.079216041999867,
+      "glyphX": 354,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 337,
+      "seconds": 26.155290749999928,
+      "glyphX": 356,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 338,
+      "seconds": 26.225452374999875,
+      "glyphX": 359,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 339,
+      "seconds": 26.29824641699996,
+      "glyphX": 362,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 340,
+      "seconds": 26.364853416999804,
+      "glyphX": 365,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 341,
+      "seconds": 26.433931499999947,
+      "glyphX": 367,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 342,
+      "seconds": 26.5077951669998,
+      "glyphX": 371,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 343,
+      "seconds": 26.574177833999972,
+      "glyphX": 374,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 344,
+      "seconds": 26.65674649999989,
+      "glyphX": 376,
+      "matchError": 0.0
+    },
+    {
+      "frame": 345,
+      "seconds": 26.730579374999973,
+      "glyphX": 379,
+      "matchError": 11.576785714285714
+    },
+    {
+      "frame": 346,
+      "seconds": 26.803746166999918,
+      "glyphX": 383,
+      "matchError": 10.942857142857143
+    },
+    {
+      "frame": 347,
+      "seconds": 26.874296791999832,
+      "glyphX": 386,
+      "matchError": 11.371428571428572
+    },
+    {
+      "frame": 348,
+      "seconds": 26.941855291999875,
+      "glyphX": 388,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 349,
+      "seconds": 27.006816916999874,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 350,
+      "seconds": 27.068663333999925,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 351,
+      "seconds": 27.133829791999887,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 352,
+      "seconds": 27.204113666999852,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 353,
+      "seconds": 27.266428874999985,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 354,
+      "seconds": 27.344512749999993,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 355,
+      "seconds": 27.421359166999814,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 356,
+      "seconds": 27.496866333999904,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 357,
+      "seconds": 27.55868658400001,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 358,
+      "seconds": 27.633183250000002,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 359,
+      "seconds": 27.693516708999873,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 360,
+      "seconds": 27.769982499999927,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 361,
+      "seconds": 27.851969916999806,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 362,
+      "seconds": 27.917835999999895,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 363,
+      "seconds": 27.98637829199992,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 364,
+      "seconds": 28.048439499999862,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 365,
+      "seconds": 28.124762541999807,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 366,
+      "seconds": 28.185729916999815,
+      "glyphX": 390,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 367,
+      "seconds": 28.249139999999898,
+      "glyphX": 388,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 368,
+      "seconds": 28.317057291999927,
+      "glyphX": 385,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 369,
+      "seconds": 28.3805699169999,
+      "glyphX": 382,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 370,
+      "seconds": 28.46371849999996,
+      "glyphX": 380,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 371,
+      "seconds": 28.539469416999957,
+      "glyphX": 376,
+      "matchError": 0.0
+    },
+    {
+      "frame": 372,
+      "seconds": 28.62493429200002,
+      "glyphX": 373,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 373,
+      "seconds": 28.70161595899984,
+      "glyphX": 369,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 374,
+      "seconds": 28.777995166999986,
+      "glyphX": 366,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 375,
+      "seconds": 28.847563416999996,
+      "glyphX": 364,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 376,
+      "seconds": 28.921456791999983,
+      "glyphX": 361,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 377,
+      "seconds": 28.981768874999833,
+      "glyphX": 358,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 378,
+      "seconds": 29.05435445899982,
+      "glyphX": 356,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 379,
+      "seconds": 29.123715041999937,
+      "glyphX": 353,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 380,
+      "seconds": 29.188184458999896,
+      "glyphX": 350,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 381,
+      "seconds": 29.3296044999999,
+      "glyphX": 345,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 382,
+      "seconds": 29.443158999999984,
+      "glyphX": 340,
+      "matchError": 11.438392857142857
+    },
+    {
+      "frame": 383,
+      "seconds": 29.5679752499999,
+      "glyphX": 334,
+      "matchError": 11.715178571428572
+    },
+    {
+      "frame": 384,
+      "seconds": 29.706643458999928,
+      "glyphX": 329,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 385,
+      "seconds": 30.02706349999993,
+      "glyphX": 317,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 386,
+      "seconds": 30.119963041999842,
+      "glyphX": 313,
+      "matchError": 12.01875
+    },
+    {
+      "frame": 387,
+      "seconds": 30.204389833999798,
+      "glyphX": 309,
+      "matchError": 12.01875
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "capture_frames": 55,
+  "maximum_frame_timestamp_error_seconds": 0.000487709000008163,
+  "actual_capture_elapsed_seconds": 3.4630318340000232,
+  "interval_seconds": {
+    "min": 0.0484985840000445,
+    "median": 0.05747254200006137,
+    "max": 0.12591079100000208
+  },
+  "encoding": "VFR from actual capture intervals; padded by at most one pixel on right/bottom for H.264",
+  "encoded": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "width": 760,
+        "height": 592,
+        "nb_frames": "56",
+        "side_data_list": [
+          {}
+        ]
+      }
+    ],
+    "format": {
+      "duration": "3.522000"
+    }
+  }
+}

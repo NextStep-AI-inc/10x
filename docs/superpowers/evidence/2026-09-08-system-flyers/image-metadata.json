@@ -1,0 +1,274 @@
+[
+  {
+    "file": "native-current-app-commands.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-command-actions.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-command-menu.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-dark-map-docked.png",
+    "pixelSize": [
+      1229,
+      768
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-dark-wide.png",
+    "pixelSize": [
+      1229,
+      768
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-expiry-finished.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-expiry-pending.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-fitting-light.png",
+    "pixelSize": [
+      1229,
+      768
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-full-details.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-global-dismissed.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-global-replacement.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-grown-composer.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-inactive.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-jump-to-latest.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-model-menu.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-open-map-action.png",
+    "pixelSize": [
+      1229,
+      768
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-recovery-minimum.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-recovery-scrolled.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-recovery-wide.png",
+    "pixelSize": [
+      1229,
+      768
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-reduced-minimum.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-second-session.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-session-dismissed.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-session-replacement.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-current-session-return.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-fixed-details.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-fixed-far-hold.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-fixed-focus-pause-held.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-fixed-focus-pause-start.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-fixed-focus-resumed.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-fixed-leading-hold.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-fixed-playback-end.png",
+    "pixelSize": [
+      1280,
+      720
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-fixed-playback-start.png",
+    "pixelSize": [
+      1280,
+      720
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-initial-recovery-minimum.png",
+    "pixelSize": [
+      760,
+      592
+    ],
+    "sourceFormat": "JPEG"
+  },
+  {
+    "file": "native-initial-recovery-wide.png",
+    "pixelSize": [
+      1229,
+      768
+    ],
+    "sourceFormat": "JPEG"
+  }
+]

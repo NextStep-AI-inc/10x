@@ -1,0 +1,18 @@
+{
+  "frames": 42,
+  "frameSizes": [
+    [
+      1229,
+      768
+    ]
+  ],
+  "seconds": 2.933087999999989,
+  "sampledPixelRect": [
+    400,
+    590,
+    847,
+    604
+  ],
+  "distinctRegionImages": 1,
+  "limitation": "First wide observation was before explicit native activation; intrinsic text fit was independently measured as 524 < 547 points."
+}
