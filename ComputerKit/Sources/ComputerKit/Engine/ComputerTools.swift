@@ -14,7 +14,8 @@ public final class ComputerTools: MCPToolProviding {
     }
 
     public var tools: [MCPTool] {
-        let windowID: [String: JSONValue] = ["window_id": .object(["type": .string("number"), "description": .string("Window id from computer_windows")])]
+        let windowIDProperty: JSONValue = .object(["type": .string("number"), "description": .string("Window id from computer_windows")])
+        let windowID: [String: JSONValue] = ["window_id": windowIDProperty]
         func schema(_ properties: [String: JSONValue], _ required: [String]) -> JSONValue {
             .object([
                 "type": .string("object"),
@@ -30,7 +31,7 @@ public final class ComputerTools: MCPToolProviding {
             MCPTool(name: "computer_claim", description: "Claim an existing window by id. Only one session may own a window.", inputSchema: schema(windowID, ["window_id"])),
             MCPTool(name: "computer_release", description: "Release a window you claimed.", inputSchema: schema(windowID, ["window_id"])),
             MCPTool(name: "computer_act", description: "Act on a claimed window at window-relative coordinates. action: click|double_click|right_click|drag|scroll|type|key.", inputSchema: schema([
-                "window_id": windowID["window_id"]!,
+                "window_id": windowIDProperty,
                 "action": .object(["type": .string("string")]),
                 "x": .object(["type": .string("number")]),
                 "y": .object(["type": .string("number")]),
@@ -80,7 +81,7 @@ public final class ComputerTools: MCPToolProviding {
             let shot = try engine.screenshot(windowID: window.id)
             return .image(
                 pngBase64: shot.pngData.base64EncodedString(),
-                text: "\(window.appName) window \(window.id) — \(Int(shot.pixelSize.width))x\(Int(shot.pixelSize.height))px @\(Int(shot.scale))x; window size \(Int(window.bounds.width))x\(Int(window.bounds.height))pt; coordinates for computer_act are window-relative points"
+                text: "\(window.appName) window \(window.id) — \(Int(shot.pixelSize.width))x\(Int(shot.pixelSize.height))px @\(shot.scale)x; window size \(Int(window.bounds.width))x\(Int(window.bounds.height))pt; coordinates for computer_act are window-relative points"
             )
 
         case "computer_status":
@@ -106,8 +107,11 @@ public final class ComputerTools: MCPToolProviding {
     }
 
     private func windowIDArgument(_ arguments: JSONValue) throws -> CGWindowID {
-        guard let id = arguments["window_id"]?.intValue else { throw MCPError.invalidParams("requires window_id") }
-        return CGWindowID(id)
+        guard let id = arguments["window_id"]?.intValue,
+              let windowID = CGWindowID(exactly: id) else {
+            throw MCPError.invalidParams("requires window_id")
+        }
+        return windowID
     }
 
     private func windowArgument(_ arguments: JSONValue, mustBeClaimed: Bool) throws -> WindowInfo {
@@ -135,13 +139,34 @@ public final class ComputerTools: MCPToolProviding {
         }
         switch action {
         case "click":
-            let button = arguments["button"]?.stringValue == "right" ? MouseButton.right : .left
+            let button: MouseButton
+            if let buttonArg = arguments["button"]?.stringValue {
+                switch buttonArg {
+                case "left": button = .left
+                case "right": button = .right
+                default: throw MCPError.invalidParams("button must be left or right")
+                }
+            } else {
+                button = .left
+            }
             return .click(point: try point("x", "y"), button: button)
         case "double_click": return .doubleClick(point: try point("x", "y"))
         case "right_click": return .click(point: try point("x", "y"), button: .right)
         case "drag": return .drag(from: try point("x", "y"), to: try point("to_x", "to_y"))
         case "scroll":
-            return .scroll(deltaX: arguments["delta_x"]?.doubleValue ?? 0, deltaY: arguments["delta_y"]?.doubleValue ?? 0)
+            func scrollDelta(_ key: String) throws -> Double? {
+                guard let value = arguments[key] else { return nil }
+                guard let delta = value.doubleValue else {
+                    throw MCPError.invalidParams("scroll requires numeric \(key)")
+                }
+                return delta
+            }
+            let deltaX = try scrollDelta("delta_x")
+            let deltaY = try scrollDelta("delta_y")
+            guard deltaX != nil || deltaY != nil else {
+                throw MCPError.invalidParams("scroll requires delta_x and/or delta_y")
+            }
+            return .scroll(deltaX: deltaX ?? 0, deltaY: deltaY ?? 0)
         case "type":
             guard let text = arguments["text"]?.stringValue else { throw MCPError.invalidParams("type requires text") }
             return .type(text)
