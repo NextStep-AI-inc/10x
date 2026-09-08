@@ -35,6 +35,7 @@
 		106BA924E08810EECA7E472B8CD45060 /* ExtensionUIRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08DB11A869FEF85B09424595F2F49EB8 /* ExtensionUIRouterTests.swift */; };
 		114E61293A71ADD6FAE5FDADD7247958 /* SettingsCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A87EB3BC3A4E6795E06B7178A561E74 /* SettingsCategory.swift */; };
 		11ABFF2D6BB0182D7B4DDDD8AA514091 /* TranscriptMessageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02A1CA4BE39825909AC005CAB2260DE2 /* TranscriptMessageTests.swift */; };
+		122D289036381C5F0BE7C9B34998BCC0 /* Flyer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A46DB59BBC648E4430F9998B18E138 /* Flyer.swift */; };
 		12A20BCCB60CC63CC14BE7F3C5A7CE49 /* FileTypeIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9D28101EEB3E94C7B933DB50FDDF71 /* FileTypeIconTests.swift */; };
 		12E40621ED0C51BCF102D670A7E8B023 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13E32214A370E0E3329B1786F2A08B4 /* AppModel.swift */; };
 		16227F7A3F65DE75B91ABF6F77D31CFF /* FileReferenceResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */; };
@@ -53,6 +54,7 @@
 		1FC3EB9BC2902A26115AF995AA7FC6B4 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65841ABCE4117B72C23FFB03E277002D /* OnboardingView.swift */; };
 		2061BAFBD5E35DEF9B56BE5A0A334FF4 /* ComposerTextViewConfigurator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5BC802B6FA8A14B2340D5488B41C746 /* ComposerTextViewConfigurator.swift */; };
 		2107C4790B8E51BF7F50A6F86DFFCE25 /* FileReferenceActionPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A744A46D4A05E422ABBB17B804E1C47F /* FileReferenceActionPresentationTests.swift */; };
+		220B9D96C65ED1B05BE6AF23BB41B3E4 /* FlyerCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8788E255AD0950F74E849433113259FD /* FlyerCenter.swift */; };
 		22C5344583CACDB956A9AE48CFA86102 /* RailMapLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0AFA12CF60F8C5D5D3928D1AFD8BA2 /* RailMapLayoutTests.swift */; };
 		23E3A622A35DE13BCBBBE2438CFDCC6A /* BrandActionsMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D5F1D5CE8D07D7C5BCF906B5FB09F1 /* BrandActionsMenuView.swift */; };
 		23FE06D8223E2986CB69C428C5733337 /* ProviderPrimaryPreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4214214DE724350A6B2449F40E4630 /* ProviderPrimaryPreferenceStore.swift */; };
@@ -77,6 +79,7 @@
 		2B7F742C4810351101F715246F0D4C98 /* ProviderManagementViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9257018FF50D56D632B8C65AAD62B5A1 /* ProviderManagementViewModelTests.swift */; };
 		2B8A8E21D48A190600704931C51E2117 /* IDEApplication.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5799BC39D7647D45E72ACECA5F6FF59 /* IDEApplication.swift */; };
 		2BF9A63C547B16E879513EA4281141FC /* SubagentPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F832078FCA06EAA16415025A84C752D5 /* SubagentPresentation.swift */; };
+		2CD6E67EF6D07BDF73951749303EB411 /* FlyerCenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91CE54AA3AD5E19B7448E62D6C8CF715 /* FlyerCenterTests.swift */; };
 		2CEE7F3B8C310837833FF0D9672A30AB /* ComposerSessionControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 563C3A7D6488F446FD8A7AA4540D9118 /* ComposerSessionControlsView.swift */; };
 		2F585840FE0521A12F893FBA7588B708 /* TranscriptSearchResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C34053D400264BD1C9FDDAB2B1F25C6 /* TranscriptSearchResolver.swift */; };
 		2F5ADAB185C76B249C7D5F226D28ADDB /* TranscriptReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D422F7E810EB9916337FD969ACB8E5A6 /* TranscriptReducer.swift */; };
@@ -594,6 +597,7 @@
 		84F480D0B750FAF700D3D86F9BD162E5 /* UIFixtureRoute.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UIFixtureRoute.swift; path = App/Application/UIFixtureRoute.swift; sourceTree = "<group>"; };
 		858E692783D96DFED18DD3954012213B /* PendingUserSubmissionTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PendingUserSubmissionTests.swift; path = Tests/TenXAppTests/PendingUserSubmissionTests.swift; sourceTree = "<group>"; };
 		877A2FC56C324B52234C33EA8FA709FE /* OmpConfigServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpConfigServiceTests.swift; path = Tests/TenXAppTests/OmpConfigServiceTests.swift; sourceTree = "<group>"; };
+		8788E255AD0950F74E849433113259FD /* FlyerCenter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FlyerCenter.swift; path = App/Flyers/FlyerCenter.swift; sourceTree = "<group>"; };
 		88D6DC39FEEF22CEAB21C2A6A6FEFFF1 /* CornerCard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = CornerCard.swift; path = App/Design/CornerCard.swift; sourceTree = "<group>"; };
 		8A57F28A120ADE252EC627757E31BAE7 /* SessionMapPaneView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapPaneView.swift; path = App/SessionMap/SessionMapPaneView.swift; sourceTree = "<group>"; };
 		8CA6C5484CCCD828D9CBA15E3C79078D /* SessionHeaderMetadataTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionHeaderMetadataTests.swift; path = Tests/TenXAppTests/SessionHeaderMetadataTests.swift; sourceTree = "<group>"; };
@@ -607,6 +611,7 @@
 		91812CFE3017F7226113A400C82E2F55 /* TenXAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TenXAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9184DBB95AC7035C9F4A0743F26739A2 /* SessionRenameTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionRenameTests.swift; path = Tests/TenXAppTests/SessionRenameTests.swift; sourceTree = "<group>"; };
 		91957BD108A0FEAE3198187EFC3E5D80 /* DiffPageLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DiffPageLoader.swift; path = App/Tools/DiffPageLoader.swift; sourceTree = "<group>"; };
+		91CE54AA3AD5E19B7448E62D6C8CF715 /* FlyerCenterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FlyerCenterTests.swift; path = Tests/TenXAppTests/FlyerCenterTests.swift; sourceTree = "<group>"; };
 		91F47C72C97671F1DF71F66633A94C29 /* AppMenuState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppMenuState.swift; path = App/Application/AppMenuState.swift; sourceTree = "<group>"; };
 		9257018FF50D56D632B8C65AAD62B5A1 /* ProviderManagementViewModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderManagementViewModelTests.swift; path = Tests/TenXAppTests/ProviderManagementViewModelTests.swift; sourceTree = "<group>"; };
 		9312CABDA54EC7E3EC2CF40B4476CAFC /* ProgressiveTextView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProgressiveTextView.swift; path = App/Design/ProgressiveTextView.swift; sourceTree = "<group>"; };
@@ -664,6 +669,7 @@
 		B38998ACEBDD0AAC27B5010E5F47A8E3 /* SessionMapWalkthroughView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionMapWalkthroughView.swift; path = App/SessionMap/SessionMapWalkthroughView.swift; sourceTree = "<group>"; };
 		B3BDA8110B9C4CBAF62E1870E6F96D17 /* ToolDisclosureState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolDisclosureState.swift; path = App/Tools/ToolDisclosureState.swift; sourceTree = "<group>"; };
 		B3EF186EA996949E598D53D7B5E831D4 /* SessionSearchService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionSearchService.swift; path = App/Search/SessionSearchService.swift; sourceTree = "<group>"; };
+		B5A46DB59BBC648E4430F9998B18E138 /* Flyer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = Flyer.swift; path = App/Flyers/Flyer.swift; sourceTree = "<group>"; };
 		B5BC802B6FA8A14B2340D5488B41C746 /* ComposerTextViewConfigurator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerTextViewConfigurator.swift; path = App/Sessions/ComposerTextViewConfigurator.swift; sourceTree = "<group>"; };
 		B6195C2D3E49373746BC1BFFF0C425DF /* TranscriptReferenceView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptReferenceView.swift; path = App/Sessions/TranscriptReferenceView.swift; sourceTree = "<group>"; };
 		B6670CE700ABFA86FC05FC86F62099E0 /* StartupTestFixtures.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StartupTestFixtures.swift; path = Tests/TenXAppTests/StartupTestFixtures.swift; sourceTree = "<group>"; };
@@ -822,6 +828,8 @@
 				153320A3E0CBC5F87098D9794539D14E /* IDEPreferenceStore.swift */,
 				70480B74480456F9EB012E088B3F9F93 /* IDERegistry.swift */,
 				057AE3CA7D4C2D4EFA57DC366AF00A4C /* ResolvedFileReference.swift */,
+				B5A46DB59BBC648E4430F9998B18E138 /* Flyer.swift */,
+				8788E255AD0950F74E849433113259FD /* FlyerCenter.swift */,
 				6A5EFE24321255DEC8BA5A09321DED2A /* OmpInstallRunner.swift */,
 				B9DBC57C8FAC7040E884E8E191B76538 /* OnboardingInstallLogBuffer.swift */,
 				E3ECECFABB6616F750627C367980EFB9 /* OnboardingInstallStepView.swift */,
@@ -1056,6 +1064,7 @@
 				A744A46D4A05E422ABBB17B804E1C47F /* FileReferenceActionPresentationTests.swift */,
 				57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */,
 				6B9D28101EEB3E94C7B933DB50FDDF71 /* FileTypeIconTests.swift */,
+				91CE54AA3AD5E19B7448E62D6C8CF715 /* FlyerCenterTests.swift */,
 				F704B536389AAF360BC1D53826D583AD /* IDEPreferenceStoreTests.swift */,
 				7640229E9B50A3716E51A25E0D4D66B0 /* InteractionPresentationTests.swift */,
 				E85949BDAE9F5A41A912C50F05954C28 /* MessageBubbleViewTests.swift */,
@@ -1338,6 +1347,8 @@
 				365DCA8899ACDD39F08E1A6862B3BC2C /* IDEPreferenceStore.swift in Sources */,
 				39AF91ADA09EAC0132F6EC7C1F794C9B /* IDERegistry.swift in Sources */,
 				E79A8E9DA355A3C39496EED749EC2D66 /* ResolvedFileReference.swift in Sources */,
+				122D289036381C5F0BE7C9B34998BCC0 /* Flyer.swift in Sources */,
+				220B9D96C65ED1B05BE6AF23BB41B3E4 /* FlyerCenter.swift in Sources */,
 				B10D96A5A4B1DC8F58D7E1F1733FD1DB /* OmpInstallRunner.swift in Sources */,
 				17E4CC50D2CBB20C3ACC2D8EB9E721BA /* OnboardingInstallLogBuffer.swift in Sources */,
 				760FE41B795ED04BBD48D5ECD85AF164 /* OnboardingInstallStepView.swift in Sources */,
@@ -1559,6 +1570,7 @@
 				2107C4790B8E51BF7F50A6F86DFFCE25 /* FileReferenceActionPresentationTests.swift in Sources */,
 				16227F7A3F65DE75B91ABF6F77D31CFF /* FileReferenceResolverTests.swift in Sources */,
 				12A20BCCB60CC63CC14BE7F3C5A7CE49 /* FileTypeIconTests.swift in Sources */,
+				2CD6E67EF6D07BDF73951749303EB411 /* FlyerCenterTests.swift in Sources */,
 				2A9831E4F0D6FFE0ED7EA8E7C3C82DB0 /* IDEPreferenceStoreTests.swift in Sources */,
 				72D9A844D0ABDAE24C6ADCD4AC1ACF2A /* InteractionPresentationTests.swift in Sources */,
 				E35B5E09ED9858397770C064E6C977A4 /* MessageBubbleViewTests.swift in Sources */,
