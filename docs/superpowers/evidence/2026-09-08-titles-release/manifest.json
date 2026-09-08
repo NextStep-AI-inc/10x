@@ -1,0 +1,27 @@
+{
+  "name": "titles",
+  "sourceCommit": "edf8ff914750e8fd66e68e83883109f48737ac03",
+  "command": [
+    "xcodebuild",
+    "build",
+    "-project",
+    "10x.xcodeproj",
+    "-scheme",
+    "10x",
+    "-configuration",
+    "Release",
+    "-destination",
+    "generic/platform=macOS",
+    "-derivedDataPath",
+    "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj",
+    "ARCHS=arm64",
+    "CODE_SIGNING_ALLOWED=NO"
+  ],
+  "log": "/tmp/10x-titles-final-release.log",
+  "logSHA256": "ecfc59b5594b7cc189aef40398ed001269139604db7f412d4471aca1283d97d0",
+  "app": "/tmp/10x-titles-final-build/10x-titles.app",
+  "bundleIdentifier": "com.nextstep.tenx.titlesqa",
+  "unsignedExecutableSHA256": "3af455b1a426ed054a23ffdc501d8e07bc970be17cbe7014a3685526d390a16a",
+  "packagedExecutableSHA256": "00c7d7708b28e2aa7b4ccfd3273ce8779b947307b58748dd2518bdfa36cd64f9",
+  "nativeLaunched": false
+}
