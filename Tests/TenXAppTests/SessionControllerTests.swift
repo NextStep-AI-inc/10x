@@ -83,9 +83,9 @@ import Testing
         await controller.sendPrompt(behaviorOverride: .followUp)
 
         #expect(await eventually { controller.queuedMessageCount == 2 })
-        try fixture.control("consume")
+        try await fixture.control("consume")
         #expect(await eventually { controller.queuedMessageCount == 1 })
-        try fixture.control("consume")
+        try await fixture.control("consume")
         #expect(await eventually { controller.queuedMessageCount == 0 })
         #expect(await eventually { controller.pendingSubmissions.isEmpty })
     }
@@ -98,7 +98,7 @@ import Testing
 
         #expect(await eventually { controller.queuedMessageCount == 1 })
         #expect(controller.pendingSubmissions.map(\.state) == [.queued(.steer)])
-        try fixture.control("consume")
+        try await fixture.control("consume")
         #expect(await eventually { controller.queuedMessageCount == 0 })
         #expect(await eventually { controller.pendingSubmissions.isEmpty })
     }
@@ -106,7 +106,7 @@ import Testing
 
 @Test func rejectedFollowUpPreservesDraftWithoutIncreasingQueueCount() async throws {
     try await withQueueController { controller, fixture in
-        try fixture.control("reject-next")
+        try await fixture.control("reject-next")
         controller.draft = "Keep rejected text"
         await controller.sendPrompt(behaviorOverride: .followUp)
 
@@ -118,7 +118,7 @@ import Testing
 
 @Test func lateAcceptedPromptStateCannotOverwriteNewerQueueCount() async throws {
     try await withQueueController { controller, fixture in
-        try fixture.control("defer-next-state")
+        try await fixture.control("defer-next-state")
         controller.draft = "First queued"
         await controller.sendPrompt(behaviorOverride: .followUp)
         #expect(await eventually { fixture.isStateDeferred })
@@ -127,7 +127,7 @@ import Testing
         await controller.sendPrompt(behaviorOverride: .followUp)
         #expect(await eventually { controller.queuedMessageCount == 2 })
 
-        try fixture.control("release-deferred-state")
+        try await fixture.control("release-deferred-state")
         try await Task.sleep(for: .milliseconds(250))
         #expect(controller.queuedMessageCount == 2)
     }
@@ -142,12 +142,12 @@ import Testing
         #expect(await eventually { controller.queuedMessageCount == 2 })
         #expect(controller.visibleUserEchoCount("Repeat this") == 2)
 
-        try fixture.control("consume")
+        try await fixture.control("consume")
         #expect(await eventually {
             controller.queuedMessageCount == 1
                 && controller.visibleUserEchoCount("Repeat this") == 2
         })
-        try fixture.control("consume")
+        try await fixture.control("consume")
         #expect(await eventually {
             controller.queuedMessageCount == 0
                 && controller.visibleUserEchoCount("Repeat this") == 2
@@ -1115,33 +1115,18 @@ private func contextFakeManager(mode: String) -> SessionProcessManager {
 }
 
 private struct QueueFixture {
+    let client: RpcClient
     let directory: URL
 
     var isStateDeferred: Bool {
         FileManager.default.fileExists(atPath: directory.appending(path: "state-deferred").path)
     }
 
-    func control(_ action: String) throws {
-        let process = Process()
-        process.executableURL = URL(filePath: "/usr/bin/env")
-        process.arguments = [
-            "python3",
-            repositoryRoot().appending(path:
-                "Tests/TenXAppTests/Fixtures/queue_fake_server.py").path,
-            "control",
-            directory.path,
-            action,
-        ]
-        try process.run()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0 else {
-            throw QueueFixtureError.controlFailed(action)
-        }
+    func control(_ action: String) async throws {
+        _ = try await client.send(RpcCommand(
+            type: "queue_test_control",
+            fields: ["action": .string(action)]), timeout: .seconds(5))
     }
-}
-
-private enum QueueFixtureError: Error {
-    case controlFailed(String)
 }
 
 @MainActor
@@ -1149,7 +1134,6 @@ private func withQueueController<T>(
     _ body: (SessionController, QueueFixture) async throws -> T
 ) async throws -> T {
     let directory = try temporaryDirectory()
-    let fixture = QueueFixture(directory: directory)
     let manager = SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
         fake.executable = "/usr/bin/env"
@@ -1157,7 +1141,6 @@ private func withQueueController<T>(
             "python3",
             repositoryRoot().appending(path:
                 "Tests/TenXAppTests/Fixtures/queue_fake_server.py").path,
-            "server",
             directory.path,
         ]
         fake.rawArgv = true
@@ -1166,9 +1149,13 @@ private func withQueueController<T>(
     })
     let controller = SessionController(processManager: manager)
     do {
+        let sessionPath = directory.appending(path: "session.jsonl").path
         await controller.openExisting(metadata(
-            path: directory.appending(path: "session.jsonl").path,
+            path: sessionPath,
             cwd: directory.path))
+        let activePath = try #require(controller.sessionPath)
+        let handle = try #require(await manager.handle(for: activePath))
+        let fixture = QueueFixture(client: handle.client, directory: directory)
         let result = try await body(controller, fixture)
         await manager.closeAll()
         try? FileManager.default.removeItem(at: directory)
