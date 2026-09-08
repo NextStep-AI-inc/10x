@@ -1,0 +1,19 @@
+{
+  "sourceCommit": "34b5a4458c468e8e3da5d52d53b79532806b3ddd",
+  "appBundleIdentifier": "com.nextstep.tenx.detailsqa",
+  "nativeVerified": false,
+  "files": {
+    "fixture": {
+      "path": "/tmp/10x-audit-details/docs/superpowers/evidence/2026-09-08-tool-details/details-control.py",
+      "sha256": "f37dbcf5a28f699be380489194167dfcc017a330d714c3030e28edc237c71f74"
+    },
+    "releaseBuildLog": {
+      "path": "/tmp/10x-tool-details-release-build-isolated.log",
+      "sha256": "14db1d464285d36a841c1227c4bd440ad57145ae880f41f3769536d5c6a42818"
+    },
+    "packagedExecutable": {
+      "path": "/tmp/10x-details-final-build/10x-details.app/Contents/MacOS/10x",
+      "sha256": "1bd2e2ed874fb57765ed5c0a338b78a872d6cff8e8553ff2b920b3468c32e988"
+    }
+  }
+}

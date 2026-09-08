@@ -1,0 +1,12 @@
+{
+  "kind": "controlled protocol fixture, not native acceptance",
+  "parentFrames": 69,
+  "updates": 45,
+  "finalLines": 45,
+  "elapsedMs": 20526,
+  "subagentProgressFrames": 3,
+  "persistedMarkers": 1,
+  "persistedResults": 2,
+  "warmChildMessages": 2,
+  "coldChildMessages": 2
+}
