@@ -619,7 +619,6 @@ final class AppModel {
 
     func performFlyerAction(_ key: Flyer.Key, actionID: String) {
         flyerActionHandler(key, actionID)
-        flyerCenter.remove(key)
     }
 
     func dismissFlyer(_ key: Flyer.Key) {

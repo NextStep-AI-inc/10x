@@ -1,5 +1,23 @@
 import SwiftUI
 
+enum FlyerOverlayLayoutEvent {
+    case stackFrame(CGRect)
+    case transcriptFrame(CGRect)
+    case clearanceFrame(CGRect)
+    case jumpFrame(CGRect)
+}
+
+private struct FlyerOverlayLayoutObserverKey: EnvironmentKey {
+    static let defaultValue: (@MainActor (FlyerOverlayLayoutEvent) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var flyerOverlayLayoutObserver: (@MainActor (FlyerOverlayLayoutEvent) -> Void)? {
+        get { self[FlyerOverlayLayoutObserverKey.self] }
+        set { self[FlyerOverlayLayoutObserverKey.self] = newValue }
+    }
+}
+
 struct ActiveSessionView: View {
     let controller: SessionController
     var controls: ComposerControlsModel?
@@ -21,6 +39,7 @@ struct ActiveSessionView: View {
     @State private var flyerStackHeight: CGFloat = 0
     @State private var flyerDate = Date()
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.flyerOverlayLayoutObserver) private var flyerOverlayLayoutObserver
 
     var body: some View {
         HStack(spacing: 0) {
@@ -141,6 +160,11 @@ struct ActiveSessionView: View {
                         onDismiss: { key in onFlyerDismiss?(key) },
                         onHeightChange: { flyerStackHeight = $0 })
                         .frame(maxWidth: 780)
+                        .onGeometryChange(for: CGRect.self) { geometry in
+                            geometry.frame(in: .global)
+                        } action: { frame in
+                            flyerOverlayLayoutObserver?(.stackFrame(frame))
+                        }
                         .padding(.horizontal, 42)
                 }
             }

@@ -31,7 +31,7 @@ struct FlyerFixtureScene: View {
         model.installFlyerFixtureHandlers(
             onAction: { [weak model, weak center] key, actionID in
                 guard let model, let center else { return }
-                handle(actionID: actionID, route: route, model: model, center: center)
+                handle(key: key, actionID: actionID, model: model, center: center)
             })
         if route == .flyerRecovery {
             model.activeSession?.handleUnexpectedExit(
@@ -118,7 +118,7 @@ struct FlyerFixtureScene: View {
                 tone: .attention,
                 title: "Component check",
                 detail: "Session replacement and dismissal use the real row controls.",
-                actions: [Flyer.Action(id: "replace-global", title: "Replace fixture")]))
+                actions: [Flyer.Action(id: "replace-session", title: "Replace fixture")]))
             center.post(flyer(
                 id: "session-expiry",
                 scope: .session(sessionPath),
@@ -133,21 +133,30 @@ struct FlyerFixtureScene: View {
 
     @MainActor
     private static func handle(
+        key: Flyer.Key,
         actionID: String,
-        route: UIFixtureRoute,
         model: AppModel,
         center: FlyerCenter
     ) {
         switch actionID {
         case "open-map":
             if !model.isSessionMapVisible { model.toggleSessionMap() }
+            center.remove(key)
         case "replace-global":
             center.post(flyer(
-                id: "global",
-                scope: .global,
+                id: key.id,
+                scope: key.scope,
                 tone: .information,
                 title: "Component check",
                 detail: "The global fixture notice was replaced in place.",
+                actions: []))
+        case "replace-session":
+            center.post(flyer(
+                id: key.id,
+                scope: key.scope,
+                tone: .attention,
+                title: "Component check",
+                detail: "The session fixture notice was replaced in place.",
                 actions: []))
         case "expire-fixture":
             center.post(flyer(
@@ -158,6 +167,7 @@ struct FlyerFixtureScene: View {
                 detail: "This synthetic expiry clears automatically after two seconds.",
                 actions: [],
                 expiresAt: Date().addingTimeInterval(2)))
+            center.remove(key)
         default:
             break
         }

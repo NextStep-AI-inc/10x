@@ -15,6 +15,7 @@ struct TranscriptView: View {
     @State private var searchResolution: TranscriptSearchResolution?
     @State private var consumedSearchNonce: UUID?
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
+    @Environment(\.flyerOverlayLayoutObserver) private var flyerOverlayLayoutObserver
     @Environment(ToolDetailPreferenceStore.self) private var detailPreference:
         ToolDetailPreferenceStore?
 
@@ -77,11 +78,21 @@ struct TranscriptView: View {
                 .frame(maxWidth: .infinity)
                 Color.clear
                     .frame(height: Self.resolvedBottomOverlayClearance(bottomOverlayClearance))
+                    .onGeometryChange(for: CGRect.self) { geometry in
+                        geometry.frame(in: .global)
+                    } action: { frame in
+                        flyerOverlayLayoutObserver?(.clearanceFrame(frame))
+                    }
                 Color.clear.frame(height: 1).id(Self.bottomID)
                 }
             }
             .environment(\.toolDisclosureState, disclosureState)
             .scrollIndicators(.hidden)
+            .onGeometryChange(for: CGRect.self) { geometry in
+                geometry.frame(in: .global)
+            } action: { frame in
+                flyerOverlayLayoutObserver?(.transcriptFrame(frame))
+            }
             .scrollPosition(id: $viewport.anchorID, anchor: .top)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(viewport.isFollowingLatest ? .bottom : nil, for: .sizeChanges)
@@ -153,6 +164,11 @@ struct TranscriptView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .onGeometryChange(for: CGRect.self) { geometry in
+                geometry.frame(in: .global)
+            } action: { frame in
+                flyerOverlayLayoutObserver?(.jumpFrame(frame))
+            }
             .padding(.bottom, Self.jumpToLatestBottomPadding(bottomOverlayClearance))
             .transition(.opacity)
             .accessibilityLabel("Jump to latest")

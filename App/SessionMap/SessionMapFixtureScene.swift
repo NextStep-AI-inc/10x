@@ -213,25 +213,28 @@ struct SessionMapFixtureScene: View {
                 agent: nil,
                 modelRole: nil),
             isFinal: true)
+        var previewItems: [TranscriptItem] = [
+            .threadStart(id: "\(transcriptSeed)-start", date: timestamp),
+            .message(user),
+            .message(assistant),
+        ]
+        if route.isFlyer {
+            previewItems.append(.extensionUI(.select(
+                id: "\(transcriptSeed)-fixture-question",
+                title: "Which fixture state should remain visible during this layout check?",
+                options: [
+                    ExtensionSelectOption(
+                        label: "Keep the current state",
+                        detail: "This is synthetic component-only fixture data."),
+                    ExtensionSelectOption(
+                        label: "Continue inspecting",
+                        detail: nil),
+                ],
+                timeout: nil)))
+        }
         let controller = SessionController(
             processManager: SessionProcessManager(),
-            previewItems: [
-                .threadStart(id: "\(transcriptSeed)-start", date: timestamp),
-                .message(user),
-                .message(assistant),
-                .extensionUI(.select(
-                    id: "\(transcriptSeed)-fixture-question",
-                    title: "Which fixture state should remain visible during this layout check?",
-                    options: [
-                        ExtensionSelectOption(
-                            label: "Keep the current state",
-                            detail: "This is synthetic component-only fixture data."),
-                        ExtensionSelectOption(
-                            label: "Continue inspecting",
-                            detail: nil),
-                    ],
-                    timeout: nil)),
-            ],
+            previewItems: previewItems,
             runtimeState: .idle,
             title: title,
             headerMetadata: SessionHeaderMetadata(
