@@ -219,7 +219,7 @@ enum TranscriptTurnProjection {
                 }
                 lastResponseHasEnd = assistantEnds[key] != nil
             case .tool(let tool):
-                starts.append(tool.startDate)
+                if tool.hasReliableStartDate { starts.append(tool.startDate) }
                 if let endDate = tool.endDate { ends.append(endDate) }
                 lastResponseHasEnd = tool.endDate != nil
             case .subagent:

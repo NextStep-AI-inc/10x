@@ -10,6 +10,7 @@ enum TranscriptMessageNormalizer {
         isFinal: Bool,
         existingTools: [String: ToolPresentation] = [:],
         previousDocuments: [TranscriptRenderLineageKey: ContentDocument] = [:],
+        persistedToolStartDates: [String: Date]? = nil,
         fallbackDate: Date = Date()
     ) -> [TranscriptItem] {
         let baseLineageKey = TranscriptRenderLineageKey.base(messageID: id)
@@ -43,6 +44,7 @@ enum TranscriptMessageNormalizer {
                 raw: raw,
                 timestamp: timestamp,
                 existingTools: existingTools,
+                persistedToolStartDates: persistedToolStartDates,
                 fallbackDate: fallbackDate) {
                 guard emittedToolIDs.insert(tool.id).inserted else { continue }
                 flush(
@@ -172,6 +174,7 @@ enum TranscriptMessageNormalizer {
         raw: JSONValue,
         timestamp: Date?,
         existingTools: [String: ToolPresentation],
+        persistedToolStartDates: [String: Date]?,
         fallbackDate: Date
     ) -> ToolPresentation? {
         guard let type = block["type"]?.stringValue,
@@ -188,7 +191,11 @@ enum TranscriptMessageNormalizer {
             }
             return refreshed
         }
-        let startDate = TranscriptMessage.messageDate(raw) ?? timestamp ?? fallbackDate
+        let persistedStart = persistedToolStartDates?[id]
+        let startDate = persistedStart
+            ?? TranscriptMessage.messageDate(raw)
+            ?? timestamp
+            ?? fallbackDate
         return ToolPresentation(
             id: id,
             name: name,
@@ -196,7 +203,8 @@ enum TranscriptMessageNormalizer {
             result: nil,
             phase: .running,
             startDate: startDate,
-            endDate: nil)
+            endDate: nil,
+            hasReliableStartDate: persistedToolStartDates == nil || persistedStart != nil)
     }
 
     private static func segmentID(base: String, ordinal: Int) -> String {

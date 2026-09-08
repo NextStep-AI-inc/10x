@@ -86,6 +86,35 @@ import Testing
     #expect(ToolCardScaffoldLayout.minimumDisclosureHitHeight >= 32)
 }
 
+@Test func liveToolDurationAdvancesFromAReferenceDateAndClampsNegativeIntervals() {
+    let presentation = ToolPresentation(
+        id: "running",
+        name: "bash",
+        arguments: .object([:]),
+        result: nil,
+        phase: .running,
+        startDate: Date(timeIntervalSince1970: 10),
+        endDate: nil)
+
+    #expect(presentation.durationLabel(at: Date(timeIntervalSince1970: 15)) == "5.0s")
+    #expect(presentation.durationLabel(at: Date(timeIntervalSince1970: 5)) == "0.0s")
+}
+
+@Test func settledToolDurationStaysFixedAtItsEndDate() {
+    for phase in [ToolPhase.complete, .interrupted] {
+        let presentation = ToolPresentation(
+            id: "settled",
+            name: "bash",
+            arguments: .object([:]),
+            result: nil,
+            phase: phase,
+            startDate: Date(timeIntervalSince1970: 10),
+            endDate: Date(timeIntervalSince1970: 13))
+
+        #expect(presentation.durationLabel(at: Date(timeIntervalSince1970: 99)) == "3.0s")
+    }
+}
+
 @MainActor @Test func toolCardEqualityTracksOnlyItsPresentation() {
     let original = tool(id: "read", name: "read", phase: .running)
     var updated = original
