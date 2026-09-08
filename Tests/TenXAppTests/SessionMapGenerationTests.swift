@@ -321,6 +321,22 @@ private actor SuspendedMapWriter {
     #expect(await script.prompts.isEmpty)
 }
 
+@Test func sessionMapOlderInvalidationCannotObsoleteNewerRequest() async {
+    let writer = SuspendedMapWriter()
+    let generator = SessionMapGenerator { prompt, images, model in
+        await writer.complete(prompt: prompt, images: images, model: model)
+    }
+    let newer = Task { await generator.generate(generationInput(revision: 2)) }
+    await writer.waitUntilStarted()
+
+    await generator.invalidate(sessionKey: "session", lineage: "lineage", revision: 1)
+    await writer.release()
+
+    let result = await newer.value
+    #expect(result.disposition == .generated)
+    #expect(result.document?.headline == "Late map")
+}
+
 @Test func sessionMapValidatedXMLSerializerRoundTripsDenseDocument() throws {
     let first = SessionMapDocumentParser.parse(
         Data(SessionMapFixtures.denseXML.utf8), context: SessionMapFixtures.context)

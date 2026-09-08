@@ -193,6 +193,7 @@ actor SessionMapGenerator {
     }
 
     func invalidate(sessionKey: String, lineage: String, revision: UInt64) {
+        guard latestRequests[sessionKey]?.revision ?? 0 <= revision else { return }
         latestRequests[sessionKey] = RequestToken(
             lineage: lineage,
             revision: revision,

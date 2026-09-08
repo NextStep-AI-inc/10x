@@ -581,6 +581,9 @@ final class AppModel {
         sessionMapGenerationTasks[controller.id] = Task { @MainActor [weak self, weak controller] in
             guard let self, let controller else { return }
             if let generator = self.sessionMapGenerators[controller.id] {
+                guard self.isCurrentSessionMapGeneration(
+                    controller, revision: revision)
+                else { return }
                 await generator.invalidate(
                     sessionKey: self.sessionMapSessionKey(for: controller),
                     lineage: self.sessionMapSessionKey(for: controller),
@@ -704,6 +707,9 @@ final class AppModel {
                 guard isCurrentSessionMapGeneration(controller, revision: revision) else { return }
                 paneModel.transition(to: .ready)
             } catch {
+                guard isCurrentSessionMapGeneration(controller, revision: revision),
+                      sessionMapSessionKey(for: controller) == sessionKey
+                else { return }
                 paneModel.retainFailure(
                     message: "[SessionMap:AppModel.generateSessionMap] The validated map remains in memory because its record could not be saved.")
             }

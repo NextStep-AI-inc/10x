@@ -36,6 +36,43 @@ import Testing
 }
 
 @MainActor
+@Test func obsoleteAppModelSaveFailureCannotChangeNewerWritingState() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "app-model-map-save-race-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let locator = BlockingSecondSessionMapLocator()
+    let writer = RecordingSessionMapWriter()
+    let atomicWrite = DelayedFailingSessionMapWrite()
+    let store = SessionMapStore(directory: root.appending(path: "maps")) { _, _ in
+        try atomicWrite.perform()
+    }
+    let dependencies = sessionMapAppDependencies(
+        root: root, locator: locator, writer: writer, store: store)
+    let model = AppModel(dependencies: dependencies)
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .idle)
+    let metadata = sessionMapMetadata(path: "/tmp/save-race.jsonl", cwd: root.path)
+    model.installSessionMapFixture(
+        [(metadata, controller, nil, .needsGeneration)],
+        selectedPath: metadata.path)
+    let pane = model.sessionMapPaneModel(for: controller, displayedWidth: 440)
+
+    pane.generate(.sinceCaughtUp)
+    await atomicWrite.waitUntilStarted()
+    pane.generate(.sinceCaughtUp)
+    await locator.waitUntilSecondRequestIsBlocked()
+    atomicWrite.releaseWithFailure()
+    await atomicWrite.waitUntilFinished()
+    for _ in 0..<50 { await Task.yield() }
+
+    #expect(pane.state == .writing)
+    #expect(pane.retainedFailureMessage == nil)
+    await locator.releaseSecondRequest()
+}
+
+@MainActor
 @Test func appModelMigratesTemporaryMapRecordToCanonicalSessionKey() async throws {
     let root = FileManager.default.temporaryDirectory
         .appending(path: "app-model-map-migration-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -96,6 +133,95 @@ private actor ReorderedSessionMapLocator: OmpLocating {
     }
 }
 
+private actor BlockingSecondSessionMapLocator: OmpLocating {
+    private var requestCount = 0
+    private var secondContinuation: CheckedContinuation<Void, Never>?
+
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        requestCount += 1
+        if requestCount == 2 {
+            await withCheckedContinuation { secondContinuation = $0 }
+        }
+        return .found(OmpInstallation(
+            executableURL: URL(filePath: "/tmp/omp"), version: "test"))
+    }
+
+    func waitUntilSecondRequestIsBlocked() async {
+        while secondContinuation == nil { await Task.yield() }
+    }
+
+    func releaseSecondRequest() {
+        secondContinuation?.resume()
+        secondContinuation = nil
+    }
+}
+
+private final class DelayedFailingSessionMapWrite: @unchecked Sendable {
+    private let lock = NSLock()
+    private let release = DispatchSemaphore(value: 0)
+    private var hasStarted = false
+    private var hasFinished = false
+    private var startedContinuation: CheckedContinuation<Void, Never>?
+    private var finishedContinuation: CheckedContinuation<Void, Never>?
+
+    func perform() throws {
+        markStarted()
+        release.wait()
+        markFinished()
+        throw SessionMapAppModelTestError.writeFailed
+    }
+
+    func waitUntilStarted() async {
+        await withCheckedContinuation(registerStartedWaiter)
+    }
+
+    func releaseWithFailure() { release.signal() }
+
+    func waitUntilFinished() async {
+        await withCheckedContinuation(registerFinishedWaiter)
+    }
+
+    private func markStarted() {
+        lock.lock()
+        hasStarted = true
+        let continuation = startedContinuation
+        startedContinuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
+
+    private func markFinished() {
+        lock.lock()
+        hasFinished = true
+        let continuation = finishedContinuation
+        finishedContinuation = nil
+        lock.unlock()
+        continuation?.resume()
+    }
+
+    private func registerStartedWaiter(_ continuation: CheckedContinuation<Void, Never>) {
+        lock.lock()
+        if hasStarted {
+            lock.unlock()
+            continuation.resume()
+        } else {
+            startedContinuation = continuation
+            lock.unlock()
+        }
+    }
+
+    private func registerFinishedWaiter(_ continuation: CheckedContinuation<Void, Never>) {
+        lock.lock()
+        if hasFinished {
+            lock.unlock()
+            continuation.resume()
+        } else {
+            finishedContinuation = continuation
+            lock.unlock()
+        }
+    }
+}
+
 private actor RecordingSessionMapWriter {
     private(set) var callCount = 0
 
@@ -112,7 +238,7 @@ private actor RecordingSessionMapWriter {
 @MainActor
 private func sessionMapAppDependencies(
     root: URL,
-    locator: ReorderedSessionMapLocator,
+    locator: any OmpLocating,
     writer: RecordingSessionMapWriter,
     store: SessionMapStore? = nil
 ) -> AppDependencies {
@@ -220,4 +346,4 @@ private func waitForSessionMap(
     }
 }
 
-private enum SessionMapAppModelTestError: Error { case renderFailed }
+private enum SessionMapAppModelTestError: Error { case renderFailed, writeFailed }
