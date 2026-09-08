@@ -10,9 +10,14 @@ struct SessionMapNodeView: View {
     let changeKind: SessionMapNodeChangeKind?
     @Binding var focus: SessionMapFocus
 
-    @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.sessionMapReduceMotionOverride) private var reduceMotionOverride
     @FocusState private var isKeyboardFocused: Bool
     @State private var isPulseVisible = false
+
+    private var isReduceMotionEnabled: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
 
     var body: some View {
         Button {

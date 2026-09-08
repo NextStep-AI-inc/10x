@@ -77,6 +77,8 @@ final class AppModel {
     private(set) var composerControls: ComposerControlsModel?
     private(set) var composerCommands: ComposerCommandModel?
     private(set) var startupState = StartupState()
+    private(set) var isSessionMapVisible = false
+    private(set) var requestedSessionMapPaneWidth: CGFloat = 440
     let sessionActivityRegistry: SessionActivityRegistry
     /// Every managed session's live `ProviderAccountChannel`, keyed by
     /// session id — see `SessionController.attachAccountChannel` (the sole
@@ -201,6 +203,7 @@ final class AppModel {
     @ObservationIgnored private var memoryPressureSource: DispatchSourceMemoryPressure?
     @ObservationIgnored private var hasStartedWarmRetention = false
     @ObservationIgnored private var managedSessions: [UUID: SessionController] = [:]
+    @ObservationIgnored private var sessionMapPaneModels: [UUID: SessionMapPaneModel] = [:]
     @ObservationIgnored private var managedSessionPaths: [String: UUID] = [:]
     /// Managed session ids in visit order, oldest first. Only sessions that
     /// are inactive, idle and holding nothing unsaved are ever reclaimed from
@@ -512,6 +515,78 @@ final class AppModel {
 
     func closeSearch() {
         isSearchPresented = false
+    }
+
+    func toggleSessionMap() {
+        setSessionMapVisible(!isSessionMapVisible)
+    }
+
+    func setSessionMapVisible(_ isVisible: Bool) {
+        isSessionMapVisible = isVisible
+        for paneModel in sessionMapPaneModels.values {
+            paneModel.synchronizePresentation(
+                paneWidth: paneModel.paneWidth,
+                isVisible: isVisible)
+        }
+    }
+
+    func resizeSessionMap(to requestedWidth: CGFloat) {
+        requestedSessionMapPaneWidth = requestedWidth
+    }
+
+    func sessionMapPaneModel(
+        for controller: SessionController,
+        displayedWidth: CGFloat
+    ) -> SessionMapPaneModel {
+        if let paneModel = sessionMapPaneModels[controller.id] {
+            paneModel.synchronizePresentation(
+                paneWidth: displayedWidth,
+                isVisible: isSessionMapVisible)
+            return paneModel
+        }
+        let paneModel = SessionMapPaneModel(
+            state: .needsGeneration,
+            paneWidth: displayedWidth,
+            isVisible: isSessionMapVisible,
+            onClose: { [weak self] in self?.setSessionMapVisible(false) })
+        sessionMapPaneModels[controller.id] = paneModel
+        return paneModel
+    }
+
+    /// Installs preview controllers into the real navigation graph without opening an
+    /// OMP process. Only the explicit UI fixture route calls this seam.
+    func installSessionMapFixture(
+        _ entries: [(
+            metadata: SessionMetadata,
+            controller: SessionController,
+            document: SessionMapDocument?,
+            state: SessionMapPaneState
+        )],
+        selectedPath: String
+    ) {
+        discardManagedSessions()
+        processManager = SessionProcessManager()
+        sessions = entries.map(\.metadata)
+        for entry in entries {
+            managedSessions[entry.controller.id] = entry.controller
+            managedSessionPaths[entry.metadata.path] = entry.controller.id
+            sessionVisitOrder.append(entry.controller.id)
+            sessionMapPaneModels[entry.controller.id] = SessionMapPaneModel(
+                displayedDocument: entry.document,
+                state: entry.state,
+                paneWidth: requestedSessionMapPaneWidth,
+                isVisible: isSessionMapVisible,
+                onClose: { [weak self] in self?.setSessionMapVisible(false) })
+        }
+        guard let selected = entries.first(where: { $0.metadata.path == selectedPath }) else {
+            route = .newSession
+            return
+        }
+        selectedProjectURL = URL(
+            filePath: selected.metadata.cwd,
+            directoryHint: .isDirectory)
+        activeSession = selected.controller
+        route = .session(selected.metadata.path)
     }
 
     func openSearchResult(_ result: SearchResult) {
@@ -1226,6 +1301,7 @@ final class AppModel {
     private func removeManagedSession(_ controller: SessionController) {
         controller.stopActivityTracking()
         managedSessions.removeValue(forKey: controller.id)
+        sessionMapPaneModels.removeValue(forKey: controller.id)
         sessionVisitOrder.removeAll { $0 == controller.id }
         let paths = managedSessionPaths.compactMap { entry in
             entry.value == controller.id ? entry.key : nil
@@ -1241,6 +1317,7 @@ final class AppModel {
             controller.stopActivityTracking()
         }
         managedSessions.removeAll()
+        sessionMapPaneModels.removeAll()
         managedSessionPaths.removeAll()
         pendingUnexpectedExits.removeAll()
         sessionVisitOrder.removeAll()

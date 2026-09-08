@@ -33,6 +33,26 @@ import Testing
 }
 
 @MainActor
+@Test func sessionMapFixtureUsesTheRealShell() throws {
+    let configuration = try SessionMapFixtureScene.make(
+        route: .mapPlanning,
+        environment: [
+            UIFixtureRoute.environmentKey: UIFixtureRoute.mapPlanning.rawValue,
+            "TENX_UI_FIXTURE_SHA": "snapshot-fixture",
+            "TENX_UI_FIXTURE_APPEARANCE": "light",
+        ],
+        isolatedRootOverride: URL(
+            filePath: "/tmp/10x-session-map-snapshot-fixture",
+            directoryHint: .isDirectory))
+    configuration.model.toggleSessionMap()
+
+    try assertSnapshot(
+        SessionMapFixtureScene(configuration: configuration),
+        name: "session-map-fixture-shell",
+        size: CGSize(width: 1_440, height: 900))
+}
+
+@MainActor
 @Test func sessionMapPaneStateSnapshots() throws {
     let document = try SessionMapFixtures.document(SessionMapFixtures.supportingXML)
     let states: [(String, SessionMapPaneState, SessionMapDocument?)] = [

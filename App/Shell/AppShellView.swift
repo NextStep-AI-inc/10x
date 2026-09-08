@@ -19,18 +19,20 @@ struct AppShellView: View {
                     OnboardingView(model: model, step: step)
                 } else {
                     ZStack(alignment: .leading) {
-                        routeCanvas
-                            .environment(\.composerProviderDockWidth, hasComposer
-                                ? ProviderUsageDockLayout.footerWidth(providers: model.providerModel?.dockProviders ?? [])
-                                : 0)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(.leading, railExpansion.contentLeadingInset)
-                            .environment(model.idePreferenceStore)
-                            .environment(model.toolDetailPreferenceStore)
-                            .environment(\.fileOpenService, model.fileOpenService)
-                            .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
-                                model.openSettings(focus: .preferredIDE)
-                            })
+                        GeometryReader { geometry in
+                            routeCanvas(shellWidth: geometry.size.width)
+                                .environment(\.composerProviderDockWidth, hasComposer
+                                    ? ProviderUsageDockLayout.footerWidth(providers: model.providerModel?.dockProviders ?? [])
+                                    : 0)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .padding(.leading, railExpansion.contentLeadingInset)
+                                .environment(model.idePreferenceStore)
+                                .environment(model.toolDetailPreferenceStore)
+                                .environment(\.fileOpenService, model.fileOpenService)
+                                .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
+                                    model.openSettings(focus: .preferredIDE)
+                                })
+                        }
                         FloatingRailView(
                             model: model,
                             expansion: railExpansion,
@@ -168,7 +170,7 @@ struct AppShellView: View {
     }
 
     @ViewBuilder
-    private var routeCanvas: some View {
+    private func routeCanvas(shellWidth: CGFloat) -> some View {
         switch model.route {
         case .onboarding:
             EmptyView()
@@ -176,11 +178,21 @@ struct AppShellView: View {
             NewSessionView(model: model)
         case .session:
             if let activeSession = model.activeSession {
+                let presentation = SessionMapPanePresentation.resolve(
+                    windowWidth: shellWidth,
+                    requestedPaneWidth: model.requestedSessionMapPaneWidth)
                 ActiveSessionView(
                     controller: activeSession,
                     controls: model.composerControls,
                     commands: model.composerCommands,
-                    onReviewPrompt: { model.reviewFailedPrompt(activeSession) })
+                    onReviewPrompt: { model.reviewFailedPrompt(activeSession) },
+                    sessionMapModel: model.sessionMapPaneModel(
+                        for: activeSession,
+                        displayedWidth: presentation.width),
+                    sessionMapPresentation: presentation,
+                    isSessionMapVisible: model.isSessionMapVisible,
+                    onToggleSessionMap: model.toggleSessionMap,
+                    onResizeSessionMap: model.resizeSessionMap)
                     .environment(\.renameCurrentSession, model.requestRenameCurrentSession)
             } else {
                 Text("Session unavailable")

@@ -13,49 +13,74 @@ extension EnvironmentValues {
 
 struct SessionHeaderView: View {
     let controller: SessionController
+    var isMapVisible = false
+    var mapToggleFocusRequest = 0
+    var onToggleMap: (() -> Void)?
     @Environment(\.renameCurrentSession) private var renameCurrentSession
+    @FocusState private var isMapToggleFocused: Bool
 
     var body: some View {
-        VStack(spacing: 4) {
-            SessionTitleView(title: controller.title, isLoading: controller.isTitleLoading)
-                .font(TenXTypography.body(size: 13, weight: .semibold))
-                .lineLimit(1)
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) {
-                    renameCurrentSession?()
-                }
-                .contextMenu {
-                    if let renameCurrentSession {
-                        Button("Rename Session...", systemImage: "pencil") {
-                            renameCurrentSession()
+        ZStack {
+            VStack(spacing: 4) {
+                SessionTitleView(title: controller.title, isLoading: controller.isTitleLoading)
+                    .font(TenXTypography.body(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        renameCurrentSession?()
+                    }
+                    .contextMenu {
+                        if let renameCurrentSession {
+                            Button("Rename Session...", systemImage: "pencil") {
+                                renameCurrentSession()
+                            }
                         }
                     }
-                }
-                .accessibilityAction(named: Text("Rename Session")) {
-                    renameCurrentSession?()
-                }
+                    .accessibilityAction(named: Text("Rename Session")) {
+                        renameCurrentSession?()
+                    }
 
-            if !controller.headerMetadata.presentationItems.isEmpty {
-                HStack(spacing: 14) {
-                    ForEach(controller.headerMetadata.presentationItems) { item in
-                        HStack(spacing: 4) {
-                            Image(systemName: item.systemImage)
-                                .font(.system(size: 9, weight: .medium))
-                            Text(item.value)
+                if !controller.headerMetadata.presentationItems.isEmpty {
+                    HStack(spacing: 14) {
+                        ForEach(controller.headerMetadata.presentationItems) { item in
+                            HStack(spacing: 4) {
+                                Image(systemName: item.systemImage)
+                                    .font(.system(size: 9, weight: .medium))
+                                Text(item.value)
+                            }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(item.accessibilityLabel)
+                            .accessibilityValue(item.value)
                         }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel(item.accessibilityLabel)
-                        .accessibilityValue(item.value)
                     }
+                    .font(TenXTypography.mono(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .lineLimit(1)
                 }
-                .font(TenXTypography.mono(size: 10))
-                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                .lineLimit(1)
+            }
+            .frame(maxWidth: 480)
+            .padding(.leading, 42)
+            .padding(.trailing, 92)
+
+            if let onToggleMap {
+                HStack {
+                    Spacer()
+                    Button("Map", systemImage: "point.3.connected.trianglepath.dotted") {
+                        onToggleMap()
+                    }
+                    .labelStyle(.titleAndIcon)
+                    .buttonStyle(GhostActionStyle(horizontalPadding: 8))
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+                    .focused($isMapToggleFocused)
+                    .accessibilityLabel(isMapVisible ? "Close session map" : "Open session map")
+                    .accessibilityValue(isMapVisible ? "Open" : "Closed")
+                    .padding(.trailing, 16)
+                }
             }
         }
-        .frame(maxWidth: 480)
         .frame(height: 54)
-        .padding(.leading, 42)
-        .padding(.trailing, 92)
+        .onChange(of: mapToggleFocusRequest) { _, _ in
+            isMapToggleFocused = true
+        }
     }
 }

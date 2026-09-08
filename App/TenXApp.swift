@@ -4,14 +4,34 @@ import SwiftUI
 @main
 struct TenXApp: App {
     @State private var model: AppModel
+    private let fixtureConfiguration: SessionMapFixtureScene.Configuration?
+    private let fixtureStartupError: String?
     @Environment(\.scenePhase) private var scenePhase
     @NSApplicationDelegateAdaptor(AppTerminationDelegate.self) private var appDelegate
 
     init() {
-        // Before anything can spawn: a Finder launch inherits LaunchServices'
-        // PATH, which cannot resolve OMP's `bun` interpreter.
-        OmpProcessEnvironment.install()
-        _model = State(initialValue: AppModel())
+        let environment = ProcessInfo.processInfo.environment
+        do {
+            if let route = try UIFixtureRoute.resolve(environment: environment) {
+                let configuration = try SessionMapFixtureScene.make(
+                    route: route,
+                    environment: environment)
+                fixtureConfiguration = configuration
+                fixtureStartupError = nil
+                _model = State(initialValue: configuration.model)
+            } else {
+                // Before anything can spawn: a Finder launch inherits LaunchServices'
+                // PATH, which cannot resolve OMP's `bun` interpreter.
+                OmpProcessEnvironment.install()
+                fixtureConfiguration = nil
+                fixtureStartupError = nil
+                _model = State(initialValue: AppModel())
+            }
+        } catch {
+            fixtureConfiguration = nil
+            fixtureStartupError = error.localizedDescription
+            _model = State(initialValue: SessionMapFixtureScene.inertModelForStartupFailure())
+        }
     }
 
     var body: some Scene {
@@ -28,20 +48,41 @@ struct TenXApp: App {
         .windowBackgroundDragBehavior(.enabled)
         .restorationBehavior(.disabled)
         .defaultLaunchBehavior(
-            model.startupState.phase == .handoff ? .suppressed : .presented)
+            fixtureConfiguration == nil && fixtureStartupError == nil
+                && model.startupState.phase != .handoff ? .presented : .suppressed)
 
-        WindowGroup("10x", id: AppWindowID.workspace) {
-            WorkspaceSceneView(
-                model: model,
-                scenePhase: scenePhase,
-                onAppear: {
-                    appDelegate.shutdown = { await model.shutdown() }
-                })
+        WindowGroup(fixtureConfiguration?.title ?? "10x", id: AppWindowID.workspace) {
+            if let fixtureConfiguration {
+                SessionMapFixtureScene(configuration: fixtureConfiguration)
+                    .onAppear {
+                        appDelegate.shutdown = { await model.shutdown() }
+                    }
+            } else if let fixtureStartupError {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("UI fixture unavailable")
+                        .font(TenXTypography.accent(size: 16))
+                    Text(fixtureStartupError)
+                        .font(TenXTypography.body(size: 12))
+                        .textSelection(.enabled)
+                }
+                .padding(24)
+                .frame(minWidth: 520, minHeight: 220, alignment: .topLeading)
+            } else {
+                WorkspaceSceneView(
+                    model: model,
+                    scenePhase: scenePhase,
+                    onAppear: {
+                        appDelegate.shutdown = { await model.shutdown() }
+                    })
+            }
         }
         .defaultLaunchBehavior(
-            model.startupState.phase == .handoff ? .presented : .suppressed)
+            fixtureConfiguration != nil || fixtureStartupError != nil
+                || model.startupState.phase == .handoff ? .presented : .suppressed)
         .restorationBehavior(.disabled)
-        .defaultSize(width: 1180, height: 760)
+        .defaultSize(
+            width: fixtureConfiguration == nil ? 1_180 : 1_440,
+            height: fixtureConfiguration == nil ? 760 : 900)
         .windowResizability(.contentMinSize)
         .windowStyle(.hiddenTitleBar)
         .commands {

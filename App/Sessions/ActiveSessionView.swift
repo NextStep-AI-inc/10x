@@ -5,12 +5,67 @@ struct ActiveSessionView: View {
     var controls: ComposerControlsModel?
     var commands: ComposerCommandModel?
     var onReviewPrompt: (() -> Void)? = nil
+    var sessionMapModel: SessionMapPaneModel?
+    var sessionMapPresentation: SessionMapPanePresentation?
+    var isSessionMapVisible = false
+    var onToggleSessionMap: (() -> Void)?
+    var onResizeSessionMap: ((CGFloat) -> Void)?
 
     @State private var flyout: ComposerFlyout?
+    @State private var mapToggleFocusRequest = 0
+    @State private var paneWidthAtDragStart: CGFloat?
 
     var body: some View {
+        Group {
+            if isSessionMapVisible,
+               let sessionMapModel,
+               let sessionMapPresentation {
+                switch sessionMapPresentation {
+                case .docked:
+                    HStack(spacing: 0) {
+                        conversation
+                        paneDivider
+                        sessionMapPane(sessionMapModel)
+                    }
+                case .drawer:
+                    ZStack(alignment: .trailing) {
+                        conversation
+                        sessionMapPane(sessionMapModel)
+                            .shadow(color: .black.opacity(0.2), radius: 18, x: -4)
+                    }
+                }
+            } else {
+                conversation
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // This view keeps its identity across session switches, so the shelf
+        // would otherwise stay open over a transcript it no longer belongs to.
+        .onChange(of: controller.id) { _, _ in flyout = nil }
+        .onChange(of: isSessionMapVisible) { wasVisible, isVisible in
+            if wasVisible && !isVisible { mapToggleFocusRequest &+= 1 }
+        }
+        .environment(\.fileReferenceBaseURL, controller.projectURL)
+        .sheet(isPresented: logBinding) {
+            ScrollView {
+                Text(controller.logText)
+                    .font(TenXTypography.mono(size: 11))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(24)
+            }
+            .frame(minWidth: 620, minHeight: 360)
+        }
+        .onExitCommand { flyout = nil }
+    }
+
+    private var conversation: some View {
         VStack(spacing: 0) {
-            SessionHeaderView(controller: controller)
+            SessionHeaderView(
+                controller: controller,
+                isMapVisible: isSessionMapVisible,
+                mapToggleFocusRequest: mapToggleFocusRequest,
+                onToggleMap: onToggleSessionMap)
 
             TranscriptView(controller: controller)
                 .id(controller.id)
@@ -65,21 +120,43 @@ struct ActiveSessionView: View {
             .padding(.bottom, 28)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // This view keeps its identity across session switches, so the shelf
-        // would otherwise stay open over a transcript it no longer belongs to.
-        .onChange(of: controller.id) { _, _ in flyout = nil }
-        .environment(\.fileReferenceBaseURL, controller.projectURL)
-        .sheet(isPresented: logBinding) {
-            ScrollView {
-                Text(controller.logText)
-                    .font(TenXTypography.mono(size: 11))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(24)
+    }
+
+    private func sessionMapPane(_ model: SessionMapPaneModel) -> some View {
+        SessionMapPaneView(model: model)
+            .focusable()
+            .onExitCommand { model.close() }
+    }
+
+    private var paneDivider: some View {
+        Rectangle()
+            .fill(TenXPalette.color(TenXPalette.separatorHex))
+            .frame(width: 1)
+            .contentShape(Rectangle().inset(by: -4))
+            .gesture(DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    guard let sessionMapPresentation, let onResizeSessionMap else { return }
+                    if paneWidthAtDragStart == nil {
+                        paneWidthAtDragStart = sessionMapPresentation.width
+                    }
+                    guard let paneWidthAtDragStart else { return }
+                    onResizeSessionMap(paneWidthAtDragStart - value.translation.width)
+                }
+                .onEnded { _ in paneWidthAtDragStart = nil })
+            .accessibilityElement()
+            .accessibilityLabel("Resize session map")
+            .accessibilityValue("\(Int(sessionMapPresentation?.width ?? 0)) points")
+            .accessibilityAdjustableAction { direction in
+                guard let sessionMapPresentation, let onResizeSessionMap else { return }
+                switch direction {
+                case .increment:
+                    onResizeSessionMap(sessionMapPresentation.width + 20)
+                case .decrement:
+                    onResizeSessionMap(sessionMapPresentation.width - 20)
+                @unknown default:
+                    break
+                }
             }
-            .frame(minWidth: 620, minHeight: 360)
-        }
-        .onExitCommand { flyout = nil }
     }
 
     private var logBinding: Binding<Bool> {

@@ -1,6 +1,41 @@
 import Observation
 import SwiftUI
 
+private struct SessionMapReduceMotionOverrideKey: EnvironmentKey {
+    static let defaultValue: Bool? = nil
+}
+
+extension EnvironmentValues {
+    var sessionMapReduceMotionOverride: Bool? {
+        get { self[SessionMapReduceMotionOverrideKey.self] }
+        set { self[SessionMapReduceMotionOverrideKey.self] = newValue }
+    }
+}
+
+enum SessionMapPanePresentation: Equatable, Sendable {
+    case docked(width: CGFloat)
+    case drawer(width: CGFloat)
+
+    static func resolve(
+        windowWidth: CGFloat,
+        requestedPaneWidth: CGFloat
+    ) -> SessionMapPanePresentation {
+        let minimumWidth: CGFloat = 320
+        let defaultWidth: CGFloat = 440
+        if windowWidth < 1_180 {
+            let maximumDrawerWidth = max(defaultWidth, windowWidth / 2)
+            return .drawer(width: min(max(requestedPaneWidth, minimumWidth), maximumDrawerWidth))
+        }
+        return .docked(width: min(max(requestedPaneWidth, minimumWidth), windowWidth / 2))
+    }
+
+    var width: CGFloat {
+        switch self {
+        case .docked(let width), .drawer(let width): width
+        }
+    }
+}
+
 enum SessionMapPaneState: Equatable, Sendable {
     case empty
     case needsGeneration
@@ -24,8 +59,8 @@ final class SessionMapPaneModel {
     private(set) var displayedDocument: SessionMapDocument?
     private(set) var state: SessionMapPaneState
     var focus: SessionMapFocus
-    var paneWidth: CGFloat
-    var isVisible: Bool
+    private(set) var paneWidth: CGFloat
+    private(set) var isVisible: Bool
 
     private let onRegenerate: (SessionMapGenerationScope) -> Void
     private let onCaughtUp: () -> Void
@@ -72,6 +107,11 @@ final class SessionMapPaneModel {
 
     func transition(to state: SessionMapPaneState) {
         self.state = state
+    }
+
+    func synchronizePresentation(paneWidth: CGFloat, isVisible: Bool) {
+        self.paneWidth = paneWidth
+        self.isVisible = isVisible
     }
 
     func regenerate(_ scope: SessionMapGenerationScope) { onRegenerate(scope) }
