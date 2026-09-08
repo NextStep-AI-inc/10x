@@ -167,7 +167,10 @@ struct SessionMapGraphView: View {
         DisclosureGroup("Relationships") {
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(document.graph.nodes) { node in
-                    Text(SessionMapInteraction.accessibilityLabel(for: node, graph: document.graph))
+                    Text(SessionMapInteraction.accessibilityLabel(
+                        for: node,
+                        graph: document.graph,
+                        isActive: activity.activeNodeIDs.contains(node.id)))
                         .font(TenXTypography.body(size: 11))
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

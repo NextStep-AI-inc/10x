@@ -20,7 +20,6 @@ struct SessionMapNodeView: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    statusMark
                     Text(node.label)
                         .font(TenXTypography.body(size: 12, weight: .semibold))
                         .lineLimit(3)
@@ -43,6 +42,12 @@ struct SessionMapNodeView: View {
                     .font(TenXTypography.body(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     .lineLimit(2)
+                HStack(spacing: 4) {
+                    statusMark
+                    Text(node.status.displayName)
+                        .font(TenXTypography.body(size: 9, weight: .medium))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                }
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 8)
@@ -77,8 +82,12 @@ struct SessionMapNodeView: View {
         .onChange(of: isReduceMotionEnabled) { _, isReduced in
             isPulseVisible = isActive && !isReduced
         }
+        .onChange(of: isActive) { _, isNowActive in
+            isPulseVisible = isNowActive && !isReduceMotionEnabled
+        }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(SessionMapInteraction.accessibilityLabel(for: node, graph: graph))
+        .accessibilityLabel(SessionMapInteraction.accessibilityLabel(
+            for: node, graph: graph, isActive: isActive))
         .accessibilityHint("Select this component to show its details.")
     }
 
@@ -91,15 +100,20 @@ struct SessionMapNodeView: View {
             with: CGSize(width: textWidth, height: 2_048),
             options: [.usesLineFragmentOrigin, .usesFontLeading]).height)
         let subtitle = NSAttributedString(
-            string: node.group ?? node.kind.displayName,
+            string: renderedSubtitle(for: node),
             attributes: [.font: NSFont.systemFont(ofSize: 10)])
         let subtitleHeight = ceil(subtitle.boundingRect(
             with: CGSize(width: width - 18, height: 2_048),
             options: [.usesLineFragmentOrigin, .usesFontLeading]).height)
-        return max(64, 20 + labelHeight + subtitleHeight)
+        let statusHeight = ceil(NSFont.systemFont(ofSize: 9, weight: .medium).boundingRectForFont.height)
+        return max(64, 24 + labelHeight + subtitleHeight + statusHeight)
     }
 
     private var subtitle: String {
+        Self.renderedSubtitle(for: node)
+    }
+
+    static func renderedSubtitle(for node: SessionMapNode) -> String {
         if let group = node.group { return "\(node.kind.displayName) · \(group)" }
         return node.kind.displayName
     }
@@ -148,6 +162,14 @@ struct SessionMapNodeView: View {
                 Circle()
                     .fill(TenXPalette.color(TenXPalette.cyanHex))
                     .frame(width: 6, height: 6)
+            case .proposed:
+                Image(systemName: "plus")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            case .planned:
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             default:
                 Circle()
                     .stroke(TenXPalette.color(TenXPalette.mutedTextHex), lineWidth: 1)

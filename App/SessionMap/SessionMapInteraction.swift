@@ -100,15 +100,17 @@ enum SessionMapInteraction {
 
     static func accessibilityLabel(
         for node: SessionMapNode,
-        graph: SessionMapGraph
+        graph: SessionMapGraph,
+        isActive: Bool = false
     ) -> String {
         let status = node.status.displayName
         let group = node.group.map { ", \($0) group" } ?? ""
+        let activity = isActive ? " Live activity." : ""
         let relationships = relationshipDescriptions(for: node, graph: graph)
         guard !relationships.isEmpty else {
-            return "\(node.label), \(status)\(group). No connections."
+            return "\(node.label), \(status)\(group).\(activity) No connections."
         }
-        return "\(node.label), \(status)\(group). \(relationships.joined(separator: " "))"
+        return "\(node.label), \(status)\(group).\(activity) \(relationships.joined(separator: " "))"
     }
 
     static func relationshipDescriptions(

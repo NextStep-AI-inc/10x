@@ -15,6 +15,10 @@ enum SessionMapFixtures {
             status: .done,
             target: .label("Native map document")
         ), SessionMapStatusEvidence(
+            sourceRef: "tool-2",
+            status: .done,
+            target: .file("App/SessionMap/SessionMapDocument.swift")
+        ), SessionMapStatusEvidence(
             sourceRef: "tool-1",
             status: .failed,
             target: .label("Request handler")
@@ -174,6 +178,7 @@ enum SessionMapFixtures {
             <node id="document" label="Native map document" kind="component" file="App/SessionMap/SessionMapDocument.swift" status="done" group="Model" ref="tool-2">Stores the validated graph.</node>
             <node id="handler" label="Request handler" kind="actor" status="failed" group="Runtime" ref="tool-1">Reports the failed request.</node>
             <node id="audit" label="Audit record" kind="store" status="planned" group="History" ref="u1">Remains disconnected from the live request.</node>
+            <node id="proposal" label="Review boundary" kind="concept" status="proposed" group="Follow-up" ref="u1">Marks a proposed later review.</node>
             <edge from="view" to="writer" kind="flow" label="request"/>
             <edge from="writer" to="document" kind="flow" label="XML"/>
             <edge from="document" to="handler" kind="flow" label="install"/>

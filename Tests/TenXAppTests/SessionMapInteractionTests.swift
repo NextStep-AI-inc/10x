@@ -60,3 +60,38 @@ import Testing
         for: document.graph.nodes[0], graph: document.graph
     ) == "Request view, Planned. Connects to Service.")
 }
+
+@MainActor
+@Test func sessionMapGroupedNodeMeasurementIncludesRenderedSubtitle() {
+    let node = SessionMapNode(
+        id: "grouped",
+        label: "Coordinator that handles a deliberately long request",
+        kind: .component,
+        file: nil,
+        status: .proposed,
+        group: "Session generation and validation",
+        ref: nil,
+        note: nil)
+
+    #expect(SessionMapNodeView.measuredHeight(for: node) >= 112)
+}
+
+@Test func sessionMapGraphFixtureCoversEveryNodeStatus() throws {
+    let document = try SessionMapFixtures.document(SessionMapFixtures.graphStatesXML)
+
+    #expect(Set(document.graph.nodes.map(\.status)) == [
+        .exists, .proposed, .planned, .active, .done, .failed,
+    ])
+}
+
+@Test func sessionMapAccessibilityDistinguishesLiveActivity() throws {
+    let document = try SessionMapFixtures.document(SessionMapFixtures.chainXML)
+    let node = document.graph.nodes[0]
+
+    #expect(SessionMapInteraction.accessibilityLabel(
+        for: node, graph: document.graph, isActive: false
+    ) == "Request view, Planned. Connects to Service.")
+    #expect(SessionMapInteraction.accessibilityLabel(
+        for: node, graph: document.graph, isActive: true
+    ) == "Request view, Planned. Live activity. Connects to Service.")
+}

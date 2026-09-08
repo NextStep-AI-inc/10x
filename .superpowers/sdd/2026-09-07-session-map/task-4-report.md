@@ -14,8 +14,8 @@ DONE
 - Added native relationship disclosure content and VoiceOver node labels containing display labels, status, optional group, and named relationships rather than raw IDs.
 - Added focus-scoped Previous/Next arrow handling, endpoint-disabled walkthrough controls, selected-step projection, and separate Jump actions.
 - Added plan task controls that project node hover/selection through the shared focus value.
-- Added reduced-motion handling for live activity pulses. Transcript jump animation is delegated through `SessionMapAction`; Task 6 owns the real shell callback and Reduce Motion jump behavior.
-- Added a graph-state fixture covering disconnected, Exists, Active, Done, Failed, changed, and added states.
+- Added reduced-motion handling for live activity pulses. Transcript jump animation is delegated through `SessionMapAction`; Task 12 owns the real transcript callback and Reduce Motion jump behavior.
+- Added a graph-state fixture covering disconnected nodes, all six node statuses, changed nodes, and added nodes.
 - Regenerated `10x.xcodeproj` with xcodeproj 1.27.0. A second generation retained the identical project-file SHA-1 `da627d5420689170bad09ed650b759d27b1dcc65`.
 
 ## TDD evidence
@@ -95,4 +95,4 @@ The normal references show the disconnected Audit record and Failed Request hand
 
 ## Deferred integration checks
 
-Task 6 must drive the real shell to prove that walkthrough arrows advance only while its native focus scope is active, composer arrows edit the draft after focus moves, VoiceOver exposes the real installed node/action hierarchy, and Reduce Motion disables the actual transcript jump animation. Task 4 supplies the focus-scoped key handler, native controls, accessibility content, and action seam needed for that check; it does not modify the shell, composer, pane, or transcript integration fences.
+Task 6 must drive the real shell to prove that walkthrough arrows advance only while its native focus scope is active, composer arrows edit the draft after focus moves, and VoiceOver exposes the real installed node/action hierarchy. Task 12 must verify transcript Jump navigation and Reduce Motion handling for the actual jump. Task 4 supplies the focus-scoped key handler, native controls, accessibility content, and action seam needed for those checks; it does not modify the shell, composer, pane, or transcript integration fences.
