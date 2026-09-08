@@ -52,14 +52,23 @@ import Testing
     #expect(!TurnActivityView.isAwaitingOutput(runtimeState: .streaming, items: items))
 }
 
-@Test func liveMessageAndSubagentEarlierInTheTurnSuppressDuplicateActivity() {
+@Test func aCompletedToolAfterPackedAssistantTextResumesActivity() {
     let user = transcriptMessage(role: "user", isFinal: true)
     let completeTool = TranscriptItem.tool(toolPresentation(phase: .complete))
     let liveMessage = transcriptMessage(role: "assistant", isFinal: false)
 
-    #expect(!TurnActivityView.isAwaitingOutput(
+    #expect(TurnActivityView.isAwaitingOutput(
         runtimeState: .streaming,
         items: [user, liveMessage, completeTool]))
+    #expect(!TurnActivityView.isAwaitingOutput(
+        runtimeState: .streaming,
+        items: [user, completeTool, liveMessage]))
+}
+
+@Test func anActiveSubagentEarlierInTheTurnSuppressesDuplicateActivity() {
+    let user = transcriptMessage(role: "user", isFinal: true)
+    let completeTool = TranscriptItem.tool(toolPresentation(phase: .complete))
+
     #expect(!TurnActivityView.isAwaitingOutput(
         runtimeState: .streaming,
         items: [user, .subagent(activitySubagent()), completeTool]))

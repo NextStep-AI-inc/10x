@@ -21,20 +21,30 @@ struct TurnActivityView: View {
             from: items, runtimeState: runtimeState).last
         let activeItems = finalSection?.state == nil ? items : finalSection?.items ?? []
         guard !activeItems.contains(where: requiresUserInput) else { return false }
-        return !activeItems.contains(where: hasVisibleActivity)
+        guard !activeItems.contains(where: hasOngoingNonMessageActivity) else { return false }
+
+        // Packed messages can leave assistant text nonfinal before a completed
+        // tool. Only the latest response item says whether that text is moving.
+        for item in activeItems.reversed() {
+            switch item {
+            case .message(let message) where message.role == .assistant:
+                return message.isFinal || message.document.blocks.isEmpty
+            case .tool, .subagent:
+                return true
+            default:
+                continue
+            }
+        }
+        return true
     }
 
-    private nonisolated static func hasVisibleActivity(_ item: TranscriptItem) -> Bool {
+    private nonisolated static func hasOngoingNonMessageActivity(_ item: TranscriptItem) -> Bool {
         switch item {
-        case .message(let message):
-            return message.role == .assistant
-                && !message.isFinal
-                && !message.document.blocks.isEmpty
         case .tool(let presentation):
             return presentation.phase == .running
         case .subagent(let presentation):
             return presentation.status.isActive
-        case .threadStart, .annotation, .notice, .extensionUI:
+        case .message, .threadStart, .annotation, .notice, .extensionUI:
             return false
         }
     }
