@@ -65,11 +65,12 @@ repeated identical nudges — record one descriptor.
 `SessionController` turns each descriptor into a `.notice` transcript item
 (existing item kind, existing gray row rendering):
 
-1. Immediate: `Hidden developer message (13.8 KB) — summarizing…`
-2. When the summary returns: replaced in place with
+1. Immediate, static: `Hidden developer message (13.8 KB)`.
+2. When the summary returns: updated in place to
    `Hidden developer message: <summary>`.
-3. On failure (spawn error, empty output, timeout): the static text stays,
-   minus the "summarizing…" tail.
+3. No summary (no model, spawn error, empty output, timeout): the static text
+   stays. There is no intermediate "summarizing…" state, so the no-model path
+   never flashes a placeholder it can't fulfill.
 
 The reducer gains `updateNotice(id:message:)`; notices currently only append.
 
@@ -90,7 +91,7 @@ func summarize(_ descriptor: HarnessMessageDescriptor) async -> String?
   text truncated to 8 KB. Summary = last non-empty stdout line (`omp -p`
   prints a `Working...` progress line first).
 - No explicit timeout: `omp -p` self-terminates after answering. (Known
-  ceiling: a hung child leaves the static "summarizing…" notice; the upgrade
+  ceiling: a hung child leaves the static notice without a summary; the upgrade
   path is a task-group race with a 60 s cap.)
 - The summarizer spawns its own one-shot process; it never touches the
   session's omp child.
