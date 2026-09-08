@@ -1,8 +1,45 @@
 import AppKit
 import OmpKit
+import Observation
 import SwiftUI
 import Testing
 @testable import TenXApp
+
+@MainActor
+@Observable
+private final class ComposerDraftProbe {
+    var text = "BEFORE | AFTER"
+}
+
+@MainActor
+@Test func fileInsertionUpdatesTheSwiftUIEditorBinding() async throws {
+    let draft = ComposerDraftProbe()
+    let bridge = ComposerTextEditorBridge()
+    let editor = Text(draft.text).hidden().overlay {
+        TextEditor(text: Bindable(draft).text)
+            .padding(16)
+            .onKeyPress(keys: ComposerCommandKeyRouting.keys, phases: .down) { _ in .handled }
+            .background(ComposerTextViewConfigurator(bridge: bridge))
+    }
+    let host = NSHostingView(rootView: editor)
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 200),
+                          styleMask: [], backing: .buffered, defer: false)
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(50))
+
+    func textViews(in view: NSView) -> [NSTextView] {
+        if let textView = view as? NSTextView { return [textView] }
+        return view.subviews.flatMap { textViews(in: $0) }
+    }
+    let textView = try #require(textViews(in: host).first)
+    textView.setSelectedRange(NSRange(location: 9, length: 0))
+
+    #expect(bridge.insertFilePaths(["/tmp/selected file.txt"]))
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(draft.text == "BEFORE | \n/tmp/selected file.txt\nAFTER")
+    #expect(textView.string == draft.text)
+}
 
 @MainActor
 @Test func composerEditorInsertsLongFilePathsAtTheCurrentSelectionAndSupportsUndo() throws {

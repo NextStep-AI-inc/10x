@@ -590,9 +590,11 @@ struct ComposerView: View {
         panel.allowedContentTypes = [.item]
         panel.prompt = "Choose"
 
-        guard panel.runModal() == .OK else { return }
-        add(urls: panel.urls)
-        isEditorFocused = true
+        panel.begin { response in
+            guard response == .OK else { return }
+            add(urls: panel.urls)
+            isEditorFocused = true
+        }
     }
 
     private func remove(_ id: ComposerAttachment.ID) {
