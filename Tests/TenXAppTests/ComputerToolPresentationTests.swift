@@ -41,6 +41,16 @@ import Testing
 }
 
 @MainActor
+@Test func computerPresentationAcceptsMCPToolNameWithScreenshotPayload() throws {
+    let parsed = try #require(ComputerToolPresentation(computerPresentation(
+        name: "mcp__tenx-computer_computer_act",
+        result: computerResult(images: [testImageBase64(.png)]))))
+
+    #expect(parsed.images.count == 1)
+    #expect(parsed.images.first?.mimeType == "image/png")
+}
+
+@MainActor
 @Test func malformedAndUnsupportedImagesAreSkippedWithoutDroppingText() throws {
     let validPNG = testImageBase64(.png)
     let result = JSONValue.object([

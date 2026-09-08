@@ -40,7 +40,8 @@ struct ComputerToolPresentation: Equatable {
     let rawDetails: JSONValue?
 
     init?(_ presentation: ToolPresentation) {
-        guard presentation.name.lowercased() == "computer" else { return nil }
+        guard presentation.name.lowercased() == "computer"
+            || presentation.name.lowercased().hasPrefix("mcp__tenx-computer_computer_") else { return nil }
         let details = presentation.result?["details"]
         code = presentation.arguments["code"]?.stringValue
             ?? details?["code"]?.stringValue

@@ -15,6 +15,7 @@ enum ToolCardRegistry {
     static func kind(for name: String) -> ToolCardKind {
         switch name.lowercased() {
         case "computer": .computer
+        case let n where n.hasPrefix("mcp__tenx-computer_computer_"): .computer
         case "read": .read
         case "bash": .bash
         case "edit": .edit
