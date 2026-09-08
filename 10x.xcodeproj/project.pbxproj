@@ -38,6 +38,8 @@
 		122D289036381C5F0BE7C9B34998BCC0 /* Flyer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5A46DB59BBC648E4430F9998B18E138 /* Flyer.swift */; };
 		12A20BCCB60CC63CC14BE7F3C5A7CE49 /* FileTypeIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B9D28101EEB3E94C7B933DB50FDDF71 /* FileTypeIconTests.swift */; };
 		12E40621ED0C51BCF102D670A7E8B023 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13E32214A370E0E3329B1786F2A08B4 /* AppModel.swift */; };
+		13D040BFD0CC23C7D0AC6CA2F7FC1B0D /* MarqueeTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA487FFE33068AD3A40BFF44B04173BC /* MarqueeTextView.swift */; };
+		153941CABE11464DE304609837810D5D /* FlyerRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABE0D38CB164661201AD26B47D3430F3 /* FlyerRowView.swift */; };
 		16227F7A3F65DE75B91ABF6F77D31CFF /* FileReferenceResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */; };
 		16592AA242140B7369290A9539C596BF /* MarqueeClockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 855CFDEC64744D49B2DA7159398C233C /* MarqueeClockTests.swift */; };
 		175942C869C877CD39AA31473861FA1B /* ProviderManaging.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C62FABF4DCE1A61B0AF5B1A62E89D4A /* ProviderManaging.swift */; };
@@ -57,12 +59,14 @@
 		2107C4790B8E51BF7F50A6F86DFFCE25 /* FileReferenceActionPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A744A46D4A05E422ABBB17B804E1C47F /* FileReferenceActionPresentationTests.swift */; };
 		220B9D96C65ED1B05BE6AF23BB41B3E4 /* FlyerCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8788E255AD0950F74E849433113259FD /* FlyerCenter.swift */; };
 		22C5344583CACDB956A9AE48CFA86102 /* RailMapLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0AFA12CF60F8C5D5D3928D1AFD8BA2 /* RailMapLayoutTests.swift */; };
+		23A49EF1C5FC23C5032905F119509F66 /* FlyerSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BFE8F3EB00DA583F9B2898879DEFB80 /* FlyerSnapshotTests.swift */; };
 		23E3A622A35DE13BCBBBE2438CFDCC6A /* BrandActionsMenuView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96D5F1D5CE8D07D7C5BCF906B5FB09F1 /* BrandActionsMenuView.swift */; };
 		23FE06D8223E2986CB69C428C5733337 /* ProviderPrimaryPreferenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4214214DE724350A6B2449F40E4630 /* ProviderPrimaryPreferenceStore.swift */; };
 		2420EB64385E79B8C0E3B3BAFDEFD14A /* CommandBrowserPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4943EFF43BB0CB6DF2D747F2D52A1258 /* CommandBrowserPresentation.swift */; };
 		245BCD39DA1F091025C5F70E62934AD4 /* ToolDisclosureState.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BDA8110B9C4CBAF62E1870E6F96D17 /* ToolDisclosureState.swift */; };
 		249623683C65C8D3F0BADD70877C857F /* ProviderAccountCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F84F534E86961DE1AF8CEC1FA5D067 /* ProviderAccountCoordinator.swift */; };
 		25015873A725FFA8626EEA4B12C8F2D5 /* ComposerControlsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61DE789082B8E3E9DF0189841BCBC9D6 /* ComposerControlsModel.swift */; };
+		251AD36BCA596DE02D58D993EF066A94 /* FlyerStackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FA1800A68D78619DEFFE4BE25F22C60 /* FlyerStackView.swift */; };
 		25F3A1CC484D2096C87583505BEE2423 /* ApprovalAccessibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6926F08F9655728CE398C085E2B7F08C /* ApprovalAccessibility.swift */; };
 		265A82749B6727BF27734BC4DF182643 /* TranscriptPresentationRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CC5C95F60582ECD7D39166DC14E7C34 /* TranscriptPresentationRow.swift */; };
 		2661D2A8A39B49076A992666661A8143 /* DiffPageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91957BD108A0FEAE3198187EFC3E5D80 /* DiffPageLoader.swift */; };
@@ -487,6 +491,7 @@
 		3C0AFA12CF60F8C5D5D3928D1AFD8BA2 /* RailMapLayoutTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailMapLayoutTests.swift; path = Tests/TenXAppTests/RailMapLayoutTests.swift; sourceTree = "<group>"; };
 		3E2127525FB7770198393A6DDF01EB64 /* ContentRenderSlice.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ContentRenderSlice.swift; path = App/Sessions/ContentRenderSlice.swift; sourceTree = "<group>"; };
 		3ED2228E1BAB11F7DA37CDA8ECCB6751 /* ApprovalCardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ApprovalCardView.swift; path = App/ExtensionUI/ApprovalCardView.swift; sourceTree = "<group>"; };
+		3FA1800A68D78619DEFFE4BE25F22C60 /* FlyerStackView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FlyerStackView.swift; path = App/Flyers/FlyerStackView.swift; sourceTree = "<group>"; };
 		3FB081247C5B8B0C7512C136CF575306 /* AppDependencies.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppDependencies.swift; path = App/Application/AppDependencies.swift; sourceTree = "<group>"; };
 		40228569430A12666591C24D49E223DD /* ProviderAccountSwitchConfirmationView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountSwitchConfirmationView.swift; path = App/Providers/ProviderAccountSwitchConfirmationView.swift; sourceTree = "<group>"; };
 		4027D5FF762D662939A6120A3B9DB4EA /* StartupState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StartupState.swift; path = App/Startup/StartupState.swift; sourceTree = "<group>"; };
@@ -562,6 +567,7 @@
 		6AFF6608FD21771793B50AA83A0DACAE /* ComposerInteractionPreferencesTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerInteractionPreferencesTests.swift; path = Tests/TenXAppTests/ComposerInteractionPreferencesTests.swift; sourceTree = "<group>"; };
 		6B0322E1325F18FCF109B4220397D11F /* ProviderAccountExtensionBackend.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountExtensionBackend.swift; path = App/Providers/ProviderAccountExtensionBackend.swift; sourceTree = "<group>"; };
 		6B9D28101EEB3E94C7B933DB50FDDF71 /* FileTypeIconTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileTypeIconTests.swift; path = Tests/TenXAppTests/FileTypeIconTests.swift; sourceTree = "<group>"; };
+		6BFE8F3EB00DA583F9B2898879DEFB80 /* FlyerSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FlyerSnapshotTests.swift; path = Tests/TenXAppTests/FlyerSnapshotTests.swift; sourceTree = "<group>"; };
 		6C62FABF4DCE1A61B0AF5B1A62E89D4A /* ProviderManaging.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderManaging.swift; path = App/Providers/ProviderManaging.swift; sourceTree = "<group>"; };
 		6CC5C95F60582ECD7D39166DC14E7C34 /* TranscriptPresentationRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptPresentationRow.swift; path = App/Sessions/TranscriptPresentationRow.swift; sourceTree = "<group>"; };
 		6CF8FF0C9FE7937A2C35DA9F771A31D9 /* ProviderPrimaryPreferenceStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderPrimaryPreferenceStoreTests.swift; path = Tests/TenXAppTests/ProviderPrimaryPreferenceStoreTests.swift; sourceTree = "<group>"; };
@@ -664,6 +670,7 @@
 		AA33C0D751449FD35D1B2FF51803BB10 /* FileOpenService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FileOpenService.swift; path = App/FileReferences/FileOpenService.swift; sourceTree = "<group>"; };
 		AAD4C1544C5F0BF60B84F3EB75EA5175 /* UpdatePresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdatePresentation.swift; path = App/Updates/UpdatePresentation.swift; sourceTree = "<group>"; };
 		AAFBBED38B16D04D458AE4051169E7E7 /* OmpProcessEnvironmentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpProcessEnvironmentTests.swift; path = Tests/TenXAppTests/OmpProcessEnvironmentTests.swift; sourceTree = "<group>"; };
+		ABE0D38CB164661201AD26B47D3430F3 /* FlyerRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FlyerRowView.swift; path = App/Flyers/FlyerRowView.swift; sourceTree = "<group>"; };
 		AF32B1A72E3334179FF48200801CC4CE /* ProviderUsagePresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsagePresentationTests.swift; path = Tests/TenXAppTests/ProviderUsagePresentationTests.swift; sourceTree = "<group>"; };
 		AF3E432F37F8D0D53810A7FB0AEFEC1B /* ToolEventReducerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolEventReducerTests.swift; path = Tests/TenXAppTests/ToolEventReducerTests.swift; sourceTree = "<group>"; };
 		AF5808862D9C60706C383E28558A306D /* StartupSplashSnapshotTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = StartupSplashSnapshotTests.swift; path = Tests/TenXAppTests/StartupSplashSnapshotTests.swift; sourceTree = "<group>"; };
@@ -764,6 +771,7 @@
 		F832078FCA06EAA16415025A84C752D5 /* SubagentPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SubagentPresentation.swift; path = App/Sessions/SubagentPresentation.swift; sourceTree = "<group>"; };
 		F8682EE2CABA7CA682ADFC2A8CA21B4F /* ComposerControlsModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerControlsModelTests.swift; path = Tests/TenXAppTests/ComposerControlsModelTests.swift; sourceTree = "<group>"; };
 		F9905325FEE3AD4AAEED343B367C5015 /* SourceSurfaceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourceSurfaceTests.swift; path = Tests/TenXAppTests/SourceSurfaceTests.swift; sourceTree = "<group>"; };
+		FA487FFE33068AD3A40BFF44B04173BC /* MarqueeTextView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MarqueeTextView.swift; path = App/Flyers/MarqueeTextView.swift; sourceTree = "<group>"; };
 		FB25640479B6D09E54E09FACD0C16006 /* ProviderAccountStackTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountStackTests.swift; path = Tests/TenXAppTests/ProviderAccountStackTests.swift; sourceTree = "<group>"; };
 		FB45F370DEDFCA9B9E2A0419A504C90C /* ToolMediaLoader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolMediaLoader.swift; path = App/Tools/ToolMediaLoader.swift; sourceTree = "<group>"; };
 		FBCA1730CCC11291EB162EB605D22111 /* SourcePageLoaderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourcePageLoaderTests.swift; path = Tests/TenXAppTests/SourcePageLoaderTests.swift; sourceTree = "<group>"; };
@@ -838,8 +846,11 @@
 				057AE3CA7D4C2D4EFA57DC366AF00A4C /* ResolvedFileReference.swift */,
 				B5A46DB59BBC648E4430F9998B18E138 /* Flyer.swift */,
 				8788E255AD0950F74E849433113259FD /* FlyerCenter.swift */,
+				ABE0D38CB164661201AD26B47D3430F3 /* FlyerRowView.swift */,
+				3FA1800A68D78619DEFFE4BE25F22C60 /* FlyerStackView.swift */,
 				DA255632F0E1A3708EF8723D5FEBADE5 /* MarqueeClock.swift */,
 				CBEC4AF2CA076D7472A9C5020649E5EA /* MarqueeMotion.swift */,
+				FA487FFE33068AD3A40BFF44B04173BC /* MarqueeTextView.swift */,
 				6A5EFE24321255DEC8BA5A09321DED2A /* OmpInstallRunner.swift */,
 				B9DBC57C8FAC7040E884E8E191B76538 /* OnboardingInstallLogBuffer.swift */,
 				E3ECECFABB6616F750627C367980EFB9 /* OnboardingInstallStepView.swift */,
@@ -1075,6 +1086,7 @@
 				57FC62A15F813DFD1BA712FEC023EE2B /* FileReferenceResolverTests.swift */,
 				6B9D28101EEB3E94C7B933DB50FDDF71 /* FileTypeIconTests.swift */,
 				91CE54AA3AD5E19B7448E62D6C8CF715 /* FlyerCenterTests.swift */,
+				6BFE8F3EB00DA583F9B2898879DEFB80 /* FlyerSnapshotTests.swift */,
 				F704B536389AAF360BC1D53826D583AD /* IDEPreferenceStoreTests.swift */,
 				7640229E9B50A3716E51A25E0D4D66B0 /* InteractionPresentationTests.swift */,
 				855CFDEC64744D49B2DA7159398C233C /* MarqueeClockTests.swift */,
@@ -1361,8 +1373,11 @@
 				E79A8E9DA355A3C39496EED749EC2D66 /* ResolvedFileReference.swift in Sources */,
 				122D289036381C5F0BE7C9B34998BCC0 /* Flyer.swift in Sources */,
 				220B9D96C65ED1B05BE6AF23BB41B3E4 /* FlyerCenter.swift in Sources */,
+				153941CABE11464DE304609837810D5D /* FlyerRowView.swift in Sources */,
+				251AD36BCA596DE02D58D993EF066A94 /* FlyerStackView.swift in Sources */,
 				EBEA3204A977115218145A92D5054964 /* MarqueeClock.swift in Sources */,
 				69954B71F397AC1EC77F7E88D714991C /* MarqueeMotion.swift in Sources */,
+				13D040BFD0CC23C7D0AC6CA2F7FC1B0D /* MarqueeTextView.swift in Sources */,
 				B10D96A5A4B1DC8F58D7E1F1733FD1DB /* OmpInstallRunner.swift in Sources */,
 				17E4CC50D2CBB20C3ACC2D8EB9E721BA /* OnboardingInstallLogBuffer.swift in Sources */,
 				760FE41B795ED04BBD48D5ECD85AF164 /* OnboardingInstallStepView.swift in Sources */,
@@ -1585,6 +1600,7 @@
 				16227F7A3F65DE75B91ABF6F77D31CFF /* FileReferenceResolverTests.swift in Sources */,
 				12A20BCCB60CC63CC14BE7F3C5A7CE49 /* FileTypeIconTests.swift in Sources */,
 				2CD6E67EF6D07BDF73951749303EB411 /* FlyerCenterTests.swift in Sources */,
+				23A49EF1C5FC23C5032905F119509F66 /* FlyerSnapshotTests.swift in Sources */,
 				2A9831E4F0D6FFE0ED7EA8E7C3C82DB0 /* IDEPreferenceStoreTests.swift in Sources */,
 				72D9A844D0ABDAE24C6ADCD4AC1ACF2A /* InteractionPresentationTests.swift in Sources */,
 				16592AA242140B7369290A9539C596BF /* MarqueeClockTests.swift in Sources */,
