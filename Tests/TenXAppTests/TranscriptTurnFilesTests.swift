@@ -102,6 +102,63 @@ import Testing
     ])
 }
 
+@Test func turnFilesUseLatestRuntimeMultiEditPathsWithoutAPlaceholder() {
+    let alpha = "/tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt"
+    let beta = "/tmp/10x-session-recovery-home/projects/review-native/editable-beta.txt"
+    let generated = "/tmp/10x-session-recovery-home/projects/review-native/generated-note.txt"
+    let section = turnSection([
+        .tool(tool(
+            id: "single-alpha",
+            name: "edit",
+            result: .object(["details": .object([
+                "diff": .string(" 1|alpha heading\n-2|alpha original\n+2|alpha first"),
+                "path": .string(alpha),
+            ])]))),
+        .tool(tool(
+            id: "multi-alpha-beta",
+            name: "edit",
+            arguments: .object([
+                "i": .string("Updating alpha and beta finals"),
+                "input": .string("[editable-alpha.txt#8B3C]\nPUT 2.=2:\n+alpha final\n[editable-beta.txt#DBDE]\nPUT 2.=2:\n+beta final\n"),
+            ]),
+            result: .object(["details": .object([
+                "diff": .string(" 1|alpha heading\n-2|alpha first\n+2|alpha final\n 1|beta heading\n-2|beta original\n+2|beta final"),
+                "firstChangedLine": .int(2),
+                "perFileResults": .array([
+                    .object([
+                        "path": .string(alpha),
+                        "diff": .string(" 1|alpha heading\n-2|alpha first\n+2|alpha final"),
+                        "firstChangedLine": .int(2),
+                        "op": .string("update"),
+                        "oldText": .string("alpha heading\nalpha first\n"),
+                        "newText": .string("alpha heading\nalpha final\n"),
+                    ]),
+                    .object([
+                        "path": .string(beta),
+                        "diff": .string(" 1|beta heading\n-2|beta original\n+2|beta final"),
+                        "firstChangedLine": .int(2),
+                        "op": .string("update"),
+                        "oldText": .string("beta heading\nbeta original\n"),
+                        "newText": .string("beta heading\nbeta final\n"),
+                    ]),
+                ]),
+            ])]))),
+        .tool(tool(
+            id: "write-generated",
+            name: "write",
+            arguments: .object([
+                "path": .string(generated),
+                "content": .string("review note\n"),
+            ]))),
+    ])
+
+    #expect(TranscriptTurnFiles.files(in: section) == [
+        TranscriptTurnFile(path: alpha, toolID: "multi-alpha-beta"),
+        TranscriptTurnFile(path: beta, toolID: "multi-alpha-beta"),
+        TranscriptTurnFile(path: generated, toolID: "write-generated"),
+    ])
+}
+
 @Test func turnFilesIgnoreIncompleteUnregisteredShellAndEmptyPaths() {
     let section = turnSection([
         .tool(tool(
