@@ -9,7 +9,12 @@ enum SessionMapFixtures {
             "testsRun": SessionMapFact(value: "3", number: 3),
         ],
         previous: nil,
-        projectURL: FileManager.default.temporaryDirectory
+        projectURL: FileManager.default.temporaryDirectory,
+        statusEvidence: [SessionMapStatusEvidence(
+            sourceRef: "tool-2",
+            status: .done,
+            target: .label("Native map document")
+        )]
     )
 
     static let chainXML = """
@@ -24,6 +29,24 @@ enum SessionMapFixtures {
           <plan title="Build"><task status="todo" node="view">Build the view.</task></plan>
           <stat fact="finishedTurns" label="Finished turns" value="1"/>
         </sessionmap>
+        """
+
+    static let identityPreviousXML = """
+        <sessionmap headline="Request path" phase="planning"><summary>A request.</summary><map>
+        <node id="view" label="Request view" kind="view" file="App/RequestView.swift" status="planned" ref="u1"/>
+        <node id="service" label="Service" kind="service" file="App/RequestService.swift" status="proposed" ref="u1"/>
+        <edge from="view" to="service" kind="flow"/>
+        </map><flow title="Request"><step node="view">Start.</step><step node="service">Finish.</step></flow>
+        <plan title="Build"><task status="todo" node="service">Build it.</task></plan></sessionmap>
+        """
+
+    static let identityReorderedXML = """
+        <sessionmap headline="Request path" phase="implementing"><summary>A request.</summary><map>
+        <node id="service-v2" label="Service renamed" kind="service" file="App/RequestService.swift" status="proposed" ref="u1"/>
+        <node id="view-v2" label="Request view renamed" kind="view" file="App/RequestView.swift" status="planned" ref="u1"/>
+        <edge from="view-v2" to="service-v2" kind="flow"/>
+        </map><flow title="Request"><step node="view-v2">Start.</step><step node="service-v2">Finish.</step></flow>
+        <plan title="Build"><task status="todo" node="service-v2">Build it.</task></plan></sessionmap>
         """
 
     static let planningXML = """

@@ -5,11 +5,37 @@ struct SessionMapFact: Equatable, Sendable {
     let number: Double?
 }
 
+struct SessionMapStatusEvidence: Equatable, Sendable {
+    enum Target: Equatable, Sendable {
+        case file(String)
+        case label(String)
+    }
+
+    let sourceRef: String
+    let status: SessionMapNodeStatus
+    let target: Target
+}
+
 struct SessionMapValidationContext: Sendable {
     let knownRefs: Set<String>
     let facts: [String: SessionMapFact]
     let previous: SessionMapDocument?
     let projectURL: URL?
+    let statusEvidence: [SessionMapStatusEvidence]
+
+    init(
+        knownRefs: Set<String>,
+        facts: [String: SessionMapFact],
+        previous: SessionMapDocument?,
+        projectURL: URL?,
+        statusEvidence: [SessionMapStatusEvidence] = []
+    ) {
+        self.knownRefs = knownRefs
+        self.facts = facts
+        self.previous = previous
+        self.projectURL = projectURL
+        self.statusEvidence = statusEvidence
+    }
 }
 
 struct SessionMapDiagnostic: Equatable, Sendable {
@@ -27,7 +53,7 @@ struct SessionMapValidation: Equatable, Sendable {
 enum SessionMapDocumentParser {
     static func parse(_ data: Data, context: SessionMapValidationContext) -> SessionMapValidation {
         guard data.count <= SessionMapLimits.xmlBytes else {
-            return failed("xml-too-large", "XML exceeds \(SessionMapLimits.xmlBytes) bytes.")
+            return failed("limitExceeded", "XML exceeds \(SessionMapLimits.xmlBytes) bytes.")
         }
         guard let source = String(data: data, encoding: .utf8) else {
             return failed("invalid-utf8", "XML is not valid UTF-8.")
@@ -47,7 +73,14 @@ enum SessionMapDocumentParser {
         }
 
         var builder = SessionMapDocumentBuilder(context: context)
-        return builder.build(root)
+        let parsed = builder.build(root)
+        guard let document = parsed.document else { return parsed }
+        let validated = SessionMapDocumentValidator.validate(document, context: context)
+        return SessionMapValidation(
+            document: validated.document,
+            warnings: parsed.warnings + validated.warnings,
+            fatal: parsed.fatal + validated.fatal
+        )
     }
 
     private static func failed(_ code: String, _ detail: String) -> SessionMapValidation {
@@ -163,7 +196,7 @@ private struct SessionMapDocumentBuilder {
         var blocks: [SessionMapBlock] = []
         for child in root.children where !structuralNames.contains(child.name) {
             guard blocks.count < SessionMapLimits.blocks else {
-                warn("too-many-blocks", "Supporting blocks beyond \(SessionMapLimits.blocks) were dropped.")
+                warn("limitExceeded", "Supporting blocks beyond \(SessionMapLimits.blocks) were dropped.")
                 break
             }
             if let block = parseBlock(child) { blocks.append(block) }
@@ -190,14 +223,18 @@ private struct SessionMapDocumentBuilder {
         warnUnknownAttributes(element, allowed: [])
         var nodes: [SessionMapNode] = []
         var ids = Set<String>()
+        var didWarnNodeLimit = false
         for child in element.children where child.name == "node" {
-            guard nodes.count < SessionMapLimits.nodes else {
-                warn("too-many-nodes", "Nodes beyond \(SessionMapLimits.nodes) were dropped.")
-                break
-            }
             guard let node = parseNode(child) else { continue }
             guard ids.insert(node.id).inserted else {
                 addFatal("duplicate-node-id", "Node ID \(node.id) appears more than once.", elementID: node.id)
+                continue
+            }
+            guard nodes.count < SessionMapLimits.nodes else {
+                if !didWarnNodeLimit {
+                    warn("limitExceeded", "Nodes beyond \(SessionMapLimits.nodes) were dropped.")
+                    didWarnNodeLimit = true
+                }
                 continue
             }
             nodes.append(node)
@@ -205,14 +242,18 @@ private struct SessionMapDocumentBuilder {
 
         var edges: [SessionMapEdge] = []
         var identities = Set<SessionMapEdgeIdentity>()
+        var didWarnEdgeLimit = false
         for child in element.children where child.name == "edge" {
             guard edges.count < SessionMapLimits.edges else {
-                warn("too-many-edges", "Edges beyond \(SessionMapLimits.edges) were dropped.")
-                break
+                if !didWarnEdgeLimit {
+                    warn("limitExceeded", "Edges beyond \(SessionMapLimits.edges) were dropped.")
+                    didWarnEdgeLimit = true
+                }
+                continue
             }
             guard let edge = parseEdge(child) else { continue }
             guard ids.contains(edge.from), ids.contains(edge.to) else {
-                warn("dangling-edge", "Edge \(edge.from) to \(edge.to) references a missing node.")
+                warn("danglingReference", "Edge \(edge.from) to \(edge.to) references a missing node.")
                 continue
             }
             let identity = SessionMapEdgeIdentity(from: edge.from, to: edge.to, kind: edge.kind)
@@ -275,7 +316,7 @@ private struct SessionMapDocumentBuilder {
         var steps: [SessionMapFlowStep] = []
         for child in element.children where child.name == "step" {
             guard steps.count < SessionMapLimits.flowSteps else {
-                warn("too-many-flow-steps", "Flow steps beyond \(SessionMapLimits.flowSteps) were dropped.")
+                warn("limitExceeded", "Flow steps beyond \(SessionMapLimits.flowSteps) were dropped.")
                 break
             }
             warnUnknownAttributes(child, allowed: ["node", "ref"])
@@ -299,7 +340,7 @@ private struct SessionMapDocumentBuilder {
         var tasks: [SessionMapPlanTask] = []
         for child in element.children where child.name == "task" {
             guard tasks.count < SessionMapLimits.planTasks else {
-                warn("too-many-plan-tasks", "Plan tasks beyond \(SessionMapLimits.planTasks) were dropped.")
+                warn("limitExceeded", "Plan tasks beyond \(SessionMapLimits.planTasks) were dropped.")
                 break
             }
             warnUnknownAttributes(child, allowed: ["status", "node", "ref"])
@@ -334,7 +375,7 @@ private struct SessionMapDocumentBuilder {
             return .section(title: title, blocks: element.children.compactMap { parseBlock($0) })
         case "row":
             warnUnknownAttributes(element, allowed: [])
-            return .row(blocks: element.children.prefix(SessionMapLimits.rowLeaves).compactMap { parseBlock($0) })
+            return .row(blocks: limitedChildren(element.children, limit: SessionMapLimits.rowLeaves, field: "row leaves").compactMap { parseBlock($0) })
         case "text":
             warnUnknownAttributes(element, allowed: [])
             return boundedText(element, limit: SessionMapLimits.text).map(SessionMapBlock.text)
@@ -345,26 +386,26 @@ private struct SessionMapDocumentBuilder {
                   let value = required(element.attributes["value"], limit: SessionMapLimits.statValue),
                   let expected = context.facts[fact], expected.value == value
             else {
-                warn("invalid-stat", "A stat without a matching fact was dropped.")
+                warn("factMismatch", "A stat without a matching fact was dropped.")
                 return nil
             }
             return .stat(fact: fact, label: label, value: value, tone: tone(element.attributes["tone"]))
         case "timeline":
             warnUnknownAttributes(element, allowed: [])
-            return .timeline(events: element.children.prefix(SessionMapLimits.timelineEvents).compactMap { parseTimelineEvent($0) })
+            return .timeline(events: limitedChildren(element.children, limit: SessionMapLimits.timelineEvents, field: "timeline events").compactMap { parseTimelineEvent($0) })
         case "files":
             warnUnknownAttributes(element, allowed: [])
-            return .files(files: element.children.prefix(SessionMapLimits.files).compactMap { parseFile($0) })
+            return .files(files: limitedChildren(element.children, limit: SessionMapLimits.files, field: "files").compactMap { parseFile($0) })
         case "chart":
             warnUnknownAttributes(element, allowed: ["kind"])
             guard let value = element.attributes["kind"], let kind = SessionMapChartKind(rawValue: value) else {
                 warn("invalid-chart", "Chart without a valid kind was dropped.")
                 return nil
             }
-            return .chart(kind: kind, points: element.children.prefix(SessionMapLimits.chartPoints).compactMap { parsePoint($0) })
+            return .chart(kind: kind, points: limitedChildren(element.children, limit: SessionMapLimits.chartPoints, field: "chart points").compactMap { parsePoint($0) })
         case "checklist":
             warnUnknownAttributes(element, allowed: [])
-            return .checklist(items: element.children.prefix(SessionMapLimits.checklistItems).compactMap { parseChecklistItem($0) })
+            return .checklist(items: limitedChildren(element.children, limit: SessionMapLimits.checklistItems, field: "checklist items").compactMap { parseChecklistItem($0) })
         case "callout":
             warnUnknownAttributes(element, allowed: ["title", "tone", "ref"])
             guard let title = required(element.attributes["title"], limit: SessionMapLimits.title),
@@ -376,7 +417,7 @@ private struct SessionMapDocumentBuilder {
             return .callout(title: title, tone: tone(element.attributes["tone"]), ref: validRef(element.attributes["ref"]), text: text)
         case "next":
             warnUnknownAttributes(element, allowed: [])
-            return .next(steps: element.children.prefix(SessionMapLimits.nextSteps).compactMap { parseNextStep($0) })
+            return .next(steps: limitedChildren(element.children, limit: SessionMapLimits.nextSteps, field: "next steps").compactMap { parseNextStep($0) })
         default:
             warn("unknown-element", "Unknown supporting element \(element.name) was dropped.")
             return nil
@@ -427,7 +468,7 @@ private struct SessionMapDocumentBuilder {
               let expected = context.facts[fact], expected.value == rawValue,
               let number = expected.number, number.isFinite, number == value
         else {
-            warn("invalid-chart-point", "A chart point without a matching numeric fact was dropped.")
+            warn("factMismatch", "A chart point without a matching numeric fact was dropped.")
             return nil
         }
         return SessionMapChartPoint(fact: fact, label: label, value: value)
@@ -466,7 +507,7 @@ private struct SessionMapDocumentBuilder {
     private mutating func validRef(_ value: String?) -> String? {
         guard let value = optional(value) else { return nil }
         guard context.knownRefs.contains(value) else {
-            warn("missing-ref", "Reference \(value) is not present in the source context.")
+            warn("danglingReference", "Reference \(value) is not present in the source context.")
             return nil
         }
         return value
@@ -502,8 +543,19 @@ private struct SessionMapDocumentBuilder {
     private mutating func bounded(_ value: String?, limit: Int, field: String) -> String? {
         guard let value = optional(value) else { return nil }
         guard value.count > limit else { return value }
-        warn("text-truncated", "The \(field) was truncated to \(limit) characters.")
+        warn("limitExceeded", "The \(field) was truncated to \(limit) characters.")
         return String(value.prefix(limit))
+    }
+
+    private mutating func limitedChildren(
+        _ children: [SessionMapXMLElement],
+        limit: Int,
+        field: String
+    ) -> ArraySlice<SessionMapXMLElement> {
+        if children.count > limit {
+            warn("limitExceeded", "Items beyond the \(field) limit of \(limit) were dropped.")
+        }
+        return children.prefix(limit)
     }
 
     private mutating func warnUnknownAttributes(_ element: SessionMapXMLElement, allowed: Set<String>) {

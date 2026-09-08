@@ -23,6 +23,7 @@ import Testing
 
     #expect(planning.phase == .planning)
     #expect(implementing.graph.nodes.map(\.id) == planning.graph.nodes.map(\.id))
+    #expect(implementing.graph.nodes.first { $0.id == "document" }?.status == .done)
     #expect(dense.graph.nodes.count == 24)
     #expect(dense.graph.edges.count == 40)
     #expect(empty.graph.nodes.isEmpty)
