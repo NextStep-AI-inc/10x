@@ -16,7 +16,6 @@ struct SessionMapRecord: Codable, Equatable, Sendable {
     let xml: String
     let cacheKey: String
     let generatedThrough: SessionMapCursor
-    let sourceLineage: String
     let sourceManifest: [String: String]
     let caughtUpAt: Date?
     let caughtUpCursor: SessionMapCursor?
@@ -49,7 +48,6 @@ struct SessionMapRecord: Codable, Equatable, Sendable {
         self.xml = xml
         self.cacheKey = cacheKey
         self.generatedThrough = generatedThrough
-        sourceLineage = generatedThrough.lineage
         self.sourceManifest = sourceManifest
         self.caughtUpAt = caughtUpAt
         self.caughtUpCursor = caughtUpCursor

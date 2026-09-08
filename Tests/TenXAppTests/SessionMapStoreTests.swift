@@ -23,7 +23,7 @@ import Testing
     #expect(try await store.load(sessionKey: "one")?.cacheKey == "first")
 }
 
-@Test func sessionMapStoreTreatsCorruptAndUnsupportedRecordsAsMissing() async throws {
+@Test func sessionMapStoreTreatsCorruptJSONAsMissing() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appending(path: "TenXAppTests.SessionMapStore.Corrupt.\(UUID().uuidString)", directoryHint: .isDirectory)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -31,6 +31,23 @@ import Testing
     try await store.save(record(cacheKey: "good"), sessionKey: "session")
     let url = recordURL(directory: directory, sessionKey: "session")
     try Data("not json".utf8).write(to: url)
+    #expect(try await store.load(sessionKey: "session") == nil)
+}
+
+@Test func sessionMapStoreTreatsUnsupportedSchemaVersionAsMissing() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "TenXAppTests.SessionMapStore.Schema.\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = SessionMapStore(directory: directory)
+    try await store.save(record(cacheKey: "good"), sessionKey: "session")
+    let url = recordURL(directory: directory, sessionKey: "session")
+    let json = try #require(String(data: Data(contentsOf: url), encoding: .utf8))
+    let unsupported = json.replacingOccurrences(
+        of: "\"schemaVersion\":1",
+        with: "\"schemaVersion\":2")
+    #expect(unsupported != json)
+    try Data(unsupported.utf8).write(to: url)
+
     #expect(try await store.load(sessionKey: "session") == nil)
 }
 
@@ -52,7 +69,7 @@ import Testing
     #expect(try await store.load(sessionKey: "session")?.cacheKey == "good")
 }
 
-@Test func sessionMapStoreMigratesTemporaryKeysWithoutOverwritingCanonicalData() async throws {
+@Test func sessionMapStoreMigratesTemporaryKeyToEmptyCanonicalKey() async throws {
     let directory = FileManager.default.temporaryDirectory
         .appending(path: "TenXAppTests.SessionMapStore.Migrate.\(UUID().uuidString)", directoryHint: .isDirectory)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -62,6 +79,19 @@ import Testing
 
     #expect(try await store.load(sessionKey: "new:ABC") == nil)
     #expect(try await store.load(sessionKey: "/sessions/one.jsonl")?.cacheKey == "temporary")
+}
+
+@Test func sessionMapStoreMigrationKeepsExistingCanonicalRecord() async throws {
+    let directory = FileManager.default.temporaryDirectory
+        .appending(path: "TenXAppTests.SessionMapStore.MigrateExisting.\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = SessionMapStore(directory: directory)
+    try await store.save(record(cacheKey: "temporary"), sessionKey: "new:ABC")
+    try await store.save(record(cacheKey: "canonical"), sessionKey: "/sessions/one.jsonl")
+    try await store.migrate(from: "new:ABC", to: "/sessions/one.jsonl")
+
+    #expect(try await store.load(sessionKey: "new:ABC") == nil)
+    #expect(try await store.load(sessionKey: "/sessions/one.jsonl")?.cacheKey == "canonical")
 }
 
 private func record(

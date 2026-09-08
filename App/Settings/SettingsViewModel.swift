@@ -21,6 +21,7 @@ final class SettingsViewModel {
 
     @ObservationIgnored private let service: OmpConfigService
     @ObservationIgnored private let sessionMapCatalog: (any ComposerCatalogLoading)?
+    @ObservationIgnored private var sessionMapCatalogGeneration = 0
 
     init(
         service: OmpConfigService,
@@ -44,19 +45,32 @@ final class SettingsViewModel {
               !isSessionMapCatalogLoading,
               let sessionMapCatalog
         else { return }
+        sessionMapCatalogGeneration += 1
+        let generation = sessionMapCatalogGeneration
         isSessionMapCatalogLoading = true
         sessionMapCatalogError = nil
-        defer { isSessionMapCatalogLoading = false }
+        defer {
+            if sessionMapCatalogGeneration == generation {
+                isSessionMapCatalogLoading = false
+            }
+        }
         do {
-            sessionMapModels = try await sessionMapCatalog.load(projectURL: projectURL).models
+            let models = try await sessionMapCatalog.load(projectURL: projectURL).models
+            guard sessionMapCatalogGeneration == generation else { return }
+            sessionMapModels = models
         } catch is CancellationError {
             return
         } catch {
+            guard sessionMapCatalogGeneration == generation else { return }
             sessionMapCatalogError = "Models couldn’t be loaded."
         }
     }
 
     func shutdownSessionMapCatalog() async {
+        sessionMapCatalogGeneration += 1
+        sessionMapModels = []
+        sessionMapCatalogError = nil
+        isSessionMapCatalogLoading = false
         await sessionMapCatalog?.shutdown()
     }
 

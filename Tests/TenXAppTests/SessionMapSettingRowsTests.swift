@@ -66,21 +66,92 @@ import Testing
     #expect(model.sessionMapRoles == ["smol": "p/writer"])
 }
 
+@MainActor
+@Test func sessionMapCatalogReloadsAfterSettingsShutdown() async throws {
+    let catalog = SessionMapSettingsCatalogStub(models: [sessionMapCatalogModel("old")])
+    let model = sessionMapSettingsModel(catalog: catalog)
+
+    await model.loadSessionMapCatalog(projectURL: nil)
+    await model.shutdownSessionMapCatalog()
+    await catalog.setModels([sessionMapCatalogModel("new")])
+    await model.loadSessionMapCatalog(projectURL: nil)
+
+    #expect(await catalog.loadCount == 2)
+    #expect(model.sessionMapModels.map(\.id) == ["p/new"])
+}
+
+@MainActor
+@Test func closingSettingsLoadCannotPublishOverReloadedCatalog() async throws {
+    let catalog = SessionMapSettingsCatalogStub(models: [sessionMapCatalogModel("old")])
+    let model = sessionMapSettingsModel(catalog: catalog)
+    await catalog.blockNextLoad()
+
+    let closingLoad = Task { await model.loadSessionMapCatalog(projectURL: nil) }
+    await catalog.waitUntilLoadIsBlocked()
+    await model.shutdownSessionMapCatalog()
+    await catalog.setModels([sessionMapCatalogModel("new")])
+    await model.loadSessionMapCatalog(projectURL: nil)
+    await catalog.releaseBlockedLoad()
+    await closingLoad.value
+
+    #expect(await catalog.loadCount == 2)
+    #expect(model.sessionMapModels.map(\.id) == ["p/new"])
+}
+
 private actor SessionMapSettingsCatalogStub: ComposerCatalogLoading {
     nonisolated let commandUpdates = AsyncStream<ComposerCommandCatalogState> { $0.finish() }
-    private let models: [ComposerModelInfo]
+    private var models: [ComposerModelInfo]
     private(set) var loadCount = 0
+    private var shouldBlockNextLoad = false
+    private var blockedLoadContinuation: CheckedContinuation<Void, Never>?
 
     init(models: [ComposerModelInfo]) { self.models = models }
 
     func load(projectURL: URL?) async throws -> ComposerCatalogSnapshot {
         loadCount += 1
+        let loadedModels = models
+        if shouldBlockNextLoad {
+            shouldBlockNextLoad = false
+            await withCheckedContinuation { blockedLoadContinuation = $0 }
+        }
         return ComposerCatalogSnapshot(
-            models: models, selected: nil, thinkingLevel: nil,
+            models: loadedModels, selected: nil, thinkingLevel: nil,
             fastModeEnabled: false, fastModeActive: false)
     }
 
     func shutdown() async {}
+
+    func setModels(_ models: [ComposerModelInfo]) {
+        self.models = models
+    }
+
+    func blockNextLoad() {
+        shouldBlockNextLoad = true
+    }
+
+    func waitUntilLoadIsBlocked() async {
+        while blockedLoadContinuation == nil { await Task.yield() }
+    }
+
+    func releaseBlockedLoad() {
+        blockedLoadContinuation?.resume()
+        blockedLoadContinuation = nil
+    }
+}
+
+@MainActor
+private func sessionMapSettingsModel(
+    catalog: SessionMapSettingsCatalogStub
+) -> SettingsViewModel {
+    SettingsViewModel(
+        service: OmpConfigService(runner: SessionMapSettingsRunner()),
+        sessionMapCatalog: catalog)
+}
+
+private func sessionMapCatalogModel(_ modelID: String) -> ComposerModelInfo {
+    ComposerModelInfo(
+        modelID: modelID, name: modelID.capitalized, provider: "p", api: nil,
+        thinkingEfforts: [], requiresEffort: false)
 }
 
 private struct SessionMapSettingsRunner: OmpConfigRunning {
