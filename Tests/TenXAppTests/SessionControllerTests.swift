@@ -1,9 +1,67 @@
 import Foundation
+import Darwin
 import OmpKit
 import Testing
 @testable import TenXApp
 
 @Suite @MainActor struct SessionControllerTests {
+
+@Test func stopClosesTheRuntimeAndRejectsLateActivity() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionPath = directory.appending(path: "saved-session.jsonl").path
+    let manager = reliableStopManager(
+        controlDirectory: directory,
+        sessionPath: sessionPath)
+    let controller = SessionController(processManager: manager)
+
+    await controller.openExisting(metadata(path: sessionPath, cwd: directory.path))
+    controller.draft = "Start controlled work"
+    await controller.sendPrompt()
+    #expect(await eventually {
+        FileManager.default.fileExists(atPath: directory.appending(path: "prompt-started").path)
+            && controller.runtimeState == .streaming
+    })
+
+    let stagedImage = ComposerAttachment(
+        name: "staged.png",
+        data: Data([0x89, 0x50, 0x4E, 0x47]),
+        mimeType: "image/png",
+        pixelWidth: 1,
+        pixelHeight: 1)
+    controller.draft = "Keep this staged text"
+    controller.attachments = [stagedImage]
+
+    let stopping = Task { await controller.abort() }
+    #expect(await eventually {
+        FileManager.default.fileExists(atPath: directory.appending(path: "abort-accepted").path)
+    })
+    #expect(controller.isStopping)
+    await controller.restart()
+    #expect(stopFixtureChildPIDs(in: directory).count == 1)
+    try Data().write(to: directory.appending(path: "emit-late"))
+    await stopping.value
+    try await Task.sleep(for: .milliseconds(500))
+
+    #expect(!controller.isStopping)
+    #expect(controller.runtimeState == .stopped(code: nil, stderrTail: ""))
+    #expect(controller.sessionPath == sessionPath)
+    #expect(controller.draft == "Keep this staged text")
+    #expect(controller.attachments == [stagedImage])
+    #expect(controller.queuedMessageCount == 0)
+    #expect(controller.pendingSubmissions.allSatisfy { $0.state == .unconfirmed })
+    #expect(controller.visibleText(for: "late-revival") == nil)
+    #expect(await manager.handle(for: sessionPath) == nil)
+    #expect(await eventually { stopFixtureChildrenHaveExited(in: directory) })
+
+    await controller.restart()
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.draft == "Keep this staged text")
+    #expect(controller.attachments == [stagedImage])
+    #expect(stopFixtureCommands(in: directory).filter { $0 == "prompt" }.count == 1)
+    #expect(await manager.handle(for: sessionPath) != nil)
+    await manager.closeAll()
+}
 
 @MainActor @Test func contextPercentageIsClampedToItsDisplayRange() {
     #expect(SessionController.contextPercent(.object(["percentage": .double(210)])) == 100)
@@ -1053,6 +1111,47 @@ private func fakeManager(
         fake.cwd = nil
         return RpcClient(configuration: fake)
     })
+}
+
+private func reliableStopManager(
+    controlDirectory: URL,
+    sessionPath: String
+) -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            repositoryRoot()
+                .appending(path: "Tests/TenXAppTests/Fixtures/stop_fake_server.py").path,
+            controlDirectory.path,
+            sessionPath,
+        ]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+}
+
+private func stopFixtureChildrenHaveExited(in directory: URL) -> Bool {
+    let pids = stopFixtureChildPIDs(in: directory)
+    guard !pids.isEmpty else { return false }
+    return pids.allSatisfy { processID in
+        errno = 0
+        return kill(processID, 0) == -1 && errno == ESRCH
+    }
+}
+
+private func stopFixtureChildPIDs(in directory: URL) -> [pid_t] {
+    let url = directory.appending(path: "child-pids")
+    guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+    return contents.split(separator: "\n").compactMap { pid_t($0) }
+}
+
+private func stopFixtureCommands(in directory: URL) -> [String] {
+    let url = directory.appending(path: "commands")
+    guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+    return contents.split(separator: "\n").map(String.init)
 }
 
 private func commandLoggingFakeManager(commandLogURL: URL) -> SessionProcessManager {
