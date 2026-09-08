@@ -24,7 +24,7 @@ final class SessionRegistryTests: XCTestCase {
         let second = registry.registerSession(clientName: "Cursor")
         try! registry.claim(safari, for: first)
         XCTAssertThrowsError(try registry.claim(safari, for: second)) { error in
-            XCTAssertEqual((error as? ComputerError)?.message, "already_claimed: window owned by session 1 (omp)")
+            XCTAssertEqual((error as? ComputerError)?.message, "already_claimed: window owned by session \(first) (omp)")
         }
     }
 
@@ -62,6 +62,35 @@ final class SessionRegistryTests: XCTestCase {
         try! registry.claim(safari, for: session)
         registry.windowClosed(safari.id)
         XCTAssertNil(registry.owner(of: safari.id))
+    }
+
+    func test_release_leavesSnapshot_andAnotherSessionCanClaim() {
+        let registry = SessionRegistry()
+        let first = registry.registerSession(clientName: "omp")
+        let second = registry.registerSession(clientName: "Cursor")
+        try! registry.claim(safari, for: first)
+        XCTAssertTrue(registry.release(safari.id))
+        XCTAssertNil(registry.owner(of: safari.id))
+        XCTAssertEqual(registry.window(safari.id), safari)
+        XCTAssertNoThrow(try registry.claim(safari, for: second))
+        XCTAssertEqual(registry.owner(of: safari.id), second)
+    }
+
+    func test_windowClosed_removesSnapshot() {
+        let registry = SessionRegistry()
+        let session = registry.registerSession(clientName: "omp")
+        try! registry.claim(safari, for: session)
+        registry.windowClosed(safari.id)
+        XCTAssertNil(registry.window(safari.id))
+    }
+
+    func test_stop_thenClaim_throwsSessionStopped() {
+        let registry = SessionRegistry()
+        let session = registry.registerSession(clientName: "omp")
+        registry.stop(session)
+        XCTAssertThrowsError(try registry.claim(safari, for: session)) { error in
+            XCTAssertEqual((error as? ComputerError)?.message, "session_stopped")
+        }
     }
 
     func test_stopAll_releasesEverything() {

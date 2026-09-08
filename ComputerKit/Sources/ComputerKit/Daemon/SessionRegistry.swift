@@ -1,9 +1,8 @@
 import CoreGraphics
-import Foundation
 
 public struct SessionID: Hashable, Sendable, CustomStringConvertible {
     public let raw: Int
-    public init(raw: Int) { self.raw = raw }
+    init(raw: Int) { self.raw = raw }
     public var description: String { String(raw) }
 }
 
@@ -14,8 +13,7 @@ public struct SessionInfo: Sendable, Equatable {
     public var isActive: Bool
 }
 
-/// Pure claim/session bookkeeping. Thread-safety lives in the daemon (Task 8);
-/// this type is deliberately single-threaded value logic.
+/// Pure claim/session bookkeeping. Not thread-safe; the daemon serializes access (Task 8).
 public final class SessionRegistry {
     public private(set) var sessions: [SessionID: SessionInfo] = [:]
     private var claims: [CGWindowID: SessionID] = [:]
@@ -39,7 +37,7 @@ public final class SessionRegistry {
     public func claim(_ window: WindowInfo, for session: SessionID) throws {
         guard isActive(session) else { throw ComputerError("session_stopped") }
         if let owner = claims[window.id] {
-            if owner == session { return }
+            if owner == session { windows[window.id] = window; return }
             let ownerInfo = sessions[owner]
             throw ComputerError("already_claimed: window owned by session \(owner) (\(ownerInfo?.harness ?? "unknown"))")
         }
@@ -49,6 +47,7 @@ public final class SessionRegistry {
 
     public func owner(of windowID: CGWindowID) -> SessionID? { claims[windowID] }
 
+    /// Returns the last known snapshot; outlives claims until `windowClosed`.
     public func window(_ windowID: CGWindowID) -> WindowInfo? { windows[windowID] }
 
     public func claimedWindows(for session: SessionID) -> [WindowInfo] {
@@ -63,17 +62,17 @@ public final class SessionRegistry {
         sessions[session]?.harness = harness
     }
 
+    /// Drops the claim only; the window snapshot remains until `windowClosed`.
     @discardableResult
     public func release(_ windowID: CGWindowID) -> Bool {
         claims.removeValue(forKey: windowID) != nil
     }
 
     public func releaseAll(for session: SessionID) {
-        for (windowID, owner) in claims where owner == session {
-            claims.removeValue(forKey: windowID)
-        }
+        claims = claims.filter { $0.value != session }
     }
 
+    /// Removes claim and snapshot when the OS window is gone.
     public func windowClosed(_ windowID: CGWindowID) {
         claims.removeValue(forKey: windowID)
         windows.removeValue(forKey: windowID)
