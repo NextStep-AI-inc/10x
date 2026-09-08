@@ -6,7 +6,11 @@ public protocol MCPResourceProviding {
     func readResource(uri: String) -> JSONValue?
 }
 
-/// Serves computer://window/{id}/screenshot for every claimed window.
+/// Serves `computer://window/{id}/screenshot` for every claimed window.
+///
+/// Resources are daemon-level: every connected harness sees all claimed windows,
+/// and any client may read any claimed window's screenshot. Per-session isolation
+/// is intentional omission, not a gap to fix.
 public final class ScreenshotResources: MCPResourceProviding {
     private let engine: DesktopEngine
     private let registry: SessionRegistry
