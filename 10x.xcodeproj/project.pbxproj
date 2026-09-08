@@ -160,6 +160,7 @@
 		9FD5CADCA1E5A1A6DF50C3CC3670B190 /* TenXPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = E95317FE231AEB99B29458EDDBC99FFD /* TenXPalette.swift */; };
 		A01FAD6A8813B9364F20E9A55122B9F7 /* TranscriptEventProcessorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A35E8A634BF91C74F76FAFB5DB3EA35 /* TranscriptEventProcessorTests.swift */; };
 		A0357CF3880C981B1B76A7784B883ACC /* AppTerminationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7651ABB34DCD41F0E1384304EA0C22A /* AppTerminationDelegate.swift */; };
+		A05620CE31DEB8DA11EE893DC9E69E60 /* SettingMetadataDriftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F401BF3D7ECD81FB71D49F92ED91F10A /* SettingMetadataDriftTests.swift */; };
 		A078DC580C936680E1CD7EC4372217D9 /* UnifiedDiffParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56F513DACCB59B05DE95FDF6BE27EADC /* UnifiedDiffParserTests.swift */; };
 		A29AAEBDC84C6F45FB78AB02F1850D79 /* ModelRoleValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CBA786D1C90ECA4F18B67B8019866D /* ModelRoleValue.swift */; };
 		A5C0DC572F461CBD1B83225283E4CD1C /* SessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A57C0E807C4A8A640794119722D0A6 /* SessionController.swift */; };
@@ -476,6 +477,7 @@
 		F02AC7D19DF24FEC5EB46B95DA8E9833 /* DiffView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DiffView.swift; path = App/Tools/DiffView.swift; sourceTree = "<group>"; };
 		F07ECBFB6BDAE4C811DB1D7ABEBF18F7 /* PreferredIDESettingRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PreferredIDESettingRowView.swift; path = App/Settings/PreferredIDESettingRowView.swift; sourceTree = "<group>"; };
 		F13E32214A370E0E3329B1786F2A08B4 /* AppModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppModel.swift; path = App/Application/AppModel.swift; sourceTree = "<group>"; };
+		F401BF3D7ECD81FB71D49F92ED91F10A /* SettingMetadataDriftTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingMetadataDriftTests.swift; path = Tests/TenXAppTests/SettingMetadataDriftTests.swift; sourceTree = "<group>"; };
 		F404B26A137A6F32B34D8CDC875BE407 /* ProviderManagementService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderManagementService.swift; path = App/Providers/ProviderManagementService.swift; sourceTree = "<group>"; };
 		F4C26B5820AE54CAAC8833DA5303BABE /* AppShellView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = AppShellView.swift; path = App/Shell/AppShellView.swift; sourceTree = "<group>"; };
 		F5799BC39D7647D45E72ACECA5F6FF59 /* IDEApplication.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = IDEApplication.swift; path = App/FileReferences/IDEApplication.swift; sourceTree = "<group>"; };
@@ -734,6 +736,7 @@
 				366335EAE0309E543F652198FEA33EDF /* SessionSearchDatabaseTests.swift */,
 				B70AB4A88F6FE5E535416E3D4BDEDC01 /* SessionSearchServiceTests.swift */,
 				B8616EC88E0EB73D54822BD51EEFFBFB /* SessionTimelineLoaderTests.swift */,
+				F401BF3D7ECD81FB71D49F92ED91F10A /* SettingMetadataDriftTests.swift */,
 				465A742031F52C7C57F77E04327EA825 /* SettingsCatalogMetadataTests.swift */,
 				0AFDCCE445DD5D7268D9CB0D20120496 /* SettingsCatalogTests.swift */,
 				8F18E50BB3B08F5F5E72126459122025 /* SnapshotHarness.swift */,
@@ -1097,6 +1100,7 @@
 				7359661AC17223C80D96F8DD716A27FA /* SessionSearchDatabaseTests.swift in Sources */,
 				DAE06B532ACC2581DADB33E9F5197108 /* SessionSearchServiceTests.swift in Sources */,
 				8D26ABA123B4D2C7185B138916501665 /* SessionTimelineLoaderTests.swift in Sources */,
+				A05620CE31DEB8DA11EE893DC9E69E60 /* SettingMetadataDriftTests.swift in Sources */,
 				27763B52A98D1BFCA9E63F3C4228DC77 /* SettingsCatalogMetadataTests.swift in Sources */,
 				7049282BFAB398ABA9978F90609A8E64 /* SettingsCatalogTests.swift in Sources */,
 				2B06CF734E7DE94B36118C292B9E1DBC /* SnapshotHarness.swift in Sources */,
