@@ -146,6 +146,12 @@ enum TranscriptHistoryMapper {
                 hasConversation = true
             }
             items.append(contentsOf: normalized)
+            if message["stopReason"]?.stringValue?.lowercased() == "aborted" {
+                let stoppedAt = TranscriptHistoryMapper.date(from: base.timestamp)
+                    ?? TranscriptMessage.messageDate(message)
+                    ?? fallbackDate
+                _ = TranscriptReducer.interruptRunningTools(in: &items, at: stoppedAt)
+            }
         }
 
         var attribution: TranscriptResponseAttribution {

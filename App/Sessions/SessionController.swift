@@ -726,6 +726,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     func abort() async {
         guard runtimeState == .loading || runtimeState == .streaming else { return }
+        let stoppedAt = Date()
         let stoppedHandle = handle
         let path = stopAndDetachCurrentSession()
         let closePredecessor = openingCloseTask
@@ -734,6 +735,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         isStopping = true
         wasStoppedByUser = true
         runtimeState = .stopped(code: nil, stderrTail: "")
+        _ = TranscriptReducer.interruptRunningTools(in: &items, at: stoppedAt)
         isRecoveryPresented = true
         queuedMessageCount = 0
         markInitialSubmissionFailed()

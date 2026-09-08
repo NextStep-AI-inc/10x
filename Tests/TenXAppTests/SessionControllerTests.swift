@@ -22,6 +22,12 @@ import Testing
         FileManager.default.fileExists(atPath: directory.appending(path: "prompt-started").path)
             && controller.runtimeState == .streaming
     })
+    #expect(await eventually {
+        controller.items.contains { item in
+            guard case .tool(let tool) = item else { return false }
+            return tool.id == "running-tool" && tool.phase == .running
+        }
+    })
 
     let stagedImage = ComposerAttachment(
         name: "staged.png",
@@ -51,6 +57,10 @@ import Testing
     #expect(controller.queuedMessageCount == 0)
     #expect(controller.pendingSubmissions.allSatisfy { $0.state == .unconfirmed })
     #expect(controller.visibleText(for: "late-revival") == nil)
+    #expect(controller.items.contains { item in
+        guard case .tool(let tool) = item else { return false }
+        return tool.id == "running-tool" && tool.phase == .interrupted && tool.endDate != nil
+    })
     #expect(await manager.handle(for: sessionPath) == nil)
     #expect(await eventually { stopFixtureChildrenHaveExited(in: directory) })
 

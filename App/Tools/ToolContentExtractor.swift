@@ -675,6 +675,20 @@ enum ToolContentExtractor {
                 body: .privateActivity)
         }
 
+        if phase == .interrupted {
+            let body: ToolBody = switch base.body {
+            case .empty: .empty("Stopped before completion")
+            default: base.body
+            }
+            return ToolCardContent(
+                title: base.title,
+                verb: base.verb,
+                primary: base.primary,
+                outcome: "Stopped",
+                reference: base.reference,
+                body: body)
+        }
+
         guard phase == .failed, kind != .think else { return base }
         let fullError = ansiSafe(envelope.error ?? envelope.text ?? "Tool failed")
         let error = fullError.split(whereSeparator: \.isNewline).first.map(String.init)
@@ -907,6 +921,7 @@ enum ToolContentExtractor {
         case .running: "Waiting"
         case .complete: "Answered"
         case .failed: "Failed"
+        case .interrupted: "Stopped"
         }
         return ToolCardContent(
             title: "Question",
@@ -1709,6 +1724,7 @@ enum ToolContentExtractor {
         case .running: "Waiting for output"
         case .complete: "Completed without output"
         case .failed: "No error details"
+        case .interrupted: "Stopped before completion"
         }
     }
 
@@ -1837,6 +1853,8 @@ enum ToolContentExtractor {
             }
         case .failed:
             "Failed"
+        case .interrupted:
+            "Stopped"
         }
     }
 

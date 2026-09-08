@@ -203,6 +203,19 @@ import Testing
     #expect(active.state == .working)
 }
 
+@Test func interruptedToolAndAbortedTerminalAgreeOnStoppedTurnState() {
+    let turn = TranscriptTurnProjection.sections(from: [
+        .message(turnMessage(id: "user", role: "user", at: 1)),
+        .tool(turnTool(id: "tool", phase: .interrupted, start: 2, end: 3)),
+        .message(turnMessage(
+            id: "stopped", role: "assistant", at: 3, completedAt: 4,
+            stopReason: "aborted", isFinal: true)),
+    ], runtimeState: .stopped(code: nil, stderrTail: ""))[0]
+
+    #expect(turn.state == .stopped)
+    #expect(turn.duration == 2)
+}
+
 @Test func failedToolsInterruptedTurnsAndIncompleteHistoryRemainDistinct() {
     let user = TranscriptItem.message(turnMessage(id: "user", role: "user", at: 1))
     let failed = TranscriptTurnProjection.sections(from: [

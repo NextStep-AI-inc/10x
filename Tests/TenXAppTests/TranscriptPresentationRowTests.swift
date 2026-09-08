@@ -25,6 +25,15 @@ import Testing
     #expect(toolPhases(in: rows) == [.running, .failed])
 }
 
+@Test func interruptedToolMakesMixedCompletedGroupInterrupted() {
+    let rows = TranscriptPresentationRow.rows(from: [
+        .tool(tool(id: "completed", phase: .complete)),
+        .tool(tool(id: "stopped", phase: .interrupted)),
+    ])
+
+    #expect(toolPhases(in: rows) == [.interrupted])
+}
+
 @Test func groupedToolsAreIndependentRowsThatDisappearWhenTheirGroupCollapses() {
     let rows = TranscriptPresentationRow.rows(from: [
         .message(message(id: "before")),
