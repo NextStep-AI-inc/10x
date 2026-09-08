@@ -1917,6 +1917,11 @@ In `DaemonServer`: add `private lazy var preview = PreviewStreamer(engine: engin
             }
 ```
 
+Two wiring rules the snippet alone gets wrong:
+
+1. **Never call `preview.actionOccurred` while holding the daemon `lock`.** `actionOccurred` `queue.sync`s onto the preview queue, and the heartbeat on that queue calls `broadcast` → `lock.lock()`: daemon-lock → preview-queue vs preview-queue → daemon-lock is an AB-BA deadlock. Collect the `(session, windowID)` pair under the lock and fire `actionOccurred` after `lock.unlock()`, alongside the other event broadcasts.
+2. **Stop the heartbeat when control ends.** Call `preview.setActive(session: nil, windowID: nil)` in `disconnect` (when an MCP session ends), `stop_session`, `stop_all`, and `DaemonServer.stop()`. Without this the 1Hz timer captures and broadcasts until process death. Add a DaemonServer test: `computer_act` → `stop_all` → no further `screenshotTaken` frames.
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd ComputerKit && swift test --filter PreviewStreamerTests`
