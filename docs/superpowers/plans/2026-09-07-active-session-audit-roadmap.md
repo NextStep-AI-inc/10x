@@ -8,14 +8,14 @@ Source inspection and existing test coverage are recorded separately from execut
 
 [Plan](2026-09-07-session-continuity-recovery.md) · [PR #32](https://github.com/NextStep-AI-inc/10x/pull/32)
 
-- [ ] **SAVE:** Verify existing persistent warm/cold creation and actual disk recovery across relaunch. Main rejects unpersisted sessions; preserve configured extensions when appending the session directory.
-- [ ] **OPEN:** Verify first-action warm existing-session checkout loads and persists history. Retain the requested path when opening fails before a handle exists.
-- [ ] **ERROR:** Verify failed-existing Retry opening, failed-new Review prompt, rejected input, and process-exit Restart separately. Preserve drafts and avoid automatic resend after uncertain delivery.
+- [x] **SAVE:** Verify existing persistent warm/cold creation and actual disk recovery across relaunch. Main rejects unpersisted sessions; preserve configured extensions when appending the session directory.
+- [x] **OPEN:** Verify first-action warm existing-session checkout loads and persists history. Retain the requested path when opening fails before a handle exists.
+- [x] **ERROR:** Verify failed-existing Retry opening, failed-new Review prompt, rejected input, and process-exit Restart separately. Preserve drafts and avoid automatic resend after uncertain delivery.
 
 ## 2. Interrupt and acknowledge
 
 - [ ] **STOP:** Main has independent Stop beside Send and Cmd-Period. Verify staged text/images, actual runtime settling, open flyouts, and focused pending decisions; change only if the real flow fails.
-- [ ] **QUEUE:** Main has per-message sending/queued/unconfirmed receipts with echo reconciliation. Refresh the authoritative queue count after acceptance and consumption, without allowing older replies to overwrite newer state. Verify multiple follow-ups, steering, rejection, and exactly one echo per accepted message.
+- [x] **QUEUE:** Main has per-message sending/queued/unconfirmed receipts with echo reconciliation. Refresh the authoritative queue count after acceptance and consumption, without allowing older replies to overwrite newer state. Verify multiple follow-ups, steering, rejection, and exactly one echo per accepted message.
 
 ## 3. Readable turns
 
@@ -55,6 +55,7 @@ Source inspection and existing test coverage are recorded separately from execut
 
 - Baseline OmpKit suite: 217 tests passed before application changes (`/tmp/10x-recovery-ompkit-baseline.log`).
 - SAVE / OPEN / ERROR acceptance is recorded in the [Release evidence](../evidence/2026-09-07-session-continuity-recovery/README.md), including real warm/cold persistence and fixture-driven rejection. PR #32 stays draft on the documented baseline/base gates.
-- QUEUE implementation is in [PR #33](https://github.com/NextStep-AI-inc/10x/pull/33), with live STOP / QUEUE verification next.
-- Image history restoration is a dependency discovered during recovery QA, planned in [PR #34](https://github.com/NextStep-AI-inc/10x/pull/34).
+- QUEUE is verified in [PR #33](https://github.com/NextStep-AI-inc/10x/pull/33): native follow-up and steering counts, consumption, rejected-input retention, one persisted echo, and reopened history. [Release evidence](https://github.com/NextStep-AI-inc/10x/blob/codex/active-session-queue/docs/superpowers/evidence/2026-09-07-stop-and-queue/README.md). STOP remains open: OMP background jobs can restart after abort; the bounded app shutdown/Restart correction is in [PR #36](https://github.com/NextStep-AI-inc/10x/pull/36), with focused pending-decision QA still required.
+- Image history restoration is verified in [PR #34](https://github.com/NextStep-AI-inc/10x/pull/34): saved pixels, one new image prompt/receipt, and quit/relaunch/reopen all passed in Release. Unsent disk drafts remain INPUT.
+- ORDER / TURNS are in [PR #35](https://github.com/NextStep-AI-inc/10x/pull/35): 28 projection/activity/render tests plus 23 snapshot/search/disclosure/viewport checks pass; actual Release QA is in progress. The two new summary/activity references were visually reviewed before promotion.
 - Keep each item unchecked until this run has evidence for its full stated scope, or explicitly record the remaining limitation beside it.
