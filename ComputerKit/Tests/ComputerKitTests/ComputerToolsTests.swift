@@ -87,6 +87,28 @@ final class ComputerToolsTests: XCTestCase {
         XCTAssertEqual(engine.actions, [.click(point: CGPoint(x: 50, y: 60), button: .left)])
     }
 
+    func test_act_clampsOutOfBoundsPoints() throws {
+        let (tools, engine, _, _) = makeTools()
+        _ = try tools.callTool(name: "computer_claim", arguments: .object(["window_id": .number(10)]))
+        _ = try tools.callTool(name: "computer_act", arguments: .object([
+            "window_id": .number(10),
+            "action": .string("click"),
+            "x": .number(900), "y": .number(-5),
+        ]))
+        XCTAssertEqual(engine.actions, [.click(point: CGPoint(x: 799, y: 0), button: .left)])
+    }
+
+    func test_offScreenWindow_claimableViaFullList() throws {
+        let engine = FakeEngine()
+        engine.windows = [safari]
+        engine.offScreenWindowIDs = [10]
+        let registry = SessionRegistry()
+        let session = registry.registerSession(clientName: "omp")
+        let tools = ComputerTools(engine: engine, registry: registry, session: session)
+        _ = try tools.callTool(name: "computer_claim", arguments: .object(["window_id": .number(10)]))
+        XCTAssertEqual(registry.owner(of: 10), session)
+    }
+
     func test_act_rejectsUnknownButton() throws {
         let (tools, _, _, _) = makeTools()
         _ = try tools.callTool(name: "computer_claim", arguments: .object(["window_id": .number(10)]))

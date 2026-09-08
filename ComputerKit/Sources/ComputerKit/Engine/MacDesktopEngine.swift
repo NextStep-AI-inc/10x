@@ -12,6 +12,8 @@ import UniformTypeIdentifiers
 public final class MacDesktopEngine: DesktopEngine {
     private static let localEventFilter: UInt32 = 0x01 | 0x02 | 0x04
 
+    public var isCancelled: @Sendable () -> Bool = { false }
+
     private let eventSource: CGEventSource = {
         let source = CGEventSource(stateID: .hidSystemState)!
         CGEventSourceSetLocalEventsSuppressionInterval(source, 0)
@@ -26,8 +28,10 @@ public final class MacDesktopEngine: DesktopEngine {
         PermissionStatus(screenRecording: CGPreflightScreenCaptureAccess(), accessibility: AXIsProcessTrusted())
     }
 
-    public func listWindows() throws -> [WindowInfo] {
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+    public func listWindows(onScreenOnly: Bool = true) throws -> [WindowInfo] {
+        var options: CGWindowListOption = [.excludeDesktopElements]
+        if onScreenOnly { options.insert(.optionOnScreenOnly) }
+        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
             throw ComputerError("window_list_unavailable")
         }
         return list.compactMap { entry in
@@ -63,7 +67,7 @@ public final class MacDesktopEngine: DesktopEngine {
         Task {
             defer { semaphore.signal() }
             do {
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
                 guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
                     throw ComputerError("window_gone: \(windowID)")
                 }
@@ -102,7 +106,7 @@ public final class MacDesktopEngine: DesktopEngine {
         let preLaunchWindowIDs: Set<CGWindowID>
         if let bundleID,
            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-            preLaunchWindowIDs = Set(try listWindows().filter { $0.pid == running.processIdentifier }.map(\.id))
+            preLaunchWindowIDs = Set(try listWindows(onScreenOnly: true).filter { $0.pid == running.processIdentifier }.map(\.id))
         } else {
             preLaunchWindowIDs = []
         }
@@ -127,7 +131,8 @@ public final class MacDesktopEngine: DesktopEngine {
 
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
-            let windows = try listWindows()
+            if isCancelled() { throw ComputerError("aborted: shut-off") }
+            let windows = try listWindows(onScreenOnly: true)
             if let window = windows.first(where: { $0.pid == launched.processIdentifier && !preLaunchWindowIDs.contains($0.id) }) {
                 return window
             }
@@ -142,7 +147,7 @@ public final class MacDesktopEngine: DesktopEngine {
         let wid = window.id
         switch action {
         case .type, .key:
-            let siblings = try listWindows().filter { $0.pid == pid }.count
+            let siblings = try listWindows(onScreenOnly: true).filter { $0.pid == pid }.count
             if siblings > 1 {
                 throw ComputerError(
                     "background_unavailable: window \(wid) is one of \(siblings) windows in its application; background keystrokes go to whichever window is key"
@@ -230,6 +235,7 @@ public final class MacDesktopEngine: DesktopEngine {
             try postStamped(event, pid: pid, windowID: wid, keyboard: false)
         case .type(let text):
             for scalar in text {
+                if isCancelled() { throw ComputerError("aborted: shut-off") }
                 var unichar = Array(String(scalar).utf16)
                 try postKeyboard(CGEvent(keyboardEventSource: eventSource, virtualKey: 0, keyDown: true)?.applyingUnicode(&unichar), pid: pid, windowID: wid)
                 Thread.sleep(forTimeInterval: 0.008)

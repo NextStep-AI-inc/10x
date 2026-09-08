@@ -50,7 +50,7 @@ public final class ComputerTools: MCPToolProviding {
         guard registry.isActive(session) else { throw ComputerError("session_stopped") }
         switch name {
         case "computer_windows":
-            let items = try engine.listWindows().map { window -> JSONValue in
+            let items = try engine.listWindows(onScreenOnly: true).map { window -> JSONValue in
                 var object: [String: JSONValue] = [
                     "id": .number(Double(window.id)),
                     "app": .string(window.appName),
@@ -97,7 +97,7 @@ public final class ComputerTools: MCPToolProviding {
 
         case "computer_act":
             let window = try claimedWindow(arguments)
-            let action = try parseAction(arguments)
+            let action = try parseAction(arguments, window: window)
             try engine.act(action, window: window)
             return .text("done")
 
@@ -116,7 +116,7 @@ public final class ComputerTools: MCPToolProviding {
 
     private func windowArgument(_ arguments: JSONValue, mustBeClaimed: Bool) throws -> WindowInfo {
         let windowID = try windowIDArgument(arguments)
-        guard let window = try engine.listWindows().first(where: { $0.id == windowID }) ?? registry.window(windowID) else {
+        guard let window = try engine.listWindows(onScreenOnly: false).first(where: { $0.id == windowID }) ?? registry.window(windowID) else {
             throw ComputerError("window_gone: \(windowID)")
         }
         if mustBeClaimed, registry.owner(of: windowID) != session {
@@ -129,13 +129,23 @@ public final class ComputerTools: MCPToolProviding {
         try windowArgument(arguments, mustBeClaimed: true)
     }
 
-    private func parseAction(_ arguments: JSONValue) throws -> ComputerAction {
+    private func clampX(_ x: Double, width: CGFloat) -> Double {
+        Double(min(max(x, 0), Double(width) - 1))
+    }
+
+    private func clampY(_ y: Double, height: CGFloat) -> Double {
+        Double(min(max(y, 0), Double(height) - 1))
+    }
+
+    private func parseAction(_ arguments: JSONValue, window: WindowInfo) throws -> ComputerAction {
         guard let action = arguments["action"]?.stringValue else { throw MCPError.invalidParams("computer_act requires action") }
+        let w = window.bounds.width
+        let h = window.bounds.height
         func point(_ x: String, _ y: String) throws -> CGPoint {
             guard let xValue = arguments[x]?.doubleValue, let yValue = arguments[y]?.doubleValue else {
                 throw MCPError.invalidParams("\(action) requires \(x)/\(y)")
             }
-            return CGPoint(x: xValue, y: yValue)
+            return CGPoint(x: clampX(xValue, width: w), y: clampY(yValue, height: h))
         }
         switch action {
         case "click":
@@ -175,6 +185,32 @@ public final class ComputerTools: MCPToolProviding {
             return .key(keys)
         default:
             throw ComputerError("invalid_action: \(action)")
+        }
+    }
+}
+
+/// Supervision action-event coordinates derived from tool args and window bounds.
+enum ActionEventPoints {
+    static func from(arguments: JSONValue?, window: WindowInfo?) -> (x: Double?, y: Double?) {
+        guard let action = arguments?["action"]?.stringValue else { return (nil, nil) }
+        let w = window?.bounds.width ?? 0
+        let h = window?.bounds.height ?? 0
+        func clampX(_ x: Double) -> Double { min(max(x, 0), Double(w) - 1) }
+        func clampY(_ y: Double) -> Double { min(max(y, 0), Double(h) - 1) }
+        switch action {
+        case "click", "double_click", "right_click":
+            guard let x = arguments?["x"]?.doubleValue, let y = arguments?["y"]?.doubleValue else { return (nil, nil) }
+            return (clampX(x), clampY(y))
+        case "drag":
+            guard let x = arguments?["to_x"]?.doubleValue, let y = arguments?["to_y"]?.doubleValue else { return (nil, nil) }
+            return (clampX(x), clampY(y))
+        case "scroll":
+            guard w > 0, h > 0 else { return (nil, nil) }
+            return (Double(w / 2), Double(h / 2))
+        case "type", "key":
+            return (nil, nil)
+        default:
+            return (nil, nil)
         }
     }
 }

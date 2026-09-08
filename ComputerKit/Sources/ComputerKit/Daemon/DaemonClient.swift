@@ -7,6 +7,7 @@ public final class DaemonClient {
     private var buffer = Data()
 
     public init(socketPath: String = DaemonServer.defaultSocketPath) throws {
+        try DaemonServer.validateSocketPath(socketPath)
         fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { throw ComputerError("socket: \(String(cString: strerror(errno)))") }
         var address = sockaddr_un()

@@ -2388,6 +2388,26 @@ git status --short   # expect clean
 
 ---
 
+## Deviations
+
+### Audit remediation (P1-fix)
+
+Wire-format freezes for Plan 2 supervision client:
+
+- **Serialized writes:** all supervision-fd `send`/`close`/`shutdown` go through serial queue `tenx-computer.supervision-writes`.
+- **`sessionStarted`:** adds optional `label` (MCP handshake) and `pid` (peer pid via `LOCAL_PEERPID`).
+- **`stopped`:** adds optional `session` (`null` = global shut-off).
+- **`sessionEnded`:** emitted by `stop_session`/`stop_all` before `stopped` (disconnect unchanged).
+- **`permissions`:** new event `{screenRecording, accessibility}` immediately after supervision handshake ack.
+- **`screenshotTaken`:** adds `width`, `height`, `scale`.
+- **`action`:** `x`/`y` nullable — real points for click/drag, window center for scroll, `null` for type/key.
+- **`windowReleased`:** emitted on all `window_gone` cleanup paths (tool + heartbeat).
+- **Failed tool calls:** no supervision events or preview when MCP result has `isError: true`.
+- **Session tombstone:** supervised stop keeps record; disconnect removes it entirely.
+- **Socket path:** rejected at ≥104 UTF-8 bytes; bound socket file mode `0600`.
+
+---
+
 ## Plan 2 preview (separate document)
 
 10x app integration: supervision client in the app, cursor overlay window, header metadata item, rail marker badge, "Currently viewing" popover, MenuBarExtra panel, ⇧⌘C command, session wiring through omp's MCP mounting (pending the two omp research answers), transcript card adaptation, settings section, acceptance pass.

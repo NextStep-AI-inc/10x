@@ -45,9 +45,13 @@ public enum ComputerAction: Sendable, Equatable {
 
 /// The OS-touching surface. Only MacDesktopEngine implements this for real;
 /// everything else in ComputerKit is tested against fakes.
-public protocol DesktopEngine {
+public protocol DesktopEngine: AnyObject {
+    /// When true, in-flight `act`/`launch` loops throw `aborted: shut-off`.
+    /// Set by DaemonServer after a global `stop_all`; never cleared (daemon restart expected).
+    var isCancelled: @Sendable () -> Bool { get set }
+
     func preflightPermissions() -> PermissionStatus
-    func listWindows() throws -> [WindowInfo]
+    func listWindows(onScreenOnly: Bool) throws -> [WindowInfo]
     func screenshot(windowID: CGWindowID) throws -> Screenshot
     func launch(app: String) throws -> WindowInfo
     func act(_ action: ComputerAction, window: WindowInfo) throws

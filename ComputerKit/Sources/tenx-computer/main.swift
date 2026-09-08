@@ -110,7 +110,7 @@ func runSelfCheck() throws {
     var probe: WindowInfo?
     while Date() < deadline, probe == nil {
         Thread.sleep(forTimeInterval: 0.2)
-        probe = try? engine.listWindows().first(where: { $0.title == "tenx-computer probe" && $0.pid == probeProcess.processIdentifier })
+        probe = try? engine.listWindows(onScreenOnly: true).first(where: { $0.title == "tenx-computer probe" && $0.pid == probeProcess.processIdentifier })
     }
     guard let probe else {
         FileHandle.standardError.write("selfcheck: probe window not found\n".data(using: .utf8)!)

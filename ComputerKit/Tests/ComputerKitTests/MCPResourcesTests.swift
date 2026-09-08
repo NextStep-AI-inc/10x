@@ -46,6 +46,7 @@ final class MCPResourcesTests: XCTestCase {
 
     func test_readResource_returnsLatestCapture() {
         let engine = FakeEngine()
+        engine.windows = [WindowInfo(id: 10, appName: "Safari", title: "Apple", bounds: .init(x: 0, y: 0, width: 800, height: 600), pid: 100)]
         engine.screenshotPNG = Data([1, 2, 3])
         let registry = SessionRegistry()
         let session = registry.registerSession(clientName: "omp")
@@ -59,6 +60,7 @@ final class MCPResourcesTests: XCTestCase {
 
     func test_readResource_returnsFreshCaptureEachRead() {
         let engine = FakeEngine()
+        engine.windows = [WindowInfo(id: 10, appName: "Safari", title: "Apple", bounds: .init(x: 0, y: 0, width: 800, height: 600), pid: 100)]
         engine.screenshotPNG = Data([1, 2, 3])
         let registry = SessionRegistry()
         let session = registry.registerSession(clientName: "omp")

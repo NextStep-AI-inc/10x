@@ -10,6 +10,7 @@ public final class PreviewStreamer {
     private let engine: DesktopEngine
     private let interval: TimeInterval
     private let emit: (SupervisionEvent) -> Void
+    var onWindowGone: ((SessionID, CGWindowID) -> Void)?
     private var timer: DispatchSourceTimer?
     private var active: (session: SessionID, windowID: CGWindowID)?
     private let queue = DispatchQueue(label: "tenx-computer.preview")
@@ -26,13 +27,13 @@ public final class PreviewStreamer {
     }
 
     func actionOccurred(session: SessionID, windowID: CGWindowID) {
-        let event: SupervisionEvent? = queue.sync {
+        let outcome = queue.sync {
             setActiveLocked(session: session, windowID: windowID)
-            return captureFrameLocked()
+            return captureOutcomeLocked()
         }
-        // ponytail: emit must not call back into PreviewStreamer — re-entrancy
-        // into queue.sync would deadlock.
-        if let event { emit(event) }
+        guard let outcome else { return }
+        if let gone = outcome.gone { onWindowGone?(gone.0, gone.1) }
+        if let event = outcome.event { emit(event) }
     }
 
     func setActive(session: SessionID?, windowID: CGWindowID?) {
@@ -77,23 +78,39 @@ public final class PreviewStreamer {
     }
 
     private func heartbeatLocked() {
-        guard let event = captureFrameLocked() else { return }
-        DispatchQueue.global(qos: .utility).async { [emit] in emit(event) }
+        guard let outcome = captureOutcomeLocked() else { return }
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            if let gone = outcome.gone { self?.onWindowGone?(gone.0, gone.1) }
+            if let event = outcome.event { self?.emit(event) }
+        }
     }
 
-    private func captureFrameLocked() -> SupervisionEvent? {
+    private struct CaptureOutcome {
+        var event: SupervisionEvent?
+        var gone: (SessionID, CGWindowID)?
+    }
+
+    private func captureOutcomeLocked() -> CaptureOutcome? {
         guard let active else { return nil }
         do {
             let shot = try engine.screenshot(windowID: active.windowID)
-            return .screenshotTaken(
-                session: active.session.raw, windowID: Int(active.windowID),
-                pngBase64: shot.pngData.base64EncodedString()
+            return CaptureOutcome(
+                event: .screenshotTaken(
+                    session: active.session.raw, windowID: Int(active.windowID),
+                    pngBase64: shot.pngData.base64EncodedString(),
+                    width: Int(shot.pixelSize.width),
+                    height: Int(shot.pixelSize.height),
+                    scale: shot.scale
+                ),
+                gone: nil
             )
         } catch let error as ComputerError where error.message.hasPrefix("window_gone") {
+            let session = active.session
+            let windowID = active.windowID
             clearActiveLocked()
-            return nil
+            return CaptureOutcome(event: nil, gone: (session, windowID))
         } catch {
-            return nil
+            return CaptureOutcome(event: nil, gone: nil)
         }
     }
 }
