@@ -184,7 +184,8 @@ struct ContextUsagePopover: View {
             }
 
             if !isCompacting, !canCompact,
-               let compactionDisabledReason, !compactionDisabledReason.isEmpty {
+               let compactionDisabledReason, !compactionDisabledReason.isEmpty,
+               compactionDisabledReason != compactionErrorMessage {
                 Text(compactionDisabledReason)
                     .font(TenXTypography.body(size: 11))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
