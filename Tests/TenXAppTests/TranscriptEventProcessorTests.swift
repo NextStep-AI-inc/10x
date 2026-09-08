@@ -259,6 +259,24 @@ import Testing
     #expect(await snapshots.next() == nil)
 }
 
+@Test func processorForwardsDroppedHarnessMessages() async {
+    let processor = TranscriptEventProcessor()
+    await confirmation(expectedCount: 1) { confirm in
+        await processor.setOnDroppedHarnessMessages { dropped in
+            #expect(dropped.first?.role == "developer")
+            #expect(dropped.first?.text == "wall")
+            confirm()
+        }
+        await processor.consume(.event(type: "message_start", payload: .object([
+            "message": .object([
+                "role": .string("developer"),
+                "content": .string("wall"),
+            ]),
+        ])))
+    }
+    await processor.stop()
+}
+
 private func collectSnapshots(from stream: AsyncStream<TranscriptSnapshot>) async -> [TranscriptSnapshot] {
     var snapshots: [TranscriptSnapshot] = []
     for await snapshot in stream {

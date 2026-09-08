@@ -454,10 +454,23 @@ struct TranscriptReducer {
 
     @discardableResult
     mutating func appendNotice(level: String, message: String) -> TranscriptMutation {
-        items.append(.notice(
-            id: syntheticID(prefix: "notice"),
-            level: level,
-            message: message))
+        appendNotice(id: syntheticID(prefix: "notice"), level: level, message: message)
+    }
+
+    /// Caller-chosen id, so the caller can rewrite the notice in place later
+    /// (harness-message notices swap in their summary).
+    @discardableResult
+    mutating func appendNotice(id: String, level: String, message: String) -> TranscriptMutation {
+        items.append(.notice(id: id, level: level, message: message))
+        return .immediate
+    }
+
+    @discardableResult
+    mutating func updateNotice(id: String, message: String) -> TranscriptMutation {
+        guard let index = items.firstIndex(where: { $0.id == id }),
+              case .notice(let noticeID, let level, _) = items[index]
+        else { return .none }
+        items[index] = .notice(id: noticeID, level: level, message: message)
         return .immediate
     }
 

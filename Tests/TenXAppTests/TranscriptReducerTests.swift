@@ -891,3 +891,20 @@ private func message(_ json: String) throws -> JSONValue {
     _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
     #expect(reducer.drainDroppedHarnessMessages().isEmpty)
 }
+
+@Test func updateNoticeRewritesTheMessageInPlace() {
+    var reducer = TranscriptReducer()
+    _ = reducer.appendNotice(id: "n1", level: "info", message: "before")
+    _ = reducer.appendNotice(id: "n2", level: "info", message: "other")
+
+    let mutation = reducer.updateNotice(id: "n1", message: "after")
+
+    #expect(mutation == .immediate)
+    let notices = reducer.items.compactMap { item -> (String, String)? in
+        guard case .notice(let id, _, let message) = item else { return nil }
+        return (id, message)
+    }
+    #expect(notices.map(\.0) == ["n1", "n2"])
+    #expect(notices.map(\.1) == ["after", "other"])
+    #expect(reducer.updateNotice(id: "missing", message: "x") == .none)
+}
