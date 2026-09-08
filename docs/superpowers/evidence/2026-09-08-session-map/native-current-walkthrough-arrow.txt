@@ -1,0 +1,90 @@
+Window: "10x | map-planning | 000abff0990f", App: 10x.
+0 standard window 10x | map-planning | 000abff0990f, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapApp
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/000abff0990f98fbbeecf28d69c80a23d3979441/map-planning/SessionMapApp
+		15 button Description: Close session map, Value: Open
+		16 scroll area
+			17 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				18 container Description: Model expansion, Details: Standard
+					19 button Description: Expanded, Value: Not selected
+					20 button Description: Standard, Value: Selected
+					21 button Description: Slim, Value: Not selected
+				22 unknown Thread started Monday, September 7, 2026 at 9:53 AM
+				23 text Show the session architecture beside the real transcript. Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The native map keeps the architecture visible while the composer remains ready.
+		24 scroll area Secondary Actions: Scroll Up, Scroll Down
+			25 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Keep the map open while I review the transcript.
+			26 scroll bar (disabled, settable, float) 0
+		27 scroll area Attached images
+			28 container map-layout.png
+				29 image
+				30 text map-layout.png 32×32 · 193 bytes
+				31 button Description: Remove map-layout.png, ID: xmark
+		32 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		33 text GPT-5.6 High
+		34 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		35 button Description: Send message, ID: arrow.up
+		36 unknown Description: Resize session map, Details: 440 points, Secondary Actions: Increment, Decrement
+		37 text Map
+		38 button Description: Map settings, ID: gearshape
+		39 button Description: Close map, ID: xmark
+		40 scroll area Secondary Actions: Scroll Up, Scroll Down
+			41 text Session map architecture Planning Architecture Exists · Proposed · Planned · Active · Done · Failed
+			42 scroll area Architecture diagram
+				43 unknown Description: Session source, Exists. Connects to Map writer., Help: Select this component to show its details.
+				44 unknown Description: Map writer, Proposed. Live activity. Receives from Session source. Connects to Native map document., Help: Select this component to show its details.
+				45 unknown Description: Native map document, Planned. Receives from Map writer. Connects to Map pane., Help: Select this component to show its details.
+				46 unknown Description: Map pane, Planned. Receives from Native map document., Help: Select this component to show its details.
+			47 container
+				48 text Native map document Planned Carries graph and supporting blocks.
+				49 button Jump
+			50 disclosure triangle Description: Architecture relationships, Value: off
+			51 container Create a map, step 2 of 4
+				52 text Create a map 2 of 4 Write the document.
+				53 button Previous
+				54 button Next
+				55 button Jump
+			56 text Implementation
+			57 container
+				58 image circle
+				59 button Define and validate the document contract.
+				60 button Jump
+			61 container
+				62 image circle
+				63 button Lay out and render the graph.
+				64 button Jump
+			65 text The pane reads a validated native document produced from bounded session context. Open decisions Confirm the layout against dense labels and a compact window.
+			66 button Jump
+			67 scroll bar (settable, float) 0
+				68 value indicator (settable, float) 0
+				69 increment arrow button
+				70 decrement arrow button
+				71 increment page button
+				72 decrement page button
+		73 menu button Regenerate
+		74 button Caught up
+	75 close button
+	76 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	77 minimize button
+78 menu bar
+	79 10x
+	80 File
+	81 Edit
+	82 View
+	83 Navigate
+	84 Session
+	85 Window
+	86 Help
+
+The focused UI element is 87 text Write the document.

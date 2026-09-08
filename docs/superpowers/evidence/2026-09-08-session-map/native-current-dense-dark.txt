@@ -1,0 +1,92 @@
+Window: "10x | map-dense | 000abff0990f", App: 10x.
+0 standard window 10x | map-dense | 000abff0990f, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapApp
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/000abff0990f98fbbeecf28d69c80a23d3979441/map-dense/SessionMapApp
+		15 button Description: Close session map, Value: Open
+		16 scroll area
+			17 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				18 container Description: Model expansion, Details: Standard
+					19 button Description: Expanded, Value: Not selected
+					20 button Description: Standard, Value: Selected
+					21 button Description: Slim, Value: Not selected
+				22 unknown Thread started Monday, September 7, 2026 at 9:53 AM
+				23 text Show the session architecture beside the real transcript. Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The native map keeps the architecture visible while the composer remains ready.
+		24 scroll area Secondary Actions: Scroll Up, Scroll Down
+			25 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Keep the map open while I review the transcript.
+			26 scroll bar (disabled, settable, float) 0
+		27 scroll area Attached images
+			28 container map-layout.png
+				29 image
+				30 text map-layout.png 32×32 · 193 bytes
+				31 button Description: Remove map-layout.png, ID: xmark
+		32 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		33 text GPT-5.6 High
+		34 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		35 button Description: Send message, ID: arrow.up
+		36 unknown Description: Resize session map, Details: 440 points, Secondary Actions: Increment, Decrement
+		37 text Map
+		38 button Description: Map settings, ID: gearshape
+		39 button Description: Close map, ID: xmark
+		40 scroll area
+			41 text Dense session architecture Mixed Architecture Exists · Proposed · Planned · Active · Done · Failed
+			42 scroll area Description: Architecture diagram, Secondary Actions: Scroll Up, Scroll Down
+				43 unknown Help: Select this component to show its details., Description: Component 1 handles a deliberately long pipeline stage, Planned. Connects to Component 2 handles a deliberately long pipeline stage. Connects to Component 3 handles a deliberately long pipeline stage.
+				44 unknown Help: Select this component to show its details., Description: Component 2 handles a deliberately long pipeline stage, Planned. Receives from Component 1 handles a deliberately long pipeline stage. Connects to Component 3 handles a deliberately long pipeline stage. Connects to Component 4 handles a deliberately long pipeline stage.
+				45 unknown Help: Select this component to show its details., Description: Component 3 handles a deliberately long pipeline stage, Planned. Receives from Component 2 handles a deliberately long pipeline stage. Connects to Component 4 handles a deliberately long pipeline stage. Receives from Component 1 handles a deliberately long pipeline stage. Connects to Component 5 handles a deliberately long pipeline stage.
+				46 unknown Help: Select this component to show its details., Description: Component 4 handles a deliberately long pipeline stage, Planned. Receives from Component 3 handles a deliberately long pipeline stage. Connects to Component 5 handles a deliberately long pipeline stage. Receives from Component 2 handles a deliberately long pipeline stage. Connects to Component 6 handles a deliberately long pipeline stage.
+				47 unknown Help: Select this component to show its details., Description: Component 5 handles a deliberately long pipeline stage, Planned. Receives from Component 4 handles a deliberately long pipeline stage. Connects to Component 6 handles a deliberately long pipeline stage. Receives from Component 3 handles a deliberately long pipeline stage. Connects to Component 7 handles a deliberately long pipeline stage.
+				48 unknown Help: Select this component to show its details., Description: Component 6 handles a deliberately long pipeline stage, Planned. Receives from Component 5 handles a deliberately long pipeline stage. Connects to Component 7 handles a deliberately long pipeline stage. Receives from Component 4 handles a deliberately long pipeline stage. Connects to Component 8 handles a deliberately long pipeline stage.
+				49 unknown Help: Select this component to show its details., Description: Component 7 handles a deliberately long pipeline stage, Planned. Receives from Component 6 handles a deliberately long pipeline stage. Connects to Component 8 handles a deliberately long pipeline stage. Receives from Component 5 handles a deliberately long pipeline stage. Connects to Component 9 handles a deliberately long pipeline stage.
+				50 unknown Help: Select this component to show its details., Description: Component 8 handles a deliberately long pipeline stage, Planned. Receives from Component 7 handles a deliberately long pipeline stage. Connects to Component 9 handles a deliberately long pipeline stage. Receives from Component 6 handles a deliberately long pipeline stage. Connects to Component 10 handles a deliberately long pipeline stage.
+				51 unknown Help: Select this component to show its details., Description: Component 9 handles a deliberately long pipeline stage, Planned. Receives from Component 8 handles a deliberately long pipeline stage. Connects to Component 10 handles a deliberately long pipeline stage. Receives from Component 7 handles a deliberately long pipeline stage. Connects to Component 11 handles a deliberately long pipeline stage.
+				52 unknown Help: Select this component to show its details., Description: Component 10 handles a deliberately long pipeline stage, Planned. Receives from Component 9 handles a deliberately long pipeline stage. Connects to Component 11 handles a deliberately long pipeline stage. Receives from Component 8 handles a deliberately long pipeline stage. Connects to Component 12 handles a deliberately long pipeline stage.
+				53 unknown Help: Select this component to show its details., Description: Component 11 handles a deliberately long pipeline stage, Planned. Receives from Component 10 handles a deliberately long pipeline stage. Connects to Component 12 handles a deliberately long pipeline stage. Receives from Component 9 handles a deliberately long pipeline stage. Connects to Component 13 handles a deliberately long pipeline stage.
+				54 unknown Help: Select this component to show its details., Description: Component 12 handles a deliberately long pipeline stage, Planned. Receives from Component 11 handles a deliberately long pipeline stage. Connects to Component 13 handles a deliberately long pipeline stage. Receives from Component 10 handles a deliberately long pipeline stage. Connects to Component 14 handles a deliberately long pipeline stage.
+				55 unknown Help: Select this component to show its details., Description: Component 13 handles a deliberately long pipeline stage, Planned. Receives from Component 12 handles a deliberately long pipeline stage. Connects to Component 14 handles a deliberately long pipeline stage. Receives from Component 11 handles a deliberately long pipeline stage. Connects to Component 15 handles a deliberately long pipeline stage.
+				56 unknown Help: Select this component to show its details., Description: Component 14 handles a deliberately long pipeline stage, Planned. Receives from Component 13 handles a deliberately long pipeline stage. Connects to Component 15 handles a deliberately long pipeline stage. Receives from Component 12 handles a deliberately long pipeline stage. Connects to Component 16 handles a deliberately long pipeline stage.
+				57 unknown Help: Select this component to show its details., Description: Component 15 handles a deliberately long pipeline stage, Planned. Receives from Component 14 handles a deliberately long pipeline stage. Connects to Component 16 handles a deliberately long pipeline stage. Receives from Component 13 handles a deliberately long pipeline stage. Connects to Component 17 handles a deliberately long pipeline stage.
+				58 unknown Help: Select this component to show its details., Description: Component 16 handles a deliberately long pipeline stage, Planned. Receives from Component 15 handles a deliberately long pipeline stage. Connects to Component 17 handles a deliberately long pipeline stage. Receives from Component 14 handles a deliberately long pipeline stage. Connects to Component 18 handles a deliberately long pipeline stage.
+				59 unknown Help: Select this component to show its details., Description: Component 17 handles a deliberately long pipeline stage, Planned. Receives from Component 16 handles a deliberately long pipeline stage. Connects to Component 18 handles a deliberately long pipeline stage. Receives from Component 15 handles a deliberately long pipeline stage. Connects to Component 19 handles a deliberately long pipeline stage.
+				60 unknown Help: Select this component to show its details., Description: Component 18 handles a deliberately long pipeline stage, Planned. Receives from Component 17 handles a deliberately long pipeline stage. Connects to Component 19 handles a deliberately long pipeline stage. Receives from Component 16 handles a deliberately long pipeline stage.
+				61 unknown Help: Select this component to show its details., Description: Component 19 handles a deliberately long pipeline stage, Planned. Receives from Component 18 handles a deliberately long pipeline stage. Connects to Component 20 handles a deliberately long pipeline stage. Receives from Component 17 handles a deliberately long pipeline stage.
+				62 unknown Help: Select this component to show its details., Description: Component 20 handles a deliberately long pipeline stage, Planned. Receives from Component 19 handles a deliberately long pipeline stage. Connects to Component 21 handles a deliberately long pipeline stage.
+				63 unknown Help: Select this component to show its details., Description: Component 21 handles a deliberately long pipeline stage, Planned. Receives from Component 20 handles a deliberately long pipeline stage. Connects to Component 22 handles a deliberately long pipeline stage.
+				64 unknown Help: Select this component to show its details., Description: Component 22 handles a deliberately long pipeline stage, Planned. Receives from Component 21 handles a deliberately long pipeline stage. Connects to Component 23 handles a deliberately long pipeline stage.
+				65 unknown Help: Select this component to show its details., Description: Component 23 handles a deliberately long pipeline stage, Planned. Receives from Component 22 handles a deliberately long pipeline stage. Connects to Component 24 handles a deliberately long pipeline stage.
+				66 unknown Help: Select this component to show its details., Description: Component 24 handles a deliberately long pipeline stage, Planned. Receives from Component 23 handles a deliberately long pipeline stage.
+				67 scroll bar (settable, float) 0
+					68 value indicator (settable, float) 0
+					69 increment arrow button
+					70 decrement arrow button
+					71 increment page button
+					72 decrement page button
+			73 disclosure triangle Description: Architecture relationships, Value: off
+			74 text Twenty-four components and forty connections exercise the accepted graph limits.
+		75 menu button Regenerate
+		76 button Caught up
+	77 close button
+	78 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	79 minimize button
+80 menu bar
+	81 10x
+	82 File
+	83 Edit
+	84 View
+	85 Navigate
+	86 Session
+	87 Window
+	88 Help
+
+The focused UI element is 25 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Keep the map open while I review the transcript.

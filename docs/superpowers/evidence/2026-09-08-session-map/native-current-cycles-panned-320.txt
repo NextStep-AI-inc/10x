@@ -1,0 +1,78 @@
+Window: "10x | map-dense | 000abff0990f", App: 10x.
+0 standard window 10x | map-dense | 000abff0990f, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Archived sessions
+		11 text Value: Implement the map renderer, Secondary Actions: Rename Session
+		12 unknown Description: Branch, Details: codex/session-map-plans
+		13 unknown Description: Folder, Details: SessionMapSupport
+		14 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/000abff0990f98fbbeecf28d69c80a23d3979441/map-dense/SessionMapSupport
+		15 button Description: Close session map, Value: Open
+		16 scroll area
+			17 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				18 container Description: Model expansion, Details: Standard
+					19 button Description: Expanded, Value: Not selected
+					20 button Description: Standard, Value: Selected
+					21 button Description: Slim, Value: Not selected
+				22 unknown Thread started Monday, September 7, 2026 at 9:53 AM
+				23 text Show the session architecture beside the real transcript. Synthetic, Implementing, Monday, September 7, 2026 at 9:53 AM The native map keeps the architecture visible while the composer remains ready.
+		24 scroll area Secondary Actions: Scroll Up, Scroll Down
+			25 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Check the drawer behavior at the minimum window size.
+			26 scroll bar (disabled, settable, float) 0
+		27 scroll area Attached images
+			28 container drawer-check.png
+				29 image
+				30 text drawer-check.png 32×32 · 193 bytes
+				31 button Description: Remove drawer-check.png, ID: xmark
+		32 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		33 text GPT-5.6 High
+		34 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		35 button Description: Send message, ID: arrow.up
+		36 unknown Description: Resize session map, Details: 320 points, Secondary Actions: Increment, Decrement
+		37 text Map
+		38 button Description: Map settings, ID: gearshape
+		39 button Description: Close map, ID: xmark
+		40 scroll area
+			41 text Layout stress Implementing Architecture Exists · Proposed · Planned · Active · Done · Failed
+			42 scroll area Description: Architecture diagram, Secondary Actions: Scroll Left, Scroll Right
+				43 unknown Description: Root 1, Planned. Connects to Dependent. Connects to Root 7., Help: Select this component to show its details.
+				44 unknown Description: Root 2, Planned. Connects to Dependent., Help: Select this component to show its details.
+				45 unknown Description: Root 3, Planned. Connects to Dependent., Help: Select this component to show its details.
+				46 unknown Description: Root 4, Planned. Connects to Dependent., Help: Select this component to show its details.
+				47 unknown Description: Root 5, Planned. Connects to Dependent., Help: Select this component to show its details.
+				48 unknown Description: Root 6, Planned. Connects to Dependent., Help: Select this component to show its details.
+				49 unknown Description: Root 7, Planned. Connects to Dependent. Receives from Root 1., Help: Select this component to show its details.
+				50 unknown Description: Cycle A, Planned. Connects to Cycle A. Connects to Cycle B. Receives from Cycle B., Help: Select this component to show its details.
+				51 unknown Description: Disconnected, Planned. No connections., Help: Select this component to show its details.
+				52 unknown Help: Select this component to show its details., Description: Dependent, Planned. Receives from Root 1. Receives from Root 2. Receives from Root 3. Receives from Root 4. Receives from Root 5. Receives from Root 6. Receives from Root 7.
+				53 unknown Description: Cycle B, Planned. Receives from Cycle A. Connects to Cycle A., Help: Select this component to show its details.
+				54 scroll bar (settable, float) 1
+					55 value indicator (settable, float) 1
+					56 increment arrow button
+					57 decrement arrow button
+					58 increment page button
+					59 decrement page button
+			60 disclosure triangle Description: Architecture relationships, Value: off
+		61 menu button Regenerate
+		62 button Caught up
+	63 close button
+	64 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	65 minimize button
+66 menu bar
+	67 10x
+	68 File
+	69 Edit
+	70 View
+	71 Navigate
+	72 Session
+	73 Window
+	74 Help
+
+The focused UI element is 25 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Check the drawer behavior at the minimum window size.

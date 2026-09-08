@@ -1,0 +1,56 @@
+Window: "10x | map-invalid | 000abff0990f", App: 10x.
+0 standard window 10x | map-invalid | 000abff0990f, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		2 container Application navigation
+			3 button Open actions
+			4 scroll area
+				5 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					6 button Description: SessionMapApp, Help: Starts a new session in SessionMapApp
+					7 button Description: Plan the native session map, SessionMapApp, Ready, Help: Plan the native session map, Secondary Actions: Rename Session
+					8 button Description: SessionMapSupport, Help: Starts a new session in SessionMapSupport
+					9 button Description: Implement the map renderer, SessionMapSupport, Ready, Help: Implement the map renderer, Secondary Actions: Rename Session
+			10 button Description: Archived sessions, ID: archivebox
+		11 text Value: Plan the native session map Map, Secondary Actions: Rename Session
+		12 button Description: Map settings, ID: gearshape
+		13 button Description: Close map, ID: xmark
+		14 unknown Description: Branch, Details: codex/session-map-plans
+		15 unknown Description: Folder, Details: SessionMapApp
+		16 unknown Description: Worktree, Details: /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/10x-session-map-fixture/000abff0990f98fbbeecf28d69c80a23d3979441/map-invalid/SessionMapApp
+		17 button Description: Close session map, Value: Open
+		18 scroll area
+			19 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				20 container Description: Model expansion, Details: Standard
+					21 button Description: Expanded, Value: Not selected
+					22 button Description: Standard, Value: Selected
+					23 button Description: Slim, Value: Not selected
+				24 unknown Thread started Monday, September 7, 2026 at 9:53 AM
+				25 text Show the session architecture beside the real transcript. Synthetic, Planning, Monday, September 7, 2026 at 9:53 AM The native map keeps the architecture visible while the composer remains ready.
+		26 scroll area Secondary Actions: Scroll Up, Scroll Down
+			27 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Keep the map open while I review the transcript.
+			28 scroll bar (disabled, settable, float) 0
+		29 scroll area Attached images
+			30 container map-layout.png
+				31 image
+				32 text map-layout.png 32×32 · 193 bytes
+				33 button Description: Remove map-layout.png, ID: xmark
+		34 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		35 text GPT-5.6 High
+		36 button Description: Context window, Help: Shows context usage details, Value: Unavailable
+		37 button Description: Send message, ID: arrow.up
+		38 scroll area
+			39 text The map couldn’t be updated.
+			40 button Try again
+	41 close button
+	42 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	43 minimize button
+44 menu bar
+	45 10x
+	46 File
+	47 Edit
+	48 View
+	49 Navigate
+	50 Session
+	51 Window
+	52 Help
+
+The focused UI element is 27 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: Keep the map open while I review the transcript.
