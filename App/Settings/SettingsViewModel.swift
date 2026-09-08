@@ -20,7 +20,7 @@ final class SettingsViewModel {
 
     init(
         service: OmpConfigService,
-        computerUseSetup: ComputerUseSetupModel = ComputerUseSetupModel()
+        computerUseSetup: ComputerUseSetupModel = ComputerUseSetupModel(supervision: SupervisionClient())
     ) {
         self.service = service
         self.computerUseSetup = computerUseSetup

@@ -212,7 +212,7 @@ final class AppModel {
         self.processManager = processManager
         settingsModel = SettingsViewModel(
             service: OmpConfigService(runner: OmpConfigProcessRunner(executableURL: installation.executableURL)),
-            computerUseSetup: ComputerUseSetupModel())
+            computerUseSetup: ComputerUseSetupModel(supervision: supervision))
         watchUnexpectedExits(from: processManager)
         setupError = nil
         route = .newSession

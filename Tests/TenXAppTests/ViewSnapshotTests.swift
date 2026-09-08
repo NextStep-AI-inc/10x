@@ -64,12 +64,13 @@ import Testing
 
 @MainActor
 @Test func computerUseSettingsSnapshot() throws {
+    let model = ComputerUseSetupModel(supervision: SupervisionClient())
     try assertSnapshot(
-        ComputerUseSettingsSection()
+        ComputerUseSettingsSection(model: model)
             .frame(width: 600)
             .frame(maxHeight: .infinity, alignment: .topLeading),
         name: "computer-use-settings",
-        size: CGSize(width: 760, height: 120))
+        size: CGSize(width: 760, height: 520))
 }
 
 @MainActor
