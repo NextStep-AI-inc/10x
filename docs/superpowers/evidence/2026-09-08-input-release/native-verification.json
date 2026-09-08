@@ -1,0 +1,36 @@
+{
+  "sourceCommit": "2b4723f79e91eb4c390e7d880a5259c98fdc7220",
+  "nativePicker": {
+    "ordinaryPathInsertedAtCaret": true,
+    "beforeText": "BEFORE | ",
+    "afterText": "AFTER",
+    "undoRestored": "BEFORE | AFTER",
+    "redoRestoredInsertion": true,
+    "longPathWrappedWithinComposer": true,
+    "editorRetainedFocus": true
+  },
+  "images": {
+    "validPNGStaged": true,
+    "dimensions": [
+      600,
+      220
+    ],
+    "invalidPNGRejected": true,
+    "existingPNGPreserved": true
+  },
+  "warnings": {
+    "attachmentAndModelVisibleSeparately": true,
+    "clearingAttachmentPreservedModelError": true
+  },
+  "liveCJK": {
+    "verified": false,
+    "reason": "Only U.S. keyboard is enabled; permission to temporarily add Pinyin is pending."
+  },
+  "nativeDragAndDrop": {
+    "verified": false,
+    "reason": "The deliberate file-insertion flow was exercised through the native picker; shared insertion and transport logic passed focused tests."
+  },
+  "testLog": "/tmp/10x-input-async-panel-focused-final.log",
+  "testLogSHA256": "4d61d66d719d40aece231d0b11278c99e9228e84f360ecc72bcfb801ef67ff83",
+  "qaClosed": true
+}

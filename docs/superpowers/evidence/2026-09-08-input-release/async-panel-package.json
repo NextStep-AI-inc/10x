@@ -1,0 +1,12 @@
+{
+  "app": "/tmp/10x-input-async-panel-build/10x-input.app",
+  "branch": "codex/active-session-input",
+  "baseCommit": "88f7e18e72344be65dff7355d463eae68f385510",
+  "executableSHA256": "c2c966158dfe33a1e351a1e1abcd2ac4208843d9443f2f5620d1d47ea8ce435f",
+  "diffSHA256": "62549be5996372cbd58e45268eeefe87fa118e9f9ed7791b6abbc6bf7124b7b6",
+  "releaseLog": "/tmp/10x-input-async-panel-release.log",
+  "releaseLogSHA256": "b94442686fa1f9e260b5962c6dcf88850201a56a028f2d936d551d3ca5e1359e",
+  "sourceCommit": "2b4723f79e91eb4c390e7d880a5259c98fdc7220",
+  "nativeLaunched": true,
+  "nativeClosed": true
+}

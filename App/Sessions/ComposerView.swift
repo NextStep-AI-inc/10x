@@ -196,8 +196,18 @@ enum ComposerCommandDismissalRouting {
     }
 }
 
+enum ComposerInputMethodRouting {
+    nonisolated static func shouldDeferToInputMethod(isComposing: Bool) -> Bool {
+        isComposing
+    }
+}
+
 enum ComposerReturnRouting {
-    nonisolated static func shortcut(for modifiers: EventModifiers) -> ComposerReturnShortcut? {
+    nonisolated static func shortcut(
+        for modifiers: EventModifiers,
+        isComposing: Bool = false
+    ) -> ComposerReturnShortcut? {
+        guard !isComposing else { return nil }
         let relevant = modifiers.intersection([.shift, .option, .command, .control])
         return switch relevant {
         case []: .enter
@@ -219,6 +229,36 @@ enum ComposerReturnRouting {
         case .newline:
             nil
         }
+    }
+}
+
+enum ComposerFeedback {
+    nonisolated static func messages(attachment: String?, model: String?) -> [String] {
+        let candidates: [String?] = [attachment, model]
+        var messages: [String] = []
+        for candidate in candidates {
+            guard let candidate, !candidate.isEmpty, !messages.contains(candidate) else { continue }
+            messages.append(candidate)
+        }
+        return messages
+    }
+}
+
+struct ComposerFeedbackView: View {
+    let messages: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(messages, id: \.self) { message in
+                Text(message)
+                    .font(TenXTypography.body(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 10)
     }
 }
 
@@ -246,6 +286,7 @@ struct ComposerView: View {
     @Environment(\.composerProviderDockWidth) private var providerDockWidth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isEditorFocused: Bool
+    @State private var editorBridge = ComposerTextEditorBridge()
     @State private var attachmentMessage: String?
     @State private var commandQuery = ""
     @State private var suppressedCommandDraft: String?
@@ -371,14 +412,11 @@ struct ComposerView: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
 
-            if let errorMessage = attachmentMessage ?? controls?.errorMessage {
-                Text(errorMessage)
-                    .font(TenXTypography.body(size: 10))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
+            let feedbackMessages = ComposerFeedback.messages(
+                attachment: attachmentMessage,
+                model: controls?.errorMessage)
+            if !feedbackMessages.isEmpty {
+                ComposerFeedbackView(messages: feedbackMessages)
             }
         }
         // Fill and border live in one background layer: an overlay border would
@@ -510,7 +548,7 @@ struct ComposerView: View {
                     .onKeyPress(keys: ComposerCommandKeyRouting.keys, phases: .down, action: handleEditorKey)
                     .accessibilityLabel("Session prompt")
                     .accessibilityHint(composerModeLabel)
-                    .background(ComposerTextViewConfigurator())
+                    .background(ComposerTextViewConfigurator(bridge: editorBridge))
             }
             .frame(minHeight: Self.minEditorHeight, maxHeight: Self.maxEditorHeight)
             // Without this the clamp is a range the parent can fill, and any
@@ -540,8 +578,8 @@ struct ComposerView: View {
         }
         .buttonStyle(.plain)
         .disabled(!isAvailable)
-        .help("Attach an image. Images can also be dropped or pasted here.")
-        .accessibilityLabel("Attach an image")
+        .help("Attach images or insert file paths. Images can also be dropped or pasted.")
+        .accessibilityLabel("Attach images or insert file paths")
     }
 
     private func chooseAttachments() {
@@ -549,12 +587,14 @@ struct ComposerView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.image]
-        panel.prompt = "Attach"
+        panel.allowedContentTypes = [.item]
+        panel.prompt = "Choose"
 
-        guard panel.runModal() == .OK else { return }
-        add(urls: panel.urls)
-        isEditorFocused = true
+        panel.begin { response in
+            guard response == .OK else { return }
+            add(urls: panel.urls)
+            isEditorFocused = true
+        }
     }
 
     private func remove(_ id: ComposerAttachment.ID) {
@@ -583,6 +623,12 @@ struct ComposerView: View {
     }
 
     private func handleEditorKey(_ press: KeyPress) -> KeyPress.Result {
+        if ComposerInputMethodRouting.shouldDeferToInputMethod(
+            isComposing: editorBridge.hasMarkedText
+        ) {
+            return .ignored
+        }
+
         if flyout == .commands, let commands, commands.isPresented {
             if let commandAction = ComposerCommandKeyRouting.route(
                 press.key,
@@ -598,7 +644,10 @@ struct ComposerView: View {
         }
 
         guard press.key == .return else { return .ignored }
-        guard let shortcut = ComposerReturnRouting.shortcut(for: press.modifiers) else {
+        guard let shortcut = ComposerReturnRouting.shortcut(
+            for: press.modifiers,
+            isComposing: editorBridge.hasMarkedText
+        ) else {
             return .ignored
         }
         let action = interactionPreferences.action(for: shortcut)
@@ -750,7 +799,12 @@ struct ComposerView: View {
             }
             attachments.append(attachment)
         }
-        if !paths.isEmpty { appendToDraft(paths.joined(separator: "\n")) }
+        if !paths.isEmpty {
+            if !editorBridge.insertFilePaths(paths) {
+                appendToDraft(paths.joined(separator: "\n"))
+            }
+            isEditorFocused = isAvailable
+        }
         report(skipped: skipped)
     }
 

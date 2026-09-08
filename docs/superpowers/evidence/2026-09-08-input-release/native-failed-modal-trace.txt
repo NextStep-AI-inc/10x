@@ -1,0 +1,9 @@
+target ObjectIdentifier(0x000000079614b800) length 14 selection {9, 0} responder Optional(<SwiftUI.PlatformTextView: 0x79614b800>
+    Frame = {{0.00, 0.00}, {748.00, 17.00}}, Bounds = {{0.00, 0.00}, {748.00, 17.00}}
+    Horizontally resizable: NO, Vertically resizable: YES
+    MinSize = {748.00, 17.00}, MaxSize = {748.00, 10000000.00}
+)
+candidate ObjectIdentifier(0x000000079614b800) frame (0.0, 0.0, 748.0, 17.0) hidden false length 14 selection {9, 0}
+before storage 14 insertion 206
+after storage 220 text 220
+after change 14 text 14
