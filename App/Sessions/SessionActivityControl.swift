@@ -1,8 +1,14 @@
 import SwiftUI
 
+enum SessionActivityControlVariant: Equatable {
+    case header
+    case composer
+}
+
 struct SessionActivityControl: View {
     let state: SessionActivityState
     let onActivate: () -> Void
+    var variant: SessionActivityControlVariant = .header
 
     @ViewBuilder
     var body: some View {
@@ -17,6 +23,9 @@ struct SessionActivityControl: View {
             .buttonStyle(.plain)
             .help("Show pending request")
             .accessibilityHint("Shows the earliest pending request")
+        case .working where variant == .composer:
+            WorkingProgressIndicator()
+                .help("Working")
         case .working, .failed, .stopped:
             label
         }

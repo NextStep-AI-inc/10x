@@ -12,16 +12,47 @@ struct ContextUsageControl: View {
     let compactionErrorMessage: String?
     let onRefresh: () async -> Void
     let onCompact: () async -> Void
+    @Binding var isPresented: Bool
+    var onRestoreFocus: () -> Void = {}
 
-    @State private var isPresented = false
+    @State private var anchor: FlyoutWindowAnchor?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let desiredPanelSize = CGSize(width: 334, height: 470)
 
     private var summary: ContextUsageSummary? {
         ContextUsageSummary(usage: usage, breakdown: breakdown)
     }
 
     var body: some View {
+        trigger
+            .background {
+                FlyoutWindowAnchorReader { nextAnchor in
+                    if anchor != nextAnchor { anchor = nextAnchor }
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if isPresented {
+                    flyout
+                        .offset(x: panelOffsetX, y: panelOffsetY)
+                        .transition(transition)
+                        .zIndex(3)
+                }
+            }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: isPresented)
+            .onExitCommand {
+                guard isPresented else { return }
+                closeAndRestoreFocus()
+            }
+    }
+
+    private var trigger: some View {
         Button {
-            isPresented.toggle()
+            if isPresented {
+                closeAndRestoreFocus()
+            } else {
+                isPresented = true
+            }
         } label: {
             HStack(spacing: 7) {
                 ContextUsageMiniMeter(fillFraction: summary?.fillFraction ?? 0)
@@ -37,23 +68,101 @@ struct ContextUsageControl: View {
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Shows context usage details")
         .accessibilityAddTraits(isPresented ? .isSelected : [])
-        .popover(isPresented: $isPresented, arrowEdge: .top) {
-            ContextUsagePopover(
-                summary: summary,
-                breakdown: breakdown,
-                isLoading: isLoading,
-                errorMessage: errorMessage,
-                canCompact: canCompact,
-                compactionDisabledReason: compactionDisabledReason,
-                isCompacting: isCompacting,
-                compactionErrorMessage: compactionErrorMessage,
-                onClose: { isPresented = false },
-                onRefresh: onRefresh,
-                onCompact: onCompact)
-                .task {
-                    await onRefresh()
+        .opacity(isPresented ? 0 : 1)
+        .accessibilityHidden(isPresented)
+    }
+
+    private var flyout: some View {
+        ConnectedFlyoutShelf(
+            panelSize: resolvedPlacement.panelFrame.size,
+            triggerSize: CGSize(
+                width: min(
+                    anchor?.triggerFrame.width ?? 126,
+                    resolvedPlacement.panelFrame.width),
+                height: anchor?.triggerFrame.height ?? 28),
+            triggerOffsetX: resolvedPlacement.triggerOffsetX,
+            direction: resolvedPlacement.direction,
+            fill: TenXPalette.color(TenXPalette.canvasHex),
+            onDismiss: { isPresented = false },
+            panelContent: {
+                ScrollView {
+                    ContextUsagePopover(
+                        summary: summary,
+                        breakdown: breakdown,
+                        isLoading: isLoading,
+                        errorMessage: errorMessage,
+                        canCompact: canCompact,
+                        compactionDisabledReason: compactionDisabledReason,
+                        isCompacting: isCompacting,
+                        compactionErrorMessage: compactionErrorMessage,
+                        onClose: closeAndRestoreFocus,
+                        onRefresh: onRefresh,
+                        onCompact: onCompact)
+                        .frame(width: resolvedPlacement.panelFrame.width)
                 }
+                .frame(
+                    width: resolvedPlacement.panelFrame.width,
+                    height: resolvedPlacement.panelFrame.height)
+            },
+            triggerContent: { openTrigger })
+            .task { await onRefresh() }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Context window details")
+    }
+
+    private var openTrigger: some View {
+        Button(action: closeAndRestoreFocus) {
+            HStack(spacing: 7) {
+                ContextUsageMiniMeter(fillFraction: summary?.fillFraction ?? 0)
+                Text(triggerLabel).lineLimit(1)
+            }
         }
+        .buttonStyle(GhostActionStyle(
+            color: TenXPalette.color(TenXPalette.nearBlackHex),
+            horizontalPadding: 5))
+        .accessibilityLabel("Context window")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Menu open")
+    }
+
+    private var placement: FlyoutPlacement? {
+        anchor.map {
+            FlyoutPlacement.resolve(
+                triggerFrame: $0.triggerFrame,
+                desiredPanelSize: Self.desiredPanelSize,
+                usableBounds: $0.usableBounds,
+                preferredDirection: .above)
+        }
+    }
+
+    private var resolvedPlacement: FlyoutPlacement {
+        placement ?? FlyoutPlacement(
+            direction: .above,
+            panelFrame: CGRect(origin: .zero, size: Self.desiredPanelSize),
+            triggerOffsetX: 0,
+            isHeightConstrained: false)
+    }
+
+    private var panelOffsetX: CGFloat {
+        guard let anchor, let placement else { return 0 }
+        return placement.panelFrame.minX - anchor.triggerFrame.minX
+    }
+
+    private var panelOffsetY: CGFloat {
+        resolvedPlacement.direction == .above ? -resolvedPlacement.panelFrame.height : 0
+    }
+
+    private var transition: AnyTransition {
+        guard !reduceMotion else { return .identity }
+        let offset = resolvedPlacement.direction == .above ? 8.0 : -8.0
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: offset)),
+            removal: .opacity.combined(with: .offset(y: offset / 2)))
+    }
+
+    private func closeAndRestoreFocus() {
+        isPresented = false
+        onRestoreFocus()
     }
 
     private var triggerLabel: String {

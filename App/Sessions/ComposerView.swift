@@ -6,6 +6,9 @@ import UniformTypeIdentifiers
 enum ComposerFlyout: Equatable {
     case project
     case model
+    case context
+    case sendAction
+    case warning
     case commands
 }
 
@@ -355,7 +358,8 @@ struct ComposerView: View {
                 case .dismissCommands:
                     dismissCommands()
                 case .hideFlyoutOnly:
-                    flyout = nil
+                    setFlyout(nil)
+                    restoreEditorFocus()
                 }
             }
             // The composer is the only thing to type into on either screen, so
@@ -375,6 +379,12 @@ struct ComposerView: View {
             }
             .onChange(of: draft) { _, draft in
                 observeDraftForCommands(draft)
+            }
+            .onChange(of: feedbackMessages) { _, messages in
+                if messages.isEmpty, flyout == .warning { setFlyout(nil) }
+            }
+            .onChange(of: streamingController != nil) { _, isStreaming in
+                if !isStreaming, flyout == .sendAction { setFlyout(nil) }
             }
     }
 
@@ -412,12 +422,6 @@ struct ComposerView: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
 
-            let feedbackMessages = ComposerFeedback.messages(
-                attachment: attachmentMessage,
-                model: controls?.errorMessage)
-            if !feedbackMessages.isEmpty {
-                ComposerFeedbackView(messages: feedbackMessages)
-            }
         }
         // Fill and border live in one background layer: an overlay border would
         // paint over card content, and the model flyout is card content.
@@ -428,9 +432,6 @@ struct ComposerView: View {
                     Rectangle()
                         .stroke(borderColor, lineWidth: 1)
                 }
-        }
-        .overlay(alignment: .bottomLeading) {
-            projectShelfOverlay
         }
         .overlay(alignment: .topLeading) {
             commandBrowserOverlay
@@ -450,36 +451,6 @@ struct ComposerView: View {
         // an ordinary paste still reaches the editor.
         .onPasteCommand(of: [.png, .jpeg, .tiff]) { providers in
             add(providers: providers)
-        }
-    }
-
-    @ViewBuilder
-    private var projectShelfOverlay: some View {
-        if flyout == .project,
-           case .newSession(
-            let projectURL,
-            let projectURLs,
-            let onChooseProject,
-            let onAddExistingFolder
-           ) = presentation {
-            ChooseProjectShelf(
-                projectURLs: projectURLs,
-                selectedProjectURL: projectURL,
-                triggerTitle: projectURL?.lastPathComponent ?? "Choose project",
-                onChoose: {
-                    onChooseProject($0)
-                    flyout = nil
-                },
-                onAddExistingFolder: {
-                    flyout = nil
-                    onAddExistingFolder()
-                },
-                onToggle: {
-                    flyout = nil
-                })
-            .padding(.leading, 10)
-            .padding(.bottom, 10)
-            .transition(shelfTransition)
         }
     }
 
@@ -918,17 +889,13 @@ struct ComposerView: View {
     }
 
     private func behaviorMenu(_ controller: SessionController) -> some View {
-        Menu {
-            Button("Steer") { controller.selectStreamingBehavior(.steer) }
-            Button("Follow up") { controller.selectStreamingBehavior(.followUp) }
-        } label: {
-            Text(controller.streamingBehavior == .followUp ? "Follow up" : "Steer")
-                .font(TenXTypography.body(size: 11, weight: .medium))
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .accessibilityLabel("Composer send action")
-        .accessibilityValue(controller.streamingBehavior == .followUp ? "Follow up" : "Steer")
+        SendActionControl(
+            selection: controller.streamingBehavior ?? .steer,
+            onSelect: controller.selectStreamingBehavior,
+            isPresented: Binding(
+                get: { flyout == .sendAction },
+                set: { setFlyout($0 ? .sendAction : nil) }),
+            onRestoreFocus: restoreEditorFocus)
     }
 
     private var streamingController: SessionController? {
@@ -956,12 +923,20 @@ struct ComposerView: View {
     @ViewBuilder
     private var footerControls: some View {
         switch presentation {
-        case .newSession(let projectURL, _, _, _):
+        case .newSession(
+            let projectURL,
+            let projectURLs,
+            let onChooseProject,
+            let onAddExistingFolder):
             ChooseProjectControl(
                 projectURL: projectURL,
+                projectURLs: projectURLs,
+                onChoose: onChooseProject,
+                onAddExistingFolder: onAddExistingFolder,
                 isPresented: Binding(
                     get: { flyout == .project },
-                    set: { setFlyout($0 ? .project : nil) }))
+                    set: { setFlyout($0 ? .project : nil) }),
+                onRestoreFocus: restoreEditorFocus)
 
             if let controls {
                 ComposerSessionControlsView(
@@ -969,7 +944,8 @@ struct ComposerView: View {
                     mode: controlsMode,
                     isPresented: Binding(
                         get: { flyout == .model },
-                        set: { setFlyout($0 ? .model : nil) }))
+                        set: { setFlyout($0 ? .model : nil) }),
+                    onRestoreFocus: restoreEditorFocus)
             }
 
         case .active(let controller):
@@ -979,7 +955,8 @@ struct ComposerView: View {
                     mode: controlsMode,
                     isPresented: Binding(
                         get: { flyout == .model },
-                        set: { setFlyout($0 ? .model : nil) }))
+                        set: { setFlyout($0 ? .model : nil) }),
+                    onRestoreFocus: restoreEditorFocus)
                     .disabled(controller.isContextCompacting)
             } else {
                 Text(controller.modelName)
@@ -997,24 +974,44 @@ struct ComposerView: View {
                 isCompacting: controller.isContextCompacting,
                 compactionErrorMessage: controller.contextCompactionErrorMessage,
                 onRefresh: { await controller.refreshContextDetails() },
-                onCompact: { await controller.compactContext() })
+                onCompact: { await controller.compactContext() },
+                isPresented: Binding(
+                    get: { flyout == .context },
+                    set: { setFlyout($0 ? .context : nil) }),
+                onRestoreFocus: restoreEditorFocus)
             SessionActivityControl(
                 state: controller.activityState,
-                onActivate: controller.focusPendingRequest)
+                onActivate: controller.focusPendingRequest,
+                variant: .composer)
             if controller.queuedMessageCount > 0 {
                 Text("\(controller.queuedMessageCount) queued")
                     .font(TenXTypography.body(size: 10, weight: .medium))
                     .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
             }
         }
+
+        if !feedbackMessages.isEmpty {
+            ComposerWarningControl(
+                messages: feedbackMessages,
+                isPresented: Binding(
+                    get: { flyout == .warning },
+                    set: { setFlyout($0 ? .warning : nil) }),
+                onRestoreFocus: restoreEditorFocus)
+        }
     }
 
     private func setFlyout(_ next: ComposerFlyout?) {
-        if next == .project || next == .model {
+        if next != .commands {
             _ = commands?.dismiss()
             commandQuery = ""
         }
         flyout = next
+    }
+
+    private var feedbackMessages: [String] {
+        ComposerFeedback.messages(
+            attachment: attachmentMessage,
+            model: controls?.errorMessage)
     }
 
     private var isAvailable: Bool {

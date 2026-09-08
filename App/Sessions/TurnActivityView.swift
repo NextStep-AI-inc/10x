@@ -56,10 +56,7 @@ struct TurnActivityView: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            ProgressView()
-                .controlSize(.small)
-            Text("Working…")
-                .font(TenXTypography.body(size: 11, weight: .semibold))
+            WorkingProgressIndicator()
             if let startedAt {
                 Text(startedAt, style: .timer)
                     .font(TenXTypography.mono(size: 10))
