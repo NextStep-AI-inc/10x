@@ -1,0 +1,81 @@
+{
+  "status": "native-accepted-with-integration-concerns",
+  "sourceCommit": "e8f12944b3c1c3245d8a0fce5f2bcd434370fd02",
+  "bundleIdentifier": "com.nextstep.tenx.signalsqa",
+  "executableSha256": "9fd40a85225c7a1d32aa3981492d98695492443ea9f35d94521d624c82f62813",
+  "nativeLaunched": true,
+  "quitViaCommandQ": true,
+  "arrivalAndFocus": {
+    "historyPositionPreserved": true,
+    "draftBefore": "DRAFT-KEEPS-FOCUS",
+    "draftAfter": "DRAFT-KEEPS-FOCUSx",
+    "composerFocusPreserved": true,
+    "headerRevealedEarliestConfirm": true,
+    "composerRevealedNextSelect": true,
+    "emptyComposerReturnBeforeDecision": {
+      "extensionResponseCount": 0,
+      "extraPromptCount": 0
+    }
+  },
+  "requestDecisions": {
+    "matchedResponsesPerRequest": 1,
+    "confirm": {
+      "confirmed": true
+    },
+    "select": {
+      "hasValue": true,
+      "valueLength": 8
+    },
+    "input": {
+      "tabFocusedCancelWithoutSubmitting": true,
+      "clickThenReturnSubmitted": true,
+      "hasValue": true,
+      "valueLength": 21
+    }
+  },
+  "firstInstanceExit": {
+    "occurredAfterFirstRun": true,
+    "expectedByOperator": false,
+    "osExitStatus": 0,
+    "crashReportFound": false,
+    "cause": "unknown",
+    "arrivalTraceRetained": true,
+    "freshTurnCompletedAfterRelaunch": true
+  },
+  "backgroundSession": {
+    "twoSessionStatusesCaptureScope": "working-only",
+    "whileAActive": {
+      "sessionA": "ready",
+      "sessionB": "needs-your-response"
+    },
+    "afterBackgroundCompletion": {
+      "sessionA": "active",
+      "sessionB": "ready-unread"
+    },
+    "openingBClearedUnread": true
+  },
+  "timeoutAndCancel": {
+    "timeoutUnit": "milliseconds",
+    "configuredTimeout": 60000,
+    "inputCancel": {
+      "at": "2026-09-08T17:31:14.286Z",
+      "cancelled": true,
+      "timedOutPresent": false
+    },
+    "confirmTimeout": {
+      "arrivedAt": "2026-09-08T17:30:57.513Z",
+      "respondedAt": "2026-09-08T17:31:57.713Z",
+      "elapsedSeconds": 60.2,
+      "cancelled": true,
+      "timedOut": true
+    },
+    "turnEndedAt": "2026-09-08T17:31:57.715Z"
+  },
+  "residualLimitations": [
+    "The initial precondition rejection is a fixture limitation, not a production bug.",
+    "The first app instance exited cleanly for an unknown reason after the first Run response.",
+    "PR #36 durable Stop behavior is not integrated in this Release.",
+    "PR #35 later controller disclosure and passive visible scroll targets are not integrated in this Release.",
+    "No integrated-build, ready-for-merge, merge, or deployment claim is made."
+  ]
+}

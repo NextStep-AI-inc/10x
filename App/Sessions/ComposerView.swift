@@ -937,6 +937,9 @@ struct ComposerView: View {
                 isLoading: controller.isContextLoading,
                 errorMessage: controller.contextErrorMessage,
                 onRefresh: { await controller.refreshContextDetails() })
+            SessionActivityControl(
+                state: controller.activityState,
+                onActivate: controller.focusPendingRequest)
             if controller.queuedMessageCount > 0 {
                 Text("\(controller.queuedMessageCount) queued")
                     .font(TenXTypography.body(size: 10, weight: .medium))

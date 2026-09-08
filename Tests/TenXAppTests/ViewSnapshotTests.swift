@@ -5704,6 +5704,75 @@ private var snapshotShelfProjectURLs: [URL] {
         size: CGSize(width: 580, height: 380))
 }
 
+@MainActor
+@Test func sessionAttentionWorkingSnapshot() throws {
+    try assertSnapshot(
+        sessionAttentionSurface(controller: sessionAttentionController(
+            title: "Working session",
+            items: [],
+            runtimeState: .streaming)),
+        name: "session-attention-working",
+        size: CGSize(width: 520, height: 220))
+}
+
+@MainActor
+@Test func sessionAttentionPendingSnapshot() throws {
+    try assertSnapshot(
+        sessionAttentionSurface(controller: sessionAttentionController(
+            title: "Pending session",
+            items: [
+                .extensionUI(.confirm(
+                    id: "approval",
+                    title: "Allow this command?",
+                    message: "Run the focused tests.",
+                    timeout: nil)),
+            ],
+            runtimeState: .idle)),
+        name: "session-attention-pending",
+        size: CGSize(width: 520, height: 220))
+}
+
+@MainActor
+@Test func sessionAttentionReadySnapshot() throws {
+    try assertSnapshot(
+        sessionAttentionSurface(controller: sessionAttentionController(
+            title: "Ready session",
+            items: [],
+            runtimeState: .idle)),
+        name: "session-attention-ready",
+        size: CGSize(width: 520, height: 220))
+}
+
+@MainActor
+private func sessionAttentionSurface(controller: SessionController) -> some View {
+    VStack(spacing: 16) {
+        SessionHeaderView(controller: controller)
+        ComposerView(
+            draft: .constant(""),
+            presentation: .active(controller: controller),
+            onSend: {})
+            .frame(width: 420)
+    }
+    .padding(20)
+}
+
+@MainActor
+private func sessionAttentionController(
+    title: String,
+    items: [TranscriptItem],
+    runtimeState: SessionRuntimeState
+) -> SessionController {
+    SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: items,
+        runtimeState: runtimeState,
+        title: title,
+        headerMetadata: SessionHeaderMetadata(
+            branch: "codex/session-attention",
+            repo: "10x",
+            worktreePath: nil))
+}
+
 
 @MainActor
 @Test func contextUsagePopoverSnapshots() throws {

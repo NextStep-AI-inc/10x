@@ -30,6 +30,7 @@ struct TranscriptView: View {
     @State private var hasRestoredReadingPosition = false
     @State private var searchResolution: TranscriptSearchResolution?
     @State private var consumedSearchNonce: UUID?
+    @State private var consumedNavigationNonce: UUID?
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
     @Environment(ToolDetailPreferenceStore.self) private var detailPreference:
         ToolDetailPreferenceStore?
@@ -130,9 +131,13 @@ struct TranscriptView: View {
                 }
             }
             .onChange(of: allPresentationRows) { _, _ in
+                focusTranscriptRow(proxy, rows: allPresentationRows)
                 focusSearchResult(proxy, rows: allPresentationRows)
                 guard viewport.isFollowingLatest else { return }
                 scroll(proxy, to: Self.bottomID, intent: .automatic)
+            }
+            .task(id: controller.transcriptNavigationRequest?.nonce) {
+                focusTranscriptRow(proxy, rows: allPresentationRows)
             }
             .task(id: controller.transcriptSearchRequest?.nonce) {
                 searchResolution = nil
@@ -171,6 +176,7 @@ struct TranscriptView: View {
         if !controller.viewport.isFollowingLatest, lastID != nil {
             Button {
                 controller.focusSearchResult(nil)
+                controller.focusTranscriptRow(nil)
                 searchResolution = nil
                 controller.viewport.isFollowingLatest = true
                 scroll(
@@ -240,6 +246,25 @@ struct TranscriptView: View {
         guard controller.transcriptSearchRequest == nil,
               !viewport.isFollowingLatest else { return }
         proxy.scrollTo(targetID, anchor: .top)
+    }
+
+    private func focusTranscriptRow(_ proxy: ScrollViewProxy, rows: [TranscriptPresentationRow]) {
+        guard let request = controller.transcriptNavigationRequest,
+              request.nonce != consumedNavigationNonce else { return }
+        consumedNavigationNonce = request.nonce
+        guard let row = rows.first(where: { $0.id == request.rowID }) else { return }
+        searchResolution = nil
+        controller.viewport.isFollowingLatest = false
+        if case .groupedTool(let groupID, _) = row {
+            controller.toolDisclosureState.setGroupExpanded(true, id: groupID)
+        }
+        Task { @MainActor in
+            await Task.yield()
+            guard controller.transcriptNavigationRequest?.nonce == request.nonce,
+                  controller.items.contains(where: { $0.viewID == request.rowID }) else { return }
+            controller.viewport.anchorID = request.rowID
+            proxy.scrollTo(request.rowID, anchor: .center)
+        }
     }
 
     private func scroll(

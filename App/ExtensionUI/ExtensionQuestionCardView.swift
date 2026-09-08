@@ -83,10 +83,6 @@ struct ExtensionQuestionCardView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .disabled(submission.isSubmitting || submission.didSucceed)
-        .task {
-            await Task.yield()
-            focusedField = .primary
-        }
     }
 
     @ViewBuilder

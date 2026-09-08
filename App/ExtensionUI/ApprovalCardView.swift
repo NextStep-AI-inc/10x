@@ -14,10 +14,6 @@ struct ApprovalCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .task {
-            await Task.yield()
-            focusedAction = .primary
-        }
     }
 
     @ViewBuilder
