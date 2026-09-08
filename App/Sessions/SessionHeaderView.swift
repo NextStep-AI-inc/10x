@@ -73,8 +73,14 @@ struct SessionHeaderView: View {
                     .keyboardShortcut("c", modifiers: [.command, .shift])
                     .focusable()
                     .focused($isMapToggleFocused)
+                    .onKeyPress(keys: [.return, .space], phases: .down) { _ in
+                        onToggleMap()
+                        return .handled
+                    }
                     .accessibilityLabel(isMapVisible ? "Close session map" : "Open session map")
                     .accessibilityValue(isMapVisible ? "Open" : "Closed")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { onToggleMap() }
                     .padding(.trailing, 16)
                 }
             }

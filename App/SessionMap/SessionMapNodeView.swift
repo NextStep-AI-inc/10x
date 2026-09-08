@@ -21,7 +21,7 @@ struct SessionMapNodeView: View {
 
     var body: some View {
         Button {
-            focus.selectedNodeID = node.id
+            select()
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -63,6 +63,10 @@ struct SessionMapNodeView: View {
         .focusable()
         .focusEffectDisabled()
         .focused($isKeyboardFocused)
+        .onKeyPress(
+            keys: [.return, .space],
+            phases: .down,
+            action: handleActivationKey)
         .background(backgroundColor)
         .overlay(border)
         .onHover { isInside in
@@ -94,6 +98,15 @@ struct SessionMapNodeView: View {
         .accessibilityLabel(SessionMapInteraction.accessibilityLabel(
             for: node, graph: graph, isActive: isActive))
         .accessibilityHint("Select this component to show its details.")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { select() }
+    }
+
+    private func select() { focus.selectedNodeID = node.id }
+
+    private func handleActivationKey(_: KeyPress) -> KeyPress.Result {
+        select()
+        return .handled
     }
 
     static func measuredHeight(for node: SessionMapNode, width: CGFloat = 124) -> CGFloat {
