@@ -108,6 +108,32 @@ enum SessionMapFixtures {
             """
     }()
 
+    static let layoutStressXML = """
+        <sessionmap headline="Layout stress" phase="implementing"><map>
+        <node id="root-1" label="Root 1" kind="component" status="planned"/>
+        <node id="root-2" label="Root 2" kind="component" status="planned"/>
+        <node id="root-3" label="Root 3" kind="component" status="planned"/>
+        <node id="root-4" label="Root 4" kind="component" status="planned"/>
+        <node id="root-5" label="Root 5" kind="component" status="planned"/>
+        <node id="root-6" label="Root 6" kind="component" status="planned"/>
+        <node id="root-7" label="Root 7" kind="component" status="planned"/>
+        <node id="dependent" label="Dependent" kind="service" status="planned"/>
+        <node id="cycle-a" label="Cycle A" kind="component" status="planned"/>
+        <node id="cycle-b" label="Cycle B" kind="component" status="planned"/>
+        <node id="disconnected" label="Disconnected" kind="concept" status="planned"/>
+        <edge from="root-1" to="dependent" kind="depends"/>
+        <edge from="root-2" to="dependent" kind="depends"/>
+        <edge from="root-3" to="dependent" kind="depends"/>
+        <edge from="root-4" to="dependent" kind="depends"/>
+        <edge from="root-5" to="dependent" kind="depends"/>
+        <edge from="root-6" to="dependent" kind="depends"/>
+        <edge from="root-7" to="dependent" kind="depends"/>
+        <edge from="cycle-a" to="cycle-a" kind="flow" label="self"/>
+        <edge from="cycle-a" to="cycle-b" kind="flow"/>
+        <edge from="cycle-b" to="cycle-a" kind="flow"/>
+        </map></sessionmap>
+        """
+
     static let emptyXML = """
         <sessionmap headline="No mapped components" phase="planning">
           <summary>The current session has context but no architecture to display.</summary>
