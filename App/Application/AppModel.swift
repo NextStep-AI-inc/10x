@@ -924,6 +924,9 @@ final class AppModel {
         try checkStartupAttempt(attemptID)
         installation = located
         processManager = manager
+        if !isSameExecutable {
+            harnessNoticeSummarizer = nil
+        }
         settingsModel = settings
         providerModel = provider
         composerControls = controls
@@ -1067,6 +1070,7 @@ final class AppModel {
         }
         installation = located
         processManager = manager
+        harnessNoticeSummarizer = nil
         settingsModel = settings
         providerModel = provider
         composerControls = controls
