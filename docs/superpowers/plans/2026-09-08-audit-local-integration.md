@@ -46,13 +46,13 @@ Pinned merge inputs:
 
 ## Task 2: Combine the reviewed changes
 
-- [ ] Merge each pinned head in table order with `git merge --no-ff --no-edit <sha>`. Stop the batch on a conflict; inspect the three versions before resolving.
-- [ ] Preserve current-main structured settings editors together with permission-scope copy.
-- [ ] Preserve the latest session-open recovery and durable Stop fences, authoritative queue refresh, and image-history mapping.
-- [ ] Preserve controller-owned tool disclosure, passive visible scroll targets, explicit attention jumps, readable turn timing/status, and scoped changed-file navigation.
-- [ ] Preserve native compaction capability/recovery, per-file result extraction, child recent-detail reconciliation, and preferred-editor links.
-- [ ] Preserve serialized draft disk writes and the pre-RPC durable send barrier, Continue route restoration, fallback naming/metadata refresh, asynchronous attachment picking, marked-text routing, and independent warning display.
-- [ ] Regenerate the Xcode project, inspect the final combined diff for lost/duplicate behavior, and commit every resolution with the relevant merge.
+- [x] Merge each pinned head in table order with `git merge --no-ff --no-edit <sha>`. Stop the batch on a conflict; inspect the three versions before resolving.
+- [x] Preserve current-main structured settings editors together with permission-scope copy.
+- [x] Preserve the latest session-open recovery and durable Stop fences, authoritative queue refresh, and image-history mapping.
+- [x] Preserve controller-owned tool disclosure, passive visible scroll targets, explicit attention jumps, readable turn timing/status, and scoped changed-file navigation.
+- [x] Preserve native compaction capability/recovery, per-file result extraction, child recent-detail reconciliation, and preferred-editor links.
+- [x] Preserve serialized draft disk writes and the pre-RPC durable send barrier, Continue route restoration, fallback naming/metadata refresh, asynchronous attachment picking, marked-text routing, and independent warning display.
+- [x] Regenerate the Xcode project, inspect the final combined diff for lost/duplicate behavior, and commit every resolution with the relevant merge.
 
 ## Task 3: Verify the combined code
 

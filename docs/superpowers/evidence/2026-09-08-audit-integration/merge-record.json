@@ -1,0 +1,111 @@
+{
+  "base": "0be4353f7ee2d72813d41d6195422f34ef213c22",
+  "sourceHead": "8b0c63bca96e2970914e744433109174727cbda5",
+  "pinnedHeadsIncluded": 13,
+  "merges": [
+    {
+      "pr": 32,
+      "log": "/tmp/10x-integration-merge-32.log",
+      "logSHA256": "446b719b1d4197b2272eddb34afaaaf65aa057d3c2c2cc607f4edeabfa62f552",
+      "conflicts": []
+    },
+    {
+      "pr": 33,
+      "log": "/tmp/10x-integration-merge-33.log",
+      "logSHA256": "04a3278b8ecd8b3360b03d9ad7a21c4131ca48300e336cfb5ea0da8cc9e08611",
+      "conflicts": []
+    },
+    {
+      "pr": 34,
+      "log": "/tmp/10x-integration-merge-34.log",
+      "logSHA256": "b5dead3c2d050182de40550e804a004266ab9b12527ac436f1791eea790f6d4a",
+      "conflicts": []
+    },
+    {
+      "pr": 35,
+      "log": "/tmp/10x-integration-merge-35.log",
+      "logSHA256": "1b5725cd5a3d54addc75db8b10ab76dfcc8db39a3027b700eec172d5ecc1fe31",
+      "conflicts": [
+        "CONFLICT (content): Merge conflict in 10x.xcodeproj/project.pbxproj",
+        "CONFLICT (content): Merge conflict in docs/superpowers/plans/2026-09-07-active-session-audit-roadmap.md"
+      ]
+    },
+    {
+      "pr": 36,
+      "log": "/tmp/10x-integration-merge-36.log",
+      "logSHA256": "347b3ed93119442c4c39bd9954719a3077016615bafb1b38205941ad221fbe9c",
+      "conflicts": [
+        "CONFLICT (content): Merge conflict in docs/superpowers/plans/2026-09-07-active-session-audit-roadmap.md"
+      ]
+    },
+    {
+      "pr": 37,
+      "log": "/tmp/10x-integration-merge-37.log",
+      "logSHA256": "5d1efa8caff7469739383850ee2ec1d24338052708ff5f70b372a9696bba5977",
+      "conflicts": [
+        "CONFLICT (content): Merge conflict in App/Sessions/TranscriptView.swift"
+      ]
+    },
+    {
+      "pr": 38,
+      "log": "/tmp/10x-integration-merge-38.log",
+      "logSHA256": "cf5c7a36e14f6ab3222b6622132c346d61870e7cc4d1d03f2c95052845b86605",
+      "conflicts": [
+        "CONFLICT (content): Merge conflict in App/Sessions/TranscriptView.swift"
+      ]
+    },
+    {
+      "pr": 39,
+      "log": "/tmp/10x-integration-merge-39.log",
+      "logSHA256": "5e32ddaf549bdd8d7088400f99e357cab8c9d62eb9c53a781a8096dc5e1c4000",
+      "conflicts": [
+        "CONFLICT (content): Merge conflict in App/Sessions/ComposerView.swift",
+        "CONFLICT (content): Merge conflict in Tests/TenXAppTests/SessionControllerTests.swift",
+        "CONFLICT (content): Merge conflict in docs/superpowers/plans/2026-09-07-active-session-audit-roadmap.md"
+      ]
+    },
+    {
+      "pr": 41,
+      "log": "/tmp/10x-integration-merge-41.log",
+      "logSHA256": "1ba16bb1299b2482850ddb9684a3dcf5dc760902c5545cd772444fbd15a8e0e3",
+      "conflicts": []
+    },
+    {
+      "pr": 42,
+      "log": "/tmp/10x-integration-merge-42.log",
+      "logSHA256": "49a2d0657095de690134a5c6d562e965d5e97de0640bd8e3b28f5e5982d2fd96",
+      "conflicts": [
+        "CONFLICT (content): Merge conflict in 10x.xcodeproj/project.pbxproj",
+        "CONFLICT (content): Merge conflict in App/Sessions/SessionController.swift"
+      ]
+    },
+    {
+      "pr": 43,
+      "log": "/tmp/10x-integration-merge-43.log",
+      "logSHA256": "e20e3d4d1e4813187dd27919727f0275cad867609e8a375ef63f43fc8e4cb396",
+      "conflicts": []
+    },
+    {
+      "pr": 44,
+      "log": "/tmp/10x-integration-merge-44.log",
+      "logSHA256": "f53ba425884dcf99291adf68a698fb2935fc08db84d5377b612aecee60551149",
+      "conflicts": [
+        "CONFLICT (content): Merge conflict in App/Sessions/SessionController.swift"
+      ]
+    },
+    {
+      "pr": 45,
+      "log": "/tmp/10x-integration-merge-45.log",
+      "logSHA256": "7104c59947aefd676ecd9f7bb47abaa0b89a411b057dd1730c88ec90080276c9",
+      "conflicts": []
+    }
+  ],
+  "resolutionSummary": [
+    "Preserved latest roadmap over stale branch progress.",
+    "Regenerated the Xcode project after choosing one generated side.",
+    "Kept reading-position restoration and explicit navigation together; navigation uses controller-owned disclosure and the reviewed reveal helper.",
+    "Kept attention control beside compaction controls.",
+    "Kept queue and compaction tests/helpers without dropping either set.",
+    "Retained context-compaction, draft-recovery, and header-metadata constructor arguments and assignments; accepted send updates both context and durable receipt state."
+  ]
+}
