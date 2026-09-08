@@ -75,6 +75,17 @@ import Testing
         route.edge.from != route.edge.to && route.isBackEdge
     })
 
+    let wrappedRoute = try #require(layout.edges.first { route in
+        route.edge.from == "root-1" && route.edge.to == "root-7"
+    })
+    #expect(!wrappedRoute.sideLanePoints.isEmpty)
+    let wrappedPoints = [wrappedRoute.start] + wrappedRoute.sideLanePoints + [wrappedRoute.end]
+    for pair in zip(wrappedPoints, wrappedPoints.dropFirst()) {
+        for (id, frame) in layout.frames where id != "root-1" && id != "root-7" {
+            #expect(!segmentIntersectsInterior(pair.0, pair.1, frame))
+        }
+    }
+
     for route in layout.edges where !route.sideLanePoints.isEmpty {
         let points = [route.start] + route.sideLanePoints + [route.end]
         for pair in zip(points, points.dropFirst()) {

@@ -130,7 +130,10 @@ enum SessionMapLayout {
             guard let source = frames[graph.edges[index].from],
                   let target = frames[graph.edges[index].to]
             else { return false }
-            return backEdgeIndices.contains(index) || target.minY <= source.maxY
+            let edge = graph.edges[index]
+            return backEdgeIndices.contains(index)
+                || ranks[edge.from, default: 0] == ranks[edge.to, default: 0]
+                || target.minY <= source.maxY
         }
         var sideLaneIndices: [Int: Int] = [:]
         for (lane, edgeIndex) in sideEdgeIndices.enumerated() {

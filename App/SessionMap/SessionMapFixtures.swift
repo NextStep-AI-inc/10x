@@ -128,6 +128,7 @@ enum SessionMapFixtures {
         <edge from="root-5" to="dependent" kind="depends"/>
         <edge from="root-6" to="dependent" kind="depends"/>
         <edge from="root-7" to="dependent" kind="depends"/>
+        <edge from="root-1" to="root-7" kind="calls" label="wrapped call"/>
         <edge from="cycle-a" to="cycle-a" kind="flow" label="self"/>
         <edge from="cycle-a" to="cycle-b" kind="flow"/>
         <edge from="cycle-b" to="cycle-a" kind="flow"/>
