@@ -49,3 +49,12 @@ Status: complete
 - Parent approved the light and dark snapshot candidates after visual inspection. Both references were promoted, and no `.actual.png` files remain.
 - Final focused verification: `/tmp/10x-tool-details-task4-final-focused.log`, 3 tests passed, 0 failures. This rechecked the missing-child error path and both approved subagent snapshots against the promoted references.
 - Native child navigation remains for parent Release QA.
+
+## Review follow-up: Preserve cursor multi-file edit paths
+
+Status: complete
+
+- Cursor edit results with `details.perFileResults` now parse each numbered diff with its matching file path and combine the parsed files into one diff card. Payloads without per-file results retain the existing parser fallback.
+- Added an exact runtime-payload regression proving two numbered diffs retain the alpha and beta paths, render “2 files,” and report `+2 −2`.
+- Focused verification: `/tmp/10x-details-multifile-focused-functions.log`, 48 tests passed, 0 failures. This covered the full extractor suite plus unified-diff parsing, file-reference resolution, and preferred-editor routing.
+- Release packaging remains pending until the separately owned transcript-reconciliation follow-up lands.

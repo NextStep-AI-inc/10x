@@ -1028,7 +1028,9 @@ enum ToolContentExtractor {
             paths: [["details", "diff"], ["diff"], ["patch"]])
             ?? firstString(in: arguments, keys: ["diff", "patch"])
             ?? envelope.text
-        let unified = patch.flatMap { UnifiedDiffParser.parse($0, fallbackPath: path) }
+        let unified = patch.flatMap {
+            editDiff($0, fallbackPath: path, result: result)
+        }
         let changedValues = firstArray(in: result, paths: [
             ["details", "changedFiles"], ["details", "changed_files"],
             ["changedFiles"], ["changed_files"], ["files"],
@@ -1074,6 +1076,28 @@ enum ToolContentExtractor {
             reference: path.flatMap { reference(forPath: $0) }
                 ?? (changedItems?.count == 1 ? changedItems?.first?.reference : nil),
             body: body)
+    }
+
+    private static func editDiff(
+        _ raw: String,
+        fallbackPath: String?,
+        result: JSONValue?
+    ) -> UnifiedDiff? {
+        guard let perFileResults = nestedValue(
+            in: result,
+            path: ["details", "perFileResults"])?.arrayValue,
+              !perFileResults.isEmpty
+        else { return UnifiedDiffParser.parse(raw, fallbackPath: fallbackPath) }
+
+        let files = perFileResults.flatMap { value -> [UnifiedDiffFile] in
+            guard let path = firstString(in: value, keys: ["path"]),
+                  let diff = firstString(in: value, keys: ["diff"]),
+                  let parsed = UnifiedDiffParser.parse(diff, fallbackPath: path)
+            else { return [] }
+            return parsed.files
+        }
+        guard !files.isEmpty else { return nil }
+        return UnifiedDiff(raw: raw, files: files)
     }
 
     private static func consoleCard(
