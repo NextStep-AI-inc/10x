@@ -3935,6 +3935,25 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
 }
 
 @MainActor
+@Test func turnToolReportedFilesSnapshot() throws {
+    try assertSnapshot(
+        TranscriptTurnSummaryView(
+            state: .completed,
+            duration: 12.8,
+            files: [
+                TranscriptTurnFile(
+                    path: "App/Sessions/TranscriptTurnFilesView.swift",
+                    toolID: "edit-one"),
+                TranscriptTurnFile(
+                    path: "Tests/TenXAppTests/Fixtures/A/Very/Long/Nested/Workspace/Path/TranscriptTurnFilesNavigationRegressionTests.swift",
+                    toolID: "edit-two"),
+            ])
+            .padding(24),
+        name: "turn-tool-reported-files",
+        size: CGSize(width: 560, height: 230))
+}
+
+@MainActor
 @Test func transcriptRunningToolHasOneActivitySnapshot() throws {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
     let controller = SessionController(

@@ -152,6 +152,62 @@ import Testing
     #expect(content.path == ".build/verification/ExistingProbe.swift")
 }
 
+@Test func cursorMultiFileEditUsesPerFileResultPathsForItsNumberedDiffs() throws {
+    let alpha = "/tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt"
+    let beta = "/tmp/10x-session-recovery-home/projects/review-native/editable-beta.txt"
+    let card = ToolContentExtractor.card(
+        name: "edit",
+        arguments: .object([
+            "i": .string("Updating alpha and beta finals"),
+            "input": .string("""
+            [editable-alpha.txt#8B3C]
+            PUT 2.=2:
+            +alpha final
+            [editable-beta.txt#DBDE]
+            PUT 2.=2:
+            +beta final
+            """),
+        ]),
+        result: .object(["details": .object([
+            "diff": .string("""
+             1|alpha heading
+            -2|alpha first
+            +2|alpha final
+             1|beta heading
+            -2|beta original
+            +2|beta final
+            """),
+            "firstChangedLine": .int(2),
+            "perFileResults": .array([
+                .object([
+                    "path": .string(alpha),
+                    "diff": .string(" 1|alpha heading\n-2|alpha first\n+2|alpha final"),
+                    "firstChangedLine": .int(2),
+                    "op": .string("update"),
+                    "oldText": .string("alpha heading\nalpha first\n"),
+                    "newText": .string("alpha heading\nalpha final\n"),
+                ]),
+                .object([
+                    "path": .string(beta),
+                    "diff": .string(" 1|beta heading\n-2|beta original\n+2|beta final"),
+                    "firstChangedLine": .int(2),
+                    "op": .string("update"),
+                    "oldText": .string("beta heading\nbeta original\n"),
+                    "newText": .string("beta heading\nbeta final\n"),
+                ]),
+            ]),
+        ])]),
+        phase: .complete)
+
+    guard case .diff(let diff, _) = card.body else {
+        Issue.record("Expected the runtime per-file edit results to render as a diff")
+        return
+    }
+    #expect(diff.files.map(\.path) == [alpha, beta])
+    #expect(card.primary == "2 files")
+    #expect(card.outcome == "+2 −2")
+}
+
 @Test func searchAndWebExtractionRetainsEveryResultForDisclosure() throws {
     let searchLines = (1...24).map { "App/File\($0).swift:\($0)" }.joined(separator: "\n")
     let search = presentation(

@@ -1,0 +1,20 @@
+{
+  "LSEnvironment": {
+    "CFFIXED_USER_HOME": "/tmp/10x-session-recovery-home",
+    "PI_CODING_AGENT_DIR": "/tmp/10x-session-recovery-home/.omp/agent"
+  },
+  "architecture": "arm64",
+  "buildLogPath": "/tmp/10x-review-multifile-release.log",
+  "buildLogSHA256": "d57e38108dd0df5954ab47e1a85b06b7c41bb414aa44466065d324ef63d3719f",
+  "bundleDisplayName": "10x Review QA",
+  "bundleIdentifier": "com.nextstep.tenx.reviewqa",
+  "bundleName": "10x Review QA",
+  "codesignVerification": "codesign --verify --deep --strict --verbose=2 passed",
+  "executablePath": "/tmp/10x-review-multifile-build/10x-review.app/Contents/MacOS/10x",
+  "executableSHA256": "a90d468d6eb4dbc5eedd29c088bd271c075db8fba3dd951d18366affae5b12a9",
+  "infoPlistSHA256": "092b438e4639b0b80ac6a35dc552e6a7f3f7cc3f8688f482dd73c04039f7de0e",
+  "packagePath": "/tmp/10x-review-multifile-build/10x-review.app",
+  "packageTarSHA256": "335584d5917b45be8b6ad91003d9e67a9047dbf06d6f34e3cb7ad33af496c31a",
+  "signing": "ad hoc",
+  "sourceSHA": "7b608387656ed56620ec5b259a8f979a12d81d81"
+}

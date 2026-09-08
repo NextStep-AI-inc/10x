@@ -1,0 +1,94 @@
+{
+  "name": "review",
+  "status": "native-accepted-with-integration-concerns",
+  "currentNativeBuild": {
+    "sourceCommit": "7b608387656ed56620ec5b259a8f979a12d81d81",
+    "app": "/tmp/10x-review-multifile-build/10x-review.app",
+    "bundleIdentifier": "com.nextstep.tenx.reviewqa",
+    "architecture": "arm64",
+    "signing": "ad hoc",
+    "buildLog": "/tmp/10x-review-multifile-release.log",
+    "buildLogSHA256": "d57e38108dd0df5954ab47e1a85b06b7c41bb414aa44466065d324ef63d3719f",
+    "executableSHA256": "a90d468d6eb4dbc5eedd29c088bd271c075db8fba3dd951d18366affae5b12a9",
+    "nativeLaunched": true,
+    "nativeQuitVia": "Command-Q",
+    "reviewProcessRemaining": false
+  },
+  "historicalReleaseBuild": {
+    "sourceCommit": "9cdefa7842a9947cd76f48ae1035ebcd398e2f3a",
+    "command": [
+      "xcodebuild",
+      "build",
+      "-project",
+      "10x.xcodeproj",
+      "-scheme",
+      "10x",
+      "-configuration",
+      "Release",
+      "-destination",
+      "generic/platform=macOS",
+      "-derivedDataPath",
+      "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj",
+      "ARCHS=arm64",
+      "CODE_SIGNING_ALLOWED=NO"
+    ],
+    "log": "/tmp/10x-review-final-release.log",
+    "logSHA256": "411134556bb6e5504991e34fb68aa23a0b43906e881ceedc73364a72a9b37dbc",
+    "app": "/tmp/10x-review-final-build/10x-review.app",
+    "bundleIdentifier": "com.nextstep.tenx.reviewqa",
+    "unsignedExecutableSHA256": "79d37efee60c2944b43898239961772251b847ce44d0533f4051ee1f1975c3e8",
+    "packagedExecutableSHA256": "8af5854bf41c6c88f89f9d10ff0230ba9f7af72418105ab26a2c404b2e83ce50",
+    "nativeLaunched": false
+  },
+  "readmeSHA256": "333fda883b309f17e52e0295c4d47a7766161a820a4157e466621049407f296c",
+  "artifacts": [
+    {
+      "file": "multifile-package.json",
+      "sha256": "ec3c703cfda3717f6580df5e0c81d7e6125f454823265011b7d8e5a8b549fc4e"
+    },
+    {
+      "file": "native-baseline.json",
+      "sha256": "71899aeae1b22a4ab5620738cfaea6beba9727bbcda234cfd13cca72ee4b4d08"
+    },
+    {
+      "file": "native-corrected-file-list.jpg",
+      "sha256": "318efa026dc4254633e2e5d504edca71ca61abd5452ed2627a0046a184ee6de9"
+    },
+    {
+      "file": "native-edit-write-results.json",
+      "sha256": "a440dc583ebf0d660108a0e99d60ec37f4fd3883ed75b98ff1af72281c0b31b5"
+    },
+    {
+      "file": "native-final-files.json",
+      "sha256": "c42ad119089d40bb99b2d79f096601b3b499f890f28ae6fa6c1a8073571c3872"
+    },
+    {
+      "file": "native-live-multifile-list.ax.txt",
+      "sha256": "7763372975b88a0e4c6d86db2c4ada353304e2c0108f39a14c4306abb12e6a95"
+    },
+    {
+      "file": "native-live-multifile-list.jpg",
+      "sha256": "1175d787230b560e94bf0e9a1b22fb0a20def7f9ecf583da3209985861a8c5d3"
+    },
+    {
+      "file": "native-multifile-before-fix.ax.txt",
+      "sha256": "0b63a80e9f2dd42020a352c23f6f334e9f562b05455d56be0aceba02bf43dbae"
+    },
+    {
+      "file": "native-multifile-before-fix.jpg",
+      "sha256": "6bde91ad145cae3e4f185f3baeffe6f9e195319c368d0c93c690a36770563901"
+    },
+    {
+      "file": "native-slim-file-list.jpg",
+      "sha256": "ae6c54e07de7804779db459b98e79318cc8b0cf0a0c35158600a004ab6f49852"
+    },
+    {
+      "file": "native-slim-latest-multifile-edit.jpg",
+      "sha256": "d5811f0b6a52d800a821f47f097d4f82a6f9d7cc016961a02612faea61b60c1b"
+    },
+    {
+      "file": "native-slim-write-details.jpg",
+      "sha256": "0251e78616c1bf974a3acd706e8c1aabec063c3addb1fe00453483339301f465"
+    }
+  ]
+}
