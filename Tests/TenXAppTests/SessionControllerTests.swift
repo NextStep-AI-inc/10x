@@ -531,6 +531,199 @@ import Testing
     await manager.closeAll()
 }
 
+@MainActor @Test func acknowledgedInitialPromptPersistsBoundedFallbackWithoutAGenerator() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/fallback.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(sessionFile: sessionFile, commandLogURL: commandLogURL)
+    let controller = SessionController(processManager: manager)
+    let prompt = "   \(String(repeating: "A", count: 100))   \nignored"
+    let expected = String(repeating: "A", count: 80)
+
+    controller.prepareInitialSubmission(text: prompt, attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+
+    #expect(await eventually { controller.title == expected })
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.filter { $0["type"] == "set_session_name" }.count == 1)
+    #expect(entries.first { $0["type"] == "set_session_name" }?["title"] == expected)
+    let reopened = await SessionLibrary(root: directory).listAll()
+    #expect(reopened.first?.title == expected)
+    await manager.closeAll()
+}
+
+@MainActor @Test func unusableGeneratedTitleFallsBackToTheInitialPrompt() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/fallback.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(sessionFile: sessionFile, commandLogURL: commandLogURL)
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { _, _ in Data("<title/>".utf8) })
+    let controller = SessionController(processManager: manager, titleGenerator: generator)
+
+    controller.prepareInitialSubmission(
+        text: "  Useful fallback title  ", attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+
+    #expect(await eventually { controller.title == "Useful fallback title" })
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.filter { $0["type"] == "set_session_name" }.count == 1)
+    #expect(entries.first { $0["type"] == "set_session_name" }?["title"]
+        == "Useful fallback title")
+    await manager.closeAll()
+}
+
+@MainActor @Test func rejectedInitialPromptDoesNotPersistAFallbackTitle() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/rejected.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(
+        sessionFile: sessionFile, commandLogURL: commandLogURL, rejectPrompt: true)
+    let controller = SessionController(processManager: manager)
+
+    controller.prepareInitialSubmission(text: "Do not name me", attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.allSatisfy { $0["type"] != "set_session_name" })
+    await manager.closeAll()
+}
+
+@MainActor @Test func manualRenameWinsOverADelayedGeneratedTitle() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/manual.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(sessionFile: sessionFile, commandLogURL: commandLogURL)
+    let gate = LoadGate()
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { _, _ in
+            await gate.started()
+            await gate.waitForRelease()
+            return Data("<title>Generated too late</title>".utf8)
+        })
+    let controller = SessionController(processManager: manager, titleGenerator: generator)
+    controller.prepareInitialSubmission(text: "Fallback", attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+    await gate.waitForStart()
+
+    let rename = Task { try await controller.rename(to: "Manual title") }
+    await gate.release()
+    try await rename.value
+
+    #expect(controller.title == "Manual title")
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.filter { $0["type"] == "set_session_name" }.count == 1)
+    #expect(entries.first { $0["type"] == "set_session_name" }?["title"] == "Manual title")
+    await manager.closeAll()
+}
+
+@MainActor @Test func sessionReplacementCancelsADelayedGeneratedTitle() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/first.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(sessionFile: sessionFile, commandLogURL: commandLogURL)
+    let gate = LoadGate()
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { _, _ in
+            await gate.started()
+            await gate.waitForRelease()
+            return Data("<title>Generated too late</title>".utf8)
+        })
+    let controller = SessionController(processManager: manager, titleGenerator: generator)
+    controller.prepareInitialSubmission(text: "Fallback", attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+    await gate.waitForStart()
+
+    await controller.openExisting(metadata(
+        path: directory.appending(path: "second.jsonl").path,
+        cwd: directory.path,
+        title: "Second session"))
+    await gate.release()
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(controller.title == "Second session")
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.allSatisfy { $0["type"] != "set_session_name" })
+    await manager.closeAll()
+}
+
+@MainActor @Test func terminalAgentBoundaryRefreshesRealGitMetadataButNonterminalDoesNot() async throws {
+    let repository = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try runTitleGit(["init", "-b", "branch-a"], at: repository)
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: repository)
+    #expect(controller.headerMetadata.branch == "branch-a")
+
+    try runTitleGit(["switch", "-c", "branch-b"], at: repository)
+    let terminal = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "agent_end", payload: .object(["isTerminal": .bool(true)]))))
+    await terminal()
+    await controller.testingAwaitHeaderMetadataRefresh()
+    #expect(controller.headerMetadata.branch == "branch-b")
+
+    try runTitleGit(["switch", "-c", "branch-c"], at: repository)
+    let nonterminal = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "agent_end", payload: .object(["isTerminal": .bool(false)]))))
+    await nonterminal()
+    for _ in 0..<20 { await Task.yield() }
+    #expect(controller.headerMetadata.branch == "branch-b")
+    await manager.closeAll()
+}
+
+@MainActor @Test func overlappingMetadataRefreshesCoalesceAndStaleProjectResultIsIgnored() async throws {
+    let firstProject = try temporaryDirectory()
+    let secondProject = try temporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: firstProject)
+        try? FileManager.default.removeItem(at: secondProject)
+    }
+    let resolver = ControlledHeaderMetadataResolver()
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(
+        processManager: manager,
+        headerMetadataResolver: { url in await resolver.resolve(url) })
+    await controller.openNew(projectURL: firstProject)
+    let boundary = try controllerEvent(#"{"type":"agent_end","isTerminal":true}"#)
+    let first = try #require(controller.testingCapturedControlConsumer(boundary))
+    let second = try #require(controller.testingCapturedControlConsumer(boundary))
+
+    await first()
+    await second()
+    await resolver.waitForDelayedRequest()
+    #expect(await resolver.requestCount == 2)
+
+    await controller.openExisting(metadata(
+        path: secondProject.appending(path: "second.jsonl").path,
+        cwd: secondProject.path,
+        title: "Second"))
+    await resolver.releaseDelayedRequest()
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(controller.headerMetadata.branch == "second-current")
+    #expect(await resolver.requestCount == 3)
+    await manager.closeAll()
+}
+
 @MainActor @Test func providerIDReadsOnlyANonemptyProviderFromAModelObject() {
     #expect(SessionController.providerID(from: .object([
         "id": .string("claude-sonnet"),
@@ -1629,11 +1822,90 @@ private func commandLoggingFakeManager(commandLogURL: URL) -> SessionProcessMana
     })
 }
 
+private func titleFakeManager(
+    sessionFile: URL,
+    commandLogURL: URL,
+    rejectPrompt: Bool = false
+) -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            repositoryRoot().appending(path:
+                "Tests/TenXAppTests/Fixtures/title_fake_server.py").path,
+            sessionFile.path,
+            commandLogURL.path,
+        ] + (rejectPrompt ? ["reject"] : [])
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+}
+
+private func writeTitleSession(at url: URL, projectURL: URL) throws {
+    try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let header = """
+    {"type":"session","version":3,"id":"title-test","timestamp":"2026-09-08T00:00:00.000Z","cwd":"\(projectURL.path)"}
+    """
+    try Data((header + "\n").utf8).write(to: url)
+}
+
+private func titleCommandEntries(at url: URL) throws -> [[String: String]] {
+    try String(contentsOf: url, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map { try JSONDecoder().decode([String: String].self, from: Data($0.utf8)) }
+}
+
 private actor TitleCommandCapture {
     private(set) var invocation: (executableURL: URL, arguments: [String])?
 
     func record(executableURL: URL, arguments: [String]) {
         invocation = (executableURL, arguments)
+    }
+}
+
+private actor ControlledHeaderMetadataResolver {
+    private let gate = LoadGate()
+    private(set) var requestCount = 0
+
+    func resolve(_ url: URL) async -> SessionHeaderMetadata {
+        requestCount += 1
+        switch requestCount {
+        case 1:
+            return SessionHeaderMetadata(branch: "first-initial", repo: url.lastPathComponent,
+                worktreePath: nil)
+        case 2:
+            await gate.started()
+            await gate.waitForRelease()
+            return SessionHeaderMetadata(branch: "first-stale", repo: url.lastPathComponent,
+                worktreePath: nil)
+        default:
+            return SessionHeaderMetadata(branch: "second-current", repo: url.lastPathComponent,
+                worktreePath: nil)
+        }
+    }
+
+    func waitForDelayedRequest() async {
+        await gate.waitForStart()
+    }
+
+    func releaseDelayedRequest() async {
+        await gate.release()
+    }
+}
+
+private func runTitleGit(_ arguments: [String], at repository: URL) throws {
+    let process = Process()
+    process.executableURL = URL(filePath: "/usr/bin/git")
+    process.arguments = ["-C", repository.path] + arguments
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        throw CocoaError(.fileWriteUnknown)
     }
 }
 

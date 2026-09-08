@@ -9,6 +9,7 @@ import UserNotifications
 @Observable
 final class SessionController: ComposerSessionControlling, ComposerCommandSession, ProviderAccountSession {
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
+    typealias HeaderMetadataResolver = @Sendable (URL) async -> SessionHeaderMetadata
     private(set) var items: [TranscriptItem] = []
     let viewport = TranscriptViewportState()
     let toolDisclosureState = ToolDisclosureState()
@@ -85,6 +86,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private weak var accountCoordinator: ProviderAccountCoordinator?
     private let accountChannelRegistry: ProviderAccountChannelRegistry?
     private let titleGenerator: OmpSessionTitleGenerator?
+    private let headerMetadataResolver: HeaderMetadataResolver
     private let recoveryStore: ComposerRecoveryStore?
     private var recoveryOwner: ComposerRecoveryOwner?
     private var isApplyingRecovery = false
@@ -99,12 +101,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private var controlTask: Task<Void, Never>?
     private var reconciliationTask: Task<Void, Never>?
     private var titleGenerationTask: Task<Void, Never>?
+    private var headerMetadataRefreshTask: Task<Void, Never>?
     private var openingTask: Task<SessionProcessManager.Handle, any Error>?
     private var openingTaskToken: UInt64?
     private var openingCloseTask: Task<Void, Never>?
     private var reconciliationGeneration: UInt64 = 0
     private var pipelineGeneration: UInt64 = 0
     private var titleGenerationGeneration: UInt64 = 0
+    private var headerMetadataRefreshGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
     private var extensionResponsesInFlight: Set<String> = []
@@ -163,6 +167,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         titleGenerator: OmpSessionTitleGenerator? = nil,
         historyLoader: HistoryLoader? = nil,
         contextCompactionTimeout: Duration = defaultContextCompactionTimeout,
+        headerMetadataResolver: @escaping HeaderMetadataResolver = SessionHeaderMetadata.resolve,
         recoveryStore: ComposerRecoveryStore? = nil,
         recoveryOwner: ComposerRecoveryOwner? = nil,
         harnessNoticePreferences: HarnessNoticePreferenceStore? = nil,
@@ -175,6 +180,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.titleGenerator = titleGenerator
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
         self.contextCompactionTimeout = contextCompactionTimeout
+        self.headerMetadataResolver = headerMetadataResolver
         self.recoveryStore = recoveryStore
         self.recoveryOwner = recoveryOwner?.canonicalized
         self.harnessNoticePreferences = harnessNoticePreferences
@@ -202,11 +208,13 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         providerID: String? = nil,
         activityRegistry: SessionActivityRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
-        historyLoader: HistoryLoader? = nil
+        historyLoader: HistoryLoader? = nil,
+        headerMetadataResolver: @escaping HeaderMetadataResolver = SessionHeaderMetadata.resolve
     ) {
         self.processManager = processManager
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
         self.contextCompactionTimeout = Self.defaultContextCompactionTimeout
+        self.headerMetadataResolver = headerMetadataResolver
         self.harnessNoticePreferences = nil
         self.harnessNoticeSummarizer = nil
         self.items = previewItems
@@ -363,6 +371,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         focusTranscriptRow(TranscriptNavigationRequest(rowID: item.viewID))
     }
 
+    func activate() {
+        scheduleHeaderMetadataRefresh()
+    }
+
     func openExisting(_ metadata: SessionMetadata) async {
         let priorSessionPath = stopAndDetachCurrentSession()
         self.sessionPath = metadata.path
@@ -383,7 +395,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let projectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
         self.projectURL = projectURL
         fallbackThreadStartDate = metadata.created
-        let headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
+        let headerMetadata = await headerMetadataResolver(projectURL)
         guard pipelineGeneration == openingGeneration else { return }
         self.headerMetadata = headerMetadata
         runtimeState = .loading
@@ -440,7 +452,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.projectURL = projectURL
         fallbackThreadStartDate = Date()
         title = "New session"
-        let headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
+        let headerMetadata = await headerMetadataResolver(projectURL)
         guard pipelineGeneration == openingGeneration else { return failureOutcome }
         self.headerMetadata = headerMetadata
         runtimeState = .loading
@@ -583,8 +595,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.attachments = []
         initialAttachments = attachments
         self.projectURL = projectURL
-        initialPromptTitle = text.split(whereSeparator: \.isNewline).first.map { String($0.prefix(80)) }
-            ?? "New session"
+        initialPromptTitle = Self.usableTitle(text) ?? "New session"
         isTitleLoading = true
         pendingSubmissions = [PendingUserSubmission(
             text: text, attachments: attachments, minimumUserIndex: 0, state: .starting)]
@@ -823,22 +834,25 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         context: PipelineContext
     ) {
         guard behavior == nil, titleGenerationTask == nil else { return }
-        guard title == "New session" || title == "Untitled session",
-              let titleGenerator,
-              let provider = liveComposerSelection.provider,
-              let modelID = liveComposerSelection.modelID
-        else {
+        guard title == "New session" || title == "Untitled session" else {
             finishTitleLoading()
             return
         }
+        let fallbackTitle = Self.usableTitle(prompt)
+        let provider = liveComposerSelection.provider
+        let modelID = liveComposerSelection.modelID
 
         titleGenerationGeneration &+= 1
         let generation = titleGenerationGeneration
         titleGenerationTask = Task { [weak self, titleGenerator] in
-            let generatedTitle = await titleGenerator.generate(
-                prompt: prompt,
-                provider: provider,
-                modelID: modelID)
+            let generatedTitle: String? = if let titleGenerator, let provider, let modelID {
+                await titleGenerator.generate(
+                    prompt: prompt,
+                    provider: provider,
+                    modelID: modelID)
+            } else {
+                nil
+            }
             guard let self else { return }
             defer {
                 if self.titleGenerationGeneration == generation {
@@ -846,15 +860,25 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                     self.finishTitleLoading()
                 }
             }
-            guard let generatedTitle,
+            guard let selectedTitle = Self.usableTitle(generatedTitle) ?? fallbackTitle,
                   self.isCurrent(context),
                   self.title == "New session" || self.title == "Untitled session"
             else { return }
             do {
-                _ = try await handle.client.send(.setSessionName(generatedTitle))
-                guard self.isCurrent(context) else { return }
-                self.title = generatedTitle
+                _ = try await handle.client.send(.setSessionName(selectedTitle))
+                guard self.titleGenerationGeneration == generation,
+                      self.isCurrent(context),
+                      self.title == "New session" || self.title == "Untitled session"
+                else { return }
+                self.title = selectedTitle
+            } catch is CancellationError {
+                return
             } catch {
+                os_log(
+                    .error,
+                    log: Self.transcriptLog,
+                    "[SessionController:persistInitialTitle] Title save failed — error=%{public}@",
+                    String(describing: type(of: error)))
                 return
             }
         }
@@ -1305,7 +1329,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         controlTask?.cancel()
         reconciliationTask?.cancel()
         titleGenerationTask?.cancel()
+        headerMetadataRefreshTask?.cancel()
         titleGenerationGeneration &+= 1
+        headerMetadataRefreshGeneration &+= 1
         openingTask = nil
         openingTaskToken = nil
         eventTask = nil
@@ -1313,6 +1339,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         controlTask = nil
         reconciliationTask = nil
         titleGenerationTask = nil
+        headerMetadataRefreshTask = nil
         if previousOpeningCloseTask != nil || openingTaskToClose != nil {
             openingCloseTask = Task { [processManager] in
                 await previousOpeningCloseTask?.value
@@ -1422,6 +1449,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
         guard isCurrent(context) else { return }
         applyEventMetadata(frame)
+        if isTerminalAgentBoundary(frame) {
+            scheduleHeaderMetadataRefresh(context: context)
+        }
         if isReconciliationBoundary(frame) {
             let snapshot = await processor.currentSnapshot()
             guard isCurrent(context) else { return }
@@ -1512,6 +1542,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     func testingAwaitReconciliation() async {
         await reconciliationTask?.value
     }
+
+    func testingAwaitHeaderMetadataRefresh() async {
+        await headerMetadataRefreshTask?.value
+    }
 #endif
 
     private func isReconciliationBoundary(_ frame: RpcFrame) -> Bool {
@@ -1523,6 +1557,35 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             payload["isTerminal"]?.boolValue != false
         default:
             false
+        }
+    }
+
+    private func isTerminalAgentBoundary(_ frame: RpcFrame) -> Bool {
+        guard case .event("agent_end", let payload) = frame else { return false }
+        return payload["isTerminal"]?.boolValue != false
+    }
+
+    private func scheduleHeaderMetadataRefresh(context: PipelineContext? = nil) {
+        guard headerMetadataRefreshTask == nil, let projectURL else { return }
+        headerMetadataRefreshGeneration &+= 1
+        let generation = headerMetadataRefreshGeneration
+        let pipelineGeneration = pipelineGeneration
+        let expectedProjectURL = projectURL.standardizedFileURL
+        headerMetadataRefreshTask = Task { [weak self, headerMetadataResolver] in
+            let metadata = await headerMetadataResolver(expectedProjectURL)
+            guard let self else { return }
+            defer {
+                if self.headerMetadataRefreshGeneration == generation {
+                    self.headerMetadataRefreshTask = nil
+                }
+            }
+            guard !Task.isCancelled,
+                  self.headerMetadataRefreshGeneration == generation,
+                  self.pipelineGeneration == pipelineGeneration,
+                  self.projectURL?.standardizedFileURL == expectedProjectURL,
+                  context.map({ self.isCurrent($0) }) ?? true
+            else { return }
+            self.headerMetadata = metadata
         }
     }
 
@@ -2107,6 +2170,21 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private static func isPlaceholderTitle(_ title: String) -> Bool {
         title == "New session" || title == "Untitled session"
+    }
+
+    private static func usableTitle(_ value: String?) -> String? {
+        guard let firstLine = value?
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return nil }
+        let title = String(firstLine.prefix(80))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty,
+              title.rangeOfCharacter(from: .alphanumerics) != nil
+        else { return nil }
+        return title
     }
 
     private func finishTitleLoading() {
