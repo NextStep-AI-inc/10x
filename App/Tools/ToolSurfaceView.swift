@@ -5,9 +5,11 @@ import SwiftUI
 
 struct ToolSurfaceView: View {
     let surface: ToolBody
+    let phase: ToolPhase
 
-    init(body: ToolBody) {
+    init(body: ToolBody, phase: ToolPhase = .complete) {
         surface = body
+        self.phase = phase
     }
 
     @ViewBuilder
@@ -20,7 +22,11 @@ struct ToolSurfaceView: View {
         case .diff(let diff, let fallbackPath):
             DiffView(diff: diff, fallbackPath: fallbackPath)
         case .console(let command, let output, let exitCode):
-            ConsoleSurfaceView(command: command, output: output, exitCode: exitCode)
+            ConsoleSurfaceView(
+                command: command,
+                output: output,
+                exitCode: exitCode,
+                window: phase == .running ? .tail : .head)
         case .collection(let items):
             CollectionSurfaceView(items: items)
         case .media(let items, let caption):
@@ -32,7 +38,7 @@ struct ToolSurfaceView: View {
         case .stack(let bodies):
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(bodies.enumerated()), id: \.offset) { _, body in
-                    ToolSurfaceView(body: body)
+                    ToolSurfaceView(body: body, phase: phase)
                 }
             }
         case .empty(let message):
@@ -51,6 +57,11 @@ struct ToolSurfaceView: View {
         bodyView
             .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
+
+enum ConsoleRenderWindow: Equatable, Sendable {
+    case head
+    case tail
 }
 
 enum ToolSurfacePagination {
@@ -84,7 +95,12 @@ struct ConsoleRenderPresentation: Equatable, Sendable {
     let inspectedLineCount: Int
     let materializedCharacterCount: Int
 
-    init(output: String, lineLimit: Int, characterLimit: Int) {
+    init(
+        output: String,
+        lineLimit: Int,
+        characterLimit: Int,
+        window: ConsoleRenderWindow = .head
+    ) {
         copyText = output
         guard !output.isEmpty else {
             visibleText = ""
@@ -103,37 +119,66 @@ struct ConsoleRenderPresentation: Equatable, Sendable {
             + ProgressiveTextPresentation.initialReveal.pageSize
             + 1
         let lineProbeLimit = lineLimit + ToolSurfacePagination.console.pageSize + 1
-        let characterProbe = output.prefix(characterProbeLimit)
+        let characterProbe = switch window {
+        case .head: output.prefix(characterProbeLimit)
+        case .tail: output.suffix(characterProbeLimit)
+        }
         var observedLineCount = 1
-        var visibleLineEnd: String.Index?
+        let boundedLineText: String
 
-        if lineLimit == 0 {
-            visibleLineEnd = characterProbe.startIndex
-        } else {
-            for index in characterProbe.indices where characterProbe[index] == "\n" {
-                if observedLineCount == lineLimit {
-                    visibleLineEnd = index
-                }
-                observedLineCount += 1
-                if observedLineCount >= lineProbeLimit {
-                    break
+        switch window {
+        case .head:
+            var visibleLineEnd: String.Index?
+            if lineLimit == 0 {
+                visibleLineEnd = characterProbe.startIndex
+            } else {
+                for index in characterProbe.indices where characterProbe[index] == "\n" {
+                    if observedLineCount == lineLimit {
+                        visibleLineEnd = index
+                    }
+                    observedLineCount += 1
+                    if observedLineCount >= lineProbeLimit { break }
                 }
             }
+            boundedLineText = String(characterProbe[..<(visibleLineEnd ?? characterProbe.endIndex)])
+        case .tail:
+            var visibleLineStart = characterProbe.startIndex
+            if lineLimit == 0 {
+                visibleLineStart = characterProbe.endIndex
+            } else {
+                for index in characterProbe.indices.reversed()
+                where characterProbe[index] == "\n" {
+                    if observedLineCount == lineLimit {
+                        visibleLineStart = characterProbe.index(after: index)
+                    }
+                    observedLineCount += 1
+                    if observedLineCount >= lineProbeLimit { break }
+                }
+            }
+            boundedLineText = String(characterProbe[visibleLineStart...])
         }
 
-        let boundedLineText = String(characterProbe[..<(visibleLineEnd ?? characterProbe.endIndex)])
-        let textPresentation = ProgressiveTextPresentation(
-            text: boundedLineText,
-            characterLimit: characterLimit)
         let maximumNextLinePage = lineLimit + ToolSurfacePagination.console.pageSize
-
-        visibleText = textPresentation.visibleText
-        accessibilityText = textPresentation.accessibilityText
         lineProgressiveTotal = min(observedLineCount, maximumNextLinePage)
-        characterProgressiveTotal = textPresentation.progressiveTotal
         inspectedCharacterCount = characterProbe.count
         inspectedLineCount = observedLineCount
         materializedCharacterCount = boundedLineText.count
+        switch window {
+        case .head:
+            let textPresentation = ProgressiveTextPresentation(
+                text: boundedLineText,
+                characterLimit: characterLimit)
+            visibleText = textPresentation.visibleText
+            accessibilityText = textPresentation.accessibilityText
+            characterProgressiveTotal = textPresentation.progressiveTotal
+        case .tail:
+            let text = String(boundedLineText.suffix(characterLimit))
+            visibleText = text
+            accessibilityText = text
+            characterProgressiveTotal = min(
+                boundedLineText.count,
+                characterLimit + ProgressiveTextPresentation.initialReveal.pageSize)
+        }
     }
 }
 
@@ -141,6 +186,7 @@ private struct ConsoleSurfaceView: View {
     let command: String?
     let output: String
     let exitCode: Int?
+    let window: ConsoleRenderWindow
 
     @State private var isWrapped = true
     @State private var lineReveal = ToolSurfacePagination.console
@@ -150,7 +196,8 @@ private struct ConsoleSurfaceView: View {
         let presentation = ConsoleRenderPresentation(
             output: output,
             lineLimit: lineReveal.limit,
-            characterLimit: characterReveal.limit)
+            characterLimit: characterReveal.limit,
+            window: window)
         VStack(alignment: .leading, spacing: 8) {
             if let command, !command.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {

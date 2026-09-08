@@ -8,7 +8,7 @@ struct ToolCardView: View, Equatable {
             presentation: presentation,
             cardContent: presentation.content
         ) {
-            ToolSurfaceView(body: presentation.content.body)
+            ToolSurfaceView(body: presentation.content.body, phase: presentation.phase)
         }
     }
 }
