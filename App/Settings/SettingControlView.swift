@@ -78,6 +78,10 @@ struct SettingControlView: View {
         case .array:
             if definition.key == "bashInterceptor.patterns" {
                 ObjectArraySettingEditor(definition: definition, model: model)
+            } else if let known = SettingMetadata.knownArrayValues[definition.key] {
+                KnownSetArrayEditor(definition: definition, model: model, knownValues: known)
+            } else if SettingMetadata.catalogFedArrays.contains(definition.key) {
+                KnownSetArrayEditor(definition: definition, model: model, knownValues: catalogValues)
             } else {
                 arrayEditor
             }
@@ -119,6 +123,15 @@ struct SettingControlView: View {
                 .buttonStyle(GhostActionStyle())
         }
         .frame(maxWidth: 290)
+    }
+
+    private var catalogValues: [String] {
+        switch definition.key {
+        case "enabledModels", "modelProviderOrder":
+            KnownSetArrayEditor.modelSelectors(from: model.catalogModels)
+        default:
+            KnownSetArrayEditor.providerIDs(from: model.catalogModels)
+        }
     }
 
     private var arrayEditor: some View {
