@@ -261,6 +261,78 @@ final class DaemonServerTests: XCTestCase {
         }
     }
 
+    func test_stopAll_stopsPreviewHeartbeat() throws {
+        daemon.stop()
+        daemon = nil
+        socketPath = NSTemporaryDirectory() + "tenx-computer-test-\(UUID().uuidString).sock"
+        daemon = DaemonServer(engine: engine, socketPath: socketPath, previewInterval: 0.05)
+        try daemon.start()
+
+        let safari = WindowInfo(id: 10, appName: "Safari", title: "Apple", bounds: .init(x: 0, y: 0, width: 800, height: 600), pid: 100)
+        engine.windows = [safari]
+        engine.screenshotPNG = Data([0x89])
+
+        let supervision = try DaemonClient(socketPath: socketPath)
+        try supervision.send(.object(["role": .string("supervision")]))
+        _ = try supervision.receive()
+
+        let mcp = try DaemonClient(socketPath: socketPath)
+        try mcp.send(.object(["role": .string("mcp")]))
+        _ = try rpc(mcp, [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("omp")])]),
+        ])
+        _ = try expectEvent(supervision)
+
+        _ = try rpc(mcp, [
+            "jsonrpc": .string("2.0"), "id": .number(2), "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("computer_claim"),
+                "arguments": .object(["window_id": .number(10)]),
+            ]),
+        ])
+        _ = try expectEvent(supervision)
+
+        _ = try rpc(mcp, [
+            "jsonrpc": .string("2.0"), "id": .number(3), "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("computer_act"),
+                "arguments": .object([
+                    "window_id": .number(10),
+                    "action": .string("click"),
+                    "x": .number(10),
+                    "y": .number(10),
+                ]),
+            ]),
+        ])
+
+        var sawScreenshot = false
+        for _ in 0..<5 {
+            let event = try expectEvent(supervision)
+            if event["type"] == .string("screenshotTaken") {
+                sawScreenshot = true
+                break
+            }
+        }
+        XCTAssertTrue(sawScreenshot)
+
+        try supervision.send(.object(["command": .string("stop_all")]))
+        var gotStopped = false
+        for _ in 0..<10 {
+            let event = try expectEvent(supervision)
+            if event["type"] == .string("stopped") {
+                gotStopped = true
+                break
+            }
+        }
+        XCTAssertTrue(gotStopped)
+
+        Thread.sleep(forTimeInterval: 0.15)
+        XCTAssertThrowsError(try supervision.receive(timeout: 0.1)) { error in
+            XCTAssertEqual((error as? ComputerError)?.message, "receive_timeout")
+        }
+    }
+
     func test_supervisionClient_unknownEventLine_doesNotTearDownSocket() throws {
         let supervision = try DaemonClient(socketPath: socketPath)
         try supervision.send(.object(["role": .string("supervision")]))
