@@ -858,3 +858,16 @@ private func message(_ json: String) throws -> JSONValue {
     #expect(dropped.first?.text == "Steer harder")
     #expect(reducer.items.count == 1)
 }
+
+@Test func loadingHistoryAdoptsItsDroppedDescriptors() {
+    var reducer = TranscriptReducer()
+    let descriptor = HarnessMessageDescriptor(
+        role: "developer",
+        customType: nil,
+        byteCount: 4,
+        text: "wall")
+
+    _ = reducer.load(history: TranscriptHistory(items: [], dropped: [descriptor]))
+
+    #expect(reducer.drainDroppedHarnessMessages() == [descriptor])
+}

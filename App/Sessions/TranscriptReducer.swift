@@ -235,6 +235,10 @@ struct TranscriptReducer {
     mutating func load(history: TranscriptHistory) -> TranscriptMutation {
         let previous = items
         items = history.items
+        for descriptor in history.dropped
+        where droppedHarnessMessageSignatures.insert(descriptor.signature).inserted {
+            droppedHarnessMessages.append(descriptor)
+        }
         inflightMessageID = nil
         pendingPersistenceIDs = []
         pendingMessageFingerprints = [:]
