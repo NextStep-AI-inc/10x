@@ -196,6 +196,12 @@ enum ComposerCommandDismissalRouting {
     }
 }
 
+enum ComposerInputMethodRouting {
+    nonisolated static func shouldDeferToInputMethod(isComposing: Bool) -> Bool {
+        isComposing
+    }
+}
+
 enum ComposerReturnRouting {
     nonisolated static func shortcut(
         for modifiers: EventModifiers,
@@ -615,6 +621,12 @@ struct ComposerView: View {
     }
 
     private func handleEditorKey(_ press: KeyPress) -> KeyPress.Result {
+        if ComposerInputMethodRouting.shouldDeferToInputMethod(
+            isComposing: editorBridge.hasMarkedText
+        ) {
+            return .ignored
+        }
+
         if flyout == .commands, let commands, commands.isPresented {
             if let commandAction = ComposerCommandKeyRouting.route(
                 press.key,

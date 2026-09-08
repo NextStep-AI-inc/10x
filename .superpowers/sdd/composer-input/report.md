@@ -6,7 +6,7 @@ Status: DONE
 
 - File picking now accepts regular files. Images still use `ComposerAttachmentEncoder`; every other selected or dropped file inserts its absolute path through the active `NSTextView` at the current selection.
 - AppKit insertion preserves surrounding text, advances the selection after long paths containing spaces, participates in undo, and rejects a stale editor after its composer marker leaves the window.
-- Plain Return is left to the input method while the editor has marked text. After composition ends, the existing Return routing applies unchanged.
+- Marked text is left to the input method before command-flyout or Return routing can consume a key. After composition ends, the existing command and Return routing applies unchanged.
 - Attachment and model failures render independently in attachment-first order. Exact duplicates render once, and clearing the attachment value leaves the model message.
 - The paperclip help and accessibility label state that images attach and other files insert paths.
 - Parent approved and promoted `Tests/TenXAppTests/ReferenceImages/composer-independent-warnings.png` after reviewing both simultaneous warnings.
@@ -17,6 +17,7 @@ TDD evidence:
 - `/tmp/10x-input-task1-green.log`: 2 editor bridge tests passed.
 - `/tmp/10x-input-task2-red.log`: marked-text and independent-feedback tests failed because the new seams did not exist.
 - `/tmp/10x-input-task2-green.log`: 2 marked-text and independent-feedback tests passed.
+- `/tmp/10x-input-ime-command-red.log`: the command-flyout composition regression failed to compile because the input-method gate did not exist.
 
 Final focused command:
 
@@ -25,6 +26,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
   '-only-testing:TenXAppTests/composerEditorInsertsLongFilePathsAtTheCurrentSelectionAndSupportsUndo()' \
   '-only-testing:TenXAppTests/composerEditorRejectsAnEditorAfterItsMarkerLeavesTheView()' \
   '-only-testing:TenXAppTests/markedTextReturnCommitsCompositionBeforeAnOrdinaryReturnRoutes()' \
+  '-only-testing:TenXAppTests/commandFlyoutReturnDefersToMarkedTextBeforeActivation()' \
   '-only-testing:TenXAppTests/composerFeedbackKeepsAttachmentAndModelFailuresIndependent()' \
   '-only-testing:TenXAppTests/composerIndependentWarningsSnapshot()' \
   '-only-testing:TenXAppTests/composerReturnRoutingRecognizesOnlyConfiguredShortcuts()' \
@@ -33,7 +35,7 @@ xcodebuild test -project 10x.xcodeproj -scheme 10x -destination 'platform=macOS'
   '-only-testing:TenXAppTests/agentSlashCommandClearsOnlyAcceptedAttachmentIdentities()'
 ```
 
-Result: 9 tests passed in 1.225 seconds. Log: `/tmp/10x-input-focused.log`. `git diff --check` also passed.
+Result: 10 tests passed in 0.305 seconds. Log: `/tmp/10x-input-focused-final.log`. `git diff --check` also passed.
 
 ## Not verified
 

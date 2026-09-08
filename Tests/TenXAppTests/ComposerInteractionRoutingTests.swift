@@ -75,6 +75,32 @@ import Testing
     #expect(ComposerReturnRouting.shortcut(for: [], isComposing: bridge.hasMarkedText) == .enter)
 }
 
+@MainActor
+@Test func commandFlyoutReturnDefersToMarkedTextBeforeActivation() {
+    let bridge = ComposerTextEditorBridge()
+    let marker = ComposerTextViewConfigurationMarker(bridge: bridge)
+    let textView = NSTextView()
+    let container = NSView()
+    container.addSubview(textView)
+    container.addSubview(marker)
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
+                          styleMask: [], backing: .buffered, defer: false)
+    window.contentView = container
+    bridge.connect(textView, owner: marker)
+    textView.setMarkedText(
+        NSAttributedString(string: "候補"),
+        selectedRange: NSRange(location: 2, length: 0),
+        replacementRange: NSRange(location: NSNotFound, length: 0))
+
+    #expect(ComposerCommandKeyRouting.route(.return, modifiers: []) == .activate)
+    #expect(ComposerInputMethodRouting.shouldDeferToInputMethod(
+        isComposing: bridge.hasMarkedText))
+
+    textView.unmarkText()
+    #expect(!ComposerInputMethodRouting.shouldDeferToInputMethod(
+        isComposing: bridge.hasMarkedText))
+}
+
 @Test func composerFeedbackKeepsAttachmentAndModelFailuresIndependent() {
     #expect(ComposerFeedback.messages(
         attachment: "Could not attach diagram.png.",
