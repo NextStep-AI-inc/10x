@@ -241,6 +241,234 @@ import Testing
     }
 }
 
+@Test func manualContextCompactionRequiresAnIdleBuiltinCapability() async throws {
+    #expect(SessionController.defaultContextCompactionTimeout == .seconds(600))
+    for (mode, expected) in [
+        ("basic", false),
+        ("compact-extension", false),
+        ("compact-streaming", false),
+        ("compact-queued", false),
+        ("compact-success", true),
+    ] {
+        let manager = contextFakeManager(mode: mode)
+        let controller = SessionController(processManager: manager)
+        await controller.openNew(projectURL: try temporaryDirectory())
+        #expect(controller.canCompactContext == expected, "mode: \(mode)")
+        #expect((controller.contextCompactionDisabledReason == nil) == expected, "mode: \(mode)")
+        await manager.closeAll()
+    }
+
+    let manager = contextFakeManager(mode: "compact-pending")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: try temporaryDirectory())
+    #expect(await eventually { controller.hasPendingUserInput })
+    #expect(!controller.canCompactContext)
+    await manager.closeAll()
+}
+
+@Test func lateCompactionCompletionCannotOverwriteAReplacementSession() async throws {
+    let manager = contextFakeManager(mode: "compact-delayed")
+    let controller = SessionController(
+        processManager: manager,
+        contextCompactionTimeout: .seconds(5))
+    let projectURL = try temporaryDirectory()
+    await controller.openNew(projectURL: projectURL)
+    let operation = Task { await controller.compactContext() }
+    #expect(await eventually { controller.isContextCompacting })
+
+    await controller.openNew(projectURL: projectURL)
+    await operation.value
+
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.canCompactContext)
+    #expect(controller.contextCompactionErrorMessage == nil)
+    #expect(controller.contextCompactionRecoveryMessage == nil)
+    await manager.closeAll()
+}
+
+@Test func successfulManualCompactionReloadsHistoryAndPreservesStagedInput() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLog = directory.appending(path: "commands.log")
+    let manager = contextFakeManager(mode: "compact-success", commandLog: commandLog)
+    let loader = CompactionHistoryLoader()
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { path in try await loader.load(path: path) })
+    await controller.openNew(projectURL: directory)
+    let image = ComposerAttachment(
+        name: "staged.png", data: Data([0x89, 0x50]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)
+    controller.draft = "Keep this draft editable"
+    controller.attachments = [image]
+
+    await controller.compactContext()
+
+    #expect(!controller.isContextCompacting)
+    #expect(controller.contextCompactionErrorMessage == nil)
+    #expect(controller.contextCompactionRecoveryMessage == nil)
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.draft == "Keep this draft editable")
+    #expect(controller.attachments == [image])
+    #expect(controller.contextUsage?.tokens == 32_000)
+    #expect(controller.visibleText(for: "compacted-history") == "Authoritative compacted history")
+    #expect(await loader.requestCount == 2)
+    let commands = try String(contentsOf: commandLog, encoding: .utf8)
+        .split(whereSeparator: \.isNewline).map(String.init)
+    #expect(commands.contains("compact"))
+    #expect(!commands.contains("prompt"))
+    await manager.closeAll()
+}
+
+@Test func successfulCompactionClosesWhenAuthoritativeHistoryIsUnavailable() async throws {
+    let knownRecovery =
+        "Context was compacted, but saved history couldn’t be reloaded. Restart to reload saved history."
+    for loader in [CompactionReloadFailure.nilHistory, .thrownError] {
+        let manager = contextFakeManager(mode: "compact-success")
+        let historyLoader = FailingCompactionHistoryLoader(failure: loader)
+        let controller = SessionController(
+            processManager: manager,
+            historyLoader: { path in try await historyLoader.load(path: path) })
+        await controller.openNew(projectURL: try temporaryDirectory())
+        controller.draft = "Preserved after known success"
+
+        await controller.compactContext()
+
+        #expect(isStopped(controller.runtimeState), "loader: \(loader)")
+        #expect(controller.draft == "Preserved after known success")
+        #expect(controller.contextCompactionRecoveryMessage == knownRecovery)
+        #expect(controller.contextCompactionRecoveryMessage?.contains("unknown") == false)
+        #expect(controller.canRestartAfterDismissal)
+        #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+        await manager.closeAll()
+    }
+}
+
+@Test func cancellationAfterCompactionSuccessClosesWithKnownSuccessRecovery() async throws {
+    let manager = contextFakeManager(mode: "compact-success")
+    let loader = CancellableCompactionHistoryLoader()
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { path in try await loader.load(path: path) })
+    await controller.openNew(projectURL: try temporaryDirectory())
+    let operation = Task { await controller.compactContext() }
+    #expect(await loader.waitForCompactedHistoryRequest())
+
+    operation.cancel()
+    await operation.value
+
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.contextCompactionRecoveryMessage ==
+        "Context was compacted, but saved history couldn’t be reloaded. Restart to reload saved history.")
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
+@Test func cancellationWhileCompactionResultIsPendingClosesWithUnknownRecovery() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLog = directory.appending(path: "commands.log")
+    let manager = contextFakeManager(mode: "compact-hang", commandLog: commandLog)
+    let controller = SessionController(
+        processManager: manager,
+        contextCompactionTimeout: .seconds(5))
+    await controller.openNew(projectURL: directory)
+    let operation = Task { await controller.compactContext() }
+    #expect(await eventually {
+        (try? String(contentsOf: commandLog, encoding: .utf8).contains("compact")) == true
+    })
+
+    operation.cancel()
+    await operation.value
+
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.contextCompactionRecoveryMessage ==
+        "The compaction result is unknown. Restart to reload saved history.")
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
+@Test func knownCompactionFailuresStayUsableAndUnsupportedDisablesTheAction() async throws {
+    let failureManager = contextFakeManager(mode: "compact-failure")
+    let failed = SessionController(processManager: failureManager)
+    await failed.openNew(projectURL: try temporaryDirectory())
+    await failed.compactContext()
+    #expect(failed.runtimeState == .idle)
+    #expect(failed.contextCompactionErrorMessage == "Context couldn’t be compacted. Try again.")
+    #expect(failed.canCompactContext)
+    await failed.refreshContextDetails()
+    #expect(failed.contextCompactionErrorMessage == "Context couldn’t be compacted. Try again.")
+    await failureManager.closeAll()
+
+    let unsupportedManager = contextFakeManager(mode: "compact-unsupported")
+    let unsupported = SessionController(processManager: unsupportedManager)
+    await unsupported.openNew(projectURL: try temporaryDirectory())
+    await unsupported.compactContext()
+    #expect(unsupported.runtimeState == .idle)
+    #expect(!unsupported.canCompactContext)
+    #expect(unsupported.contextCompactionErrorMessage == "Context compaction isn’t supported by this runtime.")
+    await unsupportedManager.closeAll()
+}
+
+@Test func compactionTimeoutClosesTheRuntimeWithUnknownResultRecovery() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLog = directory.appending(path: "commands.log")
+    let manager = contextFakeManager(mode: "compact-hang", commandLog: commandLog)
+    let controller = SessionController(
+        processManager: manager,
+        contextCompactionTimeout: .milliseconds(100))
+    await controller.openNew(projectURL: directory)
+    controller.draft = "Preserve me"
+
+    await controller.compactContext()
+
+    #expect(!controller.isContextCompacting)
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.draft == "Preserve me")
+    #expect(controller.isRecoveryPresented)
+    #expect(controller.canRestartAfterDismissal)
+    #expect(controller.contextCompactionRecoveryMessage ==
+        "The compaction result is unknown. Restart to reload saved history.")
+    #expect(try String(contentsOf: commandLog, encoding: .utf8).contains("compact"))
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
+@Test func stopDuringCompactionClosesWithoutQueuingOtherCommands() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLog = directory.appending(path: "commands.log")
+    let manager = contextFakeManager(mode: "compact-hang", commandLog: commandLog)
+    let controller = SessionController(
+        processManager: manager,
+        contextCompactionTimeout: .seconds(5))
+    await controller.openNew(projectURL: directory)
+    controller.draft = "Still editable"
+    let operation = Task { await controller.compactContext() }
+    #expect(await eventually { controller.isContextCompacting })
+    #expect(!controller.canSendMessage)
+    #expect(!controller.isEligibleForIdleEviction)
+    await controller.sendPrompt()
+    await controller.refreshContextDetails()
+    _ = try? await controller.setModel(provider: "test", modelID: "other")
+    _ = try? await controller.setThinkingLevel("high")
+    _ = try? await controller.setFastMode(true)
+    await controller.abort()
+    await operation.value
+
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.draft == "Still editable")
+    #expect(controller.contextCompactionRecoveryMessage == nil)
+    let commands = try String(contentsOf: commandLog, encoding: .utf8)
+    #expect(!commands.contains("prompt"))
+    #expect(!commands.contains("set_model"))
+    #expect(!commands.contains("set_thinking_level"))
+    #expect(!commands.contains("set_fast_mode"))
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
 @Test func ompSessionTitleGeneratorUsesTheActiveModelAndParsesTaggedOutput() async throws {
     let capture = TitleCommandCapture()
     let generator = OmpSessionTitleGenerator(
@@ -1187,12 +1415,13 @@ private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
 
 }
 
-private func contextFakeManager(mode: String) -> SessionProcessManager {
+private func contextFakeManager(mode: String, commandLog: URL? = nil) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
         fake.executable = "/usr/bin/env"
         fake.extraArguments = ["python3", repositoryRoot().appending(path:
             "Tests/TenXAppTests/Fixtures/context_fake_server.py").path, mode]
+        if let commandLog { fake.extraArguments.append(commandLog.path) }
         fake.rawArgv = true
         fake.cwd = nil
         return RpcClient(configuration: fake)
@@ -1250,6 +1479,74 @@ private func withQueueController<T>(
         try? FileManager.default.removeItem(at: directory)
         throw error
     }
+}
+
+private actor CompactionHistoryLoader {
+    private(set) var requestCount = 0
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount > 1 else { return nil }
+        return TranscriptHistory(items: [
+            messageItem(id: "compacted-history", text: "Authoritative compacted history"),
+        ])
+    }
+}
+
+private enum CompactionReloadFailure: CustomStringConvertible {
+    case nilHistory
+    case thrownError
+
+    var description: String {
+        switch self {
+        case .nilHistory: "nil history"
+        case .thrownError: "thrown error"
+        }
+    }
+}
+
+private actor FailingCompactionHistoryLoader {
+    private var requestCount = 0
+    private let failure: CompactionReloadFailure
+
+    init(failure: CompactionReloadFailure) {
+        self.failure = failure
+    }
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount > 1 else { return nil }
+        switch failure {
+        case .nilHistory: return nil
+        case .thrownError: throw ControlledHistoryError.failed
+        }
+    }
+}
+
+private actor CancellableCompactionHistoryLoader {
+    private var requestCount = 0
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount > 1 else { return nil }
+        while true {
+            try await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    func waitForCompactedHistoryRequest(timeout: Duration = .seconds(5)) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout.seconds)
+        while Date() < deadline {
+            if requestCount > 1 { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return requestCount > 1
+    }
+}
+
+private func isStopped(_ state: SessionRuntimeState) -> Bool {
+    if case .stopped = state { return true }
+    return false
 }
 
 private func fakeManager(mode: String) -> SessionProcessManager {

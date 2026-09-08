@@ -6,7 +6,12 @@ struct ContextUsageControl: View {
     let breakdown: SessionContextBreakdown?
     let isLoading: Bool
     let errorMessage: String?
+    let canCompact: Bool
+    let compactionDisabledReason: String?
+    let isCompacting: Bool
+    let compactionErrorMessage: String?
     let onRefresh: () async -> Void
+    let onCompact: () async -> Void
 
     @State private var isPresented = false
 
@@ -38,8 +43,13 @@ struct ContextUsageControl: View {
                 breakdown: breakdown,
                 isLoading: isLoading,
                 errorMessage: errorMessage,
+                canCompact: canCompact,
+                compactionDisabledReason: compactionDisabledReason,
+                isCompacting: isCompacting,
+                compactionErrorMessage: compactionErrorMessage,
                 onClose: { isPresented = false },
-                onRefresh: onRefresh)
+                onRefresh: onRefresh,
+                onCompact: onCompact)
                 .task {
                     await onRefresh()
                 }
@@ -124,8 +134,13 @@ struct ContextUsagePopover: View {
     let breakdown: SessionContextBreakdown?
     let isLoading: Bool
     let errorMessage: String?
+    let canCompact: Bool
+    let compactionDisabledReason: String?
+    let isCompacting: Bool
+    let compactionErrorMessage: String?
     let onClose: () -> Void
     let onRefresh: () async -> Void
+    let onCompact: () async -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -140,12 +155,56 @@ struct ContextUsagePopover: View {
             } else {
                 unavailableState
             }
+
+            compactionAction
         }
         .padding(20)
         .frame(minWidth: 260, idealWidth: 334, maxWidth: 334, alignment: .leading)
         .background(TenXPalette.color(TenXPalette.canvasHex))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Context window details")
+    }
+
+    private var compactionAction: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Compresses older conversation to free context space.")
+                .font(TenXTypography.body(size: 11))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if isCompacting {
+                ProgressView("Compacting context…")
+                    .controlSize(.small)
+            } else {
+                Button("Compact context") {
+                    Task { await onCompact() }
+                }
+                .buttonStyle(GhostActionStyle())
+                .disabled(!canCompact)
+            }
+
+            if !isCompacting, !canCompact,
+               let compactionDisabledReason, !compactionDisabledReason.isEmpty,
+               compactionDisabledReason != compactionErrorMessage {
+                Text(compactionDisabledReason)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let compactionErrorMessage, !compactionErrorMessage.isEmpty {
+                Text(compactionErrorMessage)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 14)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(TenXPalette.color(TenXPalette.separatorHex))
+                .frame(height: 1)
+        }
     }
 
     private var header: some View {

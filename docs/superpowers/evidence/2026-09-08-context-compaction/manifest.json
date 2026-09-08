@@ -1,0 +1,50 @@
+{
+  "finalProductionCommit": "d20ff7ca2d1e9a8821c85f4bffd8ee0d8e457b1b",
+  "screenshotProductionCommit": "e8240be",
+  "files": [
+    {
+      "file": "README.md",
+      "sha256": "24ebf5925a9b4bd80ef8288e9c8809991f4f03dcbba81ebac3b3d14356a15f83"
+    },
+    {
+      "file": "after-compaction-refreshed.png",
+      "sha256": "d139dd6b624b18a2a848cfedb1a632b2bf04280cc51955c9b8b902baea331403"
+    },
+    {
+      "file": "after-compaction-state.png",
+      "sha256": "1bda34e8551bfa7e1f5b771e8d4d3da19581c62bf23dc5cb6a7039b277f92813"
+    },
+    {
+      "file": "before-compaction.png",
+      "sha256": "f8e66f125351e8c4714c849f7754a499842fc8368955ff04f8327c3529425a92"
+    },
+    {
+      "file": "controlled-busy-progress.png",
+      "sha256": "c78459bc43a64577f60f6b962cd584f7f4f59c22717ced8fb2e40033b70d6214"
+    },
+    {
+      "file": "controlled-busy-stopped.png",
+      "sha256": "59eaac0b25579144ad96165b1d9f6845c06c9368f27594e23938ab9d972f7b1a"
+    },
+    {
+      "file": "controlled-failure-feedback.png",
+      "sha256": "3dacd224190c30f8f18b4a678e5deab52c7a4789effb32848c436fd668a8019a"
+    },
+    {
+      "file": "controlled-unsupported-feedback.png",
+      "sha256": "ff64008669651a9eb1f7fb8920bd5a26a85dc76e26db187d66d1a3d303d28fd4"
+    },
+    {
+      "file": "final-native-copy-verification.json",
+      "sha256": "a409237afb9f8a2cd85de558b28138eecd7d7a26893d5857a9fc9895c2615170"
+    },
+    {
+      "file": "final-unsupported-feedback.jpg",
+      "sha256": "9e0933797f62ac48f98a2ffb871cd4fb8709269110a5bb95a7a178b227b686bc"
+    },
+    {
+      "file": "runtime-compaction-verification.json",
+      "sha256": "6daa27cf9758d8baf0d0b330caefc91eddf5f286fc64ee4861764c68703be360"
+    }
+  ]
+}

@@ -11,6 +11,7 @@ struct RuntimeRecoveryView: View {
     var onReviewPrompt: (() -> Void)? = nil
     var isIntentionalStop = false
     var isStopping = false
+    var titleOverride: String? = nil
 
     var body: some View {
         CornerCard(color: TenXPalette.color(
@@ -46,6 +47,7 @@ struct RuntimeRecoveryView: View {
     }
 
     private var title: String {
+        if let titleOverride { return titleOverride }
         if isIntentionalStop { return "Response stopped" }
         return failureDescription == nil ? "Session process stopped" : "Session needs attention"
     }
