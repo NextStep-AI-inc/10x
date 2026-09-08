@@ -49,7 +49,7 @@ struct AppDependencies: Sendable {
             SettingsViewModel(
                 service: OmpConfigService(
                     runner: OmpConfigProcessRunner(executableURL: executableURL)),
-                catalog: OmpModelCatalogService(executableURL: executableURL))
+                catalog: ComposerCatalogService(executableURL: executableURL))
         }
         self.makeProviderModel = makeProviderModel
         self.makeComposerControls = makeComposerControls
@@ -78,7 +78,7 @@ struct AppDependencies: Sendable {
             SettingsViewModel(
                 service: OmpConfigService(
                     runner: OmpConfigProcessRunner(executableURL: executableURL)),
-                catalog: OmpModelCatalogService(executableURL: executableURL))
+                catalog: ComposerCatalogService(executableURL: executableURL))
         },
         makeProviderModel: { executableURL in
             ProviderManagementViewModel(

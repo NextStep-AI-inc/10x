@@ -16,7 +16,7 @@ final class SettingsViewModel {
     var settingCount: Int { catalog.definitions.count }
 
     @ObservationIgnored private let service: OmpConfigService
-    @ObservationIgnored private let catalogService: OmpModelCatalogService?
+    @ObservationIgnored private let catalogService: ComposerCatalogService?
     // ponytail: per-key write chain serializes saves/restores; a failed write returns
     // false but does not block subsequent writes on the same key.
     @ObservationIgnored private var writeChains: [String: Task<Bool, Never>] = [:]
@@ -25,14 +25,14 @@ final class SettingsViewModel {
     @ObservationIgnored private var ownEchoes: [String: [JSONValue]] = [:]
     private(set) var catalogModels: [ComposerModelInfo] = []
 
-    init(service: OmpConfigService, catalog: OmpModelCatalogService? = nil) {
+    init(service: OmpConfigService, catalog: ComposerCatalogService? = nil) {
         self.service = service
         self.catalogService = catalog
     }
 
     func loadCatalogIfNeeded() async {
         guard catalogModels.isEmpty, let catalogService else { return }
-        if let snapshot = try? await catalogService.load() {
+        if let snapshot = try? await catalogService.load(projectURL: nil) {
             catalogModels = snapshot.models
         }
     }
