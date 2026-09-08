@@ -1,12 +1,12 @@
 # System flyers design
 
-Status: approved product direction, written for planning review. This is the independent UI subsystem used by the [Session Map](2026-09-07-session-map-design.md).
+Status: spec approved by Tanner; implementation planning authorized. This is the independent UI subsystem used by the [Session Map](2026-09-07-session-map-design.md).
 
 ## Intended behavior
 
 System messages appear as small translucent bars floating above the composer in its own column. Each flyer occupies one line. Its description scrolls to reveal overflow, holds at the far end, then travels back to the start. The first producer is a catch-up notice for missed session work. The component is reusable for future usage/context warnings; those producers are not part of this work.
 
-Explicit choices: glass-like translucency, no tool-card corner frame, one line, overflow scrolling that returns, online references, and **real visual animation verification**. Exact geometry and motion constants below are testable starting defaults, not separately approved measurements.
+Explicit choices: glass-like translucency, no tool-card corner frame, one line, overflow scrolling that returns, online references, and **real visual animation verification**. Exact geometry and motion constants below are testable starting defaults.
 
 ```mermaid
 flowchart LR

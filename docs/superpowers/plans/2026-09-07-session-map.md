@@ -10,6 +10,8 @@
 
 **Spec:** [Session Map design](../specs/2026-09-07-session-map-design.md). Read its complete contracts and states before this plan. Companion: [system flyers plan](2026-09-07-system-flyers.md).
 
+**Status:** Implementation plan prepared from the approved spec. Execution starts with the native graph slice; model wiring follows its verification gate.
+
 ## Global Constraints
 
 - Swift 6 / macOS 15+, native SwiftUI/AppKit/Foundation, no new dependency.
@@ -26,7 +28,7 @@
 
 ## Execution order and ownership
 
-Plan base is `7b23badf779cd8b6fc8849e6434c1930ef5afde0`. Before execution, fetch/review current main and [PR #29](https://github.com/NextStep-AI-inc/10x/pull/29) (harness notices) and [PR #28](https://github.com/NextStep-AI-inc/10x/pull/28) (settings). Shared-file integration is sequential. If a delegated task needs another owner's file, skip and flag that edit; do not revert or abort their work. Use implementation-role agents for bounded implementation only when that execution workflow is chosen; the primary session owns validation and integration.
+Authoring base is `7b23badf779cd8b6fc8849e6434c1930ef5afde0`; integration was rechecked read-only against `e60234a332f6fdc34f771c92f0d3852411d7fe71`. [PR #29](https://github.com/NextStep-AI-inc/10x/pull/29) (harness notices) is now merged. Before execution, start from current main including that change and check [PR #28](https://github.com/NextStep-AI-inc/10x/pull/28) (settings). Shared-file integration is sequential. If a delegated task needs another owner's file, skip and flag that edit; do not revert or abort their work. Use implementation-role agents for bounded implementation only when that execution workflow is chosen; the primary session owns validation and integration.
 
 ```mermaid
 flowchart LR
@@ -306,7 +308,7 @@ These are private computed view properties on `SessionMapPaneView`; graph/flow/p
 **Interfaces:** `SessionMapSource` contains sessionKey, lineage, ordered `[SessionMapSourceEntry]`, canonical `finishedTurnIDs: [String]` and known refs. An entry has `id`, optional timestamp, kind (prompt/assistant/tool/attention/annotation), bounded display facts and a content fingerprint. `SessionMapCursor` contains lineage and optional entryID. `SessionMapDigest` contains text, hash, facts, knownRefs, cursor and source fingerprint manifest `[String: String]`. Adapter `make(items:sessionKey:lineage:) -> SessionMapSource`; builder `build(source:previousManifest:scope:planningExcerpts:) -> SessionMapDigest`.
 
 - [ ] Add/run `sessionMapDigestDeduplicatesSplitMessagesAndToolResults()`: construct a base assistant message split around a tool using the existing message/lineage fixtures; source has one assistant identity and one tool identity. Count terminal assistant work once, excluding tool-use stop reasons and repeated terminal notifications. Add `sessionMapWarmAndColdSourceAgree()` using a synthetic JSONL active path through `SessionTimelineLoader` and equivalent live snapshots.
-- [ ] Normalize to app-owned refs using baseMessageID/tool call ID, excluding hidden/private/thinking content and image bytes. If PR #29 has landed, consume its displayable timeline without harvesting its hidden descriptor bodies. Historical load never emits a new completion callback. If a live ephemeral ref cannot be reconciled with persisted history, invalidate its navigation link rather than jumping by approximate prose.
+- [ ] Normalize to app-owned refs using baseMessageID/tool call ID, excluding hidden/private/thinking content and image bytes. Consume the merged harness-notice feature's displayable timeline without harvesting its hidden descriptor bodies or calling its summarizer again. Historical load never emits a new completion callback. If a live ephemeral ref cannot be reconciled with persisted history, invalidate its navigation link rather than jumping by approximate prose.
 - [ ] Implement byte truncation and a prioritized digest that reserves its facts footer:
 
 ```swift
@@ -337,7 +339,7 @@ Fingerprint entries before truncation. Delta includes appended **and changed exi
 **Interfaces:** `SessionMapRecord` is Codable, schema version 1; fields are XML, cacheKey, generatedThrough, sourceManifest, caughtUpAt/caughtUpCursor, caughtUpGraph (node/edge fingerprints, not a raw transcript), firstSeenOrder, updatedAt, writer/checker configuration, check outcome, and dismissedThrough cursor. `SessionMapStore` actor exposes `load(sessionKey:)`, `save(_:sessionKey:)`, `remove(sessionKey:)` with injectable directory; caller handles errors. Preference selection enum `.role(String)` / `.model(id: String, effort: String?)`; checker is optional. `SessionMapModelResolver.resolve(selection:catalog:roles:) -> SessionMapResolvedModel?` returns provider/modelID/effort/acceptsImages.
 
 - [ ] Add/run `sessionMapPreferencesDefaultToSmolAndCheckerOff()`, `sessionMapStoreIsolatesSessionsAndKeepsLastGoodRecord()`, and `sessionMapModelRoleUsesQualifiedCatalogID()`. Test two same-named models from different providers, missing role, unsupported effort, corrupt record, atomic save failure, and repeat reload; temporary suites/directories only.
-- [ ] Add `acceptsImages: Bool = false` to `ComposerModelInfo` preserving existing initializer call sites; parse `input` containing `image` in `ComposerCatalogService.parseModel`. Resolve roles from `OmpConfigService.list()`; strip only a recognized thinking suffix when the resulting provider/model matches the catalog. Do not split arbitrary model IDs on every colon or invent a fallback.
+- [ ] Add stored `let acceptsImages: Bool` to `ComposerModelInfo` and an explicit initializer parameter `acceptsImages: Bool = false`, preserving existing call sites; parse `input` containing `image` in `ComposerCatalogService.parseModel`. Resolve roles from `OmpConfigService.list()` using its `config["modelRoles"]?["value"]?[roleName]` value shape, as the merged harness-notice factory does. Strip only a recognized thinking suffix when the resulting provider/model matches the catalog. Do not split arbitrary model IDs on every colon or invent a fallback.
 
 ```swift
 let acceptsImages = object["input"]?.arrayValue?.contains(.string("image")) == true
@@ -418,7 +420,7 @@ func isCatchUpEligible(finishedTurns: Int, awaySeconds: Double, hasAttentionEven
 ```
 
 - [ ] Add `sessionMapPaneDebouncesAndCoalescesTerminalEvents()` using an injected manual clock: terminal notifications for the same ID cause one request after 10 s; 9.9 s causes none; a second unique completion during debounce replaces input. The pure eligibility helper receives unattended finished-turn counts; wrap it with attention state so a continuously visible, pane-closed session spends nothing. Capture an unattended interval on return before clearing its timer. Test one threshold wakeup after two unattended turns and five minutes, and a preserved eligible flyer when returning. Pane closed/on/off policy follows the spec; a session switch with an open pane loads cache without a call. Per-session in-flight request plus one replaceable pending input; one active model call app-wide, manual before queued background. Use actor/main-actor state and revision checks, not a Task per transcript token.
-- [ ] Add a dedicated controller observer closure or narrow source callback beside existing retention/account callbacks. Invoke only after `handleControl` installs the matching snapshot. Distinguish hydration, nonterminal events and duplicate boundaries; do not overwrite `onActivityChange` or consume `handle.client.events` again. Managed-controller teardown unregisters source state and cancels tasks without pinning idle controllers in memory. Reuse existing library refresh signals for cold paths.
+- [ ] Add a dedicated controller observer closure or narrow source callback beside existing retention/account callbacks. Invoke only after `handleControl` installs the matching snapshot. Distinguish hydration, nonterminal events and duplicate boundaries; do not overwrite `onActivityChange`, the merged `setOnDroppedHarnessMessages` callback, or consume `handle.client.events` again. Preserve `harnessNoticePreferences`/`harnessNoticeSummarizer` in controller factories and executable replacement paths. Managed-controller teardown unregisters source state and cancels tasks without pinning idle controllers in memory. Reuse existing library refresh signals for cold paths.
 - [ ] Hook scene activity in `TenXApp` and session selection in `AppModel`. Mark caught up only on rendered acknowledgement or confirmed prompt acceptance. Capture source boundary before send; hook the shared `send(...)` success/echo path so attachments, steer/follow-up and initial prompt work. Failed/unconfirmed sends keep the old checkpoint. Opening, viewing, refreshing, clicking Use and dismissal do not acknowledge.
 - [ ] Add/run `sessionMapCaughtUpNeverAcknowledgesNewerWork()`, `sessionMapFailedSendPreservesCheckpoint()`, `sessionMapCloseCancelsPendingGeneration()`, `sessionMapConfigurationChangeRejectsLateOutput()`. Include branch rewind/session deletion and source changes under stable IDs. Persist graph baseline fingerprints on acknowledgement and source manifests on generation; derive added/changed/removed nodes/edges locally for catch-up.
 - [ ] Run controller/navigation regressions plus focused tests; commit `feat(map): schedule session updates and track caught-up coverage`.
@@ -434,7 +436,7 @@ func isCatchUpEligible(finishedTurns: Int, awaySeconds: Double, hasAttentionEven
 ```swift
 let card = ToolContentExtractor.card(
     name: tool.name, arguments: tool.arguments, result: tool.result, phase: tool.phase)
-if case .file(let path, _) = card.reference {
+if case let .file(path, _)? = card.reference {
     // Normalize against projectURL, then compare exact canonical paths.
     // Ambiguous/non-file primary strings remain an unmapped activity description.
     explicitPaths.append(path)

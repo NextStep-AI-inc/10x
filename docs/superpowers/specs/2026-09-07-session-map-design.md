@@ -1,6 +1,6 @@
 # Session Map design
 
-Status: approved product direction, written for planning review. This change contains documents only. Implementation is a separate execution step.
+Status: spec approved by Tanner; implementation planning authorized. This change contains documents only. Implementation is a separate execution step.
 
 ## Purpose and decisions
 
@@ -17,11 +17,11 @@ The agreed direction is:
 - **Use** places a suggested prompt in the composer and focuses it without submitting. Chillax is appropriate for the short pane headline.
 - Reusable glass-like, one-line system flyers are a separate plan. Catch-up is their first producer. See the [flyer design](2026-09-07-system-flyers-design.md).
 
-The numerical limits, geometry, persistence details, repair policy, and scheduling rules below make the accepted direction executable. They are implementation defaults, not separate claims of explicit approval for every number. No material product decision is awaiting an answer before planning can finish.
+The numerical limits, geometry, persistence details, repair policy, and scheduling rules below make the accepted direction executable. They are implementation defaults to tune from the native verification and contract tests. No material product decision is awaiting an answer before planning can finish.
 
 ## Current repository boundary
 
-Plan base: `7b23badf779cd8b6fc8849e6434c1930ef5afde0` on remote `main`.
+Authoring base: `7b23badf779cd8b6fc8849e6434c1930ef5afde0`. Integration points were subsequently checked read-only against current `main` at `e60234a332f6fdc34f771c92f0d3852411d7fe71`; the documentation branch retains its authoring base.
 
 | Existing surface | Reuse or narrow addition |
 | --- | --- |
@@ -38,7 +38,7 @@ Plan base: `7b23badf779cd8b6fc8849e6434c1930ef5afde0` on remote `main`.
 | `MessageBlockView.swift` (`ContentDocumentView`), `TranscriptReferenceView` | Compact prose variant and existing file/IDE actions. |
 | `SnapshotHarness.swift`, `docs/testing.md` | Native snapshots and Swift Testing function selectors. |
 
-The existing centered session **rail** map is navigation, not this document; do not replace `RailMapLayout` or extend its old plan. [Harness notices PR #29](https://github.com/NextStep-AI-inc/10x/pull/29) owns hidden-message collection, transcript `.notice` rows, summarization, and its settings. It is not merged at this plan base. Session Map must not copy those producers or route their notices through flyers. Reconcile shared `AppModel`, controller, settings, and shell edits when implementation starts. [OMP settings PR #28](https://github.com/NextStep-AI-inc/10x/pull/28) is another shared settings surface.
+The existing centered session **rail** map is navigation, not this document; do not replace `RailMapLayout` or extend its old plan. [Harness notices PR #29](https://github.com/NextStep-AI-inc/10x/pull/29) merged in `e60234a` and owns hidden-message collection, transcript `.notice` rows, summarization, and its settings. Session Map must not copy those producers or route their notices through flyers. Preserve its controller callback, summarizer dependencies and settings search matching when adding map integration. [OMP settings PR #28](https://github.com/NextStep-AI-inc/10x/pull/28) is still a separate open settings change.
 
 ## Visual structure and interactions
 

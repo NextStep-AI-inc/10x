@@ -10,6 +10,8 @@
 
 **Spec:** [System flyers design](../specs/2026-09-07-system-flyers-design.md). Companion: [Session Map implementation plan](2026-09-07-session-map.md).
 
+**Status:** Implementation plan prepared from the approved spec. This component is independent of model wiring; its native motion gate precedes the real catch-up producer.
+
 ## Global Constraints
 
 - Swift 6 / macOS 15+, native SwiftUI/AppKit/Foundation, no new dependency.
@@ -32,7 +34,7 @@
 | 3 | `App/Flyers/MarqueeTextView.swift`, `FlyerRowView.swift`, `FlyerStackView.swift`; `FlyerSnapshotTests.swift` | Reuse existing design tokens; no token redesign |
 | 4 | `App/Flyers/FlyerFixtureScene.swift`; `FlyerIntegrationTests.swift` | `App/Application/AppModel.swift`, `App/Sessions/ActiveSessionView.swift`, `TranscriptView.swift`, `App/Shell/AppShellView.swift`, `TenXApp.swift`, shared `App/Application/UIFixtureRoute.swift` |
 
-Only Task 4 owns shell integration. Coordinate it with Session Map Task 6 and Slice 3 and [harness notices #29](https://github.com/NextStep-AI-inc/10x/pull/29). If another task created `UIFixtureRoute`, extend it; do not duplicate a fixture application, transcript or composer. If delegating in the chosen execution workflow, use explicit owned paths and tell workers they are not alone; an out-of-fence need is skip-and-flag for that edit.
+Only Task 4 owns shell integration. Coordinate it with Session Map Task 6 and Slice 3. [Harness notices #29](https://github.com/NextStep-AI-inc/10x/pull/29) is merged on main at `e60234a`; preserve its `harnessNoticeStore`/`availableModels` settings wiring and keep its transcript notices outside this overlay. If another task created `UIFixtureRoute`, extend it; do not duplicate a fixture application, transcript or composer. If delegating in the chosen execution workflow, use explicit owned paths and tell workers they are not alone; an out-of-fence need is skip-and-flag for that edit.
 
 Do not execute real catch-up policy in this plan. Its producer is Task 13 of the map plan, which reuses these contracts after the independent motion gate passes. This lets the notice UI ship as one reviewable unit without waiting for model calls.
 

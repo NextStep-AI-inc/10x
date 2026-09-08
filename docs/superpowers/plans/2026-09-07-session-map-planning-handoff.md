@@ -2,11 +2,15 @@
 
 **Status: DONE (planning only).** Product implementation and native/model verification have not started.
 
+**Approval:** Tanner approved the specs and authorized the implementation-plan phase. The task breakdown and verification gates are prepared against that approved design.
+
 **Branch:** `codex/session-map-plans` → `main`
 
 **Draft PR:** [Plan the Session Map and system flyers #30](https://github.com/NextStep-AI-inc/10x/pull/30)
 
-**Plan base:** `7b23badf779cd8b6fc8849e6434c1930ef5afde0`
+**Authoring base:** `7b23badf779cd8b6fc8849e6434c1930ef5afde0`
+
+**Integration recheck:** current main `e60234a332f6fdc34f771c92f0d3852411d7fe71`, read-only. The documentation branch retains its authoring base; implementation must start from current main including the merged harness notices.
 
 **Design commit:** `410a478c0648d13b19c413382043a89ca802f272`
 
@@ -18,7 +22,7 @@
 - [x] [Session Map implementation plan](2026-09-07-session-map.md): 13 concrete tasks in three independently verifiable slices, with file ownership, interfaces, runnable test examples, current integration points and acceptance gates.
 - [x] [System flyers design](../specs/2026-09-07-system-flyers-design.md): one-line translucent composer overlay, primary motion references, overflow return-scroll and real native animation criteria.
 - [x] [System flyers implementation plan](2026-09-07-system-flyers.md): four independent tasks; real catch-up producer attaches in Map Task 13.
-- [x] Check compatibility boundaries with [harness notices #29](https://github.com/NextStep-AI-inc/10x/pull/29) and [settings editors #28](https://github.com/NextStep-AI-inc/10x/pull/28). Their implementation and shared-file merges remain owned separately.
+- [x] Check compatibility boundaries with merged [harness notices #29](https://github.com/NextStep-AI-inc/10x/pull/29) and open [settings editors #28](https://github.com/NextStep-AI-inc/10x/pull/28). Preserve the existing notice callbacks and settings wiring; implement flyers as their own surface.
 - [x] Preserve the approved direction and label exact limits/timings as implementation defaults.
 - [x] Keep this branch documentation-only and leave the PR draft.
 
@@ -79,4 +83,4 @@ No application source changed, so app compilation/typechecking, app/OmpKit tests
 
 ## For Tanner to review
 
-Review the specs' visual hierarchy and the execution order. The next working deliverable is the native fixture map (Slice 1), with the flyer motion component available as its independent companion. There is no new app build to test from this planning PR.
+The specs are approved. Review the implementation task sequence and native verification gates. The next working deliverable is the native fixture map (Slice 1), with the flyer motion component available as its independent companion. There is no new app build to test from this planning PR.
