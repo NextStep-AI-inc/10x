@@ -27,6 +27,7 @@ struct TranscriptView: View {
 
     let controller: SessionController
     @State private var isUserScrolling = false
+    @State private var hasRestoredReadingPosition = false
     @State private var searchResolution: TranscriptSearchResolution?
     @State private var consumedSearchNonce: UUID?
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
@@ -34,13 +35,16 @@ struct TranscriptView: View {
         ToolDetailPreferenceStore?
 
     var body: some View {
-        @Bindable var viewport = controller.viewport
+        let viewport = controller.viewport
         let disclosureState = controller.toolDisclosureState
         let allPresentationRows = Self.followObservation(for: controller.items)
         let renderRows = Self.renderRows(
             for: controller.items,
             runtimeState: controller.runtimeState,
             isGroupExpanded: disclosureState.isGroupExpanded)
+        let orderedScrollTargetIDs = renderRows.map(\.id)
+            + controller.pendingSubmissions.map(\.id)
+            + (isAwaitingOutput ? [TurnActivityView.transcriptID] : [])
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -102,7 +106,15 @@ struct TranscriptView: View {
             }
             .environment(\.toolDisclosureState, disclosureState)
             .scrollIndicators(.hidden)
-            .scrollPosition(id: $viewport.anchorID)
+            .onScrollTargetVisibilityChange(
+                idType: String.self,
+                threshold: 0.1
+            ) { visibleIDs in
+                viewport.observeVisibleTargets(
+                    visibleIDs,
+                    orderedIDs: orderedScrollTargetIDs,
+                    isUserScrolling: isUserScrolling)
+            }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(viewport.isFollowingLatest ? .bottom : nil, for: .sizeChanges)
             .onScrollPhaseChange { _, phase in
@@ -125,6 +137,12 @@ struct TranscriptView: View {
             .task(id: controller.transcriptSearchRequest?.nonce) {
                 searchResolution = nil
                 focusSearchResult(proxy, rows: allPresentationRows)
+            }
+            .task {
+                await restoreReadingPosition(
+                    proxy,
+                    rows: allPresentationRows,
+                    visibleIDs: Set(orderedScrollTargetIDs))
             }
             // The indicator is not an item, so its arrival needs its own follow
             // or it appears below the fold on the send that created it.
@@ -198,6 +216,32 @@ struct TranscriptView: View {
         }
     }
 
+    private func restoreReadingPosition(
+        _ proxy: ScrollViewProxy,
+        rows: [TranscriptPresentationRow],
+        visibleIDs: Set<String>
+    ) async {
+        guard !hasRestoredReadingPosition else { return }
+        hasRestoredReadingPosition = true
+
+        let viewport = controller.viewport
+        let hiddenTargetGroupID = viewport.anchorID.flatMap { anchorID in
+            Self.groupID(containing: anchorID, in: rows)
+        }
+        guard let targetID = TranscriptViewportState.restorationTarget(
+            anchorID: viewport.anchorID,
+            isFollowingLatest: viewport.isFollowingLatest,
+            hasSearchRequest: controller.transcriptSearchRequest != nil,
+            visibleIDs: visibleIDs,
+            hiddenTargetGroupID: hiddenTargetGroupID)
+        else { return }
+
+        await Task.yield()
+        guard controller.transcriptSearchRequest == nil,
+              !viewport.isFollowingLatest else { return }
+        proxy.scrollTo(targetID, anchor: .top)
+    }
+
     private func scroll(
         _ proxy: ScrollViewProxy,
         to id: String,
@@ -234,6 +278,15 @@ struct TranscriptView: View {
         for items: [TranscriptItem]
     ) -> [TranscriptPresentationRow] {
         TranscriptPresentationRow.rows(from: items)
+    }
+
+    nonisolated static func groupID(
+        containing rowID: String,
+        in rows: [TranscriptPresentationRow]
+    ) -> String? {
+        guard let row = rows.first(where: { $0.id == rowID }),
+              case .groupedTool(let groupID, _) = row else { return nil }
+        return groupID
     }
 
     nonisolated static func renderRows(

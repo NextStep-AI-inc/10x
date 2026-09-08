@@ -52,6 +52,16 @@ import Testing
     ])
 }
 
+@Test func hiddenGroupedToolResolvesToItsVisibleGroupForRestoration() {
+    let rows = TranscriptPresentationRow.rows(from: [
+        .tool(tool(id: "one", phase: .complete)),
+        .tool(tool(id: "two", phase: .complete)),
+    ])
+
+    #expect(TranscriptView.groupID(containing: "tool:two", in: rows) == "tool-group-one")
+    #expect(TranscriptView.groupID(containing: "message:missing", in: rows) == nil)
+}
+
 @Test func noticeEndsToolGroupRatherThanBeingAbsorbed() {
     let rows = TranscriptPresentationRow.rows(from: [
         .tool(tool(id: "before", phase: .running)),
