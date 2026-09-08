@@ -1,5 +1,6 @@
 import ComputerKit
 import XCTest
+@testable import ComputerKit
 @testable import TenXApp
 
 @MainActor
@@ -50,5 +51,56 @@ final class ComputerUseControllerTests: XCTestCase {
         controller.applySupervision(.stopped(reason: "global shut-off", session: nil))
         XCTAssertEqual(controller.phase, .off)
         XCTAssertEqual(controller.claimedWindowIDs, [])
+    }
+}
+
+private final class NoopEngine: DesktopEngine {
+    var isCancelled: @Sendable () -> Bool = { false }
+    func preflightPermissions() -> PermissionStatus { .init(screenRecording: true, accessibility: true) }
+    func listWindows(onScreenOnly: Bool) throws -> [WindowInfo] { [] }
+    func screenshot(windowID: CGWindowID) throws -> Screenshot {
+        Screenshot(pngData: Data(), pixelSize: .zero, scale: 1)
+    }
+    func launch(app: String) throws -> WindowInfo { throw ComputerError("nope") }
+    func act(_ action: ComputerAction, window: WindowInfo) throws {}
+}
+
+@MainActor
+final class ComputerUseStopIntegrationTests: XCTestCase {
+    func test_stop_revokesSessionAtDaemon() async throws {
+        let socketPath = "/tmp/tenx-stop-\(UUID().uuidString.prefix(8)).sock"
+        defer { try? FileManager.default.removeItem(atPath: socketPath) }
+        let daemon = DaemonServer(engine: NoopEngine(), socketPath: socketPath)
+        try daemon.start()
+        defer { daemon.stop() }
+
+        let mcp = try DaemonClient(socketPath: socketPath)
+        try mcp.send(.object(["role": .string("mcp")]))
+        try mcp.send(.object([
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("omp")])]),
+        ]))
+        _ = try mcp.receive()
+
+        let sessionID = daemon.registry.allSessions.keys.map(\.raw).sorted().first!
+        let supervision = SupervisionClient(socketPath: socketPath)
+        let controller = ComputerUseController(supervision: supervision)
+        controller.handleToolStarted(name: "mcp__tenx-computer_computer_claim", input: ["window_id": 10])
+        controller.applySupervision(.windowClaimed(session: sessionID, harness: "omp", windowID: 10, app: "Safari", title: "", bounds: ""))
+        XCTAssertEqual(controller.daemonSessionID, sessionID)
+
+        await controller.stopComputerUse()
+
+        var isError = false
+        for _ in 0..<50 where !isError {
+            try mcp.send(.object([
+                "jsonrpc": .string("2.0"), "id": .number(2), "method": .string("tools/call"),
+                "params": .object(["name": .string("computer_windows"), "arguments": .object([:])]),
+            ]))
+            let response = try mcp.receive()
+            isError = response["result"]?["isError"] == .bool(true)
+            if !isError { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        XCTAssertTrue(isError)
     }
 }

@@ -66,7 +66,7 @@ final class ComputerUseController {
     // MARK: - Stop
 
     func stopComputerUse() async {
-        if let daemonSessionID { supervision.stopSession(daemonSessionID) }
+        if let daemonSessionID { await supervision.stopSession(daemonSessionID) }
         tracker = ComputerActivityTracker()
         status = nil
         self.daemonSessionID = nil

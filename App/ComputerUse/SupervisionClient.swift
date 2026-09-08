@@ -61,8 +61,24 @@ public final class SupervisionClient: @unchecked Sendable {
         client?.close()
     }
 
-    public func stopSession(_ sessionID: Int) {
-        send(.object(["command": .string("stop_session"), "session": .number(Double(sessionID))]))
+    public func stopSession(_ sessionID: Int) async {
+        let path = socketPath
+        let payload: ComputerKit.JSONValue = .object([
+            "command": .string("stop_session"),
+            "session": .number(Double(sessionID)),
+        ])
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .userInitiated).async {
+                defer { continuation.resume() }
+                guard let client = try? DaemonClient(socketPath: path) else { return }
+                try? client.send(.object(["role": .string("supervision")]))
+                while true {
+                    guard let line = try? client.receive(timeout: 2) else { break }
+                    if line["type"] == .string("permissions") { break }
+                }
+                try? client.send(payload)
+            }
+        }
     }
 
     public func stopAll() {
