@@ -43,6 +43,7 @@ final class AppModel {
     @ObservationIgnored private var retiringSessions: [ObjectIdentifier: SessionController] = [:]
     @ObservationIgnored private var sessionTransitionGeneration = 0
     @ObservationIgnored private let emergencyShortcut = GlobalEmergencyShortcut()
+    @ObservationIgnored private let overlayController = OverlayWindowController()
     @ObservationIgnored private var lifecycleTokens: [NSObjectProtocol] = []
 
     init(dependencies: AppDependencies = .live, defaults: UserDefaults = .standard) {
@@ -53,9 +54,11 @@ final class AppModel {
 
     func bootstrap() async {
         installComputerUseLifecycleObservers()
+        overlayController.start()
         supervision.start()
         supervision.onEvent = { [weak self] event in
             Task { @MainActor in
+                self?.overlayController.apply(event)
                 self?.activeSession?.computerUse.applySupervision(event)
             }
         }
@@ -288,7 +291,10 @@ final class AppModel {
             object: nil,
             queue: .main)
         { [weak self] _ in
-            Task { @MainActor in self?.supervision.stopAll() }
+            Task { @MainActor in
+                self?.overlayController.stop()
+                self?.supervision.stopAll()
+            }
         })
     }
 }
