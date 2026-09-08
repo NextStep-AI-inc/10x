@@ -2,11 +2,25 @@ import AppKit
 import SwiftUI
 
 enum DiffViewLayout {
-    static func shouldShowFileHeader(
+    static func shouldHideFileHeader(
         fileCount: Int,
-        isSingleFileNamedInCard: Bool
+        diffPath: String?,
+        topHeaderPath: String?
     ) -> Bool {
-        fileCount != 1 || !isSingleFileNamedInCard
+        guard fileCount == 1,
+              let diffPath = normalizedPath(diffPath),
+              let topHeaderPath = normalizedPath(topHeaderPath)
+        else { return false }
+        return diffPath == topHeaderPath
+    }
+
+    private static func normalizedPath(_ path: String?) -> String? {
+        guard let path, !path.isEmpty else { return nil }
+        let standardized = NSString(string: path).standardizingPath
+        guard !standardized.isEmpty,
+              path.hasPrefix("/") == standardized.hasPrefix("/")
+        else { return nil }
+        return standardized
     }
 }
 
@@ -214,19 +228,10 @@ struct DiffView: View {
     }
 
     private var showsFileHeader: Bool {
-        DiffViewLayout.shouldShowFileHeader(
+        !DiffViewLayout.shouldHideFileHeader(
             fileCount: diff.files.count,
-            isSingleFileNamedInCard: isSingleFileNamedInCard)
-    }
-
-    private var isSingleFileNamedInCard: Bool {
-        guard diff.files.count == 1,
-              let topHeaderPath,
-              !topHeaderPath.isEmpty,
-              let filePath = diff.files.first?.path
-        else { return false }
-        return URL(filePath: topHeaderPath).lastPathComponent
-            == URL(filePath: filePath).lastPathComponent
+            diffPath: diff.files.first?.path,
+            topHeaderPath: topHeaderPath)
     }
 
     private func marker(for kind: UnifiedDiffLine.Kind) -> String {

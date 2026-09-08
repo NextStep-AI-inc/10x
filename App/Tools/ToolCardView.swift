@@ -19,6 +19,6 @@ struct ToolCardView: View, Equatable {
         if case .file(let path, _) = presentation.content.reference {
             return path
         }
-        return presentation.content.primary
+        return nil
     }
 }

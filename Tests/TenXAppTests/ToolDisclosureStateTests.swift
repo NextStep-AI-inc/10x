@@ -100,16 +100,23 @@ import Testing
     #expect(header.accessibilityLabel == "Edit App.swift, +2 −1, Complete, 0.3 seconds")
 }
 
-@Test func singleFileDiffHeaderChromeIsRemovedOnlyInsideANamedCard() {
-    #expect(!DiffViewLayout.shouldShowFileHeader(
+@Test func singleFileDiffHeaderRequiresExactNamedPathContext() {
+    #expect(DiffViewLayout.shouldHideFileHeader(
         fileCount: 1,
-        isSingleFileNamedInCard: true))
-    #expect(DiffViewLayout.shouldShowFileHeader(
+        diffPath: "Sources/one/Layout.swift",
+        topHeaderPath: "Sources/two/Layout.swift") == false)
+    #expect(DiffViewLayout.shouldHideFileHeader(
         fileCount: 1,
-        isSingleFileNamedInCard: false))
-    #expect(DiffViewLayout.shouldShowFileHeader(
+        diffPath: "Sources/one/Layout.swift",
+        topHeaderPath: "Sources/one/Layout.swift"))
+    #expect(DiffViewLayout.shouldHideFileHeader(
+        fileCount: 1,
+        diffPath: "Sources/one/Layout.swift",
+        topHeaderPath: nil) == false)
+    #expect(DiffViewLayout.shouldHideFileHeader(
         fileCount: 2,
-        isSingleFileNamedInCard: true))
+        diffPath: "Sources/one/Layout.swift",
+        topHeaderPath: "Sources/one/Layout.swift") == false)
 }
 
 @Test func expandedModeOpensCompletedAttentionTools() {
