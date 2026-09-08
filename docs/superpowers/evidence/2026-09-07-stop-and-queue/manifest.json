@@ -45,6 +45,14 @@
     {
       "file": "two-followups-accepted.png",
       "sha256": "4adb5434f1985a8fe6de0293aafe21614b7ca3730a52f3ca164a49b7d6159fb9"
+    },
+    {
+      "file": "followups-reopened-in-image-build.png",
+      "sha256": "14b9e062f2a055706327f38bb2272ad8e428b0d54159c747d9851ca630f93df0",
+      "application": "10x Images QA",
+      "sourceCommit": "6e3bec4d6aa4e000566c7f5a5eb8e05f89f40725",
+      "executableSHA256": "7c0b6d999c839d2588209f23d1f26c7d5ac4e1f863cedef3454eded96e80785f",
+      "purpose": "Reopen the persisted queue history through the same history/receipt presentation after image restoration."
     }
   ]
 }

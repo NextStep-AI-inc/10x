@@ -25,10 +25,10 @@ Files: modify `App/Sessions/SessionController.swift` and `Tests/TenXAppTests/Ses
 Files: create `docs/superpowers/evidence/2026-09-07-stop-and-queue/README.md` and actual screenshots; update this plan and the roadmap.
 
 - [x] Parent review of the full PR diff: no inferred delivery counts, no stale full-state overwrite, no duplicate user rows, and no process leaks. Match fixture event sequencing to installed OMP 18.1.10, documenting that steering may be consumed within an existing model loop.
-- [ ] Build Release with unique bundle ID `com.nextstep.tenx.auditqueue`, derived data `/tmp/10x-audit-queue-release`, and isolated app/runtime data. Confirm the window is visible through CUA. Drive actual prompt and follow-up controls, observe accepted counts and eventual consumption, and reopen history to check one copy per submitted message.
+- [x] Build Release with unique bundle ID `com.nextstep.tenx.auditqueue`, derived data `/tmp/10x-audit-queue-release`, and isolated app/runtime data. Confirm the window is visible through CUA. Drive actual prompt and follow-up controls, observe accepted counts and eventual consumption, and reopen history to check one copy per submitted message.
 - [ ] Verify Stop with a staged draft and image, Command-period while a flyout is open, and Stop while a decision card is focused. Confirm runtime settlement and unchanged staged input. Change the existing Stop implementation only if the user flow fails.
 - [x] Save actual build/runtime versions, commit SHA, commands/counts, screenshots, and explicit limits. Reproduce controlled rejection/late-response cases with the fixture and label them separately from real-runtime QA.
-- [ ] Update the draft PR with evidence, check base compatibility and review. Keep draft while required checks remain red or unverified. No merge; continue the next roadmap slice.
+- [x] Update the draft PR with evidence, check base compatibility and review. Keep draft while required checks remain red or unverified. No merge; continue the next roadmap slice.
 
 ## Execution record
 
@@ -36,3 +36,5 @@ Files: create `docs/superpowers/evidence/2026-09-07-stop-and-queue/README.md` an
 - Release UI evidence and exact limits are recorded in [the evidence README](../evidence/2026-09-07-stop-and-queue/README.md). Both queue modes, staged text/images, authoritative counts, and controlled rejection were driven through the app. Persisted marker counts are exactly one per submitted message.
 - STOP is incomplete: the controls abort and preserve input, but a Cursor background job can later resume the agent. A stale Running tool label and pending-decision focus remain open. Trace and correct supported cancellation before closing STOP.
 - PR stays draft on the known baseline failures and newer-main integration gate.
+
+- Native reopen verification completed in the image-history Release build after its persistence check, with the extra capture tagged to its own source/executable hash. STOP continues in [PR #36](https://github.com/NextStep-AI-inc/10x/pull/36).

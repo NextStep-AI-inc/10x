@@ -10,7 +10,7 @@ Verified on September 7, 2026 in the native macOS Release app built from `d33c93
 - **Controlled rejection:** An isolated RPC fixture rejected a follow-up through the real app controls. The draft remained, the receipt said delivery was not confirmed, the session displayed recovery actions, and no accepted queue badge appeared. This is wire-fixture evidence, not a real provider rejection.
 - **Stop controls:** Clicking Stop with staged text and a PNG, and pressing Command-period while the model flyout had focus, both produced an aborted response and preserved the staged input. This establishes that the controls are reachable and preserve input; it does not establish lasting runtime settlement, as explained below.
 
-The screenshots named in `manifest.json` are direct CUA captures of this Release build. OMP was the installed `18.1.10` runtime, using a separate QA home/profile and disposable projects. No user checkout was edited by the test prompts. Provider and runtime-generated system notices are not counted as submitted user messages.
+The first ten screenshots named in `manifest.json` are direct CUA captures of this Release build. The later reopen capture is explicitly tagged with the image-history build below. OMP was the installed `18.1.10` runtime, using a separate QA home/profile and disposable projects. No user checkout was edited by the test prompts. Provider and runtime-generated system notices are not counted as submitted user messages.
 
 ## Automated checks
 
@@ -32,3 +32,7 @@ The screenshots named in `manifest.json` are direct CUA captures of this Release
 ## Saved-session marker check
 
 Read-only JSONL inspection after the real runs found one user entry for each submitted follow-up marker and one for the steering marker. There were four user entries in the two-follow-up session and three in the steering/Stop session. These are content checks of the isolated QA files, not inferred from UI counters. Raw session files and authentication data are intentionally excluded from this evidence directory.
+
+## Reopen check after image verification
+
+Opened the persisted two-follow-up conversation through the native rail in the image-history Release build `6e3bec4` (same history/receipt presentation plus blob restoration). Both follow-up inputs and responses appeared once, in text/tool/text order, with no pending receipts or queue badge. [Reopened history](followups-reopened-in-image-build.png). This additional capture is tagged with its own executable hash in the manifest; it does not claim the image build contains the queue-count change.
