@@ -29,7 +29,6 @@ import time
 
 mode = sys.argv[1] if len(sys.argv) > 1 else "basic"
 command_log = sys.argv[2] if mode == "command-log" and len(sys.argv) > 2 else None
-custom_record_path = os.environ.get("OMP_FAKE_CUSTOM_RECORD")
 W = sys.stdout
 
 
@@ -44,20 +43,6 @@ def log_command(command_type):
         return
     with open(command_log, "a", encoding="utf-8") as handle:
         handle.write((command_type or "parse") + "\n")
-
-
-def record_custom(cmd):
-    if custom_record_path is None:
-        return
-    record = {
-        "customType": cmd.get("customType"),
-        "content": cmd.get("content"),
-        "display": cmd.get("display"),
-        "deliverAs": cmd.get("deliverAs"),
-        "triggerTurn": cmd.get("triggerTurn"),
-    }
-    with open(custom_record_path, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, separators=(",", ":")) + "\n")
 
 
 if mode == "never-ready":
@@ -427,15 +412,6 @@ for line in sys.stdin:
     elif ctype == "bad_command_test":
         emit({"id": cid, "type": "response", "command": "bad_command_test",
               "success": False, "error": "nope", "code": "test_code"})
-    elif ctype == "custom":
-        log_command(ctype)
-        record_custom(cmd)
-        if mode == "custom-failure":
-            emit({"id": cid, "type": "response", "command": "custom",
-                  "success": False, "error": "unknown command"})
-        else:
-            emit({"id": cid, "type": "response", "command": "custom",
-                  "success": True, "data": {"delivered": True}})
     elif ctype == "extension_ui_response" and mode == "extension-timeout":
         emit({"type": "message_update", "message": {"id": "leaked-timeout-response",
               "role": "assistant", "content": [{"type": "text", "text": "stale timeout leaked"}]}})
