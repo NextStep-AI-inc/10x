@@ -2,12 +2,9 @@
   "sourceCommit": "e8f12944b3c1c3245d8a0fce5f2bcd434370fd02",
   "app": "/tmp/10x-signals-final-build/10x-signals.app",
   "bundleIdentifier": "com.nextstep.tenx.signalsqa",
-  "nativeLaunched": false,
-  "files": {
-    "fixture": {
-      "path": "/tmp/10x-audit-signals/docs/superpowers/evidence/2026-09-08-session-attention/attention-control.py",
-      "sha256": "a1ffb75e3beb1887a93c97d2d2f92510efde8256fc197ab28f2a810ec9f30a71"
-    },
+  "nativeLaunched": true,
+  "nativeQuitVia": "Command-Q",
+  "externalFiles": {
     "buildLog": {
       "path": "/tmp/10x-signals-release-build.log",
       "sha256": "0b36221025dfc00a485b22d49305a87542acc4fed7e2b7039d931ba06333fc8f"
@@ -16,5 +13,75 @@
       "path": "/tmp/10x-signals-final-build/10x-signals.app/Contents/MacOS/10x",
       "sha256": "9fd40a85225c7a1d32aa3981492d98695492443ea9f35d94521d624c82f62813"
     }
-  }
+  },
+  "evidenceFiles": [
+    {
+      "file": "README.md",
+      "sha256": "1faa17184a01e63b81ff143641d2eeea56acf4655f5f6e8a71881968dfd68fec"
+    },
+    {
+      "file": "after-request-arrival.jpg",
+      "sha256": "c5afdab3e2dc5a9298db9d82b5261c6967c46c9996e733a09e3e71ee42e872e7"
+    },
+    {
+      "file": "arrival-control.jsonl",
+      "sha256": "68c2fabdd2e97041fc7e7791379f134275c7627e8909ab1597dda127e3e3180d"
+    },
+    {
+      "file": "attention-control.py",
+      "sha256": "a1ffb75e3beb1887a93c97d2d2f92510efde8256fc197ab28f2a810ec9f30a71"
+    },
+    {
+      "file": "attention-edge.py",
+      "sha256": "68d2b212377c897530b7fd8d092a89c953a3e2ca234cc4d3a1dffe23e3a762f4"
+    },
+    {
+      "file": "background-completion.jpg",
+      "sha256": "e903496775868805801297494f9c6c093c1381aec67f41521db4d7ce2a4ddafc"
+    },
+    {
+      "file": "background-pending.jpg",
+      "sha256": "05d6f57a86ecfd8d389e483b1e7a392978009d121e872ad25b3d356c148605dc"
+    },
+    {
+      "file": "before-request-arrival.jpg",
+      "sha256": "9a80de7e752306d55ac44133b93bcff8522abeb7fc5564c3bd1df7d1aefee026"
+    },
+    {
+      "file": "completion-acknowledged.jpg",
+      "sha256": "7f222353432022c4451429b1088b0cc6f582334ae711703557534e7cd5c9c7ef"
+    },
+    {
+      "file": "composer-reveals-next-request.jpg",
+      "sha256": "63fae28fa63dec3bbac4f57268b0772d05ee014cca5b40836cf1545fe7d3d3da"
+    },
+    {
+      "file": "decisions-completed.jpg",
+      "sha256": "f8abe3913f5e36b574721f15dbc859bd220d05c11ac59b6e91d37e457df42f5a"
+    },
+    {
+      "file": "edge-control.jsonl",
+      "sha256": "a1b4caaf44ba798bdb66ed37358806a30c3f705c3eb4f0236fd1cf19bb382c98"
+    },
+    {
+      "file": "header-reveals-first-request.jpg",
+      "sha256": "b565db6a21de761a9b15f1af9a65e10a72ee67e134f303279713826e66990ec8"
+    },
+    {
+      "file": "native-observations.json",
+      "sha256": "38fde5b99c9a578cc6c4dd3c1a35e73c1e51537fcb754e85e294b98b408d5d84"
+    },
+    {
+      "file": "request-decisions-control.jsonl",
+      "sha256": "bd23016c0504fb742a09d4397b0e288e9f1e8f236a3012cdb9bf3f4542348c8c"
+    },
+    {
+      "file": "two-session-pending.jpg",
+      "sha256": "68fe0c7bd180e8f93f0c6c22513b03f0321e16b98355706c347d0420b4cc8e51"
+    },
+    {
+      "file": "two-session-statuses.jpg",
+      "sha256": "c9dde51bd90d95e02f0a0ab921bff0237ac377484211bbd119d7678bcb7ef87a"
+    }
+  ]
 }

@@ -1,0 +1,12 @@
+{"at":"2026-09-08T17:30:42.859Z","direction":"command","type":"negotiate_protocol","id":"req_1"}
+{"at":"2026-09-08T17:30:42.860Z","direction":"command","type":"get_state","id":"req_2"}
+{"at":"2026-09-08T17:30:42.952Z","direction":"command","type":"get_available_commands","id":"req_3"}
+{"at":"2026-09-08T17:30:43.045Z","direction":"command","type":"set_subagent_subscription","id":"req_4"}
+{"at":"2026-09-08T17:30:56.511Z","direction":"command","type":"prompt","id":"req_5","messageLength":59,"imageCount":0}
+{"at":"2026-09-08T17:30:56.703Z","direction":"command","type":"get_state","id":"req_6"}
+{"at":"2026-09-08T17:30:57.513Z","direction":"event","type":"extension_ui_request","id":"attention-edge-timeout-confirm","method":"confirm","elapsedMs":1001}
+{"at":"2026-09-08T17:31:01.017Z","direction":"event","type":"extension_ui_request","id":"attention-edge-explicit-cancel-input","method":"input","elapsedMs":4505}
+{"at":"2026-09-08T17:31:14.286Z","direction":"command","type":"extension_ui_response","id":"attention-edge-explicit-cancel-input","matchedMethod":"input","body":{"cancelled":true}}
+{"at":"2026-09-08T17:31:57.713Z","direction":"command","type":"extension_ui_response","id":"attention-edge-timeout-confirm","matchedMethod":"confirm","body":{"cancelled":true,"timedOut":true}}
+{"at":"2026-09-08T17:31:57.715Z","direction":"event","type":"turn_end","stopReason":"stop"}
+{"at":"2026-09-08T17:31:57.974Z","direction":"command","type":"get_state","id":"req_7"}
