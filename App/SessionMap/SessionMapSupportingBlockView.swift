@@ -69,17 +69,18 @@ struct SessionMapSupportingBlockView: View {
     }
 
     private func chart(kind: SessionMapChartKind, points: [SessionMapChartPoint]) -> some View {
-        Chart(points, id: \.label) { point in
+        Chart(Array(points.indices), id: \.self) { index in
+            let point = points[index]
             if kind == .bar {
-                BarMark(x: .value("Item", point.label), y: .value("Value", point.value))
+                BarMark(x: .value("Position", String(index)), y: .value("Value", point.value))
                     .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
                     .annotation(position: .top) { chartLabel(point) }
                     .accessibilityLabel(point.label)
                     .accessibilityValue(point.value.formatted())
             } else {
-                LineMark(x: .value("Item", point.label), y: .value("Value", point.value))
+                LineMark(x: .value("Position", String(index)), y: .value("Value", point.value))
                     .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-                PointMark(x: .value("Item", point.label), y: .value("Value", point.value))
+                PointMark(x: .value("Position", String(index)), y: .value("Value", point.value))
                     .foregroundStyle(TenXPalette.color(TenXPalette.interactiveCyanHex))
                     .annotation(position: .top) { chartLabel(point) }
                     .accessibilityLabel(point.label)

@@ -182,6 +182,15 @@ enum SessionMapFixtures {
         </sessionmap>
         """
 
+    static let duplicateChartLabelsXML = """
+        <sessionmap headline="Repeated chart labels" phase="implementing">
+          <chart kind="bar">
+            <point fact="filesChanged" label="Checks" value="2"/>
+            <point fact="testsRun" label="Checks" value="3"/>
+          </chart>
+        </sessionmap>
+        """
+
     static let graphStatesXML = """
         <sessionmap headline="Request pipeline" phase="mixed">
           <summary>The request passes through native components with one disconnected audit record.</summary>

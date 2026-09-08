@@ -1,6 +1,25 @@
+import AppKit
 import SwiftUI
 import Testing
 @testable import TenXApp
+
+@MainActor
+@Test func sessionMapDuplicateChartLabelsRemainDistinct() throws {
+    let document = try SessionMapFixtures.document(SessionMapFixtures.duplicateChartLabelsXML)
+    let block = try #require(document.blocks.first)
+    let view = SessionMapSupportingBlockView(block: block, onAction: { _ in })
+        .padding(16)
+        .frame(width: 320, height: 180, alignment: .topLeading)
+    let bitmap = try #require(renderSnapshotBitmap(
+        view,
+        size: CGSize(width: 320, height: 180)))
+
+    #expect(cyanMarkRuns(in: bitmap) == 2)
+    try assertSnapshot(
+        view,
+        name: "session-map-chart-duplicate-labels",
+        size: CGSize(width: 320, height: 180))
+}
 
 @MainActor
 @Test func sessionMapPanePlacesDiagramBeforeSupportingProse() throws {
@@ -176,3 +195,21 @@ private let sessionMapSnapshotProjectURL = URL(filePath: #filePath)
     .deletingLastPathComponent()
     .deletingLastPathComponent()
     .deletingLastPathComponent()
+
+private func cyanMarkRuns(in bitmap: NSBitmapImageRep) -> Int {
+    let occupiedColumns = (0..<bitmap.pixelsWide).map { x in
+        (0..<bitmap.pixelsHigh).contains { y in
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else {
+                return false
+            }
+            return color.redComponent < 0.05
+                && color.greenComponent > 0.55
+                && color.blueComponent > 0.65
+                && color.blueComponent < 0.9
+        }
+    }
+    return occupiedColumns.reduce(into: (count: 0, previous: false)) { result, occupied in
+        if occupied && !result.previous { result.count += 1 }
+        result.previous = occupied
+    }.count
+}
