@@ -573,15 +573,11 @@ final class SessionController: ComposerSessionControlling {
             let noticeID = UUID().uuidString
             let summarizer = harnessNoticeSummarizer
             Task { [weak self] in
-                await processor.appendNotice(
-                    id: noticeID,
-                    level: "info",
-                    message: summarizer == nil ? label : "\(label) — summarizing…")
+                await processor.appendNotice(id: noticeID, level: "info", message: label)
                 guard let summarizer, self?.processor === processor else { return }
                 let summary = await summarizer.summarize(descriptor)
-                await processor.updateNotice(
-                    id: noticeID,
-                    message: summary.map { "\(label): \($0)" } ?? label)
+                guard let summary else { return }
+                await processor.updateNotice(id: noticeID, message: "\(label): \(summary)")
             }
         }
     }

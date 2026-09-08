@@ -599,10 +599,56 @@ private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
             guard case .notice(_, _, let message) = item else { return nil }
             return message
         }.first
-        if let noticeMessage, !noticeMessage.contains("summarizing") { break }
+        if noticeMessage != nil { break }
         try await Task.sleep(for: .milliseconds(20))
     }
     #expect(noticeMessage == "Hidden developer message (13 chars)")
+
+    await processManager.closeAll()
+}
+
+@MainActor @Test func droppedHarnessMessagesBelowTheThresholdStaySilent() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("controller-notices-threshold-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "activity-lifecycle")
+    let processManager = SessionProcessManager(executable: executable.path)
+
+    let suiteName = "harness-notice-threshold-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let preferences = HarnessNoticePreferenceStore(defaults: defaults)
+    preferences.isEnabled = true
+    preferences.threshold = 1_000
+
+    let descriptor = HarnessMessageDescriptor(
+        role: "developer",
+        customType: nil,
+        byteCount: 13,
+        text: "Plan approved.")
+    let controller = SessionController(
+        processManager: processManager,
+        historyLoader: { _ in TranscriptHistory(items: [], dropped: [descriptor]) },
+        harnessNoticePreferences: preferences,
+        harnessNoticeSummarizer: StubHarnessSummarizer(summary: "unused"))
+    let metadata = SessionMetadata(
+        path: "/tmp/fake.jsonl",
+        sessionId: "fake-session",
+        cwd: "/tmp",
+        title: "Fixture",
+        created: .distantPast,
+        modified: .distantPast,
+        sizeBytes: 0,
+        status: .complete)
+
+    await controller.openExisting(metadata)
+    try await Task.sleep(for: .milliseconds(200))
+
+    #expect(controller.items.allSatisfy {
+        if case .notice = $0 { return false }
+        return true
+    })
 
     await processManager.closeAll()
 }
