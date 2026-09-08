@@ -167,7 +167,7 @@ struct ContextUsagePopover: View {
 
     private var compactionAction: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Summarizes older conversation to free context space.")
+            Text("Compresses older conversation to free context space.")
                 .font(TenXTypography.body(size: 11))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 .fixedSize(horizontal: false, vertical: true)
