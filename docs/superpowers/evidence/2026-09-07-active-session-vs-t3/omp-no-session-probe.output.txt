@@ -1,0 +1,16 @@
+$ python3 omp-no-session-probe.py        # omp v18.1.10, cwd = a scratch git repo
+A) omp --mode rpc --no-title --no-session   (what 10x's warm client uses)
+  before new_session: sessionFile = None
+  new_session -> True {'cancelled': False}
+  after new_session: sessionFile = None | sessionId = 01a07e63-637e-7000-9fa0-2fb9a8efa246
+B) omp --mode rpc --no-title   (persisting)
+  before new_session: sessionFile = /Users/tannerpham/.omp/agent/sessions/<encoded cwd>/2026-09-08T00-20-38-621Z_01a07e63-665d-7000-857e-f3f015b1e496.jsonl
+  new_session -> True {'cancelled': False}
+  after new_session: sessionFile = /Users/tannerpham/.omp/agent/sessions/<encoded cwd>/2026-09-08T00-20-38-991Z_01a07e63-67cf-7000-8975-fb73e8cf058a.jsonl | sessionId = 01a07e63-67cf-7000-8975-fb73e8cf058a
+
+$ ps -o pid=,ppid=,command= -ax | grep "omp --mode rpc" | grep -v provider-accounts
+59071 59067 bun /Users/tannerpham/.bun/bin/omp --mode rpc --no-title --no-session
+59075 59067 bun /Users/tannerpham/.bun/bin/omp --mode rpc --no-title --no-session
+59104 59067 bun /Users/tannerpham/.bun/bin/omp --mode rpc --no-title --no-session
+# 59067 = the 10x audit build (Release, 59a4ae8). Two turns were run in a composer-created
+# session; no *.jsonl was written under ~/.omp/agent/sessions and the rail never listed it.

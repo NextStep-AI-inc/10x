@@ -54,3 +54,15 @@ a feature worked in the captured runtime.
   and the next concrete implementation decision.
 - Public publishing, merge, release, and cleanup of recovered sessions remain
   outside this continuation. The report is the local review surface.
+
+## Final disposition
+
+- Recovery, synthesis, all 90 finding dispositions, evidence preservation,
+  and the four-case persistence probe are complete.
+- HTML, Markdown, curated source data, and the provenance manifest are saved.
+- The planned rendered-page inspection was skipped because the browser URL
+  policy rejected the local-file URL. The workspace file preview was queued;
+  that is not a successful visual check. No alternate browser route was used.
+- The final handoff is `DONE_WITH_CONCERNS`: audit content is complete;
+  report-layout inspection and the stated future application acceptance tests
+  remain unverified. No application fixes are included.

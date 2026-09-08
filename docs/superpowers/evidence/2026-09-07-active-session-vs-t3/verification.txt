@@ -1,0 +1,14 @@
+Audit verification: 2026-09-08T02:20:00.640431+00:00
+Application source baseline: 59a4ae8faaea049bfc2ff540a4f021b3859080b6
+Scope: audit documents, generator, evidence, and diagnostic probe only.
+PASS: generator executed and wrote HTML plus Markdown.
+PASS: all 61 distinct source references resolve to existing files and valid lines on the frozen source checkouts.
+PASS: 90 unique recovered observation IDs have dispositions.
+PASS: all 30 report-image hashes match; the 16 preserved T3 source PNG hashes match.
+PASS: 32 original 10x reference PNGs matched the baseline checkout (provenance check).
+PASS: 12 embedded images have alt text; 17 local links exist; internal anchors resolve and are unique.
+PASS: no stub placeholders or report JavaScript remain.
+PASS: four isolated real-omp RPC cases completed; output saved in verify-warm-persistence.output.txt; zero model calls.
+NOT VERIFIED: rendered HTML layout. Local-file browser navigation was rejected by URL security policy; workspace file preview only queued.
+NOT VERIFIED: fresh model turns, app rebuild/tests, quit/relaunch, live approvals, focus/keyboard/IME, notification delivery, application dark mode, long transcripts.
+No workaround browser/server was started after the URL policy rejection.
