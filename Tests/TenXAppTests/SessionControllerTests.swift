@@ -1534,3 +1534,180 @@ private func messageItem(id: String, text: String) -> TranscriptItem {
     submitting.prepareInitialSubmission(text: "Start", attachments: [])
     #expect(!submitting.isEligibleForIdleEviction)
 }
+
+@MainActor @Test func controllerHydratesItsOwnedDraftBeforeOpening() {
+    let store = ComposerRecoveryStore.inMemory()
+    let owner = ComposerRecoveryOwner.session("/tmp/recovered-session.jsonl")
+    let attachment = ComposerAttachment(
+        name: "saved.png", data: Data([1, 2, 3]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)
+    store.setDraft(
+        ComposerRecoveryDraft(text: "saved text", attachments: [attachment]),
+        for: owner)
+
+    let controller = SessionController(
+        processManager: SessionProcessManager(executable: "/usr/bin/false"),
+        recoveryStore: store,
+        recoveryOwner: owner)
+
+    #expect(controller.draft == "saved text")
+    #expect(controller.attachments == [attachment])
+    controller.draft = "edited"
+    #expect(store.record(for: owner)?.draft.text == "edited")
+}
+
+@MainActor @Test func recoveredInFlightIgnoresAnIdenticalMessageBeforeItsMinimumIndex() async throws {
+    let manager = fakeManager(mode: "basic")
+    let store = ComposerRecoveryStore.inMemory()
+    let owner = ComposerRecoveryOwner.session("/tmp/recovery-no-echo.jsonl")
+    store.setDraft(ComposerRecoveryDraft(text: "newer", attachments: []), for: owner)
+    store.setInFlight(
+        ComposerRecoveryInFlight(
+            id: UUID(),
+            draft: ComposerRecoveryDraft(text: "submitted", attachments: []),
+            minimumUserIndex: 1),
+        for: owner)
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { _ in TranscriptHistory(items: [recoveryUserItem("submitted")]) },
+        recoveryStore: store,
+        recoveryOwner: owner)
+
+    await controller.openExisting(metadata(
+        path: "/tmp/recovery-no-echo.jsonl", cwd: try temporaryDirectory().path))
+
+    #expect(controller.draft == "submitted\n\nnewer")
+    #expect(controller.composerRecoveryMessage
+        == "A previous send wasn’t confirmed. Review the conversation before sending this draft.")
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+@MainActor @Test func recoveredInFlightIsDiscardedOnlyWhenHistoryContainsItsEchoAfterTheFence() async throws {
+    let manager = fakeManager(mode: "basic")
+    let store = ComposerRecoveryStore.inMemory()
+    let owner = ComposerRecoveryOwner.session("/tmp/recovery-with-echo.jsonl")
+    store.setDraft(ComposerRecoveryDraft(text: "newer", attachments: []), for: owner)
+    store.setInFlight(
+        ComposerRecoveryInFlight(
+            id: UUID(),
+            draft: ComposerRecoveryDraft(text: "submitted", attachments: []),
+            minimumUserIndex: 1),
+        for: owner)
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { _ in TranscriptHistory(items: [
+            recoveryUserItem("submitted", id: "old"),
+            recoveryUserItem("submitted", id: "echo"),
+        ]) },
+        recoveryStore: store,
+        recoveryOwner: owner)
+
+    await controller.openExisting(metadata(
+        path: "/tmp/recovery-with-echo.jsonl", cwd: try temporaryDirectory().path))
+
+    #expect(controller.draft == "newer")
+    #expect(controller.composerRecoveryMessage == nil)
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+private func recoveryUserItem(_ text: String, id: String = "user") -> TranscriptItem {
+    .message(TranscriptMessage(
+        id: id,
+        raw: .object([
+            "id": .string(id),
+            "role": .string("user"),
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string(text),
+            ])]),
+            "timestamp": .double(0),
+        ]),
+        isFinal: true))
+}
+
+@MainActor @Test func acceptedSendClearsOnlyInFlightRecoveryAndKeepsNewerInput() async throws {
+    let manager = fakeManager(mode: "delayed-prompt-success")
+    let store = ComposerRecoveryStore.inMemory()
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(try temporaryDirectory()))
+    await controller.openNew(projectURL: try temporaryDirectory())
+    controller.draft = "submitted"
+    controller.attachments = [controllerRecoveryAttachment(1)]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await eventually { controller.runtimeState == .streaming })
+    controller.draft = "newer"
+    controller.attachments = [controllerRecoveryAttachment(2)]
+    await send.value
+
+    let owner = ComposerRecoveryOwner.session(try #require(controller.sessionPath))
+    #expect(store.record(for: owner)?.draft.text == "newer")
+    #expect(store.record(for: owner)?.draft.attachments.map(\.data) == [Data([2])])
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+@MainActor @Test func rejectedSendKeepsInFlightRecoveryAlongsideNewerInput() async throws {
+    let manager = fakeManager(mode: "delayed-prompt-failure")
+    let store = ComposerRecoveryStore.inMemory()
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(try temporaryDirectory()))
+    await controller.openNew(projectURL: try temporaryDirectory())
+    controller.draft = "submitted"
+    let submittedAttachment = controllerRecoveryAttachment(1)
+    controller.attachments = [submittedAttachment]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await eventually { controller.runtimeState == .streaming })
+    controller.draft = "newer"
+    controller.attachments = [controllerRecoveryAttachment(2)]
+    await send.value
+
+    let owner = ComposerRecoveryOwner.session(try #require(controller.sessionPath))
+    #expect(store.record(for: owner)?.draft.text == "newer")
+    #expect(store.record(for: owner)?.inFlight?.draft.text == "submitted")
+    #expect(store.record(for: owner)?.inFlight?.draft.attachments == [submittedAttachment])
+    await manager.closeAll()
+}
+
+@MainActor @Test func delayedInitialOpenTransfersOwnershipWithoutErasingNewerInput() async throws {
+    let marker = try temporaryDirectory().appending(path: "opening")
+    let manager = delayedFakeManager(mode: "basic", markerURL: marker)
+    let store = ComposerRecoveryStore.inMemory()
+    let project = try temporaryDirectory()
+    let initialID = UUID()
+    let controller = SessionController(
+        processManager: manager,
+        id: initialID,
+        recoveryStore: store,
+        recoveryOwner: .initial(id: initialID, projectURL: project))
+    let submittedAttachment = controllerRecoveryAttachment(1)
+    controller.prepareInitialSubmission(
+        text: "submitted", attachments: [submittedAttachment], projectURL: project)
+
+    let opening = Task { await controller.openNew(projectURL: project) }
+    #expect(await eventually { FileManager.default.fileExists(atPath: marker.path) })
+    controller.draft = "typed while opening"
+    controller.attachments = [controllerRecoveryAttachment(2)]
+    _ = await opening.value
+    await controller.sendPrompt()
+
+    let owner = ComposerRecoveryOwner.session(try #require(controller.sessionPath))
+    #expect(store.initialRecords(for: project).isEmpty)
+    #expect(store.record(for: owner)?.draft.text == "typed while opening")
+    #expect(store.record(for: owner)?.draft.attachments.map(\.data) == [Data([2])])
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+private func controllerRecoveryAttachment(_ byte: UInt8) -> ComposerAttachment {
+    ComposerAttachment(
+        name: "\(byte).png", data: Data([byte]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)
+}

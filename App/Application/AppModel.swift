@@ -51,8 +51,9 @@ final class AppModel {
     var route: AppRoute = .onboarding(.installOmp)
     var installation: OmpInstallation?
     var selectedProjectURL: URL?
-    var newSessionDraft = ""
-    var newSessionAttachments: [ComposerAttachment] = []
+    var newSessionDraft = "" { didSet { persistNewSessionDraft() } }
+    var newSessionAttachments: [ComposerAttachment] = [] { didSet { persistNewSessionDraft() } }
+    private(set) var newSessionRecoveryMessage: String?
     private(set) var newSessionFocusRequest = 0
     /// Set when OMP is installed but would not run, so setup can say that
     /// instead of reporting it as missing.
@@ -223,6 +224,7 @@ final class AppModel {
         }
     @ObservationIgnored private var menuUpdateCheckTask: Task<Void, Never>?
     @ObservationIgnored private var shutdownOperation: Task<Void, Never>?
+    @ObservationIgnored private var isApplyingNewSessionRecovery = false
 
     var updateState: UpdateState { updateChecker.state }
 
@@ -562,8 +564,9 @@ final class AppModel {
     func openSession(_ metadata: SessionMetadata) {
         guard !isSessionMutationInFlight else { return }
         if !metadata.cwd.isEmpty {
-            selectedProjectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
-                .standardizedFileURL
+            selectProject(
+                URL(filePath: metadata.cwd, directoryHint: .isDirectory),
+                recordInRecentProjects: false)
         }
         guard let processManager else { return }
         if let controller = liveController(for: metadata.path) {
@@ -578,7 +581,8 @@ final class AppModel {
         guard sessionActivityRegistry.canCreateManagedSession else { return }
         let controller = makeSessionController(
             processManager: processManager,
-            intendedSessionPath: metadata.path)
+            intendedSessionPath: metadata.path,
+            recoveryOwner: .session(metadata.path))
         activeSession = controller
         route = .session(metadata.path)
         detachComposerSources()
@@ -614,6 +618,7 @@ final class AppModel {
             newSessionDraft = [newSessionDraft, controller.draft].filter { !$0.isEmpty }.joined(separator: "\n\n")
         }
         newSessionAttachments.append(contentsOf: controller.attachments)
+        controller.consumeRecoveryAfterReview()
         openNewSession()
     }
 
@@ -622,10 +627,17 @@ final class AppModel {
         guard let processManager, let selectedProjectURL else { return }
         guard sessionActivityRegistry.canCreateManagedSession else { return }
         let primarySnapshot = sessionActivityRegistry.newSessionPrimarySnapshot()
-        let controller = makeSessionController(processManager: processManager)
+        let controllerID = UUID()
+        let controller = makeSessionController(
+            processManager: processManager,
+            id: controllerID,
+            recoveryOwner: .initial(id: controllerID, projectURL: selectedProjectURL))
         controller.prepareInitialSubmission(text: prompt, attachments: attachments, projectURL: selectedProjectURL)
-        newSessionDraft = ""
-        newSessionAttachments = []
+        if newSessionDraft == prompt, newSessionAttachments == attachments {
+            newSessionDraft = ""
+            newSessionAttachments = []
+        }
+        newSessionRecoveryMessage = nil
         detachComposerSources()
         // omp does not name the session until the child is up, so the route
         // carries a placeholder until `openNew` reports the real path.
@@ -839,6 +851,11 @@ final class AppModel {
         let provider = providerModel
         let controls = composerControls
         let manager = processManager
+        persistNewSessionDraft()
+        for controller in managedSessions.values {
+            await controller.flushRecovery()
+        }
+        await dependencies.composerRecoveryStore.flush()
         discardManagedSessions()
         discardComposerCommands()
         async let providerShutdown: Void = provider?.shutdown() ?? ()
@@ -1091,8 +1108,10 @@ final class AppModel {
     }
 
     private func selectProject(_ url: URL, recordInRecentProjects: Bool) {
+        persistNewSessionDraft()
         let project = url.standardizedFileURL
         selectedProjectURL = project
+        restoreNewSessionDraft(for: project)
         guard recordInRecentProjects else { return }
         dependencies.recentProjectStore.recordSelection(project)
     }
@@ -1124,6 +1143,12 @@ final class AppModel {
         subject: String
     ) async {
         sessionActionError = nil
+        for path in report.succeededPaths {
+            dependencies.composerRecoveryStore.remove(.session(path))
+            if dependencies.composerRecoveryStore.lastMeaningfulRoute == .session(path) {
+                dependencies.composerRecoveryStore.setLastMeaningfulRoute(nil)
+            }
+        }
         if !report.failures.isEmpty {
             let count = report.failures.count
             let unchangedFiles = count == 1
@@ -1160,7 +1185,9 @@ final class AppModel {
 
     private func makeSessionController(
         processManager: SessionProcessManager,
-        intendedSessionPath: String? = nil
+        intendedSessionPath: String? = nil,
+        id: UUID = UUID(),
+        recoveryOwner: ComposerRecoveryOwner? = nil
     ) -> SessionController {
         if harnessNoticeSummarizer == nil, let installation {
             let executableURL = installation.executableURL
@@ -1182,11 +1209,14 @@ final class AppModel {
         }
         let controller = SessionController(
             processManager: processManager,
+            id: id,
             activityRegistry: sessionActivityRegistry,
             accountChannelRegistry: accountChannelRegistry,
             titleGenerator: installation.flatMap {
                 dependencies.makeSessionTitleGenerator($0.executableURL)
             },
+            recoveryStore: dependencies.composerRecoveryStore,
+            recoveryOwner: recoveryOwner,
             harnessNoticePreferences: harnessNoticePreferenceStore,
             harnessNoticeSummarizer: harnessNoticeSummarizer)
         managedSessions[controller.id] = controller
@@ -1198,6 +1228,35 @@ final class AppModel {
             self?.reviewIdleSessionRetention()
         }
         return controller
+    }
+
+    private func persistNewSessionDraft() {
+        guard !isApplyingNewSessionRecovery, let selectedProjectURL else { return }
+        dependencies.composerRecoveryStore.setDraft(
+            ComposerRecoveryDraft(
+                text: newSessionDraft,
+                attachments: newSessionAttachments),
+            for: .project(selectedProjectURL))
+    }
+
+    private func restoreNewSessionDraft(for projectURL: URL) {
+        let store = dependencies.composerRecoveryStore
+        let projectDraft = store.record(for: .project(projectURL))?.draft
+            ?? ComposerRecoveryDraft(text: "", attachments: [])
+        let interrupted = store.consumeInitialRecords(for: projectURL)
+        let recovered = interrupted.map { ComposerRecoveryStore.merged(projectDraft, $0) }
+            ?? projectDraft
+        isApplyingNewSessionRecovery = true
+        newSessionDraft = recovered.text
+        newSessionAttachments = recovered.attachments
+        isApplyingNewSessionRecovery = false
+        if interrupted != nil {
+            newSessionRecoveryMessage =
+                "A previous send wasn’t confirmed. Review the conversation before sending this draft."
+            persistNewSessionDraft()
+        } else {
+            newSessionRecoveryMessage = nil
+        }
     }
 
     // Not private: the navigation tests wait on the reuse registry rather than on

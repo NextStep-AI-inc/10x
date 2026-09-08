@@ -57,13 +57,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private(set) var isRecoveryPresented = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
+    private(set) var composerRecoveryMessage: String?
     let id: UUID
     private(set) var providerID: String?
     private(set) var activeProviderAccounts: [String: String] = [:]
     private(set) var providerAccountSequence = 0
     private(set) var commandCatalogState: ComposerCommandCatalogState = .loading
-    var draft = ""
-    var attachments: [ComposerAttachment] = []
+    var draft = "" { didSet { persistRecoveryDraft() } }
+    var attachments: [ComposerAttachment] = [] { didSet { persistRecoveryDraft() } }
     var streamingBehavior: StreamingBehavior? = ComposerInteractionPreferences.shared.defaultSendAction == .steer ? .steer : .followUp
     let createdAt = Date()
     /// Installed by `AppModel` so an idle-retention review runs whenever this
@@ -78,6 +79,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private weak var accountCoordinator: ProviderAccountCoordinator?
     private let accountChannelRegistry: ProviderAccountChannelRegistry?
     private let titleGenerator: OmpSessionTitleGenerator?
+    private let recoveryStore: ComposerRecoveryStore?
+    private var recoveryOwner: ComposerRecoveryOwner?
+    private var isApplyingRecovery = false
     private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
@@ -146,6 +150,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
         historyLoader: HistoryLoader? = nil,
+        recoveryStore: ComposerRecoveryStore? = nil,
+        recoveryOwner: ComposerRecoveryOwner? = nil,
         harnessNoticePreferences: HarnessNoticePreferenceStore? = nil,
         harnessNoticeSummarizer: (any HarnessNoticeSummarizing)? = nil
     ) {
@@ -155,6 +161,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.accountChannelRegistry = accountChannelRegistry
         self.titleGenerator = titleGenerator
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
+        self.recoveryStore = recoveryStore
+        self.recoveryOwner = recoveryOwner?.canonicalized
         self.harnessNoticePreferences = harnessNoticePreferences
         self.harnessNoticeSummarizer = harnessNoticeSummarizer
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
@@ -162,6 +170,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.commandUpdates = commandUpdates.stream
         self.commandContinuation = commandUpdates.continuation
         activityRegistry?.register(self)
+        hydrateRecoveryDraft()
     }
 
     init(
@@ -204,6 +213,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         // above.
         self.accountChannelRegistry = nil
         self.titleGenerator = titleGenerator
+        self.recoveryStore = nil
+        self.recoveryOwner = nil
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
         self.commandUpdates = commandUpdates.stream
@@ -519,6 +530,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         isTitleLoading = true
         pendingSubmissions = [PendingUserSubmission(
             text: text, attachments: attachments, minimumUserIndex: 0, state: .starting)]
+        if let recoveryStore, let recoveryOwner {
+            recoveryStore.setInFlight(
+                ComposerRecoveryInFlight(
+                    id: UUID(),
+                    draft: ComposerRecoveryDraft(text: text, attachments: attachments),
+                    minimumUserIndex: 0),
+                for: recoveryOwner)
+        }
     }
 
     func markInitialSubmissionFailed() {
@@ -536,6 +555,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
         for index in pendingSubmissions.indices where pendingSubmissions[index].state == .starting {
             pendingSubmissions[index].state = .unconfirmed
+        }
+        if let recoveryStore, let recoveryOwner {
+            recoveryStore.setInFlight(nil, for: recoveryOwner)
         }
         finishTitleLoading()
     }
@@ -597,6 +619,20 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         isSendInFlight = true
         defer { isSendInFlight = false }
 
+        if attachmentDisposition == .clearImmediately,
+           let recoveryStore,
+           let recoveryOwner {
+            let minimumUserIndex = pendingSubmissions.first(where: { $0.id == receiptID })?
+                .minimumUserIndex ?? userMessages.count
+            recoveryStore.setInFlight(
+                ComposerRecoveryInFlight(
+                    id: UUID(),
+                    draft: ComposerRecoveryDraft(text: text, attachments: staged),
+                    minimumUserIndex: minimumUserIndex),
+                for: recoveryOwner)
+            await recoveryStore.flush()
+        }
+
         // The composer answers the keystroke, not the round trip: the draft
         // clears and the run reads as started before omp has replied. The
         // processor is moved first so a snapshot already in flight cannot
@@ -622,6 +658,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
             guard isCurrent(context) else { return true }
+            if attachmentDisposition == .clearImmediately,
+               let recoveryStore,
+               let recoveryOwner {
+                recoveryStore.setInFlight(nil, for: recoveryOwner)
+            }
             if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }),
                let behavior {
                 pendingSubmissions[index].state = .queued(behavior)
@@ -918,6 +959,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         providerAccountSequence = 0
         self.handle = handle
         sessionPath = handle.sessionPath
+        transferRecoveryOwnership(toSessionPath: handle.sessionPath)
         let openingContext = currentPipelineContext()
 
         do {
@@ -956,6 +998,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 hasReconciliationWarning: didHistoryLoadFail,
                 runtimeState: runtimeState)
             install(snapshot: initialSnapshot)
+            reconcileRecoveredInFlight()
             guard isCurrent(processorContext) else { return }
             let eventFence = RpcEventConsumptionFence()
             startEventPipeline(
@@ -1741,6 +1784,74 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             "revision %{public}llu",
             snapshot.revision)
         reportActivity()
+    }
+
+    func flushRecovery() async {
+        persistRecoveryDraft()
+        await recoveryStore?.flush()
+    }
+
+    func consumeRecoveryAfterReview() {
+        guard let recoveryStore, let recoveryOwner else { return }
+        recoveryStore.remove(recoveryOwner)
+    }
+
+    private func hydrateRecoveryDraft() {
+        guard let recoveryStore,
+              let recoveryOwner,
+              let recovered = recoveryStore.record(for: recoveryOwner)?.draft
+        else { return }
+        isApplyingRecovery = true
+        draft = recovered.text
+        attachments = recovered.attachments
+        isApplyingRecovery = false
+    }
+
+    private func persistRecoveryDraft() {
+        guard !isApplyingRecovery, let recoveryStore, let recoveryOwner else { return }
+        recoveryStore.setDraft(
+            ComposerRecoveryDraft(text: draft, attachments: attachments),
+            for: recoveryOwner)
+    }
+
+    private func transferRecoveryOwnership(toSessionPath path: String) {
+        guard let recoveryStore, let recoveryOwner else { return }
+        let sessionOwner = ComposerRecoveryOwner.session(path).canonicalized
+        recoveryStore.moveRecord(from: recoveryOwner, to: sessionOwner)
+        if case .initial = recoveryOwner {
+            recoveryStore.setLastMeaningfulRoute(.session(path))
+        }
+        self.recoveryOwner = sessionOwner
+    }
+
+    private func reconcileRecoveredInFlight() {
+        guard let recoveryStore,
+              let recoveryOwner,
+              !pendingSubmissions.contains(where: { $0.state == .starting }),
+              let recovered = recoveryStore.record(for: recoveryOwner)?.inFlight
+        else { return }
+        let receipt = PendingUserSubmission(
+            text: recovered.draft.text,
+            attachments: recovered.draft.attachments,
+            minimumUserIndex: recovered.minimumUserIndex,
+            state: .unconfirmed)
+        let hasEcho = userMessages.enumerated().contains { index, message in
+            index >= recovered.minimumUserIndex && receipt.matches(message)
+        }
+        if !hasEcho {
+            let current = ComposerRecoveryDraft(text: draft, attachments: attachments)
+            let merged = current == recovered.draft
+                ? current
+                : ComposerRecoveryStore.merged(recovered.draft, current)
+            isApplyingRecovery = true
+            draft = merged.text
+            attachments = merged.attachments
+            isApplyingRecovery = false
+            composerRecoveryMessage =
+                "A previous send wasn’t confirmed. Review the conversation before sending this draft."
+            persistRecoveryDraft()
+        }
+        recoveryStore.setInFlight(nil, for: recoveryOwner)
     }
 
     private static func isPlaceholderTitle(_ title: String) -> Bool {
