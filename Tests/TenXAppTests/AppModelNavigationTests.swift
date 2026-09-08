@@ -1373,6 +1373,58 @@ private func writeNavigationSession(at url: URL, id: String, cwd: String) throws
     await model.shutdown()
 }
 
+@MainActor
+@Test func returningToRetainedSessionRefreshesGitMetadataWithoutOpeningAnotherRuntime() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("app-model-retained-metadata-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container)
+    let project = container.appendingPathComponent("project")
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    try runNavigationGit(["init", "-b", "branch-a"], at: project)
+    let model = AppModel(dependencies: navigationDependencies(
+        ompLocator: FixedOmpLocator(executableURL: executable),
+        sessionLibrary: SessionLibrary(root: container.appendingPathComponent("sessions"))))
+    await model.bootstrap()
+    let metadata = navigationMetadata("/tmp/fake.jsonl", cwd: project.path)
+    model.openSession(metadata)
+    await waitUntil("the retained session to open on branch A") {
+        model.activeSession?.headerMetadata.branch == "branch-a"
+    }
+    let original = try #require(model.activeSession)
+    let manager = try #require(model.processManager)
+    await waitUntil("the retained session runtime to open") {
+        await manager.handle(for: metadata.path) != nil
+    }
+    let originalHandle = try #require(await manager.handle(for: metadata.path))
+
+    model.openNewSession()
+    try runNavigationGit(["switch", "-c", "branch-b"], at: project)
+    model.openSession(metadata)
+    await waitUntil("the retained session metadata to refresh to branch B") {
+        model.activeSession?.headerMetadata.branch == "branch-b"
+    }
+
+    #expect(model.activeSession === original)
+    let retainedHandle = try #require(await manager.handle(for: metadata.path))
+    #expect(retainedHandle.client === originalHandle.client)
+    await model.shutdown()
+}
+
+private func runNavigationGit(_ arguments: [String], at repository: URL) throws {
+    let process = Process()
+    process.executableURL = URL(filePath: "/usr/bin/git")
+    process.arguments = ["-C", repository.path] + arguments
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        throw CocoaError(.fileWriteUnknown)
+    }
+}
+
 func makeNavigationExecutable(
     in directory: URL,
     mode: String = "basic",

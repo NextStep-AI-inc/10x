@@ -271,6 +271,65 @@ import Testing
     await manager.closeAll()
 }
 
+@MainActor @Test func terminalAgentBoundaryRefreshesRealGitMetadataButNonterminalDoesNot() async throws {
+    let repository = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try runTitleGit(["init", "-b", "branch-a"], at: repository)
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: repository)
+    #expect(controller.headerMetadata.branch == "branch-a")
+
+    try runTitleGit(["switch", "-c", "branch-b"], at: repository)
+    let terminal = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "agent_end", payload: .object(["isTerminal": .bool(true)]))))
+    await terminal()
+    await controller.testingAwaitHeaderMetadataRefresh()
+    #expect(controller.headerMetadata.branch == "branch-b")
+
+    try runTitleGit(["switch", "-c", "branch-c"], at: repository)
+    let nonterminal = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "agent_end", payload: .object(["isTerminal": .bool(false)]))))
+    await nonterminal()
+    for _ in 0..<20 { await Task.yield() }
+    #expect(controller.headerMetadata.branch == "branch-b")
+    await manager.closeAll()
+}
+
+@MainActor @Test func overlappingMetadataRefreshesCoalesceAndStaleProjectResultIsIgnored() async throws {
+    let firstProject = try temporaryDirectory()
+    let secondProject = try temporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: firstProject)
+        try? FileManager.default.removeItem(at: secondProject)
+    }
+    let resolver = ControlledHeaderMetadataResolver()
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(
+        processManager: manager,
+        headerMetadataResolver: { url in await resolver.resolve(url) })
+    await controller.openNew(projectURL: firstProject)
+    let boundary = try controllerEvent(#"{"type":"agent_end","isTerminal":true}"#)
+    let first = try #require(controller.testingCapturedControlConsumer(boundary))
+    let second = try #require(controller.testingCapturedControlConsumer(boundary))
+
+    await first()
+    await second()
+    await resolver.waitForDelayedRequest()
+    #expect(await resolver.requestCount == 2)
+
+    await controller.openExisting(metadata(
+        path: secondProject.appending(path: "second.jsonl").path,
+        cwd: secondProject.path,
+        title: "Second"))
+    await resolver.releaseDelayedRequest()
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(controller.headerMetadata.branch == "second-current")
+    #expect(await resolver.requestCount == 3)
+    await manager.closeAll()
+}
+
 @MainActor @Test func providerIDReadsOnlyANonemptyProviderFromAModelObject() {
     #expect(SessionController.providerID(from: .object([
         "id": .string("claude-sonnet"),
@@ -1247,6 +1306,49 @@ private actor TitleCommandCapture {
 
     func record(executableURL: URL, arguments: [String]) {
         invocation = (executableURL, arguments)
+    }
+}
+
+private actor ControlledHeaderMetadataResolver {
+    private let gate = LoadGate()
+    private(set) var requestCount = 0
+
+    func resolve(_ url: URL) async -> SessionHeaderMetadata {
+        requestCount += 1
+        switch requestCount {
+        case 1:
+            return SessionHeaderMetadata(branch: "first-initial", repo: url.lastPathComponent,
+                worktreePath: nil)
+        case 2:
+            await gate.started()
+            await gate.waitForRelease()
+            return SessionHeaderMetadata(branch: "first-stale", repo: url.lastPathComponent,
+                worktreePath: nil)
+        default:
+            return SessionHeaderMetadata(branch: "second-current", repo: url.lastPathComponent,
+                worktreePath: nil)
+        }
+    }
+
+    func waitForDelayedRequest() async {
+        await gate.waitForStart()
+    }
+
+    func releaseDelayedRequest() async {
+        await gate.release()
+    }
+}
+
+private func runTitleGit(_ arguments: [String], at repository: URL) throws {
+    let process = Process()
+    process.executableURL = URL(filePath: "/usr/bin/git")
+    process.arguments = ["-C", repository.path] + arguments
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        throw CocoaError(.fileWriteUnknown)
     }
 }
 

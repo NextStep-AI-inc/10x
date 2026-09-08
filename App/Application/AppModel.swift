@@ -583,6 +583,7 @@ final class AppModel {
             detachComposerSources()
             activeSession = controller
             route = .session(metadata.path)
+            controller.activate()
             attachComposerSources(to: controller)
             markSessionVisited(controller)
             reviewIdleSessionRetention()
