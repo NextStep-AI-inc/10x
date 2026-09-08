@@ -30,4 +30,14 @@ final class MCPResourcesTests: XCTestCase {
         let resources = ScreenshotResources(engine: FakeEngine(), registry: SessionRegistry())
         XCTAssertNil(resources.readResource(uri: "computer://window/999/screenshot"))
     }
+
+    func test_readResource_oversizedWindowID_returnsNil() {
+        let resources = ScreenshotResources(engine: FakeEngine(), registry: SessionRegistry())
+        XCTAssertNil(resources.readResource(uri: "computer://window/99999999999/screenshot"))
+    }
+
+    func test_readResource_negativeWindowID_returnsNil() {
+        let resources = ScreenshotResources(engine: FakeEngine(), registry: SessionRegistry())
+        XCTAssertNil(resources.readResource(uri: "computer://window/-1/screenshot"))
+    }
 }

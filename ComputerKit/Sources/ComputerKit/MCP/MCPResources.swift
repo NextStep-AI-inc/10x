@@ -29,8 +29,9 @@ public final class ScreenshotResources: MCPResourceProviding {
     public func readResource(uri: String) -> JSONValue? {
         guard uri.hasPrefix("computer://window/"), uri.hasSuffix("/screenshot"),
               let id = Int(uri.dropFirst("computer://window/".count).dropLast("/screenshot".count)),
-              registry.owner(of: CGWindowID(id)) != nil,
-              let shot = try? engine.screenshot(windowID: CGWindowID(id)) else { return nil }
+              let windowID = CGWindowID(exactly: id),
+              registry.owner(of: windowID) != nil,
+              let shot = try? engine.screenshot(windowID: windowID) else { return nil }
         return .object([
             "uri": .string(uri),
             "mimeType": .string("image/png"),
