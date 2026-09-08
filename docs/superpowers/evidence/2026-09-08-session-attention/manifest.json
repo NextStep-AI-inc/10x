@@ -1,0 +1,20 @@
+{
+  "sourceCommit": "e8f12944b3c1c3245d8a0fce5f2bcd434370fd02",
+  "app": "/tmp/10x-signals-final-build/10x-signals.app",
+  "bundleIdentifier": "com.nextstep.tenx.signalsqa",
+  "nativeLaunched": false,
+  "files": {
+    "fixture": {
+      "path": "/tmp/10x-audit-signals/docs/superpowers/evidence/2026-09-08-session-attention/attention-control.py",
+      "sha256": "a1ffb75e3beb1887a93c97d2d2f92510efde8256fc197ab28f2a810ec9f30a71"
+    },
+    "buildLog": {
+      "path": "/tmp/10x-signals-release-build.log",
+      "sha256": "0b36221025dfc00a485b22d49305a87542acc4fed7e2b7039d931ba06333fc8f"
+    },
+    "executable": {
+      "path": "/tmp/10x-signals-final-build/10x-signals.app/Contents/MacOS/10x",
+      "sha256": "9fd40a85225c7a1d32aa3981492d98695492443ea9f35d94521d624c82f62813"
+    }
+  }
+}
