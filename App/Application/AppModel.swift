@@ -759,6 +759,9 @@ final class AppModel {
             attemptID: attemptID,
             lifecycleGeneration: generation)
         else { return }
+        if startupState.status(of: .sessions) == .ready {
+            restoreMeaningfulRouteIfReady()
+        }
         startupState.requestHandoff(attemptID: attemptID)
         guard startupState.phase == .handoff else { return }
         startFallbackLoadsForStoppedStages(
