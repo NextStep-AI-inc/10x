@@ -317,6 +317,16 @@ struct SettingsView: View {
             && HarnessNoticeSettingRowView.matches(query: model.query)
     }
 
+    private var showsPreferredIDERow: Bool {
+        PreferredIDESettingRowView.matches(
+            query: model.query,
+            applicationName: selectedApplicationName)
+    }
+
+    private var nativeGeneralRowCount: Int {
+        (showsPreferredIDERow ? 1 : 0) + (showsHarnessNoticeRow ? 1 : 0)
+    }
+
     @ViewBuilder
     private func nativeSections(
         categories: [TenXSettingsCategory],
@@ -332,17 +342,21 @@ struct SettingsView: View {
                     .frame(height: 2)
                 switch category {
                 case .general:
-                    PreferredIDESettingRowView(
-                        registry: registry,
-                        store: store,
-                        focusedControl: $focusedControl)
-                        .id(SettingsFocusTarget.preferredIDE)
-                        .onAppear { focusPreferredIDEIfNeeded(proxy: proxy) }
-                        .onChange(of: focusTarget) { _, _ in
-                            focusPreferredIDEIfNeeded(proxy: proxy)
-                        }
+                    if showsPreferredIDERow {
+                        PreferredIDESettingRowView(
+                            registry: registry,
+                            store: store,
+                            focusedControl: $focusedControl)
+                            .id(SettingsFocusTarget.preferredIDE)
+                            .onAppear { focusPreferredIDEIfNeeded(proxy: proxy) }
+                            .onChange(of: focusTarget) { _, _ in
+                                focusPreferredIDEIfNeeded(proxy: proxy)
+                            }
+                    }
                     if showsHarnessNoticeRow, let harnessNoticeStore {
-                        Divider()
+                        if showsPreferredIDERow {
+                            Divider()
+                        }
                         HarnessNoticeSettingRowView(
                             store: harnessNoticeStore,
                             availableModels: availableModels)
@@ -352,10 +366,6 @@ struct SettingsView: View {
                 }
             }
         }
-    }
-
-    private var nativeGeneralRowCount: Int {
-        1 + (harnessNoticeStore != nil ? 1 : 0)
     }
 
     private func sectionHeader(_ title: String, count: Int) -> some View {
