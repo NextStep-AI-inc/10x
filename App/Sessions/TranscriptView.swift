@@ -41,18 +41,6 @@ struct TranscriptView: View {
             for: controller.items,
             runtimeState: controller.runtimeState,
             isGroupExpanded: disclosureState.isGroupExpanded)
-        let isAwaitingOutput = self.isAwaitingOutput
-        let visibleScrollTargetIDs = Set(
-            renderRows.map(\.id)
-                + controller.pendingSubmissions.map(\.id)
-                + (isAwaitingOutput ? [TurnActivityView.transcriptID] : []))
-        let scrollAnchor = Binding<String?>(
-            get: {
-                Self.validScrollAnchor(
-                    viewport.anchorID,
-                    visibleIDs: visibleScrollTargetIDs)
-            },
-            set: { viewport.anchorID = $0 })
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -114,9 +102,7 @@ struct TranscriptView: View {
             }
             .environment(\.toolDisclosureState, disclosureState)
             .scrollIndicators(.hidden)
-            // A retained viewport can outlive a grouped tool hidden by collapse.
-            // Never ask SwiftUI to lay out a scroll target that no longer exists.
-            .scrollPosition(id: scrollAnchor, anchor: .top)
+            .scrollPosition(id: $viewport.anchorID)
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(viewport.isFollowingLatest ? .bottom : nil, for: .sizeChanges)
             .onScrollPhaseChange { _, phase in
@@ -233,14 +219,6 @@ struct TranscriptView: View {
         isReduceMotionEnabled: Bool
     ) -> Bool {
         intent == .explicit && !isReduceMotionEnabled
-    }
-
-    nonisolated static func validScrollAnchor(
-        _ anchorID: String?,
-        visibleIDs: Set<String>
-    ) -> String? {
-        guard let anchorID, visibleIDs.contains(anchorID) else { return nil }
-        return anchorID
     }
 
     private var isAwaitingOutput: Bool {
