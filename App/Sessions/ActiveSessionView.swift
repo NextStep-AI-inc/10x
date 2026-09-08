@@ -16,26 +16,23 @@ struct ActiveSessionView: View {
     @State private var paneWidthAtDragStart: CGFloat?
 
     var body: some View {
-        Group {
+        HStack(spacing: 0) {
+            ZStack(alignment: .trailing) {
+                conversation
+                if isSessionMapVisible,
+                   let sessionMapModel,
+                   let sessionMapPresentation,
+                   case .drawer = sessionMapPresentation {
+                    sessionMapPane(sessionMapModel)
+                        .shadow(color: .black.opacity(0.2), radius: 18, x: -4)
+                }
+            }
             if isSessionMapVisible,
                let sessionMapModel,
-               let sessionMapPresentation {
-                switch sessionMapPresentation {
-                case .docked:
-                    HStack(spacing: 0) {
-                        conversation
-                        paneDivider
-                        sessionMapPane(sessionMapModel)
-                    }
-                case .drawer:
-                    ZStack(alignment: .trailing) {
-                        conversation
-                        sessionMapPane(sessionMapModel)
-                            .shadow(color: .black.opacity(0.2), radius: 18, x: -4)
-                    }
-                }
-            } else {
-                conversation
+               let sessionMapPresentation,
+               case .docked = sessionMapPresentation {
+                paneDivider
+                sessionMapPane(sessionMapModel)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
