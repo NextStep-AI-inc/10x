@@ -14,9 +14,10 @@ public final class DaemonServer {
     let registry = SessionRegistry()
     private let socketPath: String
     private let acceptQueue = DispatchQueue(label: "tenx-computer.accept")
-    /// Recursive because broadcast/emitToolEvents re-enter while handleLine holds it.
+    /// Recursive because handleLine may re-enter while updating shared state.
     private let lock = NSRecursiveLock()
     private var serverFD: Int32 = -1
+    private var ownsSocketFile = false
     private var clients: [Int32: ClientState] = [:]
     private var isRunning = false
 
@@ -36,6 +37,9 @@ public final class DaemonServer {
     }
 
     public func start() throws {
+        let parent = (socketPath as NSString).deletingLastPathComponent
+        try FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
+
         serverFD = socket(AF_UNIX, SOCK_STREAM, 0)
         guard serverFD >= 0 else { throw ComputerError("socket: \(String(cString: strerror(errno)))") }
 
@@ -51,12 +55,30 @@ public final class DaemonServer {
             // Ceiling: two daemons started in the same instant can both pass the
             // connect probe. Upgrade path: flock a sibling .lock file.
             let alive = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(serverFD, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
-            guard alive != 0 else { throw ComputerError("daemon_already_running") }
+            if alive == 0 {
+                close(serverFD)
+                serverFD = -1
+                throw ComputerError("daemon_already_running")
+            }
             unlink(socketPath)
             let rebound = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(serverFD, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
-            guard rebound == 0 else { throw ComputerError("bind: \(String(cString: strerror(errno)))") }
+            guard rebound == 0 else {
+                close(serverFD)
+                serverFD = -1
+                throw ComputerError("bind: \(String(cString: strerror(errno)))")
+            }
         }
-        guard listen(serverFD, 16) == 0 else { throw ComputerError("listen: \(String(cString: strerror(errno)))") }
+        ownsSocketFile = true
+
+        guard listen(serverFD, 16) == 0 else {
+            close(serverFD)
+            serverFD = -1
+            if ownsSocketFile {
+                unlink(socketPath)
+                ownsSocketFile = false
+            }
+            throw ComputerError("listen: \(String(cString: strerror(errno)))")
+        }
 
         isRunning = true
         acceptQueue.async { [weak self] in self?.acceptLoop() }
@@ -66,23 +88,35 @@ public final class DaemonServer {
         lock.lock()
         isRunning = false
         let fds = Array(clients.keys)
-        clients.removeAll()
         lock.unlock()
-        for fd in fds { close(fd) }
-        if serverFD >= 0 { close(serverFD); serverFD = -1 }
-        unlink(socketPath)
+        for fd in fds { shutdown(fd, SHUT_RDWR) }
+        if serverFD >= 0 {
+            close(serverFD)
+            serverFD = -1
+        }
+        if ownsSocketFile {
+            unlink(socketPath)
+            ownsSocketFile = false
+        }
     }
 
     private func acceptLoop() {
         while true {
             let clientFD = accept(serverFD, nil, nil)
-            guard clientFD >= 0 else { return }
+            if clientFD < 0 {
+                if errno == EINTR { continue }
+                lock.lock()
+                let running = isRunning
+                lock.unlock()
+                if !running || errno == EBADF || errno == EINVAL { return }
+                continue
+            }
+            guard Self.disableSIGPIPE(clientFD) else { close(clientFD); continue }
             lock.lock()
             let running = isRunning
             if running { clients[clientFD] = ClientState() }
             lock.unlock()
             guard running else { close(clientFD); return }
-            Self.disableSIGPIPE(clientFD)
             DispatchQueue.global().async { [weak self] in self?.readLoop(clientFD) }
         }
     }
@@ -91,7 +125,11 @@ public final class DaemonServer {
         var chunk = [UInt8](repeating: 0, count: 65536)
         while true {
             let count = recv(fd, &chunk, chunk.count, 0)
-            guard count > 0 else { break }
+            if count == 0 { break }
+            if count < 0 {
+                if errno == EINTR { continue }
+                break
+            }
             lock.lock()
             clients[fd]?.buffer.append(contentsOf: chunk[0..<count])
             var lines: [Data] = []
@@ -136,58 +174,70 @@ public final class DaemonServer {
             // inherently serial per machine (one input stream), so this costs
             // little. Ceiling: a slow screenshot blocks another session's call
             // for its duration. Upgrade path: per-session queues + engine pool.
+            var response: JSONValue?
+            var events: [SupervisionEvent] = []
+
             lock.lock()
-            defer { lock.unlock() }
             let claimsBefore = Set(registry.claimedWindows(for: session).map(\.id))
 
             if method == "resources/read", let uri = message["params"]?["uri"]?.stringValue,
                let windowID = Self.screenshotWindowID(from: uri),
                registry.owner(of: windowID) != nil {
                 if let resource = resources.readResource(uri: uri) {
-                    try? write(fd, .object([
+                    response = .object([
                         "jsonrpc": .string("2.0"), "id": id ?? .null,
                         "result": .object(["contents": .array([resource])]),
-                    ]))
+                    ])
                 } else {
-                    try? write(fd, errorResponse(id: id, code: -32602, message: "capture_failed: could not capture \(uri)"))
+                    response = errorResponse(id: id, code: -32602, message: "capture_failed: could not capture \(uri)")
                 }
-                return
+            } else {
+                do {
+                    if let result = try server.handle(method: method, params: message["params"]) {
+                        if method == "initialize", let name = server.clientName {
+                            registry.setHarness(name, for: session)
+                            events.append(.sessionStarted(session: session.raw, harness: name))
+                        }
+                        if method == "tools/call" {
+                            handleWindowGoneCleanup(from: result)
+                        }
+                        events.append(contentsOf: toolEvents(
+                            session: session, method: method, params: message["params"], claimsBefore: claimsBefore
+                        ))
+                        response = .object(["jsonrpc": .string("2.0"), "id": id ?? .null, "result": result])
+                    }
+                } catch let error as MCPError {
+                    response = errorResponse(id: id, code: error.code, message: error.message)
+                } catch let error as ComputerError {
+                    response = errorResponse(id: id, code: -32603, message: error.message)
+                } catch {
+                    response = errorResponse(id: id, code: -32603, message: "\(error)")
+                }
             }
+            lock.unlock()
 
-            do {
-                if let result = try server.handle(method: method, params: message["params"]) {
-                    if method == "initialize", let name = server.clientName {
-                        registry.setHarness(name, for: session)
-                        broadcast(.sessionStarted(session: session.raw, harness: name))
-                    }
-                    if method == "tools/call" {
-                        handleWindowGoneCleanup(from: result)
-                    }
-                    emitToolEvents(session: session, method: method, params: message["params"], claimsBefore: claimsBefore)
-                    try write(fd, .object(["jsonrpc": .string("2.0"), "id": id ?? .null, "result": result]))
-                }
-            } catch let error as MCPError {
-                try? write(fd, errorResponse(id: id, code: error.code, message: error.message))
-            } catch let error as ComputerError {
-                try? write(fd, errorResponse(id: id, code: -32603, message: error.message))
-            } catch {
-                try? write(fd, errorResponse(id: id, code: -32603, message: "\(error)"))
-            }
+            for event in events { broadcast(event) }
+            if let response { try? write(fd, response) }
 
         case .supervision:
             if let command = message["command"]?.stringValue {
                 switch command {
                 case "stop_session":
                     if let raw = message["session"]?.intValue {
+                        let session = SessionID(raw: raw)
                         lock.lock()
-                        registry.stop(SessionID(raw: raw))
+                        let releases = releaseEvents(for: session, reason: "stopped")
+                        registry.stop(session)
                         lock.unlock()
+                        for event in releases { broadcast(event) }
                         broadcast(.stopped(reason: "session \(raw) stopped"))
                     }
                 case "stop_all":
                     lock.lock()
+                    let releases = releaseAllEvents(reason: "shutoff")
                     registry.stopAll()
                     lock.unlock()
+                    for event in releases { broadcast(event) }
                     broadcast(.stopped(reason: "global shut-off"))
                 default:
                     break
@@ -211,15 +261,26 @@ public final class DaemonServer {
         registry.windowClosed(windowID)
     }
 
-    /// Emits supervision events for a completed tools/call. Claims are diffed
+    private func releaseEvents(for session: SessionID, reason: String) -> [SupervisionEvent] {
+        registry.claimedWindows(for: session).map {
+            .windowReleased(session: session.raw, windowID: Int($0.id), reason: reason)
+        }
+    }
+
+    private func releaseAllEvents(reason: String) -> [SupervisionEvent] {
+        registry.sessions.keys.flatMap { releaseEvents(for: $0, reason: reason) }
+    }
+
+    /// Collects supervision events for a completed tools/call. Claims are diffed
     /// around the call so computer_launch (whose window id is only known after
     /// execution) is covered by the same path as computer_claim.
-    private func emitToolEvents(session: SessionID, method: String, params: JSONValue?, claimsBefore: Set<CGWindowID>) {
-        guard method == "tools/call", let name = params?["name"]?.stringValue else { return }
+    private func toolEvents(session: SessionID, method: String, params: JSONValue?, claimsBefore: Set<CGWindowID>) -> [SupervisionEvent] {
+        guard method == "tools/call", let name = params?["name"]?.stringValue else { return [] }
+        var events: [SupervisionEvent] = []
         let newClaims = registry.claimedWindows(for: session).filter { !claimsBefore.contains($0.id) }
         let harness = registry.session(session)?.harness ?? "unknown"
         for window in newClaims {
-            broadcast(.windowClaimed(
+            events.append(.windowClaimed(
                 session: session.raw, harness: harness, windowID: Int(window.id),
                 app: window.appName, title: window.title,
                 bounds: "\(Int(window.bounds.minX)),\(Int(window.bounds.minY)) \(Int(window.bounds.width))x\(Int(window.bounds.height))"
@@ -229,10 +290,10 @@ public final class DaemonServer {
         switch name {
         case "computer_release":
             if let windowID = args?["window_id"]?.intValue {
-                broadcast(.windowReleased(session: session.raw, windowID: windowID, reason: "released"))
+                events.append(.windowReleased(session: session.raw, windowID: windowID, reason: "released"))
             }
         case "computer_act":
-            broadcast(.action(
+            events.append(.action(
                 session: session.raw,
                 windowID: args?["window_id"]?.intValue ?? 0,
                 kind: args?["action"]?.stringValue ?? "?",
@@ -240,10 +301,11 @@ public final class DaemonServer {
                 y: args?["y"]?.doubleValue ?? 0
             ))
         case "computer_status":
-            broadcast(.statusChanged(session: session.raw, status: args?["status"]?.stringValue ?? ""))
+            events.append(.statusChanged(session: session.raw, status: args?["status"]?.stringValue ?? ""))
         default:
             break
         }
+        return events
     }
 
     private func broadcast(_ event: SupervisionEvent) {
@@ -254,21 +316,30 @@ public final class DaemonServer {
             return fd
         }
         lock.unlock()
-        // ponytail: sends happen outside the lock; payloads are tiny and local.
-        for fd in supervisionFDs { _ = try? writeRaw(fd, data + Data([0x0A])) }
+        for fd in supervisionFDs {
+            do {
+                try writeRaw(fd, data + Data([0x0A]))
+            } catch {
+                disconnect(fd)
+            }
+        }
     }
 
     private func disconnect(_ fd: Int32) {
         lock.lock()
-        let client = clients.removeValue(forKey: fd)
-        var ended: (Int, String)?
-        if case .mcp(let session, _, _) = client?.role {
+        guard let client = clients.removeValue(forKey: fd) else {
+            lock.unlock()
+            return
+        }
+        var events: [SupervisionEvent] = []
+        if case .mcp(let session, _, _) = client.role {
+            events.append(contentsOf: releaseEvents(for: session, reason: "disconnect"))
             let harness = registry.session(session)?.harness ?? "unknown"
             registry.stop(session)
-            ended = (session.raw, harness)
+            events.append(.sessionEnded(session: session.raw, harness: harness))
         }
         lock.unlock()
-        if let ended { broadcast(.sessionEnded(session: ended.0, harness: ended.1)) }
+        for event in events { broadcast(event) }
         close(fd)
     }
 
@@ -308,8 +379,8 @@ public final class DaemonServer {
         return CGWindowID(exactly: id)
     }
 
-    private static func disableSIGPIPE(_ fd: Int32) {
+    private static func disableSIGPIPE(_ fd: Int32) -> Bool {
         var nosigpipe: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, socklen_t(MemoryLayout.size(ofValue: nosigpipe)))
+        return setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, socklen_t(MemoryLayout.size(ofValue: nosigpipe))) == 0
     }
 }

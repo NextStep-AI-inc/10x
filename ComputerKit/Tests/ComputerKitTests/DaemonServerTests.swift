@@ -2,6 +2,8 @@ import XCTest
 @testable import ComputerKit
 
 final class DaemonServerTests: XCTestCase {
+    private let eventTimeout: TimeInterval = 2
+
     var socketPath: String!
     var engine: FakeEngine!
     var daemon: DaemonServer!
@@ -15,7 +17,7 @@ final class DaemonServerTests: XCTestCase {
     }
 
     override func tearDown() {
-        daemon.stop()
+        daemon?.stop()
         try? FileManager.default.removeItem(atPath: socketPath)
         super.tearDown()
     }
@@ -23,6 +25,10 @@ final class DaemonServerTests: XCTestCase {
     func rpc(_ client: DaemonClient, _ request: [String: JSONValue]) throws -> JSONValue {
         try client.send(.object(request))
         return try client.receive()
+    }
+
+    func expectEvent(_ client: DaemonClient, file: StaticString = #filePath, line: UInt = #line) throws -> JSONValue {
+        try client.receive(timeout: eventTimeout)
     }
 
     func test_mcpClient_fullFlow() throws {
@@ -51,7 +57,7 @@ final class DaemonServerTests: XCTestCase {
             "params": .object(["clientInfo": .object(["name": .string("Cursor")])]),
         ])
 
-        let event = try supervision.receive()
+        let event = try expectEvent(supervision)
         XCTAssertEqual(event["type"], .string("sessionStarted"))
         XCTAssertEqual(event["harness"], .string("Cursor"))
     }
@@ -67,10 +73,10 @@ final class DaemonServerTests: XCTestCase {
             "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
             "params": .object(["clientInfo": .object(["name": .string("omp")])]),
         ])
-        _ = try supervision.receive() // sessionStarted
+        _ = try expectEvent(supervision) // sessionStarted
 
         try supervision.send(.object(["command": .string("stop_all")]))
-        let stopped = try supervision.receive()
+        let stopped = try expectEvent(supervision)
         XCTAssertEqual(stopped["type"], .string("stopped"))
 
         let response = try rpc(mcp, [
@@ -81,6 +87,9 @@ final class DaemonServerTests: XCTestCase {
     }
 
     func test_mcpDisconnect_releasesClaims_deadMansSwitch() throws {
+        let safari = WindowInfo(id: 10, appName: "Safari", title: "Apple", bounds: .init(x: 0, y: 0, width: 800, height: 600), pid: 100)
+        engine.windows = [safari]
+
         let supervision = try DaemonClient(socketPath: socketPath)
         try supervision.send(.object(["role": .string("supervision")]))
         _ = try supervision.receive() // handshake ack
@@ -91,11 +100,94 @@ final class DaemonServerTests: XCTestCase {
             "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
             "params": .object(["clientInfo": .object(["name": .string("omp")])]),
         ])
-        _ = try supervision.receive() // sessionStarted
+        _ = try expectEvent(supervision) // sessionStarted
+        _ = try rpc(mcp!, [
+            "jsonrpc": .string("2.0"), "id": .number(2), "method": .string("tools/call"),
+            "params": .object([
+                "name": .string("computer_claim"),
+                "arguments": .object(["window_id": .number(10)]),
+            ]),
+        ])
+        _ = try expectEvent(supervision) // windowClaimed
+        XCTAssertNotNil(daemon.registry.owner(of: 10))
+
         mcp = nil // close the connection
 
-        let ended = try supervision.receive()
+        let released = try expectEvent(supervision)
+        XCTAssertEqual(released["type"], .string("windowReleased"))
+        XCTAssertEqual(released["windowID"], .number(10))
+        let ended = try expectEvent(supervision)
         XCTAssertEqual(ended["type"], .string("sessionEnded"))
+        XCTAssertNil(daemon.registry.owner(of: 10))
+    }
+
+    func test_stopSession_revokesSingleSession() throws {
+        let supervision = try DaemonClient(socketPath: socketPath)
+        try supervision.send(.object(["role": .string("supervision")]))
+        _ = try supervision.receive() // handshake ack
+
+        let mcp = try DaemonClient(socketPath: socketPath)
+        try mcp.send(.object(["role": .string("mcp")]))
+        _ = try rpc(mcp, [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("omp")])]),
+        ])
+        _ = try expectEvent(supervision) // sessionStarted
+
+        let sessionID = daemon.registry.sessions.keys.first!.raw
+        try supervision.send(.object(["command": .string("stop_session"), "session": .number(Double(sessionID))]))
+        let stopped = try expectEvent(supervision)
+        XCTAssertEqual(stopped["type"], .string("stopped"))
+        XCTAssertEqual(stopped["reason"], .string("session \(sessionID) stopped"))
+
+        let response = try rpc(mcp, [
+            "jsonrpc": .string("2.0"), "id": .number(2), "method": .string("tools/call"),
+            "params": .object(["name": .string("computer_windows"), "arguments": .object([:])]),
+        ])
+        XCTAssertEqual(response["result"]?["isError"], .bool(true))
+    }
+
+    func test_secondStart_throwsAlreadyRunning_preservesSocket() throws {
+        let second = DaemonServer(engine: FakeEngine(), socketPath: socketPath)
+        XCTAssertThrowsError(try second.start()) { error in
+            XCTAssertEqual((error as? ComputerError)?.message, "daemon_already_running")
+        }
+
+        let client = try DaemonClient(socketPath: socketPath)
+        try client.send(.object(["role": .string("mcp")]))
+        let response = try rpc(client, [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("omp")])]),
+        ])
+        XCTAssertEqual(response["result"]?["serverInfo"]?["name"], .string("tenx-computer"))
+    }
+
+    func test_stop_removesSocketFile() throws {
+        _ = try DaemonClient(socketPath: socketPath)
+        daemon.stop()
+        daemon = nil
+        XCTAssertThrowsError(try DaemonClient(socketPath: socketPath)) { error in
+            let message = (error as? ComputerError)?.message ?? ""
+            XCTAssertTrue(message.hasPrefix("daemon_unreachable:"))
+        }
+    }
+
+    func test_splitNDJSON_reassemblesLine() throws {
+        let client = try DaemonClient(socketPath: socketPath)
+        try client.send(.object(["role": .string("mcp")]))
+
+        let request: [String: JSONValue] = [
+            "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+            "params": .object(["clientInfo": .object(["name": .string("omp")])]),
+        ]
+        var data = try JSONEncoder().encode(JSONValue.object(request))
+        data.append(0x0A)
+        let split = data.count / 2
+        try client.sendBytes(Data(data.prefix(split)))
+        try client.sendBytes(Data(data.suffix(from: split)))
+
+        let response = try client.receive()
+        XCTAssertEqual(response["result"]?["serverInfo"]?["name"], .string("tenx-computer"))
     }
 
     func test_windowGone_onToolCall_dropsStaleSnapshot() throws {
@@ -176,7 +268,7 @@ final class DaemonServerTests: XCTestCase {
         ])
         XCTAssertEqual(initResponse["result"]?["serverInfo"]?["name"], .string("tenx-computer"))
 
-        let event = try supervision.receive()
+        let event = try expectEvent(supervision)
         XCTAssertEqual(event["type"], .string("sessionStarted"))
         XCTAssertEqual(event["harness"], .string("omp"))
     }

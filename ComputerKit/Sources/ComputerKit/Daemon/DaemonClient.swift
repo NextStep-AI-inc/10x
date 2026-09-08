@@ -35,6 +35,10 @@ public final class DaemonClient {
 
     public func send(_ value: JSONValue) throws {
         let data = try JSONEncoder().encode(value) + Data([0x0A])
+        try sendBytes(data)
+    }
+
+    func sendBytes(_ data: Data) throws {
         try data.withUnsafeBytes { pointer in
             guard let base = pointer.baseAddress else { return }
             var sent = 0
@@ -46,12 +50,25 @@ public final class DaemonClient {
         }
     }
 
-    public func receive() throws -> JSONValue {
+    public func receive(timeout: TimeInterval? = nil) throws -> JSONValue {
         while true {
             if let newline = buffer.firstIndex(of: 0x0A) {
                 let line = buffer.prefix(upTo: newline)
                 buffer.removeSubrange(...newline)
                 return try JSONDecoder().decode(JSONValue.self, from: line)
+            }
+            if let timeout {
+                var pollFD = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+                let milliseconds = Int32((timeout * 1000).rounded())
+                let ready = poll(&pollFD, 1, milliseconds)
+                if ready == 0 { throw ComputerError("receive_timeout") }
+                if ready < 0 {
+                    if errno == EINTR { continue }
+                    throw ComputerError("poll: \(String(cString: strerror(errno)))")
+                }
+                if pollFD.revents & Int16(POLLERR | POLLHUP | POLLNVAL) != 0 {
+                    throw ComputerError("daemon_closed")
+                }
             }
             var chunk = [UInt8](repeating: 0, count: 65536)
             let count = recv(fd, &chunk, chunk.count, 0)
