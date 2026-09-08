@@ -37,6 +37,8 @@ struct SettingControlView: View {
                 "Use default for \(definition.displayLabel): \(Self.defaultActionLabel(for: definition))")
         }
         .onChange(of: definition.value) { _, value in
+            guard !model.isOwnEcho(for: definition.key, value: value),
+                  !model.hasPendingWrite(for: definition.key) else { return }
             draftText = Self.textValue(value)
             draftItems = Self.arrayValues(value)
         }
@@ -63,19 +65,41 @@ struct SettingControlView: View {
                     : .double(value)
                 await model.save(definition, value: json)
             }
+        case .enumeration where !definition.enumOptions.isEmpty:
+            InlineDropdown(
+                options: definition.enumOptions,
+                current: definition.value?.stringValue ?? "",
+                accessibilityLabelText: definition.displayLabel,
+                onSelect: { value in
+                    Task { await model.save(definition, value: .string(value)) }
+                })
         case .string, .enumeration, .unknown(_):
             editableField(prompt: definition.isSecret ? "Secure value" : "Value") {
                 await model.save(definition, value: .string(draftText))
             }
         case .array:
-            arrayEditor
+            if definition.key == "bashInterceptor.patterns" {
+                ObjectArraySettingEditor(definition: definition, model: model)
+            } else if let known = SettingMetadata.knownArrayValues[definition.key] {
+                KnownSetArrayEditor(definition: definition, model: model, knownValues: known)
+            } else if SettingMetadata.catalogFedArrays.contains(definition.key) {
+                KnownSetArrayEditor(
+                    definition: definition,
+                    model: model,
+                    knownValues: KnownSetArrayEditor.catalogValues(
+                        for: definition.key, models: model.catalogModels),
+                    alwaysShowAdd: true)
+            } else {
+                arrayEditor
+            }
         case .record:
-            editableField(prompt: "JSON object") {
-                guard let data = draftText.data(using: .utf8),
-                      let value = try? JSONDecoder().decode(JSONValue.self, from: data),
-                      value.objectValue != nil
-                else { return }
-                await model.save(definition, value: value)
+            if definition.key == "modelRoles" {
+                ModelRolesEditor(definition: definition, model: model)
+            } else {
+                RecordSettingEditor(
+                    definition: definition,
+                    model: model,
+                    valueKind: RecordSettingEditor.valueKind(for: definition.key))
             }
         }
     }
