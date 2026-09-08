@@ -51,3 +51,8 @@ Owned: `App/Sessions/TranscriptView.swift`, `App/Sessions/TurnActivityView.swift
 ## Preflight rulings
 
 Task 1 produces immutable projected sections consumed by Task 2; Task 2 preserves original content rows consumed by Task 3's scroll/search checks. All three tasks share stable message/tool IDs, not new persisted data. Timing comes from observed runtime fields, not enqueue timestamps. This resolves the queued-input and reopening ambiguities without expanding storage scope.
+
+## Release corrections within the stated acceptance
+
+- `7a2e240` corrects quiet activity after a completed tool in Cursor's packed response. Earlier nonfinal text must not suppress Working once its following tool has settled; current text and any running tool/subagent still suppress duplicate activity. Behavioral RED and 8 focused GREEN tests are recorded.
+- The native switch-away/back check exposed per-card/group disclosure loss because `TranscriptView` owns `ToolDisclosureState` in `@State` and the view is recreated per session. Task 2 ownership is extended to one `SessionController` property plus the existing view and focused tests: retain the existing disclosure object on the controller, as already done for its viewport. Keep choices scoped to that session and keep explicit detail-mode changes clearing overrides as before. Do not add disk persistence or a new preferences store. Verify session A/B choices remain independent and survive returning to a retained controller; parent repeats the native switch check.
