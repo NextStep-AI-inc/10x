@@ -754,6 +754,36 @@ struct ComposerView: View {
         report(skipped: skipped)
     }
 
+    fileprivate func add(images: [NSImage]) {
+        var skipped: [String] = []
+        for image in images {
+            guard attachments.count < ComposerAttachmentEncoder.maximumCount else {
+                skipped.append("Pasted image")
+                continue
+            }
+            guard let attachment = ComposerAttachmentEncoder.attachment(
+                from: image,
+                name: "Pasted image")
+            else {
+                skipped.append("Pasted image")
+                continue
+            }
+            attachments.append(attachment)
+        }
+        report(skipped: skipped)
+    }
+
+    fileprivate func add(pasteboardContent: ComposerPasteboard.Content) {
+        switch pasteboardContent {
+        case .imageFiles(let urls):
+            add(urls: urls)
+        case .images(let images):
+            add(images: images)
+        case .none:
+            break
+        }
+    }
+
     private func add(providers: [NSItemProvider]) {
         guard attachments.count < ComposerAttachmentEncoder.maximumCount else {
             report(skipped: ["Pasted image"])
