@@ -135,11 +135,11 @@ final class AppModel {
 
     func openSession(forDaemonSession daemonSessionID: Int) {
         guard openableDaemonSessionIDs.contains(daemonSessionID) else { return }
-        // ponytail: correlation covers the active session only, so "open" is
-        // activate + surface the session UI. Ceiling: can't jump to a
-        // background 10x session. Upgrade path: match daemon peerPID to each
-        // session's omp process PID.
+        // ponytail: correlation covers the active session only. Ceiling: can't
+        // jump to a background 10x session. Upgrade path: match daemon peerPID
+        // to each session's omp process PID.
         closeSearch()
+        if let path = activeSession?.sessionPath { route = .session(path) }
         NSApp.activate(ignoringOtherApps: true)
     }
 
