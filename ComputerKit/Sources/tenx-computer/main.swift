@@ -66,7 +66,25 @@ func requestMissingPermissions(_ permissions: PermissionStatus) {
     }
 }
 
-@MainActor
+// Separate-process probe: a real AppKit app with a text field that never
+// activates. Writes the field's content to the given file on a timer so the
+// parent selfcheck can verify background input landed.
+func runProbe(outPath: String) throws {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    app.finishLaunching()
+    let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 320, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
+    window.title = "tenx-computer probe"
+    let field = NSTextField(frame: NSRect(x: 20, y: 40, width: 280, height: 30))
+    field.stringValue = ""
+    window.contentView?.addSubview(field)
+    window.orderFront(nil)
+    Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+        try? field.stringValue.write(toFile: outPath, atomically: true, encoding: .utf8)
+    }
+    app.run()
+}
+
 func runSelfCheck() throws {
     let engine = MacDesktopEngine()
     let permissions = engine.preflightPermissions()
@@ -76,43 +94,39 @@ func runSelfCheck() throws {
         exit(1)
     }
 
-    let app = NSApplication.shared
-    app.setActivationPolicy(.accessory)
-    app.finishLaunching()
-    let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 320, height: 120), styleMask: [.titled], backing: .buffered, defer: false)
-    window.title = "tenx-computer probe"
-    let field = NSTextField(frame: NSRect(x: 20, y: 40, width: 280, height: 30))
-    field.stringValue = ""
-    window.contentView?.addSubview(field)
-    window.makeKeyAndOrderFront(nil)
-    RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+    // Cross-process probe: spawn `tenx-computer probe` (a separate process with
+    // its own window that never takes focus), drive it through the engine.
+    let outPath = NSTemporaryDirectory() + "tenx-computer-selfcheck-\(ProcessInfo.processInfo.processIdentifier).txt"
+    defer { try? FileManager.default.removeItem(atPath: outPath) }
+    let probeProcess = Process()
+    probeProcess.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+    probeProcess.arguments = ["probe", outPath]
+    probeProcess.standardOutput = FileHandle.nullDevice
+    probeProcess.standardError = FileHandle.nullDevice
+    try probeProcess.run()
+    defer { probeProcess.terminate() }
 
-    // Find the probe window through the engine. Pump the run loop so the
-    // window server actually registers it — Thread.sleep alone never does.
     let deadline = Date().addingTimeInterval(5)
     var probe: WindowInfo?
     while Date() < deadline, probe == nil {
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-        probe = try? engine.listWindows().first(where: { $0.title == "tenx-computer probe" })
+        Thread.sleep(forTimeInterval: 0.2)
+        probe = try? engine.listWindows().first(where: { $0.title == "tenx-computer probe" && $0.pid == probeProcess.processIdentifier })
     }
     guard let probe else {
         FileHandle.standardError.write("selfcheck: probe window not found\n".data(using: .utf8)!)
         exit(1)
     }
 
-    // Type into it (background delivery to our own pid). The click point is
-    // frame-relative top-left: flip the field's bottom-left-origin center and
-    // account for the title bar (WindowInfo.bounds includes chrome).
-    let clickPoint = CGPoint(x: field.frame.midX, y: window.frame.height - field.frame.midY)
+    // Click the field: frame-relative top-left. Field center is 55pt above the
+    // content bottom; bounds include the title bar, so y = height - 55.
+    let clickPoint = CGPoint(x: 160, y: probe.bounds.height - 55)
     try engine.act(.click(point: clickPoint, button: .left), window: probe)
     try engine.act(.type("hello 10x"), window: probe)
+    Thread.sleep(forTimeInterval: 1.5)
 
-    // Pump the run loop so the events land.
-    let settle = Date().addingTimeInterval(1)
-    while Date() < settle { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
-
-    guard field.stringValue == "hello 10x" else {
-        FileHandle.standardError.write("selfcheck: input FAILED — field contains \"\(field.stringValue)\"\n".data(using: .utf8)!)
+    let typed = (try? String(contentsOfFile: outPath, encoding: .utf8)) ?? ""
+    guard typed == "hello 10x" else {
+        FileHandle.standardError.write("selfcheck: input FAILED — probe field contains \"\(typed)\"\n".data(using: .utf8)!)
         exit(1)
     }
 
@@ -126,19 +140,17 @@ func runSelfCheck() throws {
     exit(0)
 }
 
-func runSelfCheckOnMain() throws {
-    if Thread.isMainThread {
-        try MainActor.assumeIsolated { try runSelfCheck() }
-    } else {
-        try DispatchQueue.main.sync { try runSelfCheck() }
-    }
-}
-
 do {
     switch arguments.first {
     case "daemon": try runDaemon()
     case "stop-all": try runStopAll()
-    case "selfcheck": try runSelfCheckOnMain()
+    case "selfcheck": try runSelfCheck()
+    case "probe":
+        guard let outPath = arguments.dropFirst().first else {
+            FileHandle.standardError.write("usage: tenx-computer probe <outfile>\n".data(using: .utf8)!)
+            exit(64)
+        }
+        try runProbe(outPath: outPath)
     case "mcp", nil: try runMCPFront()
     default:
         FileHandle.standardError.write("usage: tenx-computer [mcp|daemon|stop-all|selfcheck]\n".data(using: .utf8)!)

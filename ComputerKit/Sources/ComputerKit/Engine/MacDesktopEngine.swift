@@ -146,7 +146,6 @@ public final class MacDesktopEngine: DesktopEngine {
             try ensureBackgroundFocus(pid: pid, wid: wid)
             let group = clickGroupID()
             let (downType, upType, cgButton, buttonNumber) = buttonTypes(button)
-            try pointerPrologue(pid: pid, wid: wid, window: window, x: point.x, y: point.y, group: group)
             try postMouse(
                 pid: pid, wid: wid, window: window, type: downType, button: cgButton,
                 x: point.x, y: point.y, phase: 3, clickState: 1, buttonNumber: buttonNumber, group: group
@@ -159,7 +158,6 @@ public final class MacDesktopEngine: DesktopEngine {
         case .doubleClick(let point):
             try ensureBackgroundFocus(pid: pid, wid: wid)
             let group = clickGroupID()
-            try pointerPrologue(pid: pid, wid: wid, window: window, x: point.x, y: point.y, group: group)
             for clickState in 1...2 {
                 try postMouse(
                     pid: pid, wid: wid, window: window, type: .leftMouseDown, button: .left,
@@ -175,7 +173,6 @@ public final class MacDesktopEngine: DesktopEngine {
         case .drag(let from, let to):
             try ensureBackgroundFocus(pid: pid, wid: wid)
             let group = clickGroupID()
-            try pointerPrologue(pid: pid, wid: wid, window: window, x: from.x, y: from.y, group: group)
             try postMouse(
                 pid: pid, wid: wid, window: window, type: .leftMouseDown, button: .left,
                 x: from.x, y: from.y, phase: 3, clickState: 1, buttonNumber: 0, group: group
@@ -265,24 +262,6 @@ public final class MacDesktopEngine: DesktopEngine {
         lastFocusedWid = window.id
     }
 
-    private func pointerPrologue(pid: pid_t, wid: CGWindowID, window: WindowInfo, x: CGFloat, y: CGFloat, group: Int64) throws {
-        try postMouse(
-            pid: pid, wid: wid, window: window, type: .mouseMoved, button: .left,
-            x: x, y: y, phase: 2, clickState: 0, buttonNumber: 0, group: group
-        )
-        Thread.sleep(forTimeInterval: 0.015)
-        try postMouse(
-            pid: pid, wid: wid, window: window, type: .leftMouseDown, button: .left,
-            x: -1, y: -1, phase: 1, clickState: 1, buttonNumber: 0, group: group
-        )
-        Thread.sleep(forTimeInterval: 0.001)
-        try postMouse(
-            pid: pid, wid: wid, window: window, type: .leftMouseUp, button: .left,
-            x: -1, y: -1, phase: 2, clickState: 1, buttonNumber: 0, group: group
-        )
-        Thread.sleep(forTimeInterval: 0.1)
-    }
-
     private func postMouse(
         pid: pid_t,
         wid: CGWindowID,
@@ -333,12 +312,12 @@ public final class MacDesktopEngine: DesktopEngine {
     }
 
     private func globalPoint(_ windowRelative: CGPoint, in window: WindowInfo) -> CGPoint {
-        CGPoint(x: window.bounds.minX + windowRelative.x, y: window.bounds.maxY - windowRelative.y)
+        CGPoint(x: window.bounds.minX + windowRelative.x, y: window.bounds.minY + windowRelative.y)
     }
 
     private func windowLocalPoint(x: CGFloat, y: CGFloat, in window: WindowInfo) -> CGPoint {
         if x == -1, y == -1 { return CGPoint(x: -1, y: -1) }
-        return CGPoint(x: x, y: window.bounds.height - y)
+        return CGPoint(x: x, y: y)
     }
 
     private func buttonTypes(_ button: MouseButton) -> (CGEventType, CGEventType, CGMouseButton, Int64) {
