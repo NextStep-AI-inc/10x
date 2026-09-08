@@ -1,0 +1,27 @@
+{
+  "name": "drafts",
+  "sourceCommit": "4d74a5ee36a17ac07505e9dc7f5a14f605ffd55b",
+  "command": [
+    "xcodebuild",
+    "build",
+    "-project",
+    "10x.xcodeproj",
+    "-scheme",
+    "10x",
+    "-configuration",
+    "Release",
+    "-destination",
+    "generic/platform=macOS",
+    "-derivedDataPath",
+    "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj",
+    "ARCHS=arm64",
+    "CODE_SIGNING_ALLOWED=NO"
+  ],
+  "log": "/tmp/10x-drafts-final-release.log",
+  "logSHA256": "066bd5d7178f7afaadeb5802aef2851e33e51611c4ee6e6a47f971aea6ac9b15",
+  "app": "/tmp/10x-drafts-final-build/10x-drafts.app",
+  "bundleIdentifier": "com.nextstep.tenx.draftsqa",
+  "unsignedExecutableSHA256": "86fc2b234add8bb7a8e9126ff25f703482bad70e3e32f16cf2c72aa30c921889",
+  "packagedExecutableSHA256": "478e06f412adf81c7cae85dc796b885bbe522b01b91caba5dc45ace9eebd69fd",
+  "nativeLaunched": false
+}
