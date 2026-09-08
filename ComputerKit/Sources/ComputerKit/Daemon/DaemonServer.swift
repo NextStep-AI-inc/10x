@@ -33,7 +33,7 @@ public final class DaemonServer {
         var buffer = Data()
     }
 
-    init(engine: DesktopEngine, socketPath: String = DaemonServer.defaultSocketPath, previewInterval: TimeInterval = 1.0) {
+    public init(engine: DesktopEngine, socketPath: String = DaemonServer.defaultSocketPath, previewInterval: TimeInterval = 1.0) {
         self.engine = engine
         self.previewInterval = previewInterval
         self.socketPath = socketPath
