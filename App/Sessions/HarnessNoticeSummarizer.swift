@@ -36,6 +36,7 @@ actor HarnessNoticeSummarizer: HarnessNoticeSummarizing {
             .joined()
         if let cached = cachedSummaries()[key] { return cached }
         guard let model = await resolveModel() else { return nil }
+        if let cached = cache?[key] { return cached }
         let prompt = """
             Summarize in one short sentence, for the user of a chat UI, what \
             this hidden harness message says. Plain text, no markup, 120 \
@@ -47,14 +48,15 @@ actor HarnessNoticeSummarizer: HarnessNoticeSummarizing {
         // static notice. ponytail ceiling: no timeout — upgrade path is a
         // task-group race with a 60 s cap.
         guard let data = try? await run([
-                "-p", "--model", model, "--no-session", "--no-tools", prompt]),
-              let output = String(data: data, encoding: .utf8),
-              let summary = output
-                  .split(whereSeparator: \.isNewline)
-                  .last?
-                  .trimmingCharacters(in: .whitespaces),
-              !summary.isEmpty
+                "-p", "--model", model, "--no-session", "--no-tools", prompt])
         else { return nil }
+        if let cached = cache?[key] { return cached }
+        guard let output = String(data: data, encoding: .utf8) else { return nil }
+        let summary = output
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last(where: { !$0.isEmpty })
+        guard let summary else { return nil }
         cache?[key] = summary
         persist()
         return summary

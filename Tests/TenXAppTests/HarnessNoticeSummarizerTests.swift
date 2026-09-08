@@ -82,6 +82,15 @@ private func tempCacheURL() -> URL {
     #expect(await summarizer.summarize(noticeDescriptor()) == nil)
 }
 
+@Test func summarizerSkipsAWhitespaceOnlyLastLine() async {
+    let summarizer = HarnessNoticeSummarizer(
+        resolveModel: { "cursor/smol" },
+        cacheURL: tempCacheURL(),
+        run: { _ in Data("Working...\nThe real summary.\n   \n".utf8) })
+
+    #expect(await summarizer.summarize(noticeDescriptor()) == "The real summary.")
+}
+
 private actor RunCount {
     private(set) var value = 0
     func increment() { value += 1 }
