@@ -2,7 +2,9 @@
 
 Date: 2026-09-07
 Branch: `codex/computer-use-design`
-Build SHA: `0ca8ea2`
+Build SHA: `0ca8ea2` (live pass). Branch later merged with origin/main at
+`ccdf897`: OmpKit 217 tests, ComputerKit 98, TenXApp 1481, all green; project
+generator byte-stable.
 
 Architecture under test: the `tenx-computer` daemon (ComputerKit) owns the
 engine, session registry, MCP socket, and supervision event stream. Harnesses
