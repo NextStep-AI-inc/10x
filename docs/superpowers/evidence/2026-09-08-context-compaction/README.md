@@ -1,6 +1,6 @@
 # Context compaction acceptance
 
-Status: **DONE_WITH_CONCERNS** for the feature branch. The core compaction action passed real-runtime and controlled native acceptance. Final wording was verified through the native accessibility tree; the Mac locked before its last screenshot and QA-app shutdown. Stack integration remains outstanding. No merge or deployment occurred.
+Status: **DONE_WITH_CONCERNS** for the feature branch. The core compaction action passed real-runtime and controlled native acceptance. Final wording was verified through the native accessibility tree and final screenshot; the isolated QA app was then quit with Command-Q. Stack integration remains outstanding. No merge or deployment occurred.
 
 ## Verified
 
@@ -11,7 +11,7 @@ Status: **DONE_WITH_CONCERNS** for the feature branch. The core compaction actio
 - The real-runtime action preserved the unsent `CONTEXT-PRESERVES-UNSENT-DRAFT`. The JSONL retained 80 user entries, contained one compaction entry, and did not contain the staged marker. The runtime did not invoke a summarizing model for this native method. These synthetic-history values demonstrate the flow, not a provider benchmark.
 - A controlled serial RPC server stalled inside compact. The popover displayed Compacting context, Send/Model were disabled, the draft stayed editable, and Stop remained available. Command-period from the open popover closed the runtime and exposed Restart with the draft intact. No fixture process remained after this check.
 - A controlled unsuccessful response showed a separate compaction error while retaining usable Send/Model controls and staged input. A runtime that advertised compact then returned unsupported disabled further attempts with an explicit explanation.
-- The final native accessibility tree displayed `Compresses older conversation to free context space.` and exactly one `Context compaction isn’t supported by this runtime.` message below a disabled Compact context button. `final-native-copy-verification.json` records that last check without claiming a final screenshot.
+- The final native accessibility tree displayed `Compresses older conversation to free context space.` and exactly one `Context compaction isn’t supported by this runtime.` message below a disabled Compact context button. `final-unsupported-feedback.png` captures the same state, and `final-native-copy-verification.json` records both observations and the completed QA-app shutdown.
 
 ## Evidence and limits
 
@@ -19,8 +19,8 @@ Status: **DONE_WITH_CONCERNS** for the feature branch. The core compaction actio
 
 The synthetic history has no usage field for its compaction boundary's `tokensBefore`, so the persisted boundary shows 0 → 71,401. The meaningful before/after evidence is the actual context report, 94,526 → 71,401. No token reduction is inferred from the missing boundary value.
 
-Native acceptance used staged text. Preservation of staged image data during compaction is covered by the focused controller regression; the added native PNG repetition was skipped after the Mac locked. Short controlled timeout and failed-reload paths were verified in controller tests rather than waiting for the production ten-minute timeout in the UI. Other providers and distribution signing were not tested.
+Native acceptance used staged text. Preservation of staged image data during compaction is covered by the focused controller regression; the added native PNG repetition was not run. Short controlled timeout and failed-reload paths were verified in controller tests rather than waiting for the production ten-minute timeout in the UI. Other providers and distribution signing were not tested.
 
 ## For Tanner to test
 
-Unlock the Mac to permit the final screenshot and close the isolated QA app. After stack integration, exercise the action in an ordinary long session on your preferred provider. The branch's runtime capability and failure handling remain explicit when that provider cannot compact.
+After stack integration, exercise the action in an ordinary long session on your preferred provider. The branch's runtime capability and failure handling remain explicit when that provider cannot compact.

@@ -4,7 +4,7 @@
   "files": [
     {
       "file": "README.md",
-      "sha256": "d28728d12a9d28327c8a5518899d8b8c7381eded4825f418bf64c2b903d046f6"
+      "sha256": "63aa292727c4f2e352fe8a9bdb34c2c7a8483c7983afc0cc33d822fb7dfc4ba5"
     },
     {
       "file": "after-compaction-refreshed.png",
@@ -36,7 +36,11 @@
     },
     {
       "file": "final-native-copy-verification.json",
-      "sha256": "f01acc19235dab2e65e40a2b3e99855257d3bc79fb2764614da1bfc229c9a82b"
+      "sha256": "bf6c892869d3c274d3119f131ae49493861fc77f9b5a729e400858cc0b72f8be"
+    },
+    {
+      "file": "final-unsupported-feedback.png",
+      "sha256": "9e0933797f62ac48f98a2ffb871cd4fb8709269110a5bb95a7a178b227b686bc"
     },
     {
       "file": "runtime-compaction-verification.json",
