@@ -78,13 +78,21 @@ struct SettingControlView: View {
         case .array:
             arrayEditor
         case .record:
-            editableField(prompt: "JSON object") {
-                guard let data = draftText.data(using: .utf8),
-                      let value = try? JSONDecoder().decode(JSONValue.self, from: data),
-                      value.objectValue != nil
-                else { return }
-                await model.save(definition, value: value)
+            if definition.key == "modelRoles" {
+                ModelRolesEditor(definition: definition, model: model)
+            } else {
+                recordJSONField
             }
+        }
+    }
+
+    private var recordJSONField: some View {
+        editableField(prompt: "JSON object") {
+            guard let data = draftText.data(using: .utf8),
+                  let value = try? JSONDecoder().decode(JSONValue.self, from: data),
+                  value.objectValue != nil
+            else { return }
+            await model.save(definition, value: value)
         }
     }
 
