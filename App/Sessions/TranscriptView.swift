@@ -179,16 +179,6 @@ struct TranscriptView: View {
             }
         case .extensionUI(let state):
             switch state {
-            case .computerHandoff(_, let target, _, let reason):
-                ComputerHandoffCardView(
-                    target: target,
-                    reason: reason,
-                    onApprove: {
-                        Task { await controller.respondToComputerHandoff(state, approved: true) }
-                    },
-                    onCancel: {
-                        Task { await controller.respondToComputerHandoff(state, approved: false) }
-                    })
             default:
                 ApprovalCardView(
                     state: state,

@@ -1,25 +1,16 @@
 import SwiftUI
 
 struct ComputerUseMenuBarView: View {
-    let phase: ComputerUsePhase
-    let onStop: () -> Void
+    let client: SupervisionClient
 
     var body: some View {
-        Text(status)
-        Divider()
-        Button("Stop Computer", action: onStop)
-            .accessibilityLabel("Stop computer control for this session")
-    }
-
-    private var status: String {
-        switch phase {
-        case .off: "Computer: Off"
-        case .preparing: "Computer: Preparing"
-        case .ready: "Computer: Ready"
-        case .controlling(let target): "Controlling: \(target)"
-        case .needsHandoff(let target, _): "Needs handoff: \(target)"
-        case .unavailable: "Computer: Unavailable"
-        case .stopping: "Computer: Stopping"
+        if client.hasAnyActivity {
+            Text("Computer use active")
+        } else {
+            Text("No windows in use")
         }
+        Divider()
+        Button("Stop All Computer Use") { client.stopAll() }
+            .accessibilityLabel("Stop all computer use, all apps")
     }
 }

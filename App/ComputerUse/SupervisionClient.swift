@@ -36,8 +36,8 @@ public final class SupervisionClient: @unchecked Sendable {
 
     private let socketPath: String
     private var listenTask: Task<Void, Never>?
-    private let clientLock = NSLock()
-    private var activeClient: DaemonClient?
+    // ponytail: listenLoop and stop() are the only writers; no lock needed beyond this.
+    nonisolated(unsafe) private var activeClient: DaemonClient?
 
     /// Side-channel for per-session forwarding — AppModel sets this to route
     /// events to the active session's ComputerUseController.
@@ -55,12 +55,8 @@ public final class SupervisionClient: @unchecked Sendable {
     public func stop() {
         listenTask?.cancel()
         listenTask = nil
-        // Cancellation is cooperative and receive() blocks — close the socket
-        // to actually end the loop, so a later start() can't double-apply events.
-        clientLock.lock()
-        let client = activeClient
-        clientLock.unlock()
-        client?.close()
+        activeClient?.close()
+        activeClient = nil
     }
 
     public func stopSession(_ sessionID: Int) {
@@ -84,10 +80,12 @@ public final class SupervisionClient: @unchecked Sendable {
         while !Task.isCancelled {
             do {
                 let client = try DaemonClient(socketPath: socketPath)
-                clientLock.lock()
                 activeClient = client
-                clientLock.unlock()
-                if Task.isCancelled { client.close(); break }
+                if Task.isCancelled {
+                    client.close()
+                    activeClient = nil
+                    break
+                }
                 try client.send(.object(["role": .string("supervision")]))
                 _ = try client.receive() // handshake ack
                 await MainActor.run { self.isConnected = true }
@@ -103,9 +101,7 @@ public final class SupervisionClient: @unchecked Sendable {
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-        clientLock.lock()
         activeClient = nil
-        clientLock.unlock()
     }
 
     /// Pure reducer — the tested surface.

@@ -24,7 +24,6 @@ final class SessionController {
     private(set) var isLogPresented = false
     private(set) var logText = ""
     private(set) var computerUse: ComputerUseController
-    private(set) var computerUsePreference: AgentDesktopPreference
     var draft = ""
     var streamingBehavior: StreamingBehavior? = .steer
 
@@ -42,17 +41,13 @@ final class SessionController {
 
     init(
         processManager: SessionProcessManager,
-        computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry(),
+        supervision: SupervisionClient,
         computerUse: ComputerUseController? = nil,
-        computerUsePreference: AgentDesktopPreference = .automatic,
         terminateProcess: (@Sendable (ContinuousClock.Instant) async -> Bool)? = nil
     ) {
         self.processManager = processManager
         self.terminateProcess = terminateProcess
-        self.computerUsePreference = computerUsePreference
-        self.computerUse = computerUse ?? ComputerUseController(
-            registry: computerUseRegistry,
-            preference: computerUsePreference)
+        self.computerUse = computerUse ?? ComputerUseController(supervision: supervision)
     }
 
     init(
@@ -66,15 +61,12 @@ final class SessionController {
             branch: "",
             repo: "",
         worktreePath: nil),
-        computerUseRegistry: ComputerUseRegistry = ComputerUseRegistry(),
-        computerUsePreference: AgentDesktopPreference = .automatic
+        supervision: SupervisionClient = SupervisionClient(
+            socketPath: NSTemporaryDirectory() + "preview-\(UUID().uuidString).sock")
     ) {
         self.processManager = processManager
         terminateProcess = nil
-        self.computerUsePreference = computerUsePreference
-        computerUse = ComputerUseController(
-            registry: computerUseRegistry,
-            preference: computerUsePreference)
+        computerUse = ComputerUseController(supervision: supervision)
         self.items = previewItems
         self.runtimeState = runtimeState
         self.title = title
@@ -184,9 +176,6 @@ final class SessionController {
         for task in extensionTimeoutTasks.values { task.cancel() }
         extensionTimeoutTasks.removeAll()
         await computerUse.stopComputerUse()
-        // A failed forced shutdown still owns a live process. Its exit event is
-        // responsible for releasing the computer-use resources.
-        guard !computerUse.isAwaitingConfirmedProcessExit else { return }
         if let sessionPath {
             await processManager.close(sessionPath: sessionPath)
         }
@@ -196,7 +185,6 @@ final class SessionController {
     func restart() async {
         guard let projectURL, let sessionPath else { return }
         await teardown()
-        guard !computerUse.isAwaitingConfirmedProcessExit else { return }
         runtimeState = .loading
         isRecoveryPresented = false
         do {
@@ -223,13 +211,6 @@ final class SessionController {
         }
     }
 
-    func respondToComputerHandoff(_ state: ExtensionUIState, approved: Bool) async {
-        guard case .computerHandoff(let id, _, _, _) = state else { return }
-        if await computerUse.respondToHandoff(id: id, approved: approved) {
-            removeExtensionRequest(id: id)
-        }
-    }
-
     func openURL(_ url: URL, requestID: String) {
         NSWorkspace.shared.open(url)
         removeExtensionRequest(id: requestID)
@@ -243,7 +224,7 @@ final class SessionController {
     }
 
     func handleUnexpectedExit(code: Int32?, stderrTail: String) async {
-        await computerUse.handleProcessTerminated()
+        await computerUse.stopComputerUse()
         runtimeState = .stopped(code: code, stderrTail: stderrTail)
         reducer.runtimeState = runtimeState
         isRecoveryPresented = true
@@ -265,24 +246,6 @@ final class SessionController {
     private func finishOpening(_ handle: SessionProcessManager.Handle) async throws {
         self.handle = handle
         sessionPath = handle.sessionPath
-        let path = handle.sessionPath
-        let terminateProcess = self.terminateProcess
-        await computerUse.attachAndReconcile(
-            rpc: handle.computerUseRPC,
-            sessionPath: path,
-            terminateProcess: { [processManager] deadline in
-                if let terminateProcess {
-                    return await terminateProcess(deadline)
-                }
-                return await processManager.forceClose(
-                    sessionPath: path,
-                    deadline: deadline)
-            },
-            handoffResponder: { id, approved in
-                try await handle.client.sendRaw(.computerForegroundHandoffResponse(
-                    id: id,
-                    approved: approved))
-            })
 
         let state = try await handle.client.send(.getState())
         applyState(state.data)
@@ -336,14 +299,12 @@ final class SessionController {
                 switch frame {
                 case .extensionUIRequest(let request):
                     self.consumeExtensionUI(request)
-                case .hostToolCall(let call):
-                    self.computerUse.handleHostToolCall(call)
-                case .hostToolCancel(_, let targetID):
-                    self.computerUse.handleHostToolCancel(targetID: targetID)
+                case .hostToolCall, .hostToolCancel:
+                    break
                 default:
                     self.reducer.consume(frame)
                 }
-                self.routeComputerToolEvent(frame)
+                self.routeToolEvent(frame)
                 self.syncReducerState()
                 self.applyEventMetadata(frame)
                 self.reconcileAfterBoundary(frame)
@@ -404,14 +365,10 @@ final class SessionController {
         case "config_update":
             modelName = Self.modelLabel(payload["model"]) ?? modelName
             thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
-            Task { [weak self] in await self?.refreshComputerAvailability() }
         case "thinking_level_changed":
             thinkingLevel = payload["thinkingLevel"]?.stringValue?.capitalized ?? thinkingLevel
         case "model_changed":
-            Task { [weak self] in
-                await self?.refreshState()
-                await self?.refreshComputerAvailability()
-            }
+            Task { [weak self] in await self?.refreshState() }
         default:
             break
         }
@@ -427,36 +384,61 @@ final class SessionController {
         }
     }
 
-    private func refreshComputerAvailability() async {
-        await computerUse.refreshAvailability()
-    }
-
-    private func routeComputerToolEvent(_ frame: RpcFrame) {
+    private func routeToolEvent(_ frame: RpcFrame) {
         guard case .event(let type, let payload) = frame,
-              payload["toolName"]?.stringValue == "computer"
+              let toolName = payload["toolName"]?.stringValue
         else { return }
         switch type {
         case "tool_execution_start":
-            computerUse.handleToolStarted(payload)
+            computerUse.handleToolStarted(
+                name: toolName,
+                input: Self.toolInput(from: payload))
         case "tool_execution_end":
-            computerUse.handleToolEnded(payload)
-            if Self.reportsComputerPermissionLoss(payload) {
-                Task { [weak self] in await self?.computerUse.handlePermissionLoss() }
-            }
+            computerUse.handleToolCompleted(
+                name: toolName,
+                claimedWindowID: Self.claimedWindowID(from: payload, toolName: toolName))
         default:
             break
         }
     }
 
-    private static func reportsComputerPermissionLoss(_ value: JSONValue) -> Bool {
-        guard let object = value.objectValue else { return false }
-        for key in ["capturePermission", "inputPermission", "axPermission"] {
-            if let state = object[key]?.stringValue,
-               state == "denied" || state == "unavailable" {
-                return true
+    private static func toolInput(from payload: JSONValue) -> [String: Any]? {
+        guard let args = payload["args"]?.objectValue else { return nil }
+        var result: [String: Any] = [:]
+        for (key, value) in args {
+            if let intValue = value.intValue {
+                result[key] = intValue
+            } else if let stringValue = value.stringValue {
+                result[key] = stringValue
+            } else if let doubleValue = value.doubleValue {
+                result[key] = doubleValue
+            } else if let boolValue = value.boolValue {
+                result[key] = boolValue
             }
         }
-        return object.values.contains { reportsComputerPermissionLoss($0) }
+        return result.isEmpty ? nil : result
+    }
+
+    private static let claimedWindowPattern = /claimed window (\d+)/
+
+    private static func claimedWindowID(from payload: JSONValue, toolName: String) -> Int? {
+        guard toolName.hasSuffix("computer_launch") else { return nil }
+        guard let text = toolResultText(from: payload),
+              let match = text.firstMatch(of: claimedWindowPattern)
+        else { return nil }
+        return Int(match.1)
+    }
+
+    private static func toolResultText(from payload: JSONValue) -> String? {
+        guard let result = payload["result"] else { return payload["content"]?.stringValue }
+        if let text = result.stringValue { return text }
+        if let content = result["content"]?.arrayValue {
+            return content.compactMap { block -> String? in
+                guard block["type"]?.stringValue == "text" else { return nil }
+                return block["text"]?.stringValue
+            }.joined(separator: "\n")
+        }
+        return nil
     }
 
     private func syncReducerState() {
@@ -469,10 +451,7 @@ final class SessionController {
         extensionRouter.consume(request)
 
         switch state {
-        case .computerHandoff(let id, let target, _, let reason):
-            computerUse.requestHandoff(id: id, target: target, reason: reason)
-            reducer.upsertExtensionUI(state)
-        case .confirm, .select:
+        case .computerHandoff, .confirm, .select:
             reducer.upsertExtensionUI(state)
             scheduleTimeout(for: state)
         case .input, .editor:

@@ -39,19 +39,6 @@ import Testing
 }
 
 @MainActor
-@Test func computerHandoffSnapshot() throws {
-    try assertSnapshot(
-        ComputerHandoffCardView(
-            target: "TextEdit",
-            reason: "Background keyboard delivery is unavailable",
-            onApprove: {},
-            onCancel: {})
-            .frame(width: 680),
-        name: "computer-handoff",
-        size: CGSize(width: 760, height: 240))
-}
-
-@MainActor
 @Test func setupSnapshot() throws {
     try assertSnapshot(SetupView(model: AppModel()), name: "omp-missing")
 }
@@ -78,33 +65,11 @@ import Testing
 @MainActor
 @Test func computerUseSettingsSnapshot() throws {
     try assertSnapshot(
-        ComputerUseSettingsSection(model: computerUseSnapshotModel(contract: .complete))
+        ComputerUseSettingsSection()
             .frame(width: 600)
             .frame(maxHeight: .infinity, alignment: .topLeading),
         name: "computer-use-settings",
-        size: CGSize(width: 760, height: 860))
-}
-
-@MainActor
-@Test func degradedComputerUseSettingsSnapshot() throws {
-    try assertSnapshot(
-        ComputerUseSettingsSection(model: computerUseSnapshotModel(contract: .legacyBestEffort))
-            .frame(width: 600)
-            .frame(maxHeight: .infinity, alignment: .topLeading),
-        name: "computer-use-settings-degraded",
-        size: CGSize(width: 760, height: 860))
-}
-
-@Test func computerUseSettingsOnlyPromisesNonInterruptionForCompleteContract() {
-    let complete = ComputerUseSettingsSection.primaryDescription(for: .complete)
-    let bestEffort = ComputerUseSettingsSection.primaryDescription(for: .legacyBestEffort)
-    let unavailable = ComputerUseSettingsSection.primaryDescription(for: .unavailable)
-
-    #expect(complete.contains("without taking over your desktop"))
-    #expect(!bestEffort.contains("without taking over your desktop"))
-    #expect(bestEffort.contains("may interrupt your current app"))
-    #expect(!unavailable.contains("without taking over your desktop"))
-    #expect(unavailable.contains("may interrupt your current app"))
+        size: CGSize(width: 760, height: 120))
 }
 
 @MainActor
@@ -371,32 +336,6 @@ import Testing
 }
 
 @MainActor
-@Test func computerSessionReadySnapshot() throws {
-    let controller = computerHeaderSnapshotController(title: "Desktop verification")
-    try assertSnapshot(
-        SessionHeaderView(
-            controller: controller,
-            phaseOverride: .ready,
-            safetyModeOverride: .focusIsolated,
-            isCompleteContractOverride: true),
-        name: "computer-session-ready",
-        size: CGSize(width: 760, height: 80))
-}
-
-@MainActor
-@Test func computerSessionControllingSnapshot() throws {
-    let controller = computerHeaderSnapshotController(title: "Desktop verification")
-    try assertSnapshot(
-        SessionHeaderView(
-            controller: controller,
-            phaseOverride: .controlling(target: "TextEdit"),
-            safetyModeOverride: .legacyBestEffort,
-            isCompleteContractOverride: false),
-        name: "computer-session-controlling",
-        size: CGSize(width: 1_180, height: 80))
-}
-
-@MainActor
 @Test func collapsedRailSnapshot() throws {
     let (model, expansion) = snapshotRail(isExpanded: false)
 
@@ -557,19 +496,6 @@ private func wideTranscriptController() -> SessionController {
 }
 
 @MainActor
-private func computerHeaderSnapshotController(title: String) -> SessionController {
-    SessionController(
-        processManager: SessionProcessManager(),
-        previewItems: [],
-        runtimeState: .streaming,
-        title: title,
-        headerMetadata: SessionHeaderMetadata(
-            branch: "codex/computer-use-design",
-            repo: "10x",
-            worktreePath: ".worktrees/computer-use-design"))
-}
-
-@MainActor
 private func snapshotRail(isExpanded: Bool) -> (AppModel, RailExpansionModel) {
     let model = AppModel()
     model.sessions = [
@@ -694,40 +620,6 @@ private func snapshotComputerImage(color: NSColor) -> Data {
         }
     }
     return bitmap.representation(using: .png, properties: [:])!
-}
-
-@MainActor
-private func computerUseSnapshotModel(contract: OmpComputerContract) -> ComputerUseSetupModel {
-    let isComplete = contract == .complete
-    let capabilities = ComputerCapabilities(
-        backend: "macos",
-        capture: isComplete ? .granted : .denied,
-        input: isComplete ? .granted : .unknown,
-        accessibility: isComplete ? .granted : .denied)
-    let provider = ProviderProbe(
-        availability: isComplete ? .healthy : .incompatible,
-        integrationVersion: isComplete ? "1.0.0" : nil,
-        capabilities: isComplete ? .isolated : .background)
-    return ComputerUseSetupModel(
-        preference: .automatic,
-        readiness: ComputerUseReadiness(
-            ompContract: contract,
-            capabilities: capabilities,
-            preferredProvider: provider,
-            backgroundFallbackAvailable: true,
-            providerProbes: [.aeroSpace: provider, .background: ProviderProbe(
-                availability: .healthy,
-                integrationVersion: nil,
-                capabilities: .background)]),
-        harmlessTest: ComputerUseProbeReport(
-            outcome: isComplete ? .passed : .failed,
-            capabilities: capabilities,
-            captureSucceeded: isComplete,
-            backgroundInputSucceeded: isComplete,
-            helperAvailable: isComplete,
-            windowPlacementOutcome: isComplete ? .passed : .notApplicable),
-        ompVersion: "18.0.5",
-        automaticallyChecksReadiness: false)
 }
 
 private struct SnapshotConfigRunner: OmpConfigRunning {

@@ -1,18 +1,7 @@
+import Foundation
 import OmpKit
 import Testing
 @testable import TenXApp
-
-@MainActor
-@Test(arguments: AgentDesktopPreference.allCases)
-func sessionControllerPassesItsDesktopPreferenceToComputerUse(
-    preference: AgentDesktopPreference
-) {
-    let controller = SessionController(
-        processManager: SessionProcessManager(),
-        computerUsePreference: preference)
-
-    #expect(controller.computerUsePreference == preference)
-}
 
 @MainActor @Test func contextPercentageIsClampedToItsDisplayRange() {
     #expect(SessionController.contextPercent(.object(["percentage": .double(210)])) == 100)
@@ -21,7 +10,10 @@ func sessionControllerPassesItsDesktopPreferenceToComputerUse(
 }
 
 @MainActor @Test func unexpectedExitPreservesDraftAndOffersRecovery() async {
-    let controller = SessionController(processManager: SessionProcessManager())
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        supervision: SupervisionClient(
+            socketPath: NSTemporaryDirectory() + "test-\(UUID().uuidString).sock"))
     controller.draft = "Unsent follow-up"
 
     await controller.handleUnexpectedExit(code: 9, stderrTail: "process terminated")

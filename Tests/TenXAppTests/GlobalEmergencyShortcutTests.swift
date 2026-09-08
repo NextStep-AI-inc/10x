@@ -2,15 +2,15 @@ import Testing
 @testable import TenXApp
 
 @MainActor
-@Test func emergencyShortcutRegistersOnlyWhileComputerUseIsEnabled() async throws {
+@Test func emergencyShortcutRegistersOnlyWhileComputerUseIsActive() async throws {
     let registrar = FakeHotKeyRegistrar()
     let shortcut = GlobalEmergencyShortcut(registrar: registrar)
     var stopCount = 0
 
-    shortcut.update(phase: .off) { stopCount += 1 }
+    shortcut.update(isActive: false) { stopCount += 1 }
     #expect(registrar.registrations().isEmpty)
 
-    shortcut.update(phase: .ready) { stopCount += 1 }
+    shortcut.update(isActive: true) { stopCount += 1 }
     #expect(registrar.registrations() == [
         HotKeyRegistration(
             keyCode: GlobalEmergencyShortcut.escapeKeyCode,
@@ -21,7 +21,7 @@ import Testing
     await Task.yield()
     #expect(stopCount == 1)
 
-    shortcut.update(phase: .off) { stopCount += 1 }
+    shortcut.update(isActive: false) { stopCount += 1 }
     #expect(registrar.unregisteredTokens() == [GlobalHotKeyToken(id: 1)])
 }
 

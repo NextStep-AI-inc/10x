@@ -27,8 +27,8 @@ final class GlobalEmergencyShortcut {
         self.registrar = registrar
     }
 
-    func update(phase: ComputerUsePhase, onStop: @escaping @MainActor @Sendable () -> Void) {
-        guard Self.isEnabled(phase) else {
+    func update(isActive: Bool, onStop: @escaping @MainActor @Sendable () -> Void) {
+        guard isActive else {
             if let token { registrar.unregister(token) }
             token = nil
             return
@@ -39,15 +39,6 @@ final class GlobalEmergencyShortcut {
             modifiers: Self.requiredModifiers)
         {
             Task { @MainActor in onStop() }
-        }
-    }
-
-    private static func isEnabled(_ phase: ComputerUsePhase) -> Bool {
-        switch phase {
-        case .preparing, .ready, .controlling, .needsHandoff, .stopping:
-            true
-        case .off, .unavailable:
-            false
         }
     }
 }

@@ -4,24 +4,24 @@ import OmpKit
 struct AppDependencies {
     let ompLocator: any OmpLocating
     let sessionLibrary: SessionLibrary
-    let computerUseRegistry: ComputerUseRegistry
+    let supervisionClient: SupervisionClient
     let makeProcessManager: (String) -> SessionProcessManager
-    let makeSessionController: (SessionProcessManager, ComputerUseRegistry, AgentDesktopPreference) -> SessionController
+    let makeSessionController: (SessionProcessManager, SupervisionClient) -> SessionController
 
     init(
         ompLocator: any OmpLocating,
         sessionLibrary: SessionLibrary,
-        computerUseRegistry: ComputerUseRegistry,
+        supervisionClient: SupervisionClient,
         makeProcessManager: @escaping (String) -> SessionProcessManager = {
             SessionProcessManager(executable: $0)
         },
-        makeSessionController: @escaping (SessionProcessManager, ComputerUseRegistry, AgentDesktopPreference) -> SessionController = {
-            SessionController(processManager: $0, computerUseRegistry: $1, computerUsePreference: $2)
+        makeSessionController: @escaping (SessionProcessManager, SupervisionClient) -> SessionController = {
+            SessionController(processManager: $0, supervision: $1)
         }
     ) {
         self.ompLocator = ompLocator
         self.sessionLibrary = sessionLibrary
-        self.computerUseRegistry = computerUseRegistry
+        self.supervisionClient = supervisionClient
         self.makeProcessManager = makeProcessManager
         self.makeSessionController = makeSessionController
     }
@@ -29,5 +29,5 @@ struct AppDependencies {
     static let live = AppDependencies(
         ompLocator: OmpExecutableLocator(),
         sessionLibrary: SessionLibrary(),
-        computerUseRegistry: ComputerUseRegistry())
+        supervisionClient: SupervisionClient())
 }

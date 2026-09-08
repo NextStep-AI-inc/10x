@@ -17,6 +17,7 @@ final class AppModel {
     private(set) var processManager: SessionProcessManager?
     private(set) var settingsModel: SettingsViewModel?
     var activeComputerUse: ComputerUseController? { activeSession?.computerUse }
+    let supervision: SupervisionClient
 
     @ObservationIgnored private let dependencies: AppDependencies
     @ObservationIgnored private let defaults: UserDefaults
@@ -26,35 +27,35 @@ final class AppModel {
     @ObservationIgnored private var sessionTransitionGeneration = 0
     @ObservationIgnored private let emergencyShortcut = GlobalEmergencyShortcut()
     @ObservationIgnored private var lifecycleTokens: [NSObjectProtocol] = []
-    @ObservationIgnored private var selectedHelperProcessID: pid_t?
 
     init(dependencies: AppDependencies = .live, defaults: UserDefaults = .standard) {
         self.dependencies = dependencies
         self.defaults = defaults
+        supervision = dependencies.supervisionClient
     }
 
     func bootstrap() async {
         installComputerUseLifecycleObservers()
+        supervision.start()
+        supervision.onEvent = { [weak self] event in
+            Task { @MainActor in
+                self?.activeSession?.computerUse.applySupervision(event)
+            }
+        }
+        updateEmergencyShortcut()
         await install(preferredURL: nil)
         await reloadSessions()
     }
 
-    func computerUsePhaseDidChange() {
-        let phase = activeComputerUse?.phase ?? .off
-        emergencyShortcut.update(phase: phase) { [weak self] in
-            Task { @MainActor in await self?.stopActiveComputerUse() }
+    func updateEmergencyShortcut() {
+        emergencyShortcut.update(isActive: supervision.hasAnyActivity) { [weak self] in
+            self?.supervision.stopAll()
         }
-        selectedHelperProcessID = helperProcessID(for: activeComputerUse?.isolation)
     }
 
     func stopActiveComputerUse() async {
-        await activeComputerUse?.stopComputerUse()
-        computerUsePhaseDidChange()
-    }
-
-    func failClosedActiveComputerUse() async {
-        await activeComputerUse?.failClosed()
-        computerUsePhaseDidChange()
+        guard let activeComputerUse else { return }
+        await activeComputerUse.stopComputerUse()
     }
 
     func useOmp(at url: URL) async {
@@ -111,8 +112,7 @@ final class AppModel {
             else { return }
             let controller = self.dependencies.makeSessionController(
                 processManager,
-                self.dependencies.computerUseRegistry,
-                ComputerUsePreferenceStore.preference(defaults: self.defaults))
+                self.dependencies.supervisionClient)
             self.activeSession = controller
             await controller.openExisting(metadata)
             if self.sessionTransitionGeneration != generation {
@@ -135,8 +135,7 @@ final class AppModel {
             else { return }
             let controller = self.dependencies.makeSessionController(
                 processManager,
-                self.dependencies.computerUseRegistry,
-                ComputerUsePreferenceStore.preference(defaults: self.defaults))
+                self.dependencies.supervisionClient)
             controller.draft = prompt
             self.activeSession = controller
             await controller.openNew(projectURL: selectedProjectURL)
@@ -157,13 +156,7 @@ final class AppModel {
         let priorManager = processManager
         await retireActiveSession()
         if let priorManager {
-            let safetyPaths = Set<String>(retiringSessions.values.compactMap { controller in
-                guard controller.usesProcessManager(priorManager),
-                      controller.computerUse.isAwaitingConfirmedProcessExit
-                else { return nil }
-                return controller.processSessionPath(from: priorManager)
-            })
-            await priorManager.closeAll(excludingSessionPaths: safetyPaths)
+            await priorManager.closeAll()
         }
         guard let installation = await dependencies.ompLocator.locate(preferredURL: preferredURL) else {
             self.installation = nil
@@ -179,9 +172,7 @@ final class AppModel {
         self.processManager = processManager
         settingsModel = SettingsViewModel(
             service: OmpConfigService(runner: OmpConfigProcessRunner(executableURL: installation.executableURL)),
-            computerUseSetup: ComputerUseSetupModel(
-                omp: DisposableComputerUseOMP(executable: installation.executableURL.path),
-                ompVersion: installation.version))
+            computerUseSetup: ComputerUseSetupModel())
         watchUnexpectedExits(from: processManager)
         setupError = nil
         route = .newSession
@@ -239,9 +230,7 @@ final class AppModel {
             await prior?.value
             await retiring?.teardown()
             guard let self, let retiring else { return }
-            if !retiring.computerUse.isAwaitingConfirmedProcessExit {
-                self.retiringSessions.removeValue(forKey: ObjectIdentifier(retiring))
-            }
+            self.retiringSessions.removeValue(forKey: ObjectIdentifier(retiring))
         }
         return sessionTransitionTask
     }
@@ -274,42 +263,15 @@ final class AppModel {
                 object: nil,
                 queue: .main)
             { [weak self] _ in
-                Task { @MainActor in await self?.failClosedActiveComputerUse() }
+                Task { @MainActor in self?.supervision.stopAll() }
             })
         }
-        lifecycleTokens.append(workspace.notificationCenter.addObserver(
-            forName: NSWorkspace.didTerminateApplicationNotification,
-            object: nil,
-            queue: .main)
-        { [weak self] notification in
-            guard let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
-                    as? NSRunningApplication
-            else { return }
-            let processID = application.processIdentifier
-            Task { @MainActor [weak self] in
-                guard let self, processID == self.selectedHelperProcessID else { return }
-                await self.failClosedActiveComputerUse()
-            }
-        })
         lifecycleTokens.append(NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification,
             object: nil,
             queue: .main)
         { [weak self] _ in
-            Task { @MainActor in await self?.failClosedActiveComputerUse() }
+            Task { @MainActor in self?.supervision.stopAll() }
         })
-    }
-
-    private func helperProcessID(for provider: AgentDesktopProviderKind?) -> pid_t? {
-        let identity: (bundleID: String, name: String)? = switch provider {
-        case .aeroSpace: ("bobko.aerospace", "AeroSpace")
-        case .hammerspoon: ("org.hammerspoon.Hammerspoon", "Hammerspoon")
-        case .background, nil: nil
-        }
-        guard let identity else { return nil }
-        return NSWorkspace.shared.runningApplications.first {
-            $0.bundleIdentifier == identity.bundleID
-                || $0.localizedName?.caseInsensitiveCompare(identity.name) == .orderedSame
-        }?.processIdentifier
     }
 }

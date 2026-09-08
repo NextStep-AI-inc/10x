@@ -107,7 +107,7 @@ struct SettingsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 if model.hasComputerUseSetting {
-                    ComputerUseSettingsSection(model: model.computerUseSetup)
+                    ComputerUseSettingsSection()
                 }
                 if model.sections.isEmpty {
                     Text("No settings match this search")
