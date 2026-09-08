@@ -469,6 +469,7 @@ private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
     defer { try? FileManager.default.removeItem(at: container) }
     try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
     let executable = try makeNavigationExecutable(in: container, mode: "activity-lifecycle")
+    let processManager = SessionProcessManager(executable: executable.path)
 
     let suiteName = "harness-notice-controller-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
@@ -482,7 +483,7 @@ private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
         byteCount: 13,
         text: "Plan approved.")
     let controller = SessionController(
-        processManager: SessionProcessManager(executable: executable.path),
+        processManager: processManager,
         historyLoader: { _ in TranscriptHistory(items: [], dropped: [descriptor]) },
         harnessNoticePreferences: preferences,
         harnessNoticeSummarizer: StubHarnessSummarizer(summary: "A plan-approval gate."))
@@ -508,6 +509,8 @@ private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
         try await Task.sleep(for: .milliseconds(20))
     }
     #expect(noticeMessage == "Hidden developer message (13 chars): A plan-approval gate.")
+
+    await processManager.closeAll()
 }
 
 @MainActor @Test func droppedHarnessMessagesStaySilentWhenThePreferenceIsOff() async throws {
@@ -516,6 +519,7 @@ private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
     defer { try? FileManager.default.removeItem(at: container) }
     try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
     let executable = try makeNavigationExecutable(in: container, mode: "activity-lifecycle")
+    let processManager = SessionProcessManager(executable: executable.path)
 
     let suiteName = "harness-notice-off-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
@@ -528,7 +532,7 @@ private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
         byteCount: 13,
         text: "Plan approved.")
     let controller = SessionController(
-        processManager: SessionProcessManager(executable: executable.path),
+        processManager: processManager,
         historyLoader: { _ in TranscriptHistory(items: [], dropped: [descriptor]) },
         harnessNoticePreferences: preferences,
         harnessNoticeSummarizer: StubHarnessSummarizer(summary: "unused"))
@@ -549,6 +553,58 @@ private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
         if case .notice = $0 { return false }
         return true
     })
+
+    await processManager.closeAll()
+}
+
+@MainActor @Test func aFailedSummaryLeavesTheStaticNoticeText() async throws {
+    let container = URL(filePath: NSTemporaryDirectory())
+        .appendingPathComponent("controller-notices-nil-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: container) }
+    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+    let executable = try makeNavigationExecutable(in: container, mode: "activity-lifecycle")
+    let processManager = SessionProcessManager(executable: executable.path)
+
+    let suiteName = "harness-notice-nil-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let preferences = HarnessNoticePreferenceStore(defaults: defaults)
+    preferences.isEnabled = true
+
+    let descriptor = HarnessMessageDescriptor(
+        role: "developer",
+        customType: nil,
+        byteCount: 13,
+        text: "Plan approved.")
+    let controller = SessionController(
+        processManager: processManager,
+        historyLoader: { _ in TranscriptHistory(items: [], dropped: [descriptor]) },
+        harnessNoticePreferences: preferences,
+        harnessNoticeSummarizer: StubHarnessSummarizer(summary: nil))
+    let metadata = SessionMetadata(
+        path: "/tmp/fake.jsonl",
+        sessionId: "fake-session",
+        cwd: "/tmp",
+        title: "Fixture",
+        created: .distantPast,
+        modified: .distantPast,
+        sizeBytes: 0,
+        status: .complete)
+
+    await controller.openExisting(metadata)
+
+    var noticeMessage: String?
+    for _ in 0..<100 {
+        noticeMessage = controller.items.compactMap { item -> String? in
+            guard case .notice(_, _, let message) = item else { return nil }
+            return message
+        }.first
+        if let noticeMessage, !noticeMessage.contains("summarizing") { break }
+        try await Task.sleep(for: .milliseconds(20))
+    }
+    #expect(noticeMessage == "Hidden developer message (13 chars)")
+
+    await processManager.closeAll()
 }
 
 private func fakeManager(mode: String) -> SessionProcessManager {
