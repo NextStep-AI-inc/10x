@@ -45,6 +45,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private(set) var contextBreakdown: SessionContextBreakdown?
     private(set) var isContextLoading = false
     private(set) var contextErrorMessage: String?
+    private(set) var isContextCompacting = false
+    private(set) var contextCompactionErrorMessage: String?
+    private(set) var contextCompactionRecoveryMessage: String?
     private var contextRefreshTask: Task<Void, Never>?
     private var contextEventFence: RpcEventConsumptionFence?
     private var contextReportText: String?
@@ -73,6 +76,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
+    private let contextCompactionTimeout: Duration
     private let harnessNoticePreferences: HarnessNoticePreferenceStore?
     private let harnessNoticeSummarizer: (any HarnessNoticeSummarizing)?
     private weak var accountCoordinator: ProviderAccountCoordinator?
@@ -111,6 +115,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     /// `forwardToAccountChannelIfMarked`, the sole producer.
     private var accountChannelContinuation: AsyncStream<RpcFrame>.Continuation?
     @ObservationIgnored private var isSendInFlight = false
+    @ObservationIgnored private var isContextCompactionUnsupported = false
     @ObservationIgnored private weak var attachedComposerControls: ComposerControlsModel?
     @ObservationIgnored private var pendingSlashAttachments: PendingSlashAttachments?
     private static let transcriptLog = OSLog(
@@ -137,7 +142,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private enum ControllerError: Error {
         case runtimeUnavailable
+        case operationBusy
+        case eventFenceClosed
     }
+
+    static let defaultContextCompactionTimeout: Duration = .seconds(600)
 
     init(
         processManager: SessionProcessManager,
@@ -146,6 +155,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
         historyLoader: HistoryLoader? = nil,
+        contextCompactionTimeout: Duration = defaultContextCompactionTimeout,
         harnessNoticePreferences: HarnessNoticePreferenceStore? = nil,
         harnessNoticeSummarizer: (any HarnessNoticeSummarizing)? = nil
     ) {
@@ -155,6 +165,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.accountChannelRegistry = accountChannelRegistry
         self.titleGenerator = titleGenerator
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
+        self.contextCompactionTimeout = contextCompactionTimeout
         self.harnessNoticePreferences = harnessNoticePreferences
         self.harnessNoticeSummarizer = harnessNoticeSummarizer
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
@@ -183,6 +194,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     ) {
         self.processManager = processManager
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
+        self.contextCompactionTimeout = Self.defaultContextCompactionTimeout
         self.harnessNoticePreferences = nil
         self.harnessNoticeSummarizer = nil
         self.items = previewItems
@@ -225,6 +237,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard runtimeState == .idle,
               openingTask == nil,
               !isSendInFlight,
+              !isContextCompacting,
               titleGenerationTask == nil,
               draft.isEmpty,
               attachments.isEmpty,
@@ -251,6 +264,37 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
     }
 
+    var canSendMessage: Bool {
+        isComposerAvailable && !isContextCompacting
+    }
+
+    var canCompactContext: Bool {
+        contextCompactionDisabledReason == nil
+    }
+
+    var contextCompactionDisabledReason: String? {
+        guard handle != nil else { return "Connect the session to compact context." }
+        guard !isContextCompactionUnsupported else {
+            return "Context compaction isn’t supported by this runtime."
+        }
+        guard availableCommands.contains(where: { $0.name == "compact" && $0.source == .builtin }) else {
+            return "Context compaction isn’t available in this runtime."
+        }
+        guard runtimeState == .idle else { return "Wait for the current response to finish." }
+        guard !isSendInFlight, !isContextCompacting else { return "Context compaction is already running." }
+        guard pendingSubmissions.isEmpty, queuedMessageCount == 0 else {
+            return "Wait for queued messages to finish."
+        }
+        guard !hasPendingUserInput, extensionSheetRequest == nil,
+              extensionRouter.inlineRequests.isEmpty, extensionRouter.sheetRequest == nil
+        else { return "Answer the pending question first." }
+        return nil
+    }
+
+    var canRestartAfterDismissal: Bool {
+        contextCompactionRecoveryMessage != nil && sessionPath != nil && !isStopping
+    }
+
     var canRetryOpening: Bool {
         guard case .failed = runtimeState else { return false }
         return sessionPath != nil && handle == nil
@@ -269,6 +313,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     var activityState: SessionActivityState {
         if hasPendingUserInput { return .needsInput }
+        if isContextCompacting { return .working }
         switch runtimeState {
         case .loading, .streaming: return .working
         case .idle: return wasStoppedByUser ? .stopped : .ready
@@ -406,6 +451,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func setModel(provider: String, modelID: String) async throws {
+        guard !isContextCompacting else { throw ControllerError.operationBusy }
         guard let handle else { throw RpcClientError.notStarted }
         let context = currentPipelineContext()
         let response = try await handle.client.send(.setModel(provider: provider, modelId: modelID))
@@ -419,6 +465,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func setThinkingLevel(_ level: String) async throws {
+        guard !isContextCompacting else { throw ControllerError.operationBusy }
         guard let handle else { throw RpcClientError.notStarted }
         let context = currentPipelineContext()
         _ = try await handle.client.send(.setThinkingLevel(level))
@@ -460,6 +507,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     /// Returns `false` only when Fast mode is unsupported (`active == false`).
     /// Transport / OMP command failures throw.
     func setFastMode(_ enabled: Bool) async throws -> Bool {
+        guard !isContextCompacting else { throw ControllerError.operationBusy }
         guard let handle else { throw RpcClientError.notStarted }
         let context = currentPipelineContext()
         let response = try await handle.client.send(.setFastMode(enabled: enabled))
@@ -475,6 +523,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func sendPrompt(behaviorOverride: StreamingBehavior? = nil) async {
+        guard !isContextCompacting else { return }
         if let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
             let accepted = await send(text: initial.message.visibleText, behavior: nil,
                 attachmentDisposition: .clearImmediately, failureFunction: "sendPrompt",
@@ -550,7 +599,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let staged = suppliedAttachments ?? attachments
         let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !staged.isEmpty
-        guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return false }
+        guard let handle, canSendMessage, !isSendInFlight, hasContent else { return false }
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {
             guard let requestedBehavior else { return false }
@@ -725,7 +774,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func abort() async {
-        guard runtimeState == .loading || runtimeState == .streaming else { return }
+        guard runtimeState == .loading || runtimeState == .streaming || isContextCompacting else { return }
         let stoppedAt = Date()
         let stoppedHandle = handle
         let path = stopAndDetachCurrentSession()
@@ -832,6 +881,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func rename(to name: String) async throws {
+        guard !isContextCompacting else { throw ControllerError.operationBusy }
         titleGenerationGeneration &+= 1
         titleGenerationTask?.cancel()
         if let titleGenerationTask {
@@ -864,9 +914,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func handleUnexpectedExit(code: Int32?, stderrTail: String) {
+        let wasCompacting = isContextCompacting
         stopEventPipeline()
         runtimeState = .stopped(code: code, stderrTail: stderrTail)
         isRecoveryPresented = true
+        if wasCompacting {
+            contextCompactionRecoveryMessage =
+                "The compaction result is unknown. Restart to reload saved history."
+        }
         logText = stderrTail.isEmpty ? "OMP exited without stderr output." : stderrTail
         reportActivity()
     }
@@ -917,6 +972,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         failureFunction: String
     ) async {
         stopEventPipeline()
+        isContextCompactionUnsupported = false
         providerAccountSequence = 0
         self.handle = handle
         sessionPath = handle.sessionPath
@@ -1151,6 +1207,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         contextReportText = nil
         contextErrorMessage = nil
         isContextLoading = false
+        isContextCompacting = false
+        contextCompactionErrorMessage = nil
+        contextCompactionRecoveryMessage = nil
+        isContextCompactionUnsupported = false
         eventTask?.cancel()
         snapshotTask?.cancel()
         controlTask?.cancel()
@@ -1493,6 +1553,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     private func refreshContextUsage() async {
+        guard !isContextCompacting else { return }
         guard let handle else { return }
         let context = currentPipelineContext()
         let revision = contextRevision
@@ -1509,6 +1570,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func refreshContextDetails() async {
+        guard !isContextCompacting else { return }
         guard !isContextLoading else { return }
         guard let handle, let eventFence = contextEventFence else {
             contextErrorMessage = "Context usage is unavailable while the session is disconnected."
@@ -1558,6 +1620,102 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
     }
 
+    func compactContext() async {
+        guard canCompactContext, let handle, let eventFence = contextEventFence else { return }
+        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else {
+            contextCompactionErrorMessage = "Context couldn’t be compacted while another session is active."
+            return
+        }
+        defer { accountCoordinator?.endManagedTurn(sessionID: id) }
+
+        let context = currentPipelineContext()
+        isContextCompacting = true
+        contextCompactionErrorMessage = nil
+        contextCompactionRecoveryMessage = nil
+        reportActivity()
+        defer {
+            if isCurrent(context) {
+                isContextCompacting = false
+                reportActivity()
+            }
+        }
+
+        do {
+            let receipt = try await handle.client.sendWithEventFence(
+                .compact(customInstructions: nil),
+                timeout: contextCompactionTimeout)
+            guard await eventFence.wait(through: receipt.precedingEventCount) else {
+                throw ControllerError.eventFenceClosed
+            }
+            guard isCurrent(context), !Task.isCancelled else { return }
+            guard receipt.response.success else {
+                if receipt.response.code?.lowercased().contains("unsupported") == true {
+                    isContextCompactionUnsupported = true
+                    contextCompactionErrorMessage =
+                        "Context compaction isn’t supported by this runtime."
+                } else {
+                    contextCompactionErrorMessage = "Context couldn’t be compacted. Try again."
+                }
+                return
+            }
+
+            if let sessionPath, let processor = context.processor {
+                do {
+                    if let history = try await historyLoader(sessionPath) {
+                        guard isCurrent(context), !Task.isCancelled else { return }
+                        reconciliationGeneration &+= 1
+                        let generation = reconciliationGeneration
+                        await processor.reconcile(history, hasWarning: false, generation: generation)
+                        guard isCurrent(context), reconciliationGeneration == generation else { return }
+                        install(snapshot: await processor.currentSnapshot())
+                    }
+                } catch {
+                    guard isCurrent(context), !Task.isCancelled else { return }
+                    contextCompactionErrorMessage =
+                        "Context was compacted, but saved history couldn’t be reloaded."
+                }
+            }
+            guard isCurrent(context), !Task.isCancelled else { return }
+            let state = try await handle.client.send(.getState(), timeout: .seconds(5))
+            guard isCurrent(context), !Task.isCancelled else { return }
+            contextRevision &+= 1
+            contextBreakdown = nil
+            contextErrorMessage = nil
+            applyState(state.data)
+        } catch {
+            guard isCurrent(context) else { return }
+            await closeAfterUncertainCompaction(error: error, context: context)
+        }
+    }
+
+    private func closeAfterUncertainCompaction(
+        error: any Error,
+        context: PipelineContext
+    ) async {
+        guard isCurrent(context) else { return }
+        let path = stopAndDetachCurrentSession()
+        let closePredecessor = openingCloseTask
+        let stopGeneration = pipelineGeneration
+        isStopping = true
+        wasStoppedByUser = false
+        runtimeState = .stopped(code: nil, stderrTail: "")
+        queuedMessageCount = 0
+        contextCompactionRecoveryMessage =
+            "The compaction result is unknown. Restart to reload saved history."
+        logText = "[Session:compactContext] Compaction status unknown: \(error)"
+        isRecoveryPresented = true
+        reportActivity()
+
+        let closeTask = Task { [processManager] in
+            await closePredecessor?.value
+            if let path { await processManager.close(sessionPath: path) }
+        }
+        openingCloseTask = closeTask
+        await closeTask.value
+        isStopping = false
+        if pipelineGeneration == stopGeneration { openingCloseTask = nil }
+    }
+
     private func consumeContextReport(_ frame: RpcFrame, processor: TranscriptEventProcessor) -> Bool {
         guard self.processor?.id == processor.id, isContextLoading,
               case .event("command_output", let payload) = frame,
@@ -1568,6 +1726,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     private func refreshState() async {
+        guard !isContextCompacting else { return }
         guard let handle else { return }
         let context = currentPipelineContext()
         do {
@@ -1760,8 +1919,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         accountCoordinator?.update(
             sessionID: id,
             providerID: providerID,
-            isGenerating: runtimeState == .streaming)
-        if runtimeState == .idle {
+            isGenerating: runtimeState == .streaming || isContextCompacting)
+        if runtimeState == .idle && !isContextCompacting {
             Task { [weak accountCoordinator] in
                 await accountCoordinator?.sessionDidBecomeIdle(id)
             }

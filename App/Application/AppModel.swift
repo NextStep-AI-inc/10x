@@ -112,7 +112,8 @@ final class AppModel {
             sessions: sessions,
             activeSessionPath: activeSession?.sessionPath,
             runtimeState: activeSession?.runtimeState,
-            isSessionMutationInFlight: isSessionMutationInFlight)
+            isSessionMutationInFlight: isSessionMutationInFlight,
+            isContextCompacting: activeSession?.isContextCompacting == true)
     }
 
     var activeSessionIdentityToken: UUID? {
