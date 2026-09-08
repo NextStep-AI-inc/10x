@@ -246,7 +246,7 @@ enum CommandBrowserPresentation {
         }
         let executionNote: String? = switch command {
         case .computer:
-            mode == .activeStreaming ? "Runs after the current response" : nil
+            mode == .activeStreaming ? "Runs after the current response" : "Send a computer-use task"
         default:
             mode == .activeStreaming ? "Applies to the next request" : nil
         }

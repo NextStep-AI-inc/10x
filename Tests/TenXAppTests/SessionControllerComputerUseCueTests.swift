@@ -4,6 +4,44 @@ import Testing
 @testable import TenXApp
 
 @MainActor
+@Test func sendComputerUsePromptWhileIdleSendsWrappedVisiblePrompt() async throws {
+    let fixture = try await ComputerUseCueFixture(mode: "basic", recordsPrompts: true)
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "keep this draft"
+
+    await fixture.controller.sendComputerUsePrompt("check my email")
+
+    #expect(await fixture.waitUntilPromptArrives())
+    let prompt = try fixture.recordedPrompt()
+    #expect(prompt.message == ComputerUsePrompt.wrap("check my email"))
+    #expect(prompt.streamingBehavior == nil)
+    #expect(await fixture.sentCommands().isEmpty)
+    #expect(fixture.controller.draft.isEmpty)
+    await fixture.cleanup()
+}
+
+@MainActor
+@Test func sendComputerUsePromptWhileStreamingUsesFollowUpAndSkipsExtensionCue() async throws {
+    let fixture = try await ComputerUseCueFixture(mode: "slash-streaming-record", recordsPrompts: true)
+    defer { fixture.cleanupAfterFailure() }
+    fixture.controller.draft = "start streaming"
+    await fixture.controller.sendPrompt()
+    #expect(await computerUseCueEventually { fixture.controller.runtimeState == .streaming })
+    fixture.controller.selectStreamingBehavior(.steer)
+    fixture.controller.draft = "keep this draft while streaming"
+
+    await fixture.controller.sendComputerUsePrompt("check my email")
+
+    #expect(await fixture.waitUntilPromptArrives())
+    let prompt = try fixture.recordedPrompt(at: 1)
+    #expect(prompt.message == ComputerUsePrompt.wrap("check my email"))
+    #expect(prompt.streamingBehavior == "followUp")
+    #expect(await fixture.sentCommands().isEmpty)
+    #expect(fixture.controller.draft.isEmpty)
+    await fixture.cleanup()
+}
+
+@MainActor
 @Test func sendComputerUseCueWhileIdleSendsOneCommandAndLeavesDraftUntouched() async throws {
     let fixture = try await ComputerUseCueFixture(mode: "basic")
     defer { fixture.cleanupAfterFailure() }
@@ -59,12 +97,20 @@ private final class ComputerUseCueFixture {
     let project: URL
     private let recordingChannel: RecordingComputerUseCueChannel?
     private let registry: ProviderAccountChannelRegistry
+    private let promptRecordURL: URL?
     private var didCleanUp = false
 
-    init(mode: String, channel: (any ProviderAccountChannel)? = nil) async throws {
+    init(
+        mode: String,
+        channel: (any ProviderAccountChannel)? = nil,
+        recordsPrompts: Bool = false
+    ) async throws {
         let directory = try computerUseCueTemporaryDirectory()
         project = directory
-        manager = computerUseCueFakeManager(mode: mode)
+        promptRecordURL = recordsPrompts
+            ? directory.appendingPathComponent("prompts.jsonl")
+            : nil
+        manager = computerUseCueFakeManager(mode: mode, promptRecordURL: promptRecordURL)
         registry = ProviderAccountChannelRegistry()
         let recording = channel == nil ? RecordingComputerUseCueChannel() : nil
         recordingChannel = recording
@@ -78,6 +124,23 @@ private final class ComputerUseCueFixture {
 
     func sentCommands() async -> [ProviderAccountChannelCommand] {
         await recordingChannel?.sentCommands() ?? []
+    }
+
+    func waitUntilPromptArrives() async -> Bool {
+        guard let promptRecordURL else { return false }
+        return await computerUseCueEventually({
+            (try? String(contentsOf: promptRecordURL, encoding: .utf8).isEmpty) == false
+        })
+    }
+
+    func recordedPrompt(at index: Int = 0) throws -> ComputerUseRecordedPrompt {
+        guard let promptRecordURL else {
+            throw ComputerUsePromptRecordError.missingRecordFile
+        }
+        let lines = try String(contentsOf: promptRecordURL, encoding: .utf8)
+            .split(separator: "\n")
+        let line = try #require(lines.indices.contains(index) ? String(lines[index]) : nil)
+        return try JSONDecoder().decode(ComputerUseRecordedPrompt.self, from: Data(line.utf8))
     }
 
     func cleanup() async {
@@ -113,18 +176,24 @@ private actor FailingComputerUseCueChannel: ProviderAccountChannel {
     }
 }
 
-private func computerUseCueFakeManager(mode: String) -> SessionProcessManager {
+private func computerUseCueFakeManager(
+    mode: String,
+    promptRecordURL: URL? = nil
+) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
-        fake.executable = "/usr/bin/env"
-        fake.extraArguments = [
-            "python3",
-            computerUseCueRepositoryRoot()
-                .appending(path: "OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py").path,
-            mode,
-        ]
+        fake.executable = "/usr/bin/python3"
+        let serverURL = promptRecordURL == nil
+            ? computerUseCueRepositoryRoot()
+                .appending(path: "OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py")
+            : computerUseCueRepositoryRoot()
+                .appending(path: "Tests/TenXAppTests/Fixtures/composer_fake_server.py")
+        fake.extraArguments = [serverURL.path, mode]
         fake.rawArgv = true
         fake.cwd = nil
+        if let promptRecordURL {
+            fake.environment = ["OMP_FAKE_PROMPT_RECORD": promptRecordURL.path]
+        }
         return RpcClient(configuration: fake)
     })
 }
@@ -157,4 +226,13 @@ private func computerUseCueEventually(
         try? await Task.sleep(for: .milliseconds(20))
     }
     return await MainActor.run(body: predicate)
+}
+
+private struct ComputerUseRecordedPrompt: Decodable {
+    let message: String
+    let streamingBehavior: String?
+}
+
+private enum ComputerUsePromptRecordError: Error {
+    case missingRecordFile
 }

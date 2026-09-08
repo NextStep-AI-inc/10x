@@ -54,6 +54,14 @@ import Testing
         hasSelection: false) == .useCommandModel)
 }
 
+@Test func commandBrowserNewSessionComputerDraftUsesCommandModel() {
+    #expect(ComposerCommandActivationRouting.action(
+        isNewSession: true,
+        hasVisibleRows: false,
+        hasSelection: false,
+        draft: "/computer check my email") == .useCommandModel)
+}
+
 @Test func commandBrowserComposerFocusReturnsOnlyWhenTheEditorOwnsInput() {
     #expect(!ComposerCommandFocusRouting.shouldRestoreEditorFocus(
         effect: .none,
@@ -829,6 +837,18 @@ import Testing
     #expect(starts.count == 1)
     #expect(starts[0].0 == ComputerUsePrompt.wrap("check my email"))
     #expect(starts[0].1.isEmpty)
+}
+
+@MainActor
+@Test func commandModelTypedComputerDraftIgnoresHighlightedNonComputerRow() async {
+    let session = CommandModelSession(state: .idle, catalog: .available(commandModelCommands))
+    let model = commandModel(catalog: CommandModelCatalog())
+    model.attachActiveSession(session)
+    #expect(model.updateDraft("/computer check my email"))
+    model.highlight(CommandBrowserRowID(rawSource: "app", canonicalName: "model"))
+    #expect(await model.activate() == .executed)
+    #expect(session.computerUsePromptTasks == ["check my email"])
+    #expect(session.sent.isEmpty)
 }
 
 @MainActor

@@ -217,6 +217,7 @@ private func matchNames(_ query: String) -> [String] {
 
     #expect(row?.summary == "Run a task with computer use")
     #expect(row?.inputHint == "<task>")
+    #expect(row?.executionNote == "Send a computer-use task")
 }
 
 @Test func streamingRowsExplainWhenEachCommandWillRun() {

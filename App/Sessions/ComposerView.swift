@@ -136,9 +136,16 @@ enum ComposerCommandActivationRouting {
     nonisolated static func action(
         isNewSession: Bool,
         hasVisibleRows: Bool,
-        hasSelection: Bool
+        hasSelection: Bool,
+        draft: String = ""
     ) -> ComposerCommandActivationAction {
-        isNewSession && !hasVisibleRows && !hasSelection
+        if isNewSession,
+           let parsed = CommandBrowserPresentation.parseDraft(draft),
+           parsed.query.lowercased() == AppCommand.computer.rawValue
+        {
+            return .useCommandModel
+        }
+        return isNewSession && !hasVisibleRows && !hasSelection
             ? .sendUnchangedDraft
             : .useCommandModel
     }
@@ -647,7 +654,8 @@ struct ComposerView: View {
         case .activate:
             if Self.commandActivationAction(
                 presentation: presentation,
-                model: model) == .sendUnchangedDraft
+                model: model,
+                draft: draft) == .sendUnchangedDraft
             {
                 onSend()
                 dismissCommands()
@@ -715,7 +723,8 @@ struct ComposerView: View {
 
     private static func commandActivationAction(
         presentation: ComposerPresentation,
-        model: ComposerCommandModel
+        model: ComposerCommandModel,
+        draft: String
     ) -> ComposerCommandActivationAction {
         let isNewSession: Bool
         switch presentation {
@@ -727,7 +736,21 @@ struct ComposerView: View {
         return ComposerCommandActivationRouting.action(
             isNewSession: isNewSession,
             hasVisibleRows: !model.visibleRows.isEmpty,
-            hasSelection: model.selectedRowID != nil)
+            hasSelection: model.selectedRowID != nil,
+            draft: draft)
+    }
+
+    private var isComputerCommandDraft: Bool {
+        CommandBrowserPresentation.parseDraft(draft)?.query.lowercased() == AppCommand.computer.rawValue
+    }
+
+    @MainActor
+    private func submitComputerCommandIfNeeded() async -> Bool {
+        guard isComputerCommandDraft, let commands else { return false }
+        _ = commands.updateDraft(draft)
+        let effect = await commands.activate(attachments: attachments)
+        applyCommandEffect(effect)
+        return effect == .executed
     }
 
     /// Images are staged; anything else becomes a path in the message, which is
@@ -885,6 +908,18 @@ struct ComposerView: View {
 
     private func submit(_ action: ComposerReturnAction) {
         attachmentMessage = nil
+        if isComputerCommandDraft, commands != nil {
+            Task {
+                if await submitComputerCommandIfNeeded() { return }
+                await finishSubmit(action)
+            }
+            return
+        }
+        Task { await finishSubmit(action) }
+    }
+
+    @MainActor
+    private func finishSubmit(_ action: ComposerReturnAction) async {
         switch presentation {
         case .newSession:
             onSend()
@@ -894,7 +929,7 @@ struct ComposerView: View {
                 : .followUp
             let primary = controller.streamingBehavior ?? defaultPrimary
             let behavior = ComposerReturnRouting.behavior(for: action, primary: primary)
-            Task { await controller.sendPrompt(behaviorOverride: behavior) }
+            await controller.sendPrompt(behaviorOverride: behavior)
         }
     }
 

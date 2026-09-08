@@ -536,7 +536,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     func sendComputerUsePrompt(_ task: String) async {
         await send(
             text: ComputerUsePrompt.wrap(task),
-            behavior: runtimeState == .streaming ? streamingBehavior : nil,
+            behavior: runtimeState == .streaming ? .followUp : nil,
             attachmentDisposition: .clearImmediately,
             failureFunction: "sendComputerUsePrompt")
     }
