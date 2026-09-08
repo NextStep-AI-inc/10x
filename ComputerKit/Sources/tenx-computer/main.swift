@@ -1,5 +1,7 @@
 import AppKit
+@preconcurrency import ApplicationServices
 import ComputerKit
+import CoreGraphics
 import Foundation
 
 let arguments = Array(CommandLine.arguments.dropFirst())
@@ -56,12 +58,21 @@ func runStopAll() throws {
     print("stop_all sent")
 }
 
+func requestMissingPermissions(_ permissions: PermissionStatus) {
+    if !permissions.screenRecording { CGRequestScreenCaptureAccess() }
+    if !permissions.accessibility {
+        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(opts)
+    }
+}
+
 @MainActor
 func runSelfCheck() throws {
     let engine = MacDesktopEngine()
     let permissions = engine.preflightPermissions()
     guard permissions.isComplete else {
-        FileHandle.standardError.write("selfcheck: permissions missing — screen_recording=\(permissions.screenRecording) accessibility=\(permissions.accessibility)\nGrant them to this binary in System Settings > Privacy & Security.\n".data(using: .utf8)!)
+        requestMissingPermissions(permissions)
+        FileHandle.standardError.write("selfcheck: permissions missing — screen_recording=\(permissions.screenRecording) accessibility=\(permissions.accessibility)\nPermission prompts triggered — grant `tenx-computer` in System Settings > Privacy & Security > Screen Recording and Accessibility, then re-run selfcheck.\n".data(using: .utf8)!)
         exit(1)
     }
 
