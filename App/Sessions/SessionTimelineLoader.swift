@@ -131,7 +131,7 @@ private struct SessionImageBlobResolver: Sendable {
 
     private func verifiedBlob(hash: String) -> Data? {
         let url = directory.appending(path: hash)
-        let descriptor = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let descriptor = open(url.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else { return nil }
         defer { close(descriptor) }
 

@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import OmpKit
 import Testing
@@ -88,6 +89,12 @@ import Testing
             try FileManager.default.createDirectory(
                 at: fixture.blobURL(for: validReference),
                 withIntermediateDirectories: false)
+        }),
+        ("FIFO", validReference, { fixture in
+            let result = mkfifo(fixture.blobURL(for: validReference).path, 0o600)
+            guard result == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
         }),
         ("symlink", validReference, { fixture in
             let target = fixture.directory.appending(path: "target")
