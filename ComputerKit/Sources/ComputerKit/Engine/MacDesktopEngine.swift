@@ -224,7 +224,7 @@ public final class MacDesktopEngine: DesktopEngine {
             event.location = globalPoint(center, in: window)
             try SkyLight.stamp(
                 event: event, pid: pid, wid: wid,
-                windowLocal: windowLocalPoint(x: center.x, y: center.y, in: window),
+                windowLocal: center,
                 phase: 3, clickState: 0, button: 0, clickGroup: group
             )
             try postStamped(event, pid: pid, windowID: wid, keyboard: false)
@@ -266,7 +266,7 @@ public final class MacDesktopEngine: DesktopEngine {
         buttonNumber: Int64,
         group: Int64
     ) throws {
-        let screenPoint = x == -1 && y == -1 ? CGPoint(x: -1, y: -1) : globalPoint(CGPoint(x: x, y: y), in: window)
+        let screenPoint = globalPoint(CGPoint(x: x, y: y), in: window)
         guard let event = CGEvent(
             mouseEventSource: eventSource,
             mouseType: type,
@@ -275,9 +275,8 @@ public final class MacDesktopEngine: DesktopEngine {
         ) else {
             throw ComputerError("event_create_failed")
         }
-        let windowLocal = windowLocalPoint(x: x, y: y, in: window)
         try SkyLight.stamp(
-            event: event, pid: pid, wid: wid, windowLocal: windowLocal,
+            event: event, pid: pid, wid: wid, windowLocal: CGPoint(x: x, y: y),
             phase: phase, clickState: clickState, button: buttonNumber, clickGroup: group
         )
         try postStamped(event, pid: pid, windowID: wid, keyboard: false)
@@ -304,11 +303,6 @@ public final class MacDesktopEngine: DesktopEngine {
 
     private func globalPoint(_ windowRelative: CGPoint, in window: WindowInfo) -> CGPoint {
         CGPoint(x: window.bounds.minX + windowRelative.x, y: window.bounds.minY + windowRelative.y)
-    }
-
-    private func windowLocalPoint(x: CGFloat, y: CGFloat, in window: WindowInfo) -> CGPoint {
-        if x == -1, y == -1 { return CGPoint(x: -1, y: -1) }
-        return CGPoint(x: x, y: y)
     }
 
     private func buttonTypes(_ button: MouseButton) -> (CGEventType, CGEventType, CGMouseButton, Int64) {
@@ -372,11 +366,5 @@ private final class SyncBox<T>: @unchecked Sendable {
         let current = value
         value = nil
         return current
-    }
-
-    func get() -> T? {
-        lock.lock()
-        defer { lock.unlock() }
-        return value
     }
 }

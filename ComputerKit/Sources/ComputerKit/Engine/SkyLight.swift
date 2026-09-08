@@ -35,7 +35,6 @@ enum SkyLight {
     private typealias SLEventSetAuthenticationMessageFn = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Void
     private typealias ObjcGetClassFn = @convention(c) (UnsafePointer<CChar>) -> UnsafeMutableRawPointer?
     private typealias SelRegisterNameFn = @convention(c) (UnsafePointer<CChar>) -> UnsafeMutableRawPointer?
-    private typealias ClassRespondsToSelectorFn = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Bool
     private typealias AuthenticationFactoryFn = @convention(c) (
         UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, Int32, UInt32
     ) -> UnsafeMutableRawPointer?
@@ -56,7 +55,6 @@ enum SkyLight {
         let setMessage: SLEventSetAuthenticationMessageFn
         let objcGetClass: ObjcGetClassFn
         let selRegisterName: SelRegisterNameFn
-        let classResponds: ClassRespondsToSelectorFn
         let factory: AuthenticationFactoryFn
     }
 
@@ -95,7 +93,6 @@ enum SkyLight {
               let setMessage: SLEventSetAuthenticationMessageFn = symbol("SLEventSetAuthenticationMessage"),
               let objcGetClass: ObjcGetClassFn = symbol("objc_getClass"),
               let selRegisterName: SelRegisterNameFn = symbol("sel_registerName"),
-              let classResponds: ClassRespondsToSelectorFn = symbol("class_respondsToSelector"),
               let factory: AuthenticationFactoryFn = symbol("objc_msgSend") else {
             return nil
         }
@@ -103,7 +100,6 @@ enum SkyLight {
             setMessage: setMessage,
             objcGetClass: objcGetClass,
             selRegisterName: selRegisterName,
-            classResponds: classResponds,
             factory: factory
         )
     }()
@@ -166,11 +162,6 @@ enum SkyLight {
         let spi = try required()
         attachKeyboardAuthentication(pid: pid, event: event)
         spi.postToPid(pid, eventPtr(event))
-    }
-
-    static func activateWithoutRaise(pid: pid_t, wid: CGWindowID) throws {
-        let token = try acquireBackgroundFocus(pid: pid, wid: wid)
-        _ = token
     }
 
     /// Focus the target window for synthetic input WITHOUT raising it, remembering
