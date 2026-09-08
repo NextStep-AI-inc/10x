@@ -91,4 +91,53 @@ struct ObjectArraySettingEditorTests {
         ]
         #expect(ObjectArraySettingEditor.canSave(entries: entries))
     }
+
+    @Test func preservesFlagsAndExtrasOnSave() {
+        let value: JSONValue = .array([
+            .object([
+                "pattern": .string("^cat"),
+                "tool": .string("read"),
+                "message": .string(""),
+                "flags": .string("i"),
+                "allowSubcommands": .bool(true),
+            ]),
+        ])
+        var entries = ObjectArraySettingEditor.interceptorEntries(from: value)
+        entries[0].pattern = "^dog"
+        let saved = ObjectArraySettingEditor.jsonArray(from: entries, preserving: value)
+        let object = saved.arrayValue?[0].objectValue
+        #expect(object?["pattern"] == .string("^dog"))
+        #expect(object?["flags"] == .string("i"))
+        #expect(object?["allowSubcommands"] == .bool(true))
+    }
+
+    @Test func canSaveReturnsFalseForMixedValidAndInvalidEntries() {
+        let entries = [
+            InterceptorPatternEntry(pattern: "^ok", tool: "read", message: ""),
+            InterceptorPatternEntry(pattern: "[unclosed", tool: "read", message: ""),
+        ]
+        #expect(!ObjectArraySettingEditor.canSave(entries: entries))
+    }
+
+    @Test func missingToolDefaultsToRead() {
+        let value: JSONValue = .array([
+            .object(["pattern": .string("^cat"), "message": .string("Use read")]),
+        ])
+        let entries = ObjectArraySettingEditor.interceptorEntries(from: value)
+        #expect(entries[0].tool == "read")
+    }
+
+    @Test func shouldResyncReturnsFalseWhenExtrasPreserved() {
+        let original: JSONValue = .array([
+            .object([
+                "pattern": .string("^cat"),
+                "tool": .string("read"),
+                "message": .string(""),
+                "flags": .string("i"),
+            ]),
+        ])
+        let entries = ObjectArraySettingEditor.interceptorEntries(from: original)
+        let incoming = ObjectArraySettingEditor.jsonArray(from: entries, preserving: original)
+        #expect(!ObjectArraySettingEditor.shouldResync(entries: entries, incoming: incoming))
+    }
 }

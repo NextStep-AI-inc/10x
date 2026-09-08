@@ -6,6 +6,7 @@ struct InterceptorPatternEntry: Equatable, Identifiable {
     var pattern: String
     var tool: String
     var message: String
+    var sourceObject: [String: JSONValue]?
     var unrecognizedRaw: String?
 
     var isUnrecognized: Bool { unrecognizedRaw != nil }
@@ -15,24 +16,33 @@ struct InterceptorPatternEntry: Equatable, Identifiable {
         pattern: String,
         tool: String,
         message: String,
+        sourceObject: [String: JSONValue]? = nil,
         unrecognizedRaw: String? = nil
     ) {
         self.id = id
         self.pattern = pattern
         self.tool = tool
         self.message = message
+        self.sourceObject = sourceObject
         self.unrecognizedRaw = unrecognizedRaw
     }
 }
 
 /// Structured editor for bashInterceptor.patterns, the one array-of-objects setting.
 struct ObjectArraySettingEditor: View {
+    private enum FocusedField: Hashable {
+        case pattern(UUID)
+        case message(UUID)
+    }
+
     let definition: SettingDefinition
     let model: SettingsViewModel
 
     @State private var entries: [InterceptorPatternEntry]
+    @State private var localError: String?
+    @FocusState private var focusedField: FocusedField?
 
-    private static let toolOptions = ["read", "bash", "write", "edit", "grep", "glob"]
+    private static let toolOptions = ["read", "bash", "write", "edit", "grep", "glob", "hub"]
         .map { SettingOption($0) }
 
     init(definition: SettingDefinition, model: SettingsViewModel) {
@@ -43,17 +53,26 @@ struct ObjectArraySettingEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach($entries) { $entry in
+            ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                 if entry.isUnrecognized {
-                    unrecognizedRow(entry: $entry)
+                    unrecognizedRow(entry: binding(for: entry), rowIndex: index)
                 } else {
-                    editableCard(entry: $entry)
+                    editableCard(entry: binding(for: entry), rowIndex: index)
                 }
             }
             Button("Add pattern") {
                 entries.append(InterceptorPatternEntry(pattern: "", tool: "read", message: ""))
             }
             .buttonStyle(GhostActionStyle())
+            if let localError {
+                Text(localError)
+                    .font(TenXTypography.mono(size: 9))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+            }
+        }
+        .onChange(of: focusedField) { oldFocus, _ in
+            guard oldFocus != nil else { return }
+            save()
         }
         .onChange(of: definition.value) { _, newValue in
             if Self.shouldResync(entries: entries, incoming: newValue) {
@@ -62,8 +81,19 @@ struct ObjectArraySettingEditor: View {
         }
     }
 
+    private func binding(for entry: InterceptorPatternEntry) -> Binding<InterceptorPatternEntry> {
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else {
+            return .constant(entry)
+        }
+        return $entries[index]
+    }
+
+    private func rowLabel(index: Int, pattern: String) -> String {
+        pattern.isEmpty ? "row \(index + 1)" : pattern
+    }
+
     @ViewBuilder
-    private func unrecognizedRow(entry: Binding<InterceptorPatternEntry>) -> some View {
+    private func unrecognizedRow(entry: Binding<InterceptorPatternEntry>, rowIndex: Int) -> some View {
         HStack(spacing: 8) {
             Text(entry.wrappedValue.unrecognizedRaw ?? "")
                 .font(TenXTypography.mono(size: 11))
@@ -81,20 +111,22 @@ struct ObjectArraySettingEditor: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
-            .accessibilityLabel("Remove unrecognized pattern")
+            .accessibilityLabel("Remove unrecognized pattern \(rowIndex + 1)")
         }
         .padding(8)
         .overlay(Rectangle().stroke(TenXPalette.color(TenXPalette.separatorHex)))
     }
 
     @ViewBuilder
-    private func editableCard(entry: Binding<InterceptorPatternEntry>) -> some View {
+    private func editableCard(entry: Binding<InterceptorPatternEntry>, rowIndex: Int) -> some View {
+        let label = rowLabel(index: rowIndex, pattern: entry.wrappedValue.pattern)
         VStack(spacing: 4) {
             fieldRow(
                 label: "PATTERN",
                 text: entry.pattern,
                 invalid: !Self.isSaveablePattern(entry.wrappedValue.pattern),
-                accessibilityLabel: "Pattern")
+                accessibilityLabel: "Pattern for \(label)",
+                focus: .pattern(entry.wrappedValue.id))
             HStack(spacing: 8) {
                 Text("TOOL")
                     .font(TenXTypography.mono(size: 9))
@@ -103,7 +135,7 @@ struct ObjectArraySettingEditor: View {
                 InlineDropdown(
                     options: Self.toolOptions,
                     current: entry.wrappedValue.tool,
-                    accessibilityLabelText: "Tool for pattern \(entry.wrappedValue.pattern)",
+                    accessibilityLabelText: "Tool for pattern \(label)",
                     onSelect: { entry.wrappedValue.tool = $0; save() })
                 .frame(width: 140)
                 Spacer()
@@ -115,13 +147,14 @@ struct ObjectArraySettingEditor: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
-                .accessibilityLabel("Remove pattern")
+                .accessibilityLabel("Remove pattern \(rowIndex + 1)")
             }
             fieldRow(
                 label: "MESSAGE",
                 text: entry.message,
                 invalid: false,
-                accessibilityLabel: "Message for pattern \(entry.wrappedValue.pattern)")
+                accessibilityLabel: "Message for \(label)",
+                focus: .message(entry.wrappedValue.id))
         }
         .padding(8)
         .overlay(Rectangle().stroke(TenXPalette.color(TenXPalette.separatorHex)))
@@ -131,7 +164,8 @@ struct ObjectArraySettingEditor: View {
         label: String,
         text: Binding<String>,
         invalid: Bool,
-        accessibilityLabel: String
+        accessibilityLabel: String,
+        focus: FocusedField
     ) -> some View {
         HStack(spacing: 8) {
             Text(label)
@@ -150,12 +184,17 @@ struct ObjectArraySettingEditor: View {
                         .frame(height: 1)
                 }
                 .accessibilityLabel(accessibilityLabel)
+                .focused($focusedField, equals: focus)
                 .onSubmit { save() }
         }
     }
 
     private func save() {
-        guard Self.canSave(entries: entries) else { return }
+        guard Self.canSave(entries: entries) else {
+            localError = "Enter a valid pattern before saving."
+            return
+        }
+        localError = nil
         let value = Self.jsonArray(from: entries, preserving: definition.value ?? .array([]))
         Task { await model.save(definition, value: value) }
     }
@@ -172,7 +211,8 @@ struct ObjectArraySettingEditor: View {
                 return InterceptorPatternEntry(
                     pattern: pattern,
                     tool: object["tool"]?.stringValue ?? "read",
-                    message: object["message"]?.stringValue ?? "")
+                    message: object["message"]?.stringValue ?? "",
+                    sourceObject: object)
             }
             return InterceptorPatternEntry(
                 pattern: "",
@@ -191,14 +231,17 @@ struct ObjectArraySettingEditor: View {
                 return parseJSONText(raw)
             }
             guard isSaveablePattern(entry.pattern) else { return nil }
-            return .object([
-                "pattern": .string(entry.pattern),
-                "tool": .string(entry.tool),
-                "message": .string(entry.message),
-            ])
+            var object = entry.sourceObject ?? [:]
+            object["pattern"] = .string(entry.pattern)
+            object["tool"] = .string(entry.tool)
+            object["message"] = .string(entry.message)
+            return .object(object)
         })
     }
 
+    // ponytail: ICU approximation of OMP's JS RegExp(pattern, flags); a pattern
+    // valid in JS but not ICU can't be saved from this editor (use the CLI).
+    // Shipped defaults (lookbehind etc.) validate in both.
     nonisolated static func isValidPattern(_ pattern: String) -> Bool {
         (try? NSRegularExpression(pattern: pattern)) != nil
     }
