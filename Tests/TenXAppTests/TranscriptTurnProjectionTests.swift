@@ -17,7 +17,8 @@ import Testing
     #expect(batched[0].items.map(\.id) == ["user-live", "notice", "user-2"])
 
     let responded = batched[0].items + [.message(turnMessage(
-        id: "assistant-1", role: "assistant", at: 3, completedAt: 4, isFinal: true))]
+        id: "assistant-1", role: "assistant", at: 3, completedAt: 4,
+        stopReason: "stop", isFinal: true))]
     let sections = TranscriptTurnProjection.sections(
         from: responded + [.message(turnMessage(id: "user-3", role: "user", at: 5))],
         runtimeState: .streaming)
@@ -51,10 +52,10 @@ import Testing
     let user = turnMessage(id: "user-segment", baseID: "stable-user", role: "user", at: 1)
     let live = turnMessage(
         id: "assistant-live", baseID: "assistant-base", role: "assistant", at: 4,
-        completedAt: 8, isFinal: true)
+        completedAt: 8, stopReason: "stop", isFinal: true)
     let history = turnMessage(
         id: "assistant-history", baseID: "assistant-base", role: "assistant", at: 4,
-        completedAt: 8, isFinal: true)
+        completedAt: 8, stopReason: "stop", isFinal: true)
 
     let liveTurn = TranscriptTurnProjection.sections(
         from: [.message(user), .message(live)], runtimeState: .idle)[0]
@@ -69,9 +70,13 @@ import Testing
 @Test func responseDurationUsesTheLoopBoundsWithoutQueuedWaitOrRepeatedSegments() {
     let items: [TranscriptItem] = [
         .message(turnMessage(id: "user", role: "user", at: 1)),
-        .message(turnMessage(id: "a-live", baseID: "a", role: "assistant", at: 10, completedAt: 12)),
+        .message(turnMessage(
+            id: "a-live", baseID: "a", role: "assistant", at: 10,
+            completedAt: 12, stopReason: "toolUse")),
         .tool(turnTool(id: "tool", phase: .complete, start: 12, end: 15)),
-        .message(turnMessage(id: "a-final", baseID: "a", role: "assistant", at: 10, completedAt: 16, isFinal: true)),
+        .message(turnMessage(
+            id: "a-final", baseID: "a", role: "assistant", at: 10,
+            completedAt: 16, stopReason: "stop", isFinal: true)),
     ]
 
     let turn = TranscriptTurnProjection.sections(from: items, runtimeState: .idle)[0]
@@ -82,7 +87,9 @@ import Testing
 @Test func responseDurationIsAbsentWithoutAReliableCompletion() {
     let turn = TranscriptTurnProjection.sections(from: [
         .message(turnMessage(id: "user", role: "user", at: 1)),
-        .message(turnMessage(id: "assistant", role: "assistant", at: 3, isFinal: true)),
+        .message(turnMessage(
+            id: "assistant", role: "assistant", at: 3,
+            stopReason: "stop", isFinal: true)),
     ], runtimeState: .idle)[0]
 
     #expect(turn.state == .completed)
@@ -120,7 +127,9 @@ import Testing
         .tool(turnTool(id: "tool", phase: .failed, start: 2, end: 3)),
     ]
     let success = TranscriptTurnProjection.sections(from: prefix + [
-        .message(turnMessage(id: "success", role: "assistant", at: 4, completedAt: 5, isFinal: true)),
+        .message(turnMessage(
+            id: "success", role: "assistant", at: 4, completedAt: 5,
+            stopReason: "stop", isFinal: true)),
     ], runtimeState: .idle)[0]
     let failure = TranscriptTurnProjection.sections(from: prefix + [
         .message(turnMessage(
@@ -138,6 +147,62 @@ import Testing
     #expect(stopped.state == .stopped)
 }
 
+@Test func nonterminalToolUseAndLengthDoNotCompleteAResponseTurn() {
+    let user = TranscriptItem.message(turnMessage(id: "user", role: "user", at: 1))
+    let toolUse = TranscriptItem.message(turnToolUseMessage(id: "step", toolID: "tool", at: 2))
+
+    let running = TranscriptTurnProjection.sections(from: [
+        user, toolUse, .tool(turnTool(id: "tool", phase: .running, start: 3)),
+    ], runtimeState: .idle)[0]
+    let failed = TranscriptTurnProjection.sections(from: [
+        user, toolUse, .tool(turnTool(id: "tool", phase: .failed, start: 3, end: 4)),
+    ], runtimeState: .idle)[0]
+    let finished = TranscriptTurnProjection.sections(from: [
+        user, toolUse, .tool(turnTool(id: "tool", phase: .complete, start: 3, end: 4)),
+    ], runtimeState: .idle)[0]
+    let length = TranscriptTurnProjection.sections(from: [
+        user,
+        .message(turnMessage(
+            id: "length", role: "assistant", at: 2, completedAt: 3,
+            stopReason: "length", isFinal: true)),
+    ], runtimeState: .idle)[0]
+
+    #expect(running.state == .working)
+    #expect(failed.state == .failed)
+    #expect(finished.state == .interrupted)
+    #expect(length.state == .interrupted)
+}
+
+@Test func packedTerminalStopCompletesWhenItsToolResultsArePresent() {
+    let turn = TranscriptTurnProjection.sections(from: [
+        .message(turnMessage(id: "user", role: "user", at: 1)),
+        .message(turnPackedStopMessage(id: "stop", toolID: "tool", at: 2, completedAt: 3)),
+        .tool(turnTool(id: "tool", phase: .complete, start: 3, end: 4)),
+    ], runtimeState: .idle)[0]
+
+    #expect(turn.state == .completed)
+}
+
+@Test func settledTerminalResponseOverridesALeftoverRunningTool() {
+    let prefix: [TranscriptItem] = [
+        .message(turnMessage(id: "user", role: "user", at: 1)),
+        .tool(turnTool(id: "tool", phase: .running, start: 2)),
+    ]
+    let stopped = TranscriptTurnProjection.sections(from: prefix + [
+        .message(turnMessage(
+            id: "stopped", role: "assistant", at: 3, completedAt: 4,
+            stopReason: "aborted", isFinal: true)),
+    ], runtimeState: .idle)[0]
+    let active = TranscriptTurnProjection.sections(from: prefix + [
+        .message(turnMessage(
+            id: "stopping", role: "assistant", at: 3, completedAt: 4,
+            stopReason: "aborted", isFinal: true)),
+    ], runtimeState: .streaming)[0]
+
+    #expect(stopped.state == .stopped)
+    #expect(active.state == .working)
+}
+
 @Test func failedToolsInterruptedTurnsAndIncompleteHistoryRemainDistinct() {
     let user = TranscriptItem.message(turnMessage(id: "user", role: "user", at: 1))
     let failed = TranscriptTurnProjection.sections(from: [
@@ -149,10 +214,17 @@ import Testing
         .message(turnMessage(id: "next", role: "user", at: 4)),
     ], runtimeState: .idle)[0]
     let incomplete = TranscriptTurnProjection.sections(from: [user], runtimeState: .idle)[0]
+    let nonterminalAssistant = TranscriptTurnProjection.sections(from: [
+        user,
+        .message(turnMessage(
+            id: "assistant", role: "assistant", at: 2,
+            completedAt: 3, isFinal: true)),
+    ], runtimeState: .idle)[0]
 
     #expect(failed.state == .failed)
     #expect(interrupted.state == .interrupted)
     #expect(incomplete.state == .unknown)
+    #expect(nonterminalAssistant.state == .unknown)
 }
 
 private func turnMessage(
@@ -192,6 +264,59 @@ private func turnTool(
         phase: phase,
         startDate: Date(timeIntervalSince1970: start),
         endDate: end.map(Date.init(timeIntervalSince1970:)))
+}
+
+private func turnToolUseMessage(
+    id: String,
+    toolID: String,
+    at: TimeInterval
+) -> TranscriptMessage {
+    TranscriptMessage(
+        id: id,
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string("I will inspect it."),
+                ]),
+                .object([
+                    "type": .string("toolCall"),
+                    "id": .string(toolID),
+                ]),
+            ]),
+            "timestamp": .double(at * 1_000),
+            "completedAt": .double((at + 1) * 1_000),
+            "stopReason": .string("toolUse"),
+        ]),
+        isFinal: true)
+}
+
+private func turnPackedStopMessage(
+    id: String,
+    toolID: String,
+    at: TimeInterval,
+    completedAt: TimeInterval
+) -> TranscriptMessage {
+    TranscriptMessage(
+        id: id,
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string("Done."),
+                ]),
+                .object([
+                    "type": .string("toolCall"),
+                    "id": .string(toolID),
+                ]),
+            ]),
+            "timestamp": .double(at * 1_000),
+            "completedAt": .double(completedAt * 1_000),
+            "stopReason": .string("stop"),
+        ]),
+        isFinal: true)
 }
 
 private func turnSubagent(status: SubagentStatus) -> SubagentPresentation {

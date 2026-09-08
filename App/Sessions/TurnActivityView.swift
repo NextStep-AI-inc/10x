@@ -14,24 +14,34 @@ struct TurnActivityView: View {
     /// True only while the run has produced nothing that is still moving.
     nonisolated static func isAwaitingOutput(
         runtimeState: SessionRuntimeState,
-        lastItem: TranscriptItem?
+        items: [TranscriptItem]
     ) -> Bool {
         guard runtimeState == .streaming else { return false }
-        switch lastItem {
+        let finalSection = TranscriptTurnProjection.sections(
+            from: items, runtimeState: runtimeState).last
+        let activeItems = finalSection?.state == nil ? items : finalSection?.items ?? []
+        guard !activeItems.contains(where: requiresUserInput) else { return false }
+        return !activeItems.contains(where: hasVisibleActivity)
+    }
+
+    private nonisolated static func hasVisibleActivity(_ item: TranscriptItem) -> Bool {
+        switch item {
         case .message(let message):
-            // Only a live assistant message is output in progress. A user
-            // message is the thing being answered, so the run is still silent.
-            return message.role != .assistant || message.isFinal || message.document.blocks.isEmpty
+            return message.role == .assistant
+                && !message.isFinal
+                && !message.document.blocks.isEmpty
         case .tool(let presentation):
-            return presentation.phase == .complete || presentation.phase == .failed
+            return presentation.phase == .running
         case .subagent(let presentation):
-            return !presentation.status.isActive
-        case .extensionUI:
-            // The approval card is waiting on the user, not on omp.
+            return presentation.status.isActive
+        case .threadStart, .annotation, .notice, .extensionUI:
             return false
-        default:
-            return true
         }
+    }
+
+    private nonisolated static func requiresUserInput(_ item: TranscriptItem) -> Bool {
+        guard case .extensionUI(let state) = item else { return false }
+        return state.requiresUserInput
     }
 
     var body: some View {

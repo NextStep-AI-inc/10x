@@ -8,6 +8,13 @@ enum TranscriptTurnState: Equatable, Sendable {
     case working
     case pendingInput
     case unknown
+
+    var hasSummary: Bool {
+        switch self {
+        case .completed, .stopped, .failed, .interrupted: true
+        case .working, .pendingInput, .unknown: false
+        }
+    }
 }
 
 struct TranscriptTurnSection: Identifiable, Equatable, Sendable {
@@ -98,11 +105,12 @@ enum TranscriptTurnProjection {
         closedByNextInput: Bool
     ) -> TranscriptTurnState {
         if isFinal, items.contains(where: requiresUserInput) { return .pendingInput }
-        if isFinal, runtimeState == .streaming || items.contains(where: isActive) { return .working }
+        if isFinal, runtimeState == .streaming { return .working }
 
-        if let terminal = items.reversed().compactMap(terminalAssistantState).first {
+        if let terminal = items.reversed().compactMap({ terminalAssistantState($0, in: items) }).first {
             return terminal
         }
+        if isFinal, items.contains(where: isActive) { return .working }
         if isFinal {
             switch runtimeState {
             case .failed: return .failed
@@ -112,11 +120,13 @@ enum TranscriptTurnProjection {
         }
         if items.contains(where: isFailed) { return .failed }
         if closedByNextInput { return .interrupted }
+        if items.contains(where: isToolUseStep) { return .interrupted }
         return .unknown
     }
 
     private nonisolated static func terminalAssistantState(
-        _ item: TranscriptItem
+        _ item: TranscriptItem,
+        in items: [TranscriptItem]
     ) -> TranscriptTurnState? {
         guard case .message(let message) = item,
               message.role == .assistant,
@@ -124,8 +134,38 @@ enum TranscriptTurnProjection {
         return switch message.stopReason?.lowercased() {
         case "error": .failed
         case "aborted": .stopped
-        default: .completed
+        case "length": .interrupted
+        case "tooluse": nil
+        case "stop": hasResolvedToolCalls(message, in: items) ? .completed : .interrupted
+        default: nil
         }
+    }
+
+    private nonisolated static func hasResolvedToolCalls(
+        _ message: TranscriptMessage,
+        in items: [TranscriptItem]
+    ) -> Bool {
+        let calls = (message.raw["content"]?.arrayValue ?? []).filter {
+            $0["type"]?.stringValue?.lowercased() == "toolcall"
+        }
+        guard !calls.isEmpty else { return true }
+        let callIDs = calls.compactMap {
+            $0["id"]?.stringValue ?? $0["toolCallId"]?.stringValue
+        }.filter { !$0.isEmpty }
+        guard callIDs.count == calls.count else { return false }
+        guard Set(callIDs).count == callIDs.count else { return false }
+        let resolvedIDs = Set(items.compactMap { item -> String? in
+            guard case .tool(let tool) = item, tool.phase != .running else { return nil }
+            return tool.id
+        })
+        return Set(callIDs).isSubset(of: resolvedIDs)
+    }
+
+    private nonisolated static func isToolUseStep(_ item: TranscriptItem) -> Bool {
+        guard case .message(let message) = item else { return false }
+        return message.role == .assistant
+            && message.isFinal
+            && message.stopReason?.lowercased() == "tooluse"
     }
 
     private nonisolated static func isResponseEvidence(_ item: TranscriptItem) -> Bool {

@@ -26,6 +26,7 @@
 		0CD8E4F53A7768C5CA3E802019B7A939 /* OmpProcessEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B3CA0D4BF41671855A221DDA0BE965F /* OmpProcessEnvironment.swift */; };
 		0D344CE46865C9A36FC65D0C49B64849 /* AppRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48746C37C1E70B8DAEF2236EA7775B7F /* AppRouteTests.swift */; };
 		0EC1B81D6FA6277A1A0217E0F90BF592 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = 2D00098D3C78890E281C7F7E302E1ECC /* Fixtures */; };
+		0EF38522A863E1D65A2926B605D5C173 /* TranscriptTurnSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBBD5DCAC22E794CA15A5FD0B035E705 /* TranscriptTurnSummaryView.swift */; };
 		0F3E6B1BC475B685B34327BEE5F8E2FE /* OmpInstallation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D977E9429CDAF38DBD2772F2C6C1EE32 /* OmpInstallation.swift */; };
 		0F857D1B061773313D4761D96F7495EB /* SearchModalModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20D35C6C67F5F0451C060614D296474 /* SearchModalModel.swift */; };
 		0FB311CB19F5B760705ADD225B593363 /* ComposerCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC401EACACBD59AF101F4168D6767F18 /* ComposerCatalogService.swift */; };
@@ -652,6 +653,7 @@
 		B9319E4E7CCAD5F4188FC30AB93456D7 /* ProviderUsageDockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageDockView.swift; path = App/Providers/ProviderUsageDockView.swift; sourceTree = "<group>"; };
 		B9DBC57C8FAC7040E884E8E191B76538 /* OnboardingInstallLogBuffer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingInstallLogBuffer.swift; path = App/Onboarding/OnboardingInstallLogBuffer.swift; sourceTree = "<group>"; };
 		BB43F424A6A27983B5BB253D4CE75AC4 /* RailPresentation.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RailPresentation.swift; path = App/Shell/RailPresentation.swift; sourceTree = "<group>"; };
+		BBBD5DCAC22E794CA15A5FD0B035E705 /* TranscriptTurnSummaryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptTurnSummaryView.swift; path = App/Sessions/TranscriptTurnSummaryView.swift; sourceTree = "<group>"; };
 		BC82A22B2AB1B4AF8D75C32BD1574437 /* BrandWordmark.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = BrandWordmark.swift; path = App/Design/BrandWordmark.swift; sourceTree = "<group>"; };
 		BC831AF3F8003EF46E92EFAC4B8FB7B7 /* OnboardingProjectStepView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingProjectStepView.swift; path = App/Onboarding/OnboardingProjectStepView.swift; sourceTree = "<group>"; };
 		BD4214214DE724350A6B2449F40E4630 /* ProviderPrimaryPreferenceStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderPrimaryPreferenceStore.swift; path = App/Providers/ProviderPrimaryPreferenceStore.swift; sourceTree = "<group>"; };
@@ -905,6 +907,7 @@
 				CE2D3A9D841091AEB7D1CE9AF7DFE0AE /* TranscriptSnapshot.swift */,
 				057C34D6ACC67BB0B0F48EFF3E89C488 /* TranscriptTextSegments.swift */,
 				D73233B7776DC7B5F5D6388D3F64D507 /* TranscriptTurnProjection.swift */,
+				BBBD5DCAC22E794CA15A5FD0B035E705 /* TranscriptTurnSummaryView.swift */,
 				974783DE436CE196147C1685500F4D4E /* TranscriptView.swift */,
 				0AA35380583228F17DF74F94A11056A7 /* TranscriptViewportState.swift */,
 				D571A76482D84C6FB84D70F08D008F62 /* TurnActivityView.swift */,
@@ -1406,6 +1409,7 @@
 				D3CAAB97A3304F24F0F1A3BFDF700621 /* TranscriptSnapshot.swift in Sources */,
 				59A77226EF2328003466510A89718A79 /* TranscriptTextSegments.swift in Sources */,
 				B9C83572F04FB8C37AE054C7D98C4E3C /* TranscriptTurnProjection.swift in Sources */,
+				0EF38522A863E1D65A2926B605D5C173 /* TranscriptTurnSummaryView.swift in Sources */,
 				966ADF1BA155709CAB7442F91C39B498 /* TranscriptView.swift in Sources */,
 				017739EF32A32FF41286FF216B1F99E1 /* TranscriptViewportState.swift in Sources */,
 				4C9BD66E04D2373E1B21CD7174E3FABE /* TurnActivityView.swift in Sources */,

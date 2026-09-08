@@ -128,6 +128,54 @@ import Testing
         isReduceMotionEnabled: true))
 }
 
+@Test func transcriptRenderRowsKeepContentIDsAndAppendOnlyTerminalSummaries() {
+    let completed = responseMessage(id: "done", stopReason: "stop", completedAt: 4)
+    let failed = responseMessage(id: "failed", stopReason: "error", completedAt: 8)
+    let items: [TranscriptItem] = [
+        .message(userMessage(id: "u1", timestamp: 1)),
+        .tool(tool(id: "one", phase: .complete)),
+        .message(completed),
+        .message(userMessage(id: "u2", timestamp: 5)),
+        .message(failed),
+    ]
+
+    let rows = TranscriptView.renderRows(
+        for: items, runtimeState: .idle, isGroupExpanded: { _ in true })
+
+    #expect(rows.map(\.id) == [
+        "message:u1", "tool-group-one", "tool:one", "message:done", "summary:turn:u1",
+        "message:u2", "message:failed", "summary:turn:u2",
+    ])
+    let summaryStates: [TranscriptTurnState] = rows.compactMap { row in
+        guard case .summary(_, let state, _) = row else { return nil }
+        return state
+    }
+    #expect(summaryStates == [.completed, .failed])
+}
+
+@Test func incompleteAndActiveTurnsDoNotReceiveSummaryRows() {
+    let items: [TranscriptItem] = [
+        .message(userMessage(id: "u1", timestamp: 1)),
+        .message(responseMessage(id: "done", stopReason: "stop", completedAt: 2)),
+        .message(userMessage(id: "u2", timestamp: 3)),
+    ]
+
+    let rows = TranscriptView.renderRows(
+        for: items, runtimeState: .streaming, isGroupExpanded: { _ in true })
+
+    #expect(rows.map(\.id) == [
+        "message:u1", "message:done", "summary:turn:u1", "message:u2",
+    ])
+}
+
+@Test func turnSummaryLabelsStateAndReliableDuration() {
+    #expect(TranscriptTurnSummaryView.label(state: .completed, duration: 6.4) == "Completed · 6.4s")
+    #expect(TranscriptTurnSummaryView.label(state: .completed, duration: nil) == "Completed")
+    #expect(TranscriptTurnSummaryView.label(state: .interrupted, duration: nil) == "Stopped")
+    #expect(TranscriptTurnSummaryView.label(state: .stopped, duration: nil) == "Stopped")
+    #expect(TranscriptTurnSummaryView.label(state: .failed, duration: nil) == "Failed")
+}
+
 private func message(id: String) -> TranscriptMessage {
     TranscriptMessage(
         id: id,
@@ -136,6 +184,34 @@ private func message(id: String) -> TranscriptMessage {
             "content": .string("Message \(id)"),
         ]),
         timestamp: Date(timeIntervalSince1970: 1),
+        isFinal: true)
+}
+
+private func userMessage(id: String, timestamp: TimeInterval) -> TranscriptMessage {
+    TranscriptMessage(
+        id: id,
+        raw: .object([
+            "role": .string("user"),
+            "content": .string("Question"),
+            "timestamp": .double(timestamp * 1_000),
+        ]),
+        isFinal: true)
+}
+
+private func responseMessage(
+    id: String,
+    stopReason: String,
+    completedAt: TimeInterval
+) -> TranscriptMessage {
+    TranscriptMessage(
+        id: id,
+        raw: .object([
+            "role": .string("assistant"),
+            "content": .string("Answer"),
+            "timestamp": .double((completedAt - 1) * 1_000),
+            "completedAt": .double(completedAt * 1_000),
+            "stopReason": .string(stopReason),
+        ]),
         isFinal: true)
 }
 
