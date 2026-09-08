@@ -8,11 +8,15 @@ final class FakeEngine: DesktopEngine {
     var actions: [ComputerAction] = []
     var permissionStatus = PermissionStatus(screenRecording: true, accessibility: true)
     var launchedWindow: WindowInfo?
+    var screenshotShouldFail = false
+    var screenshotError: ComputerError?
 
     func preflightPermissions() -> PermissionStatus { permissionStatus }
     func listWindows() throws -> [WindowInfo] { windows }
     func screenshot(windowID: CGWindowID) throws -> Screenshot {
-        Screenshot(pngData: screenshotPNG, pixelSize: CGSize(width: 100, height: 100), scale: 2)
+        if let screenshotError { throw screenshotError }
+        if screenshotShouldFail { throw ComputerError("screenshot_failed") }
+        return Screenshot(pngData: screenshotPNG, pixelSize: CGSize(width: 100, height: 100), scale: 2)
     }
     func launch(app: String) throws -> WindowInfo {
         guard let launchedWindow else { throw ComputerError("no such app: \(app)") }
