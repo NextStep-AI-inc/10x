@@ -17,19 +17,21 @@ final class PreviewStreamerTests: XCTestCase {
         engine.screenshotPNG = Data([1])
         var frameCount = 0
         let secondFrame = expectation(description: "second heartbeat frame")
-        let streamer = PreviewStreamer(engine: engine, interval: 0.05) { _ in
+        var streamer: PreviewStreamer!
+        streamer = PreviewStreamer(engine: engine, interval: 0.05) { _ in
             frameCount += 1
-            if frameCount >= 2 { secondFrame.fulfill() }
+            guard frameCount == 2 else { return }
+            streamer.setActive(session: nil, windowID: nil)
+            secondFrame.fulfill()
         }
         defer { streamer.setActive(session: nil, windowID: nil) }
 
         streamer.setActive(session: SessionID(raw: 1), windowID: 10)
         wait(for: [secondFrame], timeout: 1.0)
+        XCTAssertEqual(frameCount, 2)
 
-        let count = frameCount
-        streamer.setActive(session: nil, windowID: nil)
         Thread.sleep(forTimeInterval: 0.12)
-        XCTAssertEqual(frameCount, count)
+        XCTAssertEqual(frameCount, 2)
     }
 
     func test_stopPreviewForSession_doesNotStopOtherSession() throws {
