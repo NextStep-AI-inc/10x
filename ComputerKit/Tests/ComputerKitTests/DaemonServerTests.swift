@@ -480,6 +480,25 @@ final class DaemonServerTests: XCTestCase {
         }
     }
 
+    func test_close_unblocksInFlightReceive() throws {
+        let client = try DaemonClient(socketPath: socketPath)
+        try client.send(.object(["role": .string("mcp")]))
+        let threw = expectation(description: "receive throws after close")
+        Thread.detachNewThread {
+            do {
+                _ = try client.receive()
+                XCTFail("receive should throw after close")
+            } catch {
+                XCTAssertEqual((error as? ComputerError)?.message, "daemon_closed")
+            }
+            threw.fulfill()
+        }
+        Thread.sleep(forTimeInterval: 0.1) // let receive block first
+        client.close()
+        wait(for: [threw], timeout: 2)
+        client.close() // idempotent
+    }
+
     func test_socketPathTooLong_rejected() {
         let longPath = "/tmp/" + String(repeating: "a", count: 120) + ".sock"
         XCTAssertThrowsError(try DaemonServer(engine: FakeEngine(), socketPath: longPath).start()) { error in

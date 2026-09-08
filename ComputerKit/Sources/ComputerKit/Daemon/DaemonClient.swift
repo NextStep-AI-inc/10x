@@ -5,6 +5,8 @@ import Foundation
 public final class DaemonClient {
     private let fd: Int32
     private var buffer = Data()
+    private let closeLock = NSLock()
+    private var isClosed = false
 
     public init(socketPath: String = DaemonServer.defaultSocketPath) throws {
         try DaemonServer.validateSocketPath(socketPath)
@@ -21,13 +23,24 @@ public final class DaemonClient {
             }
         }
         guard connected == 0 else {
-            close(fd)
+            Darwin.close(fd)
             throw ComputerError("daemon_unreachable: \(socketPath)")
         }
         Self.disableSIGPIPE(fd)
     }
 
-    deinit { close(fd) }
+    deinit { close() }
+
+    /// Idempotent. shutdown unblocks an in-flight receive() on another thread
+    /// (close alone does not reliably interrupt a blocked recv on Darwin).
+    public func close() {
+        closeLock.lock()
+        defer { closeLock.unlock() }
+        guard !isClosed else { return }
+        isClosed = true
+        shutdown(fd, SHUT_RDWR)
+        Darwin.close(fd)
+    }
 
     private static func disableSIGPIPE(_ fd: Int32) {
         var nosigpipe: Int32 = 1
@@ -53,6 +66,10 @@ public final class DaemonClient {
 
     public func receive(timeout: TimeInterval? = nil) throws -> JSONValue {
         while true {
+            closeLock.lock()
+            let closed = isClosed
+            closeLock.unlock()
+            if closed { throw ComputerError("daemon_closed") }
             if let newline = buffer.firstIndex(of: 0x0A) {
                 let line = buffer.prefix(upTo: newline)
                 buffer.removeSubrange(...newline)
