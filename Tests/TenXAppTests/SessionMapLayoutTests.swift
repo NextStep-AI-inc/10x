@@ -2,6 +2,15 @@ import Foundation
 import Testing
 @testable import TenXApp
 
+@Test func sessionMapEdgeLabelDisplayFitsItsPlannedFrame() {
+    let label = "continues to the next processing stage"
+    let displayed = SessionMapGraphView.displayedEdgeLabel(label, width: 112)
+
+    #expect(displayed == "continues to …")
+    #expect(displayed.count * 7 + 12 <= 112)
+    #expect(SessionMapGraphView.displayedEdgeLabel("XML", width: 36) == "XML")
+}
+
 @Test func sessionMapLayoutSeparatesNodesAndRetainsSiblingOrder() throws {
     let document = try SessionMapFixtures.document(SessionMapFixtures.denseXML)
     let layout = SessionMapLayout.layout(

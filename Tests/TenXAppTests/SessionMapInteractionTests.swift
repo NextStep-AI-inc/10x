@@ -82,7 +82,7 @@ import Testing
 
     #expect(SessionMapInteraction.accessibilityLabel(
         for: document.graph.nodes[0], graph: document.graph
-    ) == "Request view, Planned. Connects to Service.")
+    ) == "Request view, Planned. Connects to Service via request.")
 }
 
 @MainActor
@@ -114,8 +114,8 @@ import Testing
 
     #expect(SessionMapInteraction.accessibilityLabel(
         for: node, graph: document.graph, isActive: false
-    ) == "Request view, Planned. Connects to Service.")
+    ) == "Request view, Planned. Connects to Service via request.")
     #expect(SessionMapInteraction.accessibilityLabel(
         for: node, graph: document.graph, isActive: true
-    ) == "Request view, Planned. Live activity. Connects to Service.")
+    ) == "Request view, Planned. Live activity. Connects to Service via request.")
 }

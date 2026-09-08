@@ -120,13 +120,17 @@ enum SessionMapInteraction {
         let labels = Dictionary(uniqueKeysWithValues: graph.nodes.map { ($0.id, $0.label) })
         return graph.edges.compactMap { edge in
             if edge.from == node.id, let label = labels[edge.to] {
-                return "Connects to \(label)."
+                return "Connects to \(label)\(relationshipLabel(edge.label))."
             }
             if edge.to == node.id, let label = labels[edge.from] {
-                return "Receives from \(label)."
+                return "Receives from \(label)\(relationshipLabel(edge.label))."
             }
             return nil
         }
+    }
+
+    private static func relationshipLabel(_ label: String?) -> String {
+        label.map { " via \($0)" } ?? ""
     }
 }
 

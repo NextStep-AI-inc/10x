@@ -94,15 +94,26 @@ struct SessionMapGraphView: View {
                         dash: route.isBackEdge ? [4, 3] : []))
                 drawArrow(route: route, color: color.opacity(isDimmed ? 0.16 : 0.72), in: &context)
                 if let label = route.edge.label, let frame = route.labelFrame {
-                    context.draw(
-                        Text(label)
-                            .font(TenXTypography.body(size: 9))
-                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex)),
-                        at: CGPoint(x: frame.midX, y: frame.midY))
+                    let displayedLabel = Self.displayedEdgeLabel(label, width: frame.width)
+                    context.drawLayer { labelContext in
+                        labelContext.clip(to: Path(frame))
+                        labelContext.draw(
+                            Text(displayedLabel)
+                                .font(TenXTypography.body(size: 9))
+                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex)),
+                            at: CGPoint(x: frame.midX, y: frame.midY))
+                    }
                 }
             }
         }
         .accessibilityHidden(true)
+    }
+
+    static func displayedEdgeLabel(_ label: String, width: CGFloat) -> String {
+        let maximumCount = max(1, Int((width - 12) / 7))
+        guard label.count > maximumCount else { return label }
+        guard maximumCount > 1 else { return "…" }
+        return String(label.prefix(maximumCount - 1)) + "…"
     }
 
     private func drawArrow(
@@ -160,21 +171,31 @@ struct SessionMapGraphView: View {
     }
 
     private var relationshipList: some View {
-        DisclosureGroup("Relationships") {
+        DisclosureGroup {
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(document.graph.nodes) { node in
-                    Text(SessionMapInteraction.accessibilityLabel(
+                    let label = SessionMapInteraction.accessibilityLabel(
                         for: node,
                         graph: document.graph,
-                        isActive: activity.activeNodeIDs.contains(node.id)))
-                        .font(TenXTypography.body(size: 11))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        isActive: activity.activeNodeIDs.contains(node.id))
+                    Button {
+                        focus.selectedNodeID = node.id
+                    } label: {
+                        Text(label)
+                            .font(TenXTypography.body(size: 11))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(label)
+                    .accessibilityHint("Select this component to show its details.")
                 }
             }
             .padding(.top, 4)
+        } label: {
+            Text("Relationships")
+                .accessibilityLabel("Architecture relationships")
         }
         .font(TenXTypography.body(size: 12, weight: .medium))
-        .accessibilityLabel("Architecture relationships")
     }
 
     private var selectedNode: SessionMapNode? {
