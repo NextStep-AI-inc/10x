@@ -22,6 +22,9 @@ if configuration_file:
 case = os.environ.get("SESSION_MAP_FAKE_CASE", "partial-final")
 if case == "cancelled-startup":
     time.sleep(30)
+if case == "deadline-startup":
+    sys.stdin.readline()
+    sys.exit(0)
 
 emit({"type": "ready", "protocolVersion": 1})
 for line in sys.stdin:

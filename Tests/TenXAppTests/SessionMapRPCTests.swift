@@ -82,6 +82,21 @@ func sessionMapRPCFailureReapsChild(caseName: String) async throws {
     #expect(kill(pid, 0) == -1)
 }
 
+@Test func sessionMapRPCDeadlineDuringStartupReturnsDeadlineAndReapsChild() async throws {
+    let fixture = try makeRPCFixture(
+        caseName: "deadline-startup",
+        deadline: .milliseconds(100))
+    defer { try? FileManager.default.removeItem(at: fixture.root) }
+    do {
+        _ = try await fixture.rpc.complete(prompt: "Build", images: [], model: fixture.model)
+        Issue.record("Expected startup deadline to fail")
+    } catch {
+        #expect(error as? SessionMapRPCError == .deadlineExceeded)
+    }
+    let pid = try await waitForPID(at: fixture.pidFile)
+    #expect(kill(pid, 0) == -1)
+}
+
 @Test func sessionMapRPCReturnsMalformedFinalForBoundedGeneratorRepair() async throws {
     let fixture = try makeRPCFixture(caseName: "malformed-final")
     defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -96,7 +111,7 @@ private struct RPCFixture {
     let model: SessionMapResolvedModel
 }
 
-private func makeRPCFixture(caseName: String) throws -> RPCFixture {
+private func makeRPCFixture(caseName: String, deadline: Duration? = nil) throws -> RPCFixture {
     let root = FileManager.default.temporaryDirectory
         .appending(path: "session-map-rpc-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -114,7 +129,7 @@ private func makeRPCFixture(caseName: String) throws -> RPCFixture {
             executableURL: executable,
             projectURL: root,
             environment: environment,
-            deadline: caseName == "timeout" ? .milliseconds(100) : .seconds(3)),
+            deadline: deadline ?? (caseName == "timeout" ? .milliseconds(100) : .seconds(3))),
         model: SessionMapResolvedModel(
             provider: "fixture", modelID: "writer", effort: "low", acceptsImages: false))
 }

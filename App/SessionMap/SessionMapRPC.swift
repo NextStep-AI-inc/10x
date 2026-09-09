@@ -87,9 +87,7 @@ struct SessionMapRPC: Sendable {
                     return try await output.value
                 } catch {
                     output.cancel()
-                    if error as? SessionMapRPCError == .streamEnded,
-                       await deadlineState.hasExpired
-                    {
+                    if await deadlineState.hasExpired {
                         throw SessionMapRPCError.deadlineExceeded
                     }
                     throw error
