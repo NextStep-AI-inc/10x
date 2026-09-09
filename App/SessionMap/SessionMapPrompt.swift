@@ -22,7 +22,7 @@ enum SessionMapPrompt {
         - Timeline/files: <timeline><event time="TIME" ref="SOURCE_REF_FROM_DIGEST" tone="TONE">TEXT</event></timeline>; <files><file path="PROJECT_RELATIVE_PATH" change="CHANGE">NOTE</file></files>. Event ref/tone and file NOTE are optional; file change values are edited|created|read.
         - Chart/checklist: <chart kind="bar|line"><point fact="FACT_KEY_FROM_DIGEST" label="LABEL" value="EXACT_NUMERIC_FACT_VALUE"/></chart>; <checklist><item done="true|false">TEXT</item></checklist>.
         - Callout/next: <callout title="TITLE" tone="TONE" ref="SOURCE_REF_FROM_DIGEST">TEXT</callout>; tone/ref are optional. <next><step prompt="PROMPT">TEXT</step></next>. A next-step prompt is an action the user can send; its visible label is the element text.
-        - Every ref must exactly match a source ref in current_digest; omit ref when none applies. A stat requires a fact key and exact value from current_digest. A chart point also requires the matching finite numeric fact. Never invent refs, facts, values, paths, node IDs, or evidence. New done/failed status requires a matching evidence ref for that file or unique label.
+        - Every ref must exactly match a source ref in current_digest; omit ref when none applies. A stat requires a fact key and exact value from current_digest. A chart point also requires the matching finite numeric fact. Never invent refs, facts, values, paths, node IDs, or evidence. For a new done/failed node, ref, status, and either file or unique label must exactly match one status_evidence binding.
 
         Syntax example only. Never copy the example placeholders; replace or omit them using current_digest:
         <syntax_example>
@@ -53,6 +53,9 @@ enum SessionMapPrompt {
         <current_digest>
         \(escaped(digest.text, bytes: SessionMapDigestBuilder.maxBytes))
         </current_digest>
+        <status_evidence>
+        \(escapedStatusEvidence(digest.statusEvidence))
+        </status_evidence>
         </session_map_data>
         """
     }
@@ -140,5 +143,33 @@ enum SessionMapPrompt {
             used += unit.utf8.count
         }
         return result
+    }
+
+    private static func escapedStatusEvidence(
+        _ evidence: [SessionMapStatusEvidence]
+    ) -> String {
+        guard !evidence.isEmpty else { return "(none)" }
+        let byteLimit = 4 * 1024
+        let records = evidence.suffix(SessionMapLimits.nodes).map { item in
+            let target = switch item.target {
+            case .file(let path): "target-file=\(path)"
+            case .label(let label): "target-label=\(label)"
+            }
+            return "- ref=\(item.sourceRef) status=\(item.status.rawValue) \(target)"
+        }
+        var selected: [String] = []
+        var used = 0
+        for record in records.reversed() {
+            let encoded = escaped(record, bytes: .max)
+            let separatorBytes = selected.isEmpty ? 0 : 1
+            guard used + separatorBytes + encoded.utf8.count <= byteLimit - 64 else {
+                continue
+            }
+            selected.append(encoded)
+            used += separatorBytes + encoded.utf8.count
+        }
+        let omitted = evidence.count - selected.count
+        let prefix = omitted > 0 ? "[omitted] \(omitted) older bindings\n" : ""
+        return prefix + selected.reversed().joined(separator: "\n")
     }
 }

@@ -665,6 +665,68 @@ func sessionMapCheckerPreservesValidWriterWithinBudget(
     #expect(validation.fatal.isEmpty)
 }
 
+@Test func sessionMapPromptExposesRecentStatusEvidenceBindings() throws {
+    let base = generationInput().digest
+    let older = (0..<SessionMapLimits.nodes).map {
+        SessionMapStatusEvidence(
+            sourceRef: "old-\($0)",
+            status: .done,
+            target: .label("Old task \($0)"))
+    }
+    let current = [
+        SessionMapStatusEvidence(
+            sourceRef: "done-1",
+            status: .done,
+            target: .label("Completed work")),
+        SessionMapStatusEvidence(
+            sourceRef: "failure-1",
+            status: .failed,
+            target: .label("Failed check")),
+    ]
+    let evidence = older + current
+    let digest = SessionMapDigest(
+        text: base.text,
+        hash: base.hash,
+        cacheStateHash: base.cacheStateHash,
+        facts: base.facts,
+        knownRefs: Set(evidence.map(\.sourceRef)),
+        cursor: base.cursor,
+        sourceFingerprintManifest: base.sourceFingerprintManifest,
+        statusEvidence: evidence)
+
+    let prompt = SessionMapPrompt.writer(digest: digest, previousXML: nil)
+    let bindings = try #require(unescapedPromptField(prompt, name: "status_evidence"))
+
+    #expect(!bindings.contains("ref=old-0 "))
+    #expect(!bindings.contains("ref=old-1 "))
+    #expect(bindings.contains("ref=done-1 status=done target-label=Completed work"))
+    #expect(bindings.contains("ref=failure-1 status=failed target-label=Failed check"))
+    let doneRange = try #require(bindings.range(of: "ref=done-1"))
+    let failureRange = try #require(bindings.range(of: "ref=failure-1"))
+    #expect(doneRange.lowerBound < failureRange.lowerBound)
+
+    let xml = """
+        <sessionmap headline="Status evidence" phase="mixed"><map>
+          <node id="done" label="Completed work" kind="component" status="done" ref="done-1"/>
+          <node id="failed" label="Failed check" kind="component" status="failed" ref="failure-1"/>
+          <edge from="done" to="failed" kind="flow"/>
+        </map></sessionmap>
+        """
+    let validation = SessionMapDocumentParser.parse(
+        Data(xml.utf8),
+        context: SessionMapValidationContext(
+            knownRefs: digest.knownRefs,
+            facts: digest.facts,
+            previous: nil,
+            projectURL: nil,
+            statusEvidence: digest.statusEvidence))
+
+    #expect(validation.document?.graph.nodes.map(\.status) == [.done, .failed])
+    #expect(validation.document?.graph.nodes.map(\.ref) == ["done-1", "failure-1"])
+    #expect(!validation.warnings.contains { $0.code == "unsupportedStatus" })
+    #expect(validation.fatal.isEmpty)
+}
+
 @Test func sessionMapGenerationRepairsCanonicalXMLExpansionPastLimit() async throws {
     let apostrophes = String(repeating: "'", count: SessionMapLimits.nodeNote)
     let nodes = (0..<SessionMapLimits.nodes).map {
