@@ -1,0 +1,35 @@
+{
+  "packageHashMatchesManifest": true,
+  "productionUnchangedSinceRelease": true,
+  "missingReportLinks": [],
+  "unchangedDetailFiles": [
+    {
+      "path": "App/Tools/ToolCardView.swift",
+      "unchangedFromAcceptedFeature": true
+    },
+    {
+      "path": "App/Tools/ToolCardScaffold.swift",
+      "unchangedFromAcceptedFeature": true
+    },
+    {
+      "path": "App/Tools/ToolPresentation.swift",
+      "unchangedFromAcceptedFeature": true
+    },
+    {
+      "path": "App/Sessions/SubagentCardView.swift",
+      "unchangedFromAcceptedFeature": true
+    },
+    {
+      "path": "App/Sessions/SubagentPresentation.swift",
+      "unchangedFromAcceptedFeature": true
+    },
+    {
+      "path": "App/Sessions/SubagentEventReducer.swift",
+      "unchangedFromAcceptedFeature": true
+    },
+    {
+      "path": "App/Sessions/TranscriptEventProcessor.swift",
+      "unchangedFromAcceptedFeature": true
+    }
+  ]
+}

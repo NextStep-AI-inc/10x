@@ -1,0 +1,63 @@
+{
+  "sourceCommit": "d6e1508f82c9936115af8fe918530973cdd910ed",
+  "sourceBranch": "codex/active-session-drafts",
+  "configuration": "Release",
+  "architecture": "arm64",
+  "derivedDataPath": "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj",
+  "buildCommand": "xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination generic/platform=macOS -derivedDataPath /Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aeaprfrgcfzmarhgxipsdmykgcoj ARCHS=arm64 CODE_SIGNING_ALLOWED=NO",
+  "buildLog": {
+    "path": "/tmp/10x-drafts-continue-route-release.log",
+    "sha256": "6d312ee5f74108dd3d3f74fea3e3ecc5884b03e8f8ad6cf2ffaf5407974bb24e",
+    "result": "BUILD SUCCEEDED"
+  },
+  "testLogs": {
+    "red": {
+      "path": "/tmp/10x-drafts-continue-route-red.log",
+      "sha256": "e2cf6ed9a9c1221d9820edad1ced13d81e415a6f7979fb1abe3067a7e9c61b04",
+      "result": "expected regression failure"
+    },
+    "green": {
+      "path": "/tmp/10x-drafts-continue-route-green.log",
+      "sha256": "ac2f07040ef66b54d15ef362dca2566d69693820f1a07a797a17f64330c9f2fd",
+      "result": "4 tests passed, 0 failed"
+    }
+  },
+  "application": {
+    "path": "/tmp/10x-drafts-route-build/10x-drafts.app",
+    "bundleIdentifier": "com.nextstep.tenx.draftsqa",
+    "bundleName": "10x Drafts QA",
+    "bundleDisplayName": "10x Drafts QA",
+    "lsEnvironment": {
+      "CFFIXED_USER_HOME": "/tmp/10x-session-recovery-home",
+      "PI_CODING_AGENT_DIR": "/tmp/10x-session-recovery-home/.omp/agent"
+    },
+    "executable": {
+      "path": "/tmp/10x-drafts-route-build/10x-drafts.app/Contents/MacOS/10x",
+      "unsignedBuildSha256": "f55e84a7854b25e2fa4cb681f6a280abf6c4ee58e771975537c49e812fffa321",
+      "unsignedPackagedSha256": "f55e84a7854b25e2fa4cb681f6a280abf6c4ee58e771975537c49e812fffa321",
+      "signedSha256": "d7f00e819269ba8a336277e5016f682533689fbdfcb28c712017d28b59b02361",
+      "signedSizeBytes": 16325920
+    },
+    "infoPlistSha256": "69c1a8c6cccb9f430f72801bd14c422210d8e5f0d7324c024cc8bd53b9f97219",
+    "codeResourcesSha256": "919d9e50d535cca53f1f95207302263871822236065d1a1001588824bd96da20",
+    "bundleContentsManifest": {
+      "path": "/tmp/10x-drafts-route-bundle-contents.sha256",
+      "sha256": "062a52bb978b8af0fa1515ee531defac45826e027127dd0c0ca65e099905c9ce",
+      "entries": 105
+    },
+    "signature": {
+      "type": "adhoc",
+      "identifier": "com.nextstep.tenx.draftsqa",
+      "cdHash": "a18586ca44728cb088fc6b30c375a69816a95dc6",
+      "strictDeepVerification": "passed",
+      "verificationLog": {
+        "path": "/tmp/10x-drafts-route-sign-verify.log",
+        "sha256": "1dd8c0b08a06f8ea5ea775726ffb5a56a0c173572b68a08d25c4a673694696d0"
+      },
+      "detailsLog": {
+        "path": "/tmp/10x-drafts-route-sign-details.log",
+        "sha256": "43c6fde5b0668300449209ed6692cf81d09d01e416fff4050c30b98d2ffb6fab"
+      }
+    }
+  }
+}

@@ -75,6 +75,50 @@ import Testing
     #expect(header.accessibilityLabel == "Run xcodebuild test, Running, 4.2 seconds")
 }
 
+@Test func typedDiffTotalsOwnTheDiffHeaderOutcome() throws {
+    let diff = try #require(UnifiedDiffParser.parse("""
+    --- a/App.swift
+    +++ b/App.swift
+    @@ -1,1 +1,2 @@
+    -old
+    +new
+    +another
+    """))
+    let header = ToolCardHeaderPresentation(
+        content: ToolCardContent(
+            title: "Edit",
+            verb: "Edit",
+            primary: "App.swift",
+            outcome: "+99 −88",
+            reference: nil,
+            body: .diff(diff, fallbackPath: nil)),
+        phase: .complete,
+        duration: "0.3s")
+
+    #expect(header.diffTotals == ToolCardDiffTotals(additions: 2, removals: 1))
+    #expect(header.visibleText == "Edit App.swift · +2 −1")
+    #expect(header.accessibilityLabel == "Edit App.swift, +2 −1, Complete, 0.3 seconds")
+}
+
+@Test func singleFileDiffHeaderRequiresExactNamedPathContext() {
+    #expect(DiffViewLayout.shouldHideFileHeader(
+        fileCount: 1,
+        diffPath: "Sources/one/Layout.swift",
+        topHeaderPath: "Sources/two/Layout.swift") == false)
+    #expect(DiffViewLayout.shouldHideFileHeader(
+        fileCount: 1,
+        diffPath: "Sources/one/Layout.swift",
+        topHeaderPath: "Sources/one/Layout.swift"))
+    #expect(DiffViewLayout.shouldHideFileHeader(
+        fileCount: 1,
+        diffPath: "Sources/one/Layout.swift",
+        topHeaderPath: nil) == false)
+    #expect(DiffViewLayout.shouldHideFileHeader(
+        fileCount: 2,
+        diffPath: "Sources/one/Layout.swift",
+        topHeaderPath: "Sources/one/Layout.swift") == false)
+}
+
 @Test func expandedModeOpensCompletedAttentionTools() {
     let expanded = ToolDisclosureState(mode: .expanded)
     #expect(expanded.isExpanded(for: tool(id: "edit", name: "edit", phase: .complete)))
@@ -84,6 +128,35 @@ import Testing
 
 @Test func sharedToolDisclosureMeetsTheMinimumHitTarget() {
     #expect(ToolCardScaffoldLayout.minimumDisclosureHitHeight >= 32)
+}
+
+@Test func liveToolDurationAdvancesFromAReferenceDateAndClampsNegativeIntervals() {
+    let presentation = ToolPresentation(
+        id: "running",
+        name: "bash",
+        arguments: .object([:]),
+        result: nil,
+        phase: .running,
+        startDate: Date(timeIntervalSince1970: 10),
+        endDate: nil)
+
+    #expect(presentation.durationLabel(at: Date(timeIntervalSince1970: 15)) == "5.0s")
+    #expect(presentation.durationLabel(at: Date(timeIntervalSince1970: 5)) == "0.0s")
+}
+
+@Test func settledToolDurationStaysFixedAtItsEndDate() {
+    for phase in [ToolPhase.complete, .interrupted] {
+        let presentation = ToolPresentation(
+            id: "settled",
+            name: "bash",
+            arguments: .object([:]),
+            result: nil,
+            phase: phase,
+            startDate: Date(timeIntervalSince1970: 10),
+            endDate: Date(timeIntervalSince1970: 13))
+
+        #expect(presentation.durationLabel(at: Date(timeIntervalSince1970: 99)) == "3.0s")
+    }
 }
 
 @MainActor @Test func toolCardEqualityTracksOnlyItsPresentation() {
@@ -118,6 +191,29 @@ import Testing
     for id in ["one", "two"] { state.setExpanded(false, id: id) }
     state.setExpanded(true, id: "one")
     #expect(!state.isGroupExpanded(id: updatedGroupID))
+}
+
+@MainActor
+@Test func sessionsRetainIndependentDisclosureChoicesAcrossViewRecreation() {
+    let manager = SessionProcessManager()
+    let first = SessionController(
+        processManager: manager, previewItems: [], runtimeState: .idle)
+    let second = SessionController(
+        processManager: manager, previewItems: [], runtimeState: .idle)
+    let groupID = "tool-group-one"
+
+    let firstViewState = first.toolDisclosureState
+    firstViewState.setGroupExpanded(false, id: groupID)
+
+    #expect(!first.toolDisclosureState.isGroupExpanded(id: groupID))
+    #expect(second.toolDisclosureState.isGroupExpanded(id: groupID))
+
+    let recreatedViewState = first.toolDisclosureState
+    recreatedViewState.setMode(.standard)
+
+    #expect(recreatedViewState === firstViewState)
+    #expect(!recreatedViewState.isGroupExpanded(id: groupID))
+    #expect(second.toolDisclosureState.isGroupExpanded(id: groupID))
 }
 
 @Test func unrelatedDisclosureChangesDoNotInvalidateObservedRows() {

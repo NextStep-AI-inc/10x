@@ -13,6 +13,7 @@ struct TranscriptToolGroup: Equatable, Sendable {
     var phase: ToolPhase {
         if tools.contains(where: { $0.phase == .failed }) { return .failed }
         if tools.contains(where: { $0.phase == .running }) { return .running }
+        if tools.contains(where: { $0.phase == .interrupted }) { return .interrupted }
         return .complete
     }
 }

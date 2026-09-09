@@ -1,0 +1,47 @@
+{
+  "sourceCommit": "a78f90d",
+  "reviewedReferences": [
+    {
+      "name": "full-shell-dark",
+      "beforeSHA256": "bc0f5eb35fb7e9a247bcb59c725d5af8e6b154bde4ce92ec458e76d03e495cca",
+      "afterSHA256": "d942771420fa9454b1b168df81a323008d3c16fae9da33fc210cdca20b29f1d8",
+      "review": "Visually inspected. Provider rings are below the composer; labels, card bounds and minimum/expanded-rail layouts remain readable."
+    },
+    {
+      "name": "full-shell-usage-dock-wide-window",
+      "beforeSHA256": "73db37d64a43a1d273f6693ed561464c9f42f27c894d48065c77b28a94802c76",
+      "afterSHA256": "de9741fcf1aa46997db417753e9e5f93dc77dd54670401b57fe3719bfab036d8",
+      "review": "Visually inspected. Provider rings are below the composer; labels, card bounds and minimum/expanded-rail layouts remain readable."
+    },
+    {
+      "name": "full-shell-usage-dock-small-window",
+      "beforeSHA256": "728db6f3c0e277d88a8369a5f453c69fa2cc8b0837e37f775a3f98b03b34fa15",
+      "afterSHA256": "b708de446647fdc95fc0be853ce8150e0155d64660ff1c06f878253340677038",
+      "review": "Visually inspected. Provider rings are below the composer; labels, card bounds and minimum/expanded-rail layouts remain readable."
+    },
+    {
+      "name": "full-shell-expanded-rail-overflow",
+      "beforeSHA256": "ab1a01e591bfab533db231bcdc860790154c24b5bbf87e7032ed86b77bd18b5f",
+      "afterSHA256": "1746807bfee4d89bef97fa3894f40bc12141757a80ebf90dcb624bb3e94dc36d",
+      "review": "Visually inspected. Provider rings are below the composer; labels, card bounds and minimum/expanded-rail layouts remain readable."
+    },
+    {
+      "name": "full-shell-account-dock-compact-trigger-window",
+      "beforeSHA256": "8c8bd0e9fff6ad248133d2bbf95e7841d848e24255081871b19d99ce251a150f",
+      "afterSHA256": "f843a4523252924ee618b5db26d2dc3e21224e695b0a8e32f830e3610c72a250",
+      "review": "Visually inspected. Provider rings are below the composer; labels, card bounds and minimum/expanded-rail layouts remain readable."
+    },
+    {
+      "name": "full-shell-account-dock-minimum-window",
+      "beforeSHA256": "4c45a4c4193c3d47b3c36b0c05e275461b75f86887febdc305e670d993605a17",
+      "afterSHA256": "5683f627ce3c272852e40be118796811a67302994a034a4ce9c719bbab13ce0f",
+      "review": "Visually inspected. Provider rings are below the composer; labels, card bounds and minimum/expanded-rail layouts remain readable."
+    },
+    {
+      "name": "full-shell-account-dock-wide-window",
+      "beforeSHA256": "22ceec08537808084d5f2db6e3efa7ed7530ff44668b82774341199966088cf7",
+      "afterSHA256": "a070bd4d847f1e77b7aaa6d5c5e3955cf2667ba43701a19f42bfddb5920eba75",
+      "review": "Visually inspected. Provider rings are below the composer; labels, card bounds and minimum/expanded-rail layouts remain readable."
+    }
+  ]
+}

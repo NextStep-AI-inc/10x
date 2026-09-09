@@ -1,0 +1,32 @@
+{
+  "recordedUTC": "2026-09-08T06:36:03.402207+00:00",
+  "sourceCommit": "bb37c6a",
+  "runtime": "OMP 18.1.10",
+  "nativeRuntimePID": 43303,
+  "observedRuntimeWorkerPID": 43821,
+  "bothAbsentAtUTC": "2026-09-08T06:02:44Z",
+  "noRevivalCheckedAtUTC": "2026-09-08T06:05:16Z",
+  "sessionFile": "2026-09-08T05-57-56-640Z_01a07f98-3520-7000-a72e-6193ed8e0b50.jsonl",
+  "afterRestartSessionSHA256": "b62b1d86e02373118ebd6bc2dfa98dd2fadd9348087bfa77fff875a0c2cc698a",
+  "userEntries": 2,
+  "stagedTextPersisted": false,
+  "backgroundJob2CompletionPersisted": false,
+  "abortedMessages": [
+    {
+      "entryID": "da2621cf",
+      "persistedAt": "2026-09-08T06:02:17.897Z",
+      "completedAt": 1788847337896
+    }
+  ],
+  "backgroundReceipts": [
+    {
+      "entryID": "862fd02f",
+      "resultTimestamp": 1788847321195,
+      "async": {
+        "state": "running",
+        "jobId": "bg_2",
+        "type": "bash"
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "head": "5faec777c933aa97cf4e4a6a1493cda37e8d9ec4",
+  "branch": "qa-integration-b",
+  "changes": [
+    " M integration-alpha.txt",
+    " M integration-beta.txt"
+  ],
+  "files": {
+    "integration-alpha.txt": {
+      "text": "alpha integrated\n",
+      "sha256": "b9f54ead689ec87f891caa16f88b382f5403c639eac84b4a8c1b12432377ef3e"
+    },
+    "integration-beta.txt": {
+      "text": "beta integrated\n",
+      "sha256": "4e6dc968969818bc73f5e72ece9dd43e10d94c2b218518ecf9fb5c4632f1df3d"
+    }
+  }
+}

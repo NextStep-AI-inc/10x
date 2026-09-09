@@ -14,32 +14,49 @@ struct TurnActivityView: View {
     /// True only while the run has produced nothing that is still moving.
     nonisolated static func isAwaitingOutput(
         runtimeState: SessionRuntimeState,
-        lastItem: TranscriptItem?
+        items: [TranscriptItem]
     ) -> Bool {
         guard runtimeState == .streaming else { return false }
-        switch lastItem {
-        case .message(let message):
-            // Only a live assistant message is output in progress. A user
-            // message is the thing being answered, so the run is still silent.
-            return message.role != .assistant || message.isFinal || message.document.blocks.isEmpty
-        case .tool(let presentation):
-            return presentation.phase == .complete || presentation.phase == .failed
-        case .subagent(let presentation):
-            return !presentation.status.isActive
-        case .extensionUI:
-            // The approval card is waiting on the user, not on omp.
-            return false
-        default:
-            return true
+        let finalSection = TranscriptTurnProjection.sections(
+            from: items, runtimeState: runtimeState).last
+        let activeItems = finalSection?.state == nil ? items : finalSection?.items ?? []
+        guard !activeItems.contains(where: requiresUserInput) else { return false }
+        guard !activeItems.contains(where: hasOngoingNonMessageActivity) else { return false }
+
+        // Packed messages can leave assistant text nonfinal before a completed
+        // tool. Only the latest response item says whether that text is moving.
+        for item in activeItems.reversed() {
+            switch item {
+            case .message(let message) where message.role == .assistant:
+                return message.isFinal || message.document.blocks.isEmpty
+            case .tool, .subagent:
+                return true
+            default:
+                continue
+            }
         }
+        return true
+    }
+
+    private nonisolated static func hasOngoingNonMessageActivity(_ item: TranscriptItem) -> Bool {
+        switch item {
+        case .tool(let presentation):
+            return presentation.phase == .running
+        case .subagent(let presentation):
+            return presentation.status.isActive
+        case .message, .threadStart, .annotation, .notice, .extensionUI:
+            return false
+        }
+    }
+
+    private nonisolated static func requiresUserInput(_ item: TranscriptItem) -> Bool {
+        guard case .extensionUI(let state) = item else { return false }
+        return state.requiresUserInput
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            ProgressView()
-                .controlSize(.small)
-            Text("Working…")
-                .font(TenXTypography.body(size: 11, weight: .semibold))
+            WorkingProgressIndicator()
             if let startedAt {
                 Text(startedAt, style: .timer)
                     .font(TenXTypography.mono(size: 10))

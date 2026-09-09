@@ -1,0 +1,22 @@
+{
+  "application": "10x Images QA",
+  "bundleIdentifier": "com.nextstep.tenx.imageqa",
+  "configuration": "Release arm64",
+  "sourceCommit": "6e3bec4d6aa4e000566c7f5a5eb8e05f89f40725",
+  "executableSHA256": "7c0b6d999c839d2588209f23d1f26c7d5ac4e1f863cedef3454eded96e80785f",
+  "runtime": "OMP 18.1.10",
+  "captures": [
+    {
+      "file": "new-image-persists-after-relaunch.png",
+      "sha256": "bda4ce042b1b5fa8e013e76d683be86d021f54c2a1f8df1aa613cd8163ced068"
+    },
+    {
+      "file": "new-image-response-reconciled.png",
+      "sha256": "558651fcf855a79985d48b452e822ee3aa5582d236175d91ae150ec56587f508"
+    },
+    {
+      "file": "saved-image-reopened.png",
+      "sha256": "09c8da3055ec0bcfac8edecba2aa5f04d2d433a770f968d8672fd5e99a1dba49"
+    }
+  ]
+}

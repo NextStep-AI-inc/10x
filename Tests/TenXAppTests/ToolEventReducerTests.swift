@@ -37,6 +37,42 @@ import Testing
     #expect(finalOutput == "/tmp/project")
 }
 
+@Test func interruptedToolsFreezeWhileCompletedToolsAndNewIdentitiesRemainValid() throws {
+    var reducer = ToolEventReducer()
+    let stoppedAt = Date(timeIntervalSince1970: 10)
+
+    for id in ["running-one", "completed", "running-two"] {
+        reducer.consume(type: "tool_execution_start", payload: try payload("""
+            {"type":"tool_execution_start","toolCallId":"\(id)","toolName":"bash","args":{"command":"pwd"}}
+            """))
+    }
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"completed","toolName":"bash","result":{"content":[{"type":"text","text":"done"}]},"isError":false}
+        """))
+
+    let didInterrupt = reducer.interruptRunning(at: stoppedAt)
+    #expect(didInterrupt)
+    #expect(reducer.presentations.map(\.phase) == [.interrupted, .complete, .interrupted])
+    #expect(reducer.presentations.map(\.endDate) == [stoppedAt, reducer.presentations[1].endDate, stoppedAt])
+
+    reducer.consume(type: "tool_execution_update", payload: try payload("""
+        {"type":"tool_execution_update","toolCallId":"running-one","toolName":"bash","partialResult":{"content":[{"type":"text","text":"late update"}]}}
+        """))
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"running-two","toolName":"bash","result":{"content":[{"type":"text","text":"late result"}]},"isError":false}
+        """))
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"new-turn","toolName":"read","args":{"path":"App.swift"}}
+        """))
+
+    #expect(reducer.presentations.map(\.phase) == [
+        .interrupted, .complete, .interrupted, .running,
+    ])
+    #expect(reducer.presentations[0].result == nil)
+    #expect(reducer.presentations[2].result == nil)
+    #expect(ToolPhase.interrupted.label == "Stopped")
+}
+
 @Test func presentationRefreshesNormalizedContentAfterEverySemanticMutation() {
     var presentation = ToolPresentation(
         id: "tool",

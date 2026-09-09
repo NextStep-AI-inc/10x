@@ -31,6 +31,9 @@ struct AppShellView: View {
                             .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
                                 model.openSettings(focus: .preferredIDE)
                             })
+                            .environment(\.openReportedSession, OpenReportedSessionAction { path in
+                                await model.openReportedChildSession(path: path)
+                            })
                         FloatingRailView(
                             model: model,
                             expansion: railExpansion,

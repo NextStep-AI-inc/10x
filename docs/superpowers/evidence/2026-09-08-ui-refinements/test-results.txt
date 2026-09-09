@@ -1,0 +1,20 @@
+Final app suite: 1605 executed, 1602 passed, 3 failed (4 issues).
+
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project 10x.xcodeproj -scheme 10x -destination platform=macOS,arch=arm64 -derivedDataPath /Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aotxfgauppgfpjaamwnkyebclbnl ARCHS=arm64 CODE_SIGNING_ALLOWED=NO
+􀢄 Test activityDisclosureSnapshot() failed after 3.235 seconds with 1 issue.
+􀢄 Test activityDisclosureSnapshotDark() failed after 3.338 seconds with 1 issue.
+􁁛 Test liveEchoBeforePromptAcknowledgmentKeepsItsRequestedMode() passed after 7.710 seconds.
+􁁛 Test conflictingModesForIdenticalOverlappingMessagesStayUnannotated() passed after 8.145 seconds.
+􁁛 Test liveModeMovesToPersistedIDAndReopensWithoutClassifyingOlderHistory() passed after 8.361 seconds.
+􁁛 Test staleHistoryReconciliationCannotPersistASubmissionMode() passed after 8.429 seconds.
+􁁛 Test repeatedQueuedMessagesKeepExactlyOneVisibleEchoPerSubmission() passed after 8.636 seconds.
+􀢄 Test staleReconciliationFailureCannotOverwriteNewerBoundary() recorded an issue at SessionControllerTests.swift:1207:5: Expectation failed: await loader.waitForRequestCount(3)
+􀢄 Test staleReconciliationFailureCannotOverwriteNewerBoundary() failed after 67.212 seconds with 2 issues.
+􀢄 Suite SessionControllerTests failed after 67.949 seconds with 2 issues.
+􀢄 Test run with 1605 tests in 43 suites failed after 67.956 seconds with 4 issues.
+** TEST FAILED **
+
+Release: ** BUILD SUCCEEDED **
+Signature: codesign --verify --deep --strict passed
+Project generation: ruby scripts/generate_xcodeproj.rb; byte-identical generated project

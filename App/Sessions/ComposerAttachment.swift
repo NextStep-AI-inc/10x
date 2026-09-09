@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// Encoding happens when the image is added rather than when the prompt is
 /// sent, so the cost lands while the user is still typing and the strip can
 /// show the real size it will send.
-struct ComposerAttachment: Identifiable, Equatable, Sendable {
+struct ComposerAttachment: Codable, Identifiable, Equatable, Sendable {
     let id: UUID
     let name: String
     let data: Data

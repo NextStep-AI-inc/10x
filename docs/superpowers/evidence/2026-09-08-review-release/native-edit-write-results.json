@@ -1,0 +1,109 @@
+[
+  {
+    "role": "toolResult",
+    "toolCallId": "call-1aca3b46-11ff-41e2-886e-6bd3ae66fe7e-4\nfc_ozV4Bnh-3LYxF7-a37fc7fcb92cf322_0",
+    "toolName": "edit",
+    "content": [
+      {
+        "type": "text",
+        "text": "[editable-alpha.txt#8B3C]\n1:alpha heading\n2:alpha first"
+      }
+    ],
+    "details": {
+      "diff": " 1|alpha heading\n-2|alpha original\n+2|alpha first",
+      "firstChangedLine": 2,
+      "op": "update",
+      "path": "/tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt",
+      "oldText": "alpha heading\nalpha original\n",
+      "newText": "alpha heading\nalpha first\n"
+    },
+    "isError": false,
+    "timestamp": 1788889678862
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "call-3b32efd9-3bab-40c8-8bbf-cc3692b01ee4-5\nfc_ozV4CgV-3LYxF7-a37fc80f3f5af322_0",
+    "toolName": "edit",
+    "content": [
+      {
+        "type": "text",
+        "text": "[editable-alpha.txt#FABF]\n1:alpha heading\n2:alpha final\n\n[editable-beta.txt#B094]\n1:beta heading\n2:beta final"
+      }
+    ],
+    "details": {
+      "diff": " 1|alpha heading\n-2|alpha first\n+2|alpha final\n 1|beta heading\n-2|beta original\n+2|beta final",
+      "firstChangedLine": 2,
+      "perFileResults": [
+        {
+          "path": "/tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt",
+          "diff": " 1|alpha heading\n-2|alpha first\n+2|alpha final",
+          "firstChangedLine": 2,
+          "op": "update",
+          "oldText": "alpha heading\nalpha first\n",
+          "newText": "alpha heading\nalpha final\n"
+        },
+        {
+          "path": "/tmp/10x-session-recovery-home/projects/review-native/editable-beta.txt",
+          "diff": " 1|beta heading\n-2|beta original\n+2|beta final",
+          "firstChangedLine": 2,
+          "op": "update",
+          "oldText": "beta heading\nbeta original\n",
+          "newText": "beta heading\nbeta final\n"
+        }
+      ]
+    },
+    "isError": false,
+    "timestamp": 1788889681656
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "call-a9706b4f-d98b-4933-a706-972d509d02da-6\nfc_ozV4DVL-3LYxF7-a37fc8205f6df322_0",
+    "toolName": "write",
+    "content": [
+      {
+        "type": "text",
+        "text": "[generated-note.txt#9051]\nSuccessfully wrote 12 bytes to generated-note.txt"
+      }
+    ],
+    "details": {
+      "resolvedPath": "/tmp/10x-session-recovery-home/projects/review-native/generated-note.txt"
+    },
+    "isError": false,
+    "timestamp": 1788889683486
+  },
+  {
+    "role": "toolResult",
+    "toolCallId": "call-9e780196-2a42-4df0-8e88-93a4a9defb2b-13\nfc_ozVQb1a-3LYxF7-a3802929bf6181d0_0",
+    "toolName": "edit",
+    "content": [
+      {
+        "type": "text",
+        "text": "[editable-alpha.txt#E267]\n1:alpha heading\n2:alpha live\n\n[editable-beta.txt#28A7]\n1:beta heading\n2:beta live"
+      }
+    ],
+    "details": {
+      "diff": " 1|alpha heading\n-2|alpha final\n+2|alpha live\n 1|beta heading\n-2|beta final\n+2|beta live",
+      "firstChangedLine": 2,
+      "perFileResults": [
+        {
+          "path": "/tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt",
+          "diff": " 1|alpha heading\n-2|alpha final\n+2|alpha live",
+          "firstChangedLine": 2,
+          "op": "update",
+          "oldText": "alpha heading\nalpha final\n",
+          "newText": "alpha heading\nalpha live\n"
+        },
+        {
+          "path": "/tmp/10x-session-recovery-home/projects/review-native/editable-beta.txt",
+          "diff": " 1|beta heading\n-2|beta final\n+2|beta live",
+          "firstChangedLine": 2,
+          "op": "update",
+          "oldText": "beta heading\nbeta final\n",
+          "newText": "beta heading\nbeta live\n"
+        }
+      ]
+    },
+    "isError": false,
+    "timestamp": 1788893657646
+  }
+]

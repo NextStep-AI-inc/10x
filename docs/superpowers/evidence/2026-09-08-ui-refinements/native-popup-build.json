@@ -1,0 +1,19 @@
+{
+  "sourceCommit": "3807b21e65bec3d928d5209177bf0524b50a05ec",
+  "branch": "codex/active-session-ui-refinements",
+  "configuration": "Release",
+  "architecture": "arm64",
+  "bundle": "/tmp/10x-ui-refinements-build/10x-ui-refinements.app",
+  "bundleIdentifier": "com.nextstep.tenx.uirefinementsqa",
+  "executable": "/tmp/10x-ui-refinements-build/10x-ui-refinements.app/Contents/MacOS/10x",
+  "executableSHA256": "df72854a315956f7fcf26c1745c6aa06588049136a08e349587f8e664df9112d",
+  "profileRoot": "/tmp/10x-session-recovery-home",
+  "signatureVerification": "codesign --verify --deep --strict passed",
+  "buildLog": "/tmp/10x-ui-refinements-popup-release.log",
+  "purpose": "Native popup/activity/warning/diff acceptance before message-mode work",
+  "launchCommand": [
+    "open",
+    "-n",
+    "/tmp/10x-ui-refinements-build/10x-ui-refinements.app"
+  ]
+}

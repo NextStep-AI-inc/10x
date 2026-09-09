@@ -1,17 +1,44 @@
 import AppKit
 import SwiftUI
 
+enum DiffViewLayout {
+    static func shouldHideFileHeader(
+        fileCount: Int,
+        diffPath: String?,
+        topHeaderPath: String?
+    ) -> Bool {
+        guard fileCount == 1,
+              let diffPath = normalizedPath(diffPath),
+              let topHeaderPath = normalizedPath(topHeaderPath)
+        else { return false }
+        return diffPath == topHeaderPath
+    }
+
+    private static func normalizedPath(_ path: String?) -> String? {
+        guard let path, !path.isEmpty else { return nil }
+        let standardized = NSString(string: path).standardizingPath
+        guard !standardized.isEmpty,
+              path.hasPrefix("/") == standardized.hasPrefix("/")
+        else { return nil }
+        return standardized
+    }
+}
+
 struct DiffView: View {
     let diff: UnifiedDiff
-    let fallbackPath: String?
+    private let topHeaderPath: String?
     private let presentation: DiffRenderPresentation
     @State private var isWrapped = true
     @State private var renderState = DiffRenderState()
     @StateObject private var pageLoader: DiffPageLoader
 
-    init(diff: UnifiedDiff, fallbackPath: String?) {
+    init(
+        diff: UnifiedDiff,
+        fallbackPath _: String?,
+        topHeaderPath: String? = nil
+    ) {
         self.diff = diff
-        self.fallbackPath = fallbackPath
+        self.topHeaderPath = topHeaderPath
         let presentation = DiffRenderPresentation(diff: diff)
         self.presentation = presentation
         _pageLoader = StateObject(wrappedValue: DiffPageLoader(
@@ -51,7 +78,6 @@ struct DiffView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            toolbar
             fileViews
             ProgressiveRevealButton(
                 reveal: Binding(
@@ -73,13 +99,61 @@ struct DiffView: View {
         }
     }
 
-    private var toolbar: some View {
-        HStack(spacing: 10) {
-            Text("+\(additions)")
-                .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-            Text("−\(removals)")
-                .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
-            Spacer()
+    private var fileViews: some View {
+        ForEach(fileSections) { file in
+            if file.header.fileID > 0 { Divider() }
+            fileView(
+                file,
+                showsHeader: showsFileHeader,
+                showsActions: file.header.fileID == fileSections.first?.header.fileID)
+        }
+    }
+
+    private func fileView(
+        _ file: DiffRenderFileSection,
+        showsHeader: Bool,
+        showsActions: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if showsHeader {
+                fileHeader(file, showsActions: showsActions)
+            } else if showsActions {
+                trailingActionRow
+            }
+            ForEach(file.hunks) { hunk in
+                hunkView(hunk)
+            }
+        }
+    }
+
+    private func fileHeader(
+        _ file: DiffRenderFileSection,
+        showsActions: Bool
+    ) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                fileReference(file)
+                Spacer(minLength: 8)
+                if showsActions { actionRow }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                fileReference(file)
+                if showsActions { trailingActionRow }
+            }
+        }
+    }
+
+    private func fileReference(_ file: DiffRenderFileSection) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            TranscriptReferenceView(reference: file.header.reference)
+            Text("+\(file.header.additions) −\(file.header.removals)")
+                .font(TenXTypography.mono(size: 10))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+        }
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: 2) {
             Button(isWrapped ? "Scroll" : "Wrap") { isWrapped.toggle() }
                 .buttonStyle(GhostActionStyle())
                 .accessibilityLabel(isWrapped ? "Use horizontal scrolling for diff" : "Wrap diff lines")
@@ -89,37 +163,10 @@ struct DiffView: View {
         .font(TenXTypography.mono(size: 10, weight: .semibold))
     }
 
-    private var fileViews: some View {
-        ForEach(fileSections) { file in
-            if file.header.fileID > 0 { Divider() }
-            fileView(file)
-        }
-    }
-
-    private func fileView(_ file: DiffRenderFileSection) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                ProgressiveTextView(
-                    text: file.header.path,
-                    accessibilityNoun: "diff path characters"
-                ) { text in
-                    Text(text)
-                        .font(TenXTypography.mono(size: 10, weight: .semibold))
-                        .lineLimit(1)
-                }
-                Text("+\(file.header.additions) −\(file.header.removals)")
-                    .font(TenXTypography.mono(size: 10))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                Spacer()
-                if let path = resolvedPath(for: file.header.fileID),
-                   FileManager.default.fileExists(atPath: path) {
-                    Button("Open file") { NSWorkspace.shared.open(URL(filePath: path)) }
-                        .buttonStyle(GhostActionStyle())
-                }
-            }
-            ForEach(file.hunks) { hunk in
-                hunkView(hunk)
-            }
+    private var trailingActionRow: some View {
+        HStack {
+            Spacer(minLength: 0)
+            actionRow
         }
     }
 
@@ -180,8 +227,12 @@ struct DiffView: View {
             accessibilityPrefix: label(for: renderLine.line.kind))
     }
 
-    private var additions: Int { diff.files.reduce(0) { $0 + $1.additions } }
-    private var removals: Int { diff.files.reduce(0) { $0 + $1.removals } }
+    private var showsFileHeader: Bool {
+        !DiffViewLayout.shouldHideFileHeader(
+            fileCount: diff.files.count,
+            diffPath: diff.files.first?.path,
+            topHeaderPath: topHeaderPath)
+    }
 
     private func marker(for kind: UnifiedDiffLine.Kind) -> String {
         switch kind {
@@ -218,16 +269,15 @@ struct DiffView: View {
         }
     }
 
-    private func resolvedPath(for fileIndex: Int) -> String? {
-        let file = diff.files[fileIndex]
-        if file.path.hasPrefix("/") { return file.path }
-        guard diff.files.count == 1 else { return nil }
-        return fallbackPath
-    }
-
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+extension DiffRenderFileHeader {
+    var reference: TranscriptReference {
+        .file(path: path, line: nil)
     }
 }
 

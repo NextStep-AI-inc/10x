@@ -6,6 +6,9 @@ import UniformTypeIdentifiers
 enum ComposerFlyout: Equatable {
     case project
     case model
+    case context
+    case sendAction
+    case warning
     case commands
 }
 
@@ -196,8 +199,18 @@ enum ComposerCommandDismissalRouting {
     }
 }
 
+enum ComposerInputMethodRouting {
+    nonisolated static func shouldDeferToInputMethod(isComposing: Bool) -> Bool {
+        isComposing
+    }
+}
+
 enum ComposerReturnRouting {
-    nonisolated static func shortcut(for modifiers: EventModifiers) -> ComposerReturnShortcut? {
+    nonisolated static func shortcut(
+        for modifiers: EventModifiers,
+        isComposing: Bool = false
+    ) -> ComposerReturnShortcut? {
+        guard !isComposing else { return nil }
         let relevant = modifiers.intersection([.shift, .option, .command, .control])
         return switch relevant {
         case []: .enter
@@ -219,6 +232,36 @@ enum ComposerReturnRouting {
         case .newline:
             nil
         }
+    }
+}
+
+enum ComposerFeedback {
+    nonisolated static func messages(attachment: String?, model: String?) -> [String] {
+        let candidates: [String?] = [attachment, model]
+        var messages: [String] = []
+        for candidate in candidates {
+            guard let candidate, !candidate.isEmpty, !messages.contains(candidate) else { continue }
+            messages.append(candidate)
+        }
+        return messages
+    }
+}
+
+struct ComposerFeedbackView: View {
+    let messages: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(messages, id: \.self) { message in
+                Text(message)
+                    .font(TenXTypography.body(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.bottom, 10)
     }
 }
 
@@ -246,6 +289,7 @@ struct ComposerView: View {
     @Environment(\.composerProviderDockWidth) private var providerDockWidth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isEditorFocused: Bool
+    @State private var editorBridge = ComposerTextEditorBridge()
     @State private var attachmentMessage: String?
     @State private var commandQuery = ""
     @State private var suppressedCommandDraft: String?
@@ -302,19 +346,23 @@ struct ComposerView: View {
         case .newSession(let projectURL, _, _, _):
             return projectURL != nil
         case .active(let controller):
-            return controller.isComposerAvailable
+            return controller.canSendMessage
         }
     }
 
     var body: some View {
-        composerCard
+        VStack(alignment: .trailing, spacing: 8) {
+            composerCard
+            providerDockSlot
+        }
             .animation(shelfAnimation, value: flyout)
             .onExitCommand {
                 switch ComposerCommandDismissalRouting.action(for: flyout) {
                 case .dismissCommands:
                     dismissCommands()
                 case .hideFlyoutOnly:
-                    flyout = nil
+                    setFlyout(nil)
+                    restoreEditorFocus()
                 }
             }
             // The composer is the only thing to type into on either screen, so
@@ -334,6 +382,12 @@ struct ComposerView: View {
             }
             .onChange(of: draft) { _, draft in
                 observeDraftForCommands(draft)
+            }
+            .onChange(of: feedbackMessages) { _, messages in
+                if messages.isEmpty, flyout == .warning { setFlyout(nil) }
+            }
+            .onChange(of: streamingController != nil) { _, isStreaming in
+                if !isStreaming, flyout == .sendAction { setFlyout(nil) }
             }
     }
 
@@ -371,15 +425,6 @@ struct ComposerView: View {
             .padding(.horizontal, 10)
             .padding(.bottom, 10)
 
-            if let errorMessage = attachmentMessage ?? controls?.errorMessage {
-                Text(errorMessage)
-                    .font(TenXTypography.body(size: 10))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14)
-                    .padding(.bottom, 10)
-            }
         }
         // Fill and border live in one background layer: an overlay border would
         // paint over card content, and the model flyout is card content.
@@ -390,9 +435,6 @@ struct ComposerView: View {
                     Rectangle()
                         .stroke(borderColor, lineWidth: 1)
                 }
-        }
-        .overlay(alignment: .bottomLeading) {
-            projectShelfOverlay
         }
         .overlay(alignment: .topLeading) {
             commandBrowserOverlay
@@ -412,36 +454,6 @@ struct ComposerView: View {
         // an ordinary paste still reaches the editor.
         .onPasteCommand(of: [.png, .jpeg, .tiff]) { providers in
             add(providers: providers)
-        }
-    }
-
-    @ViewBuilder
-    private var projectShelfOverlay: some View {
-        if flyout == .project,
-           case .newSession(
-            let projectURL,
-            let projectURLs,
-            let onChooseProject,
-            let onAddExistingFolder
-           ) = presentation {
-            ChooseProjectShelf(
-                projectURLs: projectURLs,
-                selectedProjectURL: projectURL,
-                triggerTitle: projectURL?.lastPathComponent ?? "Choose project",
-                onChoose: {
-                    onChooseProject($0)
-                    flyout = nil
-                },
-                onAddExistingFolder: {
-                    flyout = nil
-                    onAddExistingFolder()
-                },
-                onToggle: {
-                    flyout = nil
-                })
-            .padding(.leading, 10)
-            .padding(.bottom, 10)
-            .transition(shelfTransition)
         }
     }
 
@@ -510,7 +522,7 @@ struct ComposerView: View {
                     .onKeyPress(keys: ComposerCommandKeyRouting.keys, phases: .down, action: handleEditorKey)
                     .accessibilityLabel("Session prompt")
                     .accessibilityHint(composerModeLabel)
-                    .background(ComposerTextViewConfigurator())
+                    .background(ComposerTextViewConfigurator(bridge: editorBridge))
             }
             .frame(minHeight: Self.minEditorHeight, maxHeight: Self.maxEditorHeight)
             // Without this the clamp is a range the parent can fill, and any
@@ -540,8 +552,8 @@ struct ComposerView: View {
         }
         .buttonStyle(.plain)
         .disabled(!isAvailable)
-        .help("Attach an image. Images can also be dropped or pasted here.")
-        .accessibilityLabel("Attach an image")
+        .help("Attach images or insert file paths. Images can also be dropped or pasted.")
+        .accessibilityLabel("Attach images or insert file paths")
     }
 
     private func chooseAttachments() {
@@ -549,12 +561,14 @@ struct ComposerView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.image]
-        panel.prompt = "Attach"
+        panel.allowedContentTypes = [.item]
+        panel.prompt = "Choose"
 
-        guard panel.runModal() == .OK else { return }
-        add(urls: panel.urls)
-        isEditorFocused = true
+        panel.begin { response in
+            guard response == .OK else { return }
+            add(urls: panel.urls)
+            isEditorFocused = true
+        }
     }
 
     private func remove(_ id: ComposerAttachment.ID) {
@@ -583,6 +597,12 @@ struct ComposerView: View {
     }
 
     private func handleEditorKey(_ press: KeyPress) -> KeyPress.Result {
+        if ComposerInputMethodRouting.shouldDeferToInputMethod(
+            isComposing: editorBridge.hasMarkedText
+        ) {
+            return .ignored
+        }
+
         if flyout == .commands, let commands, commands.isPresented {
             if let commandAction = ComposerCommandKeyRouting.route(
                 press.key,
@@ -598,7 +618,10 @@ struct ComposerView: View {
         }
 
         guard press.key == .return else { return .ignored }
-        guard let shortcut = ComposerReturnRouting.shortcut(for: press.modifiers) else {
+        guard let shortcut = ComposerReturnRouting.shortcut(
+            for: press.modifiers,
+            isComposing: editorBridge.hasMarkedText
+        ) else {
             return .ignored
         }
         let action = interactionPreferences.action(for: shortcut)
@@ -750,7 +773,12 @@ struct ComposerView: View {
             }
             attachments.append(attachment)
         }
-        if !paths.isEmpty { appendToDraft(paths.joined(separator: "\n")) }
+        if !paths.isEmpty {
+            if !editorBridge.insertFilePaths(paths) {
+                appendToDraft(paths.joined(separator: "\n"))
+            }
+            isEditorFocused = isAvailable
+        }
         report(skipped: skipped)
     }
 
@@ -799,14 +827,13 @@ struct ComposerView: View {
     @ViewBuilder
     private var actionControls: some View {
         if let controller = streamingController {
-            providerDockSlot
             behaviorMenu(controller)
             sendButton
             stopButton(controller)
         } else {
-            providerDockSlot
             sendButton
-            if case .active(let controller) = presentation, controller.runtimeState == .loading {
+            if case .active(let controller) = presentation,
+               controller.runtimeState == .loading || controller.isContextCompacting {
                 stopButton(controller)
             }
         }
@@ -858,22 +885,18 @@ struct ComposerView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Stop the response")
-        .accessibilityLabel("Stop response")
+        .help(controller.isContextCompacting ? "Stop context compaction" : "Stop the response")
+        .accessibilityLabel(controller.isContextCompacting ? "Stop context compaction" : "Stop response")
     }
 
     private func behaviorMenu(_ controller: SessionController) -> some View {
-        Menu {
-            Button("Steer") { controller.selectStreamingBehavior(.steer) }
-            Button("Follow up") { controller.selectStreamingBehavior(.followUp) }
-        } label: {
-            Text(controller.streamingBehavior == .followUp ? "Follow up" : "Steer")
-                .font(TenXTypography.body(size: 11, weight: .medium))
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .accessibilityLabel("Composer send action")
-        .accessibilityValue(controller.streamingBehavior == .followUp ? "Follow up" : "Steer")
+        SendActionControl(
+            selection: controller.streamingBehavior ?? .steer,
+            onSelect: controller.selectStreamingBehavior,
+            isPresented: Binding(
+                get: { flyout == .sendAction },
+                set: { setFlyout($0 ? .sendAction : nil) }),
+            onRestoreFocus: restoreEditorFocus)
     }
 
     private var streamingController: SessionController? {
@@ -901,12 +924,20 @@ struct ComposerView: View {
     @ViewBuilder
     private var footerControls: some View {
         switch presentation {
-        case .newSession(let projectURL, _, _, _):
+        case .newSession(
+            let projectURL,
+            let projectURLs,
+            let onChooseProject,
+            let onAddExistingFolder):
             ChooseProjectControl(
                 projectURL: projectURL,
+                projectURLs: projectURLs,
+                onChoose: onChooseProject,
+                onAddExistingFolder: onAddExistingFolder,
                 isPresented: Binding(
                     get: { flyout == .project },
-                    set: { setFlyout($0 ? .project : nil) }))
+                    set: { setFlyout($0 ? .project : nil) }),
+                onRestoreFocus: restoreEditorFocus)
 
             if let controls {
                 ComposerSessionControlsView(
@@ -914,7 +945,8 @@ struct ComposerView: View {
                     mode: controlsMode,
                     isPresented: Binding(
                         get: { flyout == .model },
-                        set: { setFlyout($0 ? .model : nil) }))
+                        set: { setFlyout($0 ? .model : nil) }),
+                    onRestoreFocus: restoreEditorFocus)
             }
 
         case .active(let controller):
@@ -924,7 +956,9 @@ struct ComposerView: View {
                     mode: controlsMode,
                     isPresented: Binding(
                         get: { flyout == .model },
-                        set: { setFlyout($0 ? .model : nil) }))
+                        set: { setFlyout($0 ? .model : nil) }),
+                    onRestoreFocus: restoreEditorFocus)
+                    .disabled(controller.isContextCompacting)
             } else {
                 Text(controller.modelName)
                     .font(TenXTypography.body(size: 10, weight: .medium))
@@ -936,21 +970,47 @@ struct ComposerView: View {
                 breakdown: controller.contextBreakdown,
                 isLoading: controller.isContextLoading,
                 errorMessage: controller.contextErrorMessage,
-                onRefresh: { await controller.refreshContextDetails() })
+                canCompact: controller.canCompactContext,
+                compactionDisabledReason: controller.contextCompactionDisabledReason,
+                isCompacting: controller.isContextCompacting,
+                compactionErrorMessage: controller.contextCompactionErrorMessage,
+                onRefresh: { await controller.refreshContextDetails() },
+                onCompact: { await controller.compactContext() },
+                isPresented: Binding(
+                    get: { flyout == .context },
+                    set: { setFlyout($0 ? .context : nil) }),
+                onRestoreFocus: restoreEditorFocus)
+            SessionActivityControl(
+                state: controller.activityState,
+                onActivate: controller.focusPendingRequest,
+                variant: .composer)
             if controller.queuedMessageCount > 0 {
                 Text("\(controller.queuedMessageCount) queued")
                     .font(TenXTypography.body(size: 10, weight: .medium))
                     .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
             }
         }
+
+        ComposerWarningControl(
+            messages: feedbackMessages,
+            isPresented: Binding(
+                get: { flyout == .warning },
+                set: { setFlyout($0 ? .warning : nil) }),
+            onRestoreFocus: restoreEditorFocus)
     }
 
     private func setFlyout(_ next: ComposerFlyout?) {
-        if next == .project || next == .model {
+        if next != .commands {
             _ = commands?.dismiss()
             commandQuery = ""
         }
         flyout = next
+    }
+
+    private var feedbackMessages: [String] {
+        ComposerFeedback.messages(
+            attachment: attachmentMessage,
+            model: controls?.errorMessage)
     }
 
     private var isAvailable: Bool {

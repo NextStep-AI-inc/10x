@@ -52,6 +52,23 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
         document.source
     }
 
+    func settledAfterStop(at date: Date) -> Self {
+        guard role == .assistant, !isFinal, var raw = raw.objectValue else { return self }
+        raw["stopReason"] = .string("aborted")
+        raw["completedAt"] = .double(date.timeIntervalSince1970 * 1_000)
+        return Self(
+            id: id,
+            role: role,
+            raw: .object(raw),
+            timestamp: timestamp,
+            attribution: attribution,
+            isFinal: true,
+            showsResponseMetadata: showsResponseMetadata,
+            stopReason: "aborted",
+            document: document,
+            renderLineageKey: renderLineageKey)
+    }
+
     init(
         id: String,
         raw: JSONValue,
@@ -106,6 +123,30 @@ struct TranscriptMessage: Identifiable, Equatable, Sendable {
             : normalizedDocument
         document = previousDocument.map(candidateDocument.assigningRenderLineage(after:))
             ?? candidateDocument
+    }
+
+    private init(
+        id: String,
+        role: TranscriptMessageRole,
+        raw: JSONValue,
+        timestamp: Date?,
+        attribution: TranscriptResponseAttribution,
+        isFinal: Bool,
+        showsResponseMetadata: Bool,
+        stopReason: String?,
+        document: ContentDocument,
+        renderLineageKey: TranscriptRenderLineageKey
+    ) {
+        self.id = id
+        self.role = role
+        self.raw = raw
+        self.timestamp = timestamp
+        self.attribution = attribution
+        self.isFinal = isFinal
+        self.showsResponseMetadata = showsResponseMetadata
+        self.stopReason = stopReason
+        self.document = document
+        self.renderLineageKey = renderLineageKey
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {

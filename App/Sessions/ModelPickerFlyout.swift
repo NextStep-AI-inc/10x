@@ -97,6 +97,9 @@ struct ModelPickerFlyout: View {
     var favoriteModelIDs: Set<String> = []
     var onToggleFavorite: (ComposerModelInfo) -> Void = { _ in }
     var panelWidth: CGFloat = ModelPickerMetrics.panelWidth
+    var placement: FlyoutPlacement? = nil
+    var triggerWidth: CGFloat? = nil
+    var onDismiss: (() -> Void)? = nil
 
     @State private var measuredTriggerWidth: CGFloat = 0
 
@@ -129,28 +132,73 @@ struct ModelPickerFlyout: View {
             showsFastMode: isFastModeVisible)
     }
 
-    private var topHeight: CGFloat {
+    private var desiredTopHeight: CGFloat {
         ModelPickerMetrics.searchHeight
             + ModelPickerMetrics.separatorHeight
             + listHeight
             + settingsHeight
     }
 
+    private var topHeight: CGFloat {
+        placement?.panelFrame.height ?? desiredTopHeight
+    }
+
     private var bottomWidth: CGFloat {
+        if let triggerWidth {
+            return ModelPickerMetrics.bottomWidth(
+                triggerWidth: triggerWidth,
+                panelWidth: panelWidth)
+        }
         // ~intrinsic width of the chip until the real measure lands.
         let trigger = measuredTriggerWidth > 0 ? measuredTriggerWidth : 120
         return ModelPickerMetrics.bottomWidth(triggerWidth: trigger, panelWidth: panelWidth)
     }
 
-    private var silhouette: TwoRectShelfShape {
-        TwoRectShelfShape(
-            topWidth: panelWidth,
-            topHeight: topHeight,
-            bottomWidth: bottomWidth,
-            bottomHeight: ModelPickerMetrics.triggerHeight)
+    var body: some View {
+        ConnectedFlyoutShelf(
+            panelSize: CGSize(width: panelWidth, height: topHeight),
+            triggerSize: CGSize(
+                width: bottomWidth,
+                height: ModelPickerMetrics.triggerHeight),
+            triggerOffsetX: placement?.triggerOffsetX ?? 0,
+            direction: placement?.direction ?? .above,
+            fill: TenXPalette.color(TenXPalette.canvasHex),
+            onDismiss: onDismiss ?? onToggle,
+            panelContent: { panelPiece },
+            triggerContent: {
+                triggerPiece
+                    .fixedSize(horizontal: true, vertical: false)
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: ModelTriggerWidthKey.self,
+                                value: geometry.size.width)
+                        }
+                    }
+            })
+        .onPreferenceChange(ModelTriggerWidthKey.self) { measuredTriggerWidth = $0 }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Model")
+        .accessibilityValue(triggerTitle)
     }
 
-    var body: some View {
+    @ViewBuilder
+    private var panelPiece: some View {
+        if placement?.isHeightConstrained == true {
+            ScrollView {
+                panelContents
+                    .frame(
+                        width: panelWidth,
+                        height: desiredTopHeight,
+                        alignment: .topLeading)
+            }
+            .frame(width: panelWidth, height: topHeight)
+        } else {
+            panelContents
+        }
+    }
+
+    private var panelContents: some View {
         VStack(alignment: .leading, spacing: 0) {
             ModelPickerContent(
                 sections: sections,
@@ -165,30 +213,7 @@ struct ModelPickerFlyout: View {
                 onToggleFavorite: onToggleFavorite,
                 panelWidth: panelWidth)
             settingsRegion
-            triggerPiece
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(height: ModelPickerMetrics.triggerHeight)
-                .background {
-                    GeometryReader { geometry in
-                        Color.clear.preference(
-                            key: ModelTriggerWidthKey.self,
-                            value: geometry.size.width)
-                    }
-                }
         }
-        .onPreferenceChange(ModelTriggerWidthKey.self) { measuredTriggerWidth = $0 }
-        .frame(
-            width: panelWidth,
-            height: topHeight + ModelPickerMetrics.triggerHeight,
-            alignment: .topLeading)
-        .background { silhouette.fill(TenXPalette.color(TenXPalette.canvasHex)) }
-        .overlay {
-            silhouette.stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
-        }
-        .dismissesOnOutsideInteraction(silhouette: silhouette, onDismiss: onToggle)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Model")
-        .accessibilityValue(triggerTitle)
     }
 
     private var separator: some View {

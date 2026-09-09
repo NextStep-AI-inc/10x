@@ -22,10 +22,27 @@ struct ActiveSessionView: View {
                     exitCode: code,
                     onRestart: { Task { await controller.restart() } },
                     onOpenLog: controller.openLog,
-                    onDismiss: controller.dismissRecovery)
+                    onDismiss: controller.dismissRecovery,
+                    failureDescription: controller.contextCompactionRecoveryMessage,
+                    canRestart: controller.sessionPath != nil && !controller.isStopping,
+                    isIntentionalStop: controller.isIntentionallyStopped,
+                    isStopping: controller.isStopping,
+                    titleOverride: controller.contextCompactionRecoveryMessage == nil
+                        ? nil : "Context compaction needs attention")
                 .frame(maxWidth: 780)
                 .padding(.horizontal, 42)
                 .padding(.bottom, 16)
+            }
+
+            if !controller.isRecoveryPresented,
+               (controller.isIntentionallyStopped || controller.canRestartAfterDismissal),
+               controller.sessionPath != nil {
+                Button(controller.isStopping ? "Stopping…" : "Restart session") {
+                    Task { await controller.restart() }
+                }
+                .buttonStyle(GhostActionStyle())
+                .disabled(controller.isStopping)
+                .padding(.bottom, 12)
             }
 
             if controller.sessionPath == nil, case .stopped = controller.runtimeState,
@@ -39,14 +56,24 @@ struct ActiveSessionView: View {
                 RuntimeRecoveryView(exitCode: nil,
                     onRestart: { Task { await controller.restart() } },
                     onOpenLog: controller.openLog, onDismiss: controller.dismissRecovery,
-                    failureDescription: controller.sessionPath == nil
-                        ? "The session could not start. Review your preserved prompt before trying again."
-                        : "The session command could not finish. Check the log before retrying; delivery may be unconfirmed.",
+                    restartLabel: controller.canRetryOpening ? "Retry opening" : "Restart session",
+                    failureDescription: controller.canRetryOpening
+                        ? "The session could not open. Retry opening it or check the log."
+                        : controller.sessionPath == nil
+                            ? "The session could not start. Review your preserved prompt before trying again."
+                            : "The session command could not finish. Check the log before retrying; delivery may be unconfirmed.",
                     canRestart: controller.sessionPath != nil,
                     onReviewPrompt: controller.sessionPath == nil ? onReviewPrompt : nil)
                     .frame(maxWidth: 780)
                     .padding(.horizontal, 42)
                     .padding(.bottom, 16)
+            }
+
+            if let message = controller.composerRecoveryMessage {
+                ComposerRecoveryNotice(message: message)
+                    .frame(maxWidth: 780)
+                    .padding(.horizontal, 42)
+                    .padding(.bottom, 10)
             }
 
             ComposerView(

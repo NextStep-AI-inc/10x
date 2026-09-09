@@ -1,0 +1,15 @@
+􀟈 Test run started.
+􀟈 Test subagentActivitySnapshotDark() started.
+􀟈 Test activityStructuredDiffDarkSnapshot() started.
+􀟈 Test activityDisclosureSnapshot() started.
+􀟈 Test structuredDiffSnapshot() started.
+􀟈 Test subagentActivitySnapshot() started.
+􀟈 Test activityDisclosureSnapshotDark() started.
+􀢄 Test activityDisclosureSnapshot() failed after 0.067 seconds with 1 issue.
+􀢄 Test activityStructuredDiffDarkSnapshot() failed after 0.141 seconds with 1 issue.
+􀢄 Test subagentActivitySnapshot() failed after 0.188 seconds with 1 issue.
+􀢄 Test activityDisclosureSnapshotDark() failed after 0.248 seconds with 1 issue.
+􀢄 Test structuredDiffSnapshot() failed after 0.315 seconds with 1 issue.
+􀢄 Test subagentActivitySnapshotDark() failed after 0.354 seconds with 1 issue.
+􀢄 Test run with 6 tests in 0 suites failed after 0.354 seconds with 6 issues.
+** TEST FAILED **

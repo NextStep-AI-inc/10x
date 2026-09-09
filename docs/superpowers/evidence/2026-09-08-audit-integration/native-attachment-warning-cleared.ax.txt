@@ -1,0 +1,67 @@
+Window: "10x", App: 10x Integration QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: queue, Help: Starts a new session in queue
+					11 button Description: Integration queue wait complete, queue, Ready, Help: Integration queue wait complete, Secondary Actions: Rename Session
+					12 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					13 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					14 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					15 button Description: integration-native, Help: Starts a new session in integration-native
+					16 button Description: Combined native acceptance fixture, integration-native, Ready, Help: Combined native acceptance fixture, Secondary Actions: Rename Session
+					17 button Description: Integration acceptance baseline, integration-native, Unknown, Help: Integration acceptance baseline, Secondary Actions: Rename Session
+					18 button Description: details, Help: Starts a new session in details
+					19 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					20 button Description: titles-native, Help: Starts a new session in titles-native
+					21 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					22 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					23 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					24 button Description: input-native, Help: Starts a new session in input-native
+					25 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					26 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					27 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Ready, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					28 button Description: review-native, Help: Starts a new session in review-native
+					29 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					30 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					31 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					32 button Description: context-busy, Help: Starts a new session in context-busy
+					33 button Description: Untitled session, context-busy, Stopped, Help: Untitled session, Secondary Actions: Rename Session
+					34 button Description: context-failure, Help: Starts a new session in context-failure
+					35 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					36 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					37 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					38 button Description: context, Help: Starts a new session in context
+					39 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					40 button Description: continuity, Help: Starts a new session in continuity
+					41 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					42 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					43 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					44 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+			45 button Description: Show later rail items, ID: chevron.down
+			46 button Archived sessions
+		47 text Describe the task
+		48 scroll area Secondary Actions: Scroll Up, Scroll Down
+			49 text entry area (settable) Description: Session prompt, Help: New session prompt
+			50 scroll bar (disabled, settable, float) 0
+		51 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		52 button Description: Choose project, Help: Shows project menu, Value: input-native
+		53 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
+		54 button (disabled) Description: Start session, ID: arrow.up
+		55 text Models couldn’t be loaded.
+	56 close button
+	57 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	58 minimize button
+59 menu bar
+	60 10x Integration QA
+	61 File
+	62 Edit
+	63 View
+	64 Navigate
+	65 Session
+	66 Window
+	67 Help
+
+The focused UI element is 49 text entry area (settable) Description: Session prompt, Help: New session prompt

@@ -1,0 +1,199 @@
+{
+  "status": "PASS",
+  "sourceCommit": "ffd095a1bf1dcb2bc1f0a4a62c650b5de3794f35",
+  "buildManifest": "native-final-build.json",
+  "actualWindowSizes": [
+    [
+      760,
+      592
+    ],
+    [
+      1180,
+      760
+    ]
+  ],
+  "minimumContentSize": [
+    760,
+    560
+  ],
+  "activity": {
+    "result": "Two real captures show changing bar pixels in composer and quiet transcript; header retains Working text. Stop button ended the final controlled response.",
+    "frameDifference": [
+      {
+        "surface": "composer",
+        "bounds": [
+          535,
+          482,
+          551,
+          496
+        ],
+        "differentPixels": 178,
+        "maximumChannelDifference": 149
+      },
+      {
+        "surface": "quiet transcript",
+        "bounds": [
+          260,
+          376,
+          276,
+          391
+        ],
+        "differentPixels": 124,
+        "maximumChannelDifference": 152
+      }
+    ]
+  },
+  "warnings": {
+    "result": "0, 1 and 2 warnings keep identical composer borders; both messages fit. Selecting a model clears only its warning while the attachment warning remains.",
+    "composerBorderRowsAtMinimumWindow": [
+      417,
+      418,
+      563,
+      564
+    ],
+    "evidence": [
+      "native-final-no-warning.jpg",
+      "native-final-one-warning.jpg",
+      "native-final-two-warnings-closed.jpg",
+      "native-final-dual-warning.jpg",
+      "native-final-warning-independent-clear.ax.txt"
+    ]
+  },
+  "sendModes": {
+    "result": "Both unique payloads were queued through actual send controls, delivered once, and retain distinct bubbles after app quit/relaunch. The primary message remains standard.",
+    "messages": [
+      {
+        "message": "Follow-up check: summarize the final layout after this response.",
+        "entryID": "c4dc9837",
+        "persistedCount": 1,
+        "verifiedUIModeAfterRelaunch": "followUp",
+        "runtimeHistoryIncludesMode": false
+      },
+      {
+        "message": "Steer check: keep the file rows and diff actions aligned.",
+        "entryID": "e73948a2",
+        "persistedCount": 1,
+        "verifiedUIModeAfterRelaunch": "steer",
+        "runtimeHistoryIncludesMode": false
+      }
+    ]
+  },
+  "flyouts": {
+    "result": "Model, project, context, warnings and send action fit the minimum window. Model scroll reached its end. Escape returned editor focus. Keyboard Down/Return selected follow-up; click selected steer. Switching panels used one click. Resizing via the outer window corner dismisses the panel, and reopening fits the new window.",
+    "notExercised": "Global macOS Reduce Motion and VoiceOver toggles; below-opening placement is covered by pure geometry tests, not a native forced-top-anchor fixture."
+  },
+  "diff": {
+    "result": "Final single- and multi-file layouts inspected; Wrap/Scroll toggled; Copy patch pasted both complete file patches into the composer and was then cleared. Native file navigation to Cursor was verified in the preceding 3807b21 Release checkpoint; the file-action implementation is unchanged.",
+    "evidence": [
+      "native-final-single-diff.jpg",
+      "native-final-multi-diff.jpg",
+      "native-final-copy-patch.ax.txt",
+      "native-file-reference.ax.txt"
+    ]
+  },
+  "files": [
+    {
+      "file": "native-final-build.json",
+      "sha256": "ac6de60a2da2931c3637995daa7269bbd24e73ff3b747c906e9156b48c040069"
+    },
+    {
+      "file": "native-final-context-focus.ax.txt",
+      "sha256": "d79b651c6313aa8898f8e0df7f31effa94b3926edc72a53686acb3ba5762a539"
+    },
+    {
+      "file": "native-final-context-minimum.jpg",
+      "sha256": "00c6b4b3ebd21f73da3d8adc8f7325715f07b80f8dafac63dcbb0c509da96f1c"
+    },
+    {
+      "file": "native-final-copy-patch.ax.txt",
+      "sha256": "f9f049d683519b4b74751c264a38c49be3f33a76e513f8911cb6bbd04f86cb38"
+    },
+    {
+      "file": "native-final-delivered-modes.ax.txt",
+      "sha256": "b506e8f1adbabf8fa7c2bdbd16188633672b750e31b6293305febeec1f9157f6"
+    },
+    {
+      "file": "native-final-delivered-modes.jpg",
+      "sha256": "c17fdcdbb3df071c4973ca837ab42520aea7eee130c02e75eaae93ac9172160e"
+    },
+    {
+      "file": "native-final-dual-warning.ax.txt",
+      "sha256": "d039c3b0fd75f95401c7af79f9a2d10cb1a25c188af4f86c1328f6c95457c41a"
+    },
+    {
+      "file": "native-final-dual-warning.jpg",
+      "sha256": "1dc65aa903498031941bb3566561077f9f37f410ae78e2b90c8d3eec68591ea5"
+    },
+    {
+      "file": "native-final-model-minimum.jpg",
+      "sha256": "7d58bd79252c491301f7a783302c8cb1a436dbeb62225468a5d98d6046a5955d"
+    },
+    {
+      "file": "native-final-model-scrolled.ax.txt",
+      "sha256": "b18432ece016c83be1d8f56db00ce24364f5051c1cfc1540b0f754df535b537c"
+    },
+    {
+      "file": "native-final-multi-diff.jpg",
+      "sha256": "9aeb42f67c34fa807a5d1d783f5d748f3b8d7c0133d9a6d17b8ff97a8dfde0eb"
+    },
+    {
+      "file": "native-final-no-warning.jpg",
+      "sha256": "35099aa0820dbfa7753147589f4210972f7d108342640e5daaa7e55c50094750"
+    },
+    {
+      "file": "native-final-one-warning.jpg",
+      "sha256": "1578f7a2683984d4422247528a3241e90ddbb1bd74c11536d64a64ebeb50a9dd"
+    },
+    {
+      "file": "native-final-project-minimum.jpg",
+      "sha256": "531e5896d044a3c882f02457e6398f5a968b0bb4913ef312d72fb9d9db9626f0"
+    },
+    {
+      "file": "native-final-queued-modes.ax.txt",
+      "sha256": "1a87abecb536c60ed2d5caaff8c57f544bf040cc6e7052eed4a3264a28f77395"
+    },
+    {
+      "file": "native-final-queued-modes.jpg",
+      "sha256": "8df32964c4d51267eb0565e2d0b13722185f0a62b8c80168969f89d311801fd6"
+    },
+    {
+      "file": "native-final-reopened-modes.ax.txt",
+      "sha256": "72b90bb4ada6683c9e34779cd5ae383bc6b522ac5a9425b94073f21fc1bb8f27"
+    },
+    {
+      "file": "native-final-reopened-modes.jpg",
+      "sha256": "2822230b44e8ae88b8179bf18964f7e7b8cbd555dc6619a2920e5ba32ca80706"
+    },
+    {
+      "file": "native-final-send-action.jpg",
+      "sha256": "3c06923b3037a0384177987f2ebd34e628a07d8146162c54c534851e3e82a385"
+    },
+    {
+      "file": "native-final-single-diff.jpg",
+      "sha256": "978fc0b3c6b2f5d58f2e859bbfc54fc252ece4f5b50716d288b9ba1f4135c7dc"
+    },
+    {
+      "file": "native-final-stop.ax.txt",
+      "sha256": "92fc5cec3d910cb14a74047eac994f6b21a65ca3cd139a8676dab41adca1965b"
+    },
+    {
+      "file": "native-final-two-warnings-closed.jpg",
+      "sha256": "60e6c825d894e4a73ac902b08c093262182c48c8e01511a4012988b487d5f2d3"
+    },
+    {
+      "file": "native-final-warning-independent-clear.ax.txt",
+      "sha256": "fd70b865829123c3b97464e381716f428f631fb3bb74ba80e9dff6f37f5da523"
+    },
+    {
+      "file": "native-final-working-a.jpg",
+      "sha256": "9d494a5cbf031ca2bdd5b350c96c97e910508040f644c0c1f42c6d2efba2b869"
+    },
+    {
+      "file": "native-final-working-b.jpg",
+      "sha256": "ee16c2b76695d4dc071c9b3207a7f2d6c1d9a131fbc6b87061d56f077d50ddf8"
+    }
+  ],
+  "fixtureScope": "Local Python RPC fixture simulates provider events and writes neutral files in the isolated project. No external model work.",
+  "knownExistingWarningCopy": "Invalid image decoding reuses the existing generic eight-image-limit error text; warning wording was outside this layout change.",
+  "additionalTallWindow": "Also resized to a taller window; CUA returned a downsampled 1067x768 capture for the multi-file diff. No exact pixel-size claim is made for that capture."
+}

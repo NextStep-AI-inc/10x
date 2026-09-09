@@ -83,6 +83,20 @@ import Testing
     #expect(state.canArchiveSession)
 }
 
+@Test func menuStateAllowsStopDuringContextCompactionWithoutEnablingMessageBehavior() {
+    let session = menuMetadata("/sessions/compacting.jsonl")
+    let state = AppMenuState(
+        route: .session(session.path),
+        sessions: [session],
+        activeSessionPath: session.path,
+        runtimeState: .idle,
+        isSessionMutationInFlight: false,
+        isContextCompacting: true)
+
+    #expect(state.canStopResponse)
+    #expect(!state.canChooseMessageBehavior)
+}
+
 private func menuMetadata(_ path: String) -> SessionMetadata {
     SessionMetadata(
         path: path,

@@ -17,6 +17,7 @@ import Testing
     #expect(!mode.isExpandedByDefault(traits(name: "edit", phase: .complete)))
     #expect(!mode.isExpandedByDefault(traits(name: "bash", phase: .running)))
     #expect(!mode.isExpandedByDefault(traits(name: "bash", phase: .failed)))
+    #expect(!traits(name: "bash", phase: .interrupted).isActive)
     #expect(mode.opensGroupsByDefault)
 }
 

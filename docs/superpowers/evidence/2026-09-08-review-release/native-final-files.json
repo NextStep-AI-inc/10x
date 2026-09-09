@@ -1,0 +1,17 @@
+{
+  "head": "59cc2e7fac9ffdc5f6fc56b50b4fdf1d98271bf1",
+  "branch": "qa-review-base",
+  "status": " M editable-alpha.txt\n M editable-beta.txt\n M excluded-dirty.txt\n?? excluded-untracked.txt\n?? generated-note.txt\n?? shell-only.txt\n",
+  "excludedFilesUnchanged": {
+    "excluded-dirty.txt": true,
+    "excluded-untracked.txt": true
+  },
+  "content": {
+    "editable-alpha.txt": "alpha heading\nalpha live\n",
+    "editable-beta.txt": "beta heading\nbeta live\n",
+    "generated-note.txt": "review note\n",
+    "shell-only.txt": "shell note\n"
+  },
+  "userMessageCount": 2,
+  "editWriteResultCount": 4
+}

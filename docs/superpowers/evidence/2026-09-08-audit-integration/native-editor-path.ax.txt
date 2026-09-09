@@ -1,0 +1,7 @@
+									302 tab (selected) integration-beta.txt Close integration-beta.txt, Value: 1
+									309 pop up button private
+									310 pop up button tmp
+									311 pop up button 10x-session-recovery-home
+									312 pop up button projects
+									313 pop up button integration-native
+									314 pop up button integration-beta.txt

@@ -1,0 +1,58 @@
+{
+  "application": "10x Queue QA",
+  "bundleIdentifier": "com.nextstep.tenx.queueqa",
+  "configuration": "Release arm64",
+  "sourceCommit": "d33c937",
+  "executableSHA256": "bfabfdab7845d7c920f9e28a0802c795f84f67bdffddbc4eff288fb26cf0f75b",
+  "runtime": "OMP 18.1.10",
+  "captures": [
+    {
+      "file": "followups-completed-queue-empty.png",
+      "sha256": "a7cce51d9d23b7184eaac385eb6b36bf31d4252d41b1a73de1c89c179e385fda"
+    },
+    {
+      "file": "keyboard-stop-model-flyout-before.png",
+      "sha256": "ec927c74fc3763179e0953f7541a01c429a0a22bd15e6bae63c7b15a27c0e014"
+    },
+    {
+      "file": "keyboard-stop-preserves-draft.png",
+      "sha256": "6b6dab63bb8ec317482ccbc9c32fe23120001ed7efe3329f24b4462cf3a70366"
+    },
+    {
+      "file": "one-followup-consumed.png",
+      "sha256": "c0f745c941036aa346aa8bb7e5c19d646e07ed1d3781015800aeebf66a5d1c3a"
+    },
+    {
+      "file": "queued-input-with-staged-text-image-and-stop.png",
+      "sha256": "a00d80fc9ea278e941d3f1f0f1faf0d7aa45a64b233c65fbbf4c750a9fb42db1"
+    },
+    {
+      "file": "rejected-followup-preserves-draft.png",
+      "sha256": "be330aba5ceb961675753aef7c5bed431b3e5788eec792174dbb09ef1b519f54"
+    },
+    {
+      "file": "steering-accepted.png",
+      "sha256": "4ef0cf5e7dfb51cac05084bb04c6c1fdc09fe9d5ea6b36b8a7e81179b652b84e"
+    },
+    {
+      "file": "steering-consumed-count-cleared.png",
+      "sha256": "d89fa16d2c22e2fd6530c0e25b5c91c7fe1e2a8db2af271682b7106e53f21ddf"
+    },
+    {
+      "file": "stop-preserves-input-interrupted-tool-label.png",
+      "sha256": "47d2a3905f44786e056be65034d800fc69c379a90e2b31f1718d7232c11d9af2"
+    },
+    {
+      "file": "two-followups-accepted.png",
+      "sha256": "4adb5434f1985a8fe6de0293aafe21614b7ca3730a52f3ca164a49b7d6159fb9"
+    },
+    {
+      "file": "followups-reopened-in-image-build.png",
+      "sha256": "14b9e062f2a055706327f38bb2272ad8e428b0d54159c747d9851ca630f93df0",
+      "application": "10x Images QA",
+      "sourceCommit": "6e3bec4d6aa4e000566c7f5a5eb8e05f89f40725",
+      "executableSHA256": "7c0b6d999c839d2588209f23d1f26c7d5ac4e1f863cedef3454eded96e80785f",
+      "purpose": "Reopen the persisted queue history through the same history/receipt presentation after image restoration."
+    }
+  ]
+}

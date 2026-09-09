@@ -309,6 +309,67 @@ final class AppTerminationDelegateTests: XCTestCase {
 }
 
 @MainActor
+@Test func continueRestoresSavedSessionWhenOnlyRecentProjectWarmingStopped() async throws {
+    let fixture = try StartupFixture()
+    defer { fixture.cleanup() }
+    let savedProject = try fixture.project("Saved")
+    let stalledProject = try fixture.project("Stalled")
+    try fixture.writeSession(cwd: stalledProject, modified: Date(timeIntervalSince1970: 10))
+    try fixture.writeSession(cwd: savedProject, modified: Date(timeIntervalSince1970: 20))
+    let savedSession = try #require(
+        (await fixture.library.listAll()).first { $0.cwd == savedProject.path })
+    let store = ComposerRecoveryStore.inMemory()
+    store.setLastMeaningfulRoute(.session(savedSession.path))
+    let manager = fixture.mixedWarmManager(
+        readyProject: savedProject,
+        stalledProject: stalledProject)
+    let timeoutGate = LoadGate()
+    let defaultsName = "continue-route-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: defaultsName))
+    defer { defaults.removePersistentDomain(forName: defaultsName) }
+    let provider = providerTestModel(providers: [authenticatedProvider])
+    let dependencies = AppDependencies(
+        ompLocator: CountingOmpLocator(installation: fixture.installation),
+        sessionLibrary: fixture.library,
+        recentProjectStore: RecentProjectStore(defaults: defaults),
+        composerRecoveryStore: store,
+        startupTiming: .controlledTimeout(timeoutGate),
+        makeProcessManager: { _ in manager },
+        makeSettingsModel: { _ in
+            SettingsViewModel(service: OmpConfigService(runner: StartupConfigRunner()))
+        },
+        makeProviderModel: { _ in provider },
+        makeComposerControls: stubAppComposerControlsFactory,
+        makeUpdateChecker: { _ in stubUpdateCheckerReportingNoUpdate() })
+    let model = AppModel(dependencies: dependencies, preferenceDefaults: defaults)
+
+    let bootstrap = Task { await model.bootstrap() }
+    await waitForModelState { await manager.isWarm(projectDirectory: savedProject.path) }
+    await waitForModelState { fixture.mixedWarmConfigurationCount == 2 }
+    await timeoutGate.release()
+    await bootstrap.value
+    #expect(model.startupState.status(of: .runtime) == .ready)
+    #expect(model.startupState.status(of: .sessions) == .ready)
+    #expect(model.startupState.status(of: .settings) == .ready)
+    #expect(model.startupState.status(of: .recentProjects) == .stopped)
+
+    await model.continueToWorkspace()
+
+    #expect(model.startupState.phase == .handoff)
+    #expect(model.route == .session(savedSession.path))
+    #expect(model.selectedProjectURL?.path == savedProject.path)
+    #expect(store.lastMeaningfulRoute == .session(savedSession.path))
+    let activeSession = try #require(model.activeSession)
+    await waitUntil("the restored session runtime to open") {
+        await manager.handle(for: savedSession.path) != nil
+    }
+    _ = try #require(await manager.handle(for: savedSession.path))
+    #expect(activeSession === model.managedController(for: savedSession.path))
+    #expect(fixture.mixedWarmConfigurationCount == 2)
+    await model.shutdown()
+}
+
+@MainActor
 @Test func memoryPressureBeforeHandoffEvictsWarmClientsAndMakesTheStageRetryable() async throws {
     let fixture = try StartupFixture()
     defer { fixture.cleanup() }

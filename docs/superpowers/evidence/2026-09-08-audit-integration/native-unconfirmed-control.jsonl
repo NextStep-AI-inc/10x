@@ -1,0 +1,12 @@
+{"at":"2026-09-08T21:02:39.508Z","direction":"fixture","type":"process_launch","launchOrdinal":1,"priorPromptCount":0}
+{"at":"2026-09-08T21:02:39.509Z","direction":"command","type":"negotiate_protocol","id":"req_1"}
+{"at":"2026-09-08T21:02:39.509Z","direction":"command","type":"get_state","id":"req_2"}
+{"at":"2026-09-08T21:02:39.545Z","direction":"command","type":"get_available_commands","id":"req_3"}
+{"at":"2026-09-08T21:02:39.550Z","direction":"command","type":"set_subagent_subscription","id":"req_4"}
+{"at":"2026-09-08T21:04:18.522Z","direction":"command","type":"prompt","id":"req_5","messageLength":64,"imageCount":1,"promptOrdinal":1,"isReplay":false,"disposition":"withheld-unconfirmed"}
+{"at":"2026-09-08T21:05:04.869Z","direction":"fixture","type":"process_launch","launchOrdinal":2,"priorPromptCount":1}
+{"at":"2026-09-08T21:05:04.869Z","direction":"command","type":"negotiate_protocol","id":"req_1"}
+{"at":"2026-09-08T21:05:07.150Z","direction":"command","type":"switch_session","id":"req_2"}
+{"at":"2026-09-08T21:05:07.151Z","direction":"command","type":"get_state","id":"req_3"}
+{"at":"2026-09-08T21:05:07.152Z","direction":"command","type":"get_available_commands","id":"req_4"}
+{"at":"2026-09-08T21:05:07.153Z","direction":"command","type":"set_subagent_subscription","id":"req_5"}

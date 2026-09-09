@@ -554,6 +554,30 @@ import Testing
     #expect(reducer.runtimeState == .idle)
 }
 
+@Test func abortedAssistantBoundaryInterruptsUnresolvedToolsAndRejectsLateResults() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"tool_execution_start","toolCallId":"running","toolName":"bash","args":{"command":"sleep 10"}}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"message_end","message":{"id":"aborted","role":"assistant","content":[],"stopReason":"aborted"}}
+        """))
+
+    guard case .tool(let interrupted) = try #require(reducer.items.first) else {
+        Issue.record("Expected interrupted tool")
+        return
+    }
+    #expect(interrupted.phase == .interrupted)
+    #expect(interrupted.endDate != nil)
+
+    reducer.consume(try eventFrame("""
+        {"type":"tool_execution_end","toolCallId":"running","toolName":"bash","result":{"content":[{"type":"text","text":"late"}]},"isError":false}
+        """))
+    guard case .tool(let stillInterrupted) = try #require(reducer.items.first) else { return }
+    #expect(stillInterrupted.phase == .interrupted)
+    #expect(stillInterrupted.result == nil)
+}
+
 @Test func historicalToolCallsKeepArgumentsAndMergeTheirResults() throws {
     var reducer = TranscriptReducer()
     reducer.load(messages: [
@@ -735,6 +759,40 @@ import Testing
     #expect(reducer.items.filter { if case .message = $0 { true } else { false } }.count == 1)
     #expect(reducer.items.contains { $0.id == "running" })
     #expect(reducer.items.contains { if case .notice = $0 { true } else { false } })
+}
+
+@Test func persistedSubagentCompletionKeepsLiveRecentDetails() throws {
+    var reducer = TranscriptReducer()
+    reducer.consume(try eventFrame("""
+        {"type":"subagent_progress","payload":{"index":0,"agent":"worker","task":"Inspect details","parentToolCallId":"task-1","progress":{"id":"agent-1","status":"running","durationMs":100,"recentTools":[{"tool":"read","endMs":1}],"recentOutput":["Read reducer"]}}}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"subagent_progress","payload":{"index":0,"agent":"worker","task":"Inspect details","parentToolCallId":"task-1","progress":{"id":"agent-1","status":"running","durationMs":200,"recentTools":[{"tool":"read","endMs":1},{"tool":"grep","endMs":2}],"recentOutput":["Read reducer","Found reconcile"]}}}
+        """))
+    reducer.consume(try eventFrame("""
+        {"type":"subagent_progress","payload":{"index":0,"agent":"worker","task":"Inspect details","parentToolCallId":"task-1","progress":{"id":"agent-1","status":"running","durationMs":300,"recentTools":[{"tool":"read","endMs":1},{"tool":"grep","endMs":2},{"tool":"bash","endMs":3}],"recentOutput":["Read reducer","Found reconcile","Ran focused test"]}}}
+        """))
+
+    let persisted = try #require(SubagentEventReducer.presentations(
+        from: try message("""
+            {"details":{"results":[{"index":0,"id":"agent-1","agent":"worker","task":"Inspect details","output":"Complete result","exitCode":0,"durationMs":400,"toolCount":3,"resolvedModel":"openai-codex/gpt-5.6-terra:high"}]}}
+            """),
+        parentToolCallID: "task-1").first)
+    #expect(persisted.recentTools.isEmpty)
+    #expect(persisted.recentOutput.isEmpty)
+
+    reducer.reconcile(history: TranscriptHistory(items: [.subagent(persisted)]))
+
+    let reconciled = try #require(reducer.items.compactMap { item -> SubagentPresentation? in
+        guard case .subagent(let presentation) = item else { return nil }
+        return presentation
+    }.first)
+    #expect(reconciled.status == .completed)
+    #expect(reconciled.actualModel == "gpt-5.6-terra")
+    #expect(reconciled.thinkingLevel == "high")
+    #expect(reconciled.resultText == "Complete result")
+    #expect(reconciled.recentTools.map(\.name) == ["read", "grep", "bash"])
+    #expect(reconciled.recentOutput == ["Read reducer", "Found reconcile", "Ran focused test"])
 }
 
 @Test func staleHistoryKeepsFinalLiveBoundariesUntilTheirContentPersists() throws {

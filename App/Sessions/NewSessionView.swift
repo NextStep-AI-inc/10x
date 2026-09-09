@@ -10,6 +10,12 @@ struct NewSessionView: View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
 
+            if let message = model.newSessionRecoveryMessage {
+                ComposerRecoveryNotice(message: message)
+                    .frame(maxWidth: 780)
+                    .padding(.bottom, 10)
+            }
+
             ComposerView(
                 draft: Bindable(model).newSessionDraft,
                 attachments: Bindable(model).newSessionAttachments,

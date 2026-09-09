@@ -1,0 +1,91 @@
+Window: "10x", App: 10x Titles QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: titles-native, Help: Starts a new session in titles-native
+					11 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					12 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					13 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					14 button Description: input-native, Help: Starts a new session in input-native
+					15 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					16 button Description: details, Help: Starts a new session in details
+					17 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					18 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					19 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Unknown, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					20 button Description: review-native, Help: Starts a new session in review-native
+					21 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					22 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					23 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					24 button Description: context-busy, Help: Starts a new session in context-busy
+					25 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					26 button Description: context-failure, Help: Starts a new session in context-failure
+					27 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					28 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					29 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					30 button Description: context, Help: Starts a new session in context
+					31 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					32 button Description: continuity, Help: Starts a new session in continuity
+					33 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					34 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					35 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					36 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					37 button Description: queue, Help: Starts a new session in queue
+					38 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					39 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					40 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					41 button Description: queue-reject, Help: Starts a new session in queue-reject
+					42 button Description: Reject queued input, queue-reject, Pending, Help: Reject queued input, Secondary Actions: Rename Session
+					43 button Description: failure, Help: Starts a new session in failure
+					44 button Description: Recover unavailable project, failure, Ready, Help: Recover unavailable project, Secondary Actions: Rename Session
+			45 button Description: Show later rail items, ID: chevron.down
+			46 button Archived sessions
+		47 text Value: Native changed-file review, Secondary Actions: Rename Session
+		48 unknown Description: Branch, Details: qa-review-base
+		49 unknown Description: Folder, Details: review-native
+		50 scroll area
+			51 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				52 text Acceptance edits are in /tmp/10x-session-recovery-home/projects/review-native only. No commit, no branch change. Edits • editable-alpha.txt: alpha original → alpha first (single edit), then alpha first → alpha final in the multi-file edit • editable-beta.txt: beta original → beta final (same multi-file edit) • generated-note.txt: created via write (review note) • shell-only.txt: created via shell (shell note) • excluded-dirty.txt and excluded-untracked.txt: left untouched git • Branch: qa-review-base • Unstaged: editable-alpha.txt, editable-beta.txt, plus pre-existing excluded-dirty.txt • Untracked: generated-note.txt, shell-only.txt, plus pre-existing excluded-untracked.txt • Diff for the editable files is original → final on the second line of each; nothing staged Completed, 22.2s Tool-reported files (3) Completed edit and write tools in this turn. Shell commands and other workspace changes are not included.
+				53 button Show tool details for /tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt
+				54 button Show tool details for Changed file
+				55 button Show tool details for /tmp/10x-session-recovery-home/projects/review-native/generated-note.txt
+				56 text Run one final live multi-file edit in this disposable repository only: use one edit invocation to change alpha final to alpha live in editable-alpha.txt and beta final to beta live in editable-beta.txt. Preserve all other files, create no commits, then reply briefly. Cursor-Grok-4.6-Fast, Tuesday, September 8, 2026 at 11:54 AM I'll apply one multi-file edit in this repo only: alpha final → alpha live and beta final → beta live.
+				57 button Description: Tool calls (3), Complete, Help: Collapses tool calls, Value: Expanded
+				58 container Read /tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt, 2 lines, Complete, Total 8.6 seconds
+					59 button Help: Expands tool details, Value: Collapsed, Description: Read /tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt, 2 lines, Complete, Total 8.6 seconds
+					60 button Description: Choose an IDE for /tmp/10x-session-recovery-home/projects/review-native/editable-alpha.txt, Help: Hold Option while clicking to reveal in Finder
+					61 text · 2 lines Complete Total 8.6s
+				62 container Read /tmp/10x-session-recovery-home/projects/review-native/editable-beta.txt, 2 lines, Complete, Total 8.6 seconds
+					63 button Help: Expands tool details, Value: Collapsed, Description: Read /tmp/10x-session-recovery-home/projects/review-native/editable-beta.txt, 2 lines, Complete, Total 8.6 seconds
+					64 button Description: Choose an IDE for /tmp/10x-session-recovery-home/projects/review-native/editable-beta.txt, Help: Hold Option while clicking to reveal in Finder
+					65 text · 2 lines Complete Total 8.6s
+				66 container Edit Changed file, +2 −2, Complete, Total 9.9 seconds
+					67 button Description: Edit Changed file, +2 −2, Complete, Total 9.9 seconds, Help: Expands tool details, Value: Collapsed
+					68 text Changed file · +2 −2 Complete Total 9.9s
+				69 text Updated both files in one edit: editable-alpha.txt is now alpha live, editable-beta.txt is now beta live. No other files were touched and nothing was committed. Completed, 11.6s Tool-reported files (1) Completed edit and write tools in this turn. Shell commands and other workspace changes are not included.
+				70 button Show tool details for Changed file
+		71 text Send a message
+		72 scroll area Secondary Actions: Scroll Up, Scroll Down
+			73 text entry area (settable) Description: Session prompt, Help: Active session prompt
+			74 scroll bar (disabled, settable, float) 0
+		75 button Description: Attach an image, Help: Attach an image. Images can also be dropped or pasted here., ID: paperclip
+		76 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
+		77 button Description: Context window, Help: Shows context usage details, Value: 10 percent used
+		78 button (disabled) Description: Send message, ID: arrow.up
+		79 text Models couldn’t be loaded.
+	80 close button
+	81 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	82 minimize button
+83 menu bar
+	84 10x Titles QA
+	85 File
+	86 Edit
+	87 View
+	88 Navigate
+	89 Session
+	90 Window
+	91 Help
+
+The focused UI element is 73 text entry area (settable) Description: Session prompt, Help: Active session prompt

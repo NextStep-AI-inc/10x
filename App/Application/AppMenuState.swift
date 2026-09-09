@@ -14,7 +14,8 @@ struct AppMenuState {
         sessions: [SessionMetadata],
         activeSessionPath: String?,
         runtimeState: SessionRuntimeState?,
-        isSessionMutationInFlight: Bool
+        isSessionMutationInFlight: Bool,
+        isContextCompacting: Bool = false
     ) {
         isWorkspaceAvailable = !isSessionMutationInFlight && !route.isOnboarding
 
@@ -34,7 +35,7 @@ struct AppMenuState {
         }
 
         let isStreaming = runtimeState == .streaming
-        canStopResponse = isWorkspaceAvailable && isStreaming
+        canStopResponse = isWorkspaceAvailable && (isStreaming || isContextCompacting)
         canChooseMessageBehavior = isWorkspaceAvailable && isStreaming
         canArchiveSession = isWorkspaceAvailable && currentSessionPath != nil
     }

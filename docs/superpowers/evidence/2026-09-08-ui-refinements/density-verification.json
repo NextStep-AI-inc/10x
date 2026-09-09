@@ -1,0 +1,126 @@
+{
+  "status": "DONE_WITH_CONCERNS",
+  "sourceCommit": "a78f90d610c6a6dcfbd3eb099838ecd1383de46e",
+  "buildManifest": "native-density-build.json",
+  "fullSuite": {
+    "executed": 1605,
+    "passed": 1602,
+    "failed": 3,
+    "issues": 3
+  },
+  "isolatedRerun": {
+    "executed": 1,
+    "passed": 1,
+    "durationSeconds": 0.053
+  },
+  "logs": {
+    "release": {
+      "path": "/tmp/10x-ui-density-release.log",
+      "sha256": "c8f7dc5b55dff93ff83d71f236208dbb4409e49efdc8eaefef93a69a381ff4c4"
+    },
+    "initialFullSuite": {
+      "path": "/tmp/10x-ui-density-tests.log",
+      "sha256": "b9b171537764d5c00a0e279c90fc4c4ec735a6ecc7e2d93c12240e131c60e037"
+    },
+    "finalFullSuite": {
+      "path": "/tmp/10x-ui-density-final-tests.log",
+      "sha256": "e3840b98d2e2f38b7eb4e19fa56cde8c4ee97238cb8216f4cd739ecd470e9fbb"
+    },
+    "isolatedTimeout": {
+      "path": "/tmp/10x-ui-density-timeout-recheck.log",
+      "sha256": "1aeff24598a8b930b70bcf75ca308968bc0fc8c9a6c5525fa2eff197dfeb2e3b"
+    }
+  },
+  "remainingFailures": [
+    {
+      "test": "activity-running-error",
+      "baselineActualSHA256": "82a00ca2a562aa7b26f2d6669553599e038a021340ab8a96a0999a2bb7c0fa45",
+      "result": "Same actual image as the recorded main baseline; reference unchanged."
+    },
+    {
+      "test": "activity-running-error-dark",
+      "baselineActualSHA256": "648841ad4d2e5018fe2af6d6e23df86e5452c9fe8bb39cef0e34571a42158134",
+      "result": "Same actual image as the recorded main baseline; reference unchanged."
+    },
+    {
+      "test": "ProviderAccountExtensionBackendTests/helloAgainstARealChannelThatNeverOpensDegradesWithinItsOwnTimeoutNotTheChannels()",
+      "result": "Full suite: elapsed 1.236346375 seconds exceeded the 1-second assertion. Isolated rerun passed in 0.053 seconds; test and backend unchanged."
+    }
+  ],
+  "snapshotReview": "density-snapshot-review.json",
+  "native": {
+    "windowSizes": [
+      [
+        1180,
+        760
+      ],
+      [
+        760,
+        592
+      ]
+    ],
+    "deliveredMessageSurfaces": [
+      "light",
+      "dark"
+    ],
+    "queuedMessageSurfaces": [
+      "dark"
+    ],
+    "sendPanelAppearances": [
+      "light",
+      "dark"
+    ],
+    "modelPanelAppearances": [
+      "light",
+      "dark"
+    ],
+    "sendSelection": [
+      "keyboard Follow up",
+      "pointer Steer"
+    ],
+    "sendEscapeReturnsComposerFocus": true,
+    "providerRing": "Usage details opened; visible Close button dismissed them. Escape did not dismiss the separate usage panel.",
+    "stopControl": "Stopped the final fixture response and left the draft empty.",
+    "originalAppearance": "Auto",
+    "originalAppearanceRestored": true,
+    "expandedRail": "Covered by rendered snapshots; native captures use the compact rail."
+  },
+  "gallery": "density-gallery-verification.json",
+  "screenshots": [
+    {
+      "file": "native-density-delivered-dark.jpg",
+      "sha256": "3dd3b1b6942073c809385c5d9a532ae186b2f4c84d06bdae5ada3099d416b86c"
+    },
+    {
+      "file": "native-density-delivered-light.jpg",
+      "sha256": "8d6785ea28c054ab4f006017c7868baec67d3b8e742dc244a9e8668f27226d51"
+    },
+    {
+      "file": "native-density-model-minimum-dark.jpg",
+      "sha256": "67357ed5094e27e5af8a79e2204f5fe892382edadbdb6706b8818b0e0fea76cc"
+    },
+    {
+      "file": "native-density-model-minimum-light.jpg",
+      "sha256": "85054037d0d217889883f65644e92340b69d757d75886cf98034660dfadda136"
+    },
+    {
+      "file": "native-density-queued-dark.jpg",
+      "sha256": "9892782ec95a35efc975406b7a46274a700f7de4164aa2cda58deb7901511f3d"
+    },
+    {
+      "file": "native-density-send-minimum-dark.jpg",
+      "sha256": "8bf4746ed3fdac539fc6cc8bf6e085bb00c925657db95151aa5bafddddd60587"
+    },
+    {
+      "file": "native-density-send-minimum-light.jpg",
+      "sha256": "7b54c1d4a52c30aabf33fefa2e9939439d40d330e4e1f31eaf7d1a8dae4603c8"
+    }
+  ],
+  "notVerified": [
+    "Live model-provider work (local RPC fixture used)",
+    "Image-only mode styling",
+    "VoiceOver and OS Reduce Motion",
+    "Native expanded-rail state in this revision"
+  ],
+  "scope": "Three Swift presentation files only; no runtime, dependency, or schema changes."
+}

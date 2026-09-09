@@ -1,0 +1,13 @@
+{
+  "root": "/tmp/10x-session-recovery-home/projects/review-native",
+  "head": "59cc2e7fac9ffdc5f6fc56b50b4fdf1d98271bf1",
+  "branch": "qa-review-base",
+  "status": " M excluded-dirty.txt\n?? excluded-untracked.txt\n",
+  "files": {
+    "editable-alpha.txt": "00bd238935d15f4ef0506a0aa5ee8a07f79fc2b1939b1af16b076102b9ad6e2b",
+    "README.md": "c962b27876355296ff6b776457423956b821e7da6685156e00115e95d82e4daf",
+    "excluded-dirty.txt": "c20f825def8c4b4ab11d638a5cab83387fa39c199f6500adfebfbe4faf8ffaa8",
+    "excluded-untracked.txt": "a9589906b53e33971b3b6ea04335cc2840b1cd69b852018105c1b0867744b16d",
+    "editable-beta.txt": "c836947a239fc4d3f369aa05083f396172f77dab3c8e7650c651b26fa89f296e"
+  }
+}

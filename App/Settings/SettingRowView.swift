@@ -45,10 +45,27 @@ struct SettingRowView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if let approvalScopeDescription {
+                Text(approvalScopeDescription)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text(definition.key)
                 .font(TenXTypography.mono(size: 9))
                 .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var approvalScopeDescription: String? {
+        switch definition.key {
+        case "tools.approvalMode":
+            "Applies to new OMP sessions. Project configuration and per-tool policies can override this default."
+        case "tools.approval":
+            "Applies to new OMP sessions. Project configuration can override these global policies."
+        default:
+            nil
+        }
     }
 }

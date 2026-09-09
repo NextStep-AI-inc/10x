@@ -29,7 +29,7 @@ enum TranscriptHistoryMapper {
         path: [SessionEntry],
         checkCancellation: () throws -> Void
     ) rethrows -> TranscriptHistory {
-        var mapper = Mapper()
+        var mapper = Mapper(persistedToolStartDates: exactToolStartDates(in: path))
         mapper.items.append(.threadStart(
             id: "thread-start-\(header.id)",
             date: date(from: header.timestamp)))
@@ -43,12 +43,17 @@ enum TranscriptHistoryMapper {
 
     private struct Mapper {
         var items: [TranscriptItem] = []
+        let persistedToolStartDates: [String: Date]
         var currentModel: SessionModelSelection?
         var currentMode: String?
         var sessionInit: SessionInitMetadata?
         var hasConversation = false
         private(set) var dropped: [HarnessMessageDescriptor] = []
         private var droppedSignatures: Set<String> = []
+
+        init(persistedToolStartDates: [String: Date]) {
+            self.persistedToolStartDates = persistedToolStartDates
+        }
 
         private mutating func recordDropped(_ message: JSONValue) {
             let text = TranscriptMessage.visibleText(from: message)
@@ -131,6 +136,7 @@ enum TranscriptHistoryMapper {
                 attribution: attribution,
                 isFinal: true,
                 existingTools: existingTools,
+                persistedToolStartDates: persistedToolStartDates,
                 fallbackDate: fallbackDate)
             if !TranscriptMessage.isDisplayable(message) {
                 recordDropped(message)
@@ -146,6 +152,12 @@ enum TranscriptHistoryMapper {
                 hasConversation = true
             }
             items.append(contentsOf: normalized)
+            if message["stopReason"]?.stringValue?.lowercased() == "aborted" {
+                let stoppedAt = TranscriptHistoryMapper.date(from: base.timestamp)
+                    ?? TranscriptMessage.messageDate(message)
+                    ?? fallbackDate
+                _ = TranscriptReducer.interruptRunningTools(in: &items, at: stoppedAt)
+            }
         }
 
         var attribution: TranscriptResponseAttribution {
@@ -206,7 +218,25 @@ enum TranscriptHistoryMapper {
             result: message,
             phase: message["isError"]?.boolValue == true ? .failed : .complete,
             startDate: timestamp,
-            endDate: timestamp)
+            endDate: timestamp,
+            hasReliableStartDate: false)
+    }
+
+    private static func exactToolStartDates(in path: [SessionEntry]) -> [String: Date] {
+        var result: [String: Date] = [:]
+        for entry in path {
+            guard case .unknown("custom", _, let raw) = entry,
+                  raw["type"]?.stringValue == "custom",
+                  raw["customType"]?.stringValue == "tool_execution_start",
+                  let id = raw["data"]?["toolCallId"]?.stringValue,
+                  !id.isEmpty,
+                  let startedAt = raw["data"]?["startedAt"]?.stringValue,
+                  let start = date(from: startedAt),
+                  start.timeIntervalSinceReferenceDate.isFinite
+            else { continue }
+            result[id] = start
+        }
+        return result
     }
 
     private static func modelAnnotation(

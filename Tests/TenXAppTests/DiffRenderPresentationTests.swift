@@ -4,6 +4,38 @@ import Testing
 @testable import TenXApp
 
 @Suite struct DiffRenderPresentationTests {
+    @Test func multiFileDiffHeadersKeepRelativeFileReferences() throws {
+        let diff = try #require(UnifiedDiffParser.parse("""
+        diff --git a/App/One.swift b/App/One.swift
+        --- a/App/One.swift
+        +++ b/App/One.swift
+        @@ -1 +1 @@
+        -old one
+        +new one
+        diff --git a/App/Two.swift b/App/Two.swift
+        --- a/App/Two.swift
+        +++ b/App/Two.swift
+        @@ -1 +1 @@
+        -old two
+        +new two
+        """))
+        let headers = DiffRenderPresentation(diff: diff).slice(limit: 200).rows
+            .compactMap(\.fileHeader)
+        let baseURL = URL(filePath: "/tmp/project", directoryHint: .isDirectory)
+        let resolver = FileReferenceResolver(fileExists: { _ in true })
+
+        #expect(headers.map(\.reference) == [
+            .file(path: "App/One.swift", line: nil),
+            .file(path: "App/Two.swift", line: nil),
+        ])
+        #expect(headers.map {
+            resolver.resolve(path: $0.path, line: nil, relativeTo: baseURL).url?.path
+        } == [
+            "/tmp/project/App/One.swift",
+            "/tmp/project/App/Two.swift",
+        ])
+    }
+
     @Test func diffSliceUsesOneBudgetAcrossFilesAndHunks() throws {
         let diff = try #require(largeDiff(fileCount: 4, changedLinesPerFile: 150))
         let presentation = DiffRenderPresentation(diff: diff)

@@ -4,6 +4,16 @@ import OmpKit
 struct ToolEventReducer {
     private(set) var presentations: [ToolPresentation] = []
 
+    @discardableResult
+    mutating func interruptRunning(at date: Date) -> Bool {
+        var changed = false
+        for index in presentations.indices where presentations[index].phase == .running {
+            presentations[index].update(phase: .interrupted, endDate: .some(date))
+            changed = true
+        }
+        return changed
+    }
+
     mutating func consume(type: String, payload: JSONValue, at date: Date = Date()) {
         guard let id = payload["toolCallId"]?.stringValue else { return }
         let name = payload["toolName"]?.stringValue
@@ -47,6 +57,7 @@ struct ToolEventReducer {
         date: Date,
         at index: Int
     ) {
+        guard presentations[index].phase != .interrupted else { return }
         let name = payload["toolName"]?.stringValue
         let arguments = payload["args"]
         switch type {

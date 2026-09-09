@@ -1,0 +1,20 @@
+[
+  {
+    "sessionFile": "/tmp/10x-session-recovery-home/.omp/agent/sessions/-projects-queue/2026-09-08T21-10-03-190Z_01a082db-44b6-7000-8b11-9044c9618860.jsonl",
+    "sessionSHA256": "893d05104cc2b4d1c679e41da71aab2cfeecd615fcf0c94d560f9fc5960252b4",
+    "followUps": [
+      {
+        "entryID": "d140a4fa",
+        "messageID": null,
+        "timestamp": "2026-09-08T21:11:14.514Z",
+        "text": "INTEGRATION QUEUED FOLLOW-UP: reply with only QUEUED FOLLOW-UP COMPLETE."
+      },
+      {
+        "entryID": "38b8cf95",
+        "messageID": null,
+        "timestamp": "2026-09-08T21:13:23.278Z",
+        "text": "INTEGRATION COUNT FOLLOW-UP: reply with only COUNT FOLLOW-UP COMPLETE."
+      }
+    ]
+  }
+]

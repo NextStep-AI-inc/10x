@@ -1,0 +1,77 @@
+[
+  {
+    "at": "2026-09-09T00:03:18.771Z",
+    "command": "prompt",
+    "mode": null,
+    "message": "FINAL UI CHECK: hold this response while I queue a follow-up and a steer.",
+    "modelId": null
+  },
+  {
+    "at": "2026-09-09T00:03:18.772Z",
+    "event": "user-echo",
+    "entryID": "6a56db7b",
+    "mode": null,
+    "text": "FINAL UI CHECK: hold this response while I queue a follow-up and a steer."
+  },
+  {
+    "at": "2026-09-09T00:03:58.368Z",
+    "command": "prompt",
+    "mode": "followUp",
+    "message": "Follow-up check: summarize the final layout after this response.",
+    "modelId": null
+  },
+  {
+    "at": "2026-09-09T00:04:49.004Z",
+    "command": "prompt",
+    "mode": "steer",
+    "message": "Steer check: keep the file rows and diff actions aligned.",
+    "modelId": null
+  },
+  {
+    "at": "2026-09-09T00:05:12.861Z",
+    "event": "user-echo",
+    "entryID": "c4dc9837",
+    "mode": "followUp",
+    "text": "Follow-up check: summarize the final layout after this response."
+  },
+  {
+    "at": "2026-09-09T00:05:12.862Z",
+    "event": "user-echo",
+    "entryID": "e73948a2",
+    "mode": "steer",
+    "text": "Steer check: keep the file rows and diff actions aligned."
+  },
+  {
+    "at": "2026-09-09T00:05:12.862Z",
+    "event": "finished",
+    "remainingQueue": 0
+  },
+  {
+    "at": "2026-09-09T00:05:51.259Z",
+    "command": "prompt",
+    "mode": null,
+    "message": "/context",
+    "modelId": null
+  },
+  {
+    "at": "2026-09-09T00:08:02.464Z",
+    "command": "prompt",
+    "mode": null,
+    "message": "STOP CONTROL CHECK: hold this response for the stop button.",
+    "modelId": null
+  },
+  {
+    "at": "2026-09-09T00:08:02.464Z",
+    "event": "user-echo",
+    "entryID": "a6cc6313",
+    "mode": null,
+    "text": "STOP CONTROL CHECK: hold this response for the stop button."
+  },
+  {
+    "at": "2026-09-09T00:08:12.733Z",
+    "command": "abort",
+    "mode": null,
+    "message": null,
+    "modelId": null
+  }
+]

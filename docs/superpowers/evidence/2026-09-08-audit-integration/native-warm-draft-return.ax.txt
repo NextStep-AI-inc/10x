@@ -1,0 +1,112 @@
+Window: "10x", App: 10x Integration QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: integration-native, Help: Starts a new session in integration-native
+					11 button Description: Combined native acceptance fixture, integration-native, Ready, Help: Combined native acceptance fixture, Secondary Actions: Rename Session
+					12 button Description: Integration acceptance baseline, integration-native, Ready, Help: Integration acceptance baseline, Secondary Actions: Rename Session
+					13 button Description: details, Help: Starts a new session in details
+					14 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					15 button Description: titles-native, Help: Starts a new session in titles-native
+					16 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					17 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					18 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					19 button Description: input-native, Help: Starts a new session in input-native
+					20 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					21 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					22 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Unknown, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					23 button Description: review-native, Help: Starts a new session in review-native
+					24 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					25 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					26 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+					27 button Description: context-busy, Help: Starts a new session in context-busy
+					28 button Description: Untitled session, context-busy, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					29 button Description: context-failure, Help: Starts a new session in context-failure
+					30 button Description: Untitled session, context-failure, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					31 button Description: context-unsupported, Help: Starts a new session in context-unsupported
+					32 button Description: Untitled session, context-unsupported, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					33 button Description: context, Help: Starts a new session in context
+					34 button Description: Untitled session, context, Unknown, Help: Untitled session, Secondary Actions: Rename Session
+					35 button Description: continuity, Help: Starts a new session in continuity
+					36 button Description: Run stop-background sleep, continuity, Stopped, Help: Run stop-background sleep, Secondary Actions: Rename Session
+					37 button Description: Check transcript ordering, continuity, Ready, Help: Check transcript ordering, Secondary Actions: Rename Session
+					38 button Description: Untitled session, continuity, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					39 button Description: Describe the attached image, continuity, Ready, Help: Describe the attached image, Secondary Actions: Rename Session
+					40 button Description: queue, Help: Starts a new session in queue
+					41 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					42 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					43 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					44 button Description: queue-reject, Help: Starts a new session in queue-reject
+			45 button Description: Show later rail items, ID: chevron.down
+			46 button Archived sessions
+		47 text Value: Combined native acceptance fixture, Secondary Actions: Rename Session
+		48 unknown Description: Branch, Details: qa-integration-b
+		49 unknown Description: Folder, Details: integration-native
+		50 button Jump to latest
+		51 scroll area
+			52 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				53 text Combined native acceptance in this neutral fixture only. Run pwd, then git switch -c qa-integration-b. Use the edit tool on integration-alpha.txt to replace alpha original with alpha integrated, and on integration-beta.txt to replace beta original with beta integrated. Keep edits confined to those two files, do not commit. Reply briefly with both relative file paths. Cursor-Grok-4.6-Fast, Tuesday, September 8, 2026 at 1:52 PM Running pwd, creating the branch, and reading both integration files.
+				54 button Description: Tool calls (3), Complete, Help: Collapses tool calls, Value: Expanded
+				55 container Run pwd && git switch -c qa-integration-b && ls -la integration-alpha.txt integration-beta.txt && git status, 10 lines, Complete, Total 0.1 seconds
+					56 button Help: Expands tool details, Value: Collapsed, Description: Run pwd && git switch -c qa-integration-b && ls -la integration-alpha.txt integration-beta.txt && git status, 10 lines, Complete, Total 0.1 seconds
+					57 text pwd && git switch -c qa-integration-b && ls -la integration-alpha.txt integration-beta.txt && git status 10 lines Complete Total 0.1s
+				58 container Read /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt, 1 line, Complete, Total 0.0 seconds
+					59 button Help: Expands tool details, Value: Collapsed, Description: Read /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt, 1 line, Complete, Total 0.0 seconds
+					60 button Help: Hold Option while clicking to reveal in Finder, Description: Open integration-alpha.txt in Cursor, /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt
+					61 text · 1 line Complete Total 0.0s
+				62 container Read /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt, 1 line, Complete, Total 0.0 seconds
+					63 button Help: Expands tool details, Value: Collapsed, Description: Read /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt, 1 line, Complete, Total 0.0 seconds
+					64 button Help: Hold Option while clicking to reveal in Finder, Description: Open integration-beta.txt in Cursor, /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt
+					65 text · 1 line Complete Total 0.0s
+				66 text Replacing the original lines in both files with the integrated text.
+				67 button Description: Tool calls (2), Complete, Help: Collapses tool calls, Value: Expanded
+				68 container Edit /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt, +1 −1, Complete, Total 0.0 seconds
+					69 button Help: Expands tool details, Value: Collapsed, Description: Edit /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt, +1 −1, Complete, Total 0.0 seconds
+					70 button Help: Hold Option while clicking to reveal in Finder, Description: Open integration-alpha.txt in Cursor, /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt
+					71 text · +1 −1 Complete Total 0.0s
+				72 container Edit /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt, +1 −1, Complete, Total 0.0 seconds
+					73 button Help: Collapses tool details, Value: Expanded, Description: Edit /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt, +1 −1, Complete, Total 0.0 seconds
+					74 button Help: Hold Option while clicking to reveal in Finder, Description: Open integration-beta.txt in Cursor, /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt
+					75 text · +1 −1 Complete Total 0.0s +1 −1
+					76 button Use horizontal scrolling for diff
+					77 button Copy patch
+					78 button Help: Hold Option while clicking to reveal in Finder, Description: Open integration-beta.txt in Cursor, /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt
+					80 unknown Description: Removed line, beta original, Secondary Actions: show menu
+					81 unknown Description: Added line, beta integrated, Secondary Actions: show menu
+				82 text integration-alpha.txt
+integration-beta.txt Completed, 10.6s Tool-reported files (2) Completed edit and write tools in this turn. Shell commands and other workspace changes are not included.
+				83 button Show tool details for /tmp/10x-session-recovery-home/projects/integration-native/integration-alpha.txt
+				84 button Show tool details for /tmp/10x-session-recovery-home/projects/integration-native/integration-beta.txt
+		85 scroll area Secondary Actions: Scroll Up, Scroll Down
+			86 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT |
+/private/tmp/10x-session-recovery-home/projects/input-native/folder with spaces for attachment acceptance/long nested folder preserving caret position and text on both sides/deliberate insertion notes.txt
+AFTER
+			87 scroll bar (disabled, settable, float) 0
+		88 scroll area Attached images
+			89 container context.png
+				90 image
+				91 text context.png 600×220 · 30 KB
+				92 button Description: Remove context.png, ID: xmark
+		93 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		94 button Description: Model, Help: Shows model menu, Value: Grok 4.6 Fast
+		95 button Description: Context window, Help: Shows context usage details, Value: 10 percent used
+		96 button Description: Send message, ID: arrow.up
+	97 close button
+	98 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	99 minimize button
+100 menu bar
+	101 10x Integration QA
+	102 File
+	103 Edit
+	104 View
+	105 Navigate
+	106 Session
+	107 Window
+	108 Help
+
+The focused UI element is 86 text entry area (settable) Description: Session prompt, Help: Active session prompt, Value: INTEGRATION A UNSENT |
+/private/tmp/10x-session-recovery-home/projects/input-native/folder with spaces for attachment acceptance/long nested folder preserving caret position and text on both sides/deliberate insertion notes.txt
+AFTER

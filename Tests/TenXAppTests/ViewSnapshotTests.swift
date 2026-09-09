@@ -432,6 +432,21 @@ import Testing
 }
 
 @MainActor
+@Test func approvalDefaultScopeSnapshot() async throws {
+    let model = SettingsViewModel(service: OmpConfigService(runner: ApprovalScopeConfigRunner()))
+    await model.load()
+    model.query = "tools.approval"
+
+    try assertSnapshot(
+        SettingsView(
+            model: model,
+            registry: .testing(applications: [:]),
+            store: snapshotEmptyIDEStore),
+        name: "approval-default-scope",
+        size: CGSize(width: 1_060, height: 720))
+}
+
+@MainActor
 @Test func settingsProvidersEmbeddedSnapshot() async throws {
     let model = SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
     let providerModel = try providerWorkspaceModel()
@@ -2364,7 +2379,16 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         modelRole: "review",
         isFallback: false,
         currentTool: "read",
-        recentTools: [],
+        recentTools: [
+            SubagentRecentTool(
+                name: "read",
+                arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+                endMilliseconds: 1_000),
+            SubagentRecentTool(
+                name: "grep",
+                arguments: .object(["query": .string("subagent")]),
+                endMilliseconds: 2_000),
+        ],
         recentOutput: ["Checked transcript mapping", "Reviewing compact activity"],
         toolCount: 6,
         requests: 2,
@@ -2373,7 +2397,9 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         durationMilliseconds: 4_200,
         result: nil)
     try assertSnapshot(
-        SubagentCardView(presentation: presentation).frame(width: 720),
+        SubagentCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
+            .frame(width: 720),
         name: "activity-subagent",
         size: CGSize(width: 800, height: 330))
 }
@@ -2414,6 +2440,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         endDate: Date(timeIntervalSince1970: 1.7))
     try assertSnapshot(
         ToolCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
             .environment(snapshotEmptyIDEStore)
             .frame(width: 720),
         name: "activity-structured-diff",
@@ -2713,6 +2740,17 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             onSend: {}),
         name: "composer-footer-fast-present",
         size: CGSize(width: 780, height: 140))
+}
+
+@MainActor
+@Test func composerIndependentWarningsSnapshot() throws {
+    try assertSnapshot(
+        ComposerFeedbackView(messages: ComposerFeedback.messages(
+            attachment: "Could not attach architecture.png. The limit is 8 images.",
+            model: "Models couldn’t be loaded."))
+            .padding(24),
+        name: "composer-independent-warnings",
+        size: CGSize(width: 560, height: 110))
 }
 
 @MainActor
@@ -3708,6 +3746,15 @@ private struct SnapshotConfigRunner: OmpConfigRunning {
     }
 }
 
+private struct ApprovalScopeConfigRunner: OmpConfigRunning {
+    func run(arguments: [String]) async throws -> Data {
+        if arguments == ["config", "path"] {
+            return Data("/Users/example/.omp/agent\n".utf8)
+        }
+        return Data(#"{"tools.approvalMode":{"value":"always-ask","default":"always-ask","type":"enum","description":"Require confirmation before write and command tools"},"tools.approval":{"value":{"bash":"deny"},"default":{},"type":"record","description":"Set approval policy for individual tools"}}"#.utf8)
+    }
+}
+
 private let snapshotProjectURL = URL(filePath: #filePath)
     .deletingLastPathComponent()
     .deletingLastPathComponent()
@@ -3918,6 +3965,79 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
             .environment(snapshotEmptyIDEStore),
         name: "transcript-working-indicator",
         size: CGSize(width: 700, height: 260))
+}
+
+@MainActor
+@Test func turnStatusSummarySnapshot() throws {
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            TranscriptTurnSummaryView(state: .completed, duration: 6.4)
+            TranscriptTurnSummaryView(state: .stopped, duration: nil)
+            TranscriptTurnSummaryView(state: .failed, duration: nil)
+            TurnActivityView(startedAt: nil)
+        }
+        .padding(24),
+        name: "turn-status-summary",
+        size: CGSize(width: 560, height: 180))
+}
+
+@MainActor
+@Test func turnToolReportedFilesSnapshot() throws {
+    try assertSnapshot(
+        TranscriptTurnSummaryView(
+            state: .completed,
+            duration: 12.8,
+            files: [
+                TranscriptTurnFile(
+                    path: "App/Sessions/TranscriptTurnFilesView.swift",
+                    toolID: "edit-one"),
+                TranscriptTurnFile(
+                    path: "Tests/TenXAppTests/Fixtures/A/Very/Long/Nested/Workspace/Path/TranscriptTurnFilesNavigationRegressionTests.swift",
+                    toolID: "edit-two"),
+            ])
+            .padding(24),
+        name: "turn-tool-reported-files",
+        size: CGSize(width: 560, height: 230))
+}
+
+@MainActor
+@Test func transcriptRunningToolHasOneActivitySnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [
+            .message(TranscriptMessage(
+                id: "running-user",
+                raw: .object([
+                    "role": .string("user"),
+                    "content": .string("Inspect the transcript."),
+                ]),
+                timestamp: timestamp,
+                isFinal: true)),
+            .tool(ToolPresentation(
+                id: "running-tool",
+                name: "read",
+                arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+                result: nil,
+                phase: .running,
+                startDate: timestamp.addingTimeInterval(1),
+                endDate: timestamp.addingTimeInterval(2.5))),
+            .tool(ToolPresentation(
+                id: "completed-tool",
+                name: "grep",
+                arguments: .object(["query": .string("TranscriptTurnProjection")]),
+                result: snapshotTextResult("One match"),
+                phase: .complete,
+                startDate: timestamp.addingTimeInterval(2),
+                endDate: timestamp.addingTimeInterval(2.2))),
+        ],
+        runtimeState: .streaming,
+        title: "Readable turns")
+    try assertSnapshot(
+        TranscriptView(controller: controller)
+            .environment(snapshotEmptyIDEStore),
+        name: "transcript-running-tool-single-activity",
+        size: CGSize(width: 700, height: 340))
 }
 
 @MainActor
@@ -4265,6 +4385,22 @@ private actor SnapshotMediaGate {
         appearance: .dark)
 }
 
+@MainActor
+@Test func approvalDefaultScopeDarkSnapshot() async throws {
+    let model = SettingsViewModel(service: OmpConfigService(runner: ApprovalScopeConfigRunner()))
+    await model.load()
+    model.query = "tools.approval"
+
+    try assertSnapshot(
+        SettingsView(
+            model: model,
+            registry: .testing(applications: [:]),
+            store: snapshotEmptyIDEStore),
+        name: "approval-default-scope-dark",
+        appearance: .dark,
+        size: CGSize(width: 1_060, height: 720))
+}
+
 /// The user's own message is drawn on an emphasis fill, so it carries the same
 /// inversion risk as the send button — and it is the single most repeated
 /// surface in the app.
@@ -4319,6 +4455,7 @@ private actor SnapshotMediaGate {
         endDate: Date(timeIntervalSince1970: 1.7))
     try assertSnapshot(
         ToolCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
             .environment(snapshotEmptyIDEStore)
             .frame(width: 720),
         name: "activity-structured-diff-dark",
@@ -4992,7 +5129,16 @@ private actor SnapshotMediaGate {
         modelRole: "review",
         isFallback: false,
         currentTool: "read",
-        recentTools: [],
+        recentTools: [
+            SubagentRecentTool(
+                name: "read",
+                arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+                endMilliseconds: 1_000),
+            SubagentRecentTool(
+                name: "grep",
+                arguments: .object(["query": .string("subagent")]),
+                endMilliseconds: 2_000),
+        ],
         recentOutput: ["Checked transcript mapping", "Reviewing compact activity"],
         toolCount: 6,
         requests: 2,
@@ -5001,7 +5147,9 @@ private actor SnapshotMediaGate {
         durationMilliseconds: 4_200,
         result: nil)
     try assertSnapshot(
-        SubagentCardView(presentation: presentation).frame(width: 720),
+        SubagentCardView(presentation: presentation)
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
+            .frame(width: 720),
         name: "activity-subagent-dark", appearance: .dark,
         size: CGSize(width: 800, height: 330))
 }
@@ -5650,6 +5798,75 @@ private var snapshotShelfProjectURLs: [URL] {
         size: CGSize(width: 580, height: 380))
 }
 
+@MainActor
+@Test func sessionAttentionWorkingSnapshot() throws {
+    try assertSnapshot(
+        sessionAttentionSurface(controller: sessionAttentionController(
+            title: "Working session",
+            items: [],
+            runtimeState: .streaming)),
+        name: "session-attention-working",
+        size: CGSize(width: 520, height: 220))
+}
+
+@MainActor
+@Test func sessionAttentionPendingSnapshot() throws {
+    try assertSnapshot(
+        sessionAttentionSurface(controller: sessionAttentionController(
+            title: "Pending session",
+            items: [
+                .extensionUI(.confirm(
+                    id: "approval",
+                    title: "Allow this command?",
+                    message: "Run the focused tests.",
+                    timeout: nil)),
+            ],
+            runtimeState: .idle)),
+        name: "session-attention-pending",
+        size: CGSize(width: 520, height: 220))
+}
+
+@MainActor
+@Test func sessionAttentionReadySnapshot() throws {
+    try assertSnapshot(
+        sessionAttentionSurface(controller: sessionAttentionController(
+            title: "Ready session",
+            items: [],
+            runtimeState: .idle)),
+        name: "session-attention-ready",
+        size: CGSize(width: 520, height: 220))
+}
+
+@MainActor
+private func sessionAttentionSurface(controller: SessionController) -> some View {
+    VStack(spacing: 16) {
+        SessionHeaderView(controller: controller)
+        ComposerView(
+            draft: .constant(""),
+            presentation: .active(controller: controller),
+            onSend: {})
+            .frame(width: 420)
+    }
+    .padding(20)
+}
+
+@MainActor
+private func sessionAttentionController(
+    title: String,
+    items: [TranscriptItem],
+    runtimeState: SessionRuntimeState
+) -> SessionController {
+    SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: items,
+        runtimeState: runtimeState,
+        title: title,
+        headerMetadata: SessionHeaderMetadata(
+            branch: "codex/session-attention",
+            repo: "10x",
+            worktreePath: nil))
+}
+
 
 @MainActor
 @Test func contextUsagePopoverSnapshots() throws {
@@ -5669,8 +5886,29 @@ private var snapshotShelfProjectURLs: [URL] {
     for appearance in [SnapshotAppearance.light, .dark] {
         try assertSnapshot(
             ContextUsagePopover(summary: ContextUsageSummary(usage: usage, breakdown: breakdown),
-                breakdown: breakdown, isLoading: false, errorMessage: nil, onClose: {}, onRefresh: {}),
+                breakdown: breakdown, isLoading: false, errorMessage: nil,
+                canCompact: true, compactionDisabledReason: nil,
+                isCompacting: false, compactionErrorMessage: nil,
+                onClose: {}, onRefresh: {}, onCompact: {}),
             name: "context-usage-popover-\(appearance == .light ? "light" : "dark")",
-            appearance: appearance, size: CGSize(width: 360, height: 440))
+            appearance: appearance, size: CGSize(width: 360, height: 520))
     }
+
+    try assertSnapshot(
+        ContextUsagePopover(summary: ContextUsageSummary(usage: usage, breakdown: breakdown),
+            breakdown: breakdown, isLoading: false, errorMessage: nil,
+            canCompact: false, compactionDisabledReason: nil,
+            isCompacting: true, compactionErrorMessage: nil,
+            onClose: {}, onRefresh: {}, onCompact: {}),
+        name: "context-usage-popover-compacting", size: CGSize(width: 360, height: 520))
+
+    try assertSnapshot(
+        ContextUsagePopover(summary: ContextUsageSummary(usage: usage, breakdown: breakdown),
+            breakdown: breakdown, isLoading: false, errorMessage: nil,
+            canCompact: false,
+            compactionDisabledReason: "Wait for queued messages to finish.",
+            isCompacting: false,
+            compactionErrorMessage: "Context couldn’t be compacted. Try again.",
+            onClose: {}, onRefresh: {}, onCompact: {}),
+        name: "context-usage-popover-unavailable", size: CGSize(width: 360, height: 560))
 }

@@ -1,0 +1,125 @@
+{
+  "status": "VISUALLY_REVIEWED",
+  "renderLog": "/tmp/10x-ui-refinements-full-tests.log",
+  "accepted": [
+    {
+      "name": "session-attention-working",
+      "beforeSHA256": "2d89c2d837d50f11b89fe22d80d66be3e194abdcf054849220b470d5ec435f6d",
+      "afterSHA256": "cbcb245b472a9b0be4400ca9d52ad58278e6eaa9158cfd140132b24399b2682b",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "developer-tool-flow-dark",
+      "beforeSHA256": "3bd369bc4d59ebce220fd9ccb74579de553165b8909f0ea95eeb048ad9c440b1",
+      "afterSHA256": "33b5d05c675d285cdbb04c505b759bbf84ca5f0c3a69c552d6a3eb6a1ee3cf27",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "chat-full-900",
+      "beforeSHA256": "fab31fab7b807117481e4f7d7123a3021031e95985e339754011362f17ee2632",
+      "afterSHA256": "475dbaaf7c522c76e30d9dcc20f1ac6b011673b1f6b2dfc097e2dc5471fb2e48",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "transcript-working-indicator-dark",
+      "beforeSHA256": "75aab43d73c700e7908b0b7b035c46aaef35a3d4ac8ed027a4f534c1c3bbf080",
+      "afterSHA256": "753a371e666c6afb7c40508ec338ad569117ccbabf5c6c53a3be0d761bd0f0fc",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "rich-transcript-wide-dark",
+      "beforeSHA256": "2b7b465b30bec34b6d1d850b187dd1c04b66e8a85e33586cb7f488655940287d",
+      "afterSHA256": "3ced9fe4d5ca81417a883b6cb58537b4a0a1f2b35cdaa3d1fc4ec657bc2e758e",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "developer-tool-flow",
+      "beforeSHA256": "1bba31f7e1875e3a31a5096a18a707bd861984f50836ebd024ef081d6a875f7b",
+      "afterSHA256": "cb8d3c8f3140efb7b00a0c14e6a0e9012c8a1bbf92caa443dc9a8af9e4f7f5f9",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "chat-full-1440",
+      "beforeSHA256": "8c6ced58242db173b80d89e0a67b35ea83c2d4144e017c1361b89c500d41ac70",
+      "afterSHA256": "b67ba09dbfb8d5aa769d7a24db2309e662c2dbd53e7cf1761c49325714a9717a",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "session-attention-pending",
+      "beforeSHA256": "12feded24ef3cac51391698646593f0127c42f0b22ede1f5959782ae469560a9",
+      "afterSHA256": "c3ac55c2b05aaef35430342e061278e2222b3bf22d5a63667193352fc948219b",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "turn-status-summary",
+      "beforeSHA256": "4064fa6c33485236ba9ab4d706f4e7a1784e7c1030f659db088d49a9835d80b1",
+      "afterSHA256": "71d8f54b4e0425ff0f2d5bf4da0a99fdd55f9955bc265a7191c123374f774c50",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "composer-sends-attachment-mid-run",
+      "beforeSHA256": "4165a183d406334f73a20f7db600bb0050e675d6611a6e7bbb29db37cea2ca55",
+      "afterSHA256": "a3c8bdee4dd7d33556cff1625d5b2689efabe3227df0824d460f48be3323fbf4",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "chat-full-900-slim",
+      "beforeSHA256": "1602b799b429322d6a94717d29529d834e235f661338a704c242697766640785",
+      "afterSHA256": "ace7cedee322798d7e1ee8a03185fafce840fa25a8ae035f6054a5b9f5672a77",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "composer-stop-control",
+      "beforeSHA256": "a37936e313ad6eeef8d15a5d45480533699fb48ed5eedd1808e432353bf2377e",
+      "afterSHA256": "0a7c3181737ee2d5cbfe87af3863f9677e76881292f816b69a988d04f3b7a12e",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "composer-stop-control-dark",
+      "beforeSHA256": "3d5f119b453fe00cab70c4df52a28c68fbc38471910d50bf5bac789bb025f0d5",
+      "afterSHA256": "49d504f350b3f45ebc8737c70fb2a33323fe265eb918a36a0a84e01bffbf35c9",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "rich-transcript-wide",
+      "beforeSHA256": "20cc39dd143e1d83fb78fb56d608ea743cb129c50fe6df5bd11dc12dfbd1b8ba",
+      "afterSHA256": "bc04867e66f1643aa2b7b98011024e02d2a78f879e091128a0c528ac45f57bdc",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "transcript-working-indicator",
+      "beforeSHA256": "47e087f5300c35536408984b269eed1fe2c2690abfc2a58e2944cc088c88d4a0",
+      "afterSHA256": "f622f106729d598d86b9a210bd2cb3d839b9074e399997e30ba01ae7a6208e01",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "rich-transcript-compact",
+      "beforeSHA256": "438612ae9b397c94b1dc7bf86efdccba781d2e56bd1c93854c0a1b8bb5fe1e37",
+      "afterSHA256": "cd1e570ce9b6c82961f4546f6674c6b501661617d4f1f5b6aa4e4d4e18b6de3a",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "composer-command-browser-streaming-steer",
+      "beforeSHA256": "8e30ae0542c5c19fff1e4186a218c368a2f0f6334e6afff882c0e7c72f7abe60",
+      "afterSHA256": "ecee578c7c5484331cbd6f40a8986834fd279cc476e378e9aaf4163e5767374f",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "full-shell-dark",
+      "beforeSHA256": "888077c567512c86a7d7fd87d502973ff26fdc6906fae85b88e9dee78c37064f",
+      "afterSHA256": "bc0f5eb35fb7e9a247bcb59c725d5af8e6b154bde4ce92ec458e76d03e495cca",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    },
+    {
+      "name": "full-shell-expanded-rail-overflow",
+      "beforeSHA256": "20fa56b4aaa266680e0f884623bc21a2a100994bdf72b8e2f450c6507d96aa25",
+      "afterSHA256": "ab1a01e591bfab533db231bcdc860790154c24b5bbf87e7032ed86b77bd18b5f",
+      "review": "Parent visually inspected actual image this session; intended activity, send-control, reserved warning slot, or typed diff-header update."
+    }
+  ],
+  "notAccepted": [
+    "activity-running-error",
+    "activity-running-error-dark"
+  ],
+  "reasonNotAccepted": "Pre-existing unchanged running/error references outside this refinement."
+}

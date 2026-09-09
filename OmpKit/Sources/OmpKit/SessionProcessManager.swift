@@ -333,7 +333,7 @@ public actor SessionProcessManager {
             configuration.model = model
             configuration.thinking = thinking
             configuration.supportsUserInteraction = supportsUserInteraction
-            configuration.extraArguments = ["--session-dir", sessionDirectory]
+            configuration.extraArguments += ["--session-dir", sessionDirectory]
             let client = clientFactory(configuration)
             managed = ManagedClient(id: UUID(), client: client)
             isWarmCheckout = false
@@ -398,7 +398,7 @@ public actor SessionProcessManager {
             configuration.extraArguments = extraArguments
             configuration.supportsUserInteraction = supportsUserInteraction
             configuration.cwd = URL(filePath: project, directoryHint: .isDirectory)
-            configuration.extraArguments = ["--session-dir", sessionDirectory]
+            configuration.extraArguments += ["--session-dir", sessionDirectory]
             let client = factory(configuration)
             try await client.start()
             let managed = ManagedClient(id: UUID(), client: client)
@@ -521,7 +521,13 @@ public actor SessionProcessManager {
         sessionPath: String,
         warm: ManagedWarmHandle
     ) async throws -> ManagedHandle {
-        _ = try await warm.managed.client.send(.switchSession(path: sessionPath))
+        let response = try await warm.managed.client.send(.switchSession(path: sessionPath))
+        guard response.data?["cancelled"]?.boolValue != true else {
+            throw RpcClientError.commandFailed(
+                command: "switch_session",
+                error: "The session switch was cancelled.",
+                code: nil)
+        }
         let handle = Handle(sessionPath: sessionPath, client: warm.managed.client)
         return ManagedHandle(managed: warm.managed, handle: handle)
     }

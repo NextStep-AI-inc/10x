@@ -9,15 +9,21 @@ import UserNotifications
 @Observable
 final class SessionController: ComposerSessionControlling, ComposerCommandSession, ProviderAccountSession {
     typealias HistoryLoader = @Sendable (String) async throws -> TranscriptHistory?
+    typealias HeaderMetadataResolver = @Sendable (URL) async -> SessionHeaderMetadata
     private(set) var items: [TranscriptItem] = []
     let viewport = TranscriptViewportState()
+    let toolDisclosureState = ToolDisclosureState()
     private(set) var pendingSubmissions: [PendingUserSubmission] = []
     private var consumedSubmissionEchoIndices: Set<Int> = []
+    private var unresolvedSubmissionPresentations: [PendingUserSubmission] = []
+    private var transientSubmissionModes: [String: StreamingBehavior] = [:]
+    private var persistedSubmissionModes: [String: StreamingBehavior] = [:]
     private(set) var isTitleLoading = false
     private var initialPromptTitle: String?
     private var initialAttachments: [ComposerAttachment] = []
     private var wasStoppedByUser = false
     private(set) var transcriptSearchRequest: TranscriptSearchRequest?
+    private(set) var transcriptNavigationRequest: TranscriptNavigationRequest?
     private(set) var runtimeState: SessionRuntimeState = .loading {
         didSet {
             guard runtimeState != oldValue else { return }
@@ -45,6 +51,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private(set) var contextBreakdown: SessionContextBreakdown?
     private(set) var isContextLoading = false
     private(set) var contextErrorMessage: String?
+    private(set) var isContextCompacting = false
+    private(set) var contextCompactionErrorMessage: String?
+    private(set) var contextCompactionRecoveryMessage: String?
     private var contextRefreshTask: Task<Void, Never>?
     private var contextEventFence: RpcEventConsumptionFence?
     private var contextReportText: String?
@@ -54,15 +63,17 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private(set) var extensionSheetRequest: ExtensionUIState?
     private(set) var hasPendingUserInput = false
     private(set) var isRecoveryPresented = false
+    private(set) var isStopping = false
     private(set) var isLogPresented = false
     private(set) var logText = ""
+    private(set) var composerRecoveryMessage: String?
     let id: UUID
     private(set) var providerID: String?
     private(set) var activeProviderAccounts: [String: String] = [:]
     private(set) var providerAccountSequence = 0
     private(set) var commandCatalogState: ComposerCommandCatalogState = .loading
-    var draft = ""
-    var attachments: [ComposerAttachment] = []
+    var draft = "" { didSet { persistRecoveryDraft() } }
+    var attachments: [ComposerAttachment] = [] { didSet { persistRecoveryDraft() } }
     var streamingBehavior: StreamingBehavior? = ComposerInteractionPreferences.shared.defaultSendAction == .steer ? .steer : .followUp
     let createdAt = Date()
     /// Installed by `AppModel` so an idle-retention review runs whenever this
@@ -72,11 +83,17 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private let processManager: SessionProcessManager
     private let historyLoader: HistoryLoader
+    private let contextCompactionTimeout: Duration
     private let harnessNoticePreferences: HarnessNoticePreferenceStore?
     private let harnessNoticeSummarizer: (any HarnessNoticeSummarizing)?
     private weak var accountCoordinator: ProviderAccountCoordinator?
     private let accountChannelRegistry: ProviderAccountChannelRegistry?
     private let titleGenerator: OmpSessionTitleGenerator?
+    private let headerMetadataResolver: HeaderMetadataResolver
+    private let recoveryStore: ComposerRecoveryStore?
+    private let submissionPresentationStore: SubmissionPresentationStore
+    private var recoveryOwner: ComposerRecoveryOwner?
+    private var isApplyingRecovery = false
     private(set) var projectURL: URL?
     private var fallbackThreadStartDate: Date?
     private var handle: SessionProcessManager.Handle?
@@ -88,12 +105,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private var controlTask: Task<Void, Never>?
     private var reconciliationTask: Task<Void, Never>?
     private var titleGenerationTask: Task<Void, Never>?
+    private var headerMetadataRefreshTask: Task<Void, Never>?
     private var openingTask: Task<SessionProcessManager.Handle, any Error>?
     private var openingTaskToken: UInt64?
     private var openingCloseTask: Task<Void, Never>?
     private var reconciliationGeneration: UInt64 = 0
     private var pipelineGeneration: UInt64 = 0
     private var titleGenerationGeneration: UInt64 = 0
+    private var headerMetadataRefreshGeneration: UInt64 = 0
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
     private var extensionResponsesInFlight: Set<String> = []
@@ -110,6 +129,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     /// `forwardToAccountChannelIfMarked`, the sole producer.
     private var accountChannelContinuation: AsyncStream<RpcFrame>.Continuation?
     @ObservationIgnored private var isSendInFlight = false
+    @ObservationIgnored private var isContextCompactionUnsupported = false
     @ObservationIgnored private weak var attachedComposerControls: ComposerControlsModel?
     @ObservationIgnored private var pendingSlashAttachments: PendingSlashAttachments?
     private static let transcriptLog = OSLog(
@@ -136,7 +156,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private enum ControllerError: Error {
         case runtimeUnavailable
+        case operationBusy
+        case eventFenceClosed
+        case compactedHistoryUnavailable
     }
+
+    static let defaultContextCompactionTimeout: Duration = .seconds(600)
 
     init(
         processManager: SessionProcessManager,
@@ -145,6 +170,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         accountChannelRegistry: ProviderAccountChannelRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
         historyLoader: HistoryLoader? = nil,
+        contextCompactionTimeout: Duration = defaultContextCompactionTimeout,
+        headerMetadataResolver: @escaping HeaderMetadataResolver = SessionHeaderMetadata.resolve,
+        recoveryStore: ComposerRecoveryStore? = nil,
+        recoveryOwner: ComposerRecoveryOwner? = nil,
+        submissionPresentationStore: SubmissionPresentationStore = .inMemory(),
         harnessNoticePreferences: HarnessNoticePreferenceStore? = nil,
         harnessNoticeSummarizer: (any HarnessNoticeSummarizing)? = nil
     ) {
@@ -154,6 +184,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.accountChannelRegistry = accountChannelRegistry
         self.titleGenerator = titleGenerator
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
+        self.contextCompactionTimeout = contextCompactionTimeout
+        self.headerMetadataResolver = headerMetadataResolver
+        self.recoveryStore = recoveryStore
+        self.recoveryOwner = recoveryOwner?.canonicalized
+        self.submissionPresentationStore = submissionPresentationStore
         self.harnessNoticePreferences = harnessNoticePreferences
         self.harnessNoticeSummarizer = harnessNoticeSummarizer
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
@@ -161,6 +196,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.commandUpdates = commandUpdates.stream
         self.commandContinuation = commandUpdates.continuation
         activityRegistry?.register(self)
+        hydrateRecoveryDraft()
     }
 
     init(
@@ -178,14 +214,21 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         providerID: String? = nil,
         activityRegistry: SessionActivityRegistry? = nil,
         titleGenerator: OmpSessionTitleGenerator? = nil,
-        historyLoader: HistoryLoader? = nil
+        historyLoader: HistoryLoader? = nil,
+        headerMetadataResolver: @escaping HeaderMetadataResolver = SessionHeaderMetadata.resolve
     ) {
         self.processManager = processManager
         self.historyLoader = historyLoader ?? SessionController.makeHistoryLoader()
+        self.contextCompactionTimeout = Self.defaultContextCompactionTimeout
+        self.headerMetadataResolver = headerMetadataResolver
         self.harnessNoticePreferences = nil
         self.harnessNoticeSummarizer = nil
         self.items = previewItems
         self.runtimeState = runtimeState
+        self.hasPendingUserInput = previewItems.contains { item in
+            guard case .extensionUI(let state) = item else { return false }
+            return state.requiresUserInput
+        }
         self.title = title
         self.modelName = modelName
         self.thinkingLevel = thinkingLevel
@@ -199,6 +242,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         // above.
         self.accountChannelRegistry = nil
         self.titleGenerator = titleGenerator
+        self.recoveryStore = nil
+        self.recoveryOwner = nil
+        self.submissionPresentationStore = .inMemory()
         let commandUpdates = AsyncStream<ComposerCommandCatalogState>.makeStream(
             bufferingPolicy: .bufferingNewest(1))
         self.commandUpdates = commandUpdates.stream
@@ -224,6 +270,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard runtimeState == .idle,
               openingTask == nil,
               !isSendInFlight,
+              !isContextCompacting,
               titleGenerationTask == nil,
               draft.isEmpty,
               attachments.isEmpty,
@@ -250,6 +297,48 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
     }
 
+    var canSendMessage: Bool {
+        isComposerAvailable && !isContextCompacting
+    }
+
+    var canCompactContext: Bool {
+        contextCompactionDisabledReason == nil
+    }
+
+    var contextCompactionDisabledReason: String? {
+        guard handle != nil else { return "Connect the session to compact context." }
+        guard !isContextCompactionUnsupported else {
+            return "Context compaction isn’t supported by this runtime."
+        }
+        guard availableCommands.contains(where: { $0.name == "compact" && $0.source == .builtin }) else {
+            return "Context compaction isn’t available in this runtime."
+        }
+        guard runtimeState == .idle else { return "Wait for the current response to finish." }
+        guard !isSendInFlight, !isContextCompacting else { return "Context compaction is already running." }
+        guard pendingSubmissions.isEmpty, queuedMessageCount == 0 else {
+            return "Wait for queued messages to finish."
+        }
+        guard !hasPendingUserInput, extensionSheetRequest == nil,
+              extensionRouter.inlineRequests.isEmpty, extensionRouter.sheetRequest == nil
+        else { return "Answer the pending question first." }
+        return nil
+    }
+
+    var canRestartAfterDismissal: Bool {
+        contextCompactionRecoveryMessage != nil && sessionPath != nil && !isStopping
+    }
+
+    var canRetryOpening: Bool {
+        guard case .failed = runtimeState else { return false }
+        return sessionPath != nil && handle == nil
+    }
+
+    var isIntentionallyStopped: Bool {
+        guard wasStoppedByUser else { return false }
+        if case .stopped = runtimeState { return true }
+        return false
+    }
+
     var availableCommands: [AvailableSlashCommand] {
         guard case .available(let commands) = commandCatalogState else { return [] }
         return commands
@@ -257,6 +346,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     var activityState: SessionActivityState {
         if hasPendingUserInput { return .needsInput }
+        if isContextCompacting { return .working }
         switch runtimeState {
         case .loading, .streaming: return .working
         case .idle: return wasStoppedByUser ? .stopped : .ready
@@ -267,11 +357,35 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     func focusSearchResult(_ request: TranscriptSearchRequest?) {
         transcriptSearchRequest = request
-        if request != nil { viewport.isFollowingLatest = false }
+        if request != nil {
+            transcriptNavigationRequest = nil
+            viewport.isFollowingLatest = false
+        }
+    }
+
+    func focusTranscriptRow(_ request: TranscriptNavigationRequest?) {
+        transcriptNavigationRequest = request
+        guard request != nil else { return }
+        transcriptSearchRequest = nil
+        viewport.isFollowingLatest = false
+    }
+
+    func focusPendingRequest() {
+        guard let item = items.first(where: { item in
+            guard case .extensionUI(let state) = item else { return false }
+            return state.requiresUserInput
+        }) else { return }
+        focusTranscriptRow(TranscriptNavigationRequest(rowID: item.viewID))
+    }
+
+    func activate() {
+        scheduleHeaderMetadataRefresh()
     }
 
     func openExisting(_ metadata: SessionMetadata) async {
         let priorSessionPath = stopAndDetachCurrentSession()
+        persistedSubmissionModes = [:]
+        self.sessionPath = metadata.path
         publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
@@ -289,7 +403,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let projectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
         self.projectURL = projectURL
         fallbackThreadStartDate = metadata.created
-        let headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
+        let headerMetadata = await headerMetadataResolver(projectURL)
         guard pipelineGeneration == openingGeneration else { return }
         self.headerMetadata = headerMetadata
         runtimeState = .loading
@@ -329,6 +443,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             ? .failed
             : .notRequested
         let priorSessionPath = stopAndDetachCurrentSession()
+        persistedSubmissionModes = [:]
+        sessionPath = nil
         publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
@@ -345,7 +461,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.projectURL = projectURL
         fallbackThreadStartDate = Date()
         title = "New session"
-        let headerMetadata = await SessionHeaderMetadata.resolve(projectURL: projectURL)
+        let headerMetadata = await headerMetadataResolver(projectURL)
         guard pipelineGeneration == openingGeneration else { return failureOutcome }
         self.headerMetadata = headerMetadata
         runtimeState = .loading
@@ -392,6 +508,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func setModel(provider: String, modelID: String) async throws {
+        guard !isContextCompacting else { throw ControllerError.operationBusy }
         guard let handle else { throw RpcClientError.notStarted }
         let context = currentPipelineContext()
         let response = try await handle.client.send(.setModel(provider: provider, modelId: modelID))
@@ -405,6 +522,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func setThinkingLevel(_ level: String) async throws {
+        guard !isContextCompacting else { throw ControllerError.operationBusy }
         guard let handle else { throw RpcClientError.notStarted }
         let context = currentPipelineContext()
         _ = try await handle.client.send(.setThinkingLevel(level))
@@ -446,6 +564,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     /// Returns `false` only when Fast mode is unsupported (`active == false`).
     /// Transport / OMP command failures throw.
     func setFastMode(_ enabled: Bool) async throws -> Bool {
+        guard !isContextCompacting else { throw ControllerError.operationBusy }
         guard let handle else { throw RpcClientError.notStarted }
         let context = currentPipelineContext()
         let response = try await handle.client.send(.setFastMode(enabled: enabled))
@@ -461,6 +580,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func sendPrompt(behaviorOverride: StreamingBehavior? = nil) async {
+        guard !isContextCompacting else { return }
         if let initial = pendingSubmissions.first(where: { $0.state == .starting }) {
             let accepted = await send(text: initial.message.visibleText, behavior: nil,
                 attachmentDisposition: .clearImmediately, failureFunction: "sendPrompt",
@@ -480,15 +600,25 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func prepareInitialSubmission(text: String, attachments: [ComposerAttachment], projectURL: URL? = nil) {
+        unresolvedSubmissionPresentations = []
+        transientSubmissionModes = [:]
+        persistedSubmissionModes = [:]
         draft = ""
         self.attachments = []
         initialAttachments = attachments
         self.projectURL = projectURL
-        initialPromptTitle = text.split(whereSeparator: \.isNewline).first.map { String($0.prefix(80)) }
-            ?? "New session"
+        initialPromptTitle = Self.usableTitle(text) ?? "New session"
         isTitleLoading = true
         pendingSubmissions = [PendingUserSubmission(
             text: text, attachments: attachments, minimumUserIndex: 0, state: .starting)]
+        if let recoveryStore, let recoveryOwner {
+            recoveryStore.setInFlight(
+                ComposerRecoveryInFlight(
+                    id: UUID(),
+                    draft: ComposerRecoveryDraft(text: text, attachments: attachments),
+                    minimumUserIndex: 0),
+                for: recoveryOwner)
+        }
     }
 
     func markInitialSubmissionFailed() {
@@ -507,6 +637,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         for index in pendingSubmissions.indices where pendingSubmissions[index].state == .starting {
             pendingSubmissions[index].state = .unconfirmed
         }
+        if let recoveryStore, let recoveryOwner {
+            recoveryStore.setInFlight(nil, for: recoveryOwner)
+        }
         finishTitleLoading()
     }
 
@@ -515,6 +648,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             guard case .message(let message) = item, message.role == .user else { return nil }
             return message
         }
+    }
+
+    func submissionMode(for messageID: String) -> StreamingBehavior? {
+        transientSubmissionModes[messageID] ?? persistedSubmissionModes[messageID]
     }
 
     func sendSlashCommand(_ text: String) async {
@@ -536,7 +673,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let staged = suppliedAttachments ?? attachments
         let hasContent = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !staged.isEmpty
-        guard let handle, isComposerAvailable, !isSendInFlight, hasContent else { return false }
+        guard let handle, canSendMessage, !isSendInFlight, hasContent else { return false }
         let behavior: StreamingBehavior?
         if runtimeState == .streaming {
             guard let requestedBehavior else { return false }
@@ -556,7 +693,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 receiptID = pendingSubmissions[index].id
             } else {
                 let receipt = PendingUserSubmission(
-                    text: text, attachments: staged, minimumUserIndex: userMessages.count, state: .sending)
+                    text: text,
+                    attachments: staged,
+                    minimumUserIndex: userMessages.count,
+                    mode: behavior,
+                    state: .sending)
                 pendingSubmissions.append(receipt)
                 receiptID = receipt.id
             }
@@ -567,13 +708,46 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         isSendInFlight = true
         defer { isSendInFlight = false }
 
+        if attachmentDisposition == .clearImmediately,
+           let recoveryStore,
+           let recoveryOwner {
+            let minimumUserIndex = pendingSubmissions.first(where: { $0.id == receiptID })?
+                .minimumUserIndex ?? userMessages.count
+            recoveryStore.setInFlight(
+                ComposerRecoveryInFlight(
+                    id: UUID(),
+                    draft: ComposerRecoveryDraft(text: text, attachments: staged),
+                    minimumUserIndex: minimumUserIndex),
+                for: recoveryOwner)
+            let didFlush = await recoveryStore.flush()
+            guard isCurrent(context) else { return true }
+            guard didFlush else {
+                recoveryStore.setInFlight(nil, for: recoveryOwner)
+                if let receiptID {
+                    pendingSubmissions.removeAll { $0.id == receiptID }
+                }
+                if suppliedAttachments != nil {
+                    if draft.isEmpty {
+                        draft = text
+                    } else if draft != text {
+                        draft = [text, draft].joined(separator: "\n\n")
+                    }
+                    attachments = staged + attachments.filter { !stagedIDs.contains($0.id) }
+                }
+                composerRecoveryMessage =
+                    "Couldn’t save this draft. Check storage access and try again."
+                return true
+            }
+            composerRecoveryMessage = nil
+        }
+
         // The composer answers the keystroke, not the round trip: the draft
         // clears and the run reads as started before omp has replied. The
         // processor is moved first so a snapshot already in flight cannot
         // publish the old idle state back over this one.
-        if suppliedAttachments == nil { draft = "" }
+        if suppliedAttachments == nil, draft == text { draft = "" }
         if attachmentDisposition == .clearImmediately {
-            if suppliedAttachments == nil { attachments = [] }
+            if suppliedAttachments == nil { removeAttachments(withIDs: stagedIDs) }
         } else {
             pendingSlashAttachments = PendingSlashAttachments(
                 ids: stagedIDs,
@@ -592,6 +766,13 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 images: staged.map(\.promptImage),
                 streamingBehavior: behavior))
             guard isCurrent(context) else { return true }
+            contextRevision &+= 1
+            scheduleContextRefresh()
+            if attachmentDisposition == .clearImmediately,
+               let recoveryStore,
+               let recoveryOwner {
+                recoveryStore.setInFlight(nil, for: recoveryOwner)
+            }
             if let receiptID, let index = pendingSubmissions.firstIndex(where: { $0.id == receiptID }),
                let behavior {
                 pendingSubmissions[index].state = .queued(behavior)
@@ -673,22 +854,25 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         context: PipelineContext
     ) {
         guard behavior == nil, titleGenerationTask == nil else { return }
-        guard title == "New session" || title == "Untitled session",
-              let titleGenerator,
-              let provider = liveComposerSelection.provider,
-              let modelID = liveComposerSelection.modelID
-        else {
+        guard title == "New session" || title == "Untitled session" else {
             finishTitleLoading()
             return
         }
+        let fallbackTitle = Self.usableTitle(prompt)
+        let provider = liveComposerSelection.provider
+        let modelID = liveComposerSelection.modelID
 
         titleGenerationGeneration &+= 1
         let generation = titleGenerationGeneration
         titleGenerationTask = Task { [weak self, titleGenerator] in
-            let generatedTitle = await titleGenerator.generate(
-                prompt: prompt,
-                provider: provider,
-                modelID: modelID)
+            let generatedTitle: String? = if let titleGenerator, let provider, let modelID {
+                await titleGenerator.generate(
+                    prompt: prompt,
+                    provider: provider,
+                    modelID: modelID)
+            } else {
+                nil
+            }
             guard let self else { return }
             defer {
                 if self.titleGenerationGeneration == generation {
@@ -696,55 +880,83 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                     self.finishTitleLoading()
                 }
             }
-            guard let generatedTitle,
+            guard let selectedTitle = Self.usableTitle(generatedTitle) ?? fallbackTitle,
                   self.isCurrent(context),
                   self.title == "New session" || self.title == "Untitled session"
             else { return }
             do {
-                _ = try await handle.client.send(.setSessionName(generatedTitle))
-                guard self.isCurrent(context) else { return }
-                self.title = generatedTitle
+                _ = try await handle.client.send(.setSessionName(selectedTitle))
+                guard self.titleGenerationGeneration == generation,
+                      self.isCurrent(context),
+                      self.title == "New session" || self.title == "Untitled session"
+                else { return }
+                self.title = selectedTitle
+            } catch is CancellationError {
+                return
             } catch {
+                os_log(
+                    .error,
+                    log: Self.transcriptLog,
+                    "[SessionController:persistInitialTitle] Title save failed — error=%{public}@",
+                    String(describing: type(of: error)))
                 return
             }
         }
     }
 
     func abort() async {
-        if runtimeState == .loading {
-            let path = stopAndDetachCurrentSession()
-            wasStoppedByUser = true
-            runtimeState = .stopped(code: nil, stderrTail: "")
-            markInitialSubmissionFailed()
-            reportActivity()
-            if let path { await processManager.close(sessionPath: path) }
-            return
+        guard runtimeState == .loading || runtimeState == .streaming || isContextCompacting else { return }
+        let stoppedAt = Date()
+        let stoppedHandle = handle
+        let path = stopAndDetachCurrentSession()
+        let closePredecessor = openingCloseTask
+        let stopGeneration = pipelineGeneration
+
+        isStopping = true
+        wasStoppedByUser = true
+        runtimeState = .stopped(code: nil, stderrTail: "")
+        _ = TranscriptReducer.settleActiveTurnAfterStop(in: &items, at: stoppedAt)
+        isRecoveryPresented = true
+        queuedMessageCount = 0
+        markInitialSubmissionFailed()
+        for index in pendingSubmissions.indices {
+            pendingSubmissions[index].state = .unconfirmed
         }
-        guard let handle, runtimeState == .streaming else { return }
-        let context = currentPipelineContext()
-        do {
-            _ = try await handle.client.send(.abort())
-            wasStoppedByUser = true
-        } catch {
-            fail(error, function: "abort", context: context)
+        reportActivity()
+
+        let closeTask = Task { [processManager] in
+            await closePredecessor?.value
+            if let stoppedHandle {
+                _ = try? await stoppedHandle.client.send(.abort(), timeout: .milliseconds(250))
+            }
+            if let path {
+                await processManager.close(sessionPath: path)
+            }
+        }
+        openingCloseTask = closeTask
+        await closeTask.value
+        isStopping = false
+        if pipelineGeneration == stopGeneration {
+            openingCloseTask = nil
         }
     }
 
     func restart() async {
-        guard let projectURL, let sessionPath else { return }
+        guard !isStopping, let projectURL, let sessionPath else { return }
         stopEventPipeline()
         publishCommandCatalog(.loading)
         let openingGeneration = pipelineGeneration
         let pendingOpeningCloseTask = openingCloseTask
-        await processManager.close(sessionPath: sessionPath)
-        guard pipelineGeneration == openingGeneration else { return }
         await pendingOpeningCloseTask?.value
+        guard pipelineGeneration == openingGeneration else { return }
+        await processManager.close(sessionPath: sessionPath)
         guard pipelineGeneration == openingGeneration else { return }
         let openingContext = PipelineContext(
             generation: openingGeneration,
             handle: nil,
             processor: nil)
         runtimeState = .loading
+        wasStoppedByUser = false
         reportActivity()
         isRecoveryPresented = false
         let projectPath = projectURL.path
@@ -800,6 +1012,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func rename(to name: String) async throws {
+        guard !isContextCompacting else { throw ControllerError.operationBusy }
         titleGenerationGeneration &+= 1
         titleGenerationTask?.cancel()
         if let titleGenerationTask {
@@ -832,9 +1045,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func handleUnexpectedExit(code: Int32?, stderrTail: String) {
+        let wasCompacting = isContextCompacting
         stopEventPipeline()
         runtimeState = .stopped(code: code, stderrTail: stderrTail)
         isRecoveryPresented = true
+        if wasCompacting {
+            contextCompactionRecoveryMessage =
+                "The compaction result is unknown. Restart to reload saved history."
+        }
         logText = stderrTail.isEmpty ? "OMP exited without stderr output." : stderrTail
         reportActivity()
     }
@@ -856,6 +1074,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         items = []
         pendingSubmissions = []
         consumedSubmissionEchoIndices = []
+        unresolvedSubmissionPresentations = []
+        transientSubmissionModes = [:]
+        persistedSubmissionModes = [:]
         isTitleLoading = false
         runtimeState = .stopped(code: nil, stderrTail: "")
         accountCoordinator?.unregister(sessionID: id)
@@ -885,9 +1106,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         failureFunction: String
     ) async {
         stopEventPipeline()
+        isContextCompactionUnsupported = false
         providerAccountSequence = 0
         self.handle = handle
         sessionPath = handle.sessionPath
+        transferRecoveryOwnership(toSessionPath: handle.sessionPath)
         let openingContext = currentPipelineContext()
 
         do {
@@ -904,6 +1127,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 }
             }
             guard isCurrent(openingContext) else { return }
+            if let loadedHistory, let sessionPath {
+                bindSubmissionPresentations(to: loadedHistory, sessionPath: sessionPath)
+            }
             let initialContent: TranscriptInitialContent
             if let history = loadedHistory {
                 initialContent = .history(history)
@@ -926,6 +1152,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 hasReconciliationWarning: didHistoryLoadFail,
                 runtimeState: runtimeState)
             install(snapshot: initialSnapshot)
+            reconcileRecoveredInFlight()
             guard isCurrent(processorContext) else { return }
             let eventFence = RpcEventConsumptionFence()
             startEventPipeline(
@@ -1119,12 +1346,18 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         contextReportText = nil
         contextErrorMessage = nil
         isContextLoading = false
+        isContextCompacting = false
+        contextCompactionErrorMessage = nil
+        contextCompactionRecoveryMessage = nil
+        isContextCompactionUnsupported = false
         eventTask?.cancel()
         snapshotTask?.cancel()
         controlTask?.cancel()
         reconciliationTask?.cancel()
         titleGenerationTask?.cancel()
+        headerMetadataRefreshTask?.cancel()
         titleGenerationGeneration &+= 1
+        headerMetadataRefreshGeneration &+= 1
         openingTask = nil
         openingTaskToken = nil
         eventTask = nil
@@ -1132,6 +1365,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         controlTask = nil
         reconciliationTask = nil
         titleGenerationTask = nil
+        headerMetadataRefreshTask = nil
         if previousOpeningCloseTask != nil || openingTaskToClose != nil {
             openingCloseTask = Task { [processManager] in
                 await previousOpeningCloseTask?.value
@@ -1241,6 +1475,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
         guard isCurrent(context) else { return }
         applyEventMetadata(frame)
+        if isTerminalAgentBoundary(frame) {
+            scheduleHeaderMetadataRefresh(context: context)
+        }
         if isReconciliationBoundary(frame) {
             let snapshot = await processor.currentSnapshot()
             guard isCurrent(context) else { return }
@@ -1270,6 +1507,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                         processorID: processorID,
                         generation: generation) == true
                 else { return }
+                self?.bindSubmissionPresentations(to: history, sessionPath: sessionPath)
                 await processor.reconcile(history, hasWarning: false, generation: generation)
             } catch {
                 guard !Task.isCancelled,
@@ -1331,6 +1569,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     func testingAwaitReconciliation() async {
         await reconciliationTask?.value
     }
+
+    func testingAwaitHeaderMetadataRefresh() async {
+        await headerMetadataRefreshTask?.value
+    }
 #endif
 
     private func isReconciliationBoundary(_ frame: RpcFrame) -> Bool {
@@ -1342,6 +1584,35 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             payload["isTerminal"]?.boolValue != false
         default:
             false
+        }
+    }
+
+    private func isTerminalAgentBoundary(_ frame: RpcFrame) -> Bool {
+        guard case .event("agent_end", let payload) = frame else { return false }
+        return payload["isTerminal"]?.boolValue != false
+    }
+
+    private func scheduleHeaderMetadataRefresh(context: PipelineContext? = nil) {
+        guard headerMetadataRefreshTask == nil, let projectURL else { return }
+        headerMetadataRefreshGeneration &+= 1
+        let generation = headerMetadataRefreshGeneration
+        let pipelineGeneration = pipelineGeneration
+        let expectedProjectURL = projectURL.standardizedFileURL
+        headerMetadataRefreshTask = Task { [weak self, headerMetadataResolver] in
+            let metadata = await headerMetadataResolver(expectedProjectURL)
+            guard let self else { return }
+            defer {
+                if self.headerMetadataRefreshGeneration == generation {
+                    self.headerMetadataRefreshTask = nil
+                }
+            }
+            guard !Task.isCancelled,
+                  self.headerMetadataRefreshGeneration == generation,
+                  self.pipelineGeneration == pipelineGeneration,
+                  self.projectURL?.standardizedFileURL == expectedProjectURL,
+                  context.map({ self.isCurrent($0) }) ?? true
+            else { return }
+            self.headerMetadata = metadata
         }
     }
 
@@ -1461,6 +1732,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     private func refreshContextUsage() async {
+        guard !isContextCompacting else { return }
         guard let handle else { return }
         let context = currentPipelineContext()
         let revision = contextRevision
@@ -1469,6 +1741,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             guard isCurrent(context), revision == contextRevision, !Task.isCancelled else { return }
             if !isContextLoading { contextErrorMessage = nil }
             applyContextUsage(response.data?["contextUsage"])
+            queuedMessageCount = response.data?["queuedMessageCount"]?.intValue ?? 0
         } catch {
             // A usage read must not interrupt the session or its working indicator.
             guard isCurrent(context), !Task.isCancelled else { return }
@@ -1477,6 +1750,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     func refreshContextDetails() async {
+        guard !isContextCompacting else { return }
         guard !isContextLoading else { return }
         guard let handle, let eventFence = contextEventFence else {
             contextErrorMessage = "Context usage is unavailable while the session is disconnected."
@@ -1526,6 +1800,146 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
     }
 
+    func compactContext() async {
+        guard canCompactContext, let handle, let eventFence = contextEventFence else { return }
+        guard accountCoordinator?.beginManagedTurn(sessionID: id) != false else {
+            contextCompactionErrorMessage = "Context couldn’t be compacted while another session is active."
+            return
+        }
+        defer { accountCoordinator?.endManagedTurn(sessionID: id) }
+
+        let context = currentPipelineContext()
+        isContextCompacting = true
+        contextCompactionErrorMessage = nil
+        contextCompactionRecoveryMessage = nil
+        reportActivity()
+        defer {
+            if isCurrent(context) {
+                isContextCompacting = false
+                reportActivity()
+            }
+        }
+
+        do {
+            let receipt = try await handle.client.sendWithEventFence(
+                .compact(customInstructions: nil),
+                timeout: contextCompactionTimeout)
+            guard await eventFence.wait(through: receipt.precedingEventCount) else {
+                throw ControllerError.eventFenceClosed
+            }
+            guard isCurrent(context) else { return }
+            guard receipt.response.success else {
+                if receipt.response.code?.lowercased().contains("unsupported") == true {
+                    isContextCompactionUnsupported = true
+                    contextCompactionErrorMessage =
+                        "Context compaction isn’t supported by this runtime."
+                } else {
+                    contextCompactionErrorMessage = "Context couldn’t be compacted. Try again."
+                }
+                return
+            }
+        } catch {
+            guard isCurrent(context) else { return }
+            await closeAfterUncertainCompaction(error: error, context: context)
+            return
+        }
+
+        do {
+            guard !Task.isCancelled else { throw CancellationError() }
+            guard let sessionPath, let processor = context.processor,
+                  let history = try await historyLoader(sessionPath)
+            else { throw ControllerError.compactedHistoryUnavailable }
+            guard isCurrent(context) else { return }
+            guard !Task.isCancelled else { throw CancellationError() }
+            reconciliationGeneration &+= 1
+            let generation = reconciliationGeneration
+            bindSubmissionPresentations(to: history, sessionPath: sessionPath)
+            await processor.reconcile(history, hasWarning: false, generation: generation)
+            guard isCurrent(context), reconciliationGeneration == generation else { return }
+            guard !Task.isCancelled else { throw CancellationError() }
+            install(snapshot: await processor.currentSnapshot())
+            guard isCurrent(context) else { return }
+        } catch {
+            guard isCurrent(context) else { return }
+            await closeAfterKnownSuccessfulCompaction(error: error, context: context)
+            return
+        }
+
+        do {
+            guard !Task.isCancelled else { throw CancellationError() }
+            let state = try await handle.client.send(.getState(), timeout: .seconds(5))
+            guard isCurrent(context) else { return }
+            guard !Task.isCancelled else { throw CancellationError() }
+            contextRevision &+= 1
+            contextBreakdown = nil
+            contextErrorMessage = nil
+            applyState(state.data)
+        } catch {
+            guard isCurrent(context) else { return }
+            await closeAfterKnownSuccessfulCompactionStateFailure(error: error, context: context)
+        }
+    }
+
+    private func closeAfterUncertainCompaction(
+        error: any Error,
+        context: PipelineContext
+    ) async {
+        await closeAfterCompaction(
+            recoveryMessage: "The compaction result is unknown. Restart to reload saved history.",
+            diagnostic: "Compaction status unknown: \(error)",
+            context: context)
+    }
+
+    private func closeAfterKnownSuccessfulCompaction(
+        error: any Error,
+        context: PipelineContext
+    ) async {
+        await closeAfterCompaction(
+            recoveryMessage:
+                "Context was compacted, but saved history couldn’t be reloaded. Restart to reload saved history.",
+            diagnostic: "Compaction succeeded but freshness reload failed: \(error)",
+            context: context)
+    }
+
+    private func closeAfterKnownSuccessfulCompactionStateFailure(
+        error: any Error,
+        context: PipelineContext
+    ) async {
+        await closeAfterCompaction(
+            recoveryMessage:
+                "Context was compacted, but refreshed session state couldn’t be loaded. Restart to reload saved history.",
+            diagnostic: "Compaction succeeded but state refresh failed: \(error)",
+            context: context)
+    }
+
+    private func closeAfterCompaction(
+        recoveryMessage: String,
+        diagnostic: String,
+        context: PipelineContext
+    ) async {
+        guard isCurrent(context) else { return }
+        let path = stopAndDetachCurrentSession()
+        let closePredecessor = openingCloseTask
+        let stopGeneration = pipelineGeneration
+        isStopping = true
+        wasStoppedByUser = false
+        runtimeState = .stopped(code: nil, stderrTail: "")
+        queuedMessageCount = 0
+        contextCompactionRecoveryMessage = recoveryMessage
+        logText = "[Session:compactContext] \(diagnostic)"
+        isRecoveryPresented = true
+        reportActivity()
+
+        let closeTask = Task { [processManager] in
+            await closePredecessor?.value
+            if let path { await processManager.close(sessionPath: path) }
+        }
+        openingCloseTask = closeTask
+        await closeTask.value
+        isStopping = false
+        if pipelineGeneration == stopGeneration { openingCloseTask = nil }
+    }
+
     private func consumeContextReport(_ frame: RpcFrame, processor: TranscriptEventProcessor) -> Bool {
         guard self.processor?.id == processor.id, isContextLoading,
               case .event("command_output", let payload) = frame,
@@ -1536,6 +1950,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     private func refreshState() async {
+        guard !isContextCompacting else { return }
         guard let handle else { return }
         let context = currentPipelineContext()
         do {
@@ -1700,8 +2115,24 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         installedSnapshotRevision = snapshot.revision
         items = snapshot.items
         if !pendingSubmissions.isEmpty {
+            var matches: [PendingUserSubmission.Match] = []
             pendingSubmissions = PendingUserSubmission.reconcile(
-                pendingSubmissions, messages: userMessages, consumedIndices: &consumedSubmissionEchoIndices)
+                pendingSubmissions,
+                messages: userMessages,
+                consumedIndices: &consumedSubmissionEchoIndices,
+                onMatch: { matches.append($0) })
+            for match in matches {
+                unresolvedSubmissionPresentations.append(match.submission)
+                if let mode = match.mode {
+                    transientSubmissionModes[match.message.id] = mode
+                }
+            }
+        }
+        if !transientSubmissionModes.isEmpty {
+            let installedUserMessageIDs = Set(userMessages.map(\.id))
+            transientSubmissionModes = transientSubmissionModes.filter {
+                installedUserMessageIDs.contains($0.key)
+            }
         }
         runtimeState = snapshot.runtimeState
         os_signpost(
@@ -1713,8 +2144,131 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         reportActivity()
     }
 
+    private func bindSubmissionPresentations(
+        to history: TranscriptHistory,
+        sessionPath: String
+    ) {
+        persistedSubmissionModes = submissionPresentationStore.modes(
+            forSessionPath: sessionPath)
+        let historicalUserMessages = history.items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item, message.role == .user else { return nil }
+            return message
+        }
+        guard !historicalUserMessages.isEmpty else { return }
+
+        let unresolvedIDs = Set(unresolvedSubmissionPresentations.map(\.id))
+        let pendingIDs = Set(pendingSubmissions.map(\.id))
+        var candidates = unresolvedSubmissionPresentations
+        candidates.append(contentsOf: pendingSubmissions)
+        guard !candidates.isEmpty else { return }
+
+        var consumedIndices: Set<Int> = []
+        var matches: [PendingUserSubmission.Match] = []
+        let remaining = PendingUserSubmission.reconcile(
+            candidates,
+            messages: historicalUserMessages,
+            consumedIndices: &consumedIndices,
+            matchingObservedTimestamps: true,
+            onMatch: { matches.append($0) })
+        unresolvedSubmissionPresentations = remaining.filter { unresolvedIDs.contains($0.id) }
+        pendingSubmissions = remaining.filter { pendingIDs.contains($0.id) }
+
+        for match in matches {
+            if let mode = match.mode {
+                submissionPresentationStore.setMode(
+                    mode,
+                    forMessageID: match.message.id,
+                    sessionPath: sessionPath)
+                persistedSubmissionModes[match.message.id] = mode
+            }
+        }
+    }
+
+    func flushRecovery() async {
+        persistRecoveryDraft()
+        await recoveryStore?.flush()
+    }
+
+    func consumeRecoveryAfterReview() {
+        guard let recoveryStore, let recoveryOwner else { return }
+        recoveryStore.remove(recoveryOwner)
+    }
+
+    private func hydrateRecoveryDraft() {
+        guard let recoveryStore,
+              let recoveryOwner,
+              let recovered = recoveryStore.record(for: recoveryOwner)?.draft
+        else { return }
+        isApplyingRecovery = true
+        draft = recovered.text
+        attachments = recovered.attachments
+        isApplyingRecovery = false
+    }
+
+    private func persistRecoveryDraft() {
+        guard !isApplyingRecovery, let recoveryStore, let recoveryOwner else { return }
+        recoveryStore.setDraft(
+            ComposerRecoveryDraft(text: draft, attachments: attachments),
+            for: recoveryOwner)
+    }
+
+    private func transferRecoveryOwnership(toSessionPath path: String) {
+        guard let recoveryStore, let recoveryOwner else { return }
+        let sessionOwner = ComposerRecoveryOwner.session(path).canonicalized
+        recoveryStore.moveRecord(from: recoveryOwner, to: sessionOwner)
+        if case .initial = recoveryOwner {
+            recoveryStore.setLastMeaningfulRoute(.session(path))
+        }
+        self.recoveryOwner = sessionOwner
+    }
+
+    private func reconcileRecoveredInFlight() {
+        guard let recoveryStore,
+              let recoveryOwner,
+              !pendingSubmissions.contains(where: { $0.state == .starting }),
+              let recovered = recoveryStore.record(for: recoveryOwner)?.inFlight
+        else { return }
+        let receipt = PendingUserSubmission(
+            text: recovered.draft.text,
+            attachments: recovered.draft.attachments,
+            minimumUserIndex: recovered.minimumUserIndex,
+            state: .unconfirmed)
+        let hasEcho = userMessages.enumerated().contains { index, message in
+            index >= recovered.minimumUserIndex && receipt.matches(message)
+        }
+        if !hasEcho {
+            let current = ComposerRecoveryDraft(text: draft, attachments: attachments)
+            let merged = current == recovered.draft
+                ? current
+                : ComposerRecoveryStore.merged(recovered.draft, current)
+            isApplyingRecovery = true
+            draft = merged.text
+            attachments = merged.attachments
+            isApplyingRecovery = false
+            composerRecoveryMessage =
+                "A previous send wasn’t confirmed. Review the conversation before sending this draft."
+            persistRecoveryDraft()
+        }
+        recoveryStore.setInFlight(nil, for: recoveryOwner)
+    }
+
     private static func isPlaceholderTitle(_ title: String) -> Bool {
         title == "New session" || title == "Untitled session"
+    }
+
+    private static func usableTitle(_ value: String?) -> String? {
+        guard let firstLine = value?
+            .split(whereSeparator: \.isNewline)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        else { return nil }
+        let title = String(firstLine.prefix(80))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty,
+              title.rangeOfCharacter(from: .alphanumerics) != nil
+        else { return nil }
+        return title
     }
 
     private func finishTitleLoading() {
@@ -1728,8 +2282,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         accountCoordinator?.update(
             sessionID: id,
             providerID: providerID,
-            isGenerating: runtimeState == .streaming)
-        if runtimeState == .idle {
+            isGenerating: runtimeState == .streaming || isContextCompacting)
+        if runtimeState == .idle && !isContextCompacting {
             Task { [weak accountCoordinator] in
                 await accountCoordinator?.sessionDidBecomeIdle(id)
             }

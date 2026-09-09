@@ -1,9 +1,94 @@
 import Foundation
+import Darwin
 import OmpKit
 import Testing
 @testable import TenXApp
 
 @Suite @MainActor struct SessionControllerTests {
+
+@Test func stopClosesTheRuntimeAndRejectsLateActivity() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionPath = directory.appending(path: "saved-session.jsonl").path
+    let manager = reliableStopManager(
+        controlDirectory: directory,
+        sessionPath: sessionPath)
+    let controller = SessionController(processManager: manager)
+
+    await controller.openExisting(metadata(path: sessionPath, cwd: directory.path))
+    controller.draft = "Start controlled work"
+    await controller.sendPrompt()
+    #expect(await eventually {
+        FileManager.default.fileExists(atPath: directory.appending(path: "prompt-started").path)
+            && controller.runtimeState == .streaming
+    })
+    #expect(await eventually {
+        controller.items.contains { item in
+            guard case .tool(let tool) = item else { return false }
+            return tool.id == "running-tool" && tool.phase == .running
+        }
+    })
+    #expect(await eventually {
+        controller.message(for: "live-assistant")?.isFinal == false
+            && controller.extensionUIIDs == ["pending-decision"]
+    })
+    let olderAssistant = try #require(controller.message(for: "older-assistant"))
+
+    let stagedImage = ComposerAttachment(
+        name: "staged.png",
+        data: Data([0x89, 0x50, 0x4E, 0x47]),
+        mimeType: "image/png",
+        pixelWidth: 1,
+        pixelHeight: 1)
+    controller.draft = "Keep this staged text"
+    controller.attachments = [stagedImage]
+
+    let stopping = Task { await controller.abort() }
+    #expect(await eventually {
+        FileManager.default.fileExists(atPath: directory.appending(path: "abort-accepted").path)
+    })
+    #expect(controller.isStopping)
+    await controller.restart()
+    #expect(stopFixtureChildPIDs(in: directory).count == 1)
+    try Data().write(to: directory.appending(path: "emit-late"))
+    await stopping.value
+    try await Task.sleep(for: .milliseconds(500))
+
+    #expect(!controller.isStopping)
+    #expect(controller.runtimeState == .stopped(code: nil, stderrTail: ""))
+    #expect(controller.sessionPath == sessionPath)
+    #expect(controller.draft == "Keep this staged text")
+    #expect(controller.attachments == [stagedImage])
+    #expect(controller.queuedMessageCount == 0)
+    #expect(controller.pendingSubmissions.allSatisfy { $0.state == .unconfirmed })
+    #expect(controller.visibleText(for: "late-revival") == nil)
+    #expect(controller.items.contains { item in
+        guard case .tool(let tool) = item else { return false }
+        return tool.id == "running-tool" && tool.phase == .interrupted && tool.endDate != nil
+    })
+    let stoppedAssistant = try #require(controller.message(for: "live-assistant"))
+    #expect(stoppedAssistant.visibleText == "Working before Stop")
+    #expect(stoppedAssistant.isFinal)
+    #expect(stoppedAssistant.stopReason == "aborted")
+    #expect(stoppedAssistant.raw["completedAt"] != nil)
+    #expect(controller.message(for: "older-assistant") == olderAssistant)
+    #expect(controller.extensionUIIDs.isEmpty)
+    let stoppedTurn = try #require(TranscriptTurnProjection.sections(
+        from: controller.items,
+        runtimeState: controller.runtimeState).last)
+    #expect(stoppedTurn.state == .stopped)
+    #expect(stoppedTurn.items.map(\.id).contains("live-assistant"))
+    #expect(await manager.handle(for: sessionPath) == nil)
+    #expect(await eventually { stopFixtureChildrenHaveExited(in: directory) })
+
+    await controller.restart()
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.draft == "Keep this staged text")
+    #expect(controller.attachments == [stagedImage])
+    #expect(stopFixtureCommands(in: directory).filter { $0 == "prompt" }.count == 1)
+    #expect(await manager.handle(for: sessionPath) != nil)
+    await manager.closeAll()
+}
 
 @MainActor @Test func contextPercentageIsClampedToItsDisplayRange() {
     #expect(SessionController.contextPercent(.object(["percentage": .double(210)])) == 100)
@@ -75,6 +160,421 @@ import Testing
     await manager.closeAll()
 }
 
+@Test func acceptedFollowUpsRefreshQueueCountAsTheyAreConsumed() async throws {
+    try await withQueueController { controller, fixture in
+        controller.draft = "First follow-up"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        controller.draft = "Second follow-up"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+
+        #expect(await eventually { controller.queuedMessageCount == 2 })
+        try await fixture.control("consume")
+        #expect(await eventually { controller.queuedMessageCount == 1 })
+        try await fixture.control("consume")
+        #expect(await eventually { controller.queuedMessageCount == 0 })
+        #expect(await eventually { controller.pendingSubmissions.isEmpty })
+    }
+}
+
+@Test func acceptedSteerRefreshesQueueCountAsItIsConsumed() async throws {
+    try await withQueueController { controller, fixture in
+        controller.draft = "Steer now"
+        await controller.sendPrompt(behaviorOverride: .steer)
+
+        #expect(await eventually { controller.queuedMessageCount == 1 })
+        #expect(controller.pendingSubmissions.map(\.state) == [.queued(.steer)])
+        try await fixture.control("consume")
+        #expect(await eventually { controller.queuedMessageCount == 0 })
+        #expect(await eventually { controller.pendingSubmissions.isEmpty })
+    }
+}
+
+@Test func rejectedFollowUpPreservesDraftWithoutIncreasingQueueCount() async throws {
+    try await withQueueController { controller, fixture in
+        try await fixture.control("reject-next")
+        controller.draft = "Keep rejected text"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+
+        #expect(controller.draft == "Keep rejected text")
+        #expect(controller.queuedMessageCount == 0)
+        #expect(controller.pendingSubmissions.map(\.state) == [.unconfirmed])
+    }
+}
+
+@Test func lateAcceptedPromptStateCannotOverwriteNewerQueueCount() async throws {
+    try await withQueueController { controller, fixture in
+        try await fixture.control("defer-next-state")
+        controller.draft = "First queued"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        #expect(await eventually { fixture.isStateDeferred })
+
+        controller.draft = "Second queued"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        #expect(await eventually { controller.queuedMessageCount == 2 })
+
+        try await fixture.control("release-deferred-state")
+        try await Task.sleep(for: .milliseconds(250))
+        #expect(controller.queuedMessageCount == 2)
+    }
+}
+
+@Test func repeatedQueuedMessagesKeepExactlyOneVisibleEchoPerSubmission() async throws {
+    try await withQueueController { controller, fixture in
+        for _ in 0..<2 {
+            controller.draft = "Repeat this"
+            await controller.sendPrompt(behaviorOverride: .followUp)
+        }
+        #expect(await eventually { controller.queuedMessageCount == 2 })
+        #expect(controller.visibleUserEchoCount("Repeat this") == 2)
+
+        try await fixture.control("consume")
+        #expect(await eventually {
+            controller.queuedMessageCount == 1
+                && controller.visibleUserEchoCount("Repeat this") == 2
+        })
+        try await fixture.control("consume")
+        #expect(await eventually {
+            controller.queuedMessageCount == 0
+                && controller.visibleUserEchoCount("Repeat this") == 2
+                && controller.pendingSubmissions.isEmpty
+        })
+    }
+}
+
+@Test func liveEchoBeforePromptAcknowledgmentKeepsItsRequestedMode() async throws {
+    try await withQueueController { controller, fixture in
+        try await fixture.control("echo-before-next-ack")
+        controller.draft = "Continue after the current response"
+
+        let send = Task { await controller.sendPrompt(behaviorOverride: .followUp) }
+
+        #expect(await eventually {
+            fixture.hasEchoedBeforeAcknowledgment
+                && controller.pendingSubmissions.isEmpty
+        })
+        #expect(controller.submissionMode(for: "user-1") == .followUp)
+
+        try await fixture.control("release-prompt-ack")
+        await send.value
+        #expect(controller.submissionMode(for: "user-1") == .followUp)
+    }
+}
+
+@Test func conflictingModesForIdenticalOverlappingMessagesStayUnannotated() async throws {
+    try await withQueueController { controller, fixture in
+        controller.draft = "Use the same payload"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        controller.draft = "Use the same payload"
+        await controller.sendPrompt(behaviorOverride: .steer)
+
+        try await fixture.control("consume")
+        #expect(await eventually { controller.message(for: "user-1") != nil })
+        #expect(controller.submissionMode(for: "user-1") == nil)
+
+        try await fixture.control("consume")
+        #expect(await eventually {
+            controller.message(for: "user-2") != nil
+                && controller.pendingSubmissions.isEmpty
+        })
+        #expect(controller.submissionMode(for: "user-1") == nil)
+        #expect(controller.submissionMode(for: "user-2") == nil)
+        #expect(controller.submissionMode(for: "persisted-user-1") == nil)
+        #expect(controller.submissionMode(for: "persisted-user-2") == nil)
+    }
+}
+
+@Test func liveModeMovesToPersistedIDAndReopensWithoutClassifyingOlderHistory() async throws {
+    let suiteName = "controller-submission-presentation-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let store = SubmissionPresentationStore(defaults: defaults)
+
+    try await withQueueController(presentationStore: store) { controller, fixture in
+        controller.draft = "Persist this follow-up"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        try await fixture.control("consume")
+
+        #expect(await eventually {
+            controller.message(for: "persisted-user-1") != nil
+                && controller.submissionMode(for: "persisted-user-1") == .followUp
+        })
+        #expect(controller.submissionMode(for: "user-1") == nil)
+
+        let reopenedManager = fakeManager(mode: "no-session-file")
+        let reopened = SessionController(
+            processManager: reopenedManager,
+            submissionPresentationStore: SubmissionPresentationStore(defaults: defaults))
+        await reopened.openExisting(metadata(
+            path: fixture.sessionPath,
+            cwd: fixture.directory.path))
+
+        #expect(reopened.message(for: "persisted-user-1") != nil)
+        #expect(reopened.submissionMode(for: "persisted-user-1") == .followUp)
+        #expect(reopened.message(for: "persisted-older-user") != nil)
+        #expect(reopened.submissionMode(for: "persisted-older-user") == nil)
+
+        defaults.removePersistentDomain(forName: suiteName)
+        #expect(reopened.submissionMode(for: "persisted-user-1") == .followUp)
+        await reopenedManager.closeAll()
+    }
+}
+
+@Test func staleHistoryReconciliationCannotPersistASubmissionMode() async throws {
+    let loader = StaleSubmissionModeHistoryLoader()
+    let store = SubmissionPresentationStore.inMemory()
+    try await withQueueController(
+        presentationStore: store,
+        historyLoader: { path in try await loader.load(path: path) }
+    ) { controller, fixture in
+        try await fixture.control("echo-before-next-ack")
+        controller.draft = "Do not bind stale history"
+        let send = Task { await controller.sendPrompt(behaviorOverride: .steer) }
+        #expect(await eventually { fixture.hasEchoedBeforeAcknowledgment })
+        try await fixture.control("release-prompt-ack")
+        await send.value
+
+        let boundary = try controllerEvent(#"{"type":"turn_end"}"#)
+        controller.testingCapturedBoundaryReconciler(frame: boundary)()
+        await loader.waitUntilDelayedLoadStarts()
+        await controller.restart()
+        await loader.releaseDelayedLoad()
+        await loader.waitUntilDelayedLoadReturns()
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(store.mode(
+            forMessageID: "stale-persisted-user",
+            sessionPath: fixture.sessionPath) == nil)
+    }
+}
+
+@Test func manualContextCompactionRequiresAnIdleBuiltinCapability() async throws {
+    #expect(SessionController.defaultContextCompactionTimeout == .seconds(600))
+    for (mode, expected) in [
+        ("basic", false),
+        ("compact-extension", false),
+        ("compact-streaming", false),
+        ("compact-queued", false),
+        ("compact-success", true),
+    ] {
+        let manager = contextFakeManager(mode: mode)
+        let controller = SessionController(processManager: manager)
+        await controller.openNew(projectURL: try temporaryDirectory())
+        #expect(controller.canCompactContext == expected, "mode: \(mode)")
+        #expect((controller.contextCompactionDisabledReason == nil) == expected, "mode: \(mode)")
+        await manager.closeAll()
+    }
+
+    let manager = contextFakeManager(mode: "compact-pending")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: try temporaryDirectory())
+    #expect(await eventually { controller.hasPendingUserInput })
+    #expect(!controller.canCompactContext)
+    await manager.closeAll()
+}
+
+@Test func lateCompactionCompletionCannotOverwriteAReplacementSession() async throws {
+    let manager = contextFakeManager(mode: "compact-delayed")
+    let controller = SessionController(
+        processManager: manager,
+        contextCompactionTimeout: .seconds(5))
+    let projectURL = try temporaryDirectory()
+    await controller.openNew(projectURL: projectURL)
+    let operation = Task { await controller.compactContext() }
+    #expect(await eventually { controller.isContextCompacting })
+
+    await controller.openNew(projectURL: projectURL)
+    await operation.value
+
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.canCompactContext)
+    #expect(controller.contextCompactionErrorMessage == nil)
+    #expect(controller.contextCompactionRecoveryMessage == nil)
+    await manager.closeAll()
+}
+
+@Test func successfulManualCompactionReloadsHistoryAndPreservesStagedInput() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLog = directory.appending(path: "commands.log")
+    let manager = contextFakeManager(mode: "compact-success", commandLog: commandLog)
+    let loader = CompactionHistoryLoader()
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { path in try await loader.load(path: path) })
+    await controller.openNew(projectURL: directory)
+    let image = ComposerAttachment(
+        name: "staged.png", data: Data([0x89, 0x50]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)
+    controller.draft = "Keep this draft editable"
+    controller.attachments = [image]
+
+    await controller.compactContext()
+
+    #expect(!controller.isContextCompacting)
+    #expect(controller.contextCompactionErrorMessage == nil)
+    #expect(controller.contextCompactionRecoveryMessage == nil)
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.draft == "Keep this draft editable")
+    #expect(controller.attachments == [image])
+    #expect(controller.contextUsage?.tokens == 32_000)
+    #expect(controller.visibleText(for: "compacted-history") == "Authoritative compacted history")
+    #expect(await loader.requestCount == 2)
+    let commands = try String(contentsOf: commandLog, encoding: .utf8)
+        .split(whereSeparator: \.isNewline).map(String.init)
+    #expect(commands.contains("compact"))
+    #expect(!commands.contains("prompt"))
+    await manager.closeAll()
+}
+
+@Test func successfulCompactionClosesWhenAuthoritativeHistoryIsUnavailable() async throws {
+    let knownRecovery =
+        "Context was compacted, but saved history couldn’t be reloaded. Restart to reload saved history."
+    for loader in [CompactionReloadFailure.nilHistory, .thrownError] {
+        let manager = contextFakeManager(mode: "compact-success")
+        let historyLoader = FailingCompactionHistoryLoader(failure: loader)
+        let controller = SessionController(
+            processManager: manager,
+            historyLoader: { path in try await historyLoader.load(path: path) })
+        await controller.openNew(projectURL: try temporaryDirectory())
+        controller.draft = "Preserved after known success"
+
+        await controller.compactContext()
+
+        #expect(isStopped(controller.runtimeState), "loader: \(loader)")
+        #expect(controller.draft == "Preserved after known success")
+        #expect(controller.contextCompactionRecoveryMessage == knownRecovery)
+        #expect(controller.contextCompactionRecoveryMessage?.contains("unknown") == false)
+        #expect(controller.canRestartAfterDismissal)
+        #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+        await manager.closeAll()
+    }
+}
+
+@Test func cancellationAfterCompactionSuccessClosesWithKnownSuccessRecovery() async throws {
+    let manager = contextFakeManager(mode: "compact-success")
+    let loader = CancellableCompactionHistoryLoader()
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { path in try await loader.load(path: path) })
+    await controller.openNew(projectURL: try temporaryDirectory())
+    let operation = Task { await controller.compactContext() }
+    #expect(await loader.waitForCompactedHistoryRequest())
+
+    operation.cancel()
+    await operation.value
+
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.contextCompactionRecoveryMessage ==
+        "Context was compacted, but saved history couldn’t be reloaded. Restart to reload saved history.")
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
+@Test func cancellationWhileCompactionResultIsPendingClosesWithUnknownRecovery() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLog = directory.appending(path: "commands.log")
+    let manager = contextFakeManager(mode: "compact-hang", commandLog: commandLog)
+    let controller = SessionController(
+        processManager: manager,
+        contextCompactionTimeout: .seconds(5))
+    await controller.openNew(projectURL: directory)
+    let operation = Task { await controller.compactContext() }
+    #expect(await eventually {
+        (try? String(contentsOf: commandLog, encoding: .utf8).contains("compact")) == true
+    })
+
+    operation.cancel()
+    await operation.value
+
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.contextCompactionRecoveryMessage ==
+        "The compaction result is unknown. Restart to reload saved history.")
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
+@Test func knownCompactionFailuresStayUsableAndUnsupportedDisablesTheAction() async throws {
+    let failureManager = contextFakeManager(mode: "compact-failure")
+    let failed = SessionController(processManager: failureManager)
+    await failed.openNew(projectURL: try temporaryDirectory())
+    await failed.compactContext()
+    #expect(failed.runtimeState == .idle)
+    #expect(failed.contextCompactionErrorMessage == "Context couldn’t be compacted. Try again.")
+    #expect(failed.canCompactContext)
+    await failed.refreshContextDetails()
+    #expect(failed.contextCompactionErrorMessage == "Context couldn’t be compacted. Try again.")
+    await failureManager.closeAll()
+
+    let unsupportedManager = contextFakeManager(mode: "compact-unsupported")
+    let unsupported = SessionController(processManager: unsupportedManager)
+    await unsupported.openNew(projectURL: try temporaryDirectory())
+    await unsupported.compactContext()
+    #expect(unsupported.runtimeState == .idle)
+    #expect(!unsupported.canCompactContext)
+    #expect(unsupported.contextCompactionErrorMessage == "Context compaction isn’t supported by this runtime.")
+    await unsupportedManager.closeAll()
+}
+
+@Test func compactionTimeoutClosesTheRuntimeWithUnknownResultRecovery() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLog = directory.appending(path: "commands.log")
+    let manager = contextFakeManager(mode: "compact-hang", commandLog: commandLog)
+    let controller = SessionController(
+        processManager: manager,
+        contextCompactionTimeout: .milliseconds(100))
+    await controller.openNew(projectURL: directory)
+    controller.draft = "Preserve me"
+
+    await controller.compactContext()
+
+    #expect(!controller.isContextCompacting)
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.draft == "Preserve me")
+    #expect(controller.isRecoveryPresented)
+    #expect(controller.canRestartAfterDismissal)
+    #expect(controller.contextCompactionRecoveryMessage ==
+        "The compaction result is unknown. Restart to reload saved history.")
+    #expect(try String(contentsOf: commandLog, encoding: .utf8).contains("compact"))
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
+@Test func stopDuringCompactionClosesWithoutQueuingOtherCommands() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLog = directory.appending(path: "commands.log")
+    let manager = contextFakeManager(mode: "compact-hang", commandLog: commandLog)
+    let controller = SessionController(
+        processManager: manager,
+        contextCompactionTimeout: .seconds(5))
+    await controller.openNew(projectURL: directory)
+    controller.draft = "Still editable"
+    let operation = Task { await controller.compactContext() }
+    #expect(await eventually { controller.isContextCompacting })
+    #expect(!controller.canSendMessage)
+    #expect(!controller.isEligibleForIdleEviction)
+    await controller.sendPrompt()
+    await controller.refreshContextDetails()
+    _ = try? await controller.setModel(provider: "test", modelID: "other")
+    _ = try? await controller.setThinkingLevel("high")
+    _ = try? await controller.setFastMode(true)
+    await controller.abort()
+    await operation.value
+
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.draft == "Still editable")
+    #expect(controller.contextCompactionRecoveryMessage == nil)
+    let commands = try String(contentsOf: commandLog, encoding: .utf8)
+    #expect(!commands.contains("prompt"))
+    #expect(!commands.contains("set_model"))
+    #expect(!commands.contains("set_thinking_level"))
+    #expect(!commands.contains("set_fast_mode"))
+    #expect(await manager.handle(for: "/tmp/context-fixture.jsonl") == nil)
+    await manager.closeAll()
+}
+
 @Test func ompSessionTitleGeneratorUsesTheActiveModelAndParsesTaggedOutput() async throws {
     let capture = TitleCommandCapture()
     let generator = OmpSessionTitleGenerator(
@@ -134,6 +634,199 @@ import Testing
     let promptIndex = try #require(commands.firstIndex(of: "prompt"))
     let titleIndex = try #require(commands.firstIndex(of: "set_session_name"))
     #expect(promptIndex < titleIndex)
+    await manager.closeAll()
+}
+
+@MainActor @Test func acknowledgedInitialPromptPersistsBoundedFallbackWithoutAGenerator() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/fallback.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(sessionFile: sessionFile, commandLogURL: commandLogURL)
+    let controller = SessionController(processManager: manager)
+    let prompt = "   \(String(repeating: "A", count: 100))   \nignored"
+    let expected = String(repeating: "A", count: 80)
+
+    controller.prepareInitialSubmission(text: prompt, attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+
+    #expect(await eventually { controller.title == expected })
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.filter { $0["type"] == "set_session_name" }.count == 1)
+    #expect(entries.first { $0["type"] == "set_session_name" }?["title"] == expected)
+    let reopened = await SessionLibrary(root: directory).listAll()
+    #expect(reopened.first?.title == expected)
+    await manager.closeAll()
+}
+
+@MainActor @Test func unusableGeneratedTitleFallsBackToTheInitialPrompt() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/fallback.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(sessionFile: sessionFile, commandLogURL: commandLogURL)
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { _, _ in Data("<title/>".utf8) })
+    let controller = SessionController(processManager: manager, titleGenerator: generator)
+
+    controller.prepareInitialSubmission(
+        text: "  Useful fallback title  ", attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+
+    #expect(await eventually { controller.title == "Useful fallback title" })
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.filter { $0["type"] == "set_session_name" }.count == 1)
+    #expect(entries.first { $0["type"] == "set_session_name" }?["title"]
+        == "Useful fallback title")
+    await manager.closeAll()
+}
+
+@MainActor @Test func rejectedInitialPromptDoesNotPersistAFallbackTitle() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/rejected.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(
+        sessionFile: sessionFile, commandLogURL: commandLogURL, rejectPrompt: true)
+    let controller = SessionController(processManager: manager)
+
+    controller.prepareInitialSubmission(text: "Do not name me", attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.allSatisfy { $0["type"] != "set_session_name" })
+    await manager.closeAll()
+}
+
+@MainActor @Test func manualRenameWinsOverADelayedGeneratedTitle() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/manual.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(sessionFile: sessionFile, commandLogURL: commandLogURL)
+    let gate = LoadGate()
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { _, _ in
+            await gate.started()
+            await gate.waitForRelease()
+            return Data("<title>Generated too late</title>".utf8)
+        })
+    let controller = SessionController(processManager: manager, titleGenerator: generator)
+    controller.prepareInitialSubmission(text: "Fallback", attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+    await gate.waitForStart()
+
+    let rename = Task { try await controller.rename(to: "Manual title") }
+    await gate.release()
+    try await rename.value
+
+    #expect(controller.title == "Manual title")
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.filter { $0["type"] == "set_session_name" }.count == 1)
+    #expect(entries.first { $0["type"] == "set_session_name" }?["title"] == "Manual title")
+    await manager.closeAll()
+}
+
+@MainActor @Test func sessionReplacementCancelsADelayedGeneratedTitle() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let sessionFile = directory.appending(path: "bucket/first.jsonl")
+    try writeTitleSession(at: sessionFile, projectURL: directory)
+    let commandLogURL = directory.appending(path: "commands.jsonl")
+    let manager = titleFakeManager(sessionFile: sessionFile, commandLogURL: commandLogURL)
+    let gate = LoadGate()
+    let generator = OmpSessionTitleGenerator(
+        executableURL: URL(filePath: "/opt/omp"),
+        run: { _, _ in
+            await gate.started()
+            await gate.waitForRelease()
+            return Data("<title>Generated too late</title>".utf8)
+        })
+    let controller = SessionController(processManager: manager, titleGenerator: generator)
+    controller.prepareInitialSubmission(text: "Fallback", attachments: [], projectURL: directory)
+    await controller.openNew(projectURL: directory)
+    await controller.sendPrompt()
+    await gate.waitForStart()
+
+    await controller.openExisting(metadata(
+        path: directory.appending(path: "second.jsonl").path,
+        cwd: directory.path,
+        title: "Second session"))
+    await gate.release()
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(controller.title == "Second session")
+    let entries = try titleCommandEntries(at: commandLogURL)
+    #expect(entries.allSatisfy { $0["type"] != "set_session_name" })
+    await manager.closeAll()
+}
+
+@MainActor @Test func terminalAgentBoundaryRefreshesRealGitMetadataButNonterminalDoesNot() async throws {
+    let repository = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: repository) }
+    try runTitleGit(["init", "-b", "branch-a"], at: repository)
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: repository)
+    #expect(controller.headerMetadata.branch == "branch-a")
+
+    try runTitleGit(["switch", "-c", "branch-b"], at: repository)
+    let terminal = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "agent_end", payload: .object(["isTerminal": .bool(true)]))))
+    await terminal()
+    await controller.testingAwaitHeaderMetadataRefresh()
+    #expect(controller.headerMetadata.branch == "branch-b")
+
+    try runTitleGit(["switch", "-c", "branch-c"], at: repository)
+    let nonterminal = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "agent_end", payload: .object(["isTerminal": .bool(false)]))))
+    await nonterminal()
+    for _ in 0..<20 { await Task.yield() }
+    #expect(controller.headerMetadata.branch == "branch-b")
+    await manager.closeAll()
+}
+
+@MainActor @Test func overlappingMetadataRefreshesCoalesceAndStaleProjectResultIsIgnored() async throws {
+    let firstProject = try temporaryDirectory()
+    let secondProject = try temporaryDirectory()
+    defer {
+        try? FileManager.default.removeItem(at: firstProject)
+        try? FileManager.default.removeItem(at: secondProject)
+    }
+    let resolver = ControlledHeaderMetadataResolver()
+    let manager = fakeManager(mode: "basic")
+    let controller = SessionController(
+        processManager: manager,
+        headerMetadataResolver: { url in await resolver.resolve(url) })
+    await controller.openNew(projectURL: firstProject)
+    let boundary = try controllerEvent(#"{"type":"agent_end","isTerminal":true}"#)
+    let first = try #require(controller.testingCapturedControlConsumer(boundary))
+    let second = try #require(controller.testingCapturedControlConsumer(boundary))
+
+    await first()
+    await second()
+    await resolver.waitForDelayedRequest()
+    #expect(await resolver.requestCount == 2)
+
+    await controller.openExisting(metadata(
+        path: secondProject.appending(path: "second.jsonl").path,
+        cwd: secondProject.path,
+        title: "Second"))
+    await resolver.releaseDelayedRequest()
+    for _ in 0..<20 { await Task.yield() }
+
+    #expect(controller.headerMetadata.branch == "second-current")
+    #expect(await resolver.requestCount == 3)
     await manager.closeAll()
 }
 
@@ -585,6 +1278,34 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     await manager.closeAll()
 }
 
+@MainActor @Test func failedNewSessionAfterExistingClearsPathAndPreservesPromptForReview() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let manager = fakeManager { configuration in
+        configuration.resumeSessionPath == nil ? "crash-after-negotiation" : "basic"
+    }
+    let controller = SessionController(processManager: manager)
+    let existingPath = directory.appending(path: "existing.jsonl").path
+
+    await controller.openExisting(metadata(path: existingPath, cwd: directory.path))
+    #expect(controller.sessionPath != nil)
+    controller.prepareInitialSubmission(
+        text: "Preserve this new prompt",
+        attachments: [],
+        projectURL: directory)
+
+    await controller.openNew(projectURL: directory)
+    controller.markInitialSubmissionFailed()
+
+    #expect(controller.sessionPath == nil)
+    #expect(controller.draft == "Preserve this new prompt")
+    guard case .failed = controller.runtimeState else {
+        Issue.record("Expected the new session to report its opening failure")
+        return
+    }
+    await manager.closeAll()
+}
+
 @MainActor @Test func extensionRequestsRemainLosslessDuringBurst() async throws {
     let manager = fakeManager(mode: "transcript-burst-extensions")
     let controller = SessionController(processManager: manager)
@@ -993,19 +1714,161 @@ private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
 
 }
 
-private func contextFakeManager(mode: String) -> SessionProcessManager {
+private func contextFakeManager(mode: String, commandLog: URL? = nil) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
         fake.executable = "/usr/bin/env"
         fake.extraArguments = ["python3", repositoryRoot().appending(path:
             "Tests/TenXAppTests/Fixtures/context_fake_server.py").path, mode]
+        if let commandLog { fake.extraArguments.append(commandLog.path) }
         fake.rawArgv = true
         fake.cwd = nil
         return RpcClient(configuration: fake)
     })
 }
 
+private struct QueueFixture {
+    let client: RpcClient
+    let directory: URL
+
+    var sessionPath: String {
+        directory.appending(path: "session.jsonl").path
+    }
+
+    var isStateDeferred: Bool {
+        FileManager.default.fileExists(atPath: directory.appending(path: "state-deferred").path)
+    }
+
+    var hasEchoedBeforeAcknowledgment: Bool {
+        FileManager.default.fileExists(
+            atPath: directory.appending(path: "echoed-before-ack").path)
+    }
+
+    func control(_ action: String) async throws {
+        _ = try await client.send(RpcCommand(
+            type: "queue_test_control",
+            fields: ["action": .string(action)]), timeout: .seconds(5))
+    }
+}
+
+@MainActor
+private func withQueueController<T>(
+    presentationStore: SubmissionPresentationStore = .inMemory(),
+    historyLoader: SessionController.HistoryLoader? = nil,
+    _ body: (SessionController, QueueFixture) async throws -> T
+) async throws -> T {
+    let directory = try temporaryDirectory()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            repositoryRoot().appending(path:
+                "Tests/TenXAppTests/Fixtures/queue_fake_server.py").path,
+            directory.path,
+        ]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: historyLoader,
+        submissionPresentationStore: presentationStore)
+    do {
+        let sessionPath = directory.appending(path: "session.jsonl").path
+        await controller.openExisting(metadata(
+            path: sessionPath,
+            cwd: directory.path))
+        let activePath = try #require(controller.sessionPath)
+        let handle = try #require(await manager.handle(for: activePath))
+        let fixture = QueueFixture(client: handle.client, directory: directory)
+        let result = try await body(controller, fixture)
+        await manager.closeAll()
+        try? FileManager.default.removeItem(at: directory)
+        return result
+    } catch {
+        await manager.closeAll()
+        try? FileManager.default.removeItem(at: directory)
+        throw error
+    }
+}
+
+private actor CompactionHistoryLoader {
+    private(set) var requestCount = 0
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount > 1 else { return nil }
+        return TranscriptHistory(items: [
+            messageItem(id: "compacted-history", text: "Authoritative compacted history"),
+        ])
+    }
+}
+
+private enum CompactionReloadFailure: CustomStringConvertible {
+    case nilHistory
+    case thrownError
+
+    var description: String {
+        switch self {
+        case .nilHistory: "nil history"
+        case .thrownError: "thrown error"
+        }
+    }
+}
+
+private actor FailingCompactionHistoryLoader {
+    private var requestCount = 0
+    private let failure: CompactionReloadFailure
+
+    init(failure: CompactionReloadFailure) {
+        self.failure = failure
+    }
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount > 1 else { return nil }
+        switch failure {
+        case .nilHistory: return nil
+        case .thrownError: throw ControlledHistoryError.failed
+        }
+    }
+}
+
+private actor CancellableCompactionHistoryLoader {
+    private var requestCount = 0
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount > 1 else { return nil }
+        while true {
+            try await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    func waitForCompactedHistoryRequest(timeout: Duration = .seconds(5)) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout.seconds)
+        while Date() < deadline {
+            if requestCount > 1 { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return requestCount > 1
+    }
+}
+
+private func isStopped(_ state: SessionRuntimeState) -> Bool {
+    if case .stopped = state { return true }
+    return false
+}
+
 private func fakeManager(mode: String) -> SessionProcessManager {
+    fakeManager { _ in mode }
+}
+
+private func fakeManager(
+    mode: @escaping @Sendable (RpcClientConfiguration) -> String
+) -> SessionProcessManager {
     SessionProcessManager(clientFactory: { configuration in
         var fake = configuration
         fake.executable = "/usr/bin/env"
@@ -1013,12 +1876,53 @@ private func fakeManager(mode: String) -> SessionProcessManager {
             "python3",
             repositoryRoot()
                 .appending(path: "OmpKit/Tests/OmpKitTests/Fixtures/fake_server.py").path,
-            mode,
+            mode(configuration),
         ]
         fake.rawArgv = true
         fake.cwd = nil
         return RpcClient(configuration: fake)
     })
+}
+
+private func reliableStopManager(
+    controlDirectory: URL,
+    sessionPath: String
+) -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            repositoryRoot()
+                .appending(path: "Tests/TenXAppTests/Fixtures/stop_fake_server.py").path,
+            controlDirectory.path,
+            sessionPath,
+        ]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+}
+
+private func stopFixtureChildrenHaveExited(in directory: URL) -> Bool {
+    let pids = stopFixtureChildPIDs(in: directory)
+    guard !pids.isEmpty else { return false }
+    return pids.allSatisfy { processID in
+        errno = 0
+        return kill(processID, 0) == -1 && errno == ESRCH
+    }
+}
+
+private func stopFixtureChildPIDs(in directory: URL) -> [pid_t] {
+    let url = directory.appending(path: "child-pids")
+    guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+    return contents.split(separator: "\n").compactMap { pid_t($0) }
+}
+
+private func stopFixtureCommands(in directory: URL) -> [String] {
+    let url = directory.appending(path: "commands")
+    guard let contents = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+    return contents.split(separator: "\n").map(String.init)
 }
 
 private func commandLoggingFakeManager(commandLogURL: URL) -> SessionProcessManager {
@@ -1038,11 +1942,90 @@ private func commandLoggingFakeManager(commandLogURL: URL) -> SessionProcessMana
     })
 }
 
+private func titleFakeManager(
+    sessionFile: URL,
+    commandLogURL: URL,
+    rejectPrompt: Bool = false
+) -> SessionProcessManager {
+    SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            repositoryRoot().appending(path:
+                "Tests/TenXAppTests/Fixtures/title_fake_server.py").path,
+            sessionFile.path,
+            commandLogURL.path,
+        ] + (rejectPrompt ? ["reject"] : [])
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+}
+
+private func writeTitleSession(at url: URL, projectURL: URL) throws {
+    try FileManager.default.createDirectory(
+        at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let header = """
+    {"type":"session","version":3,"id":"title-test","timestamp":"2026-09-08T00:00:00.000Z","cwd":"\(projectURL.path)"}
+    """
+    try Data((header + "\n").utf8).write(to: url)
+}
+
+private func titleCommandEntries(at url: URL) throws -> [[String: String]] {
+    try String(contentsOf: url, encoding: .utf8)
+        .split(whereSeparator: \.isNewline)
+        .map { try JSONDecoder().decode([String: String].self, from: Data($0.utf8)) }
+}
+
 private actor TitleCommandCapture {
     private(set) var invocation: (executableURL: URL, arguments: [String])?
 
     func record(executableURL: URL, arguments: [String]) {
         invocation = (executableURL, arguments)
+    }
+}
+
+private actor ControlledHeaderMetadataResolver {
+    private let gate = LoadGate()
+    private(set) var requestCount = 0
+
+    func resolve(_ url: URL) async -> SessionHeaderMetadata {
+        requestCount += 1
+        switch requestCount {
+        case 1:
+            return SessionHeaderMetadata(branch: "first-initial", repo: url.lastPathComponent,
+                worktreePath: nil)
+        case 2:
+            await gate.started()
+            await gate.waitForRelease()
+            return SessionHeaderMetadata(branch: "first-stale", repo: url.lastPathComponent,
+                worktreePath: nil)
+        default:
+            return SessionHeaderMetadata(branch: "second-current", repo: url.lastPathComponent,
+                worktreePath: nil)
+        }
+    }
+
+    func waitForDelayedRequest() async {
+        await gate.waitForStart()
+    }
+
+    func releaseDelayedRequest() async {
+        await gate.release()
+    }
+}
+
+private func runTitleGit(_ arguments: [String], at repository: URL) throws {
+    let process = Process()
+    process.executableURL = URL(filePath: "/usr/bin/git")
+    process.arguments = ["-C", repository.path] + arguments
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else {
+        throw CocoaError(.fileWriteUnknown)
     }
 }
 
@@ -1323,11 +2306,15 @@ private extension Duration {
 }
 
 private extension SessionController {
-    func visibleText(for id: String) -> String? {
+    func message(for id: String) -> TranscriptMessage? {
         items.compactMap { item -> TranscriptMessage? in
             guard case .message(let message) = item, message.id == id else { return nil }
             return message
-        }.first?.visibleText
+        }.first
+    }
+
+    func visibleText(for id: String) -> String? {
+        message(for: id)?.visibleText
     }
 
     var extensionUIIDs: [String] {
@@ -1335,6 +2322,17 @@ private extension SessionController {
             guard case .extensionUI(let state) = item else { return nil }
             return state.id
         }
+    }
+
+    func visibleUserEchoCount(_ text: String) -> Int {
+        let committed = items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item,
+                  message.role == .user,
+                  message.visibleText == text
+            else { return nil }
+            return message
+        }.count
+        return committed + pendingSubmissions.count { $0.message.visibleText == text }
     }
 }
 
@@ -1380,6 +2378,38 @@ private actor DelayedHistoryLoader {
             try? await Task.sleep(for: .milliseconds(20))
         }
         return didCompleteDelayedFailure
+    }
+}
+
+private actor StaleSubmissionModeHistoryLoader {
+    private let gate = LoadGate()
+    private var requestCount = 0
+    private var didReturnDelayedLoad = false
+
+    func load(path: String) async throws -> TranscriptHistory? {
+        requestCount += 1
+        guard requestCount == 2 else { return nil }
+        await gate.started()
+        await gate.waitForRelease()
+        didReturnDelayedLoad = true
+        return TranscriptHistory(items: [submissionModeUserItem(
+            id: "stale-persisted-user",
+            text: "Do not bind stale history",
+            timestamp: Date(timeIntervalSince1970: 1_787_601_601))])
+    }
+
+    func waitUntilDelayedLoadStarts() async {
+        await gate.waitForStart()
+    }
+
+    func releaseDelayedLoad() async {
+        await gate.release()
+    }
+
+    func waitUntilDelayedLoadReturns() async {
+        while !didReturnDelayedLoad {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
     }
 }
 
@@ -1473,6 +2503,26 @@ private func messageItem(id: String, text: String) -> TranscriptItem {
         isFinal: true))
 }
 
+private func submissionModeUserItem(
+    id: String,
+    text: String,
+    timestamp: Date
+) -> TranscriptItem {
+    .message(TranscriptMessage(
+        id: id,
+        raw: .object([
+            "role": .string("user"),
+            "content": .array([
+                .object([
+                    "type": .string("text"),
+                    "text": .string(text),
+                ]),
+            ]),
+            "timestamp": .double(timestamp.timeIntervalSince1970 * 1_000),
+        ]),
+        isFinal: true))
+}
+
 @MainActor @Test func idleEvictionEligibilityRequiresAnIdleSessionWithNothingUnsaved() async throws {
     let manager = fakeManager(mode: "basic")
     let clean = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
@@ -1499,4 +2549,316 @@ private func messageItem(id: String, text: String) -> TranscriptItem {
     let submitting = SessionController(processManager: manager, previewItems: [], runtimeState: .idle)
     submitting.prepareInitialSubmission(text: "Start", attachments: [])
     #expect(!submitting.isEligibleForIdleEviction)
+}
+
+@MainActor @Test func controllerHydratesItsOwnedDraftBeforeOpening() {
+    let store = ComposerRecoveryStore.inMemory()
+    let owner = ComposerRecoveryOwner.session("/tmp/recovered-session.jsonl")
+    let attachment = ComposerAttachment(
+        name: "saved.png", data: Data([1, 2, 3]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)
+    store.setDraft(
+        ComposerRecoveryDraft(text: "saved text", attachments: [attachment]),
+        for: owner)
+
+    let controller = SessionController(
+        processManager: SessionProcessManager(executable: "/usr/bin/false"),
+        recoveryStore: store,
+        recoveryOwner: owner)
+
+    #expect(controller.draft == "saved text")
+    #expect(controller.attachments == [attachment])
+    controller.draft = "edited"
+    #expect(store.record(for: owner)?.draft.text == "edited")
+}
+
+@MainActor @Test func recoveredInFlightIgnoresAnIdenticalMessageBeforeItsMinimumIndex() async throws {
+    let manager = fakeManager(mode: "basic")
+    let store = ComposerRecoveryStore.inMemory()
+    let owner = ComposerRecoveryOwner.session("/tmp/recovery-no-echo.jsonl")
+    store.setDraft(ComposerRecoveryDraft(text: "newer", attachments: []), for: owner)
+    store.setInFlight(
+        ComposerRecoveryInFlight(
+            id: UUID(),
+            draft: ComposerRecoveryDraft(text: "submitted", attachments: []),
+            minimumUserIndex: 1),
+        for: owner)
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { _ in TranscriptHistory(items: [recoveryUserItem("submitted")]) },
+        recoveryStore: store,
+        recoveryOwner: owner)
+
+    await controller.openExisting(metadata(
+        path: "/tmp/recovery-no-echo.jsonl", cwd: try temporaryDirectory().path))
+
+    #expect(controller.draft == "submitted\n\nnewer")
+    #expect(controller.composerRecoveryMessage
+        == "A previous send wasn’t confirmed. Review the conversation before sending this draft.")
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+@MainActor @Test func recoveredInFlightIsDiscardedOnlyWhenHistoryContainsItsEchoAfterTheFence() async throws {
+    let manager = fakeManager(mode: "basic")
+    let store = ComposerRecoveryStore.inMemory()
+    let owner = ComposerRecoveryOwner.session("/tmp/recovery-with-echo.jsonl")
+    store.setDraft(ComposerRecoveryDraft(text: "newer", attachments: []), for: owner)
+    store.setInFlight(
+        ComposerRecoveryInFlight(
+            id: UUID(),
+            draft: ComposerRecoveryDraft(text: "submitted", attachments: []),
+            minimumUserIndex: 1),
+        for: owner)
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { _ in TranscriptHistory(items: [
+            recoveryUserItem("submitted", id: "old"),
+            recoveryUserItem("submitted", id: "echo"),
+        ]) },
+        recoveryStore: store,
+        recoveryOwner: owner)
+
+    await controller.openExisting(metadata(
+        path: "/tmp/recovery-with-echo.jsonl", cwd: try temporaryDirectory().path))
+
+    #expect(controller.draft == "newer")
+    #expect(controller.composerRecoveryMessage == nil)
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+private func recoveryUserItem(_ text: String, id: String = "user") -> TranscriptItem {
+    .message(TranscriptMessage(
+        id: id,
+        raw: .object([
+            "id": .string(id),
+            "role": .string("user"),
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string(text),
+            ])]),
+            "timestamp": .double(0),
+        ]),
+        isFinal: true))
+}
+
+@MainActor @Test func acceptedSendClearsOnlyInFlightRecoveryAndKeepsNewerInput() async throws {
+    let manager = fakeManager(mode: "delayed-prompt-success")
+    let store = ComposerRecoveryStore.inMemory()
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(try temporaryDirectory()))
+    await controller.openNew(projectURL: try temporaryDirectory())
+    controller.draft = "submitted"
+    controller.attachments = [controllerRecoveryAttachment(1)]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await eventually { controller.runtimeState == .streaming })
+    controller.draft = "newer"
+    controller.attachments = [controllerRecoveryAttachment(2)]
+    await send.value
+
+    let owner = ComposerRecoveryOwner.session(try #require(controller.sessionPath))
+    #expect(store.record(for: owner)?.draft.text == "newer")
+    #expect(store.record(for: owner)?.draft.attachments.map(\.data) == [Data([2])])
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+@MainActor @Test func delayedRecoveryFlushClearsOnlyTheStagedComposerInput() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLogURL = directory.appending(path: "commands.log")
+    let barrier = RecoveryFlushBarrier()
+    let store = ComposerRecoveryStore(
+        rootURL: directory.appending(path: "Recovery"),
+        debounce: .seconds(60),
+        flushBarrier: { await barrier.suspendFirstFlush() })
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(directory))
+    await controller.openNew(projectURL: directory)
+    let submittedAttachment = controllerRecoveryAttachment(1)
+    let newerAttachment = controllerRecoveryAttachment(2)
+    controller.draft = "submitted"
+    controller.attachments = [submittedAttachment]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await barrier.waitUntilSuspended())
+    controller.draft = "newer"
+    controller.attachments.append(newerAttachment)
+    await barrier.release()
+    await send.value
+
+    #expect(controller.draft == "newer")
+    #expect(controller.attachments == [newerAttachment])
+    let commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(commands.split(separator: "\n").filter { $0 == "prompt" }.count == 1)
+    await manager.closeAll()
+}
+
+@MainActor @Test func invalidatedPipelineDuringRecoveryFlushCannotSendOrOverwriteReplacementInput() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let commandLogURL = directory.appending(path: "commands.log")
+    let barrier = RecoveryFlushBarrier()
+    let store = ComposerRecoveryStore(
+        rootURL: directory.appending(path: "Recovery"),
+        debounce: .seconds(60),
+        flushBarrier: { await barrier.suspendFirstFlush() })
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(directory))
+    await controller.openNew(projectURL: directory)
+    controller.draft = "submitted"
+    controller.attachments = [controllerRecoveryAttachment(1)]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await barrier.waitUntilSuspended())
+    controller.handleUnexpectedExit(code: 9, stderrTail: "replacement")
+    let replacementAttachment = controllerRecoveryAttachment(2)
+    controller.draft = "replacement"
+    controller.attachments = [replacementAttachment]
+    await barrier.release()
+    await send.value
+
+    #expect(controller.draft == "replacement")
+    #expect(controller.attachments == [replacementAttachment])
+    #expect(controller.runtimeState == SessionRuntimeState.stopped(code: 9, stderrTail: "replacement"))
+    let commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(!commands.split(separator: "\n").contains("prompt"))
+    await manager.closeAll()
+}
+
+@MainActor @Test func failedRecoveryFlushRetainsInputAndSkipsPromptUntilSuccessfulRetry() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let recoveryRoot = directory.appending(path: "Recovery")
+    try FileManager.default.createDirectory(at: recoveryRoot, withIntermediateDirectories: true)
+    let recoveryFile = recoveryRoot.appending(path: ComposerRecoveryStore.fileName)
+    try FileManager.default.createDirectory(at: recoveryFile, withIntermediateDirectories: false)
+    let commandLogURL = directory.appending(path: "commands.log")
+    let manager = commandLoggingFakeManager(commandLogURL: commandLogURL)
+    let store = ComposerRecoveryStore(rootURL: recoveryRoot, debounce: .seconds(60))
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(directory))
+    await controller.openNew(projectURL: directory)
+    let attachment = controllerRecoveryAttachment(1)
+    controller.draft = "retain me"
+    controller.attachments = [attachment]
+
+    await controller.sendPrompt()
+
+    #expect(controller.draft == "retain me")
+    #expect(controller.attachments == [attachment])
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.composerRecoveryMessage == "Couldn’t save this draft. Check storage access and try again.")
+    var commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(!commands.split(separator: "\n").contains("prompt"))
+
+    try FileManager.default.removeItem(at: recoveryFile)
+    await controller.sendPrompt()
+
+    #expect(controller.composerRecoveryMessage == nil)
+    #expect(controller.draft.isEmpty)
+    #expect(controller.attachments.isEmpty)
+    commands = try String(contentsOf: commandLogURL, encoding: .utf8)
+    #expect(commands.split(separator: "\n").filter { $0 == "prompt" }.count == 1)
+    await manager.closeAll()
+}
+
+@MainActor @Test func rejectedSendKeepsInFlightRecoveryAlongsideNewerInput() async throws {
+    let manager = fakeManager(mode: "delayed-prompt-failure")
+    let store = ComposerRecoveryStore.inMemory()
+    let controller = SessionController(
+        processManager: manager,
+        recoveryStore: store,
+        recoveryOwner: .project(try temporaryDirectory()))
+    await controller.openNew(projectURL: try temporaryDirectory())
+    controller.draft = "submitted"
+    let submittedAttachment = controllerRecoveryAttachment(1)
+    controller.attachments = [submittedAttachment]
+
+    let send = Task { await controller.sendPrompt() }
+    #expect(await eventually { controller.runtimeState == .streaming })
+    controller.draft = "newer"
+    controller.attachments = [controllerRecoveryAttachment(2)]
+    await send.value
+
+    let owner = ComposerRecoveryOwner.session(try #require(controller.sessionPath))
+    #expect(store.record(for: owner)?.draft.text == "newer")
+    #expect(store.record(for: owner)?.inFlight?.draft.text == "submitted")
+    #expect(store.record(for: owner)?.inFlight?.draft.attachments == [submittedAttachment])
+    await manager.closeAll()
+}
+
+@MainActor @Test func delayedInitialOpenTransfersOwnershipWithoutErasingNewerInput() async throws {
+    let marker = try temporaryDirectory().appending(path: "opening")
+    let manager = delayedFakeManager(mode: "basic", markerURL: marker)
+    let store = ComposerRecoveryStore.inMemory()
+    let project = try temporaryDirectory()
+    let initialID = UUID()
+    let controller = SessionController(
+        processManager: manager,
+        id: initialID,
+        recoveryStore: store,
+        recoveryOwner: .initial(id: initialID, projectURL: project))
+    let submittedAttachment = controllerRecoveryAttachment(1)
+    controller.prepareInitialSubmission(
+        text: "submitted", attachments: [submittedAttachment], projectURL: project)
+
+    let opening = Task { await controller.openNew(projectURL: project) }
+    #expect(await eventually { FileManager.default.fileExists(atPath: marker.path) })
+    controller.draft = "typed while opening"
+    controller.attachments = [controllerRecoveryAttachment(2)]
+    _ = await opening.value
+    await controller.sendPrompt()
+
+    let owner = ComposerRecoveryOwner.session(try #require(controller.sessionPath))
+    #expect(store.initialRecords(for: project).isEmpty)
+    #expect(store.record(for: owner)?.draft.text == "typed while opening")
+    #expect(store.record(for: owner)?.draft.attachments.map(\.data) == [Data([2])])
+    #expect(store.record(for: owner)?.inFlight == nil)
+    await manager.closeAll()
+}
+
+private func controllerRecoveryAttachment(_ byte: UInt8) -> ComposerAttachment {
+    ComposerAttachment(
+        name: "\(byte).png", data: Data([byte]), mimeType: "image/png",
+        pixelWidth: 1, pixelHeight: 1)
+}
+
+private actor RecoveryFlushBarrier {
+    private var isSuspended = false
+    private var didRelease = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func suspendFirstFlush() async {
+        guard !isSuspended, !didRelease else { return }
+        isSuspended = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+
+    func waitUntilSuspended(timeout: Duration = .seconds(30)) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout.seconds)
+        while Date() < deadline {
+            if isSuspended { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return isSuspended
+    }
+
+    func release() {
+        didRelease = true
+        continuation?.resume()
+        continuation = nil
+    }
 }

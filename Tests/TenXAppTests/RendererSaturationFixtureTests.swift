@@ -148,6 +148,41 @@ struct RendererSaturationFixtureTests {
     }
 
     @Test
+    func runningConsoleKeepsNewestLinesVisibleAndRevealsBackward() {
+        let fortyLines = (1...40).map { "line \($0)" }.joined(separator: "\n")
+        let fortyOneLines = fortyLines + "\nline 41"
+        var reveal = ToolSurfacePagination.console
+
+        let initial = ConsoleRenderPresentation(
+            output: fortyLines,
+            lineLimit: reveal.limit,
+            characterLimit: ProgressiveTextPresentation.initialReveal.limit,
+            window: .tail)
+        let updated = ConsoleRenderPresentation(
+            output: fortyOneLines,
+            lineLimit: reveal.limit,
+            characterLimit: ProgressiveTextPresentation.initialReveal.limit,
+            window: .tail)
+
+        #expect(initial.visibleText.hasPrefix("line 31\n"))
+        #expect(initial.visibleText.hasSuffix("line 40"))
+        #expect(!initial.visibleText.contains("line 30\n"))
+        #expect(updated.visibleText.hasPrefix("line 32\n"))
+        #expect(updated.visibleText.hasSuffix("line 41"))
+        #expect(updated.copyText == fortyOneLines)
+
+        reveal.revealNextPage(total: updated.lineProgressiveTotal)
+        let expanded = ConsoleRenderPresentation(
+            output: fortyOneLines,
+            lineLimit: reveal.limit,
+            characterLimit: ProgressiveTextPresentation.initialReveal.limit,
+            window: .tail)
+
+        #expect(expanded.visibleText.hasPrefix("line 1\n"))
+        #expect(expanded.visibleText.hasSuffix("line 41"))
+    }
+
+    @Test
     func hundredThousandCharacterConsoleLineScansAndRevealsFinitePrefixes() {
         let output = String(repeating: "x", count: 100_000)
         let lineReveal = ToolSurfacePagination.console

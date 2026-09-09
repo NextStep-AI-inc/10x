@@ -1,0 +1,30 @@
+container Panel editor-panel-group
+							338 container
+								339 tab group Tabs
+									340 tab (settable, integer) Superpowers Brainstorming :61350 Close Superpowers Brainstorming:61350, Value: 0
+										341 text Superpowers Brainstorming
+										342 text :61350
+										343 button Close Superpowers Brainstorming:61350
+									344 tab (settable, integer) editable-alpha.txt Close editable-alpha.txt, Value: 0
+									345 tab (selected) editable-beta.txt Close editable-beta.txt, Value: 1
+								346 combo box (settable) Open new tab menu
+								347 button Enter Full Screen
+								348 button Hide Apps
+								349 container
+									350 button Back
+									351 button (disabled) Forward
+									352 pop up button private
+									353 pop up button tmp
+									354 pop up button 10x-session-recovery-home
+									355 pop up button projects
+									356 pop up button review-native
+									357 pop up button editable-beta.txt
+									358 pop up button More options
+									359 pop up button 1
+									360 button Search Files
+									361 button Browse Files
+								362 container
+									363 container editable-beta.txt Close editable-beta.txt
+										364 container
+											365 editor (settable) The editor is not accessible at this time. To enable screen reader optimized mode, use Shift+Option+F1
+					366 

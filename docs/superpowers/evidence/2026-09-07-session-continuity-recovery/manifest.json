@@ -1,0 +1,69 @@
+{
+  "screenshots": [
+    {
+      "file": "before-fix-cancelled-warm-open.png",
+      "sourceCommit": "9afb324",
+      "sha256": "55fb6209994c863b383598ceae4fee2c4c5c9431ab79f803ab17480d0ded0dcc"
+    },
+    {
+      "file": "cancelled-warm-open-retry.png",
+      "sourceCommit": "7e9c4be",
+      "sha256": "3f40442a1b91d5c3a5c6ab8f047beb634a690091e25c0fab6c139334f42fbcd0"
+    },
+    {
+      "file": "cancelled-warm-retry-restores-history.png",
+      "sourceCommit": "7e9c4be",
+      "sha256": "9b2bcdfa74125dd50a09b265113d0a5bfa5081f8b662f4b5f7b40a47f10c9906"
+    },
+    {
+      "file": "cold-created-session-after-relaunch-image-gap.png",
+      "sourceCommit": "7e9c4be",
+      "sha256": "2beb52ab1fd615f15cf692d2cae2e0694f6651bc787e332e0afa50d27d2719bb"
+    },
+    {
+      "file": "failed-new-preserves-input.png",
+      "sourceCommit": "9afb324",
+      "sha256": "458bbdec03d524a289c7f89e31b2bef30d44281b4d8f083b95cee9b571d7925e"
+    },
+    {
+      "file": "failed-open-retry.png",
+      "sourceCommit": "9afb324",
+      "sha256": "307c2c0e2dce5464c8fdd327dcc882bf0714e83a8bd226f2033c1e5e752e01dd"
+    },
+    {
+      "file": "process-exit-preserves-input.png",
+      "sourceCommit": "9afb324",
+      "sha256": "cff1492451b76295bf38e8925a4e3b436637ee84bc8408b668fc12519414f7f0"
+    },
+    {
+      "file": "recovered-session-response.png",
+      "sourceCommit": "9afb324",
+      "sha256": "2ca37fc450d47a8299fe1c8ea759f38615097cd9a7382a3ddec91ee3e2de1564"
+    },
+    {
+      "file": "rejected-prompt-preserves-text-and-image.png",
+      "sourceCommit": "7e9c4be",
+      "sha256": "0c0e439f413bea61cb74531a0ce4cbad726b905885617ee4a36fcb2b4d899eb4"
+    },
+    {
+      "file": "rejected-prompt-restart-preserves-input.png",
+      "sourceCommit": "7e9c4be",
+      "sha256": "36e319d8529c2f0749c20626ee2665b0a50dbabcaf4146e96f6a3c6b8678fd5f"
+    },
+    {
+      "file": "restarted-session-keeps-draft.png",
+      "sourceCommit": "9afb324",
+      "sha256": "1d6716861b8302ce61cb331a2bf6dc0483fcaad2eedb4e08d143e0b09b678ef9"
+    },
+    {
+      "file": "warm-created-session-after-relaunch.png",
+      "sourceCommit": "7e9c4be",
+      "sha256": "7a97e1c3ee1296e3ea41b357b54b3bf22cbc5b65390d0a4b1ee8e3c5f47f02bb"
+    },
+    {
+      "file": "warm-existing-append-after-relaunch.png",
+      "sourceCommit": "7e9c4be",
+      "sha256": "1d314072c7b21caa191ed642f86c3a0255593dc7dccc658c2a8180735785ad9d"
+    }
+  ]
+}

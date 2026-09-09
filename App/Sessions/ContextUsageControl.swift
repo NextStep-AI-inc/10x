@@ -6,17 +6,57 @@ struct ContextUsageControl: View {
     let breakdown: SessionContextBreakdown?
     let isLoading: Bool
     let errorMessage: String?
+    let canCompact: Bool
+    let compactionDisabledReason: String?
+    let isCompacting: Bool
+    let compactionErrorMessage: String?
     let onRefresh: () async -> Void
+    let onCompact: () async -> Void
+    @Binding var isPresented: Bool
+    var onRestoreFocus: () -> Void = {}
 
-    @State private var isPresented = false
+    @State private var anchor: FlyoutWindowAnchor?
+    @State private var contentHeight: CGFloat?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var desiredPanelSize: CGSize {
+        CGSize(width: 334, height: contentHeight ?? 470)
+    }
 
     private var summary: ContextUsageSummary? {
         ContextUsageSummary(usage: usage, breakdown: breakdown)
     }
 
     var body: some View {
+        trigger
+            .background {
+                FlyoutWindowAnchorReader { nextAnchor in
+                    if anchor != nextAnchor { anchor = nextAnchor }
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if isPresented {
+                    flyout
+                        .offset(x: panelOffsetX, y: panelOffsetY)
+                        .transition(transition)
+                        .zIndex(3)
+                }
+            }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: isPresented)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: contentHeight)
+            .onExitCommand {
+                guard isPresented else { return }
+                closeAndRestoreFocus()
+            }
+    }
+
+    private var trigger: some View {
         Button {
-            isPresented.toggle()
+            if isPresented {
+                closeAndRestoreFocus()
+            } else {
+                isPresented = true
+            }
         } label: {
             HStack(spacing: 7) {
                 ContextUsageMiniMeter(fillFraction: summary?.fillFraction ?? 0)
@@ -32,18 +72,112 @@ struct ContextUsageControl: View {
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Shows context usage details")
         .accessibilityAddTraits(isPresented ? .isSelected : [])
-        .popover(isPresented: $isPresented, arrowEdge: .top) {
-            ContextUsagePopover(
-                summary: summary,
-                breakdown: breakdown,
-                isLoading: isLoading,
-                errorMessage: errorMessage,
-                onClose: { isPresented = false },
-                onRefresh: onRefresh)
-                .task {
-                    await onRefresh()
+        .opacity(isPresented ? 0 : 1)
+        .accessibilityHidden(isPresented)
+    }
+
+    private var flyout: some View {
+        ConnectedFlyoutShelf(
+            panelSize: resolvedPlacement.panelFrame.size,
+            triggerSize: CGSize(
+                width: min(
+                    anchor?.triggerFrame.width ?? 126,
+                    resolvedPlacement.panelFrame.width),
+                height: anchor?.triggerFrame.height ?? 28),
+            triggerOffsetX: resolvedPlacement.triggerOffsetX,
+            direction: resolvedPlacement.direction,
+            fill: TenXPalette.color(TenXPalette.canvasHex),
+            onDismiss: { isPresented = false },
+            panelContent: {
+                ScrollView {
+                    ContextUsagePopover(
+                        summary: summary,
+                        breakdown: breakdown,
+                        isLoading: isLoading,
+                        errorMessage: errorMessage,
+                        canCompact: canCompact,
+                        compactionDisabledReason: compactionDisabledReason,
+                        isCompacting: isCompacting,
+                        compactionErrorMessage: compactionErrorMessage,
+                        onClose: closeAndRestoreFocus,
+                        onRefresh: onRefresh,
+                        onCompact: onCompact)
+                        .frame(width: resolvedPlacement.panelFrame.width)
+                        .background {
+                            GeometryReader { geometry in
+                                Color.clear.preference(
+                                    key: FlyoutContentHeightKey.self,
+                                    value: geometry.size.height)
+                            }
+                        }
                 }
+                .onPreferenceChange(FlyoutContentHeightKey.self) { height in
+                    guard height > 0 else { return }
+                    contentHeight = height
+                }
+                .frame(
+                    width: resolvedPlacement.panelFrame.width,
+                    height: resolvedPlacement.panelFrame.height)
+            },
+            triggerContent: { openTrigger })
+            .task { await onRefresh() }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Context window details")
+    }
+
+    private var openTrigger: some View {
+        Button(action: closeAndRestoreFocus) {
+            HStack(spacing: 7) {
+                ContextUsageMiniMeter(fillFraction: summary?.fillFraction ?? 0)
+                Text(triggerLabel).lineLimit(1)
+            }
         }
+        .buttonStyle(GhostActionStyle(
+            color: TenXPalette.color(TenXPalette.nearBlackHex),
+            horizontalPadding: 5))
+        .accessibilityLabel("Context window")
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Menu open")
+    }
+
+    private var placement: FlyoutPlacement? {
+        anchor.map {
+            FlyoutPlacement.resolve(
+                triggerFrame: $0.triggerFrame,
+                desiredPanelSize: desiredPanelSize,
+                usableBounds: $0.usableBounds,
+                preferredDirection: .above)
+        }
+    }
+
+    private var resolvedPlacement: FlyoutPlacement {
+        placement ?? FlyoutPlacement(
+            direction: .above,
+            panelFrame: CGRect(origin: .zero, size: desiredPanelSize),
+            triggerOffsetX: 0,
+            isHeightConstrained: false)
+    }
+
+    private var panelOffsetX: CGFloat {
+        guard let anchor, let placement else { return 0 }
+        return placement.panelFrame.minX - anchor.triggerFrame.minX
+    }
+
+    private var panelOffsetY: CGFloat {
+        resolvedPlacement.direction == .above ? -resolvedPlacement.panelFrame.height : 0
+    }
+
+    private var transition: AnyTransition {
+        guard !reduceMotion else { return .identity }
+        let offset = resolvedPlacement.direction == .above ? 8.0 : -8.0
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: offset)),
+            removal: .opacity.combined(with: .offset(y: offset / 2)))
+    }
+
+    private func closeAndRestoreFocus() {
+        isPresented = false
+        onRestoreFocus()
     }
 
     private var triggerLabel: String {
@@ -124,8 +258,13 @@ struct ContextUsagePopover: View {
     let breakdown: SessionContextBreakdown?
     let isLoading: Bool
     let errorMessage: String?
+    let canCompact: Bool
+    let compactionDisabledReason: String?
+    let isCompacting: Bool
+    let compactionErrorMessage: String?
     let onClose: () -> Void
     let onRefresh: () async -> Void
+    let onCompact: () async -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -140,12 +279,56 @@ struct ContextUsagePopover: View {
             } else {
                 unavailableState
             }
+
+            compactionAction
         }
         .padding(20)
         .frame(minWidth: 260, idealWidth: 334, maxWidth: 334, alignment: .leading)
         .background(TenXPalette.color(TenXPalette.canvasHex))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Context window details")
+    }
+
+    private var compactionAction: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Compresses older conversation to free context space.")
+                .font(TenXTypography.body(size: 11))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .fixedSize(horizontal: false, vertical: true)
+
+            if isCompacting {
+                ProgressView("Compacting context…")
+                    .controlSize(.small)
+            } else {
+                Button("Compact context") {
+                    Task { await onCompact() }
+                }
+                .buttonStyle(GhostActionStyle())
+                .disabled(!canCompact)
+            }
+
+            if !isCompacting, !canCompact,
+               let compactionDisabledReason, !compactionDisabledReason.isEmpty,
+               compactionDisabledReason != compactionErrorMessage {
+                Text(compactionDisabledReason)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let compactionErrorMessage, !compactionErrorMessage.isEmpty {
+                Text(compactionErrorMessage)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 14)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(TenXPalette.color(TenXPalette.separatorHex))
+                .frame(height: 1)
+        }
     }
 
     private var header: some View {

@@ -10,7 +10,7 @@ import OmpKit
     let rows = TranscriptPresentationRow.rows(from: [.message(empty)])
     #expect(rows.count == 1)
     #expect(TranscriptPresentationRow.visibleRows(from: rows, isGroupExpanded: { _ in true }).isEmpty)
-    #expect(TurnActivityView.isAwaitingOutput(runtimeState: .streaming, lastItem: .message(empty)))
+    #expect(TurnActivityView.isAwaitingOutput(runtimeState: .streaming, items: [.message(empty)]))
 }
 
 @Test func delayedAssistantTextBecomesVisibleWithoutLosingItsIdentity() {
@@ -20,7 +20,7 @@ import OmpKit
     let rows = TranscriptPresentationRow.rows(from: [.message(text)])
     #expect(TranscriptPresentationRow.visibleRows(from: rows, isGroupExpanded: { _ in true }).map(\.id)
         == ["message:waiting"])
-    #expect(!TurnActivityView.isAwaitingOutput(runtimeState: .streaming, lastItem: .message(text)))
+    #expect(!TurnActivityView.isAwaitingOutput(runtimeState: .streaming, items: [.message(text)]))
 }
 
 @Test @MainActor func startupRecoveryExplainsCauseAndRetryClearsIt() {

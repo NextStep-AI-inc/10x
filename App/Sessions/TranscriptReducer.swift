@@ -29,7 +29,7 @@ struct TranscriptReducer {
     private var droppedHarnessMessageSignatures: Set<String> = []
 
     @discardableResult
-    mutating func consume(_ frame: RpcFrame) -> TranscriptMutation {
+    mutating func consume(_ frame: RpcFrame, at date: Date = Date()) -> TranscriptMutation {
         guard case .event(let type, let payload) = frame else { return .none }
 
         switch type {
@@ -97,6 +97,9 @@ struct TranscriptReducer {
             }
             inflightMessageID = nil
             inflightItemIDs = []
+            if message["stopReason"]?.stringValue?.lowercased() == "aborted" {
+                _ = interruptRunningTools(at: date)
+            }
             return .immediate
         case "notice":
             let id = syntheticID(prefix: "notice")
@@ -158,7 +161,7 @@ struct TranscriptReducer {
             return .none
         case "tool_execution_start", "tool_execution_update", "tool_execution_end":
             guard payload["toolCallId"]?.stringValue != nil else { return .none }
-            toolReducer.consume(type: type, payload: payload)
+            toolReducer.consume(type: type, payload: payload, at: date)
             guard let id = payload["toolCallId"]?.stringValue,
                   let presentation = toolReducer.presentations.first(where: { $0.id == id })
             else { return .none }
@@ -245,12 +248,65 @@ struct TranscriptReducer {
                 isFinal: true,
                 existingTools: previousTools,
                 fallbackDate: fallbackDate))
+            if message["stopReason"]?.stringValue?.lowercased() == "aborted" {
+                _ = Self.interruptRunningTools(in: &items, at: fallbackDate)
+            }
         }
         inflightMessageID = nil
         inflightItemIDs = []
         pendingPersistenceIDs = []
         pendingMessageFingerprints = [:]
         return previous == items ? .none : .immediate
+    }
+
+    @discardableResult
+    mutating func interruptRunningTools(at date: Date) -> TranscriptMutation {
+        let reducerChanged = toolReducer.interruptRunning(at: date)
+        let itemsChanged = Self.interruptRunningTools(in: &items, at: date)
+        return reducerChanged || itemsChanged ? .immediate : .none
+    }
+
+    @discardableResult
+    static func interruptRunningTools(
+        in items: inout [TranscriptItem],
+        at date: Date
+    ) -> Bool {
+        var changed = false
+        for index in items.indices {
+            guard case .tool(var tool) = items[index], tool.phase == .running else { continue }
+            tool.update(phase: .interrupted, endDate: .some(date))
+            items[index] = .tool(tool)
+            changed = true
+        }
+        return changed
+    }
+
+    @discardableResult
+    static func settleActiveTurnAfterStop(
+        in items: inout [TranscriptItem],
+        at date: Date
+    ) -> Bool {
+        guard let activeTurn = TranscriptTurnProjection.sections(
+            from: items,
+            runtimeState: .stopped(code: nil, stderrTail: "")).last
+        else { return false }
+        let activeIDs = Set(activeTurn.items.map(\.viewID))
+        let previous = items
+        items = items.compactMap { item in
+            guard activeIDs.contains(item.viewID) else { return item }
+            switch item {
+            case .message(let message):
+                return .message(message.settledAfterStop(at: date))
+            case .tool(var tool) where tool.phase == .running:
+                tool.update(phase: .interrupted, endDate: .some(date))
+                return .tool(tool)
+            case .extensionUI(let state) where state.requiresUserInput:
+                return nil
+            default:
+                return item
+            }
+        }
+        return previous != items
     }
 
     @discardableResult
@@ -331,7 +387,19 @@ struct TranscriptReducer {
                 return false
             }
         }
-        items = history.items + transient
+        items = history.items.map { item in
+            guard case .subagent(var persisted) = item,
+                  case .subagent(let live)? = previous.first(where: { $0.id == item.id })
+            else { return item }
+            // Completed task results omit the recent details supplied by live progress.
+            if persisted.recentTools.isEmpty {
+                persisted.recentTools = live.recentTools
+            }
+            if persisted.recentOutput.isEmpty {
+                persisted.recentOutput = live.recentOutput
+            }
+            return .subagent(persisted)
+        } + transient
         if !inflightItemIDs.contains(where: { identity in
             items.contains { Self.inflightIdentity(for: $0) == identity }
         }) {

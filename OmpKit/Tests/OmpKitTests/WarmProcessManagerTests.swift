@@ -341,6 +341,53 @@ final class WarmManagerFixture {
     await manager.closeAll()
 }
 
+@Test func cancelledWarmSwitchRejectsHandleAndExplicitRetryUsesColdResume() async throws {
+    let fixture = try WarmManagerFixture(mode: "cancel-switch")
+    defer { fixture.cleanup() }
+    let manager = fixture.manager
+    let sessionPath = "/tmp/cancelled-switch.jsonl"
+
+    do {
+        let warm = try await manager.warm(projectDirectory: fixture.project.path)
+        var switchError: RpcClientError?
+        do {
+            _ = try await manager.open(sessionPath: sessionPath, cwd: fixture.project.path)
+            Issue.record("A cancelled warm switch must reject the requested session")
+        } catch let error as RpcClientError {
+            switchError = error
+        }
+
+        if let switchError {
+            guard case .commandFailed(let command, let message, let code) = switchError else {
+                Issue.record("Expected a switch_session command failure, got \(switchError)")
+                await manager.closeAll()
+                return
+            }
+            #expect(command == "switch_session")
+            #expect(message == "The session switch was cancelled.")
+            #expect(code == nil)
+        }
+        #expect(await manager.handle(for: sessionPath) == nil)
+        #expect(await warm.client.exitCode != nil)
+
+        if await manager.handle(for: sessionPath) != nil {
+            await manager.close(sessionPath: sessionPath)
+        }
+        let active = try await manager.open(
+            sessionPath: sessionPath,
+            cwd: fixture.project.path)
+        let registered = await manager.handle(for: sessionPath)
+
+        #expect(active.client !== warm.client)
+        #expect(registered?.client === active.client)
+        #expect(fixture.configurationCount == 2)
+        await manager.closeAll()
+    } catch {
+        await manager.closeAll()
+        throw error
+    }
+}
+
 @Test func secondConcurrentSessionInOneProjectSpawnsAColdChild() async throws {
     let fixture = try WarmManagerFixture(mode: "basic")
     defer { fixture.cleanup() }

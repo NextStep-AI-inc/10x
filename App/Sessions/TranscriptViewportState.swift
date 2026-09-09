@@ -15,6 +15,31 @@ final class TranscriptViewportState {
             isFollowingLatest = true
         }
     }
+
+    func observeVisibleTargets(
+        _ visibleIDs: [String],
+        orderedIDs: [String],
+        isUserScrolling: Bool
+    ) {
+        guard isUserScrolling else { return }
+        let visibleIDSet = Set(visibleIDs)
+        guard let firstVisibleID = orderedIDs.first(where: visibleIDSet.contains),
+              firstVisibleID != anchorID else { return }
+        anchorID = firstVisibleID
+    }
+
+    nonisolated static func restorationTarget(
+        anchorID: String?,
+        isFollowingLatest: Bool,
+        hasSearchRequest: Bool,
+        visibleIDs: Set<String>,
+        hiddenTargetGroupID: String?
+    ) -> String? {
+        guard !isFollowingLatest, !hasSearchRequest, let anchorID else { return nil }
+        if visibleIDs.contains(anchorID) { return anchorID }
+        guard let hiddenTargetGroupID, visibleIDs.contains(hiddenTargetGroupID) else { return nil }
+        return hiddenTargetGroupID
+    }
 }
 
 struct TranscriptViewportGeometry: Equatable {

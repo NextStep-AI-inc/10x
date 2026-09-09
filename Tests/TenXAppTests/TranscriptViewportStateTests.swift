@@ -33,6 +33,65 @@ import Testing
     #expect(viewport.isFollowingLatest)
 }
 
+@MainActor @Test func visibleTargetsUseTranscriptOrderInsteadOfCallbackOrder() {
+    let viewport = TranscriptViewportState()
+
+    viewport.observeVisibleTargets(
+        ["message:third", "message:second"],
+        orderedIDs: ["message:first", "message:second", "message:third"],
+        isUserScrolling: true)
+
+    #expect(viewport.anchorID == "message:second")
+}
+
+@MainActor @Test func initialVisibilityDoesNotOverwriteSavedReadingPosition() {
+    let viewport = TranscriptViewportState()
+    viewport.anchorID = "message:saved"
+
+    viewport.observeVisibleTargets(
+        ["message:first"],
+        orderedIDs: ["message:first", "message:saved"],
+        isUserScrolling: false)
+
+    #expect(viewport.anchorID == "message:saved")
+}
+
+@Test func restorationUsesVisibleTargetOrItsVisibleToolGroup() {
+    #expect(TranscriptViewportState.restorationTarget(
+        anchorID: "message:saved",
+        isFollowingLatest: false,
+        hasSearchRequest: false,
+        visibleIDs: ["message:saved"],
+        hiddenTargetGroupID: nil) == "message:saved")
+    #expect(TranscriptViewportState.restorationTarget(
+        anchorID: "tool:one",
+        isFollowingLatest: false,
+        hasSearchRequest: false,
+        visibleIDs: ["tool-group-one"],
+        hiddenTargetGroupID: "tool-group-one") == "tool-group-one")
+    #expect(TranscriptViewportState.restorationTarget(
+        anchorID: "message:missing",
+        isFollowingLatest: false,
+        hasSearchRequest: false,
+        visibleIDs: ["message:other"],
+        hiddenTargetGroupID: nil) == nil)
+}
+
+@Test func searchAndFollowTakePrecedenceOverReadingPositionRestoration() {
+    #expect(TranscriptViewportState.restorationTarget(
+        anchorID: "message:saved",
+        isFollowingLatest: false,
+        hasSearchRequest: true,
+        visibleIDs: ["message:saved"],
+        hiddenTargetGroupID: nil) == nil)
+    #expect(TranscriptViewportState.restorationTarget(
+        anchorID: "message:saved",
+        isFollowingLatest: true,
+        hasSearchRequest: false,
+        visibleIDs: ["message:saved"],
+        hiddenTargetGroupID: nil) == nil)
+}
+
 private func geometry(offset: CGFloat, contentHeight: CGFloat) -> TranscriptViewportGeometry {
     TranscriptViewportGeometry(
         offset: offset,

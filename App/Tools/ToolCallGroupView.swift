@@ -127,6 +127,8 @@ struct ToolCallGroupView: View {
             TenXPalette.color(TenXPalette.cyanHex)
         case .failed:
             TenXPalette.color(TenXPalette.signalRedHex)
+        case .interrupted:
+            TenXPalette.color(TenXPalette.mutedTextHex)
         }
     }
 }

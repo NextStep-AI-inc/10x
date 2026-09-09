@@ -26,48 +26,6 @@ enum ChooseProjectFlyoutMetrics {
     }
 }
 
-/// Stepped silhouette: wide folder panel over a narrower choose-project rect.
-struct TwoRectShelfShape: Shape {
-    var topWidth: CGFloat
-    var topHeight: CGFloat
-    var bottomWidth: CGFloat
-    var bottomHeight: CGFloat
-
-    var animatableData: AnimatablePair<
-        AnimatablePair<CGFloat, CGFloat>,
-        AnimatablePair<CGFloat, CGFloat>
-    > {
-        get {
-            AnimatablePair(
-                AnimatablePair(topWidth, topHeight),
-                AnimatablePair(bottomWidth, bottomHeight))
-        }
-        set {
-            topWidth = newValue.first.first
-            topHeight = newValue.first.second
-            bottomWidth = newValue.second.first
-            bottomHeight = newValue.second.second
-        }
-    }
-
-    func path(in rect: CGRect) -> Path {
-        let topW = min(topWidth, rect.width)
-        let bottomW = min(bottomWidth, topW)
-        let topH = topHeight
-        let bottomH = bottomHeight
-
-        var path = Path()
-        path.move(to: .zero)
-        path.addLine(to: CGPoint(x: topW, y: 0))
-        path.addLine(to: CGPoint(x: topW, y: topH))
-        path.addLine(to: CGPoint(x: bottomW, y: topH))
-        path.addLine(to: CGPoint(x: bottomW, y: topH + bottomH))
-        path.addLine(to: CGPoint(x: 0, y: topH + bottomH))
-        path.closeSubpath()
-        return path
-    }
-}
-
 private struct ShelfTriggerWidthKey: PreferenceKey {
     nonisolated(unsafe) static var defaultValue: CGFloat = 0
 
@@ -83,53 +41,53 @@ struct ChooseProjectShelf: View {
     let onChoose: (URL) -> Void
     let onAddExistingFolder: () -> Void
     let onToggle: () -> Void
+    var placement: FlyoutPlacement? = nil
+    var onDismiss: (() -> Void)? = nil
 
     @State private var measuredTriggerWidth: CGFloat = 0
 
     private var widths: (top: CGFloat, bottom: CGFloat) {
+        if let placement {
+            return (
+                placement.panelFrame.width,
+                min(max(1, measuredTriggerWidth), placement.panelFrame.width))
+        }
         // ~intrinsic width of "📁 Choose project" until the real measure lands.
         let trigger = measuredTriggerWidth > 0 ? measuredTriggerWidth : 148
         return ChooseProjectFlyoutMetrics.panelWidths(triggerWidth: trigger)
     }
 
     private var topHeight: CGFloat {
-        ChooseProjectFlyoutMetrics.topHeight(projectCount: projectURLs.count)
-    }
-
-    private var silhouette: TwoRectShelfShape {
-        TwoRectShelfShape(
-            topWidth: widths.top,
-            topHeight: topHeight,
-            bottomWidth: widths.bottom,
-            bottomHeight: ChooseProjectFlyoutMetrics.triggerHeight)
+        placement?.panelFrame.height
+            ?? ChooseProjectFlyoutMetrics.topHeight(projectCount: projectURLs.count)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            listPiece
-                .frame(width: widths.top, height: topHeight, alignment: .topLeading)
-
-            triggerPiece
-                .fixedSize(horizontal: true, vertical: false)
-                .frame(height: ChooseProjectFlyoutMetrics.triggerHeight)
-                .background {
-                    GeometryReader { geometry in
-                        Color.clear.preference(
-                            key: ShelfTriggerWidthKey.self,
-                            value: geometry.size.width)
+        ConnectedFlyoutShelf(
+            panelSize: CGSize(width: widths.top, height: topHeight),
+            triggerSize: CGSize(
+                width: widths.bottom,
+                height: ChooseProjectFlyoutMetrics.triggerHeight),
+            triggerOffsetX: placement?.triggerOffsetX ?? 0,
+            direction: placement?.direction ?? .above,
+            fill: TenXPalette.surfaceElevated,
+            onDismiss: onDismiss ?? onToggle,
+            panelContent: {
+                listPiece
+                    .frame(width: widths.top, height: topHeight, alignment: .topLeading)
+            },
+            triggerContent: {
+                triggerPiece
+                    .fixedSize(horizontal: true, vertical: false)
+                    .background {
+                        GeometryReader { geometry in
+                            Color.clear.preference(
+                                key: ShelfTriggerWidthKey.self,
+                                value: geometry.size.width)
+                        }
                     }
-                }
-        }
+            })
         .onPreferenceChange(ShelfTriggerWidthKey.self) { measuredTriggerWidth = $0 }
-        .frame(
-            width: widths.top,
-            height: topHeight + ChooseProjectFlyoutMetrics.triggerHeight,
-            alignment: .topLeading)
-        .background { silhouette.fill(TenXPalette.surfaceElevated) }
-        .overlay {
-            silhouette.stroke(TenXPalette.color(TenXPalette.nearBlackHex), lineWidth: 1)
-        }
-        .dismissesOnOutsideInteraction(silhouette: silhouette, onDismiss: onToggle)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Choose project")
     }
@@ -167,7 +125,11 @@ struct ChooseProjectShelf: View {
             }
             .frame(
                 width: widths.top,
-                height: ChooseProjectFlyoutMetrics.listHeight(projectCount: projectURLs.count))
+                height: min(
+                    ChooseProjectFlyoutMetrics.listHeight(projectCount: projectURLs.count),
+                    max(0, topHeight
+                        - ChooseProjectFlyoutMetrics.addRowHeight
+                        - ChooseProjectFlyoutMetrics.separatorHeight)))
         }
     }
 
@@ -235,14 +197,81 @@ struct FlyoutRowBackground: View {
 
 struct ChooseProjectControl: View {
     let projectURL: URL?
+    let projectURLs: [URL]
+    let onChoose: (URL) -> Void
+    let onAddExistingFolder: () -> Void
     @Binding var isPresented: Bool
+    var onRestoreFocus: () -> Void = {}
+
+    @State private var anchor: FlyoutWindowAnchor?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var triggerTitle: String {
+        projectURL?.lastPathComponent ?? "Choose project"
+    }
+
+    private var desiredPanelSize: CGSize {
+        let triggerWidth = anchor?.triggerFrame.width ?? 148
+        return CGSize(
+            width: ChooseProjectFlyoutMetrics.panelWidths(triggerWidth: triggerWidth).top,
+            height: ChooseProjectFlyoutMetrics.topHeight(projectCount: projectURLs.count))
+    }
+
+    private var placement: FlyoutPlacement? {
+        anchor.map {
+            FlyoutPlacement.resolve(
+                triggerFrame: $0.triggerFrame,
+                desiredPanelSize: desiredPanelSize,
+                usableBounds: $0.usableBounds,
+                preferredDirection: .above)
+        }
+    }
 
     var body: some View {
+        trigger
+            .background {
+                FlyoutWindowAnchorReader { nextAnchor in
+                    if anchor != nextAnchor { anchor = nextAnchor }
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if isPresented {
+                    ChooseProjectShelf(
+                        projectURLs: projectURLs,
+                        selectedProjectURL: projectURL,
+                        triggerTitle: triggerTitle,
+                        onChoose: { url in
+                            closeAndRestoreFocus()
+                            onChoose(url)
+                        },
+                        onAddExistingFolder: {
+                            closeAndRestoreFocus()
+                            onAddExistingFolder()
+                        },
+                        onToggle: closeAndRestoreFocus,
+                        placement: resolvedPlacement,
+                        onDismiss: { isPresented = false })
+                    .offset(x: panelOffsetX, y: panelOffsetY)
+                    .transition(transition)
+                    .zIndex(3)
+                }
+            }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: isPresented)
+            .onExitCommand {
+                guard isPresented else { return }
+                closeAndRestoreFocus()
+            }
+    }
+
+    private var trigger: some View {
         Button {
-            isPresented.toggle()
+            if isPresented {
+                closeAndRestoreFocus()
+            } else {
+                isPresented = true
+            }
         } label: {
-            Label(projectURL?.lastPathComponent ?? "Choose project", systemImage: "folder")
-                .lineLimit(1)
+            Label(triggerTitle, systemImage: "folder").lineLimit(1)
         }
         .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
         .opacity(isPresented ? 0 : 1)
@@ -250,5 +279,35 @@ struct ChooseProjectControl: View {
         .accessibilityLabel("Choose project")
         .accessibilityValue(projectURL?.lastPathComponent ?? "None")
         .accessibilityHint("Shows project menu")
+    }
+
+    private var resolvedPlacement: FlyoutPlacement {
+        placement ?? FlyoutPlacement(
+            direction: .above,
+            panelFrame: CGRect(origin: .zero, size: desiredPanelSize),
+            triggerOffsetX: 0,
+            isHeightConstrained: false)
+    }
+
+    private var panelOffsetX: CGFloat {
+        guard let anchor, let placement else { return 0 }
+        return placement.panelFrame.minX - anchor.triggerFrame.minX
+    }
+
+    private var panelOffsetY: CGFloat {
+        resolvedPlacement.direction == .above ? -resolvedPlacement.panelFrame.height : 0
+    }
+
+    private var transition: AnyTransition {
+        guard !reduceMotion else { return .identity }
+        let offset = resolvedPlacement.direction == .above ? 8.0 : -8.0
+        return .asymmetric(
+            insertion: .opacity.combined(with: .offset(y: offset)),
+            removal: .opacity.combined(with: .offset(y: offset / 2)))
+    }
+
+    private func closeAndRestoreFocus() {
+        isPresented = false
+        onRestoreFocus()
     }
 }

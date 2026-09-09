@@ -1,0 +1,9 @@
+{
+  "project": "/tmp/10x-session-recovery-home/projects/integration-native",
+  "head": "5faec777c933aa97cf4e4a6a1493cda37e8d9ec4",
+  "branch": "qa-integration-a",
+  "files": {
+    "integration-alpha.txt": "cce4c580c21ca6ebdeaca08dc4688d8a3eb2fd032ab90ea413cdfdff5b739aca",
+    "integration-beta.txt": "6e2674aa1b707d0e9338ba184dccd37079efcd0d5420f493a58213c9835ce935"
+  }
+}

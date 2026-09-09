@@ -1,0 +1,8 @@
+		43 text field (settable) Description: Search all settings, Value: tools.approval
+				60 text OMP Global OMP defaults /tmp/10x-session-recovery-home/.omp/agent 484 settings Tools 2
+					62 text Tools Approval Per-tool approval policies. Set to 'allow' to auto-approve, 'prompt' to require confirmation, or 'deny' to block. Overrides are honored in every approval mode. Applies to new OMP sessions. Project configuration can override these global policies. tools.approval
+					64 button Description: Use default for Tools Approval: Default, Help: Use default: Default
+					66 text Tools Approval Mode Default approval behavior for tool calls. 'Always ask' auto-approves read-only tools only. 'Write' auto-approves read and workspace-write tools. 'Yolo' auto-approves all tiers; user policy may still prompt or block. Applies to new OMP sessions. Project configuration and per-tool policies can override this default. tools.approvalMode
+					67 button Description: Tools Approval Mode, Value: Yolo
+					68 button Description: Use default for Tools Approval Mode: Default, Help: Use default: Default
+The focused UI element is 43 text field (settable) Description: Search all settings, Value: tools.approval

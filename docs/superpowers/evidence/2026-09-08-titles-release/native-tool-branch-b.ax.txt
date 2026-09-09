@@ -1,0 +1,15 @@
+					10 button Description: titles-native, Help: Starts a new session in titles-native
+					11 button Description: Check title and branch metadata, titles-native, Ready, Help: Check title and branch metadata, Secondary Actions: Rename Session
+					12 button Description: Titles baseline, titles-native, Unknown, Help: Titles baseline, Secondary Actions: Rename Session
+		48 unknown Description: Branch, Details: qa-branch-b
+		49 unknown Description: Folder, Details: titles-native
+				59 container Recall title and branch metadata titles-native qa-branch, 1 memory, Complete, Total 5.9 seconds
+					60 button Description: Recall title and branch metadata titles-native qa-branch, 1 memory, Complete, Total 5.9 seconds, Help: Expands tool details, Value: Collapsed
+					61 text title and branch metadata titles-native qa-branch · 1 memory Complete Total 5.9s
+				68 container Read /tmp/10x-session-recovery-home/projects/titles-native/README.md, 3 lines, Complete, Total 7.8 seconds
+					69 button Help: Expands tool details, Value: Collapsed, Description: Read /tmp/10x-session-recovery-home/projects/titles-native/README.md, 3 lines, Complete, Total 7.8 seconds
+					70 button Description: Choose an IDE for /tmp/10x-session-recovery-home/projects/titles-native/README.md, Help: Hold Option while clicking to reveal in Finder
+				72 container Read /tmp/10x-session-recovery-home/projects/titles-native/fixture.txt, 1 line, Complete, Total 7.8 seconds
+					73 button Help: Expands tool details, Value: Collapsed, Description: Read /tmp/10x-session-recovery-home/projects/titles-native/fixture.txt, 1 line, Complete, Total 7.8 seconds
+					74 button Description: Choose an IDE for /tmp/10x-session-recovery-home/projects/titles-native/fixture.txt, Help: Hold Option while clicking to reveal in Finder
+				84 text qa-branch-b Completed, 13.0s

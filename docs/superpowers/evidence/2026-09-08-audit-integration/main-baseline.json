@@ -1,0 +1,41 @@
+{
+  "baseCommit": "0be4353f7ee2d72813d41d6195422f34ef213c22",
+  "sourceTreeUnmodified": true,
+  "testCount": 6,
+  "issues": 6,
+  "exitCode": 65,
+  "log": "/tmp/10x-integration-main-activity-baseline.log",
+  "logSHA256": "800e565fa3753b3cfae418418a0622504fed9241ff168ca86a735c027e6db596",
+  "snapshots": [
+    {
+      "name": "activity-running-error",
+      "actualSHA256": "82a00ca2a562aa7b26f2d6669553599e038a021340ab8a96a0999a2bb7c0fa45",
+      "referenceSHA256": "35db6e564f33a36d2b3d5d3c3296524697c5b173c1eae6a9178e009fe30d9951"
+    },
+    {
+      "name": "activity-running-error-dark",
+      "actualSHA256": "648841ad4d2e5018fe2af6d6e23df86e5452c9fe8bb39cef0e34571a42158134",
+      "referenceSHA256": "eff19cc3b51cdfbdd55fefec439129927147bdd5cd388abc8d9645a5949e1af8"
+    },
+    {
+      "name": "activity-structured-diff",
+      "actualSHA256": "c4b16d8f7041bb08f5f63d442facf6e9bd1b2e76234e20383c758e028b2c844e",
+      "referenceSHA256": "15cc9ef1ac8b5eb01585de21709bb0c11c611c57ff08b498b97dab052a9c3196"
+    },
+    {
+      "name": "activity-structured-diff-dark",
+      "actualSHA256": "84c7a70a4ea19966293226cd981b7ecd53a26c812e62c970b4d781d546fb4c2c",
+      "referenceSHA256": "1bfb38db068830264ab857c6d23cdf615e26e3cfc6cd8d7c77486e68fea8eafb"
+    },
+    {
+      "name": "activity-subagent",
+      "actualSHA256": "f3359490ef0241ce25048823abb1b5408750443bf33400c1ef2f769038563bd6",
+      "referenceSHA256": "db9fa36c1bf3a3d717b253198f0156fcf496e8533512a4c26ece3d9c8fa2dcee"
+    },
+    {
+      "name": "activity-subagent-dark",
+      "actualSHA256": "01b98fbba91a96383ed7d098c3a624620b0141be7f660b928931550d69df8917",
+      "referenceSHA256": "2b817702d2c8db5d29db431659eae40a57b8d1b73c63fc8533f18932419455d9"
+    }
+  ]
+}

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct MessageBubbleView: View, Equatable {
     let message: TranscriptMessage
+    let mode: StreamingBehavior?
     let highlightedQuery: String?
 
     static let assistantContentSpacing: CGFloat = 14
@@ -12,8 +13,13 @@ struct MessageBubbleView: View, Equatable {
         TranscriptMessage.visibleText(from: message)
     }
 
-    init(message: TranscriptMessage, highlightedQuery: String? = nil) {
+    init(
+        message: TranscriptMessage,
+        mode: StreamingBehavior? = nil,
+        highlightedQuery: String? = nil
+    ) {
         self.message = message
+        self.mode = mode
         self.highlightedQuery = highlightedQuery
     }
 
@@ -26,6 +32,7 @@ struct MessageBubbleView: View, Equatable {
             && lhs.message.isFinal == rhs.message.isFinal
             && lhs.message.showsResponseMetadata == rhs.message.showsResponseMetadata
             && lhs.message.stopReason == rhs.message.stopReason
+            && lhs.mode == rhs.mode
             && lhs.highlightedQuery == rhs.highlightedQuery
     }
 
@@ -48,19 +55,10 @@ struct MessageBubbleView: View, Equatable {
             let advisory = TranscriptMessage.advisoryContent(from: message.raw)
             let userText = advisory?.message ?? message.visibleText
             VStack(alignment: .trailing, spacing: 8) {
-                ForEach(Array(message.document.images.enumerated()), id: \.offset) { _, image in
-                    MessageImageView(image: image)
-                }
-                if !userText.isEmpty {
-                    TranscriptPlainTextView(
-                        text: userText,
-                        font: TenXTypography.body(size: 14),
-                        color: TenXPalette.onEmphasis,
-                        highlightedQuery: highlightedQuery)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                        .background(TenXPalette.color(TenXPalette.nearBlackHex))
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
+                if let mode {
+                    knownModeContent(text: userText, mode: mode)
+                } else {
+                    standardUserContent(text: userText)
                 }
                 if let advisory {
                     let feedback = AdvisoryContentParser.Result(message: "", advisories: advisory.advisories)
@@ -83,6 +81,81 @@ struct MessageBubbleView: View, Equatable {
                 text: message.visibleText,
                 font: TenXTypography.mono(size: 12),
                 color: TenXPalette.color(TenXPalette.mutedTextHex))
+        }
+    }
+
+    @ViewBuilder
+    private func standardUserContent(text: String) -> some View {
+        ForEach(Array(message.document.images.enumerated()), id: \.offset) { _, image in
+            MessageImageView(image: image)
+        }
+        if !text.isEmpty {
+            TranscriptPlainTextView(
+                text: text,
+                font: TenXTypography.body(size: 14),
+                color: TenXPalette.onEmphasis,
+                highlightedQuery: highlightedQuery)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(TenXPalette.color(TenXPalette.nearBlackHex))
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+        }
+    }
+
+    private func knownModeContent(text: String, mode: StreamingBehavior) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: mode.iconName)
+                Text(mode.presentationLabel)
+            }
+            .font(TenXTypography.mono(size: 10, weight: .semibold))
+            .foregroundStyle(TenXPalette.onEmphasis)
+
+            ForEach(Array(message.document.images.enumerated()), id: \.offset) { _, image in
+                MessageImageView(image: image)
+            }
+            if !text.isEmpty {
+                TranscriptPlainTextView(
+                    text: text,
+                    font: TenXTypography.body(size: 14),
+                    color: TenXPalette.onEmphasis,
+                    highlightedQuery: highlightedQuery)
+            }
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 12)
+        .padding(.vertical, 10)
+        .background(TenXPalette.color(TenXPalette.nearBlackHex))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(mode.accentColor)
+                .frame(width: 3)
+                .padding(.vertical, 7)
+                .padding(.leading, 4)
+        }
+    }
+}
+
+private extension StreamingBehavior {
+    var presentationLabel: String {
+        switch self {
+        case .followUp: "Follow-up"
+        case .steer: "Steer"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .followUp: "arrow.triangle.branch"
+        case .steer: "arrow.up.right"
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .followUp: TenXPalette.color(TenXPalette.cyanHex)
+        case .steer: TenXPalette.color(TenXPalette.yellowHex)
         }
     }
 }

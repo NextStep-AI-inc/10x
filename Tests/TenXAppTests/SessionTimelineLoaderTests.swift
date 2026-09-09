@@ -1,6 +1,124 @@
+import CryptoKit
+import Darwin
 import Foundation
+import OmpKit
 import Testing
 @testable import TenXApp
+
+@Test func timelineLoaderHydratesPersistedImageAndReconcilesItsReceiptOnce() async throws {
+    let image = try #require(Data(base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+    let fixture = try TimelineImageFixture(reference: blobReference(for: image))
+    defer { fixture.remove() }
+    try fixture.writeBlob(image)
+    let reader = CountingTimelineReader()
+    let loader = SessionTimelineLoader(
+        blobDirectory: fixture.blobDirectory,
+        readData: { url in try reader.read(url) })
+
+    let first = try #require(try await loader.load(path: fixture.file.path))
+    let second = try #require(try await loader.load(path: fixture.file.path))
+    let messages = first.items.compactMap { item -> TranscriptMessage? in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+    let message = try #require(messages.first)
+
+    #expect(message.id == "user-1")
+    #expect(message.timestamp == Date(timeIntervalSince1970: 1_787_601_601))
+    #expect(message.document.images.map(\.data) == [image, Data([1, 2, 3])])
+    #expect(message.visibleText == "Inspect blob:sha256:not-an-image")
+    #expect(message.raw["provider"]?.stringValue == "preserve-me")
+    #expect(message.raw["content"]?.arrayValue?.first?["data"]?.stringValue
+        == blobReference(for: image))
+    #expect(first == second)
+    #expect(reader.count == 1)
+
+    let firstReceipt = pendingWithImages(image)
+    let secondReceipt = pendingWithImages(image)
+    var consumedIndices: Set<Int> = []
+
+    let afterFirstReconcile = PendingUserSubmission.reconcile(
+        [firstReceipt, secondReceipt],
+        messages: messages,
+        consumedIndices: &consumedIndices)
+    let afterSecondReconcile = PendingUserSubmission.reconcile(
+        afterFirstReconcile,
+        messages: messages,
+        consumedIndices: &consumedIndices)
+
+    #expect(afterFirstReconcile == [secondReceipt])
+    #expect(afterSecondReconcile == [secondReceipt])
+    #expect(consumedIndices == [0])
+}
+
+@Test func timelineLoaderRetriesAValidMissingBlobWhenItAppears() async throws {
+    let image = Data("late image bytes".utf8)
+    let reference = blobReference(for: image)
+    let fixture = try TimelineImageFixture(reference: reference)
+    defer { fixture.remove() }
+    let reader = CountingTimelineReader()
+    let loader = SessionTimelineLoader(
+        blobDirectory: fixture.blobDirectory,
+        readData: { url in try reader.read(url) })
+
+    let missing = try #require(try await loader.load(path: fixture.file.path))
+    #expect(missing.firstMessage?.raw.firstImageData == reference)
+    #expect(missing.firstMessage?.document.images.map(\.data) == [Data([1, 2, 3])])
+
+    try fixture.writeBlob(image)
+    let restored = try #require(try await loader.load(path: fixture.file.path))
+
+    #expect(restored.firstMessage?.document.images.map(\.data) == [image, Data([1, 2, 3])])
+    #expect(reader.count == 2)
+}
+
+@Test func timelineLoaderPreservesUnresolvableImageReferences() async throws {
+    let bytes = Data("expected bytes".utf8)
+    let validReference = blobReference(for: bytes)
+    let hash = String(validReference.dropFirst("blob:sha256:".count))
+    let cases: [(name: String, reference: String, prepare: (TimelineImageFixture) throws -> Void)] = [
+        ("invalid", "blob:md5:\(hash)", { _ in }),
+        ("malformed", "blob:sha256:1234", { _ in }),
+        ("uppercase", "blob:sha256:\(hash.uppercased())", { _ in }),
+        ("traversal", "blob:sha256:../\(hash)", { _ in }),
+        ("wrong hash", validReference, { fixture in
+            try fixture.writeBlob(Data("different bytes".utf8))
+        }),
+        ("directory", validReference, { fixture in
+            try FileManager.default.createDirectory(
+                at: fixture.blobURL(for: validReference),
+                withIntermediateDirectories: false)
+        }),
+        ("FIFO", validReference, { fixture in
+            let result = mkfifo(fixture.blobURL(for: validReference).path, 0o600)
+            guard result == 0 else {
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+        }),
+        ("symlink", validReference, { fixture in
+            let target = fixture.directory.appending(path: "target")
+            try bytes.write(to: target)
+            try FileManager.default.createSymbolicLink(
+                at: fixture.blobURL(for: validReference),
+                withDestinationURL: target)
+        }),
+    ]
+
+    for testCase in cases {
+        let fixture = try TimelineImageFixture(reference: testCase.reference)
+        defer { fixture.remove() }
+        try testCase.prepare(fixture)
+
+        let history = try #require(try await SessionTimelineLoader(
+            blobDirectory: fixture.blobDirectory).load(path: fixture.file.path))
+
+        #expect(history.firstMessage?.raw.firstImageData == testCase.reference,
+                "\(testCase.name) reference changed")
+        #expect(history.firstMessage?.document.images.map(\.data) == [Data([1, 2, 3])],
+                "\(testCase.name) produced an image")
+    }
+}
 
 @Test func timelineLoaderMapsTheActivePersistedPath() async throws {
     let directory = FileManager.default.temporaryDirectory
@@ -236,11 +354,87 @@ private struct TimelineLoaderFixture: Sendable {
     }
 }
 
+private struct TimelineImageFixture: Sendable {
+    let directory: URL
+    let blobDirectory: URL
+    let file: URL
+    let reference: String
+
+    init(reference: String) throws {
+        directory = FileManager.default.temporaryDirectory
+            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        blobDirectory = directory.appending(path: "blobs", directoryHint: .isDirectory)
+        file = directory.appending(path: "session.jsonl")
+        self.reference = reference
+        try FileManager.default.createDirectory(
+            at: blobDirectory,
+            withIntermediateDirectories: true)
+        try Data("""
+        {"type":"session","version":3,"id":"s","timestamp":"2026-08-24T20:00:00.000Z","cwd":"/tmp"}
+        {"type":"message","id":"user-1","parentId":null,"timestamp":"2026-08-24T20:00:01.000Z","message":{"role":"user","provider":"preserve-me","content":[{"type":"text","text":"Inspect blob:sha256:not-an-image","data":"\(reference)"},{"type":"image","data":"\(reference)","mimeType":"image/png","name":"proof.png"},{"type":"image","data":"AQID","mimeType":"image/png"}],"timestamp":1787601601000}}
+        """.utf8).write(to: file)
+    }
+
+    func blobURL(for reference: String? = nil) -> URL {
+        let value = reference ?? self.reference
+        let hash = String(value.dropFirst("blob:sha256:".count))
+        return blobDirectory.appending(path: hash)
+    }
+
+    func writeBlob(_ data: Data) throws {
+        try data.write(to: blobURL())
+    }
+
+    func remove() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+}
+
+private func blobReference(for data: Data) -> String {
+    "blob:sha256:" + SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
+private func pendingWithImages(_ image: Data) -> PendingUserSubmission {
+    PendingUserSubmission(
+        text: "Inspect blob:sha256:not-an-image",
+        attachments: [
+            ComposerAttachment(
+                name: "proof.png",
+                data: image,
+                mimeType: "image/png",
+                pixelWidth: 1,
+                pixelHeight: 1),
+            ComposerAttachment(
+                name: "inline.png",
+                data: Data([1, 2, 3]),
+                mimeType: "image/png",
+                pixelWidth: 1,
+                pixelHeight: 1),
+        ],
+        minimumUserIndex: 0,
+        state: .sending)
+}
+
 private extension TranscriptHistory {
     var visibleText: String? {
         items.compactMap { item -> TranscriptMessage? in
             guard case .message(let message) = item else { return nil }
             return message
         }.first?.visibleText
+    }
+
+    var firstMessage: TranscriptMessage? {
+        items.compactMap { item -> TranscriptMessage? in
+            guard case .message(let message) = item else { return nil }
+            return message
+        }.first
+    }
+}
+
+private extension JSONValue {
+    var firstImageData: String? {
+        self["content"]?.arrayValue?.first {
+            $0["type"]?.stringValue == "image"
+        }?["data"]?.stringValue
     }
 }
