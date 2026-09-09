@@ -26,12 +26,12 @@ cards = [
     ]),
     ("diff", "Less repetition in diffs", "Colored addition and removal totals appear once in the tool header. A single-file card uses that file title once; multi-file details keep one aligned row per file.", "Check the colored header totals, neutral per-file totals, and the shared row for Wrap or Scroll and Copy patch.", [
         ("native-final-multi-diff.jpg", "Expanded multi-file diff in the Release build"),
-        ("native-single-diff-minimum.jpg", "Single-file diff with its repeated file title removed"),
+        ("native-final-single-diff.jpg", "Single-file diff with its repeated file title removed"),
     ]),
     ("popups", "Panels fit the window", "Model, project, context, warning and send-action controls own their panels. They share placement rules that clamp to the window and choose the available opening direction.", "At the minimum window size, the model list scrolls, context stays within the window, and each outline connects to its control.", [
         ("native-final-model-minimum.jpg", "Model panel at minimum window size"),
         ("native-final-context-minimum.jpg", "Context panel at minimum window size"),
-        ("native-project-minimum.jpg", "Project panel at minimum window size"),
+        ("native-final-project-minimum.jpg", "Project panel at minimum window size"),
     ]),
 ]
 
@@ -47,7 +47,7 @@ parts = []
 for index, (key, title, change, look, pictures) in enumerate(cards, 1):
     media = "".join(picture(*item) for item in pictures)
     parts.append(f'<article class="evidence-card" id="{key}"><div class="evidence-copy"><span class="eyebrow">Adjustment {index:02}</span><h2>{escape(title)}</h2><p>{escape(change)}</p><p><strong>Look for:</strong> {escape(look)}</p></div>{media}</article>')
-nav = "".join(f'<a href="#{key}">{escape(title)}</a>' for key, title, *_ in cards)
+nav = "".join(f'<a href="#{key}">{escape(title)}</a>' for key, title, *_ in cards) + '<a href="../2026-09-08-audit-integration/progress-gallery.html">Earlier audit gallery</a>'
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>10x UI refinements — native evidence</title><style>{style}
 .caption{{padding:0 24px 16px}}.evidence-card .image-button{{margin-top:20px}}.evidence-copy p{{font-size:15px}}.evidence-grid{{margin-top:28px}}</style></head><body><main>
 <header class="hero"><div><p class="kicker">10x / requested UI adjustments</p><h1>Your five UI adjustments</h1><p class="dek">Real screenshots from the isolated macOS Release build, with a guide to each change.</p></div><div class="stamp">Build under test<strong>{manifest["sourceCommit"][:12]}</strong><span>Native macOS · arm64</span></div></header>

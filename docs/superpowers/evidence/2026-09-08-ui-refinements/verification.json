@@ -1,5 +1,5 @@
 {
-  "status": "IN_PROGRESS",
+  "status": "DONE_WITH_CONCERNS",
   "diffSourceCommit": "3257fe5",
   "derivedData": "/Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aotxfgauppgfpjaamwnkyebclbnl",
   "checks": [
@@ -12,7 +12,7 @@
     },
     {
       "check": "Existing diff snapshot fixture diagnostic",
-      "result": "expected mismatch; fixtures were collapsed; expanded rerun pending",
+      "result": "historical expected mismatch: fixtures were collapsed; expanded references subsequently reviewed and passed",
       "executedTests": 2,
       "log": "/tmp/10x-ui-refinements-diff-snapshots.log",
       "logSHA256": "f85697454c76ea6b02ba6e81165c8fdfd25a943492ca6790726048d26e0187df"
@@ -39,12 +39,81 @@
       "executedTests": 2,
       "log": "/tmp/10x-ui-refinements-diff-reviewed-build.log",
       "logSHA256": "edcc095849fa699b0ab4dc6534e74dc0e6a91a6a22d26874f2cfa2b232603d45"
+    },
+    {
+      "check": "Submission mode red phase",
+      "result": "expected compile failure before receipt mode/store existed",
+      "executedTests": 0,
+      "log": "/tmp/10x-ui-refinements-modes-red.log",
+      "logSHA256": "2500b2ef560bbb39c1c73ecd4bdf5f28795fd50ebe6700bdd7e6eb5034b30f68"
+    },
+    {
+      "check": "Seven submission mode behavior checks",
+      "result": "passed",
+      "executedTests": 7,
+      "log": "/tmp/10x-ui-refinements-modes-green.log",
+      "logSHA256": "ac1f1275223f9441ab0451b9f4e67cd3451d042359278d4ac214425f04833450"
+    },
+    {
+      "check": "Submission mode rendering cache regression red phase",
+      "result": "expected failed cache assertion before cached lookup",
+      "executedTests": 1,
+      "log": "/tmp/10x-ui-refinements-mode-cache-red.log",
+      "logSHA256": "432e99324cd890b01ddb31f1597b52e8f2e9ec85beb19c2f87fe082e21c3a674"
+    },
+    {
+      "check": "First full app suite",
+      "result": "failed: 21 snapshots, repeated-echo fixture baseline, and load-sensitive stale reconciliation",
+      "executedTests": 1605,
+      "log": "/tmp/10x-ui-refinements-full-tests.log",
+      "logSHA256": "824524f2ce0b8b6ceaa4e55f3c86386c3e516d529a8f929721e38e4448657f85"
+    },
+    {
+      "check": "Isolated controller failures",
+      "result": "stale reconciliation passed; repeated-echo fixture baseline failed before correction",
+      "executedTests": 2,
+      "log": "/tmp/10x-ui-refinements-controller-recheck.log",
+      "logSHA256": "d626d785def7e74df737ab039c443cc4aae3d0fab09e95a761355c34103e2a18"
+    },
+    {
+      "check": "Final full app suite",
+      "result": "1602 passed; 3 failed: two pre-existing snapshots and load-sensitive stale reconciliation",
+      "executedTests": 1605,
+      "log": "/tmp/10x-ui-refinements-final-tests.log",
+      "logSHA256": "1503e786ed6e1f32370f458d2f4a1aef5832eeec37a06d5614e0dfd9250054f1"
+    },
+    {
+      "check": "Release build, source cleanliness and ad-hoc signature",
+      "result": "passed",
+      "sourceCommit": "ffd095a1bf1dcb2bc1f0a4a62c650b5de3794f35",
+      "log": "/tmp/10x-ui-refinements-final-release.log",
+      "logSHA256": "4f121fc288ba938b6a4ebb227fee91c32636ac1a0bbc34388f95ee811a803bb5"
     }
   ],
   "fixtureSmoke": [
     "Handshake, start, queue=1, finish, unique persisted user entries, shutdown",
     "Four pipelined input commands acknowledged once"
   ],
-  "nativeAcceptance": "pending Release build",
-  "popupSourceCommit": "632d6bf"
+  "nativeAcceptance": "PASS; native-verification.json",
+  "popupSourceCommit": "632d6bf",
+  "modeSourceCommit": "5f7bec7",
+  "finalSourceCommit": "ffd095a",
+  "acceptedSnapshotReferences": 21,
+  "snapshotReview": "snapshot-review.json and diff-snapshots/",
+  "remainingTestFailures": [
+    {
+      "test": "activityDisclosureSnapshot()",
+      "reason": "Actual SHA256 exactly matches recorded pre-merge main baseline 82a00ca2a562aa7b26f2d6669553599e038a021340ab8a96a0999a2bb7c0fa45"
+    },
+    {
+      "test": "activityDisclosureSnapshotDark()",
+      "reason": "Actual SHA256 exactly matches recorded pre-merge main baseline 648841ad4d2e5018fe2af6d6e23df86e5452c9fe8bb39cef0e34571a42158134"
+    },
+    {
+      "test": "SessionControllerTests/staleReconciliationFailureCannotOverwriteNewerBoundary()",
+      "reason": "Third history-load request not reached under full-suite load; isolated rerun passed in 0.735 seconds. The existing test and its synthetic boundary timing are unchanged by this branch."
+    }
+  ],
+  "projectGeneration": "Pinned generator succeeded; no project diff",
+  "galleryAcceptance": "PASS; gallery-verification.json"
 }

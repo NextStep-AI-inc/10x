@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "url": "http://127.0.0.1:65288/2026-09-08-ui-refinements/progress-gallery.html",
+  "surface": "Codex in-app browser",
+  "checkedAt": "2026-09-09T00:19:27Z",
+  "sections": 5,
+  "imageButtons": 11,
+  "loadedImages": 11,
+  "horizontalOverflow": false,
+  "fullSizeImage": {
+    "openedFrom": "The same messages after app relaunch",
+    "naturalWidth": 1180,
+    "renderedWidth": 1180,
+    "closeButtonFocused": true,
+    "tabRetainsModalFocus": true,
+    "escapeCloses": true,
+    "focusReturnsToInvokingButton": true
+  },
+  "viewportCapture": "gallery-viewport.png"
+}

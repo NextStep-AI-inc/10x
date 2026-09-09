@@ -1,0 +1,85 @@
+Window: "10x", App: 10x UI Refinements QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: ui-refinements, Help: Starts a new session in ui-refinements
+					11 button Description: UI refinement acceptance, ui-refinements, Working, Help: UI refinement acceptance, Secondary Actions: Rename Session
+					12 button Description: UI refinement acceptance, ui-refinements, Working, Help: UI refinement acceptance, Secondary Actions: Rename Session
+					13 button Description: queue, Help: Starts a new session in queue
+					14 button Description: Integration queue wait complete, queue, Ready, Help: Integration queue wait complete, Secondary Actions: Rename Session
+					15 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					16 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					17 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					18 button Description: integration-native, Help: Starts a new session in integration-native
+					19 button Description: Combined native acceptance fixture, integration-native, Ready, Help: Combined native acceptance fixture, Secondary Actions: Rename Session
+					20 button Description: Integration acceptance baseline, integration-native, Unknown, Help: Integration acceptance baseline, Secondary Actions: Rename Session
+					21 button Description: details, Help: Starts a new session in details
+					22 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					23 button Description: titles-native, Help: Starts a new session in titles-native
+					24 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					25 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					26 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					27 button Description: input-native, Help: Starts a new session in input-native
+					28 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					29 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					30 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Unknown, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					31 button Description: review-native, Help: Starts a new session in review-native
+					32 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					33 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					34 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+			35 button Description: Show later rail items, ID: chevron.down
+			36 button Archived sessions
+		37 text Value: UI refinement acceptance, Secondary Actions: Rename Session
+		38 unknown Description: Branch, Details: detached
+		39 unknown Description: Folder, Details: ui-refinements
+		40 unknown Working
+		41 scroll area
+			42 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+				43 container Description: Model expansion, Details: Standard
+					44 button Description: Expanded, Value: Not selected
+					45 button Description: Standard, Value: Selected
+					46 button Description: Slim, Value: Not selected
+				47 unknown Thread started Tuesday, September 8, 2026 at 3:44 PM
+				48 text UI-REFINEMENT-CHECK: show the controlled diff and keep this response running.
+				49 button Description: Tool calls (2), Complete, Help: Collapses tool calls, Value: Expanded
+				50 container Edit layout.swift, +2 −2, Complete
+					51 button Description: Edit layout.swift, +2 −2, Complete, Help: Expands tool details, Value: Collapsed
+					52 button Description: Choose an IDE for /tmp/10x-session-recovery-home/projects/ui-refinements/layout.swift, Help: Hold Option while clicking to reveal in Finder
+					53 text · +2 −2 Complete
+				54 container Edit 2 files, +3 −3, Complete
+					55 button Description: Edit 2 files, +3 −3, Complete, Help: Expands tool details, Value: Collapsed
+					56 text 2 files · +3 −3 Complete
+				57 unknown Working
+		58 scroll area Secondary Actions: Scroll Up, Scroll Down
+			59 text entry area (settable) Description: Session prompt, Help: Active session prompt, Follow up mode, Value: FOLLOW-UP-FOCUS-CHECK
+			60 scroll bar (settable, float) 0.4844017028808594
+				61 value indicator (settable, float) 0.4844017028808594
+				62 increment arrow button
+				63 decrement arrow button
+				64 increment page button
+				65 decrement page button
+		66 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		67 button Description: Model, Help: Shows model menu, Value: Standard fixture
+		68 button Description: Context window, Help: Shows context usage details, Value: 42 percent used
+		69 unknown Working
+		70 button Description: Composer warnings, Help: Shows warning details, Value: 1 warning
+		71 button Description: Composer send action, Help: Shows send action menu, Value: Follow up
+		72 button Description: Send message, ID: arrow.up
+		73 button Description: Stop response, Help: Stop the response
+	74 close button
+	75 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	76 minimize button
+77 menu bar
+	78 10x UI Refinements QA
+	79 File
+	80 Edit
+	81 View
+	82 Navigate
+	83 Session
+	84 Window
+	85 Help
+
+The focused UI element is 59 text entry area (settable) Description: Session prompt, Help: Active session prompt, Follow up mode, Value: FOLLOW-UP-FOCUS-CHECK

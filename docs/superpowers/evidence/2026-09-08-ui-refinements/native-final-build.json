@@ -1,0 +1,20 @@
+{
+  "sourceCommit": "ffd095a1bf1dcb2bc1f0a4a62c650b5de3794f35",
+  "branch": "codex/active-session-ui-refinements",
+  "configuration": "Release",
+  "architecture": "arm64",
+  "bundle": "/tmp/10x-ui-refinements-final-build/10x-ui-refinements.app",
+  "bundleIdentifier": "com.nextstep.tenx.uirefinementsqa",
+  "executable": "/tmp/10x-ui-refinements-final-build/10x-ui-refinements.app/Contents/MacOS/10x",
+  "executableSHA256": "63f98b81c129f1e0d0952d37dbef2c8475a6e46775bc776d9098ed9bf6283cf7",
+  "profileRoot": "/tmp/10x-session-recovery-home",
+  "signatureVerification": "codesign --verify --deep --strict passed",
+  "buildLog": "/tmp/10x-ui-refinements-final-release.log",
+  "buildLogSHA256": "4f121fc288ba938b6a4ebb227fee91c32636ac1a0bbc34388f95ee811a803bb5",
+  "purpose": "Final native UI refinements acceptance",
+  "launchCommand": [
+    "open",
+    "-n",
+    "/tmp/10x-ui-refinements-final-build/10x-ui-refinements.app"
+  ]
+}

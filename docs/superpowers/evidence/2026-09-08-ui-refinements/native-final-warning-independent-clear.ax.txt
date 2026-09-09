@@ -1,0 +1,61 @@
+Window: "10x", App: 10x UI Refinements QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: ui-refinements, Help: Starts a new session in ui-refinements
+					11 button Description: UI refinement acceptance, ui-refinements, Ready, Help: UI refinement acceptance, Secondary Actions: Rename Session
+					12 button Description: UI refinement acceptance, ui-refinements, Ready, Help: UI refinement acceptance, Secondary Actions: Rename Session
+					13 button Description: queue, Help: Starts a new session in queue
+					14 button Description: Integration queue wait complete, queue, Ready, Help: Integration queue wait complete, Secondary Actions: Rename Session
+					15 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					16 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					17 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					18 button Description: integration-native, Help: Starts a new session in integration-native
+					19 button Description: Combined native acceptance fixture, integration-native, Ready, Help: Combined native acceptance fixture, Secondary Actions: Rename Session
+					20 button Description: Integration acceptance baseline, integration-native, Unknown, Help: Integration acceptance baseline, Secondary Actions: Rename Session
+					21 button Description: details, Help: Starts a new session in details
+					22 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					23 button Description: titles-native, Help: Starts a new session in titles-native
+					24 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					25 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					26 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					27 button Description: input-native, Help: Starts a new session in input-native
+					28 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					29 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					30 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Unknown, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					31 button Description: review-native, Help: Starts a new session in review-native
+					32 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					33 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					34 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+			35 button Description: Show later rail items, ID: chevron.down
+			36 button Archived sessions
+		37 text Describe the task
+		38 scroll area Secondary Actions: Scroll Up, Scroll Down
+			39 text entry area (settable) Description: Session prompt, Help: New session prompt
+			40 scroll bar (disabled, settable, float) 0
+		41 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		42 button Description: Choose project, Help: Shows project menu, Value: ui-refinements
+		43 button Description: Model, Help: Shows model menu, Value: Standard fixture
+		44 button Description: Composer warnings, Help: Shows warning details, Value: 1 warning
+		45 container Description: Composer warnings, Details: 1 warning
+			46 scroll area
+				47 text Could not attach invalid-image.png. The limit is 8 images.
+			48 button Description: Composer warnings, Help: Menu open, Value: 1 warning
+		49 button (disabled) Description: Start session, ID: arrow.up
+	50 close button
+	51 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	52 minimize button
+53 menu bar
+	54 10x UI Refinements QA
+	55 File
+	56 Edit
+	57 View
+	58 Navigate
+	59 Session
+	60 Window
+	61 Help
+
+The focused UI element is 39 text entry area (settable) Description: Session prompt, Help: New session prompt

@@ -1,0 +1,102 @@
+Window: "10x", App: 10x UI Refinements QA.
+0 standard window 10x, ID: workspace-AppWindow-1, Secondary Actions: Raise
+	1 container
+		6 container Application navigation
+			7 button Open actions
+			8 scroll area
+				9 list Secondary Actions: AXScrollToTop, AXScrollToBottom
+					10 button Description: ui-refinements, Help: Starts a new session in ui-refinements
+					11 button Description: UI refinement acceptance, ui-refinements, Ready, Help: UI refinement acceptance, Secondary Actions: Rename Session
+					12 button Description: UI refinement acceptance, ui-refinements, Ready, Help: UI refinement acceptance, Secondary Actions: Rename Session
+					13 button Description: queue, Help: Starts a new session in queue
+					14 button Description: Integration queue wait complete, queue, Ready, Help: Integration queue wait complete, Secondary Actions: Rename Session
+					15 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					16 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					17 button Description: Untitled session, queue, Ready, Help: Untitled session, Secondary Actions: Rename Session
+					18 button Description: integration-native, Help: Starts a new session in integration-native
+					19 button Description: Combined native acceptance fixture, integration-native, Ready, Help: Combined native acceptance fixture, Secondary Actions: Rename Session
+					20 button Description: Integration acceptance baseline, integration-native, Unknown, Help: Integration acceptance baseline, Secondary Actions: Rename Session
+					21 button Description: details, Help: Starts a new session in details
+					22 button Description: DETAILS controlled acceptance, details, Ready, Help: DETAILS controlled acceptance, Secondary Actions: Rename Session
+					23 button Description: titles-native, Help: Starts a new session in titles-native
+					24 button Help: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, Secondary Actions: Rename Session, Description: FALLBACK-NATIVE-ACCEPTANCE-SEP08 Reply with only: Title fallback checked. Do not, titles-native, Ready
+					25 button Description: Metadata duplicate, titles-native, Ready, Help: Metadata duplicate, Secondary Actions: Rename Session
+					26 button Description: Metadata duplicate, titles-native, Unknown, Help: Metadata duplicate, Secondary Actions: Rename Session
+					27 button Description: input-native, Help: Starts a new session in input-native
+					28 button Description: Deliberate input acceptance, input-native, Unknown, Help: Deliberate input acceptance, Secondary Actions: Rename Session
+					29 button Description: draft-unconfirmed, Help: Starts a new session in draft-unconfirmed
+					30 button Description: Unconfirmed draft acceptance, draft-unconfirmed, Unknown, Help: Unconfirmed draft acceptance, Secondary Actions: Rename Session
+					31 button Description: review-native, Help: Starts a new session in review-native
+					32 button Description: Native changed-file review, review-native, Ready, Help: Native changed-file review, Secondary Actions: Rename Session
+					33 button Description: turn-quiet, Help: Starts a new session in turn-quiet
+					34 button Description: Turn quiet acceptance, turn-quiet, Ready, Help: Turn quiet acceptance, Secondary Actions: Rename Session
+			35 button Description: Show later rail items, ID: chevron.down
+			36 button Archived sessions
+		37 text Describe the task
+		38 scroll area Secondary Actions: Scroll Up, Scroll Down
+			39 text entry area (settable) Description: Session prompt, Help: New session prompt
+			40 scroll bar (disabled, settable, float) 0
+		41 button Description: Attach images or insert file paths, Help: Attach images or insert file paths. Images can also be dropped or pasted., ID: paperclip
+		42 button Description: Choose project, Help: Shows project menu, Value: ui-refinements
+		43 button Description: Model, Help: Shows model menu, Value: Standard fixture
+		44 button Description: Composer warnings, Help: Shows warning details, Value: 0 warnings
+		45 container Description: Model, Details: Standard fixture
+			46 image Description: Search models, ID: magnifyingglass
+			47 text field (settable) Search models
+			48 scroll area Secondary Actions: Scroll Up, Scroll Down
+				49 text OPENAI-CODEX
+				50 button Description: Standard fixture, Value: openai-codex, selected
+				51 button Description: Add favorite, Standard fixture, openai-codex, Value: Not favorite, ID: star
+				52 button Description: Compact fixture, Value: openai-codex
+				53 button Description: Add favorite, Compact fixture, openai-codex, Value: Not favorite, ID: star
+				54 button Description: Layout fixture option 1, Value: openai-codex
+				55 button Description: Add favorite, Layout fixture option 1, openai-codex, Value: Not favorite, ID: star
+				56 button Description: Layout fixture option 2, Value: openai-codex
+				57 button Description: Add favorite, Layout fixture option 2, openai-codex, Value: Not favorite, ID: star
+				58 button Description: Layout fixture option 3, Value: openai-codex
+				59 button Description: Add favorite, Layout fixture option 3, openai-codex, Value: Not favorite, ID: star
+				60 button Description: Layout fixture option 4, Value: openai-codex
+				61 button Description: Add favorite, Layout fixture option 4, openai-codex, Value: Not favorite, ID: star
+				62 button Description: Layout fixture option 5, Value: openai-codex
+				63 button Description: Add favorite, Layout fixture option 5, openai-codex, Value: Not favorite, ID: star
+				64 button Description: Layout fixture option 6, Value: openai-codex
+				65 button Description: Add favorite, Layout fixture option 6, openai-codex, Value: Not favorite, ID: star
+				66 button Description: Layout fixture option 7, Value: openai-codex
+				67 button Description: Add favorite, Layout fixture option 7, openai-codex, Value: Not favorite, ID: star
+				68 button Description: Layout fixture option 8, Value: openai-codex
+				69 button Description: Add favorite, Layout fixture option 8, openai-codex, Value: Not favorite, ID: star
+				70 button Description: Layout fixture option 9, Value: openai-codex
+				71 button Description: Add favorite, Layout fixture option 9, openai-codex, Value: Not favorite, ID: star
+				72 button Description: Layout fixture option 10, Value: openai-codex
+				73 button Description: Add favorite, Layout fixture option 10, openai-codex, Value: Not favorite, ID: star
+				74 button Description: Layout fixture option 11, Value: openai-codex
+				75 button Description: Add favorite, Layout fixture option 11, openai-codex, Value: Not favorite, ID: star
+				76 button Description: Layout fixture option 12, Value: openai-codex
+				77 button Description: Add favorite, Layout fixture option 12, openai-codex, Value: Not favorite, ID: star
+				78 button Description: Layout fixture option 13, Value: openai-codex
+				79 button Description: Add favorite, Layout fixture option 13, openai-codex, Value: Not favorite, ID: star
+				80 button Description: Layout fixture option 14, Value: openai-codex
+				81 button Description: Add favorite, Layout fixture option 14, openai-codex, Value: Not favorite, ID: star
+				82 scroll bar (settable, float) 1
+					83 value indicator (settable, float) 1
+					84 increment arrow button
+					85 decrement arrow button
+					86 increment page button
+					87 decrement page button
+			88 toggle button Description: Fast mode, Value: off, Details: Off
+			89 button Description: Model, Help: Menu open, Value: Standard fixture
+		90 button (disabled) Description: Start session, ID: arrow.up
+	91 close button
+	92 full screen button Help: this button also has an action to zoom the window, Secondary Actions: zoom the window
+	93 minimize button
+94 menu bar
+	95 10x UI Refinements QA
+	96 File
+	97 Edit
+	98 View
+	99 Navigate
+	100 Session
+	101 Window
+	102 Help
+
+The focused UI element is 47 text field (settable) Search models

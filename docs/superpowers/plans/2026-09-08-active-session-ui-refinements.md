@@ -65,28 +65,32 @@ The reader normalizes AppKit coordinates to the helper's top-down coordinates on
 
 **Ownership:** `PendingUserSubmission.swift`, `SessionController.swift`, `TranscriptView.swift`, `MessageBubbleView.swift`; a small colocated submission-presentation store and its tests; `App/Application/AppDependencies.swift` for store injection and `App/Application/AppModel.swift:makeSessionController` for passing that dependency only. Default test/preview controllers use an in-memory store. No OMP schema/runtime edits or recovery-store expansion.
 
-- [ ] Retain the requested `StreamingBehavior?` on the receipt before awaiting prompt acknowledgment. An idle primary send has no mode; never read the current global preference to classify an older message.
-- [ ] Extend receipt reconciliation with a matched-pair callback/result while preserving its current consumed-index behavior. Keep unresolved mode receipts separately until a real history load can bind them to persisted entry IDs. Controller history-loading sites already know when the data is persisted; no broad snapshot-provenance system is needed.
-- [ ] Bind live echoes to known mode for immediate display; bind persisted history rows using the existing ordered exact text/image matching and the captured minimum user index. Where a live echo supplies a raw message timestamp, use it to disambiguate the later history match. Do not match ambiguous candidates, guess from text, or persist synthetic live IDs as durable identity.
-- [ ] Persist only canonical session path, real JSONL entry ID, and mode in a small app-owned presentation store. Reuse `UserDefaults` string dictionaries for this modest annotation set; store no message text or images. Inject isolated defaults in tests. Reopening loads those known annotations. Document that imported/preexisting messages without a mode annotation keep the standard appearance.
-- [ ] Pass mode explicitly to `MessageBubbleView`, including it in Equatable rendering. Apply the same appearance to pending receipts and their delivered bubbles. Use existing typography/palette plus the requested visual cue, not labels alone.
-- [ ] Write meaningful checks for receipt echo arriving before ACK, identical queued messages with different modes, live-to-persisted ID replacement, reopen through a fresh store instance, unknown historical messages remaining standard, and stale history generation rejection. Run red before implementing the new data flow, then green.
-- [ ] Commit the bounded mode/presentation change after checks pass.
+- [x] Retain the requested `StreamingBehavior?` on the receipt before awaiting prompt acknowledgment. An idle primary send has no mode; never read the current global preference to classify an older message.
+- [x] Extend receipt reconciliation with a matched-pair callback/result while preserving its current consumed-index behavior. Keep unresolved mode receipts separately until a real history load can bind them to persisted entry IDs. Controller history-loading sites already know when the data is persisted; no broad snapshot-provenance system is needed.
+- [x] Bind live echoes to known mode for immediate display; bind persisted history rows using the existing ordered exact text/image matching and the captured minimum user index. Where a live echo supplies a raw message timestamp, use it to disambiguate the later history match. Do not match ambiguous candidates, guess from text, or persist synthetic live IDs as durable identity.
+- [x] Persist only canonical session path, real JSONL entry ID, and mode in a small app-owned presentation store. Reuse `UserDefaults` string dictionaries for this modest annotation set; store no message text or images. Inject isolated defaults in tests. Reopening loads those known annotations. Document that imported/preexisting messages without a mode annotation keep the standard appearance.
+- [x] Pass mode explicitly to `MessageBubbleView`, including it in Equatable rendering. Apply the same appearance to pending receipts and their delivered bubbles. Use existing typography/palette plus the requested visual cue, not labels alone.
+- [x] Write meaningful checks for receipt echo arriving before ACK, identical queued messages with different modes, live-to-persisted ID replacement, reopen through a fresh store instance, unknown historical messages remaining standard, and stale history generation rejection. Run red before implementing the new data flow, then green.
+- [x] Commit the bounded mode/presentation change after checks pass.
 
 ## Task 4: Native acceptance, evidence, and handoff
 
 **Ownership:** Parent: project generation, test/build orchestration, native QA, evidence, gallery integration, documentation and PR status.
 
-- [ ] Regenerate `10x.xcodeproj` using `ruby scripts/generate_xcodeproj.rb` with the pinned xcodeproj 1.27.0. Never hand-edit it.
-- [ ] Run focused affected tests and the app build. Use a unique derived-data path for this worktree. Previously recorded snapshot baseline failures remain separately identified; do not call a suite green if they still fail.
-- [ ] Package a named Release QA app using the existing isolated QA home and OMP wrapper pattern. Record source SHA, executable SHA, launch command, and minimum-window dimensions. Leave Tanner's real app and settings untouched.
-- [ ] Drive actual controls: trigger and dismiss model/context/warnings/send/project panels, select both send modes, resize with an open panel, scroll oversized content, and verify focus returns. Check simultaneous warning messages and composer height. Capture screenshots from the actual app.
-- [ ] Run a controlled response; check animation plus Stop. Send a follow-up and a steer; observe pending and delivered styles, then reopen to confirm recorded style. Confirm a standard message is not reclassified.
-- [ ] Expand a real tool diff, change Wrap/Scroll, copy the patch, follow its file reference, and inspect single- and multi-file/long-path layouts. Preserve the existing row colors.
-- [ ] Review the actual changed UI against Tanner's screenshot and all five checklist items. Fix only regressions in the requested flow.
-- [ ] Add the new real-build evidence and explanations to the progress gallery, retaining the earlier evidence as the prior state. Verify the gallery controls after updating it.
-- [ ] Update plan/checklist and PR description with actual results, explicit gaps, and the local build to test. Parent reviews spec coverage then code quality. No GitHub merge or deployment.
+- [x] Regenerate `10x.xcodeproj` using `ruby scripts/generate_xcodeproj.rb` with the pinned xcodeproj 1.27.0. Never hand-edit it.
+- [x] Run focused affected tests and the app build. Use a unique derived-data path for this worktree. Previously recorded snapshot baseline failures remain separately identified; do not call a suite green if they still fail.
+- [x] Package a named Release QA app using the existing isolated QA home and OMP wrapper pattern. Record source SHA, executable SHA, launch command, and minimum-window dimensions. Leave Tanner's real app and settings untouched.
+- [x] Drive actual controls: trigger and dismiss model/context/warnings/send/project panels, select both send modes, resize with an open panel, scroll oversized content, and verify focus returns. Check simultaneous warning messages and composer height. Capture screenshots from the actual app.
+- [x] Run a controlled response; check animation plus Stop. Send a follow-up and a steer; observe pending and delivered styles, then reopen to confirm recorded style. Confirm a standard message is not reclassified.
+- [x] Expand a real tool diff, change Wrap/Scroll, copy the patch, follow its file reference, and inspect single- and multi-file/long-path layouts. Preserve the existing row colors.
+- [x] Review the actual changed UI against Tanner's screenshot and all five checklist items. Fix only regressions in the requested flow.
+- [x] Add the new real-build evidence and explanations to the progress gallery, retaining the earlier evidence as the prior state. Verify the gallery controls after updating it.
+- [x] Update plan/checklist and PR description with actual results, explicit gaps, and the local build to test. Parent reviews spec coverage then code quality. No GitHub merge or deployment.
 
 ## Scope and known limits
 
-The previous audit's live CJK check and four unrelated baseline snapshot failures remain separate from this refinement. No provider-notice, premature-provider-completion, keyboard-setting, runtime, or dependency changes are added here. Generated project changes are parent-owned so parallel file creation cannot race the generator. Verification ends after the requested native slice passes and evidence is attached; remaining unrelated findings are reported, not absorbed into the patch.
+The previous audit's live CJK check and two unchanged running/error snapshot failures remain separate. The two diff fixtures are now explicitly expanded and their reviewed references pass. One existing reconciliation test remains load-sensitive in the full suite and passes in isolation; it is recorded as a verification concern. No provider-notice, premature-provider-completion, keyboard-setting, runtime, or dependency changes are added here. Generated project changes are parent-owned so parallel file creation cannot race the generator. Verification ends after the requested native slice passes and evidence is attached; remaining unrelated findings are reported, not absorbed into the patch.
+
+## Final outcome
+
+All five native flows passed on Release source `ffd095a`. Full app tests: 1,602/1,605 passed; two pre-existing snapshot failures and one load-sensitive existing controller test remain. PR #46 stays draft. See the evidence README and verification records for precise scope and proof. No merge or deployment.
