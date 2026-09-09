@@ -607,6 +607,64 @@ func sessionMapCheckerPreservesValidWriterWithinBudget(
     #expect(rawBounded?.hasSuffix("&amp;") == true)
 }
 
+@Test func sessionMapWriterRepairAndRewritePromptsCarryParserGrammar() throws {
+    let digest = generationInput().digest
+    let writer = SessionMapPrompt.writer(digest: digest, previousXML: nil)
+    let repair = SessionMapPrompt.repair(
+        digest: digest,
+        previousXML: nil,
+        rejectedXML: "<sessionmap/>",
+        diagnostics: [])
+    let rewrite = SessionMapPrompt.rewrite(
+        digest: digest,
+        previousXML: nil,
+        checkedXML: SessionMapFixtures.chainXML,
+        issues: [SessionMapVerdictIssue(
+            type: .layout,
+            nodeID: nil,
+            description: "Keep the graph visible.")])
+    let requiredContract = [
+        "component|file|module|service|store|view|actor|external|concept",
+        "exists|proposed|planned|active|done|failed",
+        "depends|calls|data|flow",
+        "todo|active|done|blocked",
+        "neutral|good|warn|bad",
+        "edited|created|read",
+        "never in note= or text= attributes",
+        "Do not add id= to step, task, or item elements",
+        "<flow title=\"TITLE\"><step node=\"NODE_ID\" ref=\"SOURCE_REF_FROM_DIGEST\">TEXT</step></flow>",
+        "<next><step prompt=\"PROMPT\">TEXT</step></next>",
+        "fact key and exact value from current_digest",
+        "Never copy the example placeholders",
+    ]
+
+    for prompt in [writer, repair, rewrite] {
+        for fragment in requiredContract {
+            #expect(prompt.contains(fragment), Comment(rawValue: fragment))
+        }
+    }
+
+    let rawExample = try #require(rawPromptField(writer, name: "syntax_example"))
+    let example = rawExample
+        .replacingOccurrences(of: "SOURCE_REF_FROM_DIGEST", with: "entry-1")
+        .replacingOccurrences(of: "FACT_KEY_FROM_DIGEST", with: "finishedTurns")
+        .replacingOccurrences(of: "EXACT_FACT_VALUE", with: "1")
+    let validation = SessionMapDocumentParser.parse(
+        Data(example.utf8),
+        context: SessionMapValidationContext(
+            knownRefs: digest.knownRefs,
+            facts: digest.facts,
+            previous: nil,
+            projectURL: URL(filePath: "/tmp/session-map-project", directoryHint: .isDirectory)))
+
+    #expect(validation.document?.graph.nodes.count == 2)
+    #expect(validation.document?.flow?.steps.count == 1)
+    #expect(validation.document?.plan?.tasks.count == 1)
+    #expect(validation.document?.blocks.count == 5)
+    #expect(validation.warnings.isEmpty)
+    #expect(validation.fatal.isEmpty)
+}
+
 @Test func sessionMapGenerationRepairsCanonicalXMLExpansionPastLimit() async throws {
     let apostrophes = String(repeating: "'", count: SessionMapLimits.nodeNote)
     let nodes = (0..<SessionMapLimits.nodes).map {
