@@ -110,6 +110,83 @@ import Testing
     #expect(plainImage != failedImage)
 }
 
+@MainActor
+@Test func generatedSessionMapPublishesPersistedFirstSeenOrderToPane() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "app-model-map-order-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let writer = RecordingSessionMapWriter(output: """
+        <sessionmap headline="Ordered" phase="implementing"><map>
+        <node id="second" label="Second" kind="component" status="active"/>
+        <node id="first" label="First" kind="service" status="planned"/>
+        </map></sessionmap>
+        """)
+    let store = SessionMapStore(directory: root.appending(path: "maps"))
+    let model = AppModel(dependencies: sessionMapAppDependencies(
+        root: root, locator: ImmediateSessionMapLocator(), writer: writer, store: store))
+    let controller = SessionController(
+        processManager: SessionProcessManager(), previewItems: [], runtimeState: .idle)
+    let metadata = sessionMapMetadata(path: "/tmp/ordered-session.jsonl", cwd: root.path)
+    model.installSessionMapFixture(
+        [(metadata, controller, nil, .needsGeneration)], selectedPath: metadata.path)
+    let pane = model.sessionMapPaneModel(for: controller, displayedWidth: 440)
+
+    pane.generate(.wholeSession)
+    await waitForSessionMap { pane.state == .ready }
+
+    #expect(pane.firstSeenOrder == ["second", "first"])
+    let stored = try await store.load(sessionKey: metadata.path)
+    #expect(stored?.firstSeenOrder == pane.firstSeenOrder)
+    #expect(pane.updatedAt == stored?.updatedAt)
+    #expect(pane.attribution == "Generated from session. Layout checker off.")
+}
+
+@MainActor
+@Test func reloadedSessionMapPublishesPersistedDisplayMetadataToPane() async throws {
+    let root = FileManager.default.temporaryDirectory
+        .appending(path: "app-model-map-reload-\(UUID().uuidString)", directoryHint: .isDirectory)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = SessionMapStore(directory: root.appending(path: "maps"))
+    let metadata = sessionMapMetadata(path: "/tmp/reloaded-session.jsonl", cwd: root.path)
+    let configuration = SessionMapResolvedModel(
+        provider: "fixture", modelID: "writer", effort: nil, acceptsImages: false)
+    let updatedAt = Date(timeIntervalSince1970: 42)
+    let record = SessionMapRecord(
+        xml: "<sessionmap headline=\"Reloaded\" phase=\"planning\"><map><node id=\"saved\" label=\"Saved\" kind=\"component\" status=\"planned\"/></map></sessionmap>",
+        cacheKey: "cache",
+        generatedThrough: SessionMapCursor(lineage: metadata.path, entryID: nil),
+        sourceManifest: [:],
+        caughtUpAt: nil,
+        caughtUpCursor: nil,
+        caughtUpGraph: nil,
+        firstSeenOrder: ["saved"],
+        updatedAt: updatedAt,
+        writerConfiguration: configuration,
+        checkerConfiguration: configuration,
+        checkOutcome: .rewrittenUnchecked,
+        dismissedThrough: nil)
+    try await store.save(record, sessionKey: metadata.path)
+    let model = AppModel(dependencies: sessionMapAppDependencies(
+        root: root,
+        locator: ImmediateSessionMapLocator(),
+        writer: RecordingSessionMapWriter(),
+        store: store))
+    let controller = SessionController(
+        processManager: SessionProcessManager(), previewItems: [], runtimeState: .idle)
+    model.installSessionMapFixture(
+        [(metadata, controller, nil, .needsGeneration)],
+        selectedPath: metadata.path,
+        preinstallsPaneModels: false)
+    let pane = model.sessionMapPaneModel(for: controller, displayedWidth: 440)
+
+    await waitForSessionMap { pane.displayedDocument?.headline == "Reloaded" }
+
+    #expect(pane.firstSeenOrder == ["saved"])
+    #expect(pane.updatedAt == updatedAt)
+    #expect(pane.attribution ==
+        "Generated from session. Rewritten after checking; final revision not checked.")
+}
+
 private actor ReorderedSessionMapLocator: OmpLocating {
     private var requestCount = 0
     private var firstContinuation: CheckedContinuation<Void, Never>?
@@ -130,6 +207,12 @@ private actor ReorderedSessionMapLocator: OmpLocating {
     func releaseFirstRequest() {
         firstContinuation?.resume()
         firstContinuation = nil
+    }
+}
+
+private struct ImmediateSessionMapLocator: OmpLocating {
+    func locate(preferredURL: URL?) async -> OmpLocation {
+        .found(OmpInstallation(executableURL: URL(filePath: "/tmp/omp"), version: "test"))
     }
 }
 
@@ -224,6 +307,11 @@ private final class DelayedFailingSessionMapWrite: @unchecked Sendable {
 
 private actor RecordingSessionMapWriter {
     private(set) var callCount = 0
+    private let output: String
+
+    init(output: String = "<sessionmap headline=\"Newest map\" phase=\"planning\"><summary>Current.</summary></sessionmap>") {
+        self.output = output
+    }
 
     func complete(
         prompt: String,
@@ -231,7 +319,7 @@ private actor RecordingSessionMapWriter {
         model: SessionMapResolvedModel
     ) -> String {
         callCount += 1
-        return "<sessionmap headline=\"Newest map\" phase=\"planning\"><summary>Current.</summary></sessionmap>"
+        return output
     }
 }
 

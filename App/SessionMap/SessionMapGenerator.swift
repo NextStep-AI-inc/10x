@@ -16,6 +16,9 @@ struct SessionMapGenerationInput: Sendable {
     let priorRecord: SessionMapRecord?
     let scope: SessionMapGenerationScope
     let model: SessionMapResolvedModel
+    let checkerModel: SessionMapResolvedModel?
+    let isCheckerConfigured: Bool
+    let paneWidth: CGFloat
     let projectURL: URL
     let force: Bool
 
@@ -27,6 +30,9 @@ struct SessionMapGenerationInput: Sendable {
         priorRecord: SessionMapRecord?,
         scope: SessionMapGenerationScope,
         model: SessionMapResolvedModel,
+        checkerModel: SessionMapResolvedModel? = nil,
+        isCheckerConfigured: Bool? = nil,
+        paneWidth: CGFloat = 440,
         projectURL: URL,
         force: Bool = false
     ) {
@@ -37,6 +43,9 @@ struct SessionMapGenerationInput: Sendable {
         self.priorRecord = priorRecord
         self.scope = scope
         self.model = model
+        self.checkerModel = checkerModel
+        self.isCheckerConfigured = isCheckerConfigured ?? (checkerModel != nil)
+        self.paneWidth = paneWidth
         self.projectURL = projectURL
         self.force = force
     }
@@ -59,6 +68,7 @@ struct SessionMapGenerationResult: Sendable {
     let generatedThrough: SessionMapCursor
     let sourceManifest: [String: String]
     let checkOutcome: SessionMapCheckOutcome
+    let modelCallCount: Int
 }
 
 actor SessionMapGenerator {
@@ -67,18 +77,23 @@ actor SessionMapGenerator {
         let revision: UInt64
         let digestHash: String
         let writer: SessionMapResolvedModel
+        let checker: SessionMapResolvedModel?
+        let isCheckerConfigured: Bool
         let sourceManifest: [String: String]
     }
 
     private let completion: SessionMapWriterCompletion
+    private let checker: SessionMapChecker
     private let now: @Sendable () -> Date
     private var latestRequests: [String: RequestToken] = [:]
 
     init(
         completion: @escaping SessionMapWriterCompletion,
+        checker: SessionMapChecker? = nil,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.completion = completion
+        self.checker = checker ?? SessionMapChecker(completion: completion)
         self.now = now
     }
 
@@ -88,6 +103,8 @@ actor SessionMapGenerator {
             revision: input.revision,
             digestHash: input.digest.hash,
             writer: input.model,
+            checker: input.checkerModel,
+            isCheckerConfigured: input.isCheckerConfigured,
             sourceManifest: input.digest.sourceFingerprintManifest)
         if let latest = latestRequests[input.sessionKey],
            latest.lineage == input.lineage,
@@ -133,7 +150,10 @@ actor SessionMapGenerator {
             projectURL: input.projectURL,
             statusEvidence: input.digest.statusEvidence)
         var diagnostics = (priorValidation?.warnings ?? []) + (priorValidation?.fatal ?? [])
+        var modelCallCount = 0
+        var usedWriterRetry = false
         do {
+            modelCallCount += 1
             let candidate = try await completion(
                 SessionMapPrompt.writer(digest: input.digest, previousXML: priorXML),
                 [],
@@ -144,6 +164,8 @@ actor SessionMapGenerator {
             var validation = validateCandidate(candidate, context: validationContext)
             diagnostics += validation.warnings + validation.fatal
             if validation.document == nil || !validation.fatal.isEmpty {
+                usedWriterRetry = true
+                modelCallCount += 1
                 let repaired = try await completion(
                     SessionMapPrompt.repair(
                         digest: input.digest,
@@ -163,17 +185,102 @@ actor SessionMapGenerator {
                     input: input,
                     priorDocument: priorDocument,
                     priorXML: priorXML,
-                    diagnostics: diagnostics)
+                    diagnostics: diagnostics,
+                    modelCallCount: modelCallCount)
             }
             let xml = SessionMapXMLSerializer.serialize(document, facts: input.digest.facts)
-            let record = makeRecord(document: document, xml: xml, input: input)
+            var finalDocument = document
+            var finalXML = xml
+            var checkOutcome: SessionMapCheckOutcome = input.isCheckerConfigured ? .unavailable : .off
+            if let checkerModel = input.checkerModel {
+                if !checkerModel.acceptsImages {
+                    checkOutcome = .unavailable
+                } else if priorDocument.map({ structureSignature($0) }) == structureSignature(document) {
+                    checkOutcome = .skipped
+                } else {
+                    let firstSeenOrder = firstSeenOrder(for: document, prior: input.priorRecord)
+                    let measuredHeights = await MainActor.run {
+                        SessionMapGraphView.measuredHeights(for: document.graph)
+                    }
+                    let layout = SessionMapLayout.layout(
+                        graph: document.graph,
+                        firstSeenOrder: firstSeenOrder,
+                        measuredHeights: measuredHeights)
+                    do {
+                        let png = try await checker.render(
+                            document: document, layout: layout, width: input.paneWidth)
+                        modelCallCount += 1
+                        var verdict = try await checker.check(
+                            png: png, xml: xml, digest: input.digest, model: checkerModel)
+                        let deterministicIssues: [SessionMapVerdictIssue] = layout.diagnostics.compactMap { diagnostic in
+                            guard diagnostic.code != "edge-label-hidden" else { return nil }
+                            return SessionMapVerdictIssue(
+                                type: .layout, nodeID: nil, description: diagnostic.message)
+                        }
+                        if !deterministicIssues.isEmpty {
+                            verdict = SessionMapVerdict(
+                                passes: false,
+                                issues: Array((verdict.issues + deterministicIssues).prefix(12)))
+                        }
+                        if verdict.passes {
+                            checkOutcome = .passed
+                        } else if !usedWriterRetry, modelCallCount < 3 {
+                            modelCallCount += 1
+                            do {
+                                let rewritten = try await completion(
+                                    SessionMapPrompt.rewrite(
+                                        digest: input.digest,
+                                        previousXML: priorXML,
+                                        checkedXML: xml,
+                                        issues: verdict.issues),
+                                    [],
+                                    input.model)
+                                guard isCurrent(token, for: input.sessionKey) else {
+                                    return obsolete(input: input, priorDocument: priorDocument, priorXML: priorXML)
+                                }
+                                let rewrittenValidation = validateCandidate(
+                                    rewritten, context: validationContext)
+                                diagnostics += rewrittenValidation.warnings + rewrittenValidation.fatal
+                                if let rewrittenDocument = rewrittenValidation.document,
+                                   rewrittenValidation.fatal.isEmpty
+                                {
+                                    finalDocument = rewrittenDocument
+                                    finalXML = SessionMapXMLSerializer.serialize(
+                                        rewrittenDocument, facts: input.digest.facts)
+                                    checkOutcome = .rewrittenUnchecked
+                                } else {
+                                    checkOutcome = .failed
+                                }
+                            } catch is CancellationError {
+                                return obsolete(
+                                    input: input, priorDocument: priorDocument, priorXML: priorXML)
+                            } catch {
+                                checkOutcome = .failed
+                            }
+                        } else {
+                            checkOutcome = .failed
+                        }
+                    } catch is CancellationError {
+                        return obsolete(
+                            input: input, priorDocument: priorDocument, priorXML: priorXML)
+                    } catch {
+                        checkOutcome = .unavailable
+                    }
+                }
+            }
+            let record = makeRecord(
+                document: finalDocument,
+                xml: finalXML,
+                input: input,
+                checkOutcome: checkOutcome)
             return result(
-                document: document,
-                xml: xml,
+                document: finalDocument,
+                xml: finalXML,
                 diagnostics: diagnostics,
                 record: record,
                 disposition: .generated,
-                input: input)
+                input: input,
+                modelCallCount: modelCallCount)
         } catch is CancellationError {
             return obsolete(input: input, priorDocument: priorDocument, priorXML: priorXML)
         } catch {
@@ -188,7 +295,8 @@ actor SessionMapGenerator {
                 input: input,
                 priorDocument: priorDocument,
                 priorXML: priorXML,
-                diagnostics: diagnostics)
+                diagnostics: diagnostics,
+                modelCallCount: modelCallCount)
         }
     }
 
@@ -200,19 +308,19 @@ actor SessionMapGenerator {
             digestHash: "invalidated",
             writer: SessionMapResolvedModel(
                 provider: "", modelID: "", effort: nil, acceptsImages: false),
+            checker: nil,
+            isCheckerConfigured: false,
             sourceManifest: [:])
     }
 
     private func makeRecord(
         document: SessionMapDocument,
         xml: String,
-        input: SessionMapGenerationInput
+        input: SessionMapGenerationInput,
+        checkOutcome: SessionMapCheckOutcome
     ) -> SessionMapRecord {
         let prior = input.priorRecord
-        let previousOrder = prior?.firstSeenOrder ?? []
-        let previousIDs = Set(previousOrder)
-        let firstSeenOrder = previousOrder
-            + document.graph.nodes.map(\.id).filter { !previousIDs.contains($0) }
+        let firstSeenOrder = firstSeenOrder(for: document, prior: prior)
         return SessionMapRecord(
             xml: xml,
             cacheKey: cacheKey(input: input, priorXML: xml),
@@ -224,8 +332,8 @@ actor SessionMapGenerator {
             firstSeenOrder: firstSeenOrder,
             updatedAt: now(),
             writerConfiguration: input.model,
-            checkerConfiguration: prior?.checkerConfiguration,
-            checkOutcome: .off,
+            checkerConfiguration: input.checkerModel,
+            checkOutcome: checkOutcome,
             dismissedThrough: prior?.dismissedThrough)
     }
 
@@ -233,7 +341,8 @@ actor SessionMapGenerator {
         input: SessionMapGenerationInput,
         priorDocument: SessionMapDocument?,
         priorXML: String?,
-        diagnostics: [SessionMapDiagnostic]
+        diagnostics: [SessionMapDiagnostic],
+        modelCallCount: Int
     ) -> SessionMapGenerationResult {
         if let priorDocument, let priorXML {
             return result(
@@ -242,7 +351,8 @@ actor SessionMapGenerator {
                 diagnostics: diagnostics,
                 record: input.priorRecord,
                 disposition: .retainedLastGood,
-                input: input)
+                input: input,
+                modelCallCount: modelCallCount)
         }
         let document = factsFallback(input.digest.facts)
         return result(
@@ -251,7 +361,8 @@ actor SessionMapGenerator {
             diagnostics: diagnostics,
             record: nil,
             disposition: .factsFallback,
-            input: input)
+            input: input,
+            modelCallCount: modelCallCount)
     }
 
     private func factsFallback(_ facts: [String: SessionMapFact]) -> SessionMapDocument {
@@ -297,7 +408,8 @@ actor SessionMapGenerator {
         diagnostics: [SessionMapDiagnostic],
         record: SessionMapRecord?,
         disposition: SessionMapGenerationDisposition,
-        input: SessionMapGenerationInput
+        input: SessionMapGenerationInput,
+        modelCallCount: Int = 0
     ) -> SessionMapGenerationResult {
         SessionMapGenerationResult(
             document: document,
@@ -307,7 +419,8 @@ actor SessionMapGenerator {
             disposition: disposition,
             generatedThrough: input.digest.cursor,
             sourceManifest: input.digest.sourceFingerprintManifest,
-            checkOutcome: record?.checkOutcome ?? .off)
+            checkOutcome: record?.checkOutcome ?? .off,
+            modelCallCount: modelCallCount)
     }
 
     private func isCurrent(_ token: RequestToken, for sessionKey: String) -> Bool {
@@ -341,10 +454,32 @@ actor SessionMapGenerator {
         let fields = [
             "session-map-v2", input.lineage, input.digest.cacheStateHash,
             sha256(priorXML ?? ""), scope, input.model.provider, input.model.modelID,
-            input.model.effort ?? "",
+            input.model.effort ?? "", input.checkerModel?.provider ?? "off",
+            input.checkerModel?.modelID ?? "", input.checkerModel?.effort ?? "",
+            input.checkerModel?.acceptsImages == true ? "images" : "text-only",
+            input.isCheckerConfigured ? "configured" : "off",
         ]
         let canonical = fields.map { "\($0.utf8.count):\($0)" }.joined()
         return sha256(canonical)
+    }
+
+    private func firstSeenOrder(
+        for document: SessionMapDocument,
+        prior: SessionMapRecord?
+    ) -> [String] {
+        let previousOrder = prior?.firstSeenOrder ?? []
+        let previousIDs = Set(previousOrder)
+        return previousOrder + document.graph.nodes.map(\.id).filter { !previousIDs.contains($0) }
+    }
+
+    private func structureSignature(_ document: SessionMapDocument) -> [String] {
+        let nodes = document.graph.nodes.map {
+            "node|\($0.id)|\($0.kind.rawValue)|\($0.group ?? "")|\($0.label)|\($0.note ?? "")|\($0.file ?? "")"
+        }
+        let edges = document.graph.edges.map {
+            "edge|\($0.from)|\($0.to)|\($0.kind.rawValue)|\($0.label ?? "")"
+        }
+        return (nodes + edges).sorted()
     }
 
     private func sha256(_ value: String) -> String {

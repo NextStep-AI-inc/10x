@@ -61,6 +61,9 @@ final class SessionMapPaneModel {
     var activity: SessionMapActivity
     var focus: SessionMapFocus
     private(set) var paneWidth: CGFloat
+    private(set) var firstSeenOrder: [String]
+    private(set) var updatedAt: Date?
+    private(set) var attribution: String?
     private(set) var isVisible: Bool
     private(set) var retainedFailureMessage: String?
 
@@ -80,6 +83,9 @@ final class SessionMapPaneModel {
             focusedNodeID: nil,
             flowStepIndex: nil),
         paneWidth: CGFloat = 440,
+        firstSeenOrder: [String] = [],
+        updatedAt: Date? = nil,
+        attribution: String? = nil,
         isVisible: Bool = false,
         onRegenerate: @escaping (SessionMapGenerationScope) -> Void = { _ in },
         onGenerate: ((SessionMapGenerationScope, Bool) -> Void)? = nil,
@@ -93,6 +99,9 @@ final class SessionMapPaneModel {
         self.activity = activity
         self.focus = focus
         self.paneWidth = paneWidth
+        self.firstSeenOrder = firstSeenOrder
+        self.updatedAt = updatedAt
+        self.attribution = attribution
         self.isVisible = isVisible
         retainedFailureMessage = nil
         self.onGenerate = onGenerate ?? { scope, _ in onRegenerate(scope) }
@@ -102,12 +111,21 @@ final class SessionMapPaneModel {
         self.onAction = onAction
     }
 
-    func replaceDocument(_ document: SessionMapDocument, state: SessionMapPaneState = .ready) {
+    func replaceDocument(
+        _ document: SessionMapDocument,
+        state: SessionMapPaneState = .ready,
+        firstSeenOrder: [String]? = nil,
+        updatedAt: Date? = nil,
+        checkOutcome: SessionMapCheckOutcome? = nil
+    ) {
         if let displayedDocument {
             focus = SessionMapInteraction.reconciledFocus(
                 focus, replacing: displayedDocument, with: document)
         }
         displayedDocument = document
+        if let firstSeenOrder { self.firstSeenOrder = firstSeenOrder }
+        if let updatedAt { self.updatedAt = updatedAt }
+        if let checkOutcome { attribution = Self.attribution(for: checkOutcome) }
         self.state = state
         if state == .ready { retainedFailureMessage = nil }
     }
@@ -136,4 +154,21 @@ final class SessionMapPaneModel {
     }
     func openSettings() { onOpenSettings() }
     func perform(_ action: SessionMapAction) { onAction(action) }
+
+    private static func attribution(for outcome: SessionMapCheckOutcome) -> String {
+        switch outcome {
+        case .off:
+            "Generated from session. Layout checker off."
+        case .skipped:
+            "Generated from session. Layout unchanged, so the checker did not run."
+        case .passed:
+            "Generated from session. Checker passed for the rendered graph region."
+        case .failed:
+            "Generated from session. Checker found issues in the rendered graph region."
+        case .rewrittenUnchecked:
+            "Generated from session. Rewritten after checking; final revision not checked."
+        case .unavailable:
+            "Generated from session. Checker unavailable; final revision not checked."
+        }
+    }
 }

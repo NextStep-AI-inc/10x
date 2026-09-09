@@ -1,10 +1,12 @@
 import SwiftUI
 
 struct SessionMapPaneView: View {
+    static let contentPadding: CGFloat = 16
+
     @Bindable var model: SessionMapPaneModel
     var activity: SessionMapActivity = .empty
     var changes: SessionMapChanges = .empty
-    var firstSeenOrder: [String] = []
+    var firstSeenOrder: [String]? = nil
     var updatedAt: Date?
     var attribution: String?
 
@@ -27,12 +29,14 @@ struct SessionMapPaneView: View {
                         emptyContent
                     }
                 }
-                .padding(16)
+                .padding(Self.contentPadding)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             Divider()
             footer
-            if let attribution, model.displayedDocument != nil {
+            if let attribution = attribution ?? model.attribution,
+               model.displayedDocument != nil
+            {
                 Text(attribution)
                     .font(TenXTypography.body(size: 10))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
@@ -70,7 +74,7 @@ struct SessionMapPaneView: View {
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Text(phaseName(document.phase))
-                if let updatedAt {
+                if let updatedAt = updatedAt ?? model.updatedAt {
                     Text("Updated \(updatedAt.formatted(date: .omitted, time: .shortened))")
                 }
             }
@@ -110,7 +114,7 @@ struct SessionMapPaneView: View {
                     document: document,
                     layout: SessionMapLayout.layout(
                         graph: document.graph,
-                        firstSeenOrder: firstSeenOrder,
+                        firstSeenOrder: firstSeenOrder ?? model.firstSeenOrder,
                         measuredHeights: SessionMapGraphView.measuredHeights(for: document.graph)),
                     focus: $model.focus,
                     activity: activity,

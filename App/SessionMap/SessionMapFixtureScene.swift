@@ -166,7 +166,7 @@ struct SessionMapFixtureScene: View {
                 }
                 let rpc = SessionMapRPC(executableURL: executableURL, projectURL: projectURL)
                 return SessionMapGenerator { prompt, images, model in
-                    await callRecorder.recordCall()
+                    await callRecorder.recordCall(hasImage: !images.isEmpty)
                     return try await rpc.complete(prompt: prompt, images: images, model: model)
                 }
             })
@@ -454,15 +454,18 @@ private actor SessionMapFixtureCallRecorder {
     let url: URL
     let sourceSHA: String
     private var count = 0
+    private var writerCount = 0
+    private var checkerCount = 0
 
     init(url: URL, sourceSHA: String) {
         self.url = url
         self.sourceSHA = sourceSHA
     }
 
-    func recordCall() {
+    func recordCall(hasImage: Bool) {
         count += 1
-        let evidence = "sourceSHA=\(sourceSHA)\ncalls=\(count)\n"
+        if hasImage { checkerCount += 1 } else { writerCount += 1 }
+        let evidence = "sourceSHA=\(sourceSHA)\ncalls=\(count)\ntotalCalls=\(count)\nwriterCalls=\(writerCount)\ncheckerCalls=\(checkerCount)\n"
         try? Data(evidence.utf8).write(to: url, options: .atomic)
     }
 }

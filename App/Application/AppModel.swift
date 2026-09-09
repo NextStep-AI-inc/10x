@@ -626,6 +626,7 @@ final class AppModel {
             return
         }
         let selection = settings.sessionMapPreferences.writerSelection
+        let checkerSelection = settings.sessionMapPreferences.checkerSelection
         guard let model = SessionMapModelResolver.resolve(
             selection: selection,
             catalog: settings.sessionMapModels,
@@ -634,6 +635,12 @@ final class AppModel {
         else {
             paneModel.transition(to: .needsModel)
             return
+        }
+        let checkerModel = checkerSelection.flatMap {
+            SessionMapModelResolver.resolve(
+                selection: $0,
+                catalog: settings.sessionMapModels,
+                roles: settings.sessionMapRoles)
         }
 
         let sessionKey = sessionMapSessionKey(for: controller)
@@ -666,6 +673,9 @@ final class AppModel {
             priorRecord: priorRecord,
             scope: scope,
             model: model,
+            checkerModel: checkerModel,
+            isCheckerConfigured: checkerSelection != nil,
+            paneWidth: paneModel.paneWidth,
             projectURL: projectURL,
             force: force))
 
@@ -673,10 +683,17 @@ final class AppModel {
               managedSessions[controller.id] === controller,
               sessionMapSessionKey(for: controller) == sessionKey,
               settings.sessionMapPreferences.writerSelection == selection,
+              settings.sessionMapPreferences.checkerSelection == checkerSelection,
               SessionMapModelResolver.resolve(
                 selection: selection,
                 catalog: settings.sessionMapModels,
-                roles: settings.sessionMapRoles) == model
+                roles: settings.sessionMapRoles) == model,
+              checkerSelection.flatMap({
+                SessionMapModelResolver.resolve(
+                    selection: $0,
+                    catalog: settings.sessionMapModels,
+                    roles: settings.sessionMapRoles)
+              }) == checkerModel
         else { return }
         let currentSource = SessionMapSourceAdapter.make(
             items: controller.items,
@@ -692,7 +709,12 @@ final class AppModel {
         else { return }
 
         if let document = result.document {
-            paneModel.replaceDocument(document, state: .ready)
+            paneModel.replaceDocument(
+                document,
+                state: .ready,
+                firstSeenOrder: result.record?.firstSeenOrder,
+                updatedAt: result.record?.updatedAt,
+                checkOutcome: result.checkOutcome)
         }
         switch result.disposition {
         case .generated:
@@ -751,7 +773,12 @@ final class AppModel {
                 statusEvidence: digest.statusEvidence))
         guard let document = validation.document, validation.fatal.isEmpty else { return }
         let isCurrent = record.sourceFingerprintManifest == digest.sourceFingerprintManifest
-        paneModel.replaceDocument(document, state: isCurrent ? .ready : .stale)
+        paneModel.replaceDocument(
+            document,
+            state: isCurrent ? .ready : .stale,
+            firstSeenOrder: record.firstSeenOrder,
+            updatedAt: record.updatedAt,
+            checkOutcome: record.checkOutcome)
     }
 
     private func sessionMapExecutableURL() async -> URL? {
@@ -800,7 +827,8 @@ final class AppModel {
             document: SessionMapDocument?,
             state: SessionMapPaneState
         )],
-        selectedPath: String
+        selectedPath: String,
+        preinstallsPaneModels: Bool = true
     ) {
         discardManagedSessions()
         processManager = SessionProcessManager()
@@ -809,6 +837,7 @@ final class AppModel {
             managedSessions[entry.controller.id] = entry.controller
             managedSessionPaths[entry.metadata.path] = entry.controller.id
             sessionVisitOrder.append(entry.controller.id)
+            guard preinstallsPaneModels else { continue }
             sessionMapPaneModels[entry.controller.id] = SessionMapPaneModel(
                 displayedDocument: entry.document,
                 state: entry.state,

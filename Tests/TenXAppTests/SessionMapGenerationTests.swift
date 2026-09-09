@@ -12,7 +12,9 @@ private actor MapWriterScript {
     func complete(prompt: String, images: [PromptImage], model: SessionMapResolvedModel) throws -> String {
         prompts.append(prompt)
         guard !outputs.isEmpty else { throw MapWriterError.exhausted }
-        return outputs.removeFirst()
+        let output = outputs.removeFirst()
+        if output == "__throw__" { throw MapWriterError.exhausted }
+        return output
     }
 }
 
@@ -71,6 +73,153 @@ private actor SuspendedMapWriter {
     #expect(failed.disposition == .retainedLastGood)
     #expect(failed.document?.headline == "Generated map")
     #expect(await script.prompts.count == 5)
+}
+
+@Test func sessionMapRepairAndCheckNeverExceedThreeCalls() async throws {
+    let valid = "<sessionmap headline=\"Generated\" phase=\"implementing\"><map><node id=\"writer\" label=\"Writer\" kind=\"component\" status=\"active\"/></map></sessionmap>"
+    let verdict = "<verdict pass=\"false\"><issue type=\"layout\" node=\"writer\">Move the card away from the edge.</issue></verdict>"
+    let rewritten = "<sessionmap headline=\"Rewritten\" phase=\"implementing\"><map><node id=\"writer\" label=\"Writer\" kind=\"component\" status=\"active\">Adjusted.</node></map></sessionmap>"
+    let script = MapWriterScript([valid, verdict, rewritten])
+    let generator = SessionMapGenerator { prompt, images, model in
+        try await script.complete(prompt: prompt, images: images, model: model)
+    }
+    let prior = SessionMapRecord(
+        xml: "<sessionmap headline=\"Prior\" phase=\"planning\"><summary>Prior.</summary></sessionmap>",
+        cacheKey: "old",
+        generatedThrough: SessionMapCursor(lineage: "lineage", entryID: "entry-0"),
+        sourceManifest: [:],
+        caughtUpAt: nil,
+        caughtUpCursor: nil,
+        caughtUpGraph: nil,
+        firstSeenOrder: [],
+        updatedAt: .distantPast,
+        writerConfiguration: SessionMapResolvedModel(
+            provider: "fixture", modelID: "writer", effort: "low", acceptsImages: false),
+        checkerConfiguration: SessionMapResolvedModel(
+            provider: "fixture", modelID: "vision", effort: nil, acceptsImages: true),
+        checkOutcome: .passed,
+        dismissedThrough: nil)
+
+    let result = await generator.generate(generationInput(
+        priorRecord: prior,
+        checkerModel: prior.checkerConfiguration))
+
+    #expect(await script.prompts.count == 3)
+    #expect(result.document?.headline == "Rewritten")
+    #expect(result.checkOutcome == .rewrittenUnchecked)
+}
+
+@Test func sessionMapCheckerIsOffAndIgnoresStatusOnlyUpdates() async throws {
+    let offScript = MapWriterScript([SessionMapFixtures.planningXML])
+    let offGenerator = SessionMapGenerator { prompt, images, model in
+        try await offScript.complete(prompt: prompt, images: images, model: model)
+    }
+    let off = await offGenerator.generate(generationInput())
+    #expect(off.checkOutcome == .off)
+    #expect(off.modelCallCount == 1)
+
+    let priorXML = "<sessionmap headline=\"Prior\" phase=\"planning\"><map><node id=\"writer\" label=\"Writer\" kind=\"component\" status=\"planned\"/></map></sessionmap>"
+    let statusXML = "<sessionmap headline=\"Current\" phase=\"implementing\"><map><node id=\"writer\" label=\"Writer\" kind=\"component\" status=\"active\"/></map></sessionmap>"
+    let script = MapWriterScript([statusXML])
+    let checker = SessionMapChecker(
+        completion: { prompt, images, model in
+            try await script.complete(prompt: prompt, images: images, model: model)
+        },
+        renderer: { _, _, _ in Data([1]) })
+    let generator = SessionMapGenerator(
+        completion: { prompt, images, model in
+            try await script.complete(prompt: prompt, images: images, model: model)
+        },
+        checker: checker)
+    let prior = generationRecord(
+        xml: priorXML,
+        cacheKey: "old",
+        checkerConfiguration: checkerModel)
+    let result = await generator.generate(generationInput(
+        priorRecord: prior,
+        checkerModel: checkerModel))
+
+    #expect(result.checkOutcome == .skipped)
+    #expect(result.modelCallCount == 1)
+    #expect(await script.prompts.count == 1)
+}
+
+@Test func sessionMapCheckerDetectsRewiredEdgesAtConstantCounts() async throws {
+    let priorXML = "<sessionmap headline=\"Prior\" phase=\"planning\"><map><node id=\"a\" label=\"A\" kind=\"component\" status=\"planned\"/><node id=\"b\" label=\"B\" kind=\"service\" status=\"planned\"/><edge from=\"a\" to=\"b\" kind=\"flow\"/></map></sessionmap>"
+    let rewiredXML = "<sessionmap headline=\"Current\" phase=\"implementing\"><map><node id=\"a\" label=\"A\" kind=\"component\" status=\"active\"/><node id=\"b\" label=\"B\" kind=\"service\" status=\"planned\"/><edge from=\"b\" to=\"a\" kind=\"flow\"/></map></sessionmap>"
+    let script = MapWriterScript([rewiredXML, "<verdict pass=\"true\"/>"])
+    let checker = SessionMapChecker(
+        completion: { prompt, images, model in
+            try await script.complete(prompt: prompt, images: images, model: model)
+        },
+        renderer: { _, _, _ in Data([1]) })
+    let generator = SessionMapGenerator(
+        completion: { prompt, images, model in
+            try await script.complete(prompt: prompt, images: images, model: model)
+        },
+        checker: checker)
+    let result = await generator.generate(generationInput(
+        priorRecord: generationRecord(
+            xml: priorXML, cacheKey: "old", checkerConfiguration: checkerModel),
+        checkerModel: checkerModel))
+
+    #expect(result.checkOutcome == .passed)
+    #expect(result.modelCallCount == 2)
+    #expect(await script.prompts.count == 2)
+}
+
+@Test func sessionMapConfiguredCheckerWithoutResolvedImageModelIsUnavailable() async {
+    let script = MapWriterScript([SessionMapFixtures.planningXML])
+    let generator = SessionMapGenerator { prompt, images, model in
+        try await script.complete(prompt: prompt, images: images, model: model)
+    }
+    let result = await generator.generate(SessionMapGenerationInput(
+        sessionKey: "session",
+        lineage: "lineage",
+        revision: 1,
+        digest: generationInput().digest,
+        priorRecord: nil,
+        scope: .sinceCaughtUp,
+        model: generationInput().model,
+        checkerModel: nil,
+        isCheckerConfigured: true,
+        paneWidth: 440,
+        projectURL: URL(filePath: "/tmp/session-map-project", directoryHint: .isDirectory)))
+
+    #expect(result.checkOutcome == .unavailable)
+    #expect(result.modelCallCount == 1)
+    #expect(await script.prompts.count == 1)
+}
+
+@Test(arguments: [
+    ("invalid-valid-issues", ["bad", SessionMapFixtures.planningXML, "<verdict pass=\"false\"><issue type=\"layout\">Crowded.</issue></verdict>"], SessionMapCheckOutcome.failed, 3),
+    ("checker-timeout", [SessionMapFixtures.planningXML, "__throw__"], SessionMapCheckOutcome.unavailable, 2),
+    ("malformed-verdict", [SessionMapFixtures.planningXML, "not xml"], SessionMapCheckOutcome.unavailable, 2),
+    ("invalid-rewrite", [SessionMapFixtures.planningXML, "<verdict pass=\"false\"><issue type=\"clipped\">Clipped.</issue></verdict>", "bad"], SessionMapCheckOutcome.failed, 3),
+])
+func sessionMapCheckerPreservesValidWriterWithinBudget(
+    name: String,
+    outputs: [String],
+    outcome: SessionMapCheckOutcome,
+    calls: Int
+) async {
+    let script = MapWriterScript(outputs)
+    let checker = SessionMapChecker(
+        completion: { prompt, images, model in
+            try await script.complete(prompt: prompt, images: images, model: model)
+        },
+        renderer: { _, _, _ in Data([1]) })
+    let generator = SessionMapGenerator(
+        completion: { prompt, images, model in
+            try await script.complete(prompt: prompt, images: images, model: model)
+        },
+        checker: checker)
+    let result = await generator.generate(generationInput(checkerModel: checkerModel))
+
+    #expect(result.document != nil, Comment(rawValue: name))
+    #expect(result.checkOutcome == outcome, Comment(rawValue: name))
+    #expect(result.modelCallCount == calls, Comment(rawValue: name))
+    #expect(await script.prompts.count == calls, Comment(rawValue: name))
 }
 
 @Test func sessionMapGenerationCacheIncludesConfigurationAndPreviousXML() async throws {
@@ -371,6 +520,7 @@ private func generationInput(
     force: Bool = false,
     model: SessionMapResolvedModel = SessionMapResolvedModel(
         provider: "fixture", modelID: "writer", effort: "low", acceptsImages: false),
+    checkerModel: SessionMapResolvedModel? = nil,
     revision: UInt64 = 1,
     digest: SessionMapDigest? = nil
 ) -> SessionMapGenerationInput {
@@ -390,11 +540,19 @@ private func generationInput(
         priorRecord: priorRecord,
         scope: .sinceCaughtUp,
         model: model,
+        checkerModel: checkerModel,
         projectURL: URL(filePath: "/tmp/session-map-project", directoryHint: .isDirectory),
         force: force)
 }
 
-private func generationRecord(xml: String, cacheKey: String) -> SessionMapRecord {
+private let checkerModel = SessionMapResolvedModel(
+    provider: "fixture", modelID: "vision", effort: nil, acceptsImages: true)
+
+private func generationRecord(
+    xml: String,
+    cacheKey: String,
+    checkerConfiguration: SessionMapResolvedModel? = nil
+) -> SessionMapRecord {
     SessionMapRecord(
         xml: xml,
         cacheKey: cacheKey,
@@ -407,7 +565,7 @@ private func generationRecord(xml: String, cacheKey: String) -> SessionMapRecord
         updatedAt: Date(timeIntervalSince1970: 100),
         writerConfiguration: SessionMapResolvedModel(
             provider: "fixture", modelID: "writer", effort: "low", acceptsImages: false),
-        checkerConfiguration: nil,
+        checkerConfiguration: checkerConfiguration,
         checkOutcome: .off,
         dismissedThrough: nil)
 }
