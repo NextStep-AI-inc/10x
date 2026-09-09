@@ -351,7 +351,10 @@ struct ComposerView: View {
     }
 
     var body: some View {
-        composerCard
+        VStack(alignment: .trailing, spacing: 8) {
+            composerCard
+            providerDockSlot
+        }
             .animation(shelfAnimation, value: flyout)
             .onExitCommand {
                 switch ComposerCommandDismissalRouting.action(for: flyout) {
@@ -824,12 +827,10 @@ struct ComposerView: View {
     @ViewBuilder
     private var actionControls: some View {
         if let controller = streamingController {
-            providerDockSlot
             behaviorMenu(controller)
             sendButton
             stopButton(controller)
         } else {
-            providerDockSlot
             sendButton
             if case .active(let controller) = presentation,
                controller.runtimeState == .loading || controller.isContextCompacting {

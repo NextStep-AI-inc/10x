@@ -16,7 +16,7 @@ struct SendActionControl: View {
         (.steer, "Steer", "Send during the current response"),
         (.followUp, "Follow up", "Queue for the next turn"),
     ]
-    private static let desiredPanelSize = CGSize(width: 272, height: 104)
+    private static let desiredPanelSize = CGSize(width: 164, height: 56)
 
     var body: some View {
         trigger
@@ -102,19 +102,15 @@ struct SendActionControl: View {
                 Button {
                     select(choice.behavior)
                 } label: {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Rectangle()
                             .fill(choice.behavior == selection
                                 ? TenXPalette.color(TenXPalette.cyanHex)
                                 : .clear)
                             .frame(width: 2)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(choice.title)
-                                .font(TenXTypography.body(size: 12, weight: .semibold))
-                            Text(choice.detail)
-                                .font(TenXTypography.body(size: 10))
-                                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                        }
+                        Text(choice.title)
+                            .font(TenXTypography.body(size: 11, weight: .semibold))
+                            .lineLimit(1)
                         Spacer(minLength: 4)
                         if choice.behavior == selection {
                             Image(systemName: "checkmark")
@@ -126,7 +122,7 @@ struct SendActionControl: View {
                     .padding(.horizontal, 9)
                     .frame(
                         width: resolvedPlacement.panelFrame.width,
-                        height: Self.desiredPanelSize.height / 2,
+                        height: 28,
                         alignment: .leading)
                     .contentShape(Rectangle())
                 }
@@ -134,6 +130,7 @@ struct SendActionControl: View {
                 .background(FlyoutRowBackground(isSelected: index == highlightedIndex))
                 .accessibilityLabel("\(choice.title), \(choice.detail)")
                 .accessibilityValue(choice.behavior == selection ? "Selected" : "Not selected")
+                .help(choice.detail)
             }
         }
     }

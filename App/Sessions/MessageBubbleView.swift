@@ -103,13 +103,13 @@ struct MessageBubbleView: View, Equatable {
     }
 
     private func knownModeContent(text: String, mode: StreamingBehavior) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 5) {
                 Image(systemName: mode.iconName)
                 Text(mode.presentationLabel)
             }
             .font(TenXTypography.mono(size: 10, weight: .semibold))
-            .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+            .foregroundStyle(TenXPalette.onEmphasis)
 
             ForEach(Array(message.document.images.enumerated()), id: \.offset) { _, image in
                 MessageImageView(image: image)
@@ -118,14 +118,14 @@ struct MessageBubbleView: View, Equatable {
                 TranscriptPlainTextView(
                     text: text,
                     font: TenXTypography.body(size: 14),
-                    color: TenXPalette.color(TenXPalette.nearBlackHex),
+                    color: TenXPalette.onEmphasis,
                     highlightedQuery: highlightedQuery)
             }
         }
         .padding(.leading, 14)
         .padding(.trailing, 12)
         .padding(.vertical, 10)
-        .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+        .background(TenXPalette.color(TenXPalette.nearBlackHex))
         .clipShape(RoundedRectangle(cornerRadius: 5))
         .overlay(alignment: .leading) {
             Capsule()
