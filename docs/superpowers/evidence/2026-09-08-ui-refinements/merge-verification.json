@@ -1,0 +1,67 @@
+{
+  "status": "MERGE_AUTHORIZED_WITH_RECORDED_TEST_EXCEPTIONS",
+  "authorization": "Tanner requested merge into main after the reported local verification limitations.",
+  "sourceCommit": "5e3cb4a05bf6114be1fba373c0c5d8c5bc68ff28",
+  "baseCommit": "0be4353f7ee2d72813d41d6195422f34ef213c22",
+  "baseIsAncestor": true,
+  "productionChangesSinceNativeAcceptance": false,
+  "releaseBuild": "passed",
+  "fullAppSuite": {
+    "runnerReportedTests": 1605,
+    "failedCases": 7,
+    "issues": 10,
+    "result": "not green"
+  },
+  "focusedRecheck": {
+    "executed": 5,
+    "passed": 5,
+    "cases": [
+      "railCollapsesAfterGracePeriod()",
+      "legacyAgentLifecycleCanConfirmBeforePromptResponseResumes()",
+      "fullShellAccountDockMinimumWindowSnapshot()",
+      "SessionControllerTests/staleReconciliationFailureCannotOverwriteNewerBoundary()",
+      "warmExitAfterHandoffDoesNotReplayStartupRecovery()"
+    ]
+  },
+  "remainingSnapshotFailures": {
+    "activity-running-error": "82a00ca2a562aa7b26f2d6669553599e038a021340ab8a96a0999a2bb7c0fa45",
+    "activity-running-error-dark": "648841ad4d2e5018fe2af6d6e23df86e5452c9fe8bb39cef0e34571a42158134"
+  },
+  "remainingSnapshotResult": "Both actual image hashes equal the recorded main baseline. No references changed during merge verification.",
+  "previousHandshakeTimingFailure": "Passed in this full run.",
+  "ompkit": {
+    "runnerReportedTests": 222,
+    "optInLiveTestsSkipped": 3,
+    "result": "passed"
+  },
+  "projectGeneration": "byte-identical with pinned generator",
+  "sourceDiffCheck": "passed; archived native accessibility evidence retains original whitespace",
+  "nativeAcceptance": "density-verification.json and native-verification.json; unchanged source since acceptance",
+  "logs": {
+    "release": {
+      "path": "/tmp/10x-main-merge-release.log",
+      "sha256": "4be4df96d80402408817cdc7253d0a370d62f5d7e235d3b1b8abafd8204b7793"
+    },
+    "appFullSuite": {
+      "path": "/tmp/10x-main-merge-app-tests.log",
+      "sha256": "6f8df6455fd65d506c12437ff70e04909c75a7650a3561b071ef473fb8920803"
+    },
+    "appFocusedRecheck": {
+      "path": "/tmp/10x-main-merge-app-recheck.log",
+      "sha256": "b9d5ec4ab54a5905fd866ac0b1b1cd5dc658fc2d179c5aef70a845aff93887a8"
+    },
+    "ompkit": {
+      "path": "/tmp/10x-main-merge-ompkit-tests.log",
+      "sha256": "b8f5cf8f06dc58ae67ff4c6ef6277997ace7c4334a56219d89eace221a3b4dbc"
+    }
+  },
+  "limitations": [
+    "Full-suite timing stability",
+    "Two existing activity snapshot mismatches",
+    "Live CJK candidate composition",
+    "VoiceOver and OS Reduce Motion",
+    "Image-only submission styling",
+    "Usage-details Escape dismissal remains a follow-up"
+  ],
+  "releaseDeployment": "Not requested; no tag or release will be created."
+}

@@ -1,0 +1,31 @@
+release — /tmp/10x-main-merge-release.log
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild build -project 10x.xcodeproj -scheme 10x -configuration Release -destination platform=macOS,arch=arm64 -derivedDataPath /Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aotxfgauppgfpjaamwnkyebclbnl ARCHS=arm64 CODE_SIGNING_ALLOWED=NO
+** BUILD SUCCEEDED **
+
+appFullSuite — /tmp/10x-main-merge-app-tests.log
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project 10x.xcodeproj -scheme 10x -destination platform=macOS,arch=arm64 -derivedDataPath /Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aotxfgauppgfpjaamwnkyebclbnl ARCHS=arm64 CODE_SIGNING_ALLOWED=NO
+​􀙟 Test curatedEnumOptionsMatchOmp() skipped.
+􀢄 Test activityDisclosureSnapshotDark() failed after 3.783 seconds with 1 issue.
+􀙟 Test curatedKeysStillExist() skipped.
+􀢄 Test activityDisclosureSnapshot() failed after 8.023 seconds with 1 issue.
+􀢄 Test railCollapsesAfterGracePeriod() failed after 13.869 seconds with 1 issue.
+􀢄 Test fullShellAccountDockMinimumWindowSnapshot() failed after 15.076 seconds with 1 issue.
+􀢄 Test legacyAgentLifecycleCanConfirmBeforePromptResponseResumes() failed after 15.839 seconds with 1 issue.
+􀢄 Test warmExitAfterHandoffDoesNotReplayStartupRecovery() failed after 17.538 seconds with 3 issues.
+􀢄 Test staleReconciliationFailureCannotOverwriteNewerBoundary() failed after 74.521 seconds with 2 issues.
+􀢄 Suite SessionControllerTests failed after 75.944 seconds with 2 issues.
+􀢄 Test run with 1605 tests in 43 suites failed after 75.954 seconds with 10 issues.
+** TEST FAILED **
+
+appFocusedRecheck — /tmp/10x-main-merge-app-recheck.log
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test-without-building -project 10x.xcodeproj -scheme 10x -destination platform=macOS,arch=arm64 -derivedDataPath /Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aotxfgauppgfpjaamwnkyebclbnl "-only-testing:TenXAppTests/warmExitAfterHandoffDoesNotReplayStartupRecovery()" "-only-testing:TenXAppTests/fullShellAccountDockMinimumWindowSnapshot()" "-only-testing:TenXAppTests/railCollapsesAfterGracePeriod()" "-only-testing:TenXAppTests/legacyAgentLifecycleCanConfirmBeforePromptResponseResumes()" "-only-testing:TenXAppTests/SessionControllerTests/staleReconciliationFailureCannotOverwriteNewerBoundary()" ARCHS=arm64 CODE_SIGNING_ALLOWED=NO
+􁁛 Test run with 5 tests in 1 suite passed after 1.304 seconds.
+** TEST EXECUTE SUCCEEDED **
+
+ompkit — /tmp/10x-main-merge-ompkit-tests.log
+swift test --package-path OmpKit
+􀙟  Test realOmpReadyStateRoundTrip() skipped.
+􀙟  Test realSessionLibraryParses() skipped.
+􀙟  Test realManagerCreatesDistinctPersistentSessionsInOneProject() skipped.
+􁁛  Test run with 222 tests in 0 suites passed after 6.628 seconds.
+
