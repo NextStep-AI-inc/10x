@@ -99,9 +99,11 @@ All five native flows passed on Release source `ffd095a`. Full app tests: 1,602/
 
 Tanner's next review asks for smaller Steer/Follow up choices, separation between usage rings and composer controls, and the same black/light-mode and white/dark-mode fill as ordinary user messages. This is a bounded visual revision to the existing design.
 
-- [ ] In `SendActionControl.swift`, replace the 272×104 panel with two 28-point single-line rows in a 164-point panel. Keep selection, keyboard movement, Escape, focus return and the explanatory accessibility text/help.
-- [ ] In `ComposerView.swift`, move the existing reserved provider dock slot out of `actionControls` into a trailing-aligned strip below the bordered composer, separated by 8 points. Keep its measured width, 44-point targets and shell anchor. Do not rewrite provider routing or the dock renderer.
-- [ ] In `MessageBubbleView.swift`, use the ordinary user-message fill (`nearBlackHex`) and foreground (`onEmphasis`) for known modes. Keep the branch/arrow and accent edge; reduce the caption-to-content gap from 8 to 4 points.
-- [ ] Review the three-file change and run the affected existing checks. These are presentation adjustments, so validation uses real rendering instead of unit tests that repeat style constants.
-- [ ] Package a new immutable Release QA build. Inspect queued and delivered messages, the compact send panel and the separated rings at normal/minimum widths in both light and dark appearances. Exercise keyboard selection, focus return and a provider ring.
-- [ ] Save new native screenshots, update the gallery and PR evidence, and report any remaining gaps. Keep the existing three full-suite failures separately recorded; no unrelated repair, merge or deployment.
+- [x] In `SendActionControl.swift`, replace the 272×104 panel with two 28-point single-line rows in a 164-point panel. Keep selection, keyboard movement, Escape, focus return and the explanatory accessibility text/help.
+- [x] In `ComposerView.swift`, move the existing reserved provider dock slot out of `actionControls` into a trailing-aligned strip below the bordered composer, separated by 8 points. Keep its measured width, 44-point targets and shell anchor. Do not rewrite provider routing or the dock renderer.
+- [x] In `MessageBubbleView.swift`, use the ordinary user-message fill (`nearBlackHex`) and foreground (`onEmphasis`) for known modes. Keep the branch/arrow and accent edge; reduce the caption-to-content gap from 8 to 4 points.
+- [x] Review the three-file change and run the affected existing checks. These are presentation adjustments, so validation uses real rendering instead of unit tests that repeat style constants.
+- [x] Package a new immutable Release QA build. Inspect queued and delivered messages, the compact send panel and the separated rings at normal/minimum widths in both light and dark appearances. Exercise keyboard selection, focus return and a provider ring.
+- [x] Save new native screenshots, update the gallery and PR evidence, and report any remaining gaps. Keep the existing three full-suite failures separately recorded; no unrelated repair, merge or deployment.
+
+Revision outcome: Release `a78f90d`, seven native captures, Auto appearance restored. Final tests: 1,602/1,605 passed; baseline snapshots plus the isolated-pass provider deadline check remain. Usage-details Escape/overlay coordination is a recorded follow-up. PR remains draft.

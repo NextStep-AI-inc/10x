@@ -1,0 +1,18 @@
+Final suite: 1605 executed; 1602 passed; 3 failed.
+
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project 10x.xcodeproj -scheme 10x -destination platform=macOS,arch=arm64 -derivedDataPath /Users/tannerpham/Library/Developer/Xcode/DerivedData/10x-aotxfgauppgfpjaamwnkyebclbnl ARCHS=arm64 CODE_SIGNING_ALLOWED=NO
+􀢄 Test activityDisclosureSnapshot() failed after 3.861 seconds with 1 issue.
+􀢄 Test helloAgainstARealChannelThatNeverOpensDegradesWithinItsOwnTimeoutNotTheChannels() recorded an issue at ProviderAccountExtensionBackendTests.swift:231:5: Expectation failed: (elapsed → 1.236346375 seconds) < (.seconds(1) → 1.0 seconds)
+􀢄 Test helloAgainstARealChannelThatNeverOpensDegradesWithinItsOwnTimeoutNotTheChannels() failed after 2.122 seconds with 1 issue.
+􀢄 Test activityDisclosureSnapshotDark() failed after 4.186 seconds with 1 issue.
+􀢄 Suite ProviderAccountExtensionBackendTests failed after 8.490 seconds with 1 issue.
+􁁛 Test staleReconciliationFailureCannotOverwriteNewerBoundary() passed after 7.965 seconds.
+􁁛 Test repeatedQueuedMessagesKeepExactlyOneVisibleEchoPerSubmission() passed after 8.299 seconds.
+􀢄 Test run with 1605 tests in 43 suites failed after 18.014 seconds with 3 issues.
+** TEST FAILED **
+
+Isolated handshake timeout check: 1 passed in 0.053 seconds.
+Release build: BUILD SUCCEEDED.
+Strict ad-hoc signature verification passed.
+Pinned project generation: byte-identical.

@@ -1,0 +1,19 @@
+{
+  "sourceCommit": "a78f90d610c6a6dcfbd3eb099838ecd1383de46e",
+  "branch": "codex/active-session-ui-refinements",
+  "configuration": "Release",
+  "architecture": "arm64",
+  "bundle": "/tmp/10x-ui-density-build/10x-ui-density.app",
+  "bundleIdentifier": "com.nextstep.tenx.uirefinementsqa",
+  "executableSHA256": "a5013d590d65a5224e8ac6aa4b820c1a2c36b2c8845bf445ee4029735bf90fe6",
+  "profileRoot": "/tmp/10x-session-recovery-home",
+  "signatureVerification": "codesign --verify --deep --strict passed",
+  "buildLog": "/tmp/10x-ui-density-release.log",
+  "buildLogSHA256": "c8f7dc5b55dff93ff83d71f236208dbb4409e49efdc8eaefef93a69a381ff4c4",
+  "purpose": "Density and light/dark native acceptance",
+  "launchCommand": [
+    "open",
+    "-n",
+    "/tmp/10x-ui-density-build/10x-ui-density.app"
+  ]
+}

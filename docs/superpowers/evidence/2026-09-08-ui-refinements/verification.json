@@ -115,5 +115,6 @@
     }
   ],
   "projectGeneration": "Pinned generator succeeded; no project diff",
-  "galleryAcceptance": "PASS; gallery-verification.json"
+  "galleryAcceptance": "PASS; gallery-verification.json",
+  "supersededBy": "density-verification.json"
 }

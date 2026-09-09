@@ -1,38 +1,37 @@
 # Active-session UI refinement evidence
 
-Status: **DONE_WITH_CONCERNS**. All five requested UI changes passed native acceptance. [PR #46](https://github.com/NextStep-AI-inc/10x/pull/46) remains **draft** because the full app suite is not fully green. No GitHub merge or deployment occurred.
+Status: **DONE_WITH_CONCERNS**. The density and appearance corrections passed native acceptance. [PR #46](https://github.com/NextStep-AI-inc/10x/pull/46) remains draft because the full suite has unresolved failures.
 
-[Native screenshot gallery](progress-gallery.html) · [Implementation plan](../../plans/2026-09-08-active-session-ui-refinements.md) · [Test results](test-results.txt) · [Recorded checks](verification.json) · [Native proof](native-verification.json)
+[Latest native gallery](progress-gallery.html) · [Verification record](density-verification.json) · [Test results](density-test-results.txt) · [Implementation plan](../../plans/2026-09-08-active-session-ui-refinements.md)
 
-## Requested changes
+## Latest requested corrections
 
-- [x] Keep the header status; replace repeated composer and quiet-transcript Working text with animated bars. Two real frames show different bar heights. The final build's Stop button ended the controlled response.
-- [x] Show independent warnings in a fitted flyout. Zero, one and two warnings have identical composer border rows, 417–418 and 563–564, in the 760×592 window. Clearing the model warning leaves the attachment warning intact.
-- [x] Give follow-up and steer messages distinct symbols, accents and surfaces, including pending receipts. Both unique test messages were delivered once and kept their appearance after app quit/relaunch. The app-owned send-action panel supports keyboard and pointer selection.
-- [x] Keep colored diff totals in the tool header, remove repeated single-file labels, and align multi-file details with actions. Wrap/Scroll worked; Copy patch pasted both complete patches into the actual composer. File navigation opened the exact neutral fixture file in Cursor in the preceding Release checkpoint.
-- [x] Model, project, context, warning and send-action components own their panels. Native normal/minimum-window checks passed, long model content scrolled, Escape returned composer focus, and single-click panel switching worked. Resizing via the window corner dismisses the panel cleanly; reopening fits the new window bounds.
+- [x] Steer and Follow up use two compact single-line choices: 164×56 points, previously 272×104. Pointer and keyboard selection, Escape and composer focus return passed.
+- [x] Usage rings occupy their own strip below the composer with an 8-point layout gap. The native model panel and rings fit at normal and minimum sizes in both appearances. A ring opened its usage details and its visible Close button dismissed them.
+- [x] Known-mode bubbles use the same semantic fill and foreground as ordinary user messages: black with white text in light mode, white with black text in dark mode. Symbols and accent edges remain. Both delivered modes were inspected in both themes; the queued state was also checked in dark mode.
 
-## Build and verification
+The seven screenshots in the gallery come from Release source `a78f90d610c6a6dcfbd3eb099838ecd1383de46e`, branch `codex/active-session-ui-refinements`. The [build manifest](native-density-build.json) records the executable SHA and isolated profile. Native windows were 1180×760 and 760×592; the latter includes the title bar above the app's minimum 760×560 content size.
 
-Native Release source: `ffd095a1bf1dcb2bc1f0a4a62c650b5de3794f35`, branch `codex/active-session-ui-refinements`, based on `codex/active-session-audit-integration`.
+macOS appearance was temporarily switched from Auto to Dark for this check, then restored to **Auto**. The isolated app remains running with an empty draft. The fixture responses were stopped/completed through the demonstrated flow. No external model work is represented by this local RPC session.
 
-- Release build, Swift 6 compilation, pinned Xcode project generation and strict ad-hoc signature check passed.
-- **1,605 app tests executed: 1,602 passed, 3 failed.** All seven new mode checks, the existing repeated-queue check, and changed-surface screenshot checks passed.
-- The two failed running/error snapshots exactly match the actual hashes recorded against pre-merge main in [main-baseline.json](../2026-09-08-audit-integration/main-baseline.json). Their references remain unchanged.
-- `staleReconciliationFailureCannotOverwriteNewerBoundary()` failed to reach its third synthetic history request under full-suite load; it passed in 0.735 seconds in the isolated rerun. Its existing synthetic timing is unchanged. This is an open verification concern, not a green suite.
-- The two expanded diff references and 19 additional affected references were visually inspected before acceptance. [Snapshot review](snapshot-review.json).
-- A test-fixture regression found in the first full run was corrected: its preexisting history row is written before Ready, keeping repeated-message indices consistent. The original repeated-queue behavior check then passed.
+## Verification
 
-The native acceptance profile uses a local [RPC fixture](native-fixture.py) to generate provider events, queued delivery and real structured tool presentations. The app itself is the Release binary. No external model work is implied by these checks. [Received prompts and delivery proof](native-rpc-proof.json).
+- Swift 6 compilation/typechecking, Release build, strict ad-hoc signature verification, pinned project generation and diff checks passed.
+- Final full suite: **1,605 executed, 1,602 passed, 3 failed**. All changed-layout snapshots and submission-mode checks passed.
+- The two running/error snapshot actuals exactly match the hashes recorded against main. Their references remain unchanged.
+- The existing provider handshake deadline check exceeded its one-second assertion under full-suite load (1.236 seconds). Its isolated rerun passed in 0.053 seconds. This remains a full-suite verification concern.
+- The earlier stale-reconciliation, repeated-queue and opening-task checks passed in this final full run. An initial run also had transient timing failures while seven changed dock references required review.
+- All seven dock references were inspected before acceptance, including minimum windows, account stacks, dark mode and an expanded rail. [Snapshot review](density-snapshot-review.json).
+- The updated gallery loaded all seven images without horizontal overflow; opening a full-size image and Escape/focus return passed. [Gallery check](density-gallery-verification.json).
 
-## Review and limits
+## Remaining gaps
 
-Parent review covered the diff and file-path identity, component placement/focus behavior, submission matching/persistence, stale-generation guards and rendered message equality. The reviewed follow-up keeps transient styling until the persisted snapshot is installed and caches recorded modes outside row rendering. No open finding blocks the five demonstrated UI flows.
+Usage details did **not** dismiss with Escape during native QA, and a model panel could open behind them. The visible Close button worked. Provider overlay coordination is recorded as follow-up work; this correction changes only three Swift presentation files.
 
-OMP supplies no originating queue ID or persisted send mode. Identical overlapping payloads with conflicting modes therefore keep a standard delivered appearance; imported/older messages are not classified by their wording. The native fixture verifies unambiguous text messages. Image-only mode styling, the macOS Reduce Motion setting and VoiceOver were not exercised natively. Above/below placement is covered by geometry tests; native panels in this footer layout opened above.
+The acceptance flow uses a local RPC fixture. Live provider work, image-only mode styling, VoiceOver and the OS Reduce Motion setting were not exercised. The expanded rail was covered by snapshots rather than native interaction in this revision. OMP still supplies no originating queue ID, so identical overlapping messages with conflicting modes remain standard after delivery; older unannotated history is also unchanged.
 
-The earlier audit's live CJK input gate remains pending. Warning text reuses existing messages, including the generic image-limit wording on an invalid image. Provider runtime behavior, dependencies and unrelated baseline fixes are outside this change.
+The [first refinement report](first-refinement-report.md) and [earlier five-adjustment gallery](progress-gallery-first-refinement.html) retain the previous source and acceptance evidence, including diff actions, warnings, focus behavior and mode persistence after relaunch. The earlier CJK acceptance gap remains separate. No merge or deployment occurred.
 
 ## For Tanner to test
 
-Open `/tmp/10x-ui-refinements-final-build/10x-ui-refinements.app` or the [gallery](progress-gallery.html). The isolated app is running with the controlled **UI refinement acceptance** session available. Review animation feel, follow-up/steer contrast and the connected popup outlines at your preferred window size. The [build manifest](native-final-build.json) records the executable SHA, isolated profile and launch command.
+Use the [latest gallery](progress-gallery.html) to compare compact choices, ring spacing and both message themes. The runnable build is `/tmp/10x-ui-density-build/10x-ui-density.app`, from source `a78f90d`. The isolated **UI refinement acceptance** session is available for hands-on inspection.
