@@ -20,6 +20,82 @@ private actor MapWriterScript {
 
 private enum MapWriterError: Error { case exhausted }
 
+private actor RenderObserver {
+    private(set) var count = 0
+    func record() { count += 1 }
+}
+
+private actor SuspendedNativeRenderer {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var hasStarted = false
+
+    func render() async -> Data {
+        hasStarted = true
+        await withCheckedContinuation { continuation = $0 }
+        return Data([1])
+    }
+
+    func waitUntilStarted() async {
+        while !hasStarted { await Task.yield() }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private actor SuspendedFailingChecker {
+    private let fails: Bool
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var hasStarted = false
+
+    init(fails: Bool) { self.fails = fails }
+
+    func complete(images: [PromptImage]) async throws -> String {
+        guard !images.isEmpty else { return SessionMapFixtures.planningXML }
+        hasStarted = true
+        await withCheckedContinuation { continuation = $0 }
+        if fails { throw MapWriterError.exhausted }
+        return "<verdict pass=\"true\"/>"
+    }
+
+    func waitUntilStarted() async {
+        while !hasStarted { await Task.yield() }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private actor SuspendedFailingRewrite {
+    private var writerCalls = 0
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var hasStarted = false
+
+    func complete(images: [PromptImage]) async throws -> String {
+        if !images.isEmpty {
+            return "<verdict pass=\"false\"><issue type=\"layout\">Move it.</issue></verdict>"
+        }
+        writerCalls += 1
+        guard writerCalls > 1 else { return SessionMapFixtures.planningXML }
+        hasStarted = true
+        await withCheckedContinuation { continuation = $0 }
+        throw MapWriterError.exhausted
+    }
+
+    func waitUntilStarted() async {
+        while !hasStarted { await Task.yield() }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 private actor SuspendedMapWriter {
     private var completion: CheckedContinuation<Void, Never>?
     private var startWaiter: CheckedContinuation<Void, Never>?
@@ -111,21 +187,37 @@ private actor SuspendedMapWriter {
 
 @Test func sessionMapCheckerIsOffAndIgnoresStatusOnlyUpdates() async throws {
     let offScript = MapWriterScript([SessionMapFixtures.planningXML])
-    let offGenerator = SessionMapGenerator { prompt, images, model in
-        try await offScript.complete(prompt: prompt, images: images, model: model)
-    }
+    let offRenderObserver = RenderObserver()
+    let offChecker = SessionMapChecker(
+        completion: { prompt, images, model in
+            try await offScript.complete(prompt: prompt, images: images, model: model)
+        },
+        renderer: { _, _, _ in
+            await offRenderObserver.record()
+            return Data([1])
+        })
+    let offGenerator = SessionMapGenerator(
+        completion: { prompt, images, model in
+            try await offScript.complete(prompt: prompt, images: images, model: model)
+        },
+        checker: offChecker)
     let off = await offGenerator.generate(generationInput())
     #expect(off.checkOutcome == .off)
     #expect(off.modelCallCount == 1)
+    #expect(await offRenderObserver.count == 0)
 
     let priorXML = "<sessionmap headline=\"Prior\" phase=\"planning\"><map><node id=\"writer\" label=\"Writer\" kind=\"component\" status=\"planned\"/></map></sessionmap>"
     let statusXML = "<sessionmap headline=\"Current\" phase=\"implementing\"><map><node id=\"writer\" label=\"Writer\" kind=\"component\" status=\"active\"/></map></sessionmap>"
     let script = MapWriterScript([statusXML])
+    let renderObserver = RenderObserver()
     let checker = SessionMapChecker(
         completion: { prompt, images, model in
             try await script.complete(prompt: prompt, images: images, model: model)
         },
-        renderer: { _, _, _ in Data([1]) })
+        renderer: { _, _, _ in
+            await renderObserver.record()
+            return Data([1])
+        })
     let generator = SessionMapGenerator(
         completion: { prompt, images, model in
             try await script.complete(prompt: prompt, images: images, model: model)
@@ -142,6 +234,126 @@ private actor SuspendedMapWriter {
     #expect(result.checkOutcome == .skipped)
     #expect(result.modelCallCount == 1)
     #expect(await script.prompts.count == 1)
+    #expect(await renderObserver.count == 0)
+}
+
+@Test func sessionMapObsoleteRenderDoesNotCallCheckerOrPublish() async {
+    let renderer = SuspendedNativeRenderer()
+    let checkerCalls = RenderObserver()
+    let checker = SessionMapChecker(
+        completion: { _, _, _ in
+            await checkerCalls.record()
+            return "<verdict pass=\"true\"/>"
+        },
+        renderer: { _, _, _ in await renderer.render() })
+    let generator = SessionMapGenerator(
+        completion: { _, _, _ in SessionMapFixtures.planningXML },
+        checker: checker)
+    let generation = Task {
+        await generator.generate(generationInput(checkerModel: checkerModel))
+    }
+    await renderer.waitUntilStarted()
+    await generator.invalidate(sessionKey: "session", lineage: "lineage", revision: 2)
+    await renderer.release()
+
+    let result = await generation.value
+    #expect(result.disposition == .obsolete)
+    #expect(await checkerCalls.count == 0)
+}
+
+@Test func sessionMapObsoleteCheckerFailureDoesNotPublish() async {
+    let completion = SuspendedFailingChecker(fails: true)
+    let checker = SessionMapChecker { _, images, _ in
+        try await completion.complete(images: images)
+    }
+    let generator = SessionMapGenerator(
+        completion: { _, images, _ in try await completion.complete(images: images) },
+        checker: checker)
+    let generation = Task {
+        await generator.generate(generationInput(checkerModel: checkerModel))
+    }
+    await completion.waitUntilStarted()
+    await generator.invalidate(sessionKey: "session", lineage: "lineage", revision: 2)
+    await completion.release()
+
+    #expect(await generation.value.disposition == .obsolete)
+}
+
+@Test func sessionMapObsoleteCheckerPassDoesNotPublish() async {
+    let completion = SuspendedFailingChecker(fails: false)
+    let checker = SessionMapChecker { _, images, _ in
+        try await completion.complete(images: images)
+    }
+    let generator = SessionMapGenerator(
+        completion: { _, images, _ in try await completion.complete(images: images) },
+        checker: checker)
+    let generation = Task {
+        await generator.generate(generationInput(checkerModel: checkerModel))
+    }
+    await completion.waitUntilStarted()
+    await generator.invalidate(sessionKey: "session", lineage: "lineage", revision: 2)
+    await completion.release()
+
+    #expect(await generation.value.disposition == .obsolete)
+}
+
+@Test func sessionMapObsoleteRewriteFailureDoesNotPublish() async {
+    let completion = SuspendedFailingRewrite()
+    let checker = SessionMapChecker { _, images, _ in
+        try await completion.complete(images: images)
+    }
+    let generator = SessionMapGenerator(
+        completion: { _, images, _ in try await completion.complete(images: images) },
+        checker: checker)
+    let generation = Task {
+        await generator.generate(generationInput(checkerModel: checkerModel))
+    }
+    await completion.waitUntilStarted()
+    await generator.invalidate(sessionKey: "session", lineage: "lineage", revision: 2)
+    await completion.release()
+
+    #expect(await generation.value.disposition == .obsolete)
+}
+
+@MainActor
+@Test func sessionMapFactsFallbackReportsConfiguredCheckerHonestly() async throws {
+    let configuredScript = MapWriterScript(["bad", "still bad"])
+    let configured = SessionMapGenerator { prompt, images, model in
+        try await configuredScript.complete(prompt: prompt, images: images, model: model)
+    }
+    let configuredResult = await configured.generate(generationInput(checkerModel: checkerModel))
+
+    let offScript = MapWriterScript(["bad", "still bad"])
+    let off = SessionMapGenerator { prompt, images, model in
+        try await offScript.complete(prompt: prompt, images: images, model: model)
+    }
+    let offResult = await off.generate(generationInput())
+
+    #expect(configuredResult.disposition == .factsFallback)
+    #expect(configuredResult.checkOutcome == .unavailable)
+    #expect(offResult.checkOutcome == .off)
+    let pane = SessionMapPaneModel()
+    pane.replaceDocument(
+        try #require(configuredResult.document),
+        checkOutcome: configuredResult.checkOutcome)
+    #expect(pane.attribution ==
+        "Generated from session. Checker unavailable; final revision not checked.")
+}
+
+@Test func sessionMapDeterministicIssuesPrecedeModelIssueCap() {
+    let modelIssues = (0..<12).map {
+        SessionMapVerdictIssue(type: .wrongTone, nodeID: "n\($0)", description: "Model \($0)")
+    }
+    let issues = SessionMapChecker.prioritizedIssues(
+        modelIssues: modelIssues,
+        layoutDiagnostics: [
+            SessionMapLayoutDiagnostic(code: "node-overlap", message: "Cards overlap."),
+            SessionMapLayoutDiagnostic(code: "edge-label-hidden", message: "Allowed fallback."),
+        ])
+
+    #expect(issues.count == 12)
+    #expect(issues.first?.description == "Cards overlap.")
+    #expect(!issues.contains { $0.description == "Allowed fallback." })
 }
 
 @Test func sessionMapCheckerDetectsRewiredEdgesAtConstantCounts() async throws {
@@ -166,6 +378,39 @@ private actor SuspendedMapWriter {
     #expect(result.checkOutcome == .passed)
     #expect(result.modelCallCount == 2)
     #expect(await script.prompts.count == 2)
+}
+
+@Test(arguments: [
+    ("edge-kind", "data", "old", "Old detail."),
+    ("edge-label", "flow", "new", "Old detail."),
+    ("node-detail", "flow", "old", "New detail."),
+])
+func sessionMapCheckerDetectsGeometryDetailChanges(
+    name: String,
+    edgeKind: String,
+    edgeLabel: String,
+    nodeDetail: String
+) async {
+    let priorXML = "<sessionmap headline=\"Prior\" phase=\"planning\"><map><node id=\"a\" label=\"A\" kind=\"component\" status=\"planned\">Old detail.</node><node id=\"b\" label=\"B\" kind=\"service\" status=\"planned\"/><edge from=\"a\" to=\"b\" kind=\"flow\" label=\"old\"/></map></sessionmap>"
+    let changedXML = "<sessionmap headline=\"Current\" phase=\"implementing\"><map><node id=\"a\" label=\"A\" kind=\"component\" status=\"planned\">\(nodeDetail)</node><node id=\"b\" label=\"B\" kind=\"service\" status=\"planned\"/><edge from=\"a\" to=\"b\" kind=\"\(edgeKind)\" label=\"\(edgeLabel)\"/></map></sessionmap>"
+    let script = MapWriterScript([changedXML, "<verdict pass=\"true\"/>"])
+    let checker = SessionMapChecker(
+        completion: { prompt, images, model in
+            try await script.complete(prompt: prompt, images: images, model: model)
+        },
+        renderer: { _, _, _ in Data([1]) })
+    let generator = SessionMapGenerator(
+        completion: { prompt, images, model in
+            try await script.complete(prompt: prompt, images: images, model: model)
+        },
+        checker: checker)
+    let result = await generator.generate(generationInput(
+        priorRecord: generationRecord(
+            xml: priorXML, cacheKey: "old", checkerConfiguration: checkerModel),
+        checkerModel: checkerModel))
+
+    #expect(result.checkOutcome == .passed, Comment(rawValue: name))
+    #expect(await script.prompts.count == 2, Comment(rawValue: name))
 }
 
 @Test func sessionMapConfiguredCheckerWithoutResolvedImageModelIsUnavailable() async {

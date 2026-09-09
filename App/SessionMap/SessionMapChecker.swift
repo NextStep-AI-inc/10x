@@ -86,6 +86,20 @@ struct SessionMapChecker: Sendable {
         return SessionMapVerdict(passes: passes, issues: parserDelegate.issues)
     }
 
+    static func prioritizedIssues(
+        modelIssues: [SessionMapVerdictIssue],
+        layoutDiagnostics: [SessionMapLayoutDiagnostic]
+    ) -> [SessionMapVerdictIssue] {
+        let deterministicIssues: [SessionMapVerdictIssue] = layoutDiagnostics.compactMap { diagnostic in
+            guard diagnostic.code != "edge-label-hidden" else { return nil }
+            return SessionMapVerdictIssue(
+                type: .layout,
+                nodeID: nil,
+                description: String(diagnostic.message.prefix(240)))
+        }
+        return Array((deterministicIssues + modelIssues).prefix(12))
+    }
+
     @MainActor
     private static func renderNativeGraph(
         document: SessionMapDocument,

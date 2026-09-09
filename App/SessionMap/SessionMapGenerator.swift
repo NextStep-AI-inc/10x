@@ -202,6 +202,10 @@ actor SessionMapGenerator {
                     let measuredHeights = await MainActor.run {
                         SessionMapGraphView.measuredHeights(for: document.graph)
                     }
+                    guard isCurrent(token, for: input.sessionKey) else {
+                        return obsolete(
+                            input: input, priorDocument: priorDocument, priorXML: priorXML)
+                    }
                     let layout = SessionMapLayout.layout(
                         graph: document.graph,
                         firstSeenOrder: firstSeenOrder,
@@ -209,18 +213,23 @@ actor SessionMapGenerator {
                     do {
                         let png = try await checker.render(
                             document: document, layout: layout, width: input.paneWidth)
+                        guard isCurrent(token, for: input.sessionKey) else {
+                            return obsolete(
+                                input: input, priorDocument: priorDocument, priorXML: priorXML)
+                        }
                         modelCallCount += 1
                         var verdict = try await checker.check(
                             png: png, xml: xml, digest: input.digest, model: checkerModel)
-                        let deterministicIssues: [SessionMapVerdictIssue] = layout.diagnostics.compactMap { diagnostic in
-                            guard diagnostic.code != "edge-label-hidden" else { return nil }
-                            return SessionMapVerdictIssue(
-                                type: .layout, nodeID: nil, description: diagnostic.message)
+                        guard isCurrent(token, for: input.sessionKey) else {
+                            return obsolete(
+                                input: input, priorDocument: priorDocument, priorXML: priorXML)
                         }
-                        if !deterministicIssues.isEmpty {
+                        let prioritizedIssues = SessionMapChecker.prioritizedIssues(
+                            modelIssues: verdict.issues,
+                            layoutDiagnostics: layout.diagnostics)
+                        if layout.diagnostics.contains(where: { $0.code != "edge-label-hidden" }) {
                             verdict = SessionMapVerdict(
-                                passes: false,
-                                issues: Array((verdict.issues + deterministicIssues).prefix(12)))
+                                passes: false, issues: prioritizedIssues)
                         }
                         if verdict.passes {
                             checkOutcome = .passed
@@ -255,6 +264,12 @@ actor SessionMapGenerator {
                                 return obsolete(
                                     input: input, priorDocument: priorDocument, priorXML: priorXML)
                             } catch {
+                                guard isCurrent(token, for: input.sessionKey) else {
+                                    return obsolete(
+                                        input: input,
+                                        priorDocument: priorDocument,
+                                        priorXML: priorXML)
+                                }
                                 checkOutcome = .failed
                             }
                         } else {
@@ -264,9 +279,16 @@ actor SessionMapGenerator {
                         return obsolete(
                             input: input, priorDocument: priorDocument, priorXML: priorXML)
                     } catch {
+                        guard isCurrent(token, for: input.sessionKey) else {
+                            return obsolete(
+                                input: input, priorDocument: priorDocument, priorXML: priorXML)
+                        }
                         checkOutcome = .unavailable
                     }
                 }
+            }
+            guard isCurrent(token, for: input.sessionKey) else {
+                return obsolete(input: input, priorDocument: priorDocument, priorXML: priorXML)
             }
             let record = makeRecord(
                 document: finalDocument,
@@ -362,6 +384,7 @@ actor SessionMapGenerator {
             record: nil,
             disposition: .factsFallback,
             input: input,
+            checkOutcome: input.isCheckerConfigured ? .unavailable : .off,
             modelCallCount: modelCallCount)
     }
 
@@ -409,6 +432,7 @@ actor SessionMapGenerator {
         record: SessionMapRecord?,
         disposition: SessionMapGenerationDisposition,
         input: SessionMapGenerationInput,
+        checkOutcome: SessionMapCheckOutcome? = nil,
         modelCallCount: Int = 0
     ) -> SessionMapGenerationResult {
         SessionMapGenerationResult(
@@ -419,7 +443,7 @@ actor SessionMapGenerator {
             disposition: disposition,
             generatedThrough: input.digest.cursor,
             sourceManifest: input.digest.sourceFingerprintManifest,
-            checkOutcome: record?.checkOutcome ?? .off,
+            checkOutcome: checkOutcome ?? record?.checkOutcome ?? .off,
             modelCallCount: modelCallCount)
     }
 
