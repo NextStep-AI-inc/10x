@@ -1,0 +1,32 @@
+{
+  "checkedAtUTC": "2026-09-09T01:50:21.068641+00:00",
+  "sourceSHA": "5445b4617d69617d8f32d45b2a63f1082910c432",
+  "cli": "/Users/tannerpham/.bun/bin/omp",
+  "cliVersion": "omp/18.1.10",
+  "smolRole": "cursor/composer-2.5-fast",
+  "catalog": {
+    "models": [
+      {
+        "provider": "cursor",
+        "id": "composer-2.5-fast",
+        "selector": "cursor/composer-2.5-fast",
+        "name": "Composer 2.5 Fast",
+        "contextWindow": 200000,
+        "maxTokens": 64000,
+        "reasoning": false,
+        "thinking": null,
+        "input": [
+          "text",
+          "image"
+        ],
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0
+        }
+      }
+    ]
+  },
+  "note": "Read-only configuration/catalog preflight; authentication is not yet verified."
+}

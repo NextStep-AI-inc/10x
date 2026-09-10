@@ -1,0 +1,35 @@
+{
+  "canvasHeight" : 32,
+  "canvasWidth" : 32,
+  "checkOutcome" : "off",
+  "diagnostics" : [
+    "unknown-attribute: Unknown node attribute note was ignored.",
+    "invalid-node: A node with missing or invalid required fields was dropped.",
+    "unknown-attribute: Unknown node attribute note was ignored.",
+    "invalid-node: A node with missing or invalid required fields was dropped.",
+    "invalid-edge: An edge with missing or invalid required fields was dropped.",
+    "factMismatch: A stat without a matching fact was dropped.",
+    "factMismatch: A stat without a matching fact was dropped.",
+    "factMismatch: A stat without a matching fact was dropped.",
+    "factMismatch: A stat without a matching fact was dropped.",
+    "invalid-callout: Callout without a title or text was dropped.",
+    "unknown-attribute: Unknown next attribute prompt was ignored."
+  ],
+  "disposition" : "generated",
+  "durationMilliseconds" : 15484,
+  "firstSeenOrder" : [
+
+  ],
+  "layoutDiagnostics" : [
+
+  ],
+  "modelCallCount" : 1,
+  "name" : "failure-catch-up",
+  "retainedPlanningIDs" : [
+
+  ],
+  "sourceSHA" : "5445b4617d69617d8f32d45b2a63f1082910c432",
+  "writerModel" : "composer-2.5-fast",
+  "writerProvider" : "cursor",
+  "xml" : "<sessionmap headline=\"Focused verification done; later checker failure needs attention\" phase=\"mixed\"><summary>Completed work passed focused verification. A later checker failed and needs attention before catch-up. Two finished turns, one failed tool, one pending attention item across two source entries.<\/summary><next\/><\/sessionmap>"
+}
