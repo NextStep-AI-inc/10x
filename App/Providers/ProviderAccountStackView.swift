@@ -1,11 +1,17 @@
 import Foundation
 import SwiftUI
 
+enum ProviderAccountStackLayout: Equatable {
+    case fanUp
+    case peekRight
+}
+
 struct ProviderAccountStackItemGeometry: Equatable {
     let accountID: String
     let visualDiameter: CGFloat
     let hitTargetDiameter: CGFloat
     let verticalOffset: CGFloat
+    let horizontalOffset: CGFloat
     let zIndex: Double
     let accessibilityPriority: Double
     let isForeground: Bool
@@ -58,6 +64,10 @@ struct ProviderAccountStackGeometry: Equatable {
     /// background disc.) This constant governs rank spacing only — it is
     /// unrelated to the hover-grow sizing below.
     static let fanStepScale: CGFloat = 0.75
+    /// Fraction of `wheelDiameter` the rear account sits to the right of the
+    /// inspected account in the expanded peek. 0.48 leaves a hoverable crescent
+    /// without turning the header into a carousel.
+    static let peekStepScale: CGFloat = 0.48
     /// Fraction of `wheelDiameter` for the canvas-colored separation ring's
     /// width, drawn fully OUTSIDE each disc's own edge (see
     /// `ProviderAccountStackView`'s separation-ring overlay and badge ring).
@@ -93,27 +103,43 @@ struct ProviderAccountStackGeometry: Equatable {
     let separationRingWidth: CGFloat
     let foregroundAccountID: String?
     let accessibilityOrderedAccountIDs: [String]
+    let layout: ProviderAccountStackLayout
 
     init(
         accountIDs: [String],
         foregroundAccountID: String?,
-        wheelDiameter: CGFloat
+        wheelDiameter: CGFloat,
+        layout: ProviderAccountStackLayout = .fanUp
     ) {
         let foregroundID = foregroundAccountID.flatMap { candidate in
             accountIDs.contains(candidate) ? candidate : nil
         } ?? accountIDs.first
-        let backgroundIDs = accountIDs.filter { $0 != foregroundID }
-        let maximumBaseZIndex = Double(accountIDs.count + 1)
+        let visibleIDs: [String]
+        if layout == .peekRight {
+            let peekID = accountIDs.first(where: { $0 != foregroundID })
+            visibleIDs = [foregroundID].compactMap { $0 } + [peekID].compactMap { $0 }
+        } else {
+            visibleIDs = accountIDs
+        }
+        let backgroundIDs = visibleIDs.filter { $0 != foregroundID }
+        let maximumBaseZIndex = Double(visibleIDs.count + 1)
         let backgroundDiameter = wheelDiameter * Self.backgroundScale
         let fanStep = wheelDiameter * Self.fanStepScale
+        let peekStep = wheelDiameter * Self.peekStepScale
         let separationRingWidth = wheelDiameter * Self.separationRingScale
+        self.layout = layout
 
-        items = accountIDs.map { accountID in
+        items = visibleIDs.map { accountID in
             let isForeground = accountID == foregroundID
             let backgroundIndex = backgroundIDs.firstIndex(of: accountID) ?? 0
             let visualDiameter = isForeground ? wheelDiameter : backgroundDiameter
             let hitTargetDiameter = max(Self.minimumHitTarget, visualDiameter)
-            let verticalOffset = isForeground ? 0 : fanStep * CGFloat(backgroundIndex + 1)
+            let verticalOffset = layout == .fanUp && !isForeground
+                ? fanStep * CGFloat(backgroundIndex + 1)
+                : 0
+            let horizontalOffset = layout == .peekRight && !isForeground
+                ? peekStep
+                : 0
             let baseZIndex = isForeground
                 ? maximumBaseZIndex
                 : maximumBaseZIndex - Double(backgroundIndex + 1)
@@ -122,6 +148,7 @@ struct ProviderAccountStackGeometry: Equatable {
                 visualDiameter: visualDiameter,
                 hitTargetDiameter: hitTargetDiameter,
                 verticalOffset: verticalOffset,
+                horizontalOffset: horizontalOffset,
                 zIndex: baseZIndex,
                 accessibilityPriority: baseZIndex,
                 isForeground: isForeground)
@@ -137,9 +164,13 @@ struct ProviderAccountStackGeometry: Equatable {
         // there, which is exactly what silently shifted three unrelated
         // full-shell references (single-account dock providers, narrow
         // windows) the first time this was tried unconditionally.
-        let ringReserve = accountIDs.count > 1 ? separationRingWidth : 0
-        width = (items.map(\.hitTargetDiameter).max() ?? wheelDiameter)
-            + 2 * ringReserve
+        let ringReserve = visibleIDs.count > 1 ? separationRingWidth : 0
+        if layout == .peekRight, visibleIDs.count > 1 {
+            width = wheelDiameter + peekStep + 2 * ringReserve
+        } else {
+            width = (items.map(\.hitTargetDiameter).max() ?? wheelDiameter)
+                + 2 * ringReserve
+        }
         // Whichever item has the highest resting center is the one that, if
         // raised, needs the most headroom above it — always the
         // topmost-ranked background item when one exists.
@@ -155,10 +186,12 @@ struct ProviderAccountStackGeometry: Equatable {
         // `ringReserve` is: a single-account provider can never raise a wheel,
         // and reserving the headroom anyway would grow its column for a state
         // it cannot reach.
-        let raiseHeadroom = accountIDs.count > 1
+        let raiseHeadroom = layout == .fanUp && visibleIDs.count > 1
             ? (wheelDiameter - backgroundDiameter) / 2
             : 0
-        expandedHeight = topRestingCenter + wheelDiameter / 2 + raiseHeadroom + ringReserve
+        expandedHeight = layout == .peekRight
+            ? wheelDiameter + 2 * ringReserve
+            : topRestingCenter + wheelDiameter / 2 + raiseHeadroom + ringReserve
         self.wheelDiameter = wheelDiameter
         self.backgroundDiameter = backgroundDiameter
         self.separationRingWidth = separationRingWidth
@@ -228,7 +261,8 @@ struct ProviderAccountStackGeometry: Equatable {
         for item: ProviderAccountStackItemGeometry,
         raisedAccountID: String?
     ) -> CGFloat {
-        guard let raisedAccountID,
+        guard layout == .fanUp,
+            let raisedAccountID,
             let raised = items.first(where: { $0.accountID == raisedAccountID })
         else { return 0 }
         // Zero when the raised wheel is already the foreground: it renders at
@@ -255,10 +289,19 @@ struct ProviderAccountStackGeometry: Equatable {
         isExpanded: Bool,
         raisedAccountID: String? = nil
     ) -> CGFloat {
-        guard isExpanded else { return 0 }
+        guard isExpanded, layout == .fanUp else { return 0 }
         let restingCenter = item.verticalOffset + item.visualDiameter / 2
         let clearance = raiseClearance(for: item, raisedAccountID: raisedAccountID)
         return restingCenter + clearance - currentDiameter / 2
+    }
+
+    func renderedHorizontalOffset(
+        for item: ProviderAccountStackItemGeometry,
+        currentDiameter: CGFloat
+    ) -> CGFloat {
+        guard layout == .peekRight else { return 0 }
+        let restingCenter = item.horizontalOffset + item.visualDiameter / 2
+        return restingCenter - currentDiameter / 2
     }
 }
 
@@ -268,9 +311,10 @@ struct ProviderAccountStackView: View {
     let isGrayscale: Bool
     let diameter: CGFloat
     /// True for the panel's inline account selector, which always has room
-    /// and always wants every account visible. False (default) is the
-    /// compact dock's collapsed-at-rest, hover-to-fan behavior.
+    /// and always wants the peek visible. False (default) is the compact
+    /// dock's collapsed-at-rest, hover-to-fan behavior.
     let alwaysExpanded: Bool
+    let layout: ProviderAccountStackLayout
     let onSelect: (ProviderUsageAccount) -> Void
     @FocusState.Binding var focusedAccountID: String?
     let visualFocusAccountID: String?
@@ -287,6 +331,7 @@ struct ProviderAccountStackView: View {
         isGrayscale: Bool,
         diameter: CGFloat = ProviderUsageRingGeometry.diameter,
         alwaysExpanded: Bool = false,
+        layout: ProviderAccountStackLayout = .fanUp,
         focusedAccountID: FocusState<String?>.Binding,
         visualFocusAccountID: String? = nil,
         visualHoverAccountID: String? = nil,
@@ -297,6 +342,7 @@ struct ProviderAccountStackView: View {
         self.isGrayscale = isGrayscale
         self.diameter = diameter
         self.alwaysExpanded = alwaysExpanded
+        self.layout = layout
         self.onSelect = onSelect
         self._focusedAccountID = focusedAccountID
         self.visualFocusAccountID = visualFocusAccountID
@@ -309,12 +355,13 @@ struct ProviderAccountStackView: View {
             foregroundAccountID: provider.accounts.first(where: {
                 $0.accountRef == provider.foregroundAccountRef
             })?.id,
-            wheelDiameter: diameter)
+            wheelDiameter: diameter,
+            layout: layout)
     }
 
     var body: some View {
         VStack(spacing: 5) {
-            ZStack(alignment: .bottom) {
+            ZStack(alignment: layout == .peekRight ? .bottomLeading : .bottom) {
                 ForEach(provider.accounts) { account in
                     if let item = geometry.items.first(where: { $0.accountID == account.id }) {
                         accountButton(account, item: item)
@@ -392,6 +439,9 @@ struct ProviderAccountStackView: View {
             currentDiameter: visualState.currentDiameter,
             isExpanded: isGroupExpanded,
             raisedAccountID: raisedAccountID)
+        let horizontalOffset = geometry.renderedHorizontalOffset(
+            for: item,
+            currentDiameter: visualState.currentDiameter)
         let currentHitTarget = max(
             ProviderAccountStackGeometry.minimumHitTarget,
             visualState.currentDiameter)
@@ -473,7 +523,7 @@ struct ProviderAccountStackView: View {
                 hoveredAccountID = nil
             }
         }
-        .offset(y: -totalOffset)
+        .offset(x: horizontalOffset, y: -totalOffset)
         .zIndex(visualState.zIndex)
         .opacity(isVisible ? 1 : 0)
         .allowsHitTesting(isVisible)

@@ -3,6 +3,36 @@ import Testing
 @testable import TenXApp
 
 @Suite struct ProviderAccountStackTests {
+@Test func peekRightPlacesTheOtherAccountBehindAndToTheRight() throws {
+    let geometry = ProviderAccountStackGeometry(
+        accountIDs: ["account-a", "account-b"],
+        foregroundAccountID: "account-a",
+        wheelDiameter: 54,
+        layout: .peekRight)
+    let foreground = try #require(geometry.items.first(where: { $0.accountID == "account-a" }))
+    let peek = try #require(geometry.items.first(where: { $0.accountID == "account-b" }))
+
+    #expect(geometry.items.count == 2)
+    #expect(foreground.horizontalOffset == 0)
+    #expect(foreground.verticalOffset == 0)
+    #expect(peek.horizontalOffset > 0)
+    #expect(peek.verticalOffset == 0)
+    #expect(peek.visualDiameter < foreground.visualDiameter)
+    #expect(peek.zIndex < foreground.zIndex)
+    #expect(geometry.width > geometry.wheelDiameter)
+    #expect(geometry.expandedHeight <= 54 + 2 * geometry.separationRingWidth + 0.0001)
+}
+
+@Test func peekRightKeepsOnlyOneSiblingEvenWhenMoreAccountsExist() {
+    let geometry = ProviderAccountStackGeometry(
+        accountIDs: ["account-a", "account-b", "account-c"],
+        foregroundAccountID: "account-a",
+        wheelDiameter: 54,
+        layout: .peekRight)
+
+    #expect(geometry.items.map(\.accountID) == ["account-a", "account-b"])
+}
+
 @Test func collapsedStackShowsOnlyTheForegroundWheelUntilExpanded() throws {
     let geometry = ProviderAccountStackGeometry(
         accountIDs: ["account-a", "account-b", "account-c"],
@@ -414,6 +444,17 @@ import Testing
 // the rest-state badge in the accent color, so the activity signal the
 // per-account centers exist for survives collapsing the stack.
 @MainActor
+@Test func expandedPeekShowsTheOtherAccountToTheRightSnapshot() throws {
+    try assertSnapshot(
+        ProviderAccountStackSnapshotHarness(
+            alwaysExpanded: true,
+            layout: .peekRight,
+            provider: ProviderAccountStackSnapshotHarness.twoAccountProvider),
+        name: "provider-account-stack-expanded-peek",
+        size: CGSize(width: 140, height: 90))
+}
+
+@MainActor
 @Test func restBadgeGoesLiveWhenAHiddenAccountIsGeneratingSnapshot() throws {
     try assertSnapshot(
         ProviderAccountStackSnapshotHarness(
@@ -430,6 +471,8 @@ private struct ProviderAccountStackSnapshotHarness: View {
     var visualHoverAccountID: String?
     var generatingCounts: [ProviderAccountKey: Int] = [:]
     var isGrayscale = false
+    var alwaysExpanded = false
+    var layout = ProviderAccountStackLayout.fanUp
     var provider = ProviderAccountStackSnapshotHarness.defaultProvider
 
     @FocusState private var focusedAccountID: String?
@@ -439,6 +482,8 @@ private struct ProviderAccountStackSnapshotHarness: View {
             provider: provider,
             generatingCounts: generatingCounts,
             isGrayscale: isGrayscale,
+            alwaysExpanded: alwaysExpanded,
+            layout: layout,
             focusedAccountID: $focusedAccountID,
             visualFocusAccountID: visualFocusAccountID,
             visualHoverAccountID: visualHoverAccountID,
@@ -507,6 +552,26 @@ private struct ProviderAccountStackSnapshotHarness: View {
         ],
         capability: .accountRouting,
         foregroundAccountRef: "personal")
+
+    static let twoAccountProvider = ProviderUsageProvider(
+        id: "openai-codex",
+        name: "OpenAI",
+        accounts: [
+            account(
+                id: "openai:school",
+                label: "school",
+                accountRef: "school",
+                usageState: .available,
+                limits: [limit(id: "five-hour", percentage: 100)]),
+            account(
+                id: "openai:work",
+                label: "work",
+                accountRef: "work",
+                usageState: .available,
+                limits: [limit(id: "weekly", percentage: 69)]),
+        ],
+        capability: .accountRouting,
+        foregroundAccountRef: "school")
 
     private static func account(
         id: String,
