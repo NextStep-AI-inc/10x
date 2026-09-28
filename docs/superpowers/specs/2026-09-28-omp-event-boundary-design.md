@@ -67,7 +67,7 @@ Every presented item has a stable identity, source category, bounded preview, an
 | Retry, fallback, compaction, and model changes | Existing small status/annotation presentation |
 | Subagent lifecycle/progress | One worker row under its parent delegation when the parent is known; otherwise a standalone compact card, keyed by stable worker identity |
 | Advisor or hidden guidance | Compact guidance item behind the switch; never a full raw message row |
-| Unknown passive event | Diagnostic record with type, byte count, and bounded sanitized preview; optional compact transcript item behind the switch |
+| Unknown passive event | Diagnostic record with type, bounded size estimate, and optional sanitized preview; optional compact transcript item behind the switch |
 | Known extension UI request | Existing typed confirm/select/input/editor/open URL interaction; actionable requests ignore the visibility switch |
 
 For a preview, cap text by UTF-8 bytes and line count, array children, nesting depth, and total rendered nodes. An expansion must be explicit and lazy; it must enforce its own budget. Raw payload access, when available, should be a separate inspection action sourced from the persisted session or a capped diagnostic buffer. Presentation must not stringify an entire large payload just to compute its preview.
@@ -107,7 +107,7 @@ File surfaces use the app's existing `FileTypeIcon` and file-reference behavior.
 
 The reserved provider-account extension channel is handled before generic extension UI fallback. A malformed request on that channel must be reported to its existing channel handler, not displayed as a user prompt. Cancellation responses must be correlated to the original process and request ID, including during restarts.
 
-Diagnostics contain no full file contents, secrets, tool arguments, or model-facing instruction bodies by default. They carry a safe event type, sizes, session-local correlation ID, and a short redacted preview only when needed. The switch controls transcript visibility, not diagnostic capture or error reporting.
+Diagnostics contain no full file contents, secrets, tool arguments, or model-facing instruction bodies by default. They carry a safe event type, size, session-local correlation ID, and a short redacted preview only when needed. Size is exact when transport supplies it; otherwise a capped traversal reports a lower bound. The switch controls transcript visibility, not diagnostic capture or error reporting.
 
 ## Complexity
 
