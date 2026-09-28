@@ -10,6 +10,14 @@
 
 **Spec:** [OMP event boundary design](../specs/2026-09-28-omp-event-boundary-design.md)
 
+## Execution Routing
+
+- **Implementation:** Cursor, **Composer 2.5 high fast**.
+- **Verification and auditing:** **Grok 4.7 xhigh fast**.
+- **Visual verification and steering:** the main Codex session with Tanner.
+- These are the user-selected models. If unavailable in the destination harness, report the limitation; do not silently substitute a different model.
+- [Approved interactive UI reference](../designs/2026-09-28-omp-tool-gallery.html) is a design mockup, not evidence of implemented behavior.
+
 ## Global Constraints
 
 - Work only in an isolated 10x worktree; leave the main checkout and port 3000 alone. Do not depend on unreleased OMP changes.
