@@ -1,0 +1,271 @@
+<div id="tenx-tool-gallery">
+  <div class="gallery-top">
+    <div class="brand">10<sup>×</sup></div>
+    <div class="gallery-heading">Tool activity</div>
+  </div>
+
+  <div class="gallery-tabs" role="tablist" aria-label="Tool examples">
+    <button type="button" role="tab" id="files-tab" aria-controls="files-panel" aria-selected="true" class="selected">Files</button>
+    <button type="button" role="tab" id="work-tab" aria-controls="work-panel" aria-selected="false">Work</button>
+    <button type="button" role="tab" id="external-tab" aria-controls="external-panel" aria-selected="false">External tools</button>
+  </div>
+
+  <div id="files-panel" role="tabpanel" aria-labelledby="files-tab" class="gallery-panel">
+    <details class="tool-card file-card" open>
+      <summary class="tool-header">
+        <span class="chevron" aria-hidden="true"></span>
+        <span class="tool-title">Read</span>
+        <span class="file-ref"><span class="file-icon swift" aria-hidden="true"></span>TranscriptView.swift</span>
+        <span class="tool-result">Lines 40–54</span>
+        <span class="tool-status">Complete <small>0.3s</small></span>
+      </summary>
+      <div class="tool-body">
+        <div class="file-surface">
+          <div class="file-surface-bar"><span class="file-location"><i data-lucide="folder" aria-hidden="true"></i>App/Sessions</span><span class="body-actions"><span class="body-action">Open file</span><span class="body-action">Copy</span></span></div>
+          <div class="source-pane">
+            <div><span class="line-number">40</span><span class="code-keyword">struct</span> TranscriptView: View {</div>
+            <div><span class="line-number">41</span>  <span class="code-keyword">let</span> controller: SessionController</div>
+            <div><span class="line-number">42</span>  <span class="code-keyword">var</span> body: some View {</div>
+            <div><span class="line-number">43</span>    transcriptContent</div>
+            <div><span class="line-number">44</span>  }</div>
+          </div>
+          <div class="file-surface-foot">Showing 5 of 15 lines <span class="body-action">Show more</span></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="tool-card file-card" open>
+      <summary class="tool-header">
+        <span class="chevron" aria-hidden="true"></span>
+        <span class="tool-title">Write</span>
+        <span class="file-ref"><span class="file-icon markdown" aria-hidden="true"></span>release-notes.md</span>
+        <span class="tool-result">Created · 12 lines</span>
+        <span class="tool-status">Complete <small>0.2s</small></span>
+      </summary>
+      <div class="tool-body">
+        <div class="file-surface">
+          <div class="file-surface-bar"><span class="file-location"><i data-lucide="folder" aria-hidden="true"></i>docs</span><span class="body-actions"><span class="body-action">Open file</span><span class="body-action">Copy</span></span></div>
+          <div class="source-pane"><div><span class="line-number">1</span><span class="code-heading"># Release notes</span></div><div><span class="line-number">2</span></div><div><span class="line-number">3</span>Improved transcript stability.</div></div>
+          <div class="file-surface-foot">Showing 3 of 12 lines <span class="body-action">Show more</span></div>
+        </div>
+      </div>
+    </details>
+
+    <details class="tool-card file-card" open>
+      <summary class="tool-header">
+        <span class="chevron" aria-hidden="true"></span>
+        <span class="tool-title">Edit</span>
+        <span class="file-ref"><span class="file-icon swift" aria-hidden="true"></span>TranscriptMessage.swift</span>
+        <span class="diff-count"><span>+24</span> <b>−8</b></span>
+        <span class="tool-status">Complete <small>0.7s</small></span>
+      </summary>
+      <div class="tool-body">
+        <div class="file-surface">
+          <div class="file-surface-bar"><span class="file-location"><i data-lucide="folder" aria-hidden="true"></i>App/Sessions</span><span class="body-actions"><span class="body-action">Open file</span><span class="body-action">Copy patch</span></span></div>
+          <div class="diff-pane">
+            <div class="diff-context">@@ advisor presentation @@</div>
+            <div class="diff-remove">− return rawContent</div>
+            <div class="diff-add">+ return advisorNotes</div>
+            <div class="diff-add">+   .prefix(previewLimit)</div>
+          </div>
+          <div class="file-surface-foot"><span class="file-ref secondary-file"><span class="file-icon swift" aria-hidden="true"></span>TranscriptReducer.swift</span><span class="body-action">Show second diff</span></div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div id="work-panel" role="tabpanel" aria-labelledby="work-tab" class="gallery-panel" hidden>
+    <details class="tool-card error-card" open>
+      <summary class="tool-header">
+        <span class="chevron" aria-hidden="true"></span>
+        <span class="tool-title">Run</span>
+        <span class="tool-target">swift test --filter Transcript</span>
+        <span class="tool-result error-text">Exit 1</span>
+        <span class="tool-status error-text">Error <small>4.2s</small></span>
+      </summary>
+      <div class="tool-body">
+        <div class="body-heading"><span>Command output</span><span class="body-action">Copy output</span></div>
+        <div class="console-pane"><div>Test Suite 'TranscriptTests' started</div><div>✓ testMessageParsing</div><div class="error-text">✕ testAdvisorWrapping</div><div class="error-text">Expected 1 compact item, found 2</div></div>
+        <div class="body-foot">Showing 4 of 28 lines <span class="body-action">Show more</span></div>
+      </div>
+    </details>
+
+    <details class="tool-card" open>
+      <summary class="tool-header">
+        <span class="chevron" aria-hidden="true"></span>
+        <span class="tool-title">Search</span>
+        <span class="tool-target">extension_ui_request</span>
+        <span class="tool-result">18 matches in 4 files</span>
+        <span class="tool-status">Complete <small>0.4s</small></span>
+      </summary>
+      <div class="tool-body">
+        <div class="result-file">RpcFrame.swift <span>8 matches</span></div>
+        <div class="match-row"><span class="match-line">142</span><span>case <mark>extension_ui_request</mark>:</span></div>
+        <div class="match-row"><span class="match-line">151</span><span>return .<mark>extensionUIRequest</mark>(request)</span></div>
+        <div class="result-file">SessionController.swift <span>5 matches</span></div>
+        <div class="match-row"><span class="match-line">1990</span><span>consumeExtensionUI(request)</span></div>
+        <div class="body-foot">2 more files <span class="body-action">Show matches</span></div>
+      </div>
+    </details>
+
+    <details class="tool-card delegate-card" open>
+      <summary class="tool-header">
+        <span class="chevron" aria-hidden="true"></span>
+        <span class="tool-title">Delegate</span>
+        <span class="tool-target">Review tool wrappers</span>
+        <span class="tool-result">1 worker</span>
+        <span class="tool-status">Running <small>12s</small></span>
+      </summary>
+      <div class="tool-body">
+        <div class="delegate-worker">
+          <div class="worker-heading"><span class="worker-live" aria-hidden="true"></span><strong>UI review</strong><span class="body-action">Open session ↗</span></div>
+          <div class="worker-activity">Comparing expanded file cards</div>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div id="external-panel" role="tabpanel" aria-labelledby="external-tab" class="gallery-panel" hidden>
+    <details class="tool-card" open>
+      <summary class="tool-header">
+        <span class="chevron" aria-hidden="true"></span>
+        <span class="tool-title">Browse</span>
+        <span class="tool-target">docs.omp.dev</span>
+        <span class="tool-result">Page opened</span>
+        <span class="tool-status">Complete <small>1.1s</small></span>
+      </summary>
+      <div class="tool-body browser-body">
+        <div class="page-preview"><span class="preview-bar"></span><span class="preview-title">RPC reference</span><span class="preview-line"></span><span class="preview-line short"></span><span class="preview-line"></span></div>
+        <div class="page-info"><strong>RPC reference</strong><span>docs.omp.dev/rpc</span><span class="body-action">Open page</span></div>
+      </div>
+    </details>
+
+    <details class="tool-card" open>
+      <summary class="tool-header">
+        <span class="chevron" aria-hidden="true"></span>
+        <span class="tool-title">Computer</span>
+        <span class="tool-target">Save in Xcode</span>
+        <span class="tool-result">Action completed</span>
+        <span class="tool-status">Complete <small>0.8s</small></span>
+      </summary>
+      <div class="tool-body browser-body">
+        <div class="screen-preview"><span class="screen-dots">● ● ●</span><span class="screen-label">Xcode</span><span class="screen-line"></span><span class="screen-line short"></span></div>
+        <div class="page-info"><strong>Xcode</strong><span>Save action</span><span class="body-action">View capture</span></div>
+      </div>
+    </details>
+
+    <details class="tool-card" open>
+      <summary class="tool-header">
+        <span class="chevron" aria-hidden="true"></span>
+        <span class="tool-title">Render preview</span>
+        <span class="tool-target">vision/render_preview</span>
+        <span class="tool-result">Image and report</span>
+        <span class="tool-status">Complete <small>1.3s</small></span>
+      </summary>
+      <div class="tool-body">
+        <div class="body-heading"><span>Result</span><span class="body-action">Open image</span></div>
+        <div class="mcp-result"><div class="image-preview"><span class="preview-bar"></span><span class="preview-line"></span><span class="preview-line short"></span></div><div><strong>Transcript preview</strong><span>PNG image · 800 × 600</span><span class="body-action">Render report</span></div></div>
+        <details class="technical"><summary>Technical details</summary><div>Arguments: quality = high<br>Result: status = complete</div></details>
+      </div>
+    </details>
+  </div>
+</div>
+
+<style>
+  #tenx-tool-gallery { color-scheme: light dark; --canvas: light-dark(#ffffff,#141413); --ink: light-dark(#0c0c0b,#f2f2ef); --cyan: light-dark(#00a7c4,#22c8e4); --link: light-dark(#007c92,#4fd8e8); --red: light-dark(#ff3b24,#ff6b57); --muted: light-dark(#6b6b66,#a3a39b); --neutral: light-dark(#f7f7f5,#1f1f1d); --separator: light-dark(#e5e5e1,#2c2c2a); background: var(--canvas); color: var(--ink); font-family: -apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif; width: 100%; padding: 4px 0 12px; }
+  #tenx-tool-gallery * { box-sizing: border-box; }
+  #tenx-tool-gallery .gallery-top { display: flex; align-items: baseline; gap: 18px; padding: 8px 0 18px; }
+  #tenx-tool-gallery .brand { font-size: 24px; letter-spacing: -2px; font-weight: 400; }
+  #tenx-tool-gallery .brand sup { font-size: 10px; vertical-align: super; letter-spacing: 0; }
+  #tenx-tool-gallery .gallery-heading { font-size: 15px; font-weight: 500; }
+  #tenx-tool-gallery .gallery-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--separator); margin-bottom: 18px; }
+  #tenx-tool-gallery .gallery-tabs button { appearance: none; background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 9px 2px; font: inherit; font-size: 12px; cursor: pointer; }
+  #tenx-tool-gallery .gallery-tabs button.selected { color: var(--ink); border-bottom-color: var(--cyan); }
+  #tenx-tool-gallery .gallery-panel { display: grid; gap: 14px; }
+  #tenx-tool-gallery .gallery-panel[hidden] { display: none; }
+  #tenx-tool-gallery .tool-card { position: relative; padding: 14px 16px 16px; background: var(--canvas); }
+  #tenx-tool-gallery .tool-card::before, #tenx-tool-gallery .tool-card::after { content: ""; position: absolute; width: 27px; height: 27px; pointer-events: none; }
+  #tenx-tool-gallery .tool-card::before { top: 0; left: 0; border-top: 1px solid var(--cyan); border-left: 1px solid var(--cyan); }
+  #tenx-tool-gallery .tool-card::after { bottom: 0; right: 0; border-right: 1px solid var(--cyan); border-bottom: 1px solid var(--cyan); }
+  #tenx-tool-gallery .tool-card.error-card::before { border-color: var(--red); }
+  #tenx-tool-gallery .tool-card.error-card::after { border-color: var(--red); }
+  #tenx-tool-gallery .tool-header { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 9px; list-style: none; cursor: pointer; min-height: 27px; line-height: 1.5; }
+  #tenx-tool-gallery .tool-header::-webkit-details-marker { display: none; }
+  #tenx-tool-gallery .chevron { display: inline-block; width: 7px; height: 7px; border-right: 1.5px solid var(--cyan); border-bottom: 1.5px solid var(--cyan); transform: rotate(-45deg); margin: 0 2px 2px 0; flex: 0 0 auto; }
+  #tenx-tool-gallery details[open] > .tool-header .chevron { transform: rotate(45deg); }
+  #tenx-tool-gallery .error-card .chevron { border-color: var(--red); }
+  #tenx-tool-gallery .tool-title { font-size: 13px; font-weight: 500; }
+  #tenx-tool-gallery .tool-target { font: 11px ui-monospace,SFMono-Regular,Menlo,monospace; color: var(--muted); overflow-wrap: anywhere; min-width: 0; }
+  #tenx-tool-gallery .file-ref { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12px; font-weight: 500; color: var(--ink); min-width: 0; overflow-wrap: anywhere; }
+  #tenx-tool-gallery .file-icon { display: inline-block; width: 12px; height: 12px; flex: 0 0 12px; transform: translateY(2px); mask-position: center; mask-repeat: no-repeat; mask-size: contain; }
+  #tenx-tool-gallery .file-icon.swift { background-color: #f05138; -webkit-mask-image: url("data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+U3dpZnQ8L3RpdGxlPjxwYXRoIGQ9Ik03LjUwOCAwYy0uMjg3IDAtLjU3MyAwLS44Ni4wMDItLjI0MS4wMDItLjQ4My4wMDMtLjcyNC4wMS0uMTMyLjAwMy0uMjYzLjAwOS0uMzk1LjAxNUE5LjE1NCA5LjE1NCAwIDAgMCA0LjM0OC4xNSA1LjQ5MiA1LjQ5MiAwIDAgMCAyLjg1LjY0NSA1LjA0IDUuMDQgMCAwIDAgLjY0NSAyLjg0OGMtLjI0NS40OC0uNC45NzItLjQ5NSAxLjUtLjA5My41Mi0uMTIyIDEuMDUtLjEzNiAxLjU3NmEzNS4yIDM1LjIgMCAwIDAtLjAxMi43MjRDMCA2LjkzNSAwIDcuMjIxIDAgNy41MDh2OC45ODRjMCAuMjg3IDAgLjU3NS4wMDIuODYyLjAwMi4yNC4wMDUuNDgxLjAxMi43MjIuMDE0LjUyNi4wNDMgMS4wNTcuMTM2IDEuNTc2LjA5NS41MjguMjUgMS4wMi40OTUgMS41YTUuMDMgNS4wMyAwIDAgMCAyLjIwNSAyLjIwM2MuNDguMjQ0Ljk3LjQgMS40OTguNDk1LjUyLjA5MyAxLjA1LjEyNCAxLjU3Ni4xMzguMjQxLjAwNy40ODMuMDA5LjcyNC4wMS4yODcuMDAyLjU3My4wMDIuODYuMDAyaDguOTg0Yy4yODcgMCAuNTczIDAgLjg2LS4wMDIuMjQxLS4wMDEuNDgzLS4wMDMuNzI0LS4wMWExMC41MjMgMTAuNTIzIDAgMCAwIDEuNTc4LS4xMzggNS4zMjIgNS4zMjIgMCAwIDAgMS40OTgtLjQ5NSA1LjAzNSA1LjAzNSAwIDAgMCAyLjIwMy0yLjIwM2MuMjQ1LS40OC40LS45NzIuNDk1LTEuNS4wOTMtLjUyLjEyNC0xLjA1LjEzOC0xLjU3Ni4wMDctLjI0MS4wMDktLjQ4MS4wMS0uNzIyLjAwMi0uMjg3LjAwMi0uNTc1LjAwMi0uODYyVjcuNTA4YzAtLjI4NyAwLS41NzMtLjAwMi0uODZhMzMuNjYyIDMzLjY2MiAwIDAgMC0uMDEtLjcyNCAxMC41IDEwLjUgMCAwIDAtLjEzOC0xLjU3NiA1LjMyOCA1LjMyOCAwIDAgMC0uNDk1LTEuNUE1LjAzOSA1LjAzOSAwIDAgMCAyMS4xNTIuNjQ1IDUuMzIgNS4zMiAwIDAgMCAxOS42NTQuMTVhMTAuNDkzIDEwLjQ5MyAwIDAgMC0xLjU3OC0uMTM4IDM0Ljk4IDM0Ljk4IDAgMCAwLS43MjItLjAxQzE3LjA2NyAwIDE2Ljc3OSAwIDE2LjQ5MiAwSDcuNTA4em02LjAzNSAzLjQxYzQuMTE0IDIuNDcgNi41NDUgNy4xNjIgNS41NDkgMTEuMTMxLS4wMjQuMDkzLS4wNS4xODEtLjA3Ni4yNzJsLjAwMi4wMDFjMi4wNjIgMi41MzggMS41IDUuMjU4IDEuMjM2IDQuNzQ1LTEuMDcyLTIuMDg2LTMuMDY2LTEuNTY4LTQuMDg4LTEuMDQzYTYuODAzIDYuODAzIDAgMCAxLS4yODEuMTU4bC0uMDIuMDEyLS4wMDIuMDAyYy0yLjExNSAxLjEyMy00Ljk1NyAxLjIwNS03LjgxMi0uMDIyYTEyLjU2OCAxMi41NjggMCAwIDEtNS42NC00LjgzOGMuNjQ5LjQ4IDEuMzUuOTAyIDIuMDk3IDEuMjUyIDMuMDE5IDEuNDE0IDYuMDUxIDEuMzExIDguMTk3LS4wMDJDOS42NTEgMTIuNzMgNy4xMDEgOS42NyA1LjE0NiA3LjE5MWExMC42MjggMTAuNjI4IDAgMCAxLTEuMDA1LTEuMzg0YzIuMzQgMi4xNDIgNi4wMzggNC44MyA3LjM2NSA1LjU3NkM4LjY5IDguNDA4IDYuMjA4IDQuNzQzIDYuMzI0IDQuODZjNC40MzYgNC40NyA4LjUyOCA2Ljk5NiA4LjUyOCA2Ljk5Ni4xNTQuMDg1LjI3LjE1NC4zNi4yMTMuMDg1LS4yMTUuMTYtLjQzNy4yMjQtLjY2OC43MDgtMi41ODgtLjA5LTUuNTQ4LTEuODkzLTcuOTkyeiIvPjwvc3ZnPgo="); mask-image: url("data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+U3dpZnQ8L3RpdGxlPjxwYXRoIGQ9Ik03LjUwOCAwYy0uMjg3IDAtLjU3MyAwLS44Ni4wMDItLjI0MS4wMDItLjQ4My4wMDMtLjcyNC4wMS0uMTMyLjAwMy0uMjYzLjAwOS0uMzk1LjAxNUE5LjE1NCA5LjE1NCAwIDAgMCA0LjM0OC4xNSA1LjQ5MiA1LjQ5MiAwIDAgMCAyLjg1LjY0NSA1LjA0IDUuMDQgMCAwIDAgLjY0NSAyLjg0OGMtLjI0NS40OC0uNC45NzItLjQ5NSAxLjUtLjA5My41Mi0uMTIyIDEuMDUtLjEzNiAxLjU3NmEzNS4yIDM1LjIgMCAwIDAtLjAxMi43MjRDMCA2LjkzNSAwIDcuMjIxIDAgNy41MDh2OC45ODRjMCAuMjg3IDAgLjU3NS4wMDIuODYyLjAwMi4yNC4wMDUuNDgxLjAxMi43MjIuMDE0LjUyNi4wNDMgMS4wNTcuMTM2IDEuNTc2LjA5NS41MjguMjUgMS4wMi40OTUgMS41YTUuMDMgNS4wMyAwIDAgMCAyLjIwNSAyLjIwM2MuNDguMjQ0Ljk3LjQgMS40OTguNDk1LjUyLjA5MyAxLjA1LjEyNCAxLjU3Ni4xMzguMjQxLjAwNy40ODMuMDA5LjcyNC4wMS4yODcuMDAyLjU3My4wMDIuODYuMDAyaDguOTg0Yy4yODcgMCAuNTczIDAgLjg2LS4wMDIuMjQxLS4wMDEuNDgzLS4wMDMuNzI0LS4wMWExMC41MjMgMTAuNTIzIDAgMCAwIDEuNTc4LS4xMzggNS4zMjIgNS4zMjIgMCAwIDAgMS40OTgtLjQ5NSA1LjAzNSA1LjAzNSAwIDAgMCAyLjIwMy0yLjIwM2MuMjQ1LS40OC40LS45NzIuNDk1LTEuNS4wOTMtLjUyLjEyNC0xLjA1LjEzOC0xLjU3Ni4wMDctLjI0MS4wMDktLjQ4MS4wMS0uNzIyLjAwMi0uMjg3LjAwMi0uNTc1LjAwMi0uODYyVjcuNTA4YzAtLjI4NyAwLS41NzMtLjAwMi0uODZhMzMuNjYyIDMzLjY2MiAwIDAgMC0uMDEtLjcyNCAxMC41IDEwLjUgMCAwIDAtLjEzOC0xLjU3NiA1LjMyOCA1LjMyOCAwIDAgMC0uNDk1LTEuNUE1LjAzOSA1LjAzOSAwIDAgMCAyMS4xNTIuNjQ1IDUuMzIgNS4zMiAwIDAgMCAxOS42NTQuMTVhMTAuNDkzIDEwLjQ5MyAwIDAgMC0xLjU3OC0uMTM4IDM0Ljk4IDM0Ljk4IDAgMCAwLS43MjItLjAxQzE3LjA2NyAwIDE2Ljc3OSAwIDE2LjQ5MiAwSDcuNTA4em02LjAzNSAzLjQxYzQuMTE0IDIuNDcgNi41NDUgNy4xNjIgNS41NDkgMTEuMTMxLS4wMjQuMDkzLS4wNS4xODEtLjA3Ni4yNzJsLjAwMi4wMDFjMi4wNjIgMi41MzggMS41IDUuMjU4IDEuMjM2IDQuNzQ1LTEuMDcyLTIuMDg2LTMuMDY2LTEuNTY4LTQuMDg4LTEuMDQzYTYuODAzIDYuODAzIDAgMCAxLS4yODEuMTU4bC0uMDIuMDEyLS4wMDIuMDAyYy0yLjExNSAxLjEyMy00Ljk1NyAxLjIwNS03LjgxMi0uMDIyYTEyLjU2OCAxMi41NjggMCAwIDEtNS42NC00LjgzOGMuNjQ5LjQ4IDEuMzUuOTAyIDIuMDk3IDEuMjUyIDMuMDE5IDEuNDE0IDYuMDUxIDEuMzExIDguMTk3LS4wMDJDOS42NTEgMTIuNzMgNy4xMDEgOS42NyA1LjE0NiA3LjE5MWExMC42MjggMTAuNjI4IDAgMCAxLTEuMDA1LTEuMzg0YzIuMzQgMi4xNDIgNi4wMzggNC44MyA3LjM2NSA1LjU3NkM4LjY5IDguNDA4IDYuMjA4IDQuNzQzIDYuMzI0IDQuODZjNC40MzYgNC40NyA4LjUyOCA2Ljk5NiA4LjUyOCA2Ljk5Ni4xNTQuMDg1LjI3LjE1NC4zNi4yMTMuMDg1LS4yMTUuMTYtLjQzNy4yMjQtLjY2OC43MDgtMi41ODgtLjA5LTUuNTQ4LTEuODkzLTcuOTkyeiIvPjwvc3ZnPgo="); }
+  #tenx-tool-gallery .file-icon.markdown { background-color: var(--ink); -webkit-mask-image: url("data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+TWFya2Rvd248L3RpdGxlPjxwYXRoIGQ9Ik0yMi4yNyAxOS4zODVIMS43M0ExLjczIDEuNzMgMCAwMTAgMTcuNjU1VjYuMzQ1YTEuNzMgMS43MyAwIDAxMS43My0xLjczaDIwLjU0QTEuNzMgMS43MyAwIDAxMjQgNi4zNDV2MTEuMzA4YTEuNzMgMS43MyAwIDAxLTEuNzMgMS43MzF6TTUuNzY5IDE1LjkyM3YtNC41bDIuMzA4IDIuODg1IDIuMzA3LTIuODg1djQuNWgyLjMwOFY4LjA3OGgtMi4zMDhsLTIuMzA3IDIuODg1LTIuMzA4LTIuODg1SDMuNDZ2Ny44NDd6TTIxLjIzMiAxMmgtMi4zMDlWOC4wNzdoLTIuMzA3VjEyaC0yLjMwOGwzLjQ2MSA0LjAzOXoiLz48L3N2Zz4K"); mask-image: url("data:image/svg+xml;base64,PHN2ZyByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+TWFya2Rvd248L3RpdGxlPjxwYXRoIGQ9Ik0yMi4yNyAxOS4zODVIMS43M0ExLjczIDEuNzMgMCAwMTAgMTcuNjU1VjYuMzQ1YTEuNzMgMS43MyAwIDAxMS43My0xLjczaDIwLjU0QTEuNzMgMS43MyAwIDAxMjQgNi4zNDV2MTEuMzA4YTEuNzMgMS43MyAwIDAxLTEuNzMgMS43MzF6TTUuNzY5IDE1LjkyM3YtNC41bDIuMzA4IDIuODg1IDIuMzA3LTIuODg1djQuNWgyLjMwOFY4LjA3OGgtMi4zMDhsLTIuMzA3IDIuODg1LTIuMzA4LTIuODg1SDMuNDZ2Ny44NDd6TTIxLjIzMiAxMmgtMi4zMDlWOC4wNzdoLTIuMzA3VjEyaC0yLjMwOGwzLjQ2MSA0LjAzOXoiLz48L3N2Zz4K"); }
+  #tenx-tool-gallery .secondary-file { font-size: 11px; }
+  #tenx-tool-gallery .tool-result, #tenx-tool-gallery .diff-count { font-size: 11px; color: var(--muted); }
+  #tenx-tool-gallery .diff-count span { color: var(--cyan); }
+  #tenx-tool-gallery .diff-count b { color: var(--red); font-weight: 500; }
+  #tenx-tool-gallery .tool-status { color: var(--cyan); font-size: 11px; margin-left: auto; white-space: nowrap; }
+  #tenx-tool-gallery .tool-status small { font: 11px ui-monospace,SFMono-Regular,Menlo,monospace; color: var(--muted); margin-left: 5px; }
+  #tenx-tool-gallery .tool-body { padding: 11px 0 0 12px; font-size: 12px; }
+  #tenx-tool-gallery .file-surface { background: var(--neutral); border-radius: 4px; padding: 9px 12px; }
+  #tenx-tool-gallery .file-surface-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; border-bottom: 1px solid var(--separator); padding-bottom: 8px; margin-bottom: 8px; }
+  #tenx-tool-gallery .file-location { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--muted); font: 11px ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap: anywhere; }
+  #tenx-tool-gallery .file-location [data-lucide] { width: 12px; height: 12px; flex: 0 0 12px; color: var(--muted); }
+  #tenx-tool-gallery .body-actions { display: inline-flex; align-items: center; gap: 8px; }
+  #tenx-tool-gallery .body-actions .body-action + .body-action { border-left: 1px solid var(--separator); padding-left: 8px; }
+  #tenx-tool-gallery .file-surface-foot { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; border-top: 1px solid var(--separator); padding-top: 8px; margin-top: 8px; color: var(--muted); font-size: 11px; }
+  #tenx-tool-gallery .body-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-weight: 500; }
+  #tenx-tool-gallery .body-action { color: var(--link); font-size: 11px; font-weight: 500; white-space: nowrap; }
+  #tenx-tool-gallery .body-foot { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; margin-top: 7px; }
+  #tenx-tool-gallery .source-pane, #tenx-tool-gallery .diff-pane, #tenx-tool-gallery .console-pane { background: var(--neutral); border-radius: 4px; padding: 10px 12px; font: 11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap: anywhere; }
+  #tenx-tool-gallery .file-surface .source-pane, #tenx-tool-gallery .file-surface .diff-pane { background: transparent; border-radius: 0; padding: 0; }
+  #tenx-tool-gallery .line-number { color: var(--muted); display: inline-block; width: 29px; user-select: none; }
+  #tenx-tool-gallery .code-keyword, #tenx-tool-gallery .code-heading { color: var(--link); }
+  #tenx-tool-gallery .diff-context { color: var(--muted); }
+  #tenx-tool-gallery .diff-remove { color: var(--red); background: color-mix(in srgb,var(--red) 8%,transparent); }
+  #tenx-tool-gallery .diff-add { color: var(--link); background: color-mix(in srgb,var(--cyan) 8%,transparent); }
+  #tenx-tool-gallery .error-text { color: var(--red) !important; }
+  #tenx-tool-gallery .result-file { display: flex; justify-content: space-between; gap: 10px; font-weight: 500; padding: 6px 0 3px; }
+  #tenx-tool-gallery .result-file span { color: var(--muted); font-weight: 400; font-size: 11px; }
+  #tenx-tool-gallery .match-row { display: flex; gap: 12px; padding: 4px 10px; background: var(--neutral); font: 11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap: anywhere; }
+  #tenx-tool-gallery .match-line { color: var(--muted); min-width: 27px; }
+  #tenx-tool-gallery mark { background: color-mix(in srgb,var(--cyan) 18%,transparent); color: var(--ink); }
+  #tenx-tool-gallery .delegate-worker { background: var(--neutral); border-left: 2px solid var(--cyan); border-radius: 0 4px 4px 0; padding: 9px 12px; }
+  #tenx-tool-gallery .worker-heading { display: flex; align-items: center; gap: 8px; }
+  #tenx-tool-gallery .worker-heading strong { font-size: 12px; font-weight: 500; }
+  #tenx-tool-gallery .worker-heading .body-action { margin-left: auto; }
+  #tenx-tool-gallery .worker-live { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); flex: 0 0 6px; }
+  #tenx-tool-gallery .worker-activity { color: var(--muted); font-size: 11px; padding: 4px 0 0 14px; }
+  #tenx-tool-gallery .browser-body { display: flex; align-items: center; gap: 16px; }
+  #tenx-tool-gallery .page-preview, #tenx-tool-gallery .screen-preview, #tenx-tool-gallery .image-preview { flex: 0 0 142px; height: 90px; background: var(--neutral); border: 1px solid var(--separator); border-radius: 4px; padding: 9px; display: flex; flex-direction: column; gap: 7px; }
+  #tenx-tool-gallery .preview-bar { height: 7px; background: var(--separator); border-radius: 3px; width: 100%; }
+  #tenx-tool-gallery .preview-title { font-size: 11px; font-weight: 500; }
+  #tenx-tool-gallery .preview-line, #tenx-tool-gallery .screen-line { display: block; height: 5px; width: 85%; background: var(--separator); border-radius: 2px; }
+  #tenx-tool-gallery .preview-line.short, #tenx-tool-gallery .screen-line.short { width: 58%; }
+  #tenx-tool-gallery .page-info, #tenx-tool-gallery .mcp-result > div:last-child { display: flex; flex-direction: column; gap: 7px; min-width: 0; overflow-wrap: anywhere; }
+  #tenx-tool-gallery .page-info strong, #tenx-tool-gallery .mcp-result strong { font-weight: 500; }
+  #tenx-tool-gallery .page-info > span:not(.body-action), #tenx-tool-gallery .mcp-result > div:last-child > span:not(.body-action) { color: var(--muted); font-size: 11px; }
+  #tenx-tool-gallery .screen-dots { color: var(--red); font-size: 9px; }
+  #tenx-tool-gallery .screen-label { font-weight: 500; font-size: 11px; }
+  #tenx-tool-gallery .mcp-result { display: flex; align-items: center; gap: 16px; }
+  #tenx-tool-gallery .technical { border-top: 1px solid var(--separator); margin-top: 12px; padding-top: 10px; color: var(--muted); font-size: 11px; }
+  #tenx-tool-gallery .technical summary { color: var(--link); cursor: pointer; }
+  #tenx-tool-gallery .technical div { background: var(--neutral); margin-top: 8px; padding: 9px 11px; font-family: ui-monospace,SFMono-Regular,Menlo,monospace; line-height: 1.6; }
+  @media (max-width: 520px) { #tenx-tool-gallery .gallery-tabs { gap: 12px; } #tenx-tool-gallery .tool-status { margin-left: 16px; } #tenx-tool-gallery .browser-body, #tenx-tool-gallery .mcp-result { align-items: flex-start; } #tenx-tool-gallery .page-preview, #tenx-tool-gallery .screen-preview, #tenx-tool-gallery .image-preview { flex-basis: 105px; height: 76px; } }
+</style>
+
+<script>
+  (() => {
+    const root = document.getElementById("tenx-tool-gallery");
+    const tabs = [...root.querySelectorAll('[role="tab"]')];
+    const panels = [...root.querySelectorAll('[role="tabpanel"]')];
+    tabs.forEach(tab => tab.addEventListener("click", () => {
+      tabs.forEach(item => {
+        const active = item === tab;
+        item.setAttribute("aria-selected", String(active));
+        item.classList.toggle("selected", active);
+      });
+      panels.forEach(panel => { panel.hidden = panel.id !== tab.getAttribute("aria-controls"); });
+    }));
+  })();
+</script>
