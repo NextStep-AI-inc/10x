@@ -148,6 +148,92 @@ import Testing
     await manager.closeAll()
 }
 
+@Test func retryStartAndEndReachOrderedControls() async throws {
+    let manager = contextFakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: try temporaryDirectory())
+    let start = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_retry_start", payload: .object([:]))))
+    let success = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_retry_end", payload: .object(["success": .bool(true)]))))
+    let failure = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_retry_end", payload: .object(["success": .bool(false)]))))
+
+    await start()
+    #expect(controller.isSignalRetrying)
+    #expect(!controller.hasTerminalRetryFailure)
+    await success()
+    #expect(!controller.isSignalRetrying)
+    #expect(!controller.hasTerminalRetryFailure)
+    await start()
+    await failure()
+    #expect(!controller.isSignalRetrying)
+    #expect(controller.hasTerminalRetryFailure)
+    await manager.closeAll()
+}
+
+@Test func acceptedSendRejectsOlderStateReply() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let manager = contextFakeManager(mode: "deferred-idle-state", commandLog: directory)
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: directory)
+    let activePath = try #require(controller.sessionPath)
+    let handle = try #require(await manager.handle(for: activePath))
+    let staleState = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "model_changed", payload: .object([:]))))
+    await staleState()
+    #expect(await eventually {
+        FileManager.default.fileExists(atPath: directory.appending(path: "state-deferred").path)
+    })
+
+    controller.draft = "New working turn"
+    await controller.sendPrompt()
+    #expect(await eventually { controller.queuedMessageCount == 1 })
+    let startedAt = try #require(controller.turnStartedAt)
+
+    _ = try await handle.client.send(RpcCommand(type: "context_test_control", fields: [:]))
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(controller.runtimeState == .streaming)
+    #expect(controller.turnStartedAt == startedAt)
+    #expect(controller.queuedMessageCount == 1)
+    await manager.closeAll()
+}
+
+@Test func replacementSessionRejectsDelayedContextReply() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let manager = contextFakeManager(mode: "delayed-context", commandLog: directory)
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: directory)
+    let boundary = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_end", payload: .object([:]))))
+    await boundary()
+    #expect(await eventually {
+        FileManager.default.fileExists(atPath: directory.appending(path: "state-deferred").path)
+    })
+    await controller.openNew(projectURL: directory)
+    let replacementTokens = controller.contextUsage?.tokens
+    try Data().write(to: directory.appending(path: "release-state"))
+    try await Task.sleep(for: .milliseconds(250))
+    #expect(controller.contextUsage?.tokens == replacementTokens)
+    #expect(controller.contextErrorMessage == nil)
+    await manager.closeAll()
+}
+
+@Test func failedContextReadKeepsRuntimeHealthy() async throws {
+    let manager = contextFakeManager(mode: "transient")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: try temporaryDirectory())
+    let boundary = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_end", payload: .object([:]))))
+    await boundary()
+    #expect(await eventually { controller.contextErrorMessage != nil })
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.contextUsage?.tokens == 85_000)
+    await manager.closeAll()
+}
+
 @Test func contextRefreshesAfterCompactionBoundary() async throws {
     let manager = contextFakeManager(mode: "basic")
     let controller = SessionController(processManager: manager)

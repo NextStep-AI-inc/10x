@@ -334,6 +334,8 @@ actor TranscriptEventProcessor {
              "turn_start",
              "auto_compaction_start",
              "auto_compaction_end",
+             "auto_retry_start",
+             "auto_retry_end",
              "message_end",
              "turn_end",
              "prompt_result":

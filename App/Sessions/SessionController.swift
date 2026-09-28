@@ -47,6 +47,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         thinkingLevel: nil,
         fastModeEnabled: false)
     private(set) var contextPercentage: Int?
+    private(set) var signalCompactionPhase: SessionCompactionSignalPhase = .none
+    private(set) var isSignalRetrying = false
+    private(set) var hasTerminalRetryFailure = false
     private(set) var contextUsage: SessionContextUsage?
     private(set) var contextBreakdown: SessionContextBreakdown?
     private(set) var isContextLoading = false
@@ -756,6 +759,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 awaitingResponse: true)
         }
         runtimeState = .streaming
+        contextRevision &+= 1
         reportActivity()
         await context.processor?.setRuntimeState(.streaming)
         guard isCurrent(context) else { return true }
@@ -1345,6 +1349,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         contextBreakdown = nil
         contextReportText = nil
         contextErrorMessage = nil
+        signalCompactionPhase = .none
+        isSignalRetrying = false
+        hasTerminalRetryFailure = false
         isContextLoading = false
         isContextCompacting = false
         contextCompactionErrorMessage = nil
@@ -1659,6 +1666,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             scheduleContextRefresh()
         }
         switch type {
+        case "auto_retry_start":
+            isSignalRetrying = true
+            hasTerminalRetryFailure = false
+        case "auto_retry_end":
+            isSignalRetrying = false
+            hasTerminalRetryFailure = payload["success"]?.boolValue == false
         case "session_info_update":
             if let name = payload["title"]?.stringValue, !name.isEmpty {
                 title = name
@@ -1691,6 +1704,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             }
         case "agent_start", "turn_start":
             wasStoppedByUser = false
+            hasTerminalRetryFailure = false
             guard var pendingSlashAttachments,
                   pendingSlashAttachments.generation == pipelineGeneration
             else { break }
@@ -1744,9 +1758,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             queuedMessageCount = response.data?["queuedMessageCount"]?.intValue ?? 0
         } catch {
             // A usage read must not interrupt the session or its working indicator.
-            guard isCurrent(context), !Task.isCancelled else { return }
+            guard isCurrent(context), revision == contextRevision, !Task.isCancelled else { return }
             contextErrorMessage = "Couldn’t refresh context usage."
         }
+    }
+
+    func completeSignalReveal(generation: UInt64) {
+        guard case .revealing(generation: generation, percent: _) = signalCompactionPhase else { return }
+        signalCompactionPhase = .none
     }
 
     func refreshContextDetails() async {
@@ -1953,12 +1972,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard !isContextCompacting else { return }
         guard let handle else { return }
         let context = currentPipelineContext()
+        let revision = contextRevision
         do {
             let data = try await handle.client.send(.getState()).data
-            guard isCurrent(context) else { return }
+            guard isCurrent(context), revision == contextRevision else { return }
             applyState(data)
             await context.processor?.setRuntimeState(runtimeState)
         } catch {
+            guard isCurrent(context), revision == contextRevision else { return }
             fail(error, function: "refreshState", context: context)
         }
     }
