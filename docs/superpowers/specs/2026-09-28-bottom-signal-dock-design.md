@@ -1,6 +1,6 @@
 # Shared Bottom Signal Dock Design
 
-- **Status:** Proposed for Tanner's written-spec review
+- **Status:** Approved for implementation planning
 - **Date:** 2026-09-28
 - **Platform:** 10x for macOS 15+, SwiftUI
 
@@ -116,8 +116,9 @@ independent line takeovers.
 | Other workspace route, background work | Near-black full path with a restrained gray shimmer. | Aggregate count such as `2 working`; no context percentage. |
 | Other workspace route, idle | Still near-black full path. | Neutral workspace status; no context percentage. |
 
-User-initiated Stop settles briefly to a neutral `Response stopped` label, then
-Ready. It never turns the line red. A failed tool card may have red corners;
+User-initiated Stop settles to a neutral `Response stopped` label while the
+stopped runtime awaits its existing Restart session action. It never turns the
+line red or pretends the composer can send before restart. A failed tool card may have red corners;
 the line remains Working if the session continues. A terminal retry failure
 turns the active status red until the user begins another turn or recovers.
 
@@ -147,11 +148,13 @@ without reserving a permanently separate status lane or shortening context.
   the new cyan fill reveals from the left to its measured endpoint over about
   750 ms; the exact new number fades in. Working or Ready then resumes on the
   remainder. The fill does not jump from the old endpoint to the new one.
-- If compaction is aborted, the last measured context remains. A retryable
-  error moves to Retry; a terminal error moves to failure. If the post-
-  compaction reading fails, show `Context —` and keep the appropriate Working
-  or Ready state; do not present the old percentage as current. A skipped
-  compaction returns to the underlying state without a completion animation.
+- If automatic compaction is aborted, the last measured context remains. A
+  retryable error moves to Retry; a terminal error moves to failure. If its
+  post-compaction reading fails, show `Context —` and keep the appropriate
+  Working or Ready state; do not present the old percentage as current. A
+  skipped compaction returns to the underlying state without a completion
+  animation. Explicit manual compaction retains its existing authoritative
+  history reload and recovery behavior when that reload or state read fails.
 - Reduce Motion removes traveling shimmer and sweeping movement. State labels,
   exact context values, and color remain; a completed compaction switches to
   the measured result without an animated reveal.
@@ -204,16 +207,18 @@ OMP events; a failed terminal retry leaves an error signal until the next turn
 or recovery. A context refresh failure changes only context availability, not
 the health of the session process.
 
-Today `TranscriptEventProcessor` does not forward compaction and retry start
-events to the controller, `contextPercentage` and `queuedMessageCount` are
-mostly seeded by initial `get_state`, and `SessionActivityRegistry` counts only
-generating sessions with a known provider ID. The implementation must forward
-the needed control events, refresh `get_state` after accepted sends and turn or
-compaction boundaries, and expose an aggregate generating count independent
-of provider ID. Refreshes must be coalesced and tied to the current session
-generation so an older reply cannot overwrite a newer state. Context and queue
-refreshes must not roll back a newer optimistic Working state when `get_state`
-briefly reports the prior turn. There is no per-token context polling.
+Today `TranscriptEventProcessor` already forwards automatic compaction start
+and end, but not retry start and end. `SessionController` already schedules a
+bounded context-only `get_state` refresh on several event boundaries; its
+general `refreshState` can still apply stale streaming state. `SessionActivityRegistry`
+counts only generating sessions with a known provider ID. The implementation
+must forward retry controls, reuse the existing context refresh path after
+accepted sends and turn or compaction boundaries, and expose an aggregate
+generating count independent of provider ID. Refreshes must be coalesced and
+tied to the current session generation so an older reply cannot overwrite a
+newer state. Context and queue refreshes must not roll back a newer optimistic
+Working state when `get_state` briefly reports the prior turn. There is no
+per-token context polling.
 
 `ProviderUsageDockView` moves from offset-based shell overlay positioning into
 the dock's trailing layout slot. Its wheels and expanded details retain their
@@ -247,4 +252,5 @@ rail, transcript, and route content take the remaining height above the dock.
   startup splash.
 - Inventing a new queue transcript format or a numeric compaction progress
   percentage that OMP does not provide.
-- Merging, deployment, or product implementation in this design-only branch.
+- Merging or deployment during design and planning. Product implementation
+  begins only after the written plan and execution approach are approved.
