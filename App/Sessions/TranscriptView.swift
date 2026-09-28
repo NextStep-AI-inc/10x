@@ -485,6 +485,8 @@ struct TranscriptView: View {
                     controller.copyURL(url, requestID: state.id)
                 })
             }
+        case .guidance:
+            EmptyView()
         }
     }
 

@@ -181,3 +181,17 @@ import Testing
     let sanitized = BoundaryText.sanitizeTitle(longTitle)
     #expect(Data(sanitized.utf8).count <= 80)
 }
+
+@Test func guidanceClassifierInMemoryUserAttributedDeveloperProjection() {
+    let projection = GuidanceClassifier.classify(
+        id: "mem-proj",
+        message: .object([
+            "role": .string("developer"),
+            "attribution": .string("user"),
+            "content": .string("injected file body must stay out of the preview"),
+        ]))
+    #expect(projection?.kind == .referencedFile)
+    #expect(projection?.visibility == .always)
+    #expect(projection?.preview.isEmpty == true)
+    #expect(!(projection?.preview.contains("injected file body") ?? true))
+}

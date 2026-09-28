@@ -125,6 +125,17 @@ enum TranscriptHistoryMapper {
             }
 
             let fallbackDate = TranscriptHistoryMapper.date(from: base.timestamp) ?? Date()
+            let messageID = message["id"]?.stringValue ?? base.id
+            if let guidance = GuidanceTranscript.classify(id: messageID, message: message) {
+                GuidanceTranscript.upsert(guidance, into: &items)
+                if message["stopReason"]?.stringValue?.lowercased() == "aborted" {
+                    let stoppedAt = TranscriptHistoryMapper.date(from: base.timestamp)
+                        ?? TranscriptMessage.messageDate(message)
+                        ?? fallbackDate
+                    _ = TranscriptReducer.interruptRunningTools(in: &items, at: stoppedAt)
+                }
+                return
+            }
             let existingTools = Dictionary(items.compactMap { item -> (String, ToolPresentation)? in
                 guard case .tool(let tool) = item else { return nil }
                 return (tool.id, tool)
@@ -138,7 +149,8 @@ enum TranscriptHistoryMapper {
                 existingTools: existingTools,
                 persistedToolStartDates: persistedToolStartDates,
                 fallbackDate: fallbackDate)
-            if !TranscriptMessage.isDisplayable(message) {
+            if !TranscriptMessage.isDisplayable(message),
+               GuidanceTranscript.classify(id: base.id, message: message) == nil {
                 recordDropped(message)
             }
             if normalized.contains(where: { item in

@@ -18,6 +18,95 @@ struct GuidancePresentation: Identifiable, Equatable, Sendable {
     let visibility: Visibility
     let byteCount: Int
     let preview: String
+    /// When set, this item is the single omission marker for evicted guidance.
+    let omittedEarlierCount: Int?
+
+    init(
+        id: String,
+        kind: Kind,
+        visibility: Visibility,
+        byteCount: Int,
+        preview: String,
+        omittedEarlierCount: Int? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.visibility = visibility
+        self.byteCount = byteCount
+        self.preview = preview
+        self.omittedEarlierCount = omittedEarlierCount
+    }
+
+    static func earlierOmitted(count: Int) -> GuidancePresentation {
+        GuidancePresentation(
+            id: GuidanceTranscript.omissionItemID,
+            kind: .agentGuidance,
+            visibility: .whenEnabled,
+            byteCount: 0,
+            preview: "",
+            omittedEarlierCount: count)
+    }
+}
+
+enum GuidanceTranscript {
+    static let maxRetainedItems = 128
+    static let omissionItemID = "guidance-earlier-omitted"
+
+    static func classify(id: String, message: JSONValue) -> GuidancePresentation? {
+        GuidanceClassifier.classify(id: id, message: message)
+    }
+
+    @discardableResult
+    static func upsert(
+        _ presentation: GuidancePresentation,
+        into items: inout [TranscriptItem]
+    ) -> Bool {
+        let item = TranscriptItem.guidance(presentation)
+        if let index = items.firstIndex(where: { existing in
+            guard case .guidance(let guidance) = existing else { return false }
+            return guidance.id == presentation.id
+        }) {
+            guard items[index] != item else { return false }
+            items[index] = item
+        } else {
+            items.append(item)
+        }
+        enforceCap(on: &items)
+        return true
+    }
+
+    static func enforceCap(on items: inout [TranscriptItem]) {
+        removeOmissionMarker(from: &items)
+
+        var guidanceIndices: [Int] = []
+        for (index, item) in items.enumerated() {
+            guard case .guidance = item else { continue }
+            guidanceIndices.append(index)
+        }
+
+        let excess = guidanceIndices.count - maxRetainedItems
+        guard excess > 0 else { return }
+
+        for index in guidanceIndices.prefix(excess).sorted(by: >) {
+            items.remove(at: index)
+        }
+
+        guard let firstGuidanceIndex = items.firstIndex(where: {
+            if case .guidance = $0 { return true }
+            return false
+        }) else { return }
+
+        items.insert(
+            .guidance(.earlierOmitted(count: excess)),
+            at: firstGuidanceIndex)
+    }
+
+    private static func removeOmissionMarker(from items: inout [TranscriptItem]) {
+        items.removeAll { item in
+            guard case .guidance(let guidance) = item else { return false }
+            return guidance.omittedEarlierCount != nil
+        }
+    }
 }
 
 enum BoundaryText {
@@ -61,6 +150,9 @@ enum GuidanceClassifier {
         }
         if isUserAttributedDeveloperFileReference(message) {
             return referencedFilePresentation(id: id, message: message)
+        }
+        if isUserAttributedDeveloperInMemoryFileProjection(message) {
+            return inMemoryReferencedFilePresentation(id: id, message: message)
         }
         if message["customType"]?.stringValue == "advisor" {
             return advisorPresentation(id: id, message: message)
@@ -128,6 +220,26 @@ enum GuidanceClassifier {
         message["role"]?.stringValue == "developer"
             && message["attribution"]?.stringValue == "user"
             && !(message["files"]?.arrayValue ?? []).isEmpty
+    }
+
+    private static func isUserAttributedDeveloperInMemoryFileProjection(_ message: JSONValue) -> Bool {
+        message["role"]?.stringValue == "developer"
+            && message["attribution"]?.stringValue == "user"
+            && (message["files"]?.arrayValue ?? []).isEmpty
+    }
+
+    private static func inMemoryReferencedFilePresentation(
+        id: String,
+        message: JSONValue
+    ) -> GuidancePresentation? {
+        let source = plainText(from: message["content"])
+        guard !source.isEmpty else { return nil }
+        return GuidancePresentation(
+            id: id,
+            kind: .referencedFile,
+            visibility: .always,
+            byteCount: Data(source.utf8).count,
+            preview: "")
     }
 
     private static func isHiddenHarnessMessage(_ message: JSONValue) -> Bool {

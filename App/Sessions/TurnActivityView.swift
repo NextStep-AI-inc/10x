@@ -44,7 +44,7 @@ struct TurnActivityView: View {
             return presentation.phase == .running
         case .subagent(let presentation):
             return presentation.status.isActive
-        case .message, .threadStart, .annotation, .notice, .extensionUI:
+        case .message, .threadStart, .annotation, .notice, .extensionUI, .guidance:
             return false
         }
     }

@@ -9,6 +9,7 @@ enum TranscriptItem: Identifiable, Equatable, Sendable {
     case notice(id: String, level: String, message: String)
     case tool(ToolPresentation)
     case extensionUI(ExtensionUIState)
+    case guidance(GuidancePresentation)
 
     var id: String {
         switch self {
@@ -25,6 +26,8 @@ enum TranscriptItem: Identifiable, Equatable, Sendable {
             return presentation.id
         case .extensionUI(let state):
             return state.id
+        case .guidance(let presentation):
+            return presentation.id
         }
     }
 
@@ -44,6 +47,8 @@ enum TranscriptItem: Identifiable, Equatable, Sendable {
             "tool:\(presentation.id)"
         case .extensionUI(let state):
             "extension-ui:\(state.id)"
+        case .guidance(let presentation):
+            "guidance:\(presentation.id)"
         }
     }
 }

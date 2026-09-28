@@ -3,6 +3,34 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func processorReplayPreservesGuidanceIdentity() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
+
+    let advisor = """
+        {"id":"advisor-1","role":"custom","customType":"advisor","display":true,"content":"<advisory>Ignored.</advisory>","details":{"notes":[{"note":"Check the probe window."}]}}
+        """
+    await processor.consume(try event("""
+        {"type":"message_start","message":\(advisor)}
+        """))
+    await processor.consume(try event("""
+        {"type":"message_end","message":\(advisor)}
+        """))
+    await processor.consume(try event("""
+        {"type":"message_end","message":\(advisor)}
+        """))
+
+    let snapshot = await processor.currentSnapshot()
+    let guidance = snapshot.items.compactMap { item -> GuidancePresentation? in
+        guard case .guidance(let presentation) = item else { return nil }
+        return presentation
+    }
+    #expect(guidance.count == 1)
+    #expect(guidance[0].id == "advisor-1")
+    #expect(guidance[0].preview == "Check the probe window.")
+    await processor.stop()
+}
+
 @Test func burstUpdatesNormalizeOnlyNewestPayloadOnManualFlush() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
     _ = await processor.load(
@@ -475,13 +503,13 @@ import Testing
     let processor = TranscriptEventProcessor()
     await confirmation(expectedCount: 1) { confirm in
         await processor.setOnDroppedHarnessMessages { dropped in
-            #expect(dropped.first?.role == "developer")
+            #expect(dropped.first?.role == "system")
             #expect(dropped.first?.text == "wall")
             confirm()
         }
         await processor.consume(.event(type: "message_start", payload: .object([
             "message": .object([
-                "role": .string("developer"),
+                "role": .string("system"),
                 "content": .string("wall"),
             ]),
         ])))

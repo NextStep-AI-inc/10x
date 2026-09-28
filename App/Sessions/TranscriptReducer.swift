@@ -46,8 +46,11 @@ struct TranscriptReducer {
             return .immediate
         case "message_start":
             guard let message = payload["message"] else { return .none }
+            if let mutation = consumeGuidanceMessage(message, tracksInflight: true) { return mutation }
             guard TranscriptMessage.isDisplayable(message) else {
-                recordDroppedHarnessMessage(message)
+                if !Self.isGuidanceMessage(message) {
+                    recordDroppedHarnessMessage(message)
+                }
                 return .none
             }
             if Self.isMalformedToolResult(message) { return .none }
@@ -63,6 +66,7 @@ struct TranscriptReducer {
             return .immediate
         case "message_update":
             guard let message = payload["message"] else { return .none }
+            if let mutation = consumeGuidanceMessage(message) { return mutation }
             guard TranscriptMessage.isDisplayable(message) else { return .none }
             if Self.isCompleteAtStart(message) {
                 return appendCompleteMessage(id: messageID(message), raw: message)
@@ -74,8 +78,13 @@ struct TranscriptReducer {
             return replaceInflightMessage(id: id, raw: message, isFinal: false) ? .coalesced : .none
         case "message_end":
             guard let message = payload["message"] else { return .none }
+            if let mutation = consumeGuidanceMessage(message, clearsInflight: true) {
+                return mutation
+            }
             guard TranscriptMessage.isDisplayable(message) else {
-                recordDroppedHarnessMessage(message)
+                if !Self.isGuidanceMessage(message) {
+                    recordDroppedHarnessMessage(message)
+                }
                 return .none
             }
             if Self.isMalformedToolResult(message) { return .none }
@@ -239,11 +248,21 @@ struct TranscriptReducer {
                 continue
             }
 
-            if !TranscriptMessage.isDisplayable(message) {
+            let messageID = message["id"]?.stringValue ?? "history-\(index)"
+            if let guidance = GuidanceTranscript.classify(id: messageID, message: message) {
+                GuidanceTranscript.upsert(guidance, into: &items)
+                if message["stopReason"]?.stringValue?.lowercased() == "aborted" {
+                    _ = Self.interruptRunningTools(in: &items, at: fallbackDate)
+                }
+                continue
+            }
+
+            if !TranscriptMessage.isDisplayable(message),
+               !Self.isGuidanceMessage(message) {
                 recordDroppedHarnessMessage(message)
             }
             items.append(contentsOf: TranscriptMessageNormalizer.items(
-                id: message["id"]?.stringValue ?? "history-\(index)",
+                id: messageID,
                 raw: message,
                 isFinal: true,
                 existingTools: previousTools,
@@ -377,7 +396,7 @@ struct TranscriptReducer {
                 // the second one stranded at the bottom.
                 guard let signature = Self.annotationSignature(item) else { return true }
                 return !persistedAnnotations.contains(signature)
-            case .notice, .subagent, .extensionUI:
+            case .notice, .subagent, .extensionUI, .guidance:
                 return true
             case .tool(let presentation):
                 return presentation.phase == .running
@@ -657,7 +676,9 @@ struct TranscriptReducer {
     }
 
     private mutating func messageID(_ message: JSONValue) -> String {
-        message["id"]?.stringValue ?? syntheticID(prefix: "message")
+        if let id = message["id"]?.stringValue { return id }
+        if let inflightMessageID { return inflightMessageID }
+        return syntheticID(prefix: "message")
     }
 
     private mutating func replaceInflightMessage(
@@ -665,6 +686,18 @@ struct TranscriptReducer {
         raw: JSONValue,
         isFinal: Bool
     ) -> Bool {
+        if let guidance = GuidanceTranscript.classify(id: id, message: raw) {
+            let previous = items
+            GuidanceTranscript.upsert(guidance, into: &items)
+            if isFinal {
+                inflightMessageID = nil
+                inflightItemIDs = []
+            } else {
+                inflightMessageID = id
+                inflightItemIDs = []
+            }
+            return previous != items
+        }
         let previous = items
         let existingTools = Dictionary(items.compactMap { item -> (String, ToolPresentation)? in
             guard case .tool(let tool) = item else { return nil }
@@ -696,6 +729,11 @@ struct TranscriptReducer {
     }
 
     private mutating func appendCompleteMessage(id: String, raw: JSONValue) -> Bool {
+        if let guidance = GuidanceTranscript.classify(id: id, message: raw) {
+            let previous = items
+            GuidanceTranscript.upsert(guidance, into: &items)
+            return previous != items
+        }
         let normalized = TranscriptMessageNormalizer.items(
             id: id,
             raw: raw,
@@ -708,6 +746,31 @@ struct TranscriptReducer {
             pendingMessageFingerprints[message.id] = Self.fingerprint(message)
         }
         return changed
+    }
+
+    @discardableResult
+    private mutating func consumeGuidanceMessage(
+        _ message: JSONValue,
+        tracksInflight: Bool = false,
+        clearsInflight: Bool = false
+    ) -> TranscriptMutation? {
+        let id = messageID(message)
+        guard let guidance = GuidanceTranscript.classify(id: id, message: message) else { return nil }
+        let previous = items
+        GuidanceTranscript.upsert(guidance, into: &items)
+        if tracksInflight {
+            inflightMessageID = id
+            inflightItemIDs = []
+        }
+        if clearsInflight, inflightMessageID == id {
+            inflightMessageID = nil
+            inflightItemIDs = []
+        }
+        return previous != items ? .immediate : .none
+    }
+
+    private static func isGuidanceMessage(_ message: JSONValue) -> Bool {
+        GuidanceTranscript.classify(id: "guidance-probe", message: message) != nil
     }
 
     private mutating func syntheticID(prefix: String) -> String {
@@ -731,7 +794,7 @@ struct TranscriptReducer {
             return .message(message.id)
         case .tool(let tool):
             return .tool(tool.id)
-        case .threadStart, .annotation, .subagent, .notice, .extensionUI:
+        case .threadStart, .annotation, .subagent, .notice, .extensionUI, .guidance:
             return nil
         }
     }
@@ -751,6 +814,8 @@ struct TranscriptReducer {
             return lhsTool.id == rhsTool.id
         case (.extensionUI(let lhsState), .extensionUI(let rhsState)):
             return lhsState.id == rhsState.id
+        case (.guidance(let lhsGuidance), .guidance(let rhsGuidance)):
+            return lhsGuidance.id == rhsGuidance.id
         default:
             return false
         }

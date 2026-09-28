@@ -315,9 +315,39 @@ import Testing
 
     let history = TranscriptHistoryMapper.map(header: header, path: entries)
 
-    #expect(history.dropped.count == 1)
-    #expect(history.dropped.first?.role == "developer")
-    #expect(history.dropped.first?.text == "Plan approved. Execute it.")
+    #expect(history.dropped.isEmpty)
+    #expect(history.items.contains { item in
+        if case .guidance(let guidance) = item, guidance.id == "developer-1" { return true }
+        return false
+    })
+}
+
+@Test func restoredGuidanceMatchesLiveClassification() throws {
+    let header = SessionHeader(
+        id: "session-restore",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let projection = JSONValue.object([
+        "role": .string("developer"),
+        "attribution": .string("user"),
+        "content": .string("injected file body must stay out of the preview"),
+    ])
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: historyBase("mem-proj", nil, 1),
+            message: projection),
+    ])
+    guard case .guidance(let guidance) = history.items.last else {
+        Issue.record("Expected guidance item")
+        return
+    }
+    #expect(guidance.id == "mem-proj")
+    #expect(guidance.kind == .referencedFile)
+    #expect(guidance.preview.isEmpty == true)
 }
 
 @Test func historyMapperRestoresDisplayedCustomMessagesInTimelineOrder() throws {
