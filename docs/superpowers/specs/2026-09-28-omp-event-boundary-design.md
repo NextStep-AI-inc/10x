@@ -63,14 +63,36 @@ Every presented item has a stable identity, source category, bounded preview, an
 | Input | Product wrapper |
 | --- | --- |
 | User/assistant message | Existing content-block presentation, validated and budgeted per block; streaming updates replace the same item |
-| Tool start/update/end and result | Existing tool card keyed by `toolCallId`; specialized rendering for known tools, bounded generic summary and opt-in expansion for others |
+| Tool start/update/end and result | Product tool card keyed by `toolCallId`; explicit tool-specific composition from shared surfaces, with a bounded fallback if extraction fails |
 | Retry, fallback, compaction, and model changes | Existing small status/annotation presentation |
-| Subagent lifecycle/progress | Existing compact subagent presentation, with bounded text and update identity |
+| Subagent lifecycle/progress | One worker row under its parent delegation when the parent is known; otherwise a standalone compact card, keyed by stable worker identity |
 | Advisor or hidden guidance | Compact guidance item behind the switch; never a full raw message row |
 | Unknown passive event | Diagnostic record with type, byte count, and bounded sanitized preview; optional compact transcript item behind the switch |
 | Known extension UI request | Existing typed confirm/select/input/editor/open URL interaction; actionable requests ignore the visibility switch |
 
 For a preview, cap text by UTF-8 bytes and line count, array children, nesting depth, and total rendered nodes. An expansion must be explicit and lazy; it must enforce its own budget. Raw payload access, when available, should be a separate inspection action sourced from the persisted session or a capped diagnostic buffer. Presentation must not stringify an entire large payload just to compute its preview.
+
+### Tool presentation rules
+
+Keep the existing two-corner `CornerCard` frame and `ToolCardRegistry`'s explicit canonical names and aliases. The [rich chat tool surfaces design](2026-08-26-rich-chat-tool-surfaces-design.md) remains the coverage list for all canonical tools; the hierarchy and bounds here supersede its presentation details where they differ. The boundary produces a bounded semantic `ToolCardContent`; views compose the content and never interpret raw `JSONValue` trees. A known tool with missing or unexpected fields falls back to a labeled card with a safe target, phase, and bounded preview. An unknown tool uses the same fallback with its sanitized tool name. Neither case drops the call, expands raw JSON by default, or ends the session.
+
+Each collapsed header carries one verb, one primary object, one useful outcome or count, and phase/duration. Expanded content does not repeat that header as a separate task block. Loading, empty, interrupted, and failed states keep the same card identity. A failed card shows a concise error and any usable partial result.
+
+| Tool family | Expanded wrapper |
+| --- | --- |
+| `read`, `write` | Shared source surface with line gutter and progressive reveal. Header shows the real file-type icon and filename. A slim strip attached to the source shows a folder icon, directory path, and file actions; a divided footer holds the line count and further reveal. The verb and outcome distinguish reading from creation or replacement. |
+| `edit`, `apply_patch`, `ast_edit` | Per-file diff surface using the same file header and attached path strip. Header shows the primary edited file and addition/removal counts. For multiple files, each file has its own selectable row and diff; never merge several file paths into one unlabeled patch. |
+| `bash`, `eval`, `debug` | Command or input in the header, then a console or progress surface with exit/failure state, bounded output, copy, and wrap/scroll controls. |
+| `grep`, `ast_grep`, `glob`, `lsp`, `web_search` | Grouped results by file, symbol, or source. Show the query and count in the header; show bounded matching lines or snippets in each group, with explicit further reveal. |
+| Delegating `task` calls and subagent events | Assignment and worker count in the parent header. The body repeats one compact worker row per child: worker name, current activity or final result summary, and an Open session action when a session path exists. Activity history, model/usage metadata, and full result remain in the worker session or deliberate detail inspection. |
+| `hub`, `vibe_*` coordination calls | Show the operation and worker target in a compact status card. Attach worker rows only when the event supplies a matching parent tool call ID; do not infer ownership from names or timing. |
+| `browser`, `computer`, `inspect_image` | Bounded page, capture, or media preview next to title, URL/application, and a direct open/view action. No large screenshot data enters the transcript row. |
+| `ask` and extension UI requests | Use their typed interactive controls. A required answer or approval is never hidden by the guidance switch or reduced to a generic tool card. |
+| Other explicit tools, MCP tools, and unknown tools | Preserve their semantic title and primary target where extraction succeeds; use bounded document, collection, media, progress, or structured detail surfaces as appropriate. If extraction cannot establish meaning, show a bounded labeled fallback with a deliberate inspect action. |
+
+The Delegate row is deliberately sparse. Status appears once in the parent header for a single worker; the worker row shows only identity and current activity. With multiple workers, each row owns its own activity and state. `parentToolCallID` links a worker to its delegation; an unmatched worker remains visible as a standalone card rather than being discarded.
+
+File surfaces use the app's existing `FileTypeIcon` and file-reference behavior. The filename stays in the card header, while the directory path and actions sit inside the same neutral surface as the monospaced source or diff, separated by a thin divider. This keeps metadata attached to its content and avoids loose labels between the header and code. Actions expose only what is available: opening a missing file is disabled, and copying a bounded preview is labeled as a preview when full content is unavailable.
 
 ## Failure policy
 
@@ -92,7 +114,8 @@ Diagnostics contain no full file contents, secrets, tool arguments, or model-fac
 | Slice | Relative effort | Main risk |
 | --- | --- | --- |
 | Shared guidance classification and one switch | Medium | Matching live and restored identities without duplicate items |
-| Unknown-event diagnostics and bounded generic tool views | Medium | Large payloads escaping through an existing expansion path |
+| Passive-event diagnostics and bounded tool content | High | Existing `ToolBody` variants can carry raw JSON, text, or media into a view |
+| File, work, external-tool, and Delegate wrapper refinement | Medium | Streaming updates, multi-file edits, and worker ownership becoming visually inconsistent |
 | Extension UI fallback and recovery | High | Replying to the correct child and request without hiding a blocked interaction |
 
 This is smaller than replacing OMP with a new harness, but it crosses the transcript, history, settings, and interaction paths. The first slice is the proof point before taking on the higher-risk extension UI work.
@@ -100,7 +123,7 @@ This is smaller than replacing OMP with a new harness, but it crosses the transc
 ## Scope and rollout
 
 1. Introduce shared message classification and bounded guidance wrappers for advisor, developer, and hidden custom messages. Reuse the current notice preference as the single visibility switch. Confirm live and restored transcripts agree.
-2. Add generic passive-event diagnostics and bounded fallback tool presentation. Keep existing specialized cards.
+2. Add generic passive-event diagnostics and bounded fallback tool presentation. Preserve explicit tool-name coverage while revising file, work, external-tool, and Delegate wrappers to the hierarchy above.
 3. Handle unsupported and malformed extension UI requests explicitly, while preserving the provider-account channel and current typed interactions.
 
 The first working slice is a real OMP session containing an advisor message and a developer/hidden custom message: normal conversation is visible, guidance is absent with the switch off, and compact entries appear immediately when switched on. This proves the user's main pain before extending coverage to every event family.
@@ -111,5 +134,7 @@ The first working slice is a real OMP session containing an advisor message and 
 - Drive a built app through the switch during an active session and after reopening it. Confirm advisor and guidance appear/disappear without changing model execution or losing transcript scroll position.
 - Exercise a real confirm/select/input/editor request, an unsupported request with an ID, and a malformed request. Confirm each gets a response or a recoverable visible error, with no indefinitely pending interaction.
 - Open a large tool result in the built app. Confirm bounded initial rendering and explicit, bounded expansion.
+- Drive real Read, Write, Edit, Run, Search, and Delegate calls in a built app. Confirm file icons and paths, per-file diffs, command state, grouped matches, and worker ownership match the wrappers above through running, complete, and failed states.
+- Replay a known tool with missing fields, an unknown tool, an orphan worker, and a multi-file edit. Confirm each remains visible in a bounded, correctly grouped card without interrupting the session.
 
 No new harness, upstream OMP dependency, schema change, or three-mode passthrough setting is part of this design.
