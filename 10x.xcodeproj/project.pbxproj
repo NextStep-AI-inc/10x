@@ -352,6 +352,7 @@
 		E35B5E09ED9858397770C064E6C977A4 /* MessageBubbleViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E85949BDAE9F5A41A912C50F05954C28 /* MessageBubbleViewTests.swift */; };
 		E41203435B01C45D9A52D8EBB1D1F10B /* OnboardingRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF69D68CDAC979D339A885DB18E85B2 /* OnboardingRoutingTests.swift */; };
 		E41DB82664DD077A2061304AAC5696A0 /* SessionHeaderMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5535C8E9BA0BF585156039450368CC /* SessionHeaderMetadata.swift */; };
+		E4254090FA36695D369DB7CF832FA175 /* WorkspaceSignalViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A5BAC0CA3BB787AB0DB538D6B6F2360 /* WorkspaceSignalViewTests.swift */; };
 		E43313EE07DBA4E51426660CAA32B96F /* TranscriptHistoryMapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FD8DA63189AEF1F213279CBC6377E70 /* TranscriptHistoryMapperTests.swift */; };
 		E46B2F5A3840D5C9659B731C31926748 /* RailMapLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A981545D5E9E9723EB649A5D1490BA6 /* RailMapLayout.swift */; };
 		E5654412336C3758AB499671FE910C25 /* UpdateSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA9407F3BE2F5BA554237039EB83D44D /* UpdateSnapshotTests.swift */; };
@@ -379,6 +380,7 @@
 		F8B515929F282BD9333D5C1137D72662 /* MessageContentParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D21953D8D17C2A107E43258CBB3E6E4E /* MessageContentParser.swift */; };
 		F9253FFA0BCAA96C951F0C51668C60A1 /* SourcePageLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80E60A4911740BC178097CC2676209BE /* SourcePageLoader.swift */; };
 		F9CED5BCC51213FE16D5697F66757D21 /* AppModelUpdateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B359C25C1853CA0C9D8303FB93D8799 /* AppModelUpdateTests.swift */; };
+		FA1C9EFEB7B7875223A7A3E66FE7001E /* WorkspaceSignalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B73CB63C4B05DDCD2A80D201DB3D5D88 /* WorkspaceSignalView.swift */; };
 		FC445FF5B31ADC77D666D4BFAACAC69F /* ProviderAccountPinBackendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF8922FB4A926B45E3305E495958A097 /* ProviderAccountPinBackendTests.swift */; };
 		FC69131EA12B6064C063E3548105E6F6 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = BD7C0E944F514B6C9FF3C58480C88D4F /* Fonts */; };
 		FCB02AC971FF7586B7AB7677B7523DDF /* StartupSceneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F23951615EC5073F1FEAAA9C678509E /* StartupSceneView.swift */; };
@@ -436,6 +438,7 @@
 		08DB11A869FEF85B09424595F2F49EB8 /* ExtensionUIRouterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExtensionUIRouterTests.swift; path = Tests/TenXAppTests/ExtensionUIRouterTests.swift; sourceTree = "<group>"; };
 		090441E3D1C05BF9A5EA2F6AD93E088F /* SessionContextUsageTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionContextUsageTests.swift; path = Tests/TenXAppTests/SessionContextUsageTests.swift; sourceTree = "<group>"; };
 		0A2A1BA39530EBB6E282C5207FC5CF52 /* OmpExecutableLocatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OmpExecutableLocatorTests.swift; path = Tests/TenXAppTests/OmpExecutableLocatorTests.swift; sourceTree = "<group>"; };
+		0A5BAC0CA3BB787AB0DB538D6B6F2360 /* WorkspaceSignalViewTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WorkspaceSignalViewTests.swift; path = Tests/TenXAppTests/WorkspaceSignalViewTests.swift; sourceTree = "<group>"; };
 		0AA35380583228F17DF74F94A11056A7 /* TranscriptViewportState.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TranscriptViewportState.swift; path = App/Sessions/TranscriptViewportState.swift; sourceTree = "<group>"; };
 		0AFDCCE445DD5D7268D9CB0D20120496 /* SettingsCatalogTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SettingsCatalogTests.swift; path = Tests/TenXAppTests/SettingsCatalogTests.swift; sourceTree = "<group>"; };
 		0C43005FA517CE145F81242173B66582 /* RendererSaturationFixtureTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RendererSaturationFixtureTests.swift; path = Tests/TenXAppTests/RendererSaturationFixtureTests.swift; sourceTree = "<group>"; };
@@ -699,6 +702,7 @@
 		B6DD98A8B79DC599CD01C6860A3D07AE /* RecentModelStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RecentModelStore.swift; path = App/Sessions/RecentModelStore.swift; sourceTree = "<group>"; };
 		B70AB4A88F6FE5E535416E3D4BDEDC01 /* SessionSearchServiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionSearchServiceTests.swift; path = Tests/TenXAppTests/SessionSearchServiceTests.swift; sourceTree = "<group>"; };
 		B70E61DC8C8229C1508926749F7DDED6 /* ExtensionInputSheet.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExtensionInputSheet.swift; path = App/ExtensionUI/ExtensionInputSheet.swift; sourceTree = "<group>"; };
+		B73CB63C4B05DDCD2A80D201DB3D5D88 /* WorkspaceSignalView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WorkspaceSignalView.swift; path = App/Shell/WorkspaceSignalView.swift; sourceTree = "<group>"; };
 		B767A8A3D5E1CD0E412CB6822B80096B /* ProviderUsageAccessibility.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderUsageAccessibility.swift; path = App/Providers/ProviderUsageAccessibility.swift; sourceTree = "<group>"; };
 		B844FAFEF611A922EDB7BCB261E1F07D /* UpdateControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = UpdateControllerTests.swift; path = Tests/TenXAppTests/UpdateControllerTests.swift; sourceTree = "<group>"; };
 		B8616EC88E0EB73D54822BD51EEFFBFB /* SessionTimelineLoaderTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionTimelineLoaderTests.swift; path = Tests/TenXAppTests/SessionTimelineLoaderTests.swift; sourceTree = "<group>"; };
@@ -1022,6 +1026,7 @@
 				DE409C70FAB360D56D15AAA1236B5BAB /* RailScrollNavigation.swift */,
 				CDBB07833109F31D51F73C34E1B05AE6 /* RailSessionReadState.swift */,
 				97C6DBD83517812158F8CB4A127C468B /* WorkspaceSignalPresentation.swift */,
+				B73CB63C4B05DDCD2A80D201DB3D5D88 /* WorkspaceSignalView.swift */,
 				819BDD93255C127E9E60F23828548A76 /* RecentProjectStore.swift */,
 				57E710370317194863E647F692341814 /* SplashPresentation.swift */,
 				6730739B6C833D443EA8AA8AB4A0366E /* SplashView.swift */,
@@ -1206,6 +1211,7 @@
 				E28639B86B333CB03C5A0D49EDDEBB2C /* UpdateStateTests.swift */,
 				CCFEFC461F4D54A58DD7B0FDB4D9B755 /* ViewSnapshotTests.swift */,
 				6FC54490CAADB7F34D482D452D3D3802 /* WorkspaceSignalPresentationTests.swift */,
+				0A5BAC0CA3BB787AB0DB538D6B6F2360 /* WorkspaceSignalViewTests.swift */,
 				08A073A150CEBFA753A382C419198C36 /* ReferenceImages */,
 				2D00098D3C78890E281C7F7E302E1ECC /* Fixtures */,
 			);
@@ -1556,6 +1562,7 @@
 				9D4089C16E110B2BCCFD8DD8F0CF52D7 /* RailScrollNavigation.swift in Sources */,
 				3789E0DA22C7BC0242F39905B8A3E315 /* RailSessionReadState.swift in Sources */,
 				1B71572C2ED1C2F058E3936020769577 /* WorkspaceSignalPresentation.swift in Sources */,
+				FA1C9EFEB7B7875223A7A3E66FE7001E /* WorkspaceSignalView.swift in Sources */,
 				299DE85904348114EBAF4DD8DF44957D /* RecentProjectStore.swift in Sources */,
 				CA62013C98ED4256A6048EF9E4C61FA8 /* SplashPresentation.swift in Sources */,
 				65898B3E30608FB3E26DD9FFDA39C095 /* SplashView.swift in Sources */,
@@ -1727,6 +1734,7 @@
 				907FB1C66E1B6BEDDC13CBA4338A88B5 /* UpdateStateTests.swift in Sources */,
 				1035B3F3C2D5A60B697FF1481C00A320 /* ViewSnapshotTests.swift in Sources */,
 				9978FF86B8EE932817C251C06FB0CCBB /* WorkspaceSignalPresentationTests.swift in Sources */,
+				E4254090FA36695D369DB7CF832FA175 /* WorkspaceSignalViewTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

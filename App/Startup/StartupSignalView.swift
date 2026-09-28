@@ -146,7 +146,7 @@ extension EnvironmentValues {
     }
 }
 
-private struct StartupSignalShape: Shape {
+struct StartupSignalShape: Shape {
     let amplitude: CGFloat
 
     func path(in rect: CGRect) -> Path {

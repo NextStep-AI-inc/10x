@@ -7,6 +7,30 @@ import Testing
 @testable import TenXApp
 
 @MainActor
+@Test func workspaceSignalHalfContextSnapshot() throws {
+    let presentation = WorkspaceSignalPresentation.session(
+        runtimeState: .idle, contextPercent: 50, hasPendingUserInput: false,
+        isRetrying: false, hasTerminalRetryFailure: false, compactionPhase: .none,
+        isRecoveryPresented: false, isIntentionallyStopped: false)
+    try assertSnapshot(
+        WorkspaceSignalView(presentation: presentation, compactionPhase: .none, onRevealComplete: { _ in })
+            .frame(width: 900, height: 60),
+        name: "workspace-signal-half-context", size: CGSize(width: 900, height: 60))
+}
+
+@MainActor
+@Test func workspaceSignalNearLimitSnapshot() throws {
+    let presentation = WorkspaceSignalPresentation.session(
+        runtimeState: .idle, contextPercent: 98, hasPendingUserInput: false,
+        isRetrying: false, hasTerminalRetryFailure: false, compactionPhase: .none,
+        isRecoveryPresented: false, isIntentionallyStopped: false)
+    try assertSnapshot(
+        WorkspaceSignalView(presentation: presentation, compactionPhase: .none, onRevealComplete: { _ in })
+            .frame(width: 900, height: 60),
+        name: "workspace-signal-near-limit", size: CGSize(width: 900, height: 60))
+}
+
+@MainActor
 @Test func genericToolCardSnapshot() throws {
     let presentation = ToolPresentation(
         id: "snapshot-tool",
