@@ -1,8 +1,12 @@
 # Bottom signal dock — native acceptance
 
+## Latest: control placement correction
+
+At `8a6302c`, attachment/model/timer align beneath the editor's left edge; context is a small text-only label at the signal's exact far-left endpoint above the line. The final Release build and four affected tests passed. Native context, attachment, and model clicks all worked, resolving the earlier interaction observation. See [placement verification](placement-verification.md) and [native detail](placement-detail.png).
+
 Production Release build, macOS, isolated bundle `com.nextstep.tenx.bottomdockqa`. All provider/RPC responses came from a local fixture; no real provider requests or credentials were used. Main checkout and real app profile were untouched.
 
-## Latest: alignment correction
+## Earlier: alignment correction
 
 Product revision `19f5cce` tightens the dock controls and aligns the provider row. Ten focused tests and the isolated Release build passed; native typing, send/follow-up, provider-panel clearance, model menu in Ready, and cross-route line alignment were checked. Context-popover clicks still did not open; native narrow interaction remains unverified. See [spacing verification](spacing-verification.md) and [native detail](spacing-working-detail.png). PR remains draft. The results below describe earlier revisions.
 

@@ -1,5 +1,10 @@
 # Shared Bottom Signal Dock Design
 
+## Layout correction approved in chat, 2026-09-29
+
+The attachment control sits immediately below the editor’s left edge. Model and working status/timer follow it in the same row; message actions stay aligned near the editor’s right edge. Measured context is a smaller text-only control above the far-left endpoint of the full-width line, with no leading inset or alignment to the editor/sidebar. Remove the context control’s mini bar icon; retain measured context coloring on the main signal line and the existing context details panel. This correction supersedes earlier placement descriptions below.
+
+
 - **Status:** Approved for implementation planning
 - **Date:** 2026-09-28
 - **Platform:** 10x for macOS 15+, SwiftUI
