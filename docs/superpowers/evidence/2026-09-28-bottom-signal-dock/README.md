@@ -1,6 +1,10 @@
 # Bottom signal dock — native acceptance
 
-## Latest: session-only inline context
+## Latest: italic context label
+
+The inline context trigger now uses italics in both closed and open states. Release build and five focused checks passed (`/tmp/10x-context-italic-build.log`, `/tmp/10x-context-italic-tests-green.log`). Native label rendering and details open/close verified in the isolated Release app; see [native detail](italic-context-detail.png). Updated snapshot differences were confined to the context glyphs. No full-suite rerun for this typography change. Native narrow interaction was not repeated.
+
+## Earlier: session-only inline context
 
 At `b291733`, context sits inside a small break at the far-left of the line only while viewing a session. New Session and Archived keep an unbroken line. Five focused checks, Release build, and native context open/close and route checks passed. See [verification](inline-context-verification.md), [session detail](inline-context-session-detail.png), and [new-session detail](inline-context-new-session-detail.png).
 

@@ -74,6 +74,7 @@ struct ContextUsageControl: View {
         } label: {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isRevealing)) { timeline in
                 Text(triggerLabel)
+                    .italic()
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                     .opacity(triggerOpacity(at: timeline.date))
@@ -142,7 +143,7 @@ struct ContextUsageControl: View {
 
     private var openTrigger: some View {
         Button(action: closeAndRestoreFocus) {
-            Text(triggerLabel).lineLimit(1)
+            Text(triggerLabel).italic().lineLimit(1)
         }
         .buttonStyle(GhostActionStyle(
             color: TenXPalette.color(TenXPalette.nearBlackHex),
