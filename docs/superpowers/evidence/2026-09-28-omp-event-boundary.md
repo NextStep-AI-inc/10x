@@ -38,6 +38,14 @@ The disposable project contains a project-local OMP extension emitting an adviso
 - Task 2 review NIT: message_update real-ID promotion leaves inflightGuidanceID on removed synthetic ID (`TranscriptReducer.swift`, around line 832 at `040f0a6`). Final review must triage reconciliation before message_end.
 - No merge or deployment authorized. Main checkout remains untouched.
 
+## Later work in progress
+
+- Task 8 was implemented independently after checkpoint 1: `1c4a373` rejects missing/blank interactive request IDs while preserving usable IDs and unknown methods. Runtime RED: 1 test / 2 issues; independent focused 1 and companion 14 tests pass. Grok approved.
+- Task 4 initial implementation `45c7b5a`, first fixes `d6e9bc1`. First review caught guessed tool ownership, recognized control events becoming diagnostics, traversal past the node budget, omission reconciliation errors, and an obsolete processor expectation. Runtime fix RED: 7 tests / 21 issues; 16 focused tests pass independently after first fixes. Re-review still found unmatched history diagnostics silently discarded and settlement poisoning an unseen worker ID. Final fix `5f38d34` passed 20 implementation tests; its runtime RED was 5 tests / 7 issues. Grok independently reran the 5 changed regressions and approved. Task 4 code review is complete; native UI remains pending.
+- Controller decision for diagnostic omission reconciliation: discarded identities are not retained, so exact union counts are unavailable. Use a conservative lower bound, label it explicitly, preserve unmatched retained history until capping, and require repeated reconciliation to be idempotent. Do not add an unbounded identity cache or infer equality from payload summaries. Guidance omission behavior is unchanged.
+- Release build at `d6e9bc1` succeeded (`task-4-release-build.log`). Native launch was blocked by the locked Mac; user has been asked to unlock it. No workaround attempted. Task 4 live UI remains pending.
+- Disposable `/boundary-probe` command is ready in the QA project's local extension. It emits one synthetic unknown event only in RPC mode, without inference, to check hidden/on visibility, payload suppression, and duplicate-ID updates. It is test-only and not product code.
+
 ## Local detailed evidence
 
 Ignored scratch: `.superpowers/sdd/2026-09-28-omp-event-boundary/`.

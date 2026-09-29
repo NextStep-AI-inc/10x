@@ -2,7 +2,7 @@
 
 ## Status and authoritative git anchor
 
-**Design: DONE. Implementation: IN PROGRESS.** Tasks 1–3 are implemented and code-reviewed through `0825eaa`; checkpoint 1 passed in the rebuilt Release app, live and after restart. Tasks 4–10 have not started. See [execution evidence](../evidence/2026-09-28-omp-event-boundary.md) before resuming.
+**Design: DONE. Implementation: IN PROGRESS.** Tasks 1–4 and 8 are implemented and code-reviewed through `5f38d34`; checkpoint 1 passed in the rebuilt Release app, live and after restart. Task 5 is in progress. Tasks 6–7 and 9–10 remain. Task 4 native verification is pending the Mac being unlocked. See [execution evidence](../evidence/2026-09-28-omp-event-boundary.md) before resuming.
 
 Implementation branch: `codex/omp-event-boundary`, draft PR #50. The clean design checkout below was reused for this branch; the design branch remains preserved at `9862894`. Historical export anchors follow.
 
@@ -88,4 +88,4 @@ Tanner authorized this handoff and execution of the approved plan in Cursor. Rou
 
 ## NEXT ACTION
 
-Continue Task 4 in the existing implementation checkout; checkpoint 1 passed in the isolated Release app. Use the execution evidence for current commits, limitations, and pending review notes.
+Continue Task 5 in the existing implementation checkout, then Tasks 6–7 and 9–10; checkpoint 1 passed in the isolated Release app. Keep checkpoint 2 native UI verification pending until the Mac is unlocked. Use the execution evidence for current commits, limitations, and pending review notes.
