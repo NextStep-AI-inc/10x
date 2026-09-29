@@ -41,10 +41,11 @@ import Testing
     #expect(ProviderUsageDockWheelHoverGeometry(restingDiameter: 28).hitTargetDiameter >= 44)
 }
 
+@MainActor
 @Test func narrowDockReservesAttachmentStripAboveEditor() {
     let withoutAttachments = ProviderUsageDockLayout.aboveLineBottomOffset(hasAttachments: false)
     let withAttachments = ProviderUsageDockLayout.aboveLineBottomOffset(hasAttachments: true)
-    #expect(withoutAttachments == 168)
+    #expect(withoutAttachments == 162)
     #expect(withAttachments >= withoutAttachments + ComposerAttachmentsView.stripHeight)
 }
 

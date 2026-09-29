@@ -25,11 +25,13 @@ struct ProviderUsageDockCompactLayout: Equatable {
     static let standalone = ProviderUsageDockCompactLayout(
         wheelDiameter: ProviderUsageDockLayout.regular54,
         trailingOffset: 0,
-        bottomOffset: 0)
+        bottomOffset: 0,
+        expandedBottomOffset: 0)
 
     let wheelDiameter: CGFloat
     let trailingOffset: CGFloat
     let bottomOffset: CGFloat
+    let expandedBottomOffset: CGFloat
 }
 
 enum ProviderUsageDockLayout {
@@ -38,8 +40,9 @@ enum ProviderUsageDockLayout {
     static let inComposer28: CGFloat = 28
     static let spacing8: CGFloat = 8
 
+    @MainActor
     static func aboveLineBottomOffset(hasAttachments: Bool) -> CGFloat {
-        168 + (hasAttachments ? ComposerAttachmentsView.stripHeight : 0)
+        162 + (hasAttachments ? ComposerAttachmentsView.stripHeight : 0)
     }
 
     static func placement(

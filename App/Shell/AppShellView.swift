@@ -21,11 +21,13 @@ struct AppShellView: View {
                     GeometryReader { shell in
                         let providerWidth = ProviderUsageDockLayout.footerWidth(
                             providers: model.providerModel?.dockProviders ?? [])
-                        let providerPlacement = ProviderUsageDockLayout.placement(
-                            availableWidth: shell.size.width,
-                            factsMinWidth: 380,
-                            actionsMinWidth: 200,
-                            providerWidth: providerWidth)
+                        let providerPlacement = hasComposer
+                            ? ProviderUsageDockLayout.placement(
+                                availableWidth: shell.size.width,
+                                factsMinWidth: 380,
+                                actionsMinWidth: 200,
+                                providerWidth: providerWidth)
+                            : .belowLine
                         VStack(spacing: 0) {
                             ZStack(alignment: .leading) {
                                 routeCanvas
@@ -265,7 +267,8 @@ struct AppShellView: View {
                     bottomOffset: hasComposer && placement == .aboveLine
                         ? ProviderUsageDockLayout.aboveLineBottomOffset(
                             hasAttachments: hasComposerAttachments)
-                        : 0),
+                        : 0,
+                    expandedBottomOffset: placement == .belowLine ? 16 : 0),
                 accountScopeSatisfaction: model.accountScopeSatisfaction(
                     openSessionID: model.activeSessionIdentityToken),
                 accountScopeAvailability: model.accountScopeAvailability(
@@ -286,7 +289,7 @@ struct AppShellView: View {
                     model.manageProviderAccounts(providerID: providerID)
                 })
                 .padding(.trailing, 16)
-                .padding(.bottom, hasComposer && placement == .belowLine ? 0 : 16)
+                .padding(.bottom, placement == .belowLine ? 0 : 16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
     }

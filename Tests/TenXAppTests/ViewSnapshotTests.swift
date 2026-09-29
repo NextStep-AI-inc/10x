@@ -4257,7 +4257,8 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
                     wheelDiameter: 28,
                     trailingOffset: 0,
                     bottomOffset: ProviderUsageDockLayout.aboveLineBottomOffset(
-                        hasAttachments: true)),
+                        hasAttachments: true),
+                    expandedBottomOffset: 0),
                 onUseAccount: { _, _ in },
                 onManageAccounts: { _ in })
                 .padding(.trailing, 16)

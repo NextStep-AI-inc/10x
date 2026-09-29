@@ -122,12 +122,13 @@ struct WorkspaceDockView: View {
                 onRevealComplete: { _ in })
                 .frame(height: 32)
                 .padding(.top, -12)
+                .padding(.bottom, -8)
             Text(WorkspaceSignalPresentation.workspace(generatingCount: generatingCount).label)
                 .font(TenXTypography.body(size: 10, weight: .medium))
                 .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
-                .frame(height: 42)
+                .frame(height: 44)
         }
     }
 

@@ -244,6 +244,7 @@ struct ProviderUsageDockView: View {
                         .onTapGesture(perform: collapse)
 
                     expandedPanel(provider: provider)
+                        .padding(.bottom, compactLayout.expandedBottomOffset)
                         .transition(.identity)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
