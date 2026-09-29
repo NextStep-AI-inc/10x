@@ -168,3 +168,54 @@ private final class ComposerDraftProbe {
     #expect(ComposerReturnRouting.behavior(for: .alternate, primary: .followUp) == .steer)
     #expect(ComposerReturnRouting.behavior(for: .newline, primary: .steer) == nil)
 }
+
+@Test func blockedComposerDoesNotReclaimFocus() {
+    #expect(ComposerView.editorHeight == 106)
+    #expect(ComposerView.scrollFadeHeight == 24)
+    #expect(ComposerFocusRouting.shouldFocusEditor(
+        isAvailable: true, isFocusBlocked: false, hasBlockingSheet: false))
+    #expect(!ComposerFocusRouting.shouldFocusEditor(
+        isAvailable: true, isFocusBlocked: true, hasBlockingSheet: false))
+    #expect(!ComposerFocusRouting.shouldFocusEditor(
+        isAvailable: true, isFocusBlocked: false, hasBlockingSheet: true))
+    #expect(!ComposerFocusRouting.shouldFocusEditor(
+        isAvailable: false, isFocusBlocked: false, hasBlockingSheet: false))
+}
+
+@MainActor
+@Test func routeSwitchClosesFlyoutWithoutLosingDraft() {
+    let model = AppModel()
+    model.newSessionDraft = "Keep this draft"
+    var flyout: ComposerFlyout? = .model
+
+    WorkspaceDockRouting.resetFlyout(&flyout, whenRouteChangesFrom: .newSession, to: .archivedSessions)
+
+    #expect(flyout == nil)
+    #expect(model.newSessionDraft == "Keep this draft")
+}
+
+@MainActor
+@Test func editorScrollReportsOnlyScrolledTextViewport() async throws {
+    let bridge = ComposerTextEditorBridge()
+    let marker = ComposerTextViewConfigurationMarker(bridge: bridge)
+    let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 360, height: 106))
+    let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 360, height: 500))
+    textView.string = String(repeating: "Long draft line\n", count: 30)
+    scrollView.documentView = textView
+    let container = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 106))
+    container.addSubview(scrollView)
+    container.addSubview(marker)
+    let window = NSWindow(contentRect: container.bounds,
+                          styleMask: [], backing: .buffered, defer: false)
+    window.contentView = container
+
+    var scrollStates: [Bool] = []
+    bridge.onScrollStateChange = { scrollStates.append($0) }
+    bridge.connect(textView, owner: marker)
+    #expect(scrollStates.last == false)
+
+    scrollView.contentView.scroll(to: NSPoint(x: 0, y: 120))
+    scrollView.reflectScrolledClipView(scrollView.contentView)
+    try await Task.sleep(for: .milliseconds(50))
+    #expect(scrollStates.last == true)
+}

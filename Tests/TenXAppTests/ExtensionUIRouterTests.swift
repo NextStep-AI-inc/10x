@@ -103,6 +103,16 @@ import Testing
     #expect(blocking.filter(\.isQuestionInput).map(\.id) == ["select", "input", "editor"])
 }
 
+@Test func passiveExtensionNoticeDoesNotBlockComposer() {
+    let notice = ExtensionUIState.notification(
+        id: "notice", message: "Waiting for input", level: "info")
+    #expect(!notice.requiresUserInput)
+    #expect(ComposerFocusRouting.shouldFocusEditor(
+        isAvailable: true,
+        isFocusBlocked: false,
+        hasBlockingSheet: notice.requiresUserInput))
+}
+
 private func request(_ json: String) throws -> ExtensionUIRequest {
     guard case .extensionUIRequest(let request) = try RpcFrame.decode(line: Data(json.utf8)) else {
         throw TestRequestError.notAnExtensionRequest

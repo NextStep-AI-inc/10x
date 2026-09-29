@@ -18,27 +18,33 @@ struct AppShellView: View {
                 if case .onboarding(let step) = model.route {
                     OnboardingView(model: model, step: step)
                 } else {
-                    ZStack(alignment: .leading) {
-                        routeCanvas
+                    VStack(spacing: 0) {
+                        ZStack(alignment: .leading) {
+                            routeCanvas
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .padding(.leading, railExpansion.contentLeadingInset)
+                            FloatingRailView(
+                                model: model,
+                                expansion: railExpansion,
+                                isBrandMenuPresented: $isBrandMenuPresented)
+                        }
+                        WorkspaceDockView(
+                            model: model,
+                            isFocusBlocked: isComposerFocusBlocked,
+                            routeCanvasLeadingInset: railExpansion.contentLeadingInset)
                             .environment(\.composerProviderDockWidth, hasComposer
                                 ? ProviderUsageDockLayout.footerWidth(providers: model.providerModel?.dockProviders ?? [])
                                 : 0)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(.leading, railExpansion.contentLeadingInset)
-                            .environment(model.idePreferenceStore)
-                            .environment(model.toolDetailPreferenceStore)
-                            .environment(\.fileOpenService, model.fileOpenService)
-                            .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
-                                model.openSettings(focus: .preferredIDE)
-                            })
-                            .environment(\.openReportedSession, OpenReportedSessionAction { path in
-                                await model.openReportedChildSession(path: path)
-                            })
-                        FloatingRailView(
-                            model: model,
-                            expansion: railExpansion,
-                            isBrandMenuPresented: $isBrandMenuPresented)
                     }
+                    .environment(model.idePreferenceStore)
+                    .environment(model.toolDetailPreferenceStore)
+                    .environment(\.fileOpenService, model.fileOpenService)
+                    .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
+                        model.openSettings(focus: .preferredIDE)
+                    })
+                    .environment(\.openReportedSession, OpenReportedSessionAction { path in
+                        await model.openReportedChildSession(path: path)
+                    })
                     .animation(railAnimation, value: railExpansion.isExpanded)
                     .overlay {
                         if isBrandMenuPresented {
@@ -154,6 +160,11 @@ struct AppShellView: View {
         model.pendingDeletion != nil
             || model.pendingRename != nil
             || model.isSessionMutationInFlight
+    }
+
+    private var isComposerFocusBlocked: Bool {
+        isSessionInteractionBlocked || model.isSearchPresented || isBrandMenuPresented
+            || model.sessionActionError != nil
     }
 
     private var railAnimation: Animation? {

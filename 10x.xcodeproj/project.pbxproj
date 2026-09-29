@@ -232,6 +232,7 @@
 		93AA491E459BE8ED52564EFCC6A7B3A6 /* ProviderAccountPinBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761A4B5142B31A06BBA9A4D3F5CCD9E2 /* ProviderAccountPinBackend.swift */; };
 		940057D6C04D447D473082F824C51CEE /* ProjectSessionGrouperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07B3CCCE759F5025816240590B7D52BE /* ProjectSessionGrouperTests.swift */; };
 		94E1ED08504FB9312CE561C47662C7F9 /* SettingsCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20C8F6172588FE2E521FCAD55A8CFA6C /* SettingsCatalog.swift */; };
+		95672CA03231222BE3F74C0EEF862802 /* WorkspaceDockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D90EFEE82A313F4037ECFF8238609A3 /* WorkspaceDockView.swift */; };
 		96358199806DE027E9B3431978197DCE /* OmpUsageRunning.swift in Sources */ = {isa = PBXBuildFile; fileRef = 232D48B6C9FE88E2A942ED5CD80FAC55 /* OmpUsageRunning.swift */; };
 		966ADF1BA155709CAB7442F91C39B498 /* TranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 974783DE436CE196147C1685500F4D4E /* TranscriptView.swift */; };
 		98267A87836F5D958C782955A673A3C7 /* OnboardingStepTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984CBA3F4504C89EBB8D2BBF6710E709 /* OnboardingStepTests.swift */; };
@@ -526,6 +527,7 @@
 		4C932DCE27B19D1788E2CFCECD3CA151 /* ComposerInteractionSettingRows.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerInteractionSettingRows.swift; path = App/Settings/ComposerInteractionSettingRows.swift; sourceTree = "<group>"; };
 		4CC1AB249190EC264C4FEB172080EC0F /* ProgressiveReveal.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProgressiveReveal.swift; path = App/Design/ProgressiveReveal.swift; sourceTree = "<group>"; };
 		4D3D7E93CA9E76D7BC5C488160249CAF /* ProviderAccountUsageBackend.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ProviderAccountUsageBackend.swift; path = App/Providers/ProviderAccountUsageBackend.swift; sourceTree = "<group>"; };
+		4D90EFEE82A313F4037ECFF8238609A3 /* WorkspaceDockView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WorkspaceDockView.swift; path = App/Shell/WorkspaceDockView.swift; sourceTree = "<group>"; };
 		4E250B77264B6AD5AAEAF11BD69D6ADF /* RendererPaginationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = RendererPaginationTests.swift; path = Tests/TenXAppTests/RendererPaginationTests.swift; sourceTree = "<group>"; };
 		4EFC9F571B31A95C4E963E3CE6F5F5FA /* ToolEventReducer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ToolEventReducer.swift; path = App/Tools/ToolEventReducer.swift; sourceTree = "<group>"; };
 		4F284392DF7E6DF2AD2E527E583F3AF1 /* OnboardingRowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnboardingRowView.swift; path = App/Onboarding/OnboardingRowView.swift; sourceTree = "<group>"; };
@@ -1025,6 +1027,7 @@
 				BB43F424A6A27983B5BB253D4CE75AC4 /* RailPresentation.swift */,
 				DE409C70FAB360D56D15AAA1236B5BAB /* RailScrollNavigation.swift */,
 				CDBB07833109F31D51F73C34E1B05AE6 /* RailSessionReadState.swift */,
+				4D90EFEE82A313F4037ECFF8238609A3 /* WorkspaceDockView.swift */,
 				97C6DBD83517812158F8CB4A127C468B /* WorkspaceSignalPresentation.swift */,
 				B73CB63C4B05DDCD2A80D201DB3D5D88 /* WorkspaceSignalView.swift */,
 				819BDD93255C127E9E60F23828548A76 /* RecentProjectStore.swift */,
@@ -1561,6 +1564,7 @@
 				70881DE24D299BFE6786160332404A18 /* RailPresentation.swift in Sources */,
 				9D4089C16E110B2BCCFD8DD8F0CF52D7 /* RailScrollNavigation.swift in Sources */,
 				3789E0DA22C7BC0242F39905B8A3E315 /* RailSessionReadState.swift in Sources */,
+				95672CA03231222BE3F74C0EEF862802 /* WorkspaceDockView.swift in Sources */,
 				1B71572C2ED1C2F058E3936020769577 /* WorkspaceSignalPresentation.swift in Sources */,
 				FA1C9EFEB7B7875223A7A3E66FE7001E /* WorkspaceSignalView.swift in Sources */,
 				299DE85904348114EBAF4DD8DF44957D /* RecentProjectStore.swift in Sources */,

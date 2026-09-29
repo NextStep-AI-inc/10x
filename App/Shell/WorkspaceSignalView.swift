@@ -34,7 +34,8 @@ struct WorkspaceSignalView: View {
     let compactionPhase: SessionCompactionSignalPhase
     let onRevealComplete: (UInt64) -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.workspaceSignalReduceMotionOverride) private var reduceMotionOverride
     @State private var sweepStartedAt = Date()
     @State private var finishStartedAt = Date()
     @State private var finishFromCoverage: CGFloat = 0
@@ -44,6 +45,8 @@ struct WorkspaceSignalView: View {
 
     private let amplitude: CGFloat = 18
     private let lineWidth: CGFloat = 2
+
+    private var reduceMotion: Bool { reduceMotionOverride ?? systemReduceMotion }
 
     private var phaseKey: String {
         switch compactionPhase {
@@ -229,5 +232,16 @@ struct WorkspaceSignalView: View {
             shape.trim(from: start, to: min(start + 0.08, 1))
                 .stroke(TenXPalette.color(TenXPalette.canvasHex).opacity(0.45), style: style)
         }
+    }
+}
+
+private struct WorkspaceSignalReduceMotionOverrideKey: EnvironmentKey {
+    static let defaultValue: Bool? = nil
+}
+
+extension EnvironmentValues {
+    var workspaceSignalReduceMotionOverride: Bool? {
+        get { self[WorkspaceSignalReduceMotionOverrideKey.self] }
+        set { self[WorkspaceSignalReduceMotionOverrideKey.self] = newValue }
     }
 }
