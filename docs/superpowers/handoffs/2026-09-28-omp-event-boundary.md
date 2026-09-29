@@ -2,7 +2,7 @@
 
 ## Status and authoritative git anchor
 
-**Design: DONE. Implementation: IN PROGRESS.** Tasks 1–9 have code through `a7f355b`, with review corrections still open for Task 6 and pending verification for Task 7/9 fixes. Tasks 1–4 and 8 passed code review; Task 5 code is approved through `40fb4fb`, with the latest independent test rerun pending. Checkpoint 1 passed in the rebuilt Release app live and after restart. Checkpoints 2–3 native verification are blocked by the locked Mac. Task 10 full suite/final build has not run. See [execution evidence](../evidence/2026-09-28-omp-event-boundary.md) before resuming.
+**Design: DONE. Implementation: DONE_WITH_CONCERNS.** Product code is committed through `032034f1f7e5d537245cff4bd92b92a6750af09f`. Tasks 1–9 passed their scoped independent reviews; final corrections preserve phase/task snapshots at depth six and remove the reproduced native accessibility crash. Release native checks cover guidance, passive diagnostics, real Read/Edit/Search/failed Run, real required select, synthetic oversized/malformed results, multi-file Edit selection, Delegate hierarchy, and delayed Restart recovery. Task 10 remains incomplete: actual provider Write execution, real Delegate/child-session navigation, and a clean full app suite are not verified. The Mac is unlocked. PR #50 remains draft. Read the latest sections of [execution evidence](../evidence/2026-09-28-omp-event-boundary.md).
 
 Implementation branch: `codex/omp-event-boundary`, draft PR #50. The clean design checkout below was reused for this branch; the design branch remains preserved at `9862894`. Historical export anchors follow.
 
@@ -49,7 +49,7 @@ The authenticated Cursor `agent` CLI now runs both models. Tanner explicitly app
 - Reuse `HarnessNoticePreferenceStore.isEnabled` and its key. Retire threshold/model UI and per-event summarization after parity is proved; leave persisted old values and summary cache untouched.
 - Unknown passive events continue the session and create bounded diagnostics without raw secrets, tool arguments, file bodies, or instruction bodies. Malformed terminal tool/worker updates close existing cards with a display error instead of leaving a spinner.
 - Bound tool values before storing/extracting/rendering. Preserve explicit `ToolCardRegistry` names and aliases. Missing fields and unknown tools fall back to visible labeled bounded cards.
-- Apply the planned budgets: guidance 512 UTF-8 bytes/6 lines; title 80 bytes; latest 128 guidance/diagnostic entries plus omission count; diagnostic traversal 256 nodes. Tool scalar 8 KiB, array 32 children, depth 4, total 256 nodes, inline media 256 KiB. Expansion/copy/accessibility must obey bounds too.
+- Apply the planned budgets: guidance 512 UTF-8 bytes/6 lines; title 80 bytes; latest 128 guidance/diagnostic entries plus omission count; diagnostic traversal 256 nodes. Tool scalar 8 KiB, array 32 children, depth 6 (amended for OMP phase/task snapshots), total 256 nodes, inline media 256 KiB. Expansion/copy/accessibility must obey bounds too.
 - Full tool results remain in existing persisted session files, reachable through a deliberate file action plus copyable call ID; do not introduce a second raw-result cache.
 - Unsupported or malformed extension UI with a usable ID gets one `{cancelled:true}` response through the original pipeline plus visible recovery. Preserve the provider-account machine channel before fallback. Reject missing/empty/blank IDs structurally in OmpKit. Fence responses/timers across restarts; the plan specifies recovery after 10 seconds without turn completion.
 - Reuse native SwiftUI components, CornerCard, existing file icons/reference actions, and semantic source/diff/console/search/media surfaces. No generic event bus, new harness, database change, dependency, upstream OMP requirement, or three-mode selector.
@@ -62,7 +62,7 @@ The plan has ten tasks and three checkpoints:
 2. **Tasks 4–7: passive events and tools.** Diagnostics, ingestion budgets, connected file/tool surfaces, compact Delegate grouping. Prove real tool flows and malformed/large payload fallbacks.
 3. **Tasks 8–10: interactions and final evidence.** Usable request IDs, one correlated cancellation and recovery, built-app full flow, evidence, PR ready, scoped review. Merge requires Tanner's explicit approval.
 
-No implementation task or product tool call was left running. `likely_live: true` and `stop_reason: mid_tool: exec` describe this intentional export of the active planning session, not an interrupted code change. Do not replay the export's last shell tool.
+The historical export metadata below describes the earlier planning handoff. It is not current execution status. Do not reapply stash `7d4c7c11c2383cafceb1a3abcdf699ebc10e0afb`; it was already restored and committed.
 
 Checkpoints are verification gates, not fresh design questions. Continue within the approved plan; if a concrete code constraint changes scope, update the plan before broadening it. Flag unrelated issues separately.
 
@@ -89,3 +89,15 @@ Tanner authorized this handoff and execution of the approved plan in Cursor. Rou
 ## NEXT ACTION
 
 Finish Task 6 review corrections and Task 7 fix verification in the existing checkout. Then run Task 10 full tests, build, final review, and evidence. Do not promote uninspected Task 6 snapshots. Native verification remains pending until Tanner unlocks the Mac. No merge or deployment is authorized.
+
+
+## Resume from current git state
+
+- **Status:** DONE_WITH_CONCERNS; product HEAD `032034f1f7e5d537245cff4bd92b92a6750af09f`, followed by the evidence-only commit containing this handoff. Branch `codex/omp-event-boundary`; PR https://github.com/NextStep-AI-inc/10x/pull/50 remains draft.
+- **Verified:** scoped Grok reviews; prior 223-test OmpKit pass; Release build; guidance and passive diagnostics; real Read/Edit/Search/failed Run/select; synthetic Write/multi-file Edit/Delegate, oversized/malformed results, delayed recovery and Restart. Both reproduced AX crashes survived the fix. The two startup outliers pass their isolated rerun (2 tests / 1.316s).
+- **Not verified:** green full app suite (final full run incomplete, baseline-overlapping failures); real Delegate child execution/navigation; actual provider Write; native Browser/Computer and full VoiceOver. Local-command Sending bubbles and one recoverable startup timeout are recorded without causal attribution.
+- **Decisions made in scope:** depth cap four→six to preserve real phase/task nesting while retaining scalar/node/array/media caps; remove three redundant recursive Text AX labels; use fresh disposable sessions for synthetic protocol probes; keep PR draft. No dependencies, upstream OMP changes, merge, deployment, or broad fixes.
+- **Remaining:** resolve the full-suite gate in a separate scoped decision, verify real Delegate with a client that exposes it, and inspect the real Write/child-session experience. Do not rerun all focused tests or baseline merely to repeat evidence.
+- **Build:** `/tmp/10x-event-boundary-release/Build/Products/Release/10x.app`, bundle `com.nextstep.tenx.eventboundary`, arm64 UUID `B3E51771-AC9E-3218-8624-8D55849A4FAC`. It remains visible; no dev server was started.
+- **QA fixtures:** `/tmp/10x-event-boundary-qa/.omp/extensions/`; runbook in ignored `.superpowers/sdd/2026-09-28-omp-event-boundary/scratch/task-10-native-probes.md`. Start a fresh app session per synthetic command. Fixture frames are UI proof, not real tool execution.
+- **Backup:** stash `7d4c7c11c2383cafceb1a3abcdf699ebc10e0afb` was already restored/committed. Never apply it again. No implementation or verification agent should remain running after the final report.

@@ -244,3 +244,23 @@ Do not begin checkpoint 2 until checkpoint 1 works in a built app. Each checkpoi
 ## Execution Handoff
 
 The first checkpoint is the first independently reviewable working slice. After each checkpoint, report Verified / Not verified / For Tanner to test with build and interaction evidence, then continue only within the approved execution scope. A follow-up implementation branch may supersede this plan with measured constraints, but it must update this document before broadening scope.
+
+
+## Execution status (2026-09-29)
+
+This measured status supersedes the unchecked drafting checklist above; it does not invent historical RED evidence. Detailed counts and caveats are in `../evidence/2026-09-28-omp-event-boundary.md`.
+
+| Task | Status | Evidence / remaining gate |
+| --- | --- | --- |
+| 1–3 Guidance | Implemented and verified | Scoped independent reviews; real Release toggle, restore, reference preservation |
+| 4 Passive events | Implemented and verified | Bounded diagnostics tests; real Release fault probe on/off |
+| 5 Tool budgets | Implemented and verified | Independent budget regressions; depth-six amendment; oversized and malformed native probes |
+| 6 Tool wrappers | Implemented; native coverage partial | Real Read/Edit/Search/Run; synthetic Write and multi-file Edit; successful real Write and Browser/Computer interactions not verified |
+| 7 Delegate | Implemented; native coverage partial | Exact-parent tests and normal/failed snapshots; synthetic native two-worker hierarchy. Real delegation unavailable in selected client |
+| 8 IDs | Implemented and verified | Usable-ID regression and full 223-test OmpKit suite |
+| 9 Unsupported UI | Implemented and verified | Five controller regressions, real select response, synthetic delayed warning and successful Restart |
+| 10 Final gates | Incomplete | Release and scoped reviews pass; full app suite has baseline-overlapping failures and an incomplete final run. PR stays draft; merge not authorized |
+
+Native verification found a concrete AX recursion crash; `032034f` removes three redundant Text accessibility labels. Root repeated both failing interactions successfully on the rebuilt Release. No unrelated startup or snapshot changes were absorbed into the patch.
+
+The two startup outliers passed a single isolated rerun (2 tests / 1.316s). The incomplete full run remains incomplete. Successful synthetic Write was subsequently verified in the native Release source card.
