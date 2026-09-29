@@ -690,8 +690,17 @@ enum ToolContentExtractor {
         }
 
         guard phase == .failed, kind != .think else { return base }
+        let exitOutcome: String? = switch kind {
+        case .bash, .eval:
+            firstInt(in: result, paths: [
+                ["details", "exitCode"], ["details", "exit_code"], ["exitCode"], ["exit_code"],
+            ]).map { "Exit \($0)" }
+        default:
+            nil
+        }
         let fullError = ansiSafe(envelope.error ?? envelope.text ?? "Tool failed")
-        let error = fullError.split(whereSeparator: \.isNewline).first.map(String.init)
+        let error = exitOutcome
+            ?? fullError.split(whereSeparator: \.isNewline).first.map(String.init)
             ?? "Tool failed"
         return ToolCardContent(
             title: base.title,
@@ -1044,10 +1053,10 @@ enum ToolContentExtractor {
             let additions = unified.files.reduce(0) { $0 + $1.additions }
             let removals = unified.files.reduce(0) { $0 + $1.removals }
             outcome = "+\(additions) −\(removals)"
-            primary = path
-                ?? (unified.files.count == 1
-                    ? unified.files.first?.path
-                    : "\(unified.files.count) files")
+            let primaryPath = path ?? unified.files.first?.path
+            primary = unified.files.count == 1
+                ? primaryPath
+                : (primaryPath ?? "\(unified.files.count) files")
         } else if let changedValues, let changedItems {
             let additions = changedValues.reduce(0) { $0 + ($1["additions"]?.intValue ?? 0) }
             let removals = changedValues.reduce(0) { $0 + ($1["removals"]?.intValue ?? 0) }
@@ -1068,13 +1077,16 @@ enum ToolContentExtractor {
             outcome = envelopeOutcome(envelope, phase: phase)
             primary = path
         }
+        let unifiedReference = unified?.files.first.flatMap { reference(forPath: $0.path) }
+        let headerReference = path.flatMap { reference(forPath: $0) }
+            ?? unifiedReference
+            ?? (changedItems?.count == 1 ? changedItems?.first?.reference : nil)
         return ToolCardContent(
             title: title,
             verb: verb,
             primary: primary,
             outcome: outcome,
-            reference: path.flatMap { reference(forPath: $0) }
-                ?? (changedItems?.count == 1 ? changedItems?.first?.reference : nil),
+            reference: headerReference,
             body: body)
     }
 
@@ -1583,11 +1595,28 @@ enum ToolContentExtractor {
             }
         }
         if bodies.isEmpty {
-            bodies.append(envelopeBody(
-                envelope,
-                arguments: arguments,
-                result: result,
-                phase: phase))
+            if let primary,
+               let url = URL(string: primary),
+               url.scheme == "http" || url.scheme == "https" {
+                let title = nestedString(
+                    in: result,
+                    paths: [["details", "title"], ["title"]])
+                    ?? primary
+                bodies.append(.collection([
+                    ToolCollectionItem(
+                        id: "browser-\(primary)",
+                        label: title,
+                        detail: primary,
+                        reference: .web(url: primary, label: title),
+                        state: BrowserComputerSurfaceLayout.browserPreviewState),
+                ]))
+            } else {
+                bodies.append(envelopeBody(
+                    envelope,
+                    arguments: arguments,
+                    result: result,
+                    phase: phase))
+            }
         }
         return ToolCardContent(
             title: title,
@@ -1630,6 +1659,16 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase)
+        } else if title == "Computer" {
+            body = .stack([
+                .media(media, caption: caption),
+                .collection([ToolCollectionItem(
+                    id: "computer-\(primary ?? title)",
+                    label: primary ?? title,
+                    detail: firstString(in: arguments, keys: ["action", "gesture"]),
+                    reference: primary.flatMap { reference(for: $0) },
+                    state: BrowserComputerSurfaceLayout.computerPreviewState)]),
+            ])
         } else {
             var bodies: [ToolBody] = [.media(media, caption: caption)]
             if let details = envelope.details, !details.isEmpty {

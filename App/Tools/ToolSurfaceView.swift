@@ -31,6 +31,187 @@ enum ToolInspectionAvailability {
     static func showsFooter(sessionFilePath: String?, toolCallID: String?) -> Bool {
         sessionFilePath != nil || toolCallID != nil
     }
+
+    static func showsOpenSessionFile(sessionFilePath: String?) -> Bool {
+        sessionFilePath != nil
+    }
+}
+
+enum FilePathSurfaceLayout {
+    static func directoryPath(for path: String) -> String {
+        let directory = URL(filePath: path).deletingLastPathComponent().path
+        if directory == ".", !path.contains("/") { return "." }
+        if directory.hasPrefix("/"), !path.hasPrefix("/") {
+            return String(directory.dropFirst())
+        }
+        return directory
+    }
+
+    static func copyLabel(for target: FileSurfaceCopyTarget) -> String {
+        switch target {
+        case .source: "Copy"
+        case .diff: "Copy patch"
+        case .console: "Copy output"
+        default: ToolPayloadSurfaceCopy.previewLabel
+        }
+    }
+
+    static func usesPreviewCopyLabel(forBoundedPayload bounded: Bool) -> Bool {
+        bounded
+    }
+}
+
+enum FileSurfaceCopyTarget: Equatable {
+    case source
+    case diff
+    case console
+    case other
+}
+
+enum EditDiffFileSelection {
+    static func selectedPath(in diff: UnifiedDiff, index: Int) -> String? {
+        guard diff.files.indices.contains(index) else { return nil }
+        return diff.files[index].path
+    }
+
+    static func diff(for diff: UnifiedDiff, selectedPath: String) -> UnifiedDiff? {
+        let files = diff.files.filter { $0.path == selectedPath }
+        guard let file = files.first else { return nil }
+        return UnifiedDiff(raw: diff.raw, files: [file])
+    }
+}
+
+struct SearchResultFileGroup: Equatable {
+    let path: String
+    let matches: [ToolCollectionItem]
+}
+
+enum SearchResultGrouping {
+    static func groups(from items: [ToolCollectionItem]) -> [SearchResultFileGroup] {
+        var order: [String] = []
+        var grouped: [String: [ToolCollectionItem]] = [:]
+        for item in items {
+            guard case .file(let path, _) = item.reference else { continue }
+            if grouped[path] == nil { order.append(path) }
+            grouped[path, default: []].append(item)
+        }
+        guard !order.isEmpty else { return [] }
+        return order.map { SearchResultFileGroup(path: $0, matches: grouped[$0] ?? []) }
+    }
+
+    static func shouldGroup(_ items: [ToolCollectionItem]) -> Bool {
+        !items.isEmpty && items.allSatisfy { item in
+            if case .file(_, let line) = item.reference { return line != nil }
+            return false
+        }
+    }
+}
+
+enum ConsoleSurfaceLayout {
+    static func usesCommandOutputHeading(for body: ToolBody) -> Bool {
+        switch body {
+        case .console, .stack:
+            true
+        default:
+            false
+        }
+    }
+}
+
+enum BrowserComputerSurfaceLayout {
+    static let browserPreviewState = "browser-preview"
+    static let computerPreviewState = "computer-preview"
+
+    static func isBrowserCard(_ content: ToolCardContent) -> Bool {
+        content.title == "Browser" || content.verb == "Browse"
+    }
+
+    static func isComputerCard(_ content: ToolCardContent) -> Bool {
+        content.title == "Computer"
+    }
+}
+
+struct FileAttachedPathSurface<Content: View>: View {
+    let filePath: String
+    let copyText: String
+    let copyLabel: String
+    let usesPreviewCopyLabel: Bool
+    @ViewBuilder let content: () -> Content
+
+    @Environment(\.fileReferenceBaseURL) private var baseURL
+    @Environment(\.fileOpenService) private var fileOpenService
+    @Environment(\.openIDEPreferences) private var openIDEPreferences
+    @Environment(\.accessibilityAnnouncer) private var accessibilityAnnouncer
+    @State private var errorStatus: String?
+
+    private var resolvedReference: ResolvedFileReference {
+        FileReferenceResolver().resolve(path: filePath, line: nil, relativeTo: baseURL)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pathBar
+            content()
+        }
+        .padding(10)
+        .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private var pathBar: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    Text(FilePathSurfaceLayout.directoryPath(for: filePath))
+                        .font(TenXTypography.mono(size: 10))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                HStack(spacing: 8) {
+                    if resolvedReference.exists {
+                        Button("Open file", action: openFile)
+                            .buttonStyle(GhostActionStyle())
+                    }
+                    Button(copyActionLabel) { copy(copyText) }
+                        .buttonStyle(GhostActionStyle())
+                }
+                .font(TenXTypography.mono(size: 10, weight: .medium))
+            }
+            if let errorStatus {
+                Text(errorStatus)
+                    .font(TenXTypography.body(size: 10, weight: .medium))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+            }
+        }
+        .padding(.bottom, 8)
+        .overlay(alignment: .bottom) {
+            Divider()
+        }
+    }
+
+    private var copyActionLabel: String {
+        usesPreviewCopyLabel ? ToolPayloadSurfaceCopy.previewLabel : copyLabel
+    }
+
+    private func openFile() {
+        guard resolvedReference.exists, let url = resolvedReference.url else { return }
+        do {
+            try fileOpenService.openWithSystemDefault(url)
+        } catch {
+            errorStatus = "Couldn't open \(resolvedReference.compactLabel)"
+            accessibilityAnnouncer.announce(errorStatus ?? "Couldn't open file")
+        }
+    }
+
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
 }
 
 enum ToolSessionFileOpening {
@@ -69,7 +250,21 @@ struct ToolSurfaceView: View {
         case .document(let document):
             ContentDocumentView(document: document)
         case .source(let source, let previewLines):
-            SourceSurface(presentation: source, previewLineLimit: previewLines)
+            if let topFilePath {
+                FileAttachedPathSurface(
+                    filePath: topFilePath,
+                    copyText: source.text,
+                    copyLabel: FilePathSurfaceLayout.copyLabel(for: .source),
+                    usesPreviewCopyLabel: false
+                ) {
+                    SourceSurface(
+                        presentation: source,
+                        previewLineLimit: previewLines,
+                        style: .embeddedInFileSurface)
+                }
+            } else {
+                SourceSurface(presentation: source, previewLineLimit: previewLines)
+            }
         case .diff(let diff, let fallbackPath):
             DiffView(
                 diff: diff,
@@ -82,7 +277,13 @@ struct ToolSurfaceView: View {
                 exitCode: exitCode,
                 window: phase == .running ? .tail : .head)
         case .collection(let items):
-            CollectionSurfaceView(items: items)
+            if items.first?.state == BrowserComputerSurfaceLayout.browserPreviewState {
+                BrowserToolSurfaceView(items: items)
+            } else if SearchResultGrouping.shouldGroup(items) {
+                GroupedSearchSurfaceView(items: items)
+            } else {
+                CollectionSurfaceView(items: items)
+            }
         case .media(let items, let caption):
             MediaSurfaceView(items: items, caption: caption)
         case .progress(let progress):
@@ -90,13 +291,25 @@ struct ToolSurfaceView: View {
         case .data(let label, let value):
             DataTreeSurfaceView(label: label, value: value)
         case .stack(let bodies):
-            VStack(alignment: .leading, spacing: 12) {
-                ForEach(Array(bodies.enumerated()), id: \.offset) { _, body in
-                    ToolSurfaceView(
-                        body: body,
-                        phase: phase,
-                        topFilePath: topFilePath,
-                        showsInspectionFooter: false)
+            if let browser = BrowserToolSurfacePresentation(bodies: bodies) {
+                BrowserToolSurfaceView(
+                    items: [ToolCollectionItem(
+                        id: "browser-\(browser.url)",
+                        label: browser.title,
+                        detail: browser.url,
+                        reference: .web(url: browser.url, label: browser.title),
+                        state: BrowserComputerSurfaceLayout.browserPreviewState)])
+            } else if let computer = ComputerToolSurfacePresentation(bodies: bodies) {
+                ComputerToolSurfaceView(presentation: computer)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(bodies.enumerated()), id: \.offset) { _, body in
+                        ToolSurfaceView(
+                            body: body,
+                            phase: phase,
+                            topFilePath: topFilePath,
+                            showsInspectionFooter: false)
+                    }
                 }
             }
         case .empty(let message):
@@ -316,6 +529,196 @@ struct ConsoleRenderPresentation: Equatable, Sendable {
     }
 }
 
+struct BrowserToolSurfacePresentation: Equatable {
+    let title: String
+    let url: String
+
+    init?(bodies: [ToolBody]) {
+        for body in bodies {
+            guard case .collection(let items) = body,
+                  let item = items.first,
+                  item.state == BrowserComputerSurfaceLayout.browserPreviewState
+            else { continue }
+            title = item.label
+            url = item.detail ?? item.label
+            return
+        }
+        return nil
+    }
+
+    init(items: [ToolCollectionItem]) {
+        title = items.first?.label ?? "Page"
+        url = items.first?.detail ?? title
+    }
+}
+
+struct ComputerToolSurfacePresentation: Equatable {
+    let application: String
+    let action: String?
+    let media: [ToolMediaItem]
+
+    init?(bodies: [ToolBody]) {
+        var media: [ToolMediaItem] = []
+        var info: ToolCollectionItem?
+        for body in bodies {
+            switch body {
+            case .media(let items, _):
+                media = items
+            case .collection(let items):
+                info = items.first(where: { $0.state == BrowserComputerSurfaceLayout.computerPreviewState })
+            default:
+                break
+            }
+        }
+        guard let info else { return nil }
+        application = info.label
+        action = info.detail
+        self.media = media
+    }
+}
+
+private struct BrowserToolSurfaceView: View {
+    let items: [ToolCollectionItem]
+
+    var body: some View {
+        let presentation = BrowserToolSurfacePresentation(items: items)
+        HStack(alignment: .top, spacing: 16) {
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(TenXPalette.color(TenXPalette.separatorHex), lineWidth: 1)
+                .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+                .frame(width: 142, height: 90)
+                .overlay(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(TenXPalette.color(TenXPalette.separatorHex))
+                            .frame(height: 7)
+                        Text(presentation.title)
+                            .font(TenXTypography.body(size: 11, weight: .medium))
+                            .lineLimit(1)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(TenXPalette.color(TenXPalette.separatorHex))
+                            .frame(height: 5)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(TenXPalette.color(TenXPalette.separatorHex))
+                            .frame(width: 80, height: 5)
+                    }
+                    .padding(9)
+                }
+            VStack(alignment: .leading, spacing: 7) {
+                Text(presentation.title)
+                    .font(TenXTypography.body(size: 12, weight: .medium))
+                Text(presentation.url)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                if let url = URL(string: presentation.url) {
+                    Link("Open page", destination: url)
+                        .buttonStyle(GhostActionStyle())
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct ComputerToolSurfaceView: View {
+    let presentation: ComputerToolSurfacePresentation
+    @Environment(\.toolMediaLoaderFactory) private var makeLoader
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(TenXPalette.color(TenXPalette.separatorHex), lineWidth: 1)
+                .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+                .frame(width: 142, height: 90)
+                .overlay(alignment: .topLeading) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("● ● ●")
+                            .font(TenXTypography.body(size: 9))
+                            .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                        Text(presentation.application)
+                            .font(TenXTypography.body(size: 11, weight: .medium))
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(TenXPalette.color(TenXPalette.separatorHex))
+                            .frame(height: 5)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(TenXPalette.color(TenXPalette.separatorHex))
+                            .frame(width: 80, height: 5)
+                    }
+                    .padding(9)
+                }
+            VStack(alignment: .leading, spacing: 7) {
+                Text(presentation.application)
+                    .font(TenXTypography.body(size: 12, weight: .medium))
+                if let action = presentation.action {
+                    Text(action)
+                        .font(TenXTypography.body(size: 11))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                }
+                if let item = presentation.media.first {
+                    Button("View capture") {
+                        if let url = item.url.flatMap(URL.init(string:)) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(GhostActionStyle())
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct GroupedSearchSurfaceView: View {
+    let items: [ToolCollectionItem]
+    @State private var reveal = ToolSurfacePagination.collection
+
+    var body: some View {
+        let groups = SearchResultGrouping.groups(from: items)
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(visibleGroups.enumerated()), id: \.offset) { _, group in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        TranscriptReferenceView(reference: .file(path: group.path, line: nil))
+                        Spacer(minLength: 8)
+                        Text("\(group.matches.count) \(group.matches.count == 1 ? "match" : "matches")")
+                            .font(TenXTypography.body(size: 11))
+                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    }
+                    ForEach(group.matches) { match in
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            if case .file(_, let line) = match.reference, let line {
+                                Text(String(line))
+                                    .font(TenXTypography.mono(size: 10))
+                                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                                    .frame(width: 28, alignment: .trailing)
+                            }
+                            if let detail = match.detail {
+                                Text(detail)
+                                    .font(TenXTypography.mono(size: 10))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+                    }
+                }
+            }
+            ProgressiveRevealButton(
+                reveal: $reveal,
+                total: groups.count,
+                noun: "files",
+                accessibilityNoun: "result files")
+        }
+    }
+
+    private var visibleGroups: [SearchResultFileGroup] {
+        let groups = SearchResultGrouping.groups(from: items)
+        return Array(groups.prefix(reveal.visibleCount(total: groups.count)))
+    }
+}
+
 private struct ConsoleSurfaceView: View {
     let command: String?
     let output: String
@@ -356,37 +759,46 @@ private struct ConsoleSurfaceView: View {
 
             if !output.isEmpty {
                 HStack(spacing: 8) {
+                    Text("Command output")
+                        .font(TenXTypography.body(size: 11, weight: .medium))
+                    Spacer(minLength: 8)
                     if let exitCode {
                         Text("Exit \(exitCode)")
                             .foregroundStyle(exitCode == 0
                                 ? TenXPalette.color(TenXPalette.cyanHex)
                                 : TenXPalette.color(TenXPalette.signalRedHex))
-                    } else {
-                        Text("OUTPUT")
-                            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     }
-                    Spacer(minLength: 8)
                     Button(isWrapped ? "Scroll" : "Wrap") {
                         isWrapped.toggle()
                     }
                     .buttonStyle(GhostActionStyle())
-                    Button(ToolPayloadSurfaceCopy.previewLabel) { copy(presentation.copyText) }
+                    Button(FilePathSurfaceLayout.copyLabel(for: .console)) { copy(presentation.copyText) }
                         .buttonStyle(GhostActionStyle())
                 }
                 .font(TenXTypography.mono(size: 10, weight: .medium))
 
                 outputText(presentation.visibleText)
                     .accessibilityLabel(presentation.accessibilityText)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(consoleFooterSummary(presentation: presentation))
+                        .font(TenXTypography.body(size: 11))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    Spacer(minLength: 8)
+                    ProgressiveRevealButton(
+                        reveal: $lineReveal,
+                        total: presentation.lineProgressiveTotal,
+                        noun: "lines",
+                        accessibilityNoun: "output lines")
+                }
                 ProgressiveRevealButton(
                     reveal: $characterReveal,
                     total: presentation.characterProgressiveTotal,
                     noun: "characters",
                     accessibilityNoun: "output characters")
-                ProgressiveRevealButton(
-                    reveal: $lineReveal,
-                    total: presentation.lineProgressiveTotal,
-                    noun: "lines",
-                    accessibilityNoun: "output lines")
             }
         }
     }
@@ -414,6 +826,15 @@ private struct ConsoleSurfaceView: View {
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func consoleFooterSummary(presentation: ConsoleRenderPresentation) -> String {
+        let total = presentation.lineProgressiveTotal
+        let visible = min(total, lineReveal.limit)
+        guard total > visible else {
+            return "Showing \(total) \(total == 1 ? "line" : "lines")"
+        }
+        return "Showing \(visible) of \(total) \(total == 1 ? "line" : "lines")"
     }
 }
 

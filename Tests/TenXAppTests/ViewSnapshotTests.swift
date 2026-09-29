@@ -22,6 +22,242 @@ import Testing
 }
 
 @MainActor
+@Test func task6FileToolGalleryReadWriteSnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1_725_000_000)
+    let read = ToolPresentation(
+        id: "task6-read",
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: snapshotTextResult("""
+        struct TranscriptView: View {
+          let controller: SessionController
+          var body: some View {
+            transcriptContent
+          }
+        """),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.3))
+    let write = ToolPresentation(
+        id: "task6-write",
+        name: "write",
+        arguments: .object([
+            "path": .string("docs/release-notes.md"),
+            "content": .string("# Release notes\n\nImproved transcript stability."),
+        ]),
+        result: nil,
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.2))
+    let disclosure = ToolDisclosureState()
+    for id in [read.id, write.id] { disclosure.setExpanded(true, id: id) }
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ToolCardView(presentation: read)
+            ToolCardView(presentation: write)
+        }
+        .environment(\.toolDisclosureState, disclosure)
+        .environment(snapshotEmptyIDEStore)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .frame(width: 720, alignment: .leading),
+        name: "task6-file-tool-gallery-read-write",
+        size: CGSize(width: 800, height: 720))
+}
+
+@MainActor
+@Test func task6FileToolGalleryEditMultiFileSnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1_725_000_000)
+    let alpha = "App/Sessions/TranscriptMessage.swift"
+    let beta = "App/Sessions/TranscriptReducer.swift"
+    let edit = ToolPresentation(
+        id: "task6-edit",
+        name: "edit",
+        arguments: .object(["path": .string(alpha)]),
+        result: .object(["details": .object([
+            "diff": .string("""
+            diff --git a/\(alpha) b/\(alpha)
+            --- a/\(alpha)
+            +++ b/\(alpha)
+            @@ advisor presentation @@
+            -return rawContent
+            +return advisorNotes
+            diff --git a/\(beta) b/\(beta)
+            --- a/\(beta)
+            +++ b/\(beta)
+            @@ guidance routing @@
+            -append guidance
+            +replace guidance
+            """),
+            "perFileResults": .array([
+                .object([
+                    "path": .string(alpha),
+                    "diff": .string("-return rawContent\n+return advisorNotes"),
+                ]),
+                .object([
+                    "path": .string(beta),
+                    "diff": .string("-append guidance\n+replace guidance"),
+                ]),
+            ]),
+        ])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.7))
+    let disclosure = ToolDisclosureState()
+    disclosure.setExpanded(true, id: edit.id)
+
+    try assertSnapshot(
+        ToolCardView(presentation: edit)
+            .environment(\.toolDisclosureState, disclosure)
+            .environment(snapshotEmptyIDEStore)
+            .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+            .environment(\.fileOpenService, snapshotFileOpenService)
+            .frame(width: 720, alignment: .leading),
+        name: "task6-file-tool-gallery-edit-multifile",
+        size: CGSize(width: 800, height: 620))
+}
+
+@MainActor
+@Test func task6WorkToolGalleryRunFailureSnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1_725_000_000)
+    let run = ToolPresentation(
+        id: "task6-run-failure",
+        name: "bash",
+        arguments: .object(["command": .string("swift test --filter Transcript")]),
+        result: .object([
+            "error": .string("Tests failed"),
+            "details": .object([
+                "exitCode": .int(1),
+                "stdout": .string("""
+                Test Suite 'TranscriptTests' started
+                ✓ testMessageParsing
+                ✕ testAdvisorWrapping
+                Expected 1 compact item, found 2
+                """),
+            ]),
+        ]),
+        phase: .failed,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(4.2),
+        hasReliableStartDate: false)
+    let disclosure = ToolDisclosureState()
+    disclosure.setExpanded(true, id: run.id)
+
+    try assertSnapshot(
+        ToolCardView(presentation: run)
+            .environment(\.toolDisclosureState, disclosure)
+            .environment(snapshotEmptyIDEStore)
+            .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+            .environment(\.fileOpenService, snapshotFileOpenService)
+            .frame(width: 720, alignment: .leading),
+        name: "task6-work-tool-gallery-run-failure",
+        size: CGSize(width: 800, height: 520))
+}
+
+@MainActor
+@Test func task6WorkToolGallerySearchSnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1_725_000_000)
+    let search = ToolPresentation(
+        id: "task6-search",
+        name: "grep",
+        arguments: .object(["pattern": .string("extension_ui_request")]),
+        result: .object(["details": .object(["matches": .array([
+            .object([
+                "path": .string("OmpKit/Sources/OmpKit/Wire/RpcFrame.swift"),
+                "line": .int(142),
+                "text": .string("case extension_ui_request:"),
+            ]),
+            .object([
+                "path": .string("OmpKit/Sources/OmpKit/Wire/RpcFrame.swift"),
+                "line": .int(151),
+                "text": .string("return .extensionUIRequest(request)"),
+            ]),
+            .object([
+                "path": .string("App/Sessions/SessionController.swift"),
+                "line": .int(1990),
+                "text": .string("consumeExtensionUI(request)"),
+            ]),
+        ])])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.4))
+    let disclosure = ToolDisclosureState()
+    disclosure.setExpanded(true, id: search.id)
+
+    try assertSnapshot(
+        ToolCardView(presentation: search)
+            .environment(\.toolDisclosureState, disclosure)
+            .environment(snapshotEmptyIDEStore)
+            .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+            .environment(\.fileOpenService, snapshotFileOpenService)
+            .frame(width: 720, alignment: .leading),
+        name: "task6-work-tool-gallery-search",
+        size: CGSize(width: 800, height: 520))
+}
+
+@MainActor
+@Test func task6ExternalToolGalleryBrowserComputerSnapshot() throws {
+    let timestamp = Date(timeIntervalSince1970: 1_725_000_000)
+    let previewPath = snapshotProjectURL
+        .appending(path: "Tests/TenXAppTests/ReferenceImages/source-wrapped.png")
+        .path
+    let browser = ToolPresentation(
+        id: "task6-browser",
+        name: "browser",
+        arguments: .object([
+            "action": .string("browse"),
+            "url": .string("https://docs.omp.dev/rpc"),
+            "title": .string("RPC reference"),
+        ]),
+        result: .object(["details": .object([
+            "title": .string("RPC reference"),
+            "url": .string("https://docs.omp.dev/rpc"),
+        ])]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(1.1))
+    let computer = ToolPresentation(
+        id: "task6-computer",
+        name: "computer",
+        arguments: .object([
+            "action": .string("Save in Xcode"),
+            "application": .string("Xcode"),
+        ]),
+        result: .object([
+            "content": .array([.object([
+                "type": .string("image"),
+                "url": .string(previewPath),
+                "mimeType": .string("image/png"),
+                "name": .string("Xcode"),
+            ])]),
+            "details": .object([
+                "application": .string("Xcode"),
+                "action": .string("Save action"),
+            ]),
+        ]),
+        phase: .complete,
+        startDate: timestamp,
+        endDate: timestamp.addingTimeInterval(0.8))
+    let disclosure = ToolDisclosureState()
+    for id in [browser.id, computer.id] { disclosure.setExpanded(true, id: id) }
+
+    try assertSnapshot(
+        VStack(alignment: .leading, spacing: 18) {
+            ToolCardView(presentation: browser)
+            ToolCardView(presentation: computer)
+        }
+        .environment(\.toolDisclosureState, disclosure)
+        .environment(snapshotEmptyIDEStore)
+        .environment(\.fileReferenceBaseURL, snapshotProjectURL)
+        .environment(\.fileOpenService, snapshotFileOpenService)
+        .environment(\.toolMediaLoaderFactory, snapshotMediaLoader)
+        .frame(width: 720, alignment: .leading),
+        name: "task6-external-tool-gallery-browser-computer",
+        size: CGSize(width: 800, height: 760))
+}
+
+@MainActor
 @Test func genericToolCardSnapshot() throws {
     let presentation = ToolPresentation(
         id: "snapshot-tool",

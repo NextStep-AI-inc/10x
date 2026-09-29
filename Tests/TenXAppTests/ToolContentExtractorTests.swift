@@ -204,7 +204,7 @@ import Testing
         return
     }
     #expect(diff.files.map(\.path) == [alpha, beta])
-    #expect(card.primary == "2 files")
+    #expect(card.primary == alpha)
     #expect(card.outcome == "+2 −2")
 }
 
@@ -487,7 +487,7 @@ import Testing
             arguments: .object([:]),
             result: .object(["details": .object(["diff": .string(patch)])]),
             phase: .complete)
-        #expect(card.primary == "2 files")
+        #expect(card.primary == "App/A.swift")
         #expect(card.outcome == "+2 −2")
         guard case .diff(let diff, _) = card.body else {
             Issue.record("\(name) should use the diff surface")
@@ -1397,4 +1397,200 @@ private func jsonNodeCount(_ value: JSONValue) -> Int {
 private func toolCardVisibleText(_ tool: ToolPresentation) -> String {
     let header = ToolCardHeaderPresentation(content: tool.content, phase: tool.phase, duration: nil)
     return header.visibleText + header.accessibilityLabel
+}
+
+@Test func fileToolCardsUseAttachedPathSurface() throws {
+    let read = ToolContentExtractor.card(
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: result(text: "struct TranscriptView: View {\n  var body: some View {\n"),
+        phase: .complete)
+    #expect(read.reference == .file(path: "App/Sessions/TranscriptView.swift", line: nil))
+    #expect(ToolCardFileHeaderLabel.filename(for: read.reference) == "TranscriptView.swift")
+    #expect(FilePathSurfaceLayout.directoryPath(for: "App/Sessions/TranscriptView.swift")
+        == "App/Sessions")
+    guard case .source(let readSource, _) = read.body else {
+        Issue.record("Read should use a source body")
+        return
+    }
+    #expect(!readSource.text.isEmpty)
+    #expect(FilePathSurfaceLayout.copyLabel(for: FileSurfaceCopyTarget.source) == "Copy")
+
+    let write = ToolContentExtractor.card(
+        name: "write",
+        arguments: .object([
+            "path": .string("docs/release-notes.md"),
+            "content": .string("# Release notes\n\nImproved transcript stability."),
+        ]),
+        result: nil,
+        phase: .complete)
+    #expect(ToolCardFileHeaderLabel.filename(for: write.reference) == "release-notes.md")
+    #expect(FilePathSurfaceLayout.directoryPath(for: "docs/release-notes.md") == "docs")
+    guard case .source = write.body else {
+        Issue.record("Write should use a source body")
+        return
+    }
+
+    let alpha = "App/Sessions/TranscriptMessage.swift"
+    let beta = "App/Sessions/TranscriptReducer.swift"
+    let edit = ToolContentExtractor.card(
+        name: "edit",
+        arguments: .object(["path": .string(alpha)]),
+        result: .object(["details": .object([
+            "diff": .string("""
+            diff --git a/\(alpha) b/\(alpha)
+            --- a/\(alpha)
+            +++ b/\(alpha)
+            @@ -1 +1 @@
+            -return rawContent
+            +return advisorNotes
+            diff --git a/\(beta) b/\(beta)
+            --- a/\(beta)
+            +++ b/\(beta)
+            @@ -1 +1 @@
+            -append guidance
+            +replace guidance
+            """),
+            "perFileResults": .array([
+                .object([
+                    "path": .string(alpha),
+                    "diff": .string("""
+                    --- a/\(alpha)
+                    +++ b/\(alpha)
+                    @@ -1 +1 @@
+                    -return rawContent
+                    +return advisorNotes
+                    """),
+                ]),
+                .object([
+                    "path": .string(beta),
+                    "diff": .string("""
+                    --- a/\(beta)
+                    +++ b/\(beta)
+                    @@ -1 +1 @@
+                    -append guidance
+                    +replace guidance
+                    """),
+                ]),
+            ]),
+        ])]),
+        phase: .complete)
+    #expect(ToolCardFileHeaderLabel.filename(for: edit.reference) == "TranscriptMessage.swift")
+    guard case .diff(let editDiff, _) = edit.body else {
+        Issue.record("Edit should use a diff body")
+        return
+    }
+    #expect(editDiff.files.count == 2)
+    #expect(EditDiffFileSelection.selectedPath(in: editDiff, index: 0) == alpha)
+    #expect(EditDiffFileSelection.selectedPath(in: editDiff, index: 1) == beta)
+    #expect(EditDiffFileSelection.diff(for: editDiff, selectedPath: beta)?.files.count == 1)
+    #expect(EditDiffFileSelection.diff(for: editDiff, selectedPath: beta)?.files.first?.path == beta)
+    #expect(FilePathSurfaceLayout.copyLabel(for: FileSurfaceCopyTarget.diff) == "Copy patch")
+
+    let runFailure = ToolContentExtractor.card(
+        name: "bash",
+        arguments: .object(["command": .string("swift test --filter Transcript")]),
+        result: .object([
+            "details": .object([
+                "exitCode": .int(1),
+                "stdout": .string("Test Suite 'TranscriptTests' started\n✕ testAdvisorWrapping"),
+            ]),
+        ]),
+        phase: .failed)
+    #expect(runFailure.outcome == "Exit 1")
+    guard case .stack(let failureBodies) = runFailure.body,
+          case .console(let command, let output, let exitCode) = failureBodies.last
+    else {
+        Issue.record("Failed run should retain a console body")
+        return
+    }
+    #expect(command == "swift test --filter Transcript")
+    #expect(exitCode == 1)
+    #expect(output.contains("testAdvisorWrapping"))
+    #expect(ConsoleSurfaceLayout.usesCommandOutputHeading(for: runFailure.body))
+
+    let search = ToolContentExtractor.card(
+        name: "grep",
+        arguments: .object(["pattern": .string("extension_ui_request")]),
+        result: .object(["details": .object(["matches": .array([
+            .object([
+                "path": .string("OmpKit/Sources/OmpKit/Wire/RpcFrame.swift"),
+                "line": .int(142),
+                "text": .string("case extension_ui_request:"),
+            ]),
+            .object([
+                "path": .string("OmpKit/Sources/OmpKit/Wire/RpcFrame.swift"),
+                "line": .int(151),
+                "text": .string("return .extensionUIRequest(request)"),
+            ]),
+            .object([
+                "path": .string("App/Sessions/SessionController.swift"),
+                "line": .int(1990),
+                "text": .string("consumeExtensionUI(request)"),
+            ]),
+        ])])]),
+        phase: .complete)
+    guard case .collection(let searchItems) = search.body else {
+        Issue.record("Search should use a collection body")
+        return
+    }
+    let groups = SearchResultGrouping.groups(from: searchItems)
+    #expect(groups.count == 2)
+    #expect(groups[0].path.hasSuffix("RpcFrame.swift"))
+    #expect(groups[0].matches.count == 2)
+    #expect(groups[1].path.hasSuffix("SessionController.swift"))
+
+    let browser = ToolContentExtractor.card(
+        name: "browser",
+        arguments: .object([
+            "action": .string("browse"),
+            "url": .string("https://docs.omp.dev/rpc"),
+            "title": .string("RPC reference"),
+        ]),
+        result: .object(["details": .object([
+            "title": .string("RPC reference"),
+            "url": .string("https://docs.omp.dev/rpc"),
+        ])]),
+        phase: .complete)
+    #expect(BrowserComputerSurfaceLayout.isBrowserCard(browser))
+    #expect(browser.primary == "https://docs.omp.dev/rpc")
+
+    let computer = ToolContentExtractor.card(
+        name: "computer",
+        arguments: .object([
+            "action": .string("Save in Xcode"),
+            "application": .string("Xcode"),
+        ]),
+        result: .object(["details": .object([
+            "application": .string("Xcode"),
+            "action": .string("Save action"),
+        ])]),
+        phase: .complete)
+    #expect(BrowserComputerSurfaceLayout.isComputerCard(computer))
+
+    #expect(ToolInspectionAvailability.showsFooter(sessionFilePath: nil, toolCallID: "call-1"))
+    #expect(ToolInspectionAvailability.showsFooter(
+        sessionFilePath: "/tmp/session.jsonl",
+        toolCallID: nil))
+    #expect(!ToolInspectionAvailability.showsFooter(sessionFilePath: nil, toolCallID: nil))
+    #expect(ToolInspectionAvailability.showsOpenSessionFile(sessionFilePath: "/tmp/session.jsonl"))
+    #expect(!ToolInspectionAvailability.showsOpenSessionFile(sessionFilePath: nil))
+}
+
+@Test func fileToolCardsDisableMissingPathActions() {
+    let missing = ToolContentExtractor.card(
+        name: "read",
+        arguments: .object(["path": .string("App/Missing.swift")]),
+        result: result(text: "missing"),
+        phase: .complete)
+    let resolved = FileReferenceResolver(fileExists: { _ in false })
+        .resolve(path: "App/Missing.swift", line: nil, relativeTo: nil)
+    #expect(!resolved.exists)
+    #expect(missing.reference == .file(path: "App/Missing.swift", line: nil))
+}
+
+@Test func fileToolCardsKeepCopyPreviewLabelForBoundedPayloads() {
+    #expect(ToolPayloadSurfaceCopy.previewLabel == "Copy preview")
+    #expect(FilePathSurfaceLayout.usesPreviewCopyLabel(forBoundedPayload: true))
+    #expect(!FilePathSurfaceLayout.usesPreviewCopyLabel(forBoundedPayload: false))
 }
