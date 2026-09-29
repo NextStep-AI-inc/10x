@@ -86,20 +86,30 @@ import Testing
         "toolName": .string("bash"),
         "args": .object(["command": .string("sleep 1")]),
     ])))
-    _ = reducer.consume(.event(type: "tool_execution_end", payload: .object([
-        "toolName": .string("bash"),
+    _ = reducer.consume(.event(type: "tool_execution_start", payload: .object([
+        "toolCallId": .string("tool-2"),
+        "toolName": .string("read"),
+        "args": .object(["path": .string("App.swift")]),
     ])))
-
-    let settledTool = try #require(toolItems(from: reducer.items).first { $0.id == "tool-1" })
-    #expect(settledTool.phase == .failed)
-    #expect(settledTool.isError)
-
     _ = reducer.consume(.event(type: "subagent_lifecycle", payload: .object([
         "payload": .object([
             "id": .string("worker-1"),
+            "agent": .string("explorer"),
             "index": .int(1),
             "status": .string("running"),
         ]),
+    ])))
+    _ = reducer.consume(.event(type: "subagent_lifecycle", payload: .object([
+        "payload": .object([
+            "id": .string("worker-2"),
+            "agent": .string("reviewer"),
+            "index": .int(2),
+            "status": .string("running"),
+        ]),
+    ])))
+
+    _ = reducer.consume(.event(type: "tool_execution_end", payload: .object([
+        "toolName": .string("bash"),
     ])))
     _ = reducer.consume(.event(type: "subagent_lifecycle", payload: .object([
         "payload": .object([
@@ -107,9 +117,52 @@ import Testing
             "status": .string("completed"),
         ]),
     ])))
-    let settledSubagent = try #require(subagentItems(from: reducer.items).first { $0.id == "worker-1" })
-    #expect(settledSubagent.status == .failed)
-    #expect(settledSubagent.description == EventDiagnosticDisplay.settledUpdateError)
+
+    let toolOne = try #require(toolItems(from: reducer.items).first { $0.id == "tool-1" })
+    let toolTwo = try #require(toolItems(from: reducer.items).first { $0.id == "tool-2" })
+    #expect(toolOne.phase == .running)
+    #expect(toolTwo.phase == .running)
+    let workerOne = try #require(subagentItems(from: reducer.items).first { $0.id == "worker-1" })
+    let workerTwo = try #require(subagentItems(from: reducer.items).first { $0.id == "worker-2" })
+    #expect(workerOne.status.isActive)
+    #expect(workerTwo.status.isActive)
+
+    _ = reducer.consume(.event(type: "tool_execution_end", payload: .object([
+        "toolCallId": .string("tool-1"),
+        "toolName": .string("bash"),
+    ])))
+    _ = reducer.consume(.event(type: "subagent_lifecycle", payload: .object([
+        "payload": .object([
+            "id": .string("worker-2"),
+            "status": .string("completed"),
+        ]),
+    ])))
+
+    let settledTool = try #require(toolItems(from: reducer.items).first { $0.id == "tool-1" })
+    #expect(settledTool.phase == .failed)
+    #expect(settledTool.isError)
+    #expect(toolTwo.phase == .running)
+    let settledWorker = try #require(subagentItems(from: reducer.items).first { $0.id == "worker-2" })
+    #expect(settledWorker.status == .failed)
+    #expect(settledWorker.description == EventDiagnosticDisplay.settledUpdateError)
+    #expect(workerOne.status.isActive)
+
+    _ = reducer.consume(.event(type: "tool_execution_update", payload: .object([
+        "toolCallId": .string("tool-1"),
+        "toolName": .string("bash"),
+        "partialResult": .object(["content": .array([.object(["type": .string("text"), "text": .string("late")])])]),
+    ])))
+    _ = reducer.consume(.event(type: "subagent_lifecycle", payload: .object([
+        "payload": .object([
+            "id": .string("worker-2"),
+            "agent": .string("reviewer"),
+            "index": .int(2),
+            "status": .string("running"),
+        ]),
+    ])))
+
+    #expect(toolItems(from: reducer.items).first { $0.id == "tool-1" }?.phase == .failed)
+    #expect(subagentItems(from: reducer.items).first { $0.id == "worker-2" }?.status == .failed)
 
     let assistantReply = JSONValue.object([
         "id": .string("assistant-1"),
@@ -187,6 +240,20 @@ import Testing
 
     _ = reducer.consume(.event(type: "agent_start", payload: .object([:])))
     _ = reducer.consume(.event(type: "turn_start", payload: .object([:])))
+    _ = reducer.consume(.event(type: "turn_end", payload: .object([:])))
+    _ = reducer.consume(.event(type: "session_info_update", payload: .object([
+        "cwd": .string("/tmp/project"),
+    ])))
+    _ = reducer.consume(.event(type: "config_update", payload: .object([
+        "model": .string("anthropic/claude-sonnet-4-6"),
+    ])))
+    _ = reducer.consume(.event(type: "model_changed", payload: .object([
+        "model": .string("anthropic/claude-sonnet-4-6"),
+    ])))
+    _ = reducer.consume(.event(type: "available_commands_update", payload: .object([
+        "commands": .array([.object(["name": .string("compact")])]),
+    ])))
+    _ = reducer.consume(.event(type: "auto_compaction_start", payload: .object([:])))
     _ = reducer.consume(.event(type: "auto_retry_start", payload: .object([
         "attempt": .int(1),
         "maxAttempts": .int(3),
@@ -197,6 +264,22 @@ import Testing
 
     #expect(diagnosticItems(from: reducer.items).isEmpty)
     #expect(reducer.runtimeState == .streaming)
+}
+
+@Test func payloadBoundaryWideObjectStopsAtNodeBudget() {
+    var children: [String: JSONValue] = [:]
+    for index in 0..<400 {
+        children["key-\(index)"] = .string("value-\(index)")
+    }
+    let estimate = PayloadBoundaryTesting.estimate(.object(children))
+    #expect(estimate.isLowerBound)
+    #expect(estimate.byteCount > 0)
+}
+
+@Test func payloadBoundaryZeroPrimitiveReportsConservativeLowerBound() {
+    let estimate = PayloadBoundaryTesting.estimate(.null)
+    #expect(estimate.isLowerBound)
+    #expect(estimate.byteCount == 0)
 }
 
 private func diagnosticItems(from items: [TranscriptItem]) -> [EventDiagnostic] {

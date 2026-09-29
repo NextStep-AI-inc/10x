@@ -3,6 +3,36 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func terminalEndWithoutResultFailsExactIDAndBlocksRevival() throws {
+    var reducer = ToolEventReducer()
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"tool-1","toolName":"bash","args":{"command":"pwd"}}
+        """))
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"tool-2","toolName":"read","args":{"path":"App.swift"}}
+        """))
+
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"tool-1","toolName":"bash","isError":false}
+        """))
+
+    let failed = try #require(reducer.presentations.first { $0.id == "tool-1" })
+    #expect(failed.phase == .failed)
+    #expect(failed.result?["error"]?.stringValue == EventDiagnosticDisplay.settledUpdateError)
+    #expect(reducer.presentations.first { $0.id == "tool-2" }?.phase == .running)
+
+    reducer.consume(type: "tool_execution_update", payload: try payload("""
+        {"type":"tool_execution_update","toolCallId":"tool-1","toolName":"bash","partialResult":{"content":[{"type":"text","text":"late"}]}}
+        """))
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"tool-1","toolName":"bash","result":{"content":[{"type":"text","text":"too late"}]},"isError":false}
+        """))
+
+    let stillFailed = try #require(reducer.presentations.first { $0.id == "tool-1" })
+    #expect(stillFailed.phase == .failed)
+    #expect(stillFailed.result?["error"]?.stringValue == EventDiagnosticDisplay.settledUpdateError)
+}
+
 @Test func toolUpdatesAndCompletionReplaceResultSnapshots() throws {
     var reducer = ToolEventReducer()
 

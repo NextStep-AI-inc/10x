@@ -163,18 +163,23 @@ struct TranscriptReducer {
             }
             return .none
         case "tool_execution_start", "tool_execution_update", "tool_execution_end":
-            guard payload["toolCallId"]?.stringValue != nil else {
-                var mutation = recordMalformedPassiveEvent(type: type, payload: payload)
-                if type == "tool_execution_end" {
-                    mutation = settleRunningToolDisplayError(at: date) ? .immediate : mutation
-                }
-                return mutation
+            guard let id = payload["toolCallId"]?.stringValue else {
+                return recordMalformedPassiveEvent(type: type, payload: payload)
             }
+            let missingTerminalResult = type == "tool_execution_end"
+                && ToolEventReducer.isMissingTerminalResult(payload)
             toolReducer.consume(type: type, payload: payload, at: date)
-            guard let id = payload["toolCallId"]?.stringValue,
-                  let presentation = toolReducer.presentations.first(where: { $0.id == id })
-            else { return .none }
+            guard let presentation = toolReducer.presentations.first(where: { $0.id == id })
+            else {
+                return missingTerminalResult
+                    ? recordMalformedPassiveEvent(type: type, payload: payload)
+                    : .none
+            }
             var changed = replaceOrAppend(.tool(presentation))
+            if missingTerminalResult {
+                _ = recordMalformedPassiveEvent(type: type, payload: payload)
+                changed = true
+            }
             if type == "tool_execution_end", let result = payload["result"] {
                 pendingPersistenceIDs.insert(.tool(id))
                 subagentReducer.attachResult(parentToolCallID: id, result: result)
@@ -197,8 +202,17 @@ struct TranscriptReducer {
             if type == "subagent_lifecycle",
                body["id"]?.stringValue == nil,
                Self.isTerminalSubagentStatus(body["status"]?.stringValue) {
-                var mutation = recordMalformedPassiveEvent(type: type, payload: payload)
-                mutation = settleRunningSubagentDisplayError(body: body, at: date) ? .immediate : mutation
+                return recordMalformedPassiveEvent(type: type, payload: payload)
+            }
+            if type == "subagent_lifecycle",
+               let id = body["id"]?.stringValue,
+               SubagentEventReducer.isMalformedTerminalLifecycle(body) {
+                _ = subagentReducer.settleDisplayError(id: id)
+                let mutation = recordMalformedPassiveEvent(type: type, payload: payload)
+                if let presentation = subagentReducer.presentations.first(where: { $0.id == id }) {
+                    _ = replaceOrAppend(.subagent(presentation))
+                    return .immediate
+                }
                 return mutation
             }
             if type == "subagent_progress",
@@ -215,6 +229,13 @@ struct TranscriptReducer {
                 return changed ? .coalesced : .none
             }
             return .immediate
+        case "available_commands_update",
+             "turn_end",
+             "session_info_update",
+             "config_update",
+             "model_changed",
+             "auto_compaction_start":
+            return .none
         default:
             return recordUnknownPassiveEvent(type: type, payload: payload)
         }
@@ -385,6 +406,8 @@ struct TranscriptReducer {
         }
         let persistedAnnotations = Set(history.items.compactMap(Self.annotationSignature))
         var persistedGuidanceFingerprintCounts = Self.persistedGuidanceFingerprintCounts(from: history.items)
+        let liveDiagnosticState = Self.diagnosticReconcileState(from: previous)
+        let historyDiagnosticOmittedCount = Self.diagnosticOmittedCount(from: history.items)
         var transient: [TranscriptItem] = []
         for item in items {
             if let identity = Self.inflightIdentity(for: item) {
@@ -405,8 +428,15 @@ struct TranscriptReducer {
                 if !persistedAnnotations.contains(signature) {
                     transient.append(item)
                 }
-            case .notice, .subagent, .extensionUI, .diagnostic:
+            case .notice, .subagent, .extensionUI:
                 transient.append(item)
+            case .diagnostic(let diagnostic):
+                if Self.shouldKeepDiagnosticTransient(
+                    diagnostic,
+                    live: liveDiagnosticState,
+                    persistedIDs: persistedIDs) {
+                    transient.append(item)
+                }
             case .guidance(let presentation):
                 if Self.shouldKeepGuidanceTransient(
                     presentation,
@@ -426,7 +456,15 @@ struct TranscriptReducer {
                 break
             }
         }
-        items = history.items.map { item in
+        items = history.items.compactMap { item in
+            if case .diagnostic(let diagnostic) = item {
+                if diagnostic.omittedEarlierCount != nil {
+                    if liveDiagnosticState.hasOmissionMarker { return nil }
+                } else if liveDiagnosticState.hasOmissionMarker,
+                          !liveDiagnosticState.retainedIDs.contains(item.id) {
+                    return nil
+                }
+            }
             guard case .subagent(var persisted) = item,
                   case .subagent(let live)? = previous.first(where: { $0.id == item.id })
             else { return item }
@@ -440,7 +478,9 @@ struct TranscriptReducer {
             return .subagent(persisted)
         } + transient
         GuidanceTranscript.enforceCap(on: &items)
-        EventDiagnosticTranscript.enforceCap(on: &items)
+        EventDiagnosticTranscript.enforceCap(
+            on: &items,
+            minimumOmittedCount: max(liveDiagnosticState.omittedCount, historyDiagnosticOmittedCount))
         if !inflightItemIDs.contains(where: { identity in
             items.contains { Self.inflightIdentity(for: $0) == identity }
         }) {
@@ -897,40 +937,41 @@ struct TranscriptReducer {
         return syntheticID(prefix: "diagnostic-\(type)")
     }
 
-    @discardableResult
-    private mutating func settleRunningToolDisplayError(at date: Date) -> Bool {
-        guard let index = items.lastIndex(where: { item in
-            guard case .tool(let tool) = item else { return false }
-            return tool.phase == .running
-        }) else { return false }
-        guard case .tool(var tool) = items[index] else { return false }
-        let errorResult = JSONValue.object([
-            "error": .string(EventDiagnosticDisplay.settledUpdateError),
-        ])
-        tool.update(
-            result: .some(errorResult),
-            phase: .failed,
-            endDate: .some(date))
-        items[index] = .tool(tool)
-        return true
+    private struct DiagnosticReconcileState: Equatable {
+        let omittedCount: Int
+        let retainedIDs: Set<String>
+        let hasOmissionMarker: Bool
     }
 
-    @discardableResult
-    private mutating func settleRunningSubagentDisplayError(
-        body: JSONValue,
-        at date: Date
+    private static func diagnosticReconcileState(from items: [TranscriptItem]) -> DiagnosticReconcileState {
+        let diagnostics = diagnosticItems(from: items)
+        return DiagnosticReconcileState(
+            omittedCount: diagnostics.compactMap(\.omittedEarlierCount).first ?? 0,
+            retainedIDs: Set(diagnostics.compactMap { diagnostic in
+                diagnostic.omittedEarlierCount == nil ? diagnostic.id : nil
+            }),
+            hasOmissionMarker: diagnostics.contains { $0.omittedEarlierCount != nil })
+    }
+
+    private static func diagnosticOmittedCount(from items: [TranscriptItem]) -> Int {
+        diagnosticItems(from: items).compactMap(\.omittedEarlierCount).first ?? 0
+    }
+
+    private static func diagnosticItems(from items: [TranscriptItem]) -> [EventDiagnostic] {
+        items.compactMap { item in
+            guard case .diagnostic(let diagnostic) = item else { return nil }
+            return diagnostic
+        }
+    }
+
+    private static func shouldKeepDiagnosticTransient(
+        _ diagnostic: EventDiagnostic,
+        live: DiagnosticReconcileState,
+        persistedIDs: Set<String>
     ) -> Bool {
-        let indexValue = body["index"]?.intValue
-        guard let index = items.lastIndex(where: { item in
-            guard case .subagent(let presentation) = item else { return false }
-            guard presentation.status.isActive else { return false }
-            if let indexValue { return presentation.index == indexValue }
-            return true
-        }) else { return false }
-        guard case .subagent(var presentation) = items[index] else { return false }
-        presentation.status = .failed
-        presentation.description = EventDiagnosticDisplay.settledUpdateError
-        items[index] = .subagent(presentation)
+        if diagnostic.omittedEarlierCount != nil { return false }
+        if persistedIDs.contains(diagnostic.id) { return false }
+        if live.hasOmissionMarker, !live.retainedIDs.contains(diagnostic.id) { return false }
         return true
     }
 

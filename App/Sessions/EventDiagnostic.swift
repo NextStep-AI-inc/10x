@@ -74,8 +74,8 @@ enum EventDiagnosticTranscript {
         return true
     }
 
-    static func enforceCap(on items: inout [TranscriptItem]) {
-        let previousOmittedCount = currentOmittedCount(in: items)
+    static func enforceCap(on items: inout [TranscriptItem], minimumOmittedCount: Int = 0) {
+        let previousOmittedCount = max(currentOmittedCount(in: items), minimumOmittedCount)
         removeOmissionMarker(from: &items)
 
         var diagnosticIndices: [Int] = []
@@ -123,6 +123,18 @@ enum EventDiagnosticTranscript {
     }
 }
 
+enum PayloadBoundaryTesting {
+    struct Estimate: Equatable {
+        let byteCount: Int
+        let isLowerBound: Bool
+    }
+
+    static func estimate(_ value: JSONValue, nodeLimit: Int = 256) -> Estimate {
+        let estimate = PayloadBoundary.estimate(value, nodeLimit: nodeLimit)
+        return Estimate(byteCount: estimate.byteCount, isLowerBound: estimate.isLowerBound)
+    }
+}
+
 private enum PayloadBoundary {
     struct Estimate: Equatable {
         let byteCount: Int
@@ -132,32 +144,40 @@ private enum PayloadBoundary {
     static func estimate(_ value: JSONValue, nodeLimit: Int = 256) -> Estimate {
         var nodesVisited = 0
         var bytes = 0
-        var isLowerBound = false
+        var saturated = false
 
-        func visit(_ value: JSONValue) {
+        func visit(_ value: JSONValue) -> Bool {
             guard nodesVisited < nodeLimit else {
-                isLowerBound = true
-                return
+                saturated = true
+                return false
             }
             nodesVisited += 1
             switch value {
             case .string(let text):
-                bytes += Data(text.utf8).count
+                bytes += text.utf8.count
             case .array(let values):
-                for child in values { visit(child) }
+                for child in values {
+                    guard visit(child) else { return false }
+                }
             case .object(let values):
                 for (key, child) in values {
-                    bytes += Data(key.utf8).count
-                    visit(child)
+                    guard nodesVisited < nodeLimit else {
+                        saturated = true
+                        return false
+                    }
+                    bytes += key.utf8.count
+                    guard visit(child) else { return false }
                 }
             case .int, .double, .bool, .null:
                 break
             }
+            return true
         }
 
-        visit(value)
-        if nodesVisited >= nodeLimit { isLowerBound = true }
-        return Estimate(byteCount: bytes, isLowerBound: isLowerBound)
+        _ = visit(value)
+        if nodesVisited >= nodeLimit { saturated = true }
+        // ponytail: no transport byte count on this path; traversal is always conservative.
+        return Estimate(byteCount: bytes, isLowerBound: true)
     }
 }
 
@@ -179,7 +199,7 @@ struct DiagnosticCardView: View {
                     Text(diagnostic.type)
                         .font(TenXTypography.mono(size: 10))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                    if diagnostic.byteCount > 0 {
+                    if diagnostic.byteCount > 0 || diagnostic.isByteCountLowerBound {
                         Text(Self.sizeLabel(diagnostic))
                             .font(TenXTypography.mono(size: 10))
                             .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
@@ -216,7 +236,7 @@ struct DiagnosticCardView: View {
             return "Earlier activity omitted, \(itemCount)"
         }
         var parts = [title(for: diagnostic), diagnostic.type]
-        if diagnostic.byteCount > 0 {
+        if diagnostic.byteCount > 0 || diagnostic.isByteCountLowerBound {
             parts.append(sizeLabel(diagnostic))
         }
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")

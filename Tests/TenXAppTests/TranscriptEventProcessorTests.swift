@@ -443,13 +443,13 @@ import Testing
     #expect(await collector.value == ["event:message_end", "event:message_end"])
 }
 
-@Test func malformedAndUnknownFramesProduceNoSnapshot() async throws {
+@Test func malformedAndUnknownFramesProduceBoundedDiagnostics() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
     let initial = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
     let collector = Task { await collectControlLabels(from: processor.controlEvents) }
 
     await processor.consume(try event("""
-        {"type":"unknown_future_event","payload":{"large":"ignored"}}
+        {"type":"unknown_future_event","payload":{"id":"unknown-1","token":"sk-live-secret-token"}}
         """))
     await processor.consume(try event("""
         {"type":"message_update"}
@@ -462,7 +462,17 @@ import Testing
         """))
 
     #expect(await processor.flush() == nil)
-    #expect(await processor.currentSnapshot() == initial)
+    let snapshot = await processor.currentSnapshot()
+    #expect(snapshot.revision > initial.revision)
+    #expect(snapshot.items.count == initial.items.count + 4)
+    let diagnostics = snapshot.items.compactMap { item -> EventDiagnostic? in
+        guard case .diagnostic(let diagnostic) = item else { return nil }
+        return diagnostic
+    }
+    #expect(diagnostics.count == 4)
+    #expect(diagnostics.contains { $0.type == "unknown_future_event" })
+    #expect(!diagnostics.contains { $0.preview?.contains("sk-live-secret-token") == true })
+    #expect(!DiagnosticCardView.accessibilityLabel(for: diagnostics[0]).contains("sk-live-secret-token"))
     await processor.stop()
     #expect(await collector.value.isEmpty)
 }
