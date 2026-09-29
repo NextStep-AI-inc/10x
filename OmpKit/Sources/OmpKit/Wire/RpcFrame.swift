@@ -157,10 +157,13 @@ public enum RpcFrame: Sendable, Equatable {
         case "rpc_chunk":
             return .chunk(try RpcChunk(object: object))
         case "extension_ui_request":
-            guard let id = object["id"]?.stringValue,
-                  let method = object["method"]?.stringValue
-            else {
+            guard let method = object["method"]?.stringValue else {
                 throw RpcFrameError.malformedFrame(type: type, underlying: "missing id or method")
+            }
+            guard let id = object["id"]?.stringValue,
+                  id.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil
+            else {
+                throw RpcFrameError.malformedFrame(type: type, underlying: "missing or unusable id")
             }
             return .extensionUIRequest(ExtensionUIRequest(id: id, method: method, payload: value))
         case "provider_account_changed":
