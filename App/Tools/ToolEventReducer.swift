@@ -99,7 +99,8 @@ struct ToolEventReducer {
         case "tool_execution_end":
             let result = payload["result"]
             let phase: ToolPhase = payload["isError"]?.boolValue == true ? .failed : .complete
-            let alreadyApplied = presentations[index].result == result
+            let boundedResult = result.map(ToolPayloadBudget.limit)
+            let alreadyApplied = presentations[index].result == boundedResult
                 && presentations[index].phase == phase
             presentations[index].update(
                 name: name,

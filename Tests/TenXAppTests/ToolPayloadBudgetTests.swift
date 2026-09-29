@@ -15,6 +15,10 @@ import Testing
         children.append(.string("item-\(index)"))
     }
     let limitedArray = ToolPayloadBudget.limit(.array(children))
+    guard case .array = limitedArray else {
+        Issue.record("Root truncated arrays must stay arrays")
+        return
+    }
     #expect(arrayChildCount(limitedArray) <= ToolPayloadBudget.Limits.arrayChildren)
     #expect(isTruncationMarked(limitedArray))
 
@@ -63,24 +67,70 @@ import Testing
 
 @Test func toolBudgetMarksExplicitTruncationMetadata() {
     let limited = ToolPayloadBudget.limit(.array((0..<64).map { .int($0) }))
-    #expect(isTruncationMarked(limited))
-    if case .object(let object) = limited {
-        #expect(object[ToolPayloadBudget.omittedCountKey]?.intValue != nil)
+    guard case .array(let values) = limited else {
+        Issue.record("Truncated root arrays must remain arrays")
+        return
     }
+    #expect(values.count <= ToolPayloadBudget.Limits.arrayChildren)
+    #expect(values.contains { ToolPayloadBudget.isTruncationMarker($0) })
 }
 
-@Test func toolBudgetNodeCapReturnsPlaceholder() {
-    var nodes: [JSONValue] = []
-    for index in 0..<512 {
-        nodes.append(.object(["i": .int(index), "text": .string("v-\(index)")]))
+@Test func toolBudgetNestedArraysRespectNodeCap() {
+    let outer = (0..<32).map { row in
+        JSONValue.array((0..<32).map { col in JSONValue.string("row-\(row)-\(col)") })
     }
-    let limited = ToolPayloadBudget.limit(.array(nodes))
+    let limited = ToolPayloadBudget.limit(.array(outer))
     #expect(visitedNodeCount(limited) <= ToolPayloadBudget.Limits.totalNodes)
+}
+
+@Test func toolBudgetCapsLongObjectKeysAndMIMELabels() {
+    let longKey = String(repeating: "k", count: 16_384)
+    let longMIME = String(repeating: "m", count: 16_384)
+    let oversized = String(repeating: "A", count: ToolPayloadBudget.Limits.inlineMediaBytes + 1)
+
+    let limitedKeyPayload = ToolPayloadBudget.limit(.object([longKey: .string("value")]))
+    guard case .object(let keyed) = limitedKeyPayload, let storedKey = keyed.keys.first else {
+        Issue.record("Expected capped object key")
+        return
+    }
+    #expect(Data(storedKey.utf8).count <= ToolPayloadBudget.Limits.scalarBytes)
+
+    let limitedMedia = ToolPayloadBudget.limit(.object([
+        "content": .array([.object([
+            "type": .string("image"),
+            "mimeType": .string(longMIME),
+            "data": .string(oversized),
+        ])]),
+    ]))
+    let placeholder = limitedMedia["content"]?.arrayValue?.first?["data"]?.stringValue
+    guard let placeholder else {
+        Issue.record("Expected capped media placeholder")
+        return
+    }
+    #expect(Data(placeholder.utf8).count <= ToolPayloadBudget.Limits.scalarBytes)
+}
+
+@Test func toolBudgetThirtyThreeMatchArrayStaysArrayWithParentMetadata() {
+    let matches = (0..<33).map { index in JSONValue.string("match-\(index)") }
+    let limited = ToolPayloadBudget.limit(.object([
+        "details": .object(["matches": .array(matches)]),
+    ]))
+    guard case .object(let root) = limited,
+          case .object(let details) = root["details"],
+          case .array(let kept) = details["matches"]
+    else {
+        Issue.record("Expected bounded matches array under details")
+        return
+    }
+    #expect(kept.count == 32)
+    #expect(details[ToolPayloadBudget.truncatedKey]?.boolValue == true)
+    #expect(details[ToolPayloadBudget.omittedCountKey]?.intValue == 1)
 }
 
 // MARK: - Helpers
 
 private func isTruncationMarked(_ value: JSONValue) -> Bool {
+    if ToolPayloadBudget.isTruncationMarker(value) { return true }
     switch value {
     case .object(let object):
         if object[ToolPayloadBudget.truncatedKey]?.boolValue == true { return true }
@@ -98,9 +148,6 @@ private func arrayChildCount(_ value: JSONValue) -> Int {
     switch value {
     case .array(let values):
         return values.count
-    case .object(let object):
-        if let items = object[ToolPayloadBudget.itemsKey]?.arrayValue { return items.count }
-        return object.count
     default:
         return 0
     }

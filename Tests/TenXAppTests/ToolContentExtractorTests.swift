@@ -1275,6 +1275,32 @@ private func result(text: String) -> JSONValue {
     #expect(ToolPayloadSurfaceCopy.previewLabel == "Copy preview")
 }
 
+@Test func toolBudgetThirtyThreeGrepMatchesRetainBoundedCollection() {
+    let matches = (0..<33).map { index in
+        JSONValue.object([
+            "path": .string("App/Match\(index).swift"),
+            "line": .int(index + 1),
+            "text": .string("match \(index)"),
+        ])
+    }
+    let tool = ToolPresentation(
+        id: "grep-33",
+        name: "grep",
+        arguments: .object(["pattern": .string("match")]),
+        result: .object(["details": .object(["matches": .array(matches)])]),
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantPast)
+
+    guard case .collection(let items) = tool.content.body else {
+        Issue.record("Expected bounded grep collection")
+        return
+    }
+    #expect(items.count == 32)
+    #expect(tool.content.outcome == "32 matches")
+    #expect(tool.content.outcome != "No matches")
+}
+
 @Test func toolInspectionIntegrationShowsFooterWhenWired() {
     #expect(ToolInspectionAvailability.showsFooter(
         sessionFilePath: "/tmp/session.jsonl",

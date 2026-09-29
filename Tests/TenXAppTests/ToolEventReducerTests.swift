@@ -335,6 +335,27 @@ private enum TestPayloadError: Error {
     #expect(maxStoredScalarBytes(in: running.arguments) <= ToolPayloadBudget.Limits.scalarBytes)
 }
 
+@Test func duplicateOversizedTerminalToolEventDoesNotRepublish() throws {
+    var reducer = ToolEventReducer()
+    let huge = String(repeating: "z", count: 64 * 1_024)
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"dup-huge","toolName":"write","args":{"path":"/tmp/Huge.swift"}}
+        """))
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"dup-huge","toolName":"write","result":{"content":[{"type":"text","text":"\(huge)"}]},"isError":false}
+        """))
+    let firstEnd = try #require(reducer.presentations.first { $0.id == "dup-huge" }?.endDate)
+
+    Thread.sleep(forTimeInterval: 0.01)
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"dup-huge","toolName":"write","result":{"content":[{"type":"text","text":"\(huge)"}]},"isError":false}
+        """))
+
+    let tool = try #require(reducer.presentations.first { $0.id == "dup-huge" })
+    #expect(tool.endDate == firstEnd)
+    #expect(reducer.presentations.count == 1)
+}
+
 private func maxStoredScalarBytes(in value: JSONValue?) -> Int {
     guard let value else { return 0 }
     var maxBytes = 0

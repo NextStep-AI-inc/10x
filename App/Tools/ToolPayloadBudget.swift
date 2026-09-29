@@ -12,18 +12,26 @@ enum ToolPayloadBudget {
 
     static let truncatedKey = "_truncated"
     static let omittedCountKey = "_omittedCount"
-    static let itemsKey = "_items"
 
     /// ponytail: single-pass cap; upgrade path is streaming field extraction per tool family.
     static func limit(_ value: JSONValue) -> JSONValue {
         var context = Context()
-        return limitValue(value, depth: 0, context: &context)
+        return limitValue(value, depth: 0, context: &context) ?? .null
+    }
+
+    static func isTruncationMarker(_ value: JSONValue) -> Bool {
+        guard case .object(let object) = value,
+              object[truncatedKey]?.boolValue == true
+        else { return false }
+        return object.keys.allSatisfy { $0 == truncatedKey || $0 == omittedCountKey }
     }
 
     private struct Context {
         var nodesUsed = 0
         var truncated = false
-        var omittedCount = 0
+        var lastArrayOmission = 0
+
+        var hasNodeBudget: Bool { nodesUsed < Limits.totalNodes }
 
         mutating func consumeNode() -> Bool {
             guard nodesUsed < Limits.totalNodes else {
@@ -33,25 +41,30 @@ enum ToolPayloadBudget {
             nodesUsed += 1
             return true
         }
+
+        mutating func beginArrayLimit() {
+            lastArrayOmission = 0
+        }
     }
 
-    private static let summaryKeys: Set<String> = [
+    private static let summaryKeyOrder: [String] = [
         "path", "filePath", "file_path", "absolutePath",
         "command", "cmd", "script", "pattern", "query", "glob",
         "title", "task", "description", "prompt", "toolName", "name",
         "error", "message", "type", "content", "text", "details",
         "isError", "exitCode", "exit_code", "url", "mimeType", "mime_type",
-        "partialResult", "result", "args", "toolCallId", "toolName",
+        "partialResult", "result", "args", "toolCallId",
+        "matches", "paths", "files", "results", "tasks", "phases", "todos",
     ]
+
+    private static let summaryKeys = Set(summaryKeyOrder)
 
     private static func limitValue(
         _ value: JSONValue,
         depth: Int,
         context: inout Context
-    ) -> JSONValue {
-        guard context.consumeNode() else {
-            return .string("[truncated: node limit]")
-        }
+    ) -> JSONValue? {
+        guard context.consumeNode() else { return nil }
 
         switch value {
         case .null, .bool, .int, .double:
@@ -71,27 +84,56 @@ enum ToolPayloadBudget {
         return truncateUTF8(text, to: Limits.scalarBytes)
     }
 
+    private static func limitKey(_ key: String, context: inout Context) -> String {
+        limitScalar(key, context: &context)
+    }
+
     private static func limitArray(
         _ values: [JSONValue],
         depth: Int,
         context: inout Context
     ) -> JSONValue {
+        context.beginArrayLimit()
+
         guard depth < Limits.containerDepth else {
             context.truncated = true
-            return .string("[truncated: depth limit]")
+            return .string(limitScalar("[truncated: depth limit]", context: &context))
         }
 
-        let kept = values.prefix(Limits.arrayChildren)
-        var limited = kept.map { limitValue($0, depth: depth + 1, context: &context) }
-        if values.count > Limits.arrayChildren {
-            context.truncated = true
-            context.omittedCount += values.count - Limits.arrayChildren
-            return .object([
-                truncatedKey: .bool(true),
-                omittedCountKey: .int(values.count - Limits.arrayChildren),
-                itemsKey: .array(limited),
-            ])
+        let isRoot = depth == 0
+        let reserveMarkerSlot = isRoot && values.count > Limits.arrayChildren
+        let dataCap = reserveMarkerSlot
+            ? Limits.arrayChildren - 1
+            : Limits.arrayChildren
+
+        var limited: [JSONValue] = []
+        var omitted = 0
+
+        for (index, value) in values.enumerated() {
+            if limited.count >= dataCap {
+                omitted = values.count - index
+                break
+            }
+            guard context.hasNodeBudget else {
+                omitted = values.count - index
+                context.truncated = true
+                break
+            }
+            guard let limitedChild = limitValue(value, depth: depth + 1, context: &context) else {
+                omitted = values.count - index
+                break
+            }
+            limited.append(limitedChild)
         }
+
+        if omitted > 0 {
+            context.truncated = true
+            context.lastArrayOmission = omitted
+            if isRoot, limited.count < Limits.arrayChildren, context.consumeNode() {
+                limited.append(truncationMarker(omittedCount: omitted, context: &context))
+            }
+        }
+
         return .array(limited)
     }
 
@@ -100,39 +142,90 @@ enum ToolPayloadBudget {
         depth: Int,
         context: inout Context
     ) -> JSONValue {
+        context.beginArrayLimit()
+
         guard depth < Limits.containerDepth else {
             context.truncated = true
-            return .string("[truncated: depth limit]")
-        }
-
-        let prioritized = object.keys.sorted { lhs, rhs in
-            let leftPriority = summaryKeys.contains(lhs)
-            let rightPriority = summaryKeys.contains(rhs)
-            if leftPriority != rightPriority { return leftPriority }
-            return lhs < rhs
+            return .string(limitScalar("[truncated: depth limit]", context: &context))
         }
 
         var limited: [String: JSONValue] = [:]
-        for key in prioritized {
-            guard context.nodesUsed < Limits.totalNodes else {
+        var processed = Set<String>()
+        var objectOmitted = 0
+
+        func insertEntry(key: String, value: JSONValue) -> Bool {
+            guard context.hasNodeBudget else {
                 context.truncated = true
-                break
+                return false
             }
-            guard let child = object[key] else { continue }
-            if isInlineMediaField(key: key, in: object, value: child) {
+            let limitedKey = limitKey(key, context: &context)
+            let limitedValue: JSONValue?
+            if isInlineMediaField(key: key, in: object, value: value) {
+                guard context.consumeNode() else {
+                    context.truncated = true
+                    return false
+                }
                 let mime = object["mimeType"]?.stringValue ?? object["mime_type"]?.stringValue
-                limited[key] = limitInlineMedia(child, mimeType: mime, context: &context)
+                limitedValue = limitInlineMedia(value, mimeType: mime, context: &context)
             } else {
-                limited[key] = limitValue(child, depth: depth + 1, context: &context)
+                context.beginArrayLimit()
+                limitedValue = limitValue(value, depth: depth + 1, context: &context)
             }
-        }
-        if context.truncated {
-            limited[truncatedKey] = .bool(true)
-            if context.omittedCount > 0 {
-                limited[omittedCountKey] = .int(context.omittedCount)
+            guard let limitedValue else {
+                context.truncated = true
+                return false
             }
+            limited[limitedKey] = limitedValue
+            if context.lastArrayOmission > 0 {
+                context.truncated = true
+                objectOmitted = max(objectOmitted, context.lastArrayOmission)
+            }
+            return true
         }
+
+        for key in summaryKeyOrder {
+            guard let value = object[key] else { continue }
+            processed.insert(key)
+            guard insertEntry(key: key, value: value) else { break }
+        }
+
+        if context.hasNodeBudget {
+            for (key, value) in object where !processed.contains(key) {
+                guard insertEntry(key: key, value: value) else { break }
+            }
+        } else {
+            context.truncated = true
+        }
+
+        appendTruncationMetadata(
+            to: &limited,
+            omittedCount: objectOmitted,
+            context: &context)
+
         return .object(limited)
+    }
+
+    private static func appendTruncationMetadata(
+        to object: inout [String: JSONValue],
+        omittedCount: Int,
+        context: inout Context
+    ) {
+        guard context.truncated || omittedCount > 0 else { return }
+        guard context.consumeNode() else { return }
+        object[truncatedKey] = .bool(true)
+        guard omittedCount > 0, context.consumeNode() else { return }
+        object[omittedCountKey] = .int(omittedCount)
+    }
+
+    private static func truncationMarker(
+        omittedCount: Int,
+        context: inout Context
+    ) -> JSONValue {
+        var marker: [String: JSONValue] = [truncatedKey: .bool(true)]
+        if omittedCount > 0 {
+            marker[omittedCountKey] = .int(omittedCount)
+        }
+        return .object(marker)
     }
 
     private static func isInlineMediaField(
@@ -157,8 +250,12 @@ enum ToolPayloadBudget {
         guard Data(text.utf8).count > Limits.inlineMediaBytes else { return value }
         context.truncated = true
         let kilobytes = Double(text.utf8.count) / 1_024
-        let mime = mimeType ?? "application/octet-stream"
-        return .string(String(format: "[Inline media omitted: %.1f KiB, %@]", kilobytes, mime))
+        let cappedMIME = mimeType.map { limitScalar($0, context: &context) }
+            ?? limitScalar("application/octet-stream", context: &context)
+        let label = limitScalar(
+            String(format: "[Inline media omitted: %.1f KiB, %@]", kilobytes, cappedMIME),
+            context: &context)
+        return .string(label)
     }
 
     private static func truncateUTF8(_ text: String, to byteLimit: Int) -> String {
