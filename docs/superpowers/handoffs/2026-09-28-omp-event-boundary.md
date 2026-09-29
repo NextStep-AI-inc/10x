@@ -2,7 +2,9 @@
 
 ## Status and authoritative git anchor
 
-**Design: DONE. Implementation: NOT STARTED.** Tanner approved the spec and selected the Cursor/Composer handoff for the implementation plan. No product code, build, or test run belongs to this work yet.
+**Design: DONE. Implementation: IN PROGRESS.** Tasks 1–3 are implemented and code-reviewed through `0825eaa`; checkpoint 1 passed in the rebuilt Release app, live and after restart. Tasks 4–10 have not started. See [execution evidence](../evidence/2026-09-28-omp-event-boundary.md) before resuming.
+
+Implementation branch: `codex/omp-event-boundary`, draft PR #50. The clean design checkout below was reused for this branch; the design branch remains preserved at `9862894`. Historical export anchors follow.
 
 - Repository: `git@github.com:NextStep-AI-inc/10x.git`
 - Design branch: `codex/omp-event-boundary-design`
@@ -24,11 +26,11 @@ The spec and plan are the executable source of scope; this file supplies decisio
 
 ## Required model routing
 
-- **Composer 2.5 high fast:** implementation and light checks.
+- **Composer 2.5 Fast:** implementation and light checks.
 - **Grok 4.7 xhigh fast:** verification and audits. This explicitly supersedes the earlier Grok 4.6 preference.
 - **Strongest/main Codex session:** orchestration, steering, and visual verification.
 
-These exact Cursor models were unavailable to the exporting Codex session, so none was launched. Configure the destination with these exact choices. If a model is unavailable, report that limitation; do not silently substitute another model. Delegated work must have explicit owned paths, respect concurrent work, and skip-and-flag an out-of-fence need rather than abort the entire task.
+The authenticated Cursor `agent` CLI now runs both models. Tanner explicitly approved Composer 2.5 Fast after the CLI rejected a high-effort override. If a model is unavailable, report that limitation; do not silently substitute another model. Delegated work must have explicit owned paths, respect concurrent work, and skip-and-flag an out-of-fence need rather than abort the entire task.
 
 ## Decision timeline
 
@@ -86,4 +88,4 @@ Tanner authorized this handoff and execution of the approved plan in Cursor. Rou
 
 ## NEXT ACTION
 
-Read the committed plan and repository instructions, confirm the exact Composer/Grok routing, then create the fresh implementation worktree from the design ref including this handoff. Start **Task 1: `guidanceClassifierBoundsAndLabels()`**, demonstrate a nonzero failing test, and implement the bounded classifier. Reach the first built-app guidance checkpoint before starting broader tool work.
+Continue Task 4 in the existing implementation checkout; checkpoint 1 passed in the isolated Release app. Use the execution evidence for current commits, limitations, and pending review notes.

@@ -12,10 +12,10 @@
 
 ## Execution Routing
 
-- **Implementation:** Cursor, **Composer 2.5 high fast**.
+- **Implementation:** Cursor, **Composer 2.5 Fast**.
 - **Verification and auditing:** **Grok 4.7 xhigh fast**.
 - **Visual verification and steering:** the main Codex session with Tanner.
-- These are the user-selected models. If unavailable in the destination harness, report the limitation; do not silently substitute a different model.
+- Tanner explicitly approved Composer 2.5 Fast after the authenticated Cursor CLI rejected a high-effort override. These are the user-selected models. If unavailable in the destination harness, report the limitation; do not silently substitute a different model.
 - [Approved interactive UI reference](../designs/2026-09-28-omp-tool-gallery.html) is a design mockup, not evidence of implemented behavior.
 
 ## Global Constraints
