@@ -83,7 +83,6 @@ struct ContextUsageControl: View {
             color: TenXPalette.color(TenXPalette.nearBlackHex),
             horizontalPadding: 6,
             fontSize: 10))
-        .background(TenXPalette.color(TenXPalette.hoverNeutralHex).opacity(0.55))
         .accessibilityLabel("Context window")
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Shows context usage details")
@@ -149,7 +148,6 @@ struct ContextUsageControl: View {
             color: TenXPalette.color(TenXPalette.nearBlackHex),
             horizontalPadding: 6,
             fontSize: 10))
-        .background(TenXPalette.color(TenXPalette.hoverNeutralHex).opacity(0.55))
         .accessibilityLabel("Context window")
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Menu open")
