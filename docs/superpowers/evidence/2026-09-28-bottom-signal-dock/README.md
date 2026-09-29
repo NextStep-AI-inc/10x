@@ -1,6 +1,10 @@
 # Bottom signal dock — native acceptance
 
-## Latest: context control styling
+## Latest: transparent context label
+
+At `f73ba4e`, the resting background is removed; spacing and original hover styling remain. Four focused checks, Release build, and native open/close interaction passed. See [verification](context-chip-verification.md) and [native detail](context-no-fill-detail.png).
+
+## Earlier: context control styling
 
 At `c88c228`, context has a small outer inset, internal padding, and faint neutral resting fill; the existing hover style is retained. Four focused checks and the Release build passed; native click opens details. See [verification](context-chip-verification.md) and [native detail](context-chip-detail.png).
 

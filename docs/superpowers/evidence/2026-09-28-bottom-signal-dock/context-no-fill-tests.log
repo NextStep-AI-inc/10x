@@ -1,0 +1,132 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test -project 10x.xcodeproj -scheme 10x -destination platform=macOS -derivedDataPath .superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData "-only-testing:TenXAppTests/fullShellActiveDockSnapshot()" "-only-testing:TenXAppTests/composerKeepsQueuedBadgeAfterStreamingSnapshot()" "-only-testing:TenXAppTests/composerStopsARunWithNothingToSendSnapshot()" "-only-testing:TenXAppTests/narrowComposerAttachmentsClearProviderWheelsSnapshot()"
+
+Resolve Package Graph
+
+
+Resolved source packages:
+  Sparkle: https://github.com/sparkle-project/Sparkle @ 2.9.6
+  OmpKit: /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/OmpKit @ local
+
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+{ platform:macOS, arch:arm64, id:00006050-000D68D43651401C, name:My Mac }
+{ platform:macOS, arch:x86_64, id:00006050-000D68D43651401C, name:My Mac }
+ComputePackagePrebuildTargetDependencyGraph
+
+Prepare packages
+
+CreateBuildRequest
+
+SendProjectDescription
+
+CreateBuildOperation
+
+ComputeTargetDependencyGraph
+note: Building targets in dependency order
+note: Target dependency graph (5 targets)
+    Target 'TenXAppTests' in project '10x'
+        ➜ Explicit dependency on target '10x' in project '10x'
+    Target '10x' in project '10x'
+        ➜ Explicit dependency on target 'OmpKit-product' in project 'OmpKit'
+        ➜ Explicit dependency on target 'Sparkle-product' in project 'Sparkle'
+    Target 'Sparkle-product' in project 'Sparkle' (no dependencies)
+    Target 'OmpKit-product' in project 'OmpKit'
+        ➜ Explicit dependency on target 'OmpKit' in project 'OmpKit'
+    Target 'OmpKit' in project 'OmpKit' (no dependencies)
+
+GatherProvisioningInputs
+
+CreateBuildDescription
+
+ClangStatCache /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/SDKStatCaches.noindex/macosx27.0-26A425-e829b21a6f8c9b70876ba0858053c0447231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+    cd /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/10x.xcodeproj
+    /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang-stat-cache /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX27.0.sdk -o /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/SDKStatCaches.noindex/macosx27.0-26A425-e829b21a6f8c9b70876ba0858053c0447231f6df4def33e022ae2eb8f782df1a.sdkstatcache
+
+CpResource /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/PlugIns/TenXAppTests.xctest/Contents/Resources/ReferenceImages /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/Tests/TenXAppTests/ReferenceImages (in target 'TenXAppTests' from project '10x')
+    cd /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x
+    builtin-copy -exclude .DS_Store -exclude CVS -exclude .svn -exclude .git -exclude .hg -resolve-src-symlinks /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/Tests/TenXAppTests/ReferenceImages /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/PlugIns/TenXAppTests.xctest/Contents/Resources
+
+CodeSign /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/PlugIns/TenXAppTests.xctest (in target 'TenXAppTests' from project '10x')
+    cd /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/PlugIns/TenXAppTests.xctest
+/Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/PlugIns/TenXAppTests.xctest: replacing existing signature
+
+CodeSign /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/MacOS/10x.debug.dylib (in target '10x' from project '10x')
+    cd /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/MacOS/10x.debug.dylib
+/Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/MacOS/10x.debug.dylib: replacing existing signature
+
+CodeSign /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/MacOS/__preview.dylib (in target '10x' from project '10x')
+    cd /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --timestamp\=none --generate-entitlement-der /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/MacOS/__preview.dylib
+/Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app/Contents/MacOS/__preview.dylib: replacing existing signature
+
+CodeSign /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app (in target '10x' from project '10x')
+    cd /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x
+    
+    Signing Identity:     "Sign to Run Locally"
+    
+    /usr/bin/codesign --force --sign - --entitlements /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Intermediates.noindex/10x.build/Debug/10x.build/10x.app.xcent --timestamp\=none --generate-entitlement-der /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app
+/Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app: replacing existing signature
+
+Validate /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app (in target '10x' from project '10x')
+    cd /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x
+    builtin-validationUtility /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app -no-validate-extension -infoplist-subpath Contents/Info.plist
+
+RegisterWithLaunchServices /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app (in target '10x' from project '10x')
+    cd /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x
+    builtin-lsregisterurl --record-path /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Intermediates.noindex/XCBuildData/registered-launchservices.txt -- /System/Library/Frameworks/CoreServices.framework/Versions/Current/Frameworks/LaunchServices.framework/Versions/Current/Support/lsregister -f -R -trusted /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Products/Debug/10x.app
+
+PruneExplicitPrecompiledModules /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Intermediates.noindex/ExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Build/Intermediates.noindex/SwiftExplicitPrecompiledModules
+
+PruneExplicitPrecompiledModules /Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/SDKExplicitPrecompiledModules
+
+2026-09-29 13:27:25.542616-0700 10x[41493:42006544] [Connection] Unable to get synchronousRemoteObjectProxy, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-09-29 13:27:25.542662-0700 10x[41493:42006544] [Application] Error registering app with intents framework: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-09-29 13:27:25.544056-0700 10x[41493:42006552] [Connection] Unable to get synchronousRemoteObjectProxy, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-09-29 13:27:25.544089-0700 10x[41493:42006552] [Connection] Unable to re-register with Process Instance Registry, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-09-29 13:27:25.545538-0700 10x[41493:42006544] [Connection] Unable to get synchronousRemoteObjectProxy, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-09-29 13:27:25.545633-0700 10x[41493:42006544] [Connection] Unable to re-register with Process Instance Registry, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-09-29 13:27:25.546565-0700 10x[41493:42006552] [Connection] Will NOT re-try to establish the connection
+2026-09-29 13:27:25.546660-0700 10x[41493:42006547] [Connection] Unable to get synchronousRemoteObjectProxy, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-09-29 13:27:25.546690-0700 10x[41493:42006547] [Connection] Unable to re-register with Process Instance Registry, error: Error Domain=NSCocoaErrorDomain Code=4097 "connection to service named com.apple.linkd.autoShortcut" UserInfo={NSDebugDescription=connection to service named com.apple.linkd.autoShortcut}
+2026-09-29 13:27:25.629951-0700 10x[41493:42006500] ApplePersistenceIgnoreState: Existing state will not be touched. New state will be written to /var/folders/np/6c87vcks1z32ypzsnf98vwsw0000gn/T/com.nextstep.tenx.savedState
+Test Suite 'Selected tests' started at 2026-09-29 13:27:25.777.
+Test Suite 'TenXAppTests.xctest' started at 2026-09-29 13:27:25.778.
+Test Suite 'TenXAppTests.xctest' passed at 2026-09-29 13:27:25.778.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.000) seconds
+Test Suite 'Selected tests' passed at 2026-09-29 13:27:25.778.
+	 Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds
+􀟈 Test run started.
+􀄵 Testing Library Version: 2084
+􀄵 Target Platform: arm64e-apple-macos14.0
+􀟈 Test fullShellActiveDockSnapshot() started.
+􀟈 Test composerStopsARunWithNothingToSendSnapshot() started.
+􀟈 Test narrowComposerAttachmentsClearProviderWheelsSnapshot() started.
+􀟈 Test composerKeepsQueuedBadgeAfterStreamingSnapshot() started.
+􁁛 Test narrowComposerAttachmentsClearProviderWheelsSnapshot() passed after 0.081 seconds.
+􁁛 Test composerStopsARunWithNothingToSendSnapshot() passed after 0.112 seconds.
+􁁛 Test composerKeepsQueuedBadgeAfterStreamingSnapshot() passed after 0.250 seconds.
+􁁛 Test fullShellActiveDockSnapshot() passed after 0.540 seconds.
+􁁛 Test run with 4 tests in 0 suites passed after 0.540 seconds.
+2026-09-29 13:27:26.618 xcodebuild[41461:42006110] [MT] IDETestOperationsObserverDebug: 1.691 elapsed -- Testing started completed.
+2026-09-29 13:27:26.618 xcodebuild[41461:42006110] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-09-29 13:27:26.618 xcodebuild[41461:42006110] [MT] IDETestOperationsObserverDebug: 1.691 sec, +1.691 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/DerivedData/Logs/Test/Test-10x-2026.09.29_13-27-23--0700.xcresult
+
+** TEST SUCCEEDED **
+
+Testing started
