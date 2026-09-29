@@ -2,7 +2,11 @@
 
 Production Release build, macOS, isolated bundle `com.nextstep.tenx.bottomdockqa`. All provider/RPC responses came from a local fixture; no real provider requests or credentials were used. Main checkout and real app profile were untouched.
 
-## Result
+## Latest: alignment correction
+
+Product revision `19f5cce` tightens the dock controls and aligns the provider row. Ten focused tests and the isolated Release build passed; native typing, send/follow-up, provider-panel clearance, model menu in Ready, and cross-route line alignment were checked. Context-popover clicks still did not open; native narrow interaction remains unverified. See [spacing verification](spacing-verification.md) and [native detail](spacing-working-detail.png). PR remains draft. The results below describe earlier revisions.
+
+## Earlier result
 
 **DONE_WITH_CONCERNS** on `codex/bottom-dock-design`. Product commit `538395bbbb1f7ad6c174de4c89ca8e0abd8c9724` passed the isolated Release build and scoped final review. PR remains draft: native final-fix checks are blocked by the locked Mac, and the full suite remains red as detailed below. No merge or deployment.
 
@@ -84,7 +88,7 @@ Remaining native gates: click project/model/context menus after the anchor fix; 
 
 The Release build at `538395b` completed successfully. See `build-provenance.json` for source revisions and executable hashes, and `final-fix-verification.md` for exact focused test/build commands and results. The final fix build was not launched because the Mac locked.
 
-One new nonblocking warning remains: `App/Providers/ProviderUsageDockLayout.swift:42` reads main-actor-isolated `ComposerAttachmentsView.stripHeight` from an unannotated helper. This computed height reads constants; the production call is from main-actor UI. An annotation cleanup was deferred after the successful build and approved review, so a stricter future Swift toolchain may require it. Other compiler warnings were already present.
+At `538395b`, one nonblocking warning remained (the helper is now annotated at `19f5cce` and no longer warns): `App/Providers/ProviderUsageDockLayout.swift:42` reads main-actor-isolated `ComposerAttachmentsView.stripHeight` from an unannotated helper. This computed height reads constants; the production call is from main-actor UI. An annotation cleanup was deferred after the successful build and approved review, so a stricter future Swift toolchain may require it. Other compiler warnings were already present.
 
 ### Decisions made
 
