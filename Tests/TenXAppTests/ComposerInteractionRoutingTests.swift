@@ -182,6 +182,38 @@ private final class ComposerDraftProbe {
         isAvailable: false, isFocusBlocked: false, hasBlockingSheet: false))
 }
 
+@Test func commandMonitorPassesKeysWhenComposerFocusIsBlocked() throws {
+    let keys: [(UInt16, String)] = [(36, "\r"), (125, ""), (48, "\t"), (53, "")]
+    for (keyCode, characters) in keys {
+        let event = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: 1, context: nil, characters: characters,
+            charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode))
+
+        for (isAvailable, isFocusBlocked, hasBlockingSheet) in [
+            (false, false, false), (true, true, false), (true, false, true),
+        ] {
+            var didHandle = false
+            let result = CommandBrowserKeyboardEventRouting.result(for: event, route: .root) { _ in
+                guard ComposerFocusRouting.shouldFocusEditor(
+                    isAvailable: isAvailable,
+                    isFocusBlocked: isFocusBlocked,
+                    hasBlockingSheet: hasBlockingSheet
+                ) else { return false }
+                didHandle = true
+                return true
+            }
+            #expect(result == .pass)
+            #expect(!didHandle)
+        }
+
+        #expect(CommandBrowserKeyboardEventRouting.result(for: event, route: .root) { _ in
+            ComposerFocusRouting.shouldFocusEditor(
+                isAvailable: true, isFocusBlocked: false, hasBlockingSheet: false)
+        } == .consume)
+    }
+}
+
 @MainActor
 @Test func routeSwitchClosesFlyoutWithoutLosingDraft() {
     let model = AppModel()

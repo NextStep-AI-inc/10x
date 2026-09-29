@@ -489,6 +489,11 @@ struct ComposerView: View {
                     restoreEditorFocus: restoreEditorFocus)
                 .background {
                     CommandBrowserKeyboardMonitor(route: commands.route) { action in
+                        guard ComposerFocusRouting.shouldFocusEditor(
+                            isAvailable: isAvailable,
+                            isFocusBlocked: isFocusBlocked,
+                            hasBlockingSheet: hasBlockingSheet
+                        ) else { return false }
                         handleCommandKeyAction(action, model: commands)
                         return true
                     }
