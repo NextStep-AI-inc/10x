@@ -15,6 +15,8 @@ struct WorkspaceDockView: View {
     let model: AppModel
     let isFocusBlocked: Bool
     var routeCanvasLeadingInset: CGFloat = 0
+    var providerWidth: CGFloat = 0
+    var providerPlacement: ProviderUsageDockPlacement = .belowLine
 
     @State private var flyout: ComposerFlyout?
 
@@ -107,6 +109,8 @@ struct WorkspaceDockView: View {
             onSignalRevealComplete: onSignalRevealComplete,
             isFocusBlocked: isFocusBlocked,
             routeCanvasLeadingInset: routeCanvasLeadingInset,
+            providerWidth: providerWidth,
+            providerPlacement: providerPlacement,
             onSend: onSend)
     }
 
@@ -128,9 +132,7 @@ struct WorkspaceDockView: View {
     }
 
     private var generatingCount: Int {
-        model.sessionActivityRegistry.managedSessions.values.filter {
-            $0.runtimeState == .streaming
-        }.count
+        model.generatingSessionCount
     }
 
     private func addExistingFolder() {

@@ -69,6 +69,14 @@ import Testing
             .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "full-shell-active-opening-dock-wide",
         size: CGSize(width: 1280, height: 760))
+
+    let railExpansion = RailExpansionModel()
+    railExpansion.pointerEntered()
+    try assertSnapshot(
+        AppShellView(model: model, railExpansion: railExpansion)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
+        name: "full-shell-active-opening-dock-narrow",
+        size: CGSize(width: 760, height: 560))
 }
 
 @MainActor
@@ -1303,9 +1311,12 @@ private func longestNonWhiteVerticalRun(
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     await model.bootstrap()
     model.sessions = fullShellSessions
+    let railExpansion = RailExpansionModel()
+    railExpansion.pointerEntered()
 
     try assertSnapshot(
-        AppShellView(model: model),
+        AppShellView(model: model, railExpansion: railExpansion)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "full-shell-usage-dock-small-window",
         size: CGSize(width: 760, height: 560))
 }
@@ -1333,9 +1344,12 @@ private func longestNonWhiteVerticalRun(
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     await model.bootstrap()
     model.sessions = fullShellSessions
+    let railExpansion = RailExpansionModel()
+    railExpansion.pointerEntered()
 
     try assertSnapshot(
-        AppShellView(model: model),
+        AppShellView(model: model, railExpansion: railExpansion)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "full-shell-usage-dock-wide-window",
         size: CGSize(width: 1280, height: 760))
 }

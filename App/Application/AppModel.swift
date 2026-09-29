@@ -97,6 +97,10 @@ final class AppModel {
         sessionActivityRegistry.activeCounts
     }
 
+    var generatingSessionCount: Int {
+        sessionActivityRegistry.generatingSessionCount
+    }
+
     /// Removed on main by `9406c7b` as unused once the constrained wheels moved
     /// into the composer footer and stopped greying. The account stack reads it
     /// again: a provider's wheels grey together while the session in front of

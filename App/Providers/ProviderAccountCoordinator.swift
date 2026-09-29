@@ -81,6 +81,7 @@ final class ProviderAccountCoordinator {
     private(set) var generatingCounts: [ProviderAccountKey: Int] = [:]
     private(set) var sessionCounts: [ProviderAccountKey: Int] = [:]
     private(set) var activeCounts: [String: Int] = [:]
+    private(set) var generatingSessionCount = 0
     private(set) var pendingRemovalAccounts: Set<ProviderAccountKey> = []
     private(set) var failureSummary: String?
 
@@ -877,6 +878,7 @@ final class ProviderAccountCoordinator {
     }
 
     private func publishSessionState() {
+        generatingSessionCount = sessionStates.values.filter(\.isGenerating).count
         activeAccountRefs = sessionStates.reduce(into: [:]) { refs, entry in
             if let accountRef = entry.value.accountRef {
                 refs[entry.key] = accountRef

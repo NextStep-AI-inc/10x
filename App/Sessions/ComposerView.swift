@@ -299,9 +299,10 @@ struct ComposerView: View {
     let onSignalRevealComplete: (UInt64) -> Void
     let isFocusBlocked: Bool
     let routeCanvasLeadingInset: CGFloat
+    let providerWidth: CGFloat
+    let providerPlacement: ProviderUsageDockPlacement
     let onSend: () -> Void
 
-    @Environment(\.composerProviderDockWidth) private var providerDockWidth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isEditorFocused: Bool
     @State private var editorBridge = ComposerTextEditorBridge()
@@ -330,6 +331,8 @@ struct ComposerView: View {
         onSignalRevealComplete: @escaping (UInt64) -> Void = { _ in },
         isFocusBlocked: Bool = false,
         routeCanvasLeadingInset: CGFloat = 0,
+        providerWidth: CGFloat = 0,
+        providerPlacement: ProviderUsageDockPlacement = .belowLine,
         onSend: @escaping () -> Void
     ) {
         _draft = draft
@@ -346,6 +349,8 @@ struct ComposerView: View {
         self.onSignalRevealComplete = onSignalRevealComplete
         self.isFocusBlocked = isFocusBlocked
         self.routeCanvasLeadingInset = routeCanvasLeadingInset
+        self.providerWidth = providerWidth
+        self.providerPlacement = providerPlacement
         self.onSend = onSend
     }
 
@@ -396,16 +401,24 @@ struct ComposerView: View {
                 }
 
             HStack(spacing: 8) {
-                attachButton
-                footerControls
-                Spacer(minLength: 4)
+                HStack(spacing: 8) {
+                    attachButton
+                    footerControls
+                }
+                .layoutPriority(1)
+                Spacer(minLength: 8)
                 actionControls
-                providerDockSlot
+                    .fixedSize()
+                Spacer(minLength: 8)
+                if providerPlacement == .belowLine, providerWidth > 0 {
+                    Color.clear
+                        .frame(width: providerWidth, height: 28)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
             }
-            .frame(maxWidth: 780)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 24)
             .frame(maxWidth: .infinity)
-            .padding(.leading, routeCanvasLeadingInset)
             .frame(height: 42)
         }
             .animation(shelfAnimation, value: flyout)
@@ -861,26 +874,20 @@ struct ComposerView: View {
     @ViewBuilder
     private var actionControls: some View {
         if let controller = streamingController {
-            behaviorMenu(controller)
-            if canSend { sendButton }
-            stopButton(controller)
+            behaviorChoice(.steer, controller: controller)
+            behaviorChoice(.followUp, controller: controller)
+            if controller.queuedMessageCount > 0 {
+                Text("\(controller.queuedMessageCount) queued")
+                    .font(TenXTypography.body(size: 10, weight: .medium))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+            }
+            if canSend { sendButton } else { stopButton(controller) }
         } else {
             sendButton
             if case .active(let controller) = presentation,
                controller.runtimeState == .loading || controller.isContextCompacting {
                 stopButton(controller)
             }
-        }
-    }
-
-    @ViewBuilder
-    private var providerDockSlot: some View {
-        if providerDockWidth > 0 {
-            Color.clear
-                .frame(width: providerDockWidth, height: 28)
-                .anchorPreference(key: ComposerProviderDockAnchorKey.self, value: .bounds) { $0 }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
         }
     }
 
@@ -923,14 +930,22 @@ struct ComposerView: View {
         .accessibilityLabel(controller.isContextCompacting ? "Stop context compaction" : "Stop response")
     }
 
-    private func behaviorMenu(_ controller: SessionController) -> some View {
-        SendActionControl(
-            selection: controller.streamingBehavior ?? .steer,
-            onSelect: controller.selectStreamingBehavior,
-            isPresented: Binding(
-                get: { flyout == .sendAction },
-                set: { setFlyout($0 ? .sendAction : nil) }),
-            onRestoreFocus: restoreEditorFocus)
+    private func behaviorChoice(_ behavior: StreamingBehavior, controller: SessionController) -> some View {
+        let isSelected = (controller.streamingBehavior ?? .steer) == behavior
+        let title = behavior == .steer ? "Steer" : "Follow up"
+        return Button {
+            controller.selectStreamingBehavior(behavior)
+            restoreEditorFocus()
+        } label: {
+            Text(title)
+                .font(TenXTypography.body(size: 11, weight: isSelected ? .semibold : .medium))
+                .lineLimit(1)
+        }
+        .buttonStyle(GhostActionStyle(
+            color: TenXPalette.color(isSelected ? TenXPalette.cyanHex : TenXPalette.nearBlackHex),
+            horizontalPadding: 5))
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 
     private var streamingController: SessionController? {
@@ -1016,14 +1031,11 @@ struct ComposerView: View {
                     get: { flyout == .context },
                     set: { setFlyout($0 ? .context : nil) }),
                 onRestoreFocus: restoreEditorFocus)
-            SessionActivityControl(
-                state: controller.activityState,
-                onActivate: controller.focusPendingRequest,
-                variant: .composer)
-            if controller.queuedMessageCount > 0 {
-                Text("\(controller.queuedMessageCount) queued")
-                    .font(TenXTypography.body(size: 10, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+            if signalPresentation.status == .needsInput {
+                SessionActivityControl(
+                    state: controller.activityState,
+                    onActivate: controller.focusPendingRequest,
+                    variant: .composer)
             }
         }
 
@@ -1034,10 +1046,14 @@ struct ComposerView: View {
                 set: { setFlyout($0 ? .warning : nil) }),
             onRestoreFocus: restoreEditorFocus)
 
-        Text(signalPresentation.label)
-            .font(TenXTypography.body(size: 10, weight: .medium))
-            .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-            .lineLimit(1)
+        if signalPresentation.status == .needsInput {
+            EmptyView()
+        } else {
+            Text(signalPresentation.label)
+                .font(TenXTypography.body(size: 10, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .lineLimit(1)
+        }
 
         if case .active(let controller) = presentation,
            controller.runtimeState == .streaming,

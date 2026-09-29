@@ -38,11 +38,16 @@ enum ProviderUsageDockLayout {
     static let inComposer28: CGFloat = 28
     static let spacing8: CGFloat = 8
 
-    static func compact(shellSize: CGSize, footerFrame: CGRect) -> ProviderUsageDockCompactLayout {
-        ProviderUsageDockCompactLayout(
-            wheelDiameter: inComposer28,
-            trailingOffset: shellSize.width - footerFrame.maxX - 16,
-            bottomOffset: shellSize.height - footerFrame.maxY - 16)
+    static func placement(
+        availableWidth: CGFloat,
+        factsMinWidth: CGFloat,
+        actionsMinWidth: CGFloat,
+        providerWidth: CGFloat
+    ) -> ProviderUsageDockPlacement {
+        guard providerWidth > 0 else { return .belowLine }
+        let horizontalMargins: CGFloat = 48
+        return availableWidth >= factsMinWidth + actionsMinWidth + providerWidth + horizontalMargins
+            ? .belowLine : .aboveLine
     }
 
     static func footerWidth(providers: [ProviderUsageProvider]) -> CGFloat {
@@ -58,21 +63,7 @@ enum ProviderUsageDockLayout {
     }
 }
 
-private struct ComposerProviderDockWidthKey: EnvironmentKey {
-    static let defaultValue: CGFloat = 0
-}
-
-extension EnvironmentValues {
-    var composerProviderDockWidth: CGFloat {
-        get { self[ComposerProviderDockWidthKey.self] }
-        set { self[ComposerProviderDockWidthKey.self] = newValue }
-    }
-}
-
-struct ComposerProviderDockAnchorKey: PreferenceKey {
-    static let defaultValue: Anchor<CGRect>? = nil
-
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
-        value = nextValue() ?? value
-    }
+enum ProviderUsageDockPlacement: Equatable {
+    case belowLine
+    case aboveLine
 }
