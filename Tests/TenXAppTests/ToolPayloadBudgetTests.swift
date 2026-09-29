@@ -110,6 +110,60 @@ import Testing
     #expect(Data(placeholder.utf8).count <= ToolPayloadBudget.Limits.scalarBytes)
 }
 
+@Test func toolBudgetRootArrayMarkerCountsSingleNodeAtNodeLimit() {
+    var values: [JSONValue] = []
+    values.reserveCapacity(33)
+    for _ in 0..<30 {
+        var object: [String: JSONValue] = [:]
+        for index in 0..<7 {
+            object["field-\(index)"] = .string("value")
+        }
+        values.append(.object(object))
+    }
+    var heavyObject: [String: JSONValue] = [:]
+    for index in 0..<13 {
+        heavyObject["field-\(index)"] = .string("value")
+    }
+    values.append(.object(heavyObject))
+    values.append(.string("tail-31"))
+    values.append(.string("tail-32"))
+
+    let limited = ToolPayloadBudget.limit(.array(values))
+    guard case .array(let kept) = limited else {
+        Issue.record("Expected root array")
+        return
+    }
+    #expect(kept.count <= ToolPayloadBudget.Limits.arrayChildren)
+    #expect(isTruncationMarked(limited))
+    #expect(visitedNodeCount(limited) <= ToolPayloadBudget.Limits.totalNodes)
+}
+
+@Test func toolBudgetRootArrayMarkerNearNodeLimitStillCountsMarker() {
+    var values: [JSONValue] = []
+    values.reserveCapacity(33)
+    for _ in 0..<30 {
+        var object: [String: JSONValue] = [:]
+        for index in 0..<7 {
+            object["field-\(index)"] = .string("value")
+        }
+        values.append(.object(object))
+    }
+    var lighterObject: [String: JSONValue] = [:]
+    for index in 0..<12 {
+        lighterObject["field-\(index)"] = .string("value")
+    }
+    values.append(.object(lighterObject))
+    values.append(.string("tail-31"))
+    values.append(.string("tail-32"))
+
+    let limited = ToolPayloadBudget.limit(.array(values))
+    guard case .array = limited else {
+        Issue.record("Expected root array")
+        return
+    }
+    #expect(visitedNodeCount(limited) <= ToolPayloadBudget.Limits.totalNodes)
+}
+
 @Test func toolBudgetThirtyThreeMatchArrayStaysArrayWithParentMetadata() {
     let matches = (0..<33).map { index in JSONValue.string("match-\(index)") }
     let limited = ToolPayloadBudget.limit(.object([

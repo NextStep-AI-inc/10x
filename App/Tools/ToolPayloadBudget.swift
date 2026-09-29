@@ -20,10 +20,8 @@ enum ToolPayloadBudget {
     }
 
     static func isTruncationMarker(_ value: JSONValue) -> Bool {
-        guard case .object(let object) = value,
-              object[truncatedKey]?.boolValue == true
-        else { return false }
-        return object.keys.allSatisfy { $0 == truncatedKey || $0 == omittedCountKey }
+        guard let text = value.stringValue else { return false }
+        return text.hasPrefix("[truncated:") && text.contains("omitted]")
     }
 
     private struct Context {
@@ -221,11 +219,7 @@ enum ToolPayloadBudget {
         omittedCount: Int,
         context: inout Context
     ) -> JSONValue {
-        var marker: [String: JSONValue] = [truncatedKey: .bool(true)]
-        if omittedCount > 0 {
-            marker[omittedCountKey] = .int(omittedCount)
-        }
-        return .object(marker)
+        .string(limitScalar("[truncated: \(omittedCount) omitted]", context: &context))
     }
 
     private static func isInlineMediaField(
