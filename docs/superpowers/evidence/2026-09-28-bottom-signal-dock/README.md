@@ -1,6 +1,10 @@
 # Bottom signal dock — native acceptance
 
-## Latest: control placement correction
+## Latest: context control styling
+
+At `c88c228`, context has a small outer inset, internal padding, and faint neutral resting fill; the existing hover style is retained. Four focused checks and the Release build passed; native click opens details. See [verification](context-chip-verification.md) and [native detail](context-chip-detail.png).
+
+## Earlier: control placement correction
 
 At `8a6302c`, attachment/model/timer align beneath the editor's left edge; context is a small text-only label at the signal's exact far-left endpoint above the line. The final Release build and four affected tests passed. Native context, attachment, and model clicks all worked, resolving the earlier interaction observation. See [placement verification](placement-verification.md) and [native detail](placement-detail.png).
 
