@@ -115,6 +115,15 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private var nextOpeningTaskToken: UInt64 = 0
     private var extensionTimeoutTasks: [String: Task<Void, Never>] = [:]
     private var extensionResponsesInFlight: Set<String> = []
+    private var cancelledUnsupportedExtensionIDs: Set<String> = []
+    private var extensionBlockedRecoveryTask: Task<Void, Never>?
+    private var extensionBlockedRecoveryGeneration: UInt64 = 0
+    private(set) var extensionBlockedRecoveryMessage: String?
+    private static let extensionBlockedRecoveryDelay: Duration = .seconds(10)
+#if DEBUG
+    static var testingExtensionBlockedRecoveryDelay: Duration?
+    static var testingForceExtensionUICancellationFailure = false
+#endif
     nonisolated let commandUpdates: AsyncStream<ComposerCommandCatalogState>
     private let commandContinuation: AsyncStream<ComposerCommandCatalogState>.Continuation
     /// This controller's one write handle onto the marker-filtered frame
@@ -321,7 +330,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     var canRestartAfterDismissal: Bool {
-        contextCompactionRecoveryMessage != nil && sessionPath != nil && !isStopping
+        (contextCompactionRecoveryMessage != nil || extensionBlockedRecoveryMessage != nil)
+            && sessionPath != nil
+            && !isStopping
     }
 
     var canRetryOpening: Bool {
@@ -1351,6 +1362,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         extensionTimeoutTasks.values.forEach { $0.cancel() }
         extensionTimeoutTasks.removeAll()
         extensionResponsesInFlight.removeAll()
+        cancelledUnsupportedExtensionIDs.removeAll()
+        clearExtensionBlockedRecovery()
         extensionRouter = ExtensionUIRouter()
         extensionSheetRequest = nil
         hasPendingUserInput = false
@@ -1445,6 +1458,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             scheduleHeaderMetadataRefresh(context: context)
         }
         if isReconciliationBoundary(frame) {
+            clearExtensionBlockedRecovery()
             let snapshot = await processor.currentSnapshot()
             guard isCurrent(context) else { return }
             install(snapshot: snapshot)
@@ -1959,41 +1973,124 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         context: PipelineContext
     ) async {
         guard isCurrent(context) else { return }
-        guard let state = ExtensionUIRouter.parse(request) else {
+        switch ExtensionUIRouter.classify(request) {
+        case .reservedChannel:
             forwardToAccountChannelIfMarked(request)
             return
-        }
-        extensionRouter.consume(request)
-        refreshPendingUserInput()
+        case .unsupported(let reason):
+            await handleUnsupportedExtensionUI(
+                request,
+                reason: reason,
+                processor: processor,
+                context: context)
+            return
+        case .known(let state):
+            extensionRouter.consume(request)
+            refreshPendingUserInput()
 
-        switch state {
-        case .confirm, .select:
-            await processor.upsertExtensionUI(state)
-            guard isCurrent(context) else { return }
-            scheduleTimeout(for: state, context: context)
-        case .input, .editor:
-            await processor.upsertExtensionUI(state)
-            guard isCurrent(context) else { return }
-            scheduleTimeout(for: state, context: context)
-        case .cancel(_, let targetID):
-            await removeExtensionRequest(id: targetID, context: context)
-        case .notification(_, let message, let level):
-            await processor.appendNotice(level: level, message: message)
-            guard isCurrent(context) else { return }
-            postNotification(message: message)
-        case .title(_, let updatedTitle):
-            guard isCurrent(context) else { return }
-            title = updatedTitle
-        case .setEditorText(_, let text):
-            guard isCurrent(context) else { return }
-            draft = text
-            extensionRouter.clearEditorText()
-        case .openURL:
-            await processor.upsertExtensionUI(state)
-            guard isCurrent(context) else { return }
-        case .status, .widget:
-            break
+            switch state {
+            case .confirm, .select:
+                await processor.upsertExtensionUI(state)
+                guard isCurrent(context) else { return }
+                scheduleTimeout(for: state, context: context)
+            case .input, .editor:
+                await processor.upsertExtensionUI(state)
+                guard isCurrent(context) else { return }
+                scheduleTimeout(for: state, context: context)
+            case .cancel(_, let targetID):
+                await removeExtensionRequest(id: targetID, context: context)
+            case .notification(_, let message, let level):
+                await processor.appendNotice(level: level, message: message)
+                guard isCurrent(context) else { return }
+                postNotification(message: message)
+            case .title(_, let updatedTitle):
+                guard isCurrent(context) else { return }
+                title = updatedTitle
+            case .setEditorText(_, let text):
+                guard isCurrent(context) else { return }
+                draft = text
+                extensionRouter.clearEditorText()
+            case .openURL:
+                await processor.upsertExtensionUI(state)
+                guard isCurrent(context) else { return }
+            case .status, .widget:
+                break
+            }
         }
+    }
+
+    private func handleUnsupportedExtensionUI(
+        _ request: ExtensionUIRequest,
+        reason: String,
+        processor: TranscriptEventProcessor,
+        context: PipelineContext
+    ) async {
+        guard isCurrent(context) else { return }
+        guard cancelledUnsupportedExtensionIDs.insert(request.id).inserted else { return }
+        guard extensionResponsesInFlight.insert(request.id).inserted else { return }
+        defer { extensionResponsesInFlight.remove(request.id) }
+        guard let handle = context.handle else { return }
+        do {
+#if DEBUG
+            if Self.testingForceExtensionUICancellationFailure {
+                throw RpcClientError.notStarted
+            }
+#endif
+            try await handle.client.sendRaw(.extensionUIResponse(
+                id: request.id,
+                body: ExtensionUIResponse.cancelled(timedOut: false).body))
+            guard isCurrent(context) else { return }
+            await processor.appendNotice(
+                id: "extension-unsupported-\(request.id)",
+                level: "warning",
+                message: Self.boundedExtensionNotice(reason))
+            scheduleExtensionBlockedRecoveryCheck(context: context)
+        } catch {
+            cancelledUnsupportedExtensionIDs.remove(request.id)
+            guard isCurrent(context) else { return }
+            fail(error, function: "handleUnsupportedExtensionUI", context: context)
+        }
+    }
+
+    private static func boundedExtensionNotice(_ reason: String) -> String {
+        BoundaryText.preview(reason, byteLimit: 80, lineLimit: 2)
+    }
+
+    private var extensionBlockedRecoveryDelay: Duration {
+#if DEBUG
+        if let delay = Self.testingExtensionBlockedRecoveryDelay {
+            return delay
+        }
+#endif
+        return Self.extensionBlockedRecoveryDelay
+    }
+
+    private func scheduleExtensionBlockedRecoveryCheck(context: PipelineContext) {
+        clearExtensionBlockedRecovery()
+        extensionBlockedRecoveryGeneration &+= 1
+        let generation = extensionBlockedRecoveryGeneration
+        let pipelineGeneration = context.generation
+        extensionBlockedRecoveryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: self?.extensionBlockedRecoveryDelay ?? Self.extensionBlockedRecoveryDelay)
+            } catch {
+                return
+            }
+            guard let self,
+                  self.extensionBlockedRecoveryGeneration == generation,
+                  self.pipelineGeneration == pipelineGeneration,
+                  self.runtimeState == .streaming
+            else { return }
+            self.extensionBlockedRecoveryMessage =
+                "The session is still waiting after an unsupported request was cancelled. Restart to continue."
+        }
+    }
+
+    private func clearExtensionBlockedRecovery() {
+        extensionBlockedRecoveryGeneration &+= 1
+        extensionBlockedRecoveryTask?.cancel()
+        extensionBlockedRecoveryTask = nil
+        extensionBlockedRecoveryMessage = nil
     }
 
     private func scheduleTimeout(for state: ExtensionUIState, context: PipelineContext) {
