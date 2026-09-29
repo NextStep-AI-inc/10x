@@ -195,3 +195,22 @@ import Testing
     #expect(projection?.preview.isEmpty == true)
     #expect(!(projection?.preview.contains("injected file body") ?? true))
 }
+
+@Test func guidanceReconcileFingerprintDistinguishesIdenticalPreviews() {
+    let shared = String(repeating: "a", count: 513)
+    let first = GuidanceClassifier.classify(
+        id: "dev-a",
+        message: .object([
+            "role": .string("developer"),
+            "content": .string(shared + "tailA"),
+        ]))
+    let second = GuidanceClassifier.classify(
+        id: "dev-b",
+        message: .object([
+            "role": .string("developer"),
+            "content": .string(shared + "tailB"),
+        ]))
+    #expect(first?.preview == second?.preview)
+    #expect(first?.byteCount == second?.byteCount)
+    #expect(first?.reconcileFingerprint != second?.reconcileFingerprint)
+}

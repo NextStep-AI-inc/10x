@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import OmpKit
 
@@ -18,6 +19,8 @@ struct GuidancePresentation: Identifiable, Equatable, Sendable {
     let visibility: Visibility
     let byteCount: Int
     let preview: String
+    /// Stable digest of selected source metadata for reconcile dedup; not a view id.
+    let reconcileFingerprint: String
     /// When set, this item is the single omission marker for evicted guidance.
     let omittedEarlierCount: Int?
 
@@ -27,6 +30,7 @@ struct GuidancePresentation: Identifiable, Equatable, Sendable {
         visibility: Visibility,
         byteCount: Int,
         preview: String,
+        reconcileFingerprint: String,
         omittedEarlierCount: Int? = nil
     ) {
         self.id = id
@@ -34,6 +38,7 @@ struct GuidancePresentation: Identifiable, Equatable, Sendable {
         self.visibility = visibility
         self.byteCount = byteCount
         self.preview = preview
+        self.reconcileFingerprint = reconcileFingerprint
         self.omittedEarlierCount = omittedEarlierCount
     }
 
@@ -44,7 +49,29 @@ struct GuidancePresentation: Identifiable, Equatable, Sendable {
             visibility: .whenEnabled,
             byteCount: 0,
             preview: "",
+            reconcileFingerprint: "",
             omittedEarlierCount: count)
+    }
+}
+
+enum GuidanceReconcileFingerprint {
+    static func digest(kind: GuidancePresentation.Kind, message: JSONValue, source: String) -> String {
+        var parts: [String] = [kindToken(kind)]
+        if let role = message["role"]?.stringValue { parts.append("role:\(role)") }
+        if let customType = message["customType"]?.stringValue { parts.append("custom:\(customType)") }
+        if let attribution = message["attribution"]?.stringValue { parts.append("attr:\(attribution)") }
+        parts.append("bytes:\(Data(source.utf8).count)")
+        parts.append(source)
+        let input = parts.joined(separator: "\u{1F}")
+        return SHA256.hash(data: Data(input.utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private static func kindToken(_ kind: GuidancePresentation.Kind) -> String {
+        switch kind {
+        case .advisor: "advisor"
+        case .agentGuidance: "agentGuidance"
+        case .referencedFile: "referencedFile"
+        }
     }
 }
 
@@ -76,6 +103,7 @@ enum GuidanceTranscript {
     }
 
     static func enforceCap(on items: inout [TranscriptItem]) {
+        let previousOmittedCount = currentOmittedCount(in: items)
         removeOmissionMarker(from: &items)
 
         var guidanceIndices: [Int] = []
@@ -84,21 +112,35 @@ enum GuidanceTranscript {
             guidanceIndices.append(index)
         }
 
-        let excess = guidanceIndices.count - maxRetainedItems
-        guard excess > 0 else { return }
+        let excess = max(0, guidanceIndices.count - maxRetainedItems)
+        let totalOmitted = previousOmittedCount + excess
 
-        for index in guidanceIndices.prefix(excess).sorted(by: >) {
-            items.remove(at: index)
+        if excess > 0 {
+            for index in guidanceIndices.prefix(excess).sorted(by: >) {
+                items.remove(at: index)
+            }
         }
 
-        guard let firstGuidanceIndex = items.firstIndex(where: {
-            if case .guidance = $0 { return true }
-            return false
+        guard totalOmitted > 0 else { return }
+
+        guard let firstGuidanceIndex = items.firstIndex(where: { item in
+            guard case .guidance(let presentation) = item else { return false }
+            return presentation.omittedEarlierCount == nil
         }) else { return }
 
         items.insert(
-            .guidance(.earlierOmitted(count: excess)),
+            .guidance(.earlierOmitted(count: totalOmitted)),
             at: firstGuidanceIndex)
+    }
+
+    private static func currentOmittedCount(in items: [TranscriptItem]) -> Int {
+        for item in items {
+            guard case .guidance(let presentation) = item,
+                  let count = presentation.omittedEarlierCount
+            else { continue }
+            return count
+        }
+        return 0
     }
 
     private static func removeOmissionMarker(from items: inout [TranscriptItem]) {
@@ -177,7 +219,11 @@ enum GuidanceClassifier {
             preview: BoundaryText.preview(
                 source,
                 byteLimit: GuidanceLimits.previewByteLimit,
-                lineLimit: GuidanceLimits.previewLineLimit))
+                lineLimit: GuidanceLimits.previewLineLimit),
+            reconcileFingerprint: GuidanceReconcileFingerprint.digest(
+                kind: .advisor,
+                message: message,
+                source: source))
     }
 
     private static func agentGuidancePresentation(id: String, message: JSONValue) -> GuidancePresentation? {
@@ -191,7 +237,11 @@ enum GuidanceClassifier {
             preview: BoundaryText.preview(
                 source,
                 byteLimit: GuidanceLimits.previewByteLimit,
-                lineLimit: GuidanceLimits.previewLineLimit))
+                lineLimit: GuidanceLimits.previewLineLimit),
+            reconcileFingerprint: GuidanceReconcileFingerprint.digest(
+                kind: .agentGuidance,
+                message: message,
+                source: source))
     }
 
     private static func referencedFilePresentation(id: String, message: JSONValue) -> GuidancePresentation? {
@@ -205,6 +255,7 @@ enum GuidanceClassifier {
         let byteCount = files.reduce(into: 0) { total, file in
             total += Data(plainText(from: file["content"]).utf8).count
         }
+        let fingerprintSource = referencedFileSource(from: message)
         return GuidancePresentation(
             id: id,
             kind: .referencedFile,
@@ -213,7 +264,11 @@ enum GuidanceClassifier {
             preview: BoundaryText.preview(
                 previewSource,
                 byteLimit: GuidanceLimits.previewByteLimit,
-                lineLimit: GuidanceLimits.previewLineLimit))
+                lineLimit: GuidanceLimits.previewLineLimit),
+            reconcileFingerprint: GuidanceReconcileFingerprint.digest(
+                kind: .referencedFile,
+                message: message,
+                source: fingerprintSource))
     }
 
     private static func isUserAttributedDeveloperFileReference(_ message: JSONValue) -> Bool {
@@ -239,7 +294,11 @@ enum GuidanceClassifier {
             kind: .referencedFile,
             visibility: .always,
             byteCount: Data(source.utf8).count,
-            preview: "")
+            preview: "",
+            reconcileFingerprint: GuidanceReconcileFingerprint.digest(
+                kind: .referencedFile,
+                message: message,
+                source: source))
     }
 
     private static func isHiddenHarnessMessage(_ message: JSONValue) -> Bool {
@@ -272,6 +331,15 @@ enum GuidanceClassifier {
             .map(String.init)
             .joined(separator: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func referencedFileSource(from message: JSONValue) -> String {
+        let files = message["files"]?.arrayValue ?? []
+        return files.map { file -> String in
+            let path = file["path"]?.stringValue ?? ""
+            let content = plainText(from: file["content"])
+            return "\(path)\u{1F}\(content)"
+        }.sorted().joined(separator: "\n")
     }
 
     private static func plainText(from content: JSONValue?) -> String {

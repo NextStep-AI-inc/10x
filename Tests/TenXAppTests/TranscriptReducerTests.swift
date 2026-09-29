@@ -1057,6 +1057,244 @@ import Testing
     #expect(!cappedGuidance.contains { $0.preview == "Guidance wall 0" })
 }
 
+@Test func guidanceOmissionCountAccumulatesAndSurvivesInPlaceUpdates() throws {
+    var reducer = TranscriptReducer()
+    for index in 0..<129 {
+        let wall = JSONValue.object([
+            "id": .string("developer-\(index)"),
+            "role": .string("developer"),
+            "content": .string("Guidance wall \(index)"),
+        ])
+        _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall])))
+    }
+    let firstOmission = try #require(omissionMarker(from: reducer.items))
+    #expect(firstOmission.omittedEarlierCount == 1)
+
+    let wall130 = JSONValue.object([
+        "id": .string("developer-129"),
+        "role": .string("developer"),
+        "content": .string("Guidance wall 129"),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall130])))
+    let secondOmission = try #require(omissionMarker(from: reducer.items))
+    #expect(secondOmission.omittedEarlierCount == 2)
+
+    let updated = JSONValue.object([
+        "id": .string("developer-128"),
+        "role": .string("developer"),
+        "content": .string("Guidance wall 128 updated preview text"),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": updated])))
+    let afterUpdate = try #require(omissionMarker(from: reducer.items))
+    #expect(afterUpdate.omittedEarlierCount == 2)
+}
+
+@Test func reconcileReplacesIdLessLiveGuidanceWithPersistedEntry() throws {
+    var reducer = TranscriptReducer()
+    let wall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Plan approved. Execute step by step."),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": wall])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall])))
+    let liveSyntheticID = try #require(guidanceItems(from: reducer.items).first?.id)
+    #expect(liveSyntheticID.hasPrefix("message-") || liveSyntheticID.hasPrefix("guidance-"))
+
+    let header = SessionHeader(
+        id: "session-reconcile-guidance",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-developer-1", nil, 1),
+            message: wall),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 1)
+    #expect(guidance[0].id == "persisted-developer-1")
+    #expect(!guidance.map(\.id).contains(liveSyntheticID))
+}
+
+@Test func idLessGuidanceKeepsSeparateInflightIdentityAndPromotesRealID() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object([
+        "message": .object([
+            "id": .string("assistant-1"),
+            "role": .string("assistant"),
+            "content": .array([]),
+        ]),
+    ])))
+    let idLessWall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Hidden wall"),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": idLessWall])))
+    let guidanceBeforeEnd = try #require(guidanceItems(from: reducer.items).first)
+    #expect(guidanceBeforeEnd.id != "assistant-1")
+    #expect(reducer.items.contains { item in
+        guard case .message(let message) = item else { return false }
+        return message.id == "assistant-1" && !message.isFinal
+    })
+
+    let wallWithID = JSONValue.object([
+        "id": .string("persisted-wall-1"),
+        "role": .string("developer"),
+        "content": .string("Hidden wall"),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wallWithID])))
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 1)
+    #expect(guidance[0].id == "persisted-wall-1")
+}
+
+@Test func abortedGuidanceEndInterruptsRunningToolsOnLivePath() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "tool_execution_start", payload: .object([
+        "toolCallId": .string("running"),
+        "toolName": .string("bash"),
+        "args": .object(["command": .string("sleep 10")]),
+    ])))
+    let wall = JSONValue.object([
+        "id": .string("aborted-guidance"),
+        "role": .string("developer"),
+        "content": .string("Stop now."),
+        "stopReason": .string("aborted"),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall])))
+
+    guard case .tool(let tool) = try #require(reducer.items.first(where: { item in
+        if case .tool = item { return true }
+        return false
+    })) else {
+        Issue.record("Expected interrupted tool")
+        return
+    }
+    #expect(tool.id == "running")
+    #expect(tool.phase == .interrupted)
+}
+
+@Test func reconcilePreservesDistinctSameLengthGuidanceWithIdenticalPreview() throws {
+    let shared = String(repeating: "a", count: 513)
+    let wallA = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string(shared + "tailA"),
+    ])
+    let wallB = JSONValue.object([
+        "id": .string("live-only-b"),
+        "role": .string("developer"),
+        "content": .string(shared + "tailB"),
+    ])
+    let previewA = try #require(GuidanceClassifier.classify(id: "probe-a", message: wallA)?.preview)
+    let previewB = try #require(GuidanceClassifier.classify(id: "probe-b", message: wallB)?.preview)
+    #expect(previewA == previewB)
+    #expect(previewA != shared + "tailA")
+
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": wallA])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wallA])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wallB])))
+
+    let header = SessionHeader(
+        id: "session-reconcile-distinct-preview",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-a", nil, 1),
+            message: wallA),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 2)
+    #expect(guidance.map(\.id).contains("persisted-a"))
+    #expect(guidance.map(\.id).contains("live-only-b"))
+}
+
+@Test func reconcilePreservesUnmatchedDuplicateLiveGuidanceOccurrence() throws {
+    let wall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Repeat me exactly."),
+    ])
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": wall])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall])))
+    let second = JSONValue.object([
+        "id": .string("live-second"),
+        "role": .string("developer"),
+        "content": .string("Repeat me exactly."),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": second])))
+
+    let header = SessionHeader(
+        id: "session-reconcile-duplicate-live",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-first", nil, 1),
+            message: wall),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 2)
+    #expect(guidance.map(\.id).contains("persisted-first"))
+    #expect(guidance.map(\.id).contains("live-second"))
+}
+
+@Test func reconcilePreservesInflightGuidanceMatchingPersistedNote() throws {
+    let wall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Still streaming context"),
+    ])
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": wall])))
+    let inflightID = try #require(guidanceItems(from: reducer.items).first?.id)
+
+    let header = SessionHeader(
+        id: "session-reconcile-inflight-guidance",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-note", nil, 1),
+            message: wall),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 2)
+    #expect(guidance.map(\.id).contains("persisted-note"))
+    #expect(guidance.map(\.id).contains(inflightID))
+}
+
+private func omissionMarker(from items: [TranscriptItem]) -> GuidancePresentation? {
+    guidanceItems(from: items).first { $0.omittedEarlierCount != nil }
+}
+
 private func guidanceItems(from items: [TranscriptItem]) -> [GuidancePresentation] {
     items.compactMap { item in
         guard case .guidance(let presentation) = item else { return nil }

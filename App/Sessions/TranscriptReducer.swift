@@ -19,6 +19,7 @@ struct TranscriptReducer {
     var hasPendingPersistence: Bool { !pendingPersistenceIDs.isEmpty }
 
     private var inflightMessageID: String?
+    private var inflightGuidanceID: String?
     private var inflightItemIDs: [InflightItemIdentity] = []
     private var pendingPersistenceIDs: Set<InflightItemIdentity> = []
     private var pendingMessageFingerprints: [String: String] = [:]
@@ -46,7 +47,7 @@ struct TranscriptReducer {
             return .immediate
         case "message_start":
             guard let message = payload["message"] else { return .none }
-            if let mutation = consumeGuidanceMessage(message, tracksInflight: true) { return mutation }
+            if let mutation = consumeGuidanceMessage(message, at: date, tracksInflight: true) { return mutation }
             guard TranscriptMessage.isDisplayable(message) else {
                 if !Self.isGuidanceMessage(message) {
                     recordDroppedHarnessMessage(message)
@@ -66,7 +67,7 @@ struct TranscriptReducer {
             return .immediate
         case "message_update":
             guard let message = payload["message"] else { return .none }
-            if let mutation = consumeGuidanceMessage(message) { return mutation }
+            if let mutation = consumeGuidanceMessage(message, at: date) { return mutation }
             guard TranscriptMessage.isDisplayable(message) else { return .none }
             if Self.isCompleteAtStart(message) {
                 return appendCompleteMessage(id: messageID(message), raw: message)
@@ -78,7 +79,7 @@ struct TranscriptReducer {
             return replaceInflightMessage(id: id, raw: message, isFinal: false) ? .coalesced : .none
         case "message_end":
             guard let message = payload["message"] else { return .none }
-            if let mutation = consumeGuidanceMessage(message, clearsInflight: true) {
+            if let mutation = consumeGuidanceMessage(message, at: date, clearsInflight: true) {
                 return mutation
             }
             guard TranscriptMessage.isDisplayable(message) else {
@@ -272,6 +273,7 @@ struct TranscriptReducer {
             }
         }
         inflightMessageID = nil
+        inflightGuidanceID = nil
         inflightItemIDs = []
         pendingPersistenceIDs = []
         pendingMessageFingerprints = [:]
@@ -337,6 +339,7 @@ struct TranscriptReducer {
             droppedHarnessMessages.append(descriptor)
         }
         inflightMessageID = nil
+        inflightGuidanceID = nil
         inflightItemIDs = []
         pendingPersistenceIDs = []
         pendingMessageFingerprints = [:]
@@ -381,29 +384,46 @@ struct TranscriptReducer {
             pendingMessageFingerprints.removeValue(forKey: id)
         }
         let persistedAnnotations = Set(history.items.compactMap(Self.annotationSignature))
-        let transient = items.filter { item in
+        var persistedGuidanceFingerprintCounts = Self.persistedGuidanceFingerprintCounts(from: history.items)
+        var transient: [TranscriptItem] = []
+        for item in items {
             if let identity = Self.inflightIdentity(for: item) {
-                guard !persistedInflightItemIDs.contains(identity) else { return false }
-                if pendingPersistenceIDs.contains(identity) { return true }
+                guard !persistedInflightItemIDs.contains(identity) else { continue }
+                if pendingPersistenceIDs.contains(identity) {
+                    transient.append(item)
+                    continue
+                }
             } else {
-                guard !persistedIDs.contains(item.id) else { return false }
+                guard !persistedIDs.contains(item.id) else { continue }
             }
             switch item {
             case .annotation:
-                // A model, thinking, mode, or compaction change is replayed from
-                // the session file under its own id. Keeping the live copy as
-                // well would leave the transcript holding two of the same note,
-                // the second one stranded at the bottom.
-                guard let signature = Self.annotationSignature(item) else { return true }
-                return !persistedAnnotations.contains(signature)
-            case .notice, .subagent, .extensionUI, .guidance:
-                return true
+                guard let signature = Self.annotationSignature(item) else {
+                    transient.append(item)
+                    continue
+                }
+                if !persistedAnnotations.contains(signature) {
+                    transient.append(item)
+                }
+            case .notice, .subagent, .extensionUI:
+                transient.append(item)
+            case .guidance(let presentation):
+                if Self.shouldKeepGuidanceTransient(
+                    presentation,
+                    inflightGuidanceID: inflightGuidanceID,
+                    counts: &persistedGuidanceFingerprintCounts) {
+                    transient.append(item)
+                }
             case .tool(let presentation):
-                return presentation.phase == .running
+                if presentation.phase == .running {
+                    transient.append(item)
+                }
             case .message(let message):
-                return !message.isFinal
+                if !message.isFinal {
+                    transient.append(item)
+                }
             case .threadStart:
-                return false
+                break
             }
         }
         items = history.items.map { item in
@@ -419,13 +439,49 @@ struct TranscriptReducer {
             }
             return .subagent(persisted)
         } + transient
+        GuidanceTranscript.enforceCap(on: &items)
         if !inflightItemIDs.contains(where: { identity in
             items.contains { Self.inflightIdentity(for: $0) == identity }
         }) {
             inflightMessageID = nil
             inflightItemIDs = []
         }
+        if inflightGuidanceID != nil,
+           !items.contains(where: { item in
+               guard case .guidance(let presentation) = item else { return false }
+               return presentation.id == inflightGuidanceID
+           }) {
+            inflightGuidanceID = nil
+        }
         return previous == items ? .none : .immediate
+    }
+
+    private static func persistedGuidanceFingerprintCounts(
+        from items: [TranscriptItem]
+    ) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for item in items {
+            guard case .guidance(let presentation) = item,
+                  presentation.omittedEarlierCount == nil
+            else { continue }
+            counts[presentation.reconcileFingerprint, default: 0] += 1
+        }
+        return counts
+    }
+
+    private static func shouldKeepGuidanceTransient(
+        _ presentation: GuidancePresentation,
+        inflightGuidanceID: String?,
+        counts: inout [String: Int]
+    ) -> Bool {
+        if presentation.omittedEarlierCount != nil { return false }
+        if inflightGuidanceID == presentation.id { return true }
+        let fingerprint = presentation.reconcileFingerprint
+        if let count = counts[fingerprint], count > 0 {
+            counts[fingerprint] = count - 1
+            return false
+        }
+        return true
     }
 
     /// Identity for the same change arriving twice: once as a live event and
@@ -681,6 +737,12 @@ struct TranscriptReducer {
         return syntheticID(prefix: "message")
     }
 
+    private mutating func guidanceMessageID(_ message: JSONValue) -> String {
+        if let id = message["id"]?.stringValue { return id }
+        if let inflightGuidanceID { return inflightGuidanceID }
+        return syntheticID(prefix: "guidance")
+    }
+
     private mutating func replaceInflightMessage(
         id: String,
         raw: JSONValue,
@@ -751,22 +813,34 @@ struct TranscriptReducer {
     @discardableResult
     private mutating func consumeGuidanceMessage(
         _ message: JSONValue,
+        at date: Date,
         tracksInflight: Bool = false,
         clearsInflight: Bool = false
     ) -> TranscriptMutation? {
-        let id = messageID(message)
+        let id = guidanceMessageID(message)
         guard let guidance = GuidanceTranscript.classify(id: id, message: message) else { return nil }
         let previous = items
+        if let inflightGuidanceID,
+           inflightGuidanceID != id,
+           message["id"]?.stringValue != nil {
+            items.removeAll { item in
+                guard case .guidance(let presentation) = item else { return false }
+                return presentation.id == inflightGuidanceID
+            }
+        }
         GuidanceTranscript.upsert(guidance, into: &items)
         if tracksInflight {
-            inflightMessageID = id
-            inflightItemIDs = []
+            inflightGuidanceID = id
         }
-        if clearsInflight, inflightMessageID == id {
-            inflightMessageID = nil
-            inflightItemIDs = []
+        if clearsInflight {
+            inflightGuidanceID = nil
         }
-        return previous != items ? .immediate : .none
+        var changed = previous != items
+        if clearsInflight,
+           message["stopReason"]?.stringValue?.lowercased() == "aborted" {
+            changed = interruptRunningTools(at: date) != .none || changed
+        }
+        return changed ? .immediate : .none
     }
 
     private static func isGuidanceMessage(_ message: JSONValue) -> Bool {
