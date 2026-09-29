@@ -11,6 +11,8 @@ is_compacted = False
 is_streaming = False
 queued_count = 0
 deferred_state = None
+defer_next_state = False
+has_accepted_prompt = False
 
 def emit(value):
     print(json.dumps(value), flush=True)
@@ -35,11 +37,20 @@ for line in sys.stdin:
                 time.sleep(0.01)
         success = not ((mode == "transient" and state_reads == 3)
                        or (mode == "compact-state-failure" and is_compacted))
-        tokens = 32000 if is_compacted else 84000 + (state_reads-1)*1000
+        if mode == 'accepted-send-stale-state':
+            tokens = 87000 if has_accepted_prompt else 85000
+        else:
+            tokens = 32000 if is_compacted else 84000 + (state_reads-1)*1000
         data = {'model':{'id':'fake','provider':'test'},'isStreaming':mode == 'compact-streaming' or is_streaming,
                 'sessionFile':'/tmp/context-fixture.jsonl',
                 'queuedMessageCount':1 if mode == 'compact-queued' else queued_count,
                 'contextUsage':{'tokens':tokens,'contextWindow':200000,'percent':16 if is_compacted else 42}}
+        if mode == 'accepted-send-stale-state' and defer_next_state:
+            defer_next_state = False
+            data['contextUsage']['tokens'] = 86000
+            deferred_state = {'id':command['id'],'type':'response','command':kind,'success':success,'data':data}
+            open(os.path.join(command_log, 'state-deferred'), 'w').close()
+            continue
         if mode == 'deferred-idle-state' and state_reads == 3:
             deferred_state = {'id':command['id'],'type':'response','command':kind,'success':success,'data':data}
             open(os.path.join(command_log, 'state-deferred'), 'w').close()
@@ -57,6 +68,12 @@ for line in sys.stdin:
         if kind == 'get_messages_page':
             data['nextCursor'] = None
     elif kind == 'prompt':
+        if mode == 'accepted-send-stale-state' and command.get('message') != '/context':
+            has_accepted_prompt = True
+            is_streaming = True
+            queued_count = 1
+            emit({'id':command['id'],'type':'response','command':kind,'success':True,'data':{}})
+            continue
         if mode == 'deferred-idle-state' and command.get('message') != '/context':
             is_streaming = True
             queued_count = 1
@@ -96,7 +113,10 @@ for line in sys.stdin:
             continue
         is_compacted = True
     elif kind == 'context_test_control':
-        if deferred_state:
+        action = command.get('action')
+        if mode == 'accepted-send-stale-state' and action == 'defer-next-state':
+            defer_next_state = True
+        elif deferred_state:
             emit(deferred_state)
             deferred_state = None
     emit({'id':command['id'],'type':'response','command':kind,'success':success,'data':data})

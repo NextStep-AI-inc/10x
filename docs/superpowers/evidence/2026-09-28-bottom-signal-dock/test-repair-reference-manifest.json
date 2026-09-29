@@ -1,0 +1,1081 @@
+{
+  "base_commit": "039ba990e31706c6372f2e55358bec12756020b8",
+  "reference_count": 179,
+  "comparison": "Exact PNG bytes; existing harness unchanged. Each reference visually reviewed before update.",
+  "entries": [
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/active-session-header-dark.png",
+      "before_sha256": "ec2fe70cc1608adf8f08287ee97aa7a218cdf98e350f94f9aee2d04e83261c13",
+      "after_sha256": "61897f35a5329d3fb1df47443a31bc663597db92542ed533ecc2e06e26bfb35f",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/active-session-header.png",
+      "before_sha256": "823ca931e56a0bd59b2f991ccf1751f651633f14d4be21ec624470f01e763ed5",
+      "after_sha256": "e7bcb46678c949bbf9ffe9793db4e7e9fe5fb46ab883be8b4f0ddde6d8af9156",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/activity-file-references-dark.png",
+      "before_sha256": "e22e163501fb2e18df5937173362426b2197aafbc4d69ac14c05edc68fb5e5b5",
+      "after_sha256": "d137a6fb4794cc29721376e9f2defb12834cfcaebb148af9e0a402220b7c4a8b",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/activity-file-references.png",
+      "before_sha256": "beaafe3cf8b80c41035650698a2240924bbca02a99c1f53e71cd8a55d155f380",
+      "after_sha256": "43b091f0bcdd4c08a7e6212241856b16cbcdfbc4fb04834338c8415d4072ae1e",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/activity-running-error-dark.png",
+      "before_sha256": "eff19cc3b51cdfbdd55fefec439129927147bdd5cd388abc8d9645a5949e1af8",
+      "after_sha256": "6f8b6b8cc4e1e97ed8daf30f964a4f91650db8988027ca37c8f10547a22c452d",
+      "review_reason": "Expanded tool cards fit taller fixture canvas."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/activity-running-error.png",
+      "before_sha256": "35db6e564f33a36d2b3d5d3c3296524697c5b173c1eae6a9178e009fe30d9951",
+      "after_sha256": "17aa9a27becd5cf16c26976febcbc27dfe6d99e54a03ef1a47f6b58324ffe4f2",
+      "review_reason": "Expanded tool cards fit taller fixture canvas."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/activity-structured-diff-dark.png",
+      "before_sha256": "1cd390b73e1848e709c45a5ca3b09f85b6ebfa87c074f38ecc9df37491903cf4",
+      "after_sha256": "b64955f60e12f5e1fe2cee390d10c37749826ce8a2fcfbbe278c2e8fc5df47da",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/activity-structured-diff.png",
+      "before_sha256": "b43329441144935e926625d113984b54f842769c7412294392ce04f7f379d3c1",
+      "after_sha256": "d8fac4a44816548335be75e136b391e6ad9d111acad8cd86bae2e8569b6d6921",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/activity-subagent-dark.png",
+      "before_sha256": "3636d42c9eafbe65017d712487548621730810ac4f7de428d9fd44ab50bafaa9",
+      "after_sha256": "822218039f37e7bdfdc679b1a26f83816b198ec5faa981352b641610a36cb983",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/activity-subagent.png",
+      "before_sha256": "53e590e2b27fc033aebd2ca35e0e800109062c29ef903dc962be4233a9f9b628",
+      "after_sha256": "15cbfbc33887b97d806162944ddf34e2c6a32378befa32689428f93e39561801",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/approval-card-dark.png",
+      "before_sha256": "c9ffa50bffa982c3281968326b6a61a9ca11579ba465e72cf5c25abd2d8d6291",
+      "after_sha256": "4c47b479a0d8b0b42bd6542421529c9ab9b5a42bf012c33d1508e932667728e7",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/approval-card.png",
+      "before_sha256": "23d4437f26736fb909c7404825bf724ae2c613493f8d0bed60e4612cab65179a",
+      "after_sha256": "6f25499221fe5570e6baaaa16f81ae86260c4ade7d2ab6b1443e07a5218b1c9e",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/approval-default-scope-dark.png",
+      "before_sha256": "7ac3c787e1e394eeb9583d55e3a6755e9c4dfb3b010be037772058545fbda9f2",
+      "after_sha256": "3f0c2c397018c8e6be1e78ab6323ac63962cdeb412482f74442aaac89d3587c0",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/approval-default-scope.png",
+      "before_sha256": "7434b9d0141bf345a832256e4f96c7660d5a6fc5a4d0fc031454cb5fff429e9a",
+      "after_sha256": "22cc95517756c3f463294e56c7a4baa5c00e7a3b0ed53f529a0578487d995aec",
+      "review_reason": "Byte-identical in full and focused reruns; reviewed intrinsic control layout."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/archived-sessions-empty.png",
+      "before_sha256": "8e215db32587658fefff8fe25d89e8e23309fdf095e950b0faca42bd796948c8",
+      "after_sha256": "c71901d69eca2c601f4915ce436b93ad07e13ba4d48be4697eccd68c5e5ac660",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/archived-sessions-populated-dark.png",
+      "before_sha256": "0b82bd30f6e062b8aa95f8a3ca115b72e7889070f790952fe2a0a42a3b4bdf00",
+      "after_sha256": "6943ebd8f326a85f0bc065b9a4da09a17ae5789984a5c6a3dee7eacbca5605d3",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/archived-sessions-populated.png",
+      "before_sha256": "1e72f5160d93e5dcb83bc230be11cafbbcdc45aceb5b6bd50cf0654af96bc42d",
+      "after_sha256": "84d096be84a3303d4ff98a27c1226f0c1fa7ace30f7529a53aac0f27534b85d8",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/brand-actions-menu-dark.png",
+      "before_sha256": "b2be8fb5f8714f93d0d396c50b5d5e476f673eb7ee1afb420b4aacebe3868e5e",
+      "after_sha256": "9679da7680e78f47a77aa4062574c68b2922c17c8af9db82c264165ba00815b4",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/brand-actions-menu.png",
+      "before_sha256": "3d2fd7b78dda0267cba307fa986203cce5c65f31be071281f655bc3b08a1053e",
+      "after_sha256": "8c09f59507345193835cb35419d18a09d179489095069cf4bb67b41997412ecf",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/chat-full-1440.png",
+      "before_sha256": "50f5091efbc2e6b29183d487fccc560864d0ebb026ab7ed320ecf7da231932f9",
+      "after_sha256": "833defd9208a73a01ab320a07f1e556af3da74b7c3a10c0c8eca15bf60852303",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/chat-full-900.png",
+      "before_sha256": "8834db2c642fd08c4867c9965798653927cb58573dac2c56bf3cde2a90829470",
+      "after_sha256": "711271eea38f841b0291f73206025c641f2c798d246d127fd0c01ee53ae73ed9",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/chat-long-wrapping-dark.png",
+      "before_sha256": "1454af7bb85eff37be312942cc19e7665db3a8b76b3c560c3e18d644fcd25312",
+      "after_sha256": "d3ec8edfadd6c7875f9ad33d569e31963cedef6512464e5a84a68fbf5cc3d386",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/chat-long-wrapping.png",
+      "before_sha256": "4bacd69ce154eb8904694cc6dddea710f279a24f4b636455dd388d84b76895ae",
+      "after_sha256": "15e82272b10f1d17e70cbb70fee00a4790fd7a65e7fd0684409fc05d84d93667",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/chat-rich-assistant-dark.png",
+      "before_sha256": "e4208c35bc13fb34c9f692da5eedf2c7c2f3cf09af0ab4a9eb266ef0b1465e21",
+      "after_sha256": "c8591f93203eae5ec061c57f13d225e85f280470ee13b903e1778c4b5f45a83f",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/chat-rich-assistant.png",
+      "before_sha256": "f75b67f3974ae47428a63c39b83b896fb05b48d97b3a8a9412d379637dc47cba",
+      "after_sha256": "78fce5d5ed4dc656569d3fb1cd6669c78b0ddbfc2c253e0e69fc1c930847f6da",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/chat-user-message-dark.png",
+      "before_sha256": "9d0056fa8297770fe7dc5042fb276bd4df4c4f85089278a3a5a71c3796b46579",
+      "after_sha256": "9f419e875ce4b9b3852b7ffe939ce5eea83991b18549b09e1546f8b7c63de06a",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/chat-user-message.png",
+      "before_sha256": "3712f52832feb0c82bc88ac29c06b5739623924939f7e1bd993e7e7261aae054",
+      "after_sha256": "10b6bad5124e5489363635c5d3ac5be23e2880672c27fae320613a662f328f3f",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/choose-project-shelf-dark.png",
+      "before_sha256": "b201c068a440817ae8030dc9de09954872dd0081c9a2f8b75e030a9a8b97e314",
+      "after_sha256": "80aa1ff30f1b6af51dd760ca4b4908d4adf37f0f80b67f1f37e6893f0016ac69",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/choose-project-shelf.png",
+      "before_sha256": "1364e6441816ce078d93cd72028d74b887637526896fddc6c8324e32dbed5b92",
+      "after_sha256": "de2e4b188b1097bcf047b5b76aeeb1f8b297e755daf8f55ef13af5375fdc9e96",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/command-browser-minimum-window.png",
+      "before_sha256": "ff60d2e3b304ed8f58244b286f1f38cc24e2cde8b32686646a11cc86137931a0",
+      "after_sha256": "e26980337fd781ef26ee56ab508be92949418120179f3252b26cf2ac05759d6a",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/command-browser-model-child.png",
+      "before_sha256": "fafe40698ac1c7201c48f3c38ba1a8c77e33b7708aefe15a1bb29b836bbace79",
+      "after_sha256": "f6293edd19b0afd1cc8732cdc091e14a455c650dd43c1bc4c7a9de34b8c0326f",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/command-browser-no-match.png",
+      "before_sha256": "0957e62c8f3ab196b805b436bb32d9621feaae1cb95aebe4f3cfa4a0ad2e3bc3",
+      "after_sha256": "4291f1930ad57b07416d47e1509cd48b0cb292fc96d200b8be27ca38d31fe818",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/command-browser-root.png",
+      "before_sha256": "c184d958840e7e07c9e3e52676278c0180d5c766dc90c27585f10d65979645b9",
+      "after_sha256": "b778bb0ab592aa290a57ed67678aab3298d3118ad657d1956c4b758ca8888b77",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/command-browser-streaming.png",
+      "before_sha256": "08a370b76143b82f9d4e0d3d8fd1484d7473e5ef334bbe2795200f5f26fa91b4",
+      "after_sha256": "3f0904ea1a71608885f49e30b1ff82194b0507590191e3a1fbc8b72b6e75b843",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/command-browser-unavailable.png",
+      "before_sha256": "aeed59ec71cb6b63876fe57ef59168bba4f73932ca83978e0b5a51d96baa2c42",
+      "after_sha256": "9428281c8d71bb8b8e8264bab13556f19d39bd0d133c422893f1ac5fed91ff73",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-command-browser-active-attachments.png",
+      "before_sha256": "04981a4fe42734eaf3dd13e77f683c32a48467445d836ad6016823777bd4fad6",
+      "after_sha256": "c1415ad372a31c0f63fd65263055374b7e1ffe9edc00a11213f1513371189388",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-command-browser-long-names-minimum-window.png",
+      "before_sha256": "3b088573e2d1908d9bbb2fa7988e3dfe4217b4c67c6d5f788532af25dcbd4798",
+      "after_sha256": "901b21aa85c3abde6c1be86a862c88ae541b73ba81542f0505bd8a50782fe9a2",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-command-browser-new-session-commands-unavailable.png",
+      "before_sha256": "95f78173a977285205841621a35f918d96a5089e0890cb395b07ff2348f29c8a",
+      "after_sha256": "918d9a4cc83457290400c7ba3dbb658dbf9288cf4b52b967334ca52bb9b6446f",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-command-browser-streaming-steer.png",
+      "before_sha256": "f79a795d502e4622d81517818a2493ffb1992255ce3afcbad65a150f312fba51",
+      "after_sha256": "17bd6c635d966dbb6e36ae7ddd6611ab4ceba01900258b6e44516afb99c30b6e",
+      "review_reason": "Working signal frozen with existing ReduceMotion override; byte-identical full and focused captures."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-footer-fast-absent.png",
+      "before_sha256": "b08668adae345247de1e421ad5914a4f962202b5d1fcbd94a13dae2d16b92785",
+      "after_sha256": "6f1e41e4785cb367b4713fdb7ee6c79de92221456582e65f2621c8c165b25142",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-footer-fast-present-dark.png",
+      "before_sha256": "712453b3e03e35ecdd9ef9c6e2fd96f4fc67caaffee6022a5b1f5176010af460",
+      "after_sha256": "3569c21763f654703b71abe0f3bb444c571118abb70085fa8d1bd96b7583c8c6",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-footer-fast-present.png",
+      "before_sha256": "d526366c0142476c9420e02f890dd22e7ad5250172a5b05c326af8f4f516e96f",
+      "after_sha256": "ac39225a9f0d3630572f45fad354d58c0a3cece6e3b788320e94c0ccb830e9a9",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-independent-warnings.png",
+      "before_sha256": "359bef4778497327eb94747544cf0d85186f8ed3fc4572012dd15204e56fc291",
+      "after_sha256": "09f57ac250ff5ec2c3aa81341266626a38801a919ae7ea6c9375c10caab3ee2b",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-placeholder-and-growth.png",
+      "before_sha256": "bc089c6f18897623c0968c9a7d087598ef7804b5d92b43c6bab6e8030c0a0066",
+      "after_sha256": "5ef3716f89cc9bb83afcd4ee0ffc5fcccc2b5107ce07ffa357dfdf7768a6aaa9",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-sends-attachment-mid-run.png",
+      "before_sha256": "bd804a69e68f1278854b8dfdbf8b1015263044f19033b7b55732450c2b60d99c",
+      "after_sha256": "b258855a31c108caefb504c762886b9660804a6afdacb912f77503b58d9c8dd9",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-stop-control-dark.png",
+      "before_sha256": "7d1c0e8d70cefbc8b4805e2cac42cd7b5179b57c6e464d176cdad43598f05106",
+      "after_sha256": "08bd45ca164c7a2aed08530f98499417c898808487dbe4cfa37e6c5be51f2617",
+      "review_reason": "Working signal frozen with existing ReduceMotion override; byte-identical full and focused captures."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-with-attachments-dark.png",
+      "before_sha256": "ad8b0cd05f02466019d611cad537951d8998c303676bbe4e5953007a11c9ee45",
+      "after_sha256": "0a00c87d8d0fcb2d9911f42c30cb40147c6613f751c2662c10c56fee223f5f6e",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-with-model-flyout-dark.png",
+      "before_sha256": "249b003869fb9d55500da4bcd43516b16649e9f12955922917b4eea0e578957e",
+      "after_sha256": "af3087de22f74d72347f63e6d5c87b763880bcaad222b4c4e3e0a0b70516308b",
+      "review_reason": "Reviewed updated footer layout. Detached hosting view uses the existing provisional 120pt trigger; actual Release window anchor verified without overlap."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-with-model-flyout.png",
+      "before_sha256": "d6413a4f8876fa845e3e6a1e466fa3b634145842282cc208270bf5d1995694d8",
+      "after_sha256": "682f6a63367fc68a5321bb51ad7f391a32cbc0c2995bb12fc950858eb5479b9c",
+      "review_reason": "Reviewed updated footer layout. Detached hosting view uses the existing provisional 120pt trigger; actual Release window anchor verified without overlap."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/content-document-budget-initial.png",
+      "before_sha256": "66a254f2da5e15791d90ee95ed8431f18a2162162c2ac86a31b420b865c1b694",
+      "after_sha256": "3097f3f01a86f92709e279558d4df2553612751404ffcab0f509aa0c2f26e6e0",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/context-usage-popover-compacting.png",
+      "before_sha256": "4dfc956f9eedd52fa7d13e73ff40d81542a71fc1816910e313a0b719141dfe29",
+      "after_sha256": "d33466ba8ca4e99ee17c8a3b075eb643b19ab62a138af39225b7f3a994b24989",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/context-usage-popover-dark.png",
+      "before_sha256": "75f4a4488b538a6f9240fa66a433d6376158559eb3ffbffb59d584e9accc65a3",
+      "after_sha256": "fcf61e29d285e16e0a61c3610e41bbc1d0a8c58e17b4e6252336ae4f4dc05b9c",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/context-usage-popover-light.png",
+      "before_sha256": "078fa80296572775c63fc192c25570b3393420d46ede036672adfff6316d18ec",
+      "after_sha256": "f76cc79b4ee25728dd1acb8ac76d74923584a960aa9d4b5831227759b7bab1b7",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/context-usage-popover-unavailable.png",
+      "before_sha256": "b42e2a769ba1f30e4515ca53b6a5f405a7629f3c9364a33d760f8b44e07aa2a4",
+      "after_sha256": "faa41872063b836a1398ad140a2b208d16a12cdda175a1639c2e292177b4230e",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/continuous-settings-dark.png",
+      "before_sha256": "4aea33fcb370cd8d928747d8051eac5d7bcafc5cda15c002532f9d997d373527",
+      "after_sha256": "59a2bb40ab28c8849abaa620233efcc4a26c960f085c0f4a72cca7c906df914f",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/continuous-settings.png",
+      "before_sha256": "e22dc111d5956baa7b14e45f5e533422e72e19e64fb3cf9a0d2be157ff2707fd",
+      "after_sha256": "657dab84cc74ee330956a2731582016c32c5d1f32901f3ec385761395dea9c3d",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/developer-tool-flow-dark.png",
+      "before_sha256": "33b5d05c675d285cdbb04c505b759bbf84ca5f0c3a69c552d6a3eb6a1ee3cf27",
+      "after_sha256": "228fef8b3257ea0aaa2f054f6a2dc588e9caa257918122dad8d556a0c5721d5b",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/developer-tool-flow.png",
+      "before_sha256": "cb8d3c8f3140efb7b00a0c14e6a0e9012c8a1bbf92caa443dc9a8af9e4f7f5f9",
+      "after_sha256": "2038e62868d913c35ea6a29887b07f7dc7bb66e7af0b4c5df83e5df578c6f120",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/extension-question-card.png",
+      "before_sha256": "148551715da8664d810fa833f4817ab31c9db24e640d8f216a5cd73ca8f82a74",
+      "after_sha256": "d917b1da9169a1f1edee05454c2cfc660dd529c4f1b6b7e3392027343c48c45a",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/file-reference-states-dark.png",
+      "before_sha256": "5131e992971b5135139edf85dbf110a770d8280d9514cbaf4105d12ad7520b1f",
+      "after_sha256": "0ffc2467aafacee24bb34f6964d0655f0e9ae7ff353b95331db8b9630bd7e4e3",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/file-reference-states.png",
+      "before_sha256": "b8a2991baaa37aa576426ff675c30511519bff189d48ea1c4c57b03f44512315",
+      "after_sha256": "19e880c73988d46b649566143dce68d42113680f9069e883bdaf95d45a569865",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/file-type-icon-catalog-dark.png",
+      "before_sha256": "19985c08e7d8f627f002bcdbb298fa3f7aeacc2b4df81a1454ffbd21bb6034c6",
+      "after_sha256": "d555b81d0eadf4033e0fd373f510a345caecd4fabf863e7cfbc3e407a8829374",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/file-type-icon-catalog.png",
+      "before_sha256": "31e138b97fdd2903f397ef8ea94e335367ecf547e8c684cb9cc9728e46d5999c",
+      "after_sha256": "3981dd2c2e0b622542cda3980ad4617ee655b5e3059dbf9e3c98a12fcbe89f1c",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-compact-trigger-window.png",
+      "before_sha256": "f843a4523252924ee618b5db26d2dc3e21224e695b0a8e32f830e3610c72a250",
+      "after_sha256": "ad7ebbec59a9f764aba7cc30b0bb60298eb232f4bb3e02878316932da7f908aa",
+      "review_reason": "intended dock layout/state shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-minimum-window.png",
+      "before_sha256": "24b6e4b83ba26c9d6894ca72f723b66a17b29fdd18c30857c30d80b1e798e89c",
+      "after_sha256": "7233d7a3a0de12e6a36979d4053d9d89cfbcc1a20a40f033ef7aae7ffd6c4dba",
+      "review_reason": "intended dock layout/state shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-wide-window.png",
+      "before_sha256": "b61588d00ee2cc7e2ac6893fe384cdd581861bf1c452873b281b46af55f0b3ff",
+      "after_sha256": "8f3dbc7249635cbd618e50b714300330f8363f18ee6f2501ce07cb585b3fcafc",
+      "review_reason": "intended dock layout/state shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-dark.png",
+      "before_sha256": "d942771420fa9454b1b168df81a323008d3c16fae9da33fc210cdca20b29f1d8",
+      "after_sha256": "de0096ed66a0a1fd12b8320c503ee99a99a0be880e2f2b26806d8fb867d48639",
+      "review_reason": "intended dock layout/state shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-expanded-rail-overflow.png",
+      "before_sha256": "1746807bfee4d89bef97fa3894f40bc12141757a80ebf90dcb624bb3e94dc36d",
+      "after_sha256": "46781cde661b7a36019f977a841d4687a7661ad39f6916c50b025c8763e5b498",
+      "review_reason": "intended dock layout/state shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-usage-dock-small-window.png",
+      "before_sha256": "9b60154dc0d4e6d4821f8c612ecb6c00eb5aafa9acadf30daa0f7e401ad49098",
+      "after_sha256": "46781cde661b7a36019f977a841d4687a7661ad39f6916c50b025c8763e5b498",
+      "review_reason": "intended dock layout/state shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-usage-dock-wide-window.png",
+      "before_sha256": "d74fa8732ba7d5d0617f34fc40ceaf746c2af82755a8ad010b95e02483db057c",
+      "after_sha256": "bbaabab9391c2ac21945db0d7d56b1259d19c9870c6ac813c752cd8ecf471dde",
+      "review_reason": "intended dock layout/state shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/generic-tool-card-dark.png",
+      "before_sha256": "46762150ee66ef3f9a5c19a2caf223629266c86a2a342f51f6f79295d321c849",
+      "after_sha256": "4271c2dc539eb889cebe04d995b610232fb635486a8c44a602d814ae42c6de3b",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/generic-tool-card.png",
+      "before_sha256": "e16947a8d9f65cd39e675a2116593f70774b5fe76f183bc7c7698a8d47e06b33",
+      "after_sha256": "39912ad966d763c3d10b287bbceed05f84a50d3b27746bc808d0df480cf6a0ab",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/model-picker-default-dark.png",
+      "before_sha256": "59213be136b0bba351075ea997c908f63026c46fb989a16f3e9760f32dc259f1",
+      "after_sha256": "3b084f542dd4c325aa4ae8e7a775ce27ab9285e0678412df574229a0759de6f7",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/model-picker-default.png",
+      "before_sha256": "cbdbe330813a61e845e9feec9f93e54ca92d95b878737025b6a99ffbb80768c9",
+      "after_sha256": "702a53c1cbd71944006a1d84c60647568cd0f3acbf9390113a2a21b148236700",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/model-picker-empty-dark.png",
+      "before_sha256": "2f59bc3d45b104644ec87e33babb0e1ff11c55fd9f7bde48989db5647d737f62",
+      "after_sha256": "039bb014f40db365b0a60addea64c22f574830c26594444df13c63296be45571",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/model-picker-empty.png",
+      "before_sha256": "6049df741568e7254944da49d40046a84cf03d209fd56203405a23a8cc13223b",
+      "after_sha256": "2a8ea67feafbc5ed480168d9f77fa6ec9255c8f43071bdbb87af89e2f438a10f",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/model-picker-fast-only.png",
+      "before_sha256": "f6e03277efe71f25ed16f19fca95097e4d7fc6b89978f8c645b2833e0fd59da1",
+      "after_sha256": "c4256e0ee9e9f420665d3444edb0d33d206a3eeceadd4cba3a07e37feecb7d91",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/model-picker-searching.png",
+      "before_sha256": "950515d505523c8a751e8d5df02b06c88ae2c54d35e681fd9f31a18fa6b93828",
+      "after_sha256": "fa6de491733b61e3453fd68afacb4bbf5a3f22011835055e3f7cf0d45ce7e58a",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-install-dark.png",
+      "before_sha256": "d4d0e7db512712e08730152869c28abaea2a7dc6488fded12532aaa6ba684189",
+      "after_sha256": "608cf9f689c0399c1bc385003d04925c05081e196b2afe051b71c2aeef31c054",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-install-expanded-paged-log.png",
+      "before_sha256": "d6d7063a151d34869d732eb86f97768de47ba515b21caff139144f971a512c5f",
+      "after_sha256": "07077dea5c9b1349894d9a5612fa129f9392953a78a991ca8e5a1ecac9bedd55",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-install-paged-log.png",
+      "before_sha256": "3c0eca8707c142b92494f840e3ab3f389f96d4fe0359acd253ce690b5f83cf81",
+      "after_sha256": "d1c5c22dc9a8f0a45ffc1ec17cad77aba6ab60e917ef6785508e3c7341d126ff",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-install-unrunnable.png",
+      "before_sha256": "ac7a9e94ead55b96c3c26411f1cc9583eae93f66768a0df7444a8e52e6f673da",
+      "after_sha256": "93cb5da5c7a2e6ab4338ce0d3f1f5f8a2c047c52e72658932248d888fdca411c",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-install-verifying.png",
+      "before_sha256": "16c145e5ccf281fbcf832d6448e2e84257be0a21639a05e8799c7213360ba2c6",
+      "after_sha256": "c7e437d4bbeff231f4646e3627cfd4dc71e0a5d08c7bbf9b3c0d3390e9ca5cc9",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-install.png",
+      "before_sha256": "2e4b727836a0d071f1c7f2ae09567865909792b927f79a1758c6bee510abb64f",
+      "after_sha256": "3f6b3b92588a4048be542d5bf951740da62edcc16fa98a2d8b8fd1034e436b96",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-project-empty.png",
+      "before_sha256": "414fd1d871ddfe98770debc5e5d87410ded272803b6996882d4fe70a7ac0f031",
+      "after_sha256": "95e0891f27e87d8a07b5438b4ab701a8ef02d6fce31cabd97577b5633eacbdab",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-project-picked-no-sessions.png",
+      "before_sha256": "84de39f7a91699f38ebfb728b92e2d9a84932d4ce16d24cda494a3567a6902a9",
+      "after_sha256": "6a1a0a03e154b158d06687cc10890081f884654c91b77dbd7589748f70ac9d35",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-project-populated-dark.png",
+      "before_sha256": "3e811831e2181062d0cde4eee50e20df1cf1aece10d5197d8485f5a270848225",
+      "after_sha256": "8a78409877e810f1ac313f1763ea52a90fe78c026f6a75fad6a17c78a7392a84",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/onboarding-project-populated.png",
+      "before_sha256": "25e56998a343ee3b55fe61d18878b76f1920e93518cc86db472832951e21b8e6",
+      "after_sha256": "20da3f4b585b4d50331c4211e506a21afae1b20a91bdbc3d8da692e2aac88206",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-connections-stock-tier.png",
+      "before_sha256": "932fee1c95b41760cc2cb3a7336c6fed01a08c0a0c7475fe3092cfec84762f40",
+      "after_sha256": "585a9a53beb1169919752e6735b55431470d3043e76ea77125886928882ba52c",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-connections.png",
+      "before_sha256": "a962224c95142022787b11a195036caf20410fd657f1c17df07a3ae279414ddf",
+      "after_sha256": "dddfe84c19281c1c6238625a135ea57f6a1d3380c2680233fff88e699177ad06",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-expanded-semantic.png",
+      "before_sha256": "5117b0e5174bb6f6bcb76e6651a27a0074f21ae7aeea7ee76ffe13670cc795a5",
+      "after_sha256": "ad26c23e36a3f74836e4655cf38260a40c7d243a73fa9848583472b6d7d04872",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-generating-grayscale.png",
+      "before_sha256": "4ee3465742a3a9521103fb4206630df67584847e5220c87771a4e1255fbd7986",
+      "after_sha256": "d0e180366a3004d6dbf700e8d16680550600ae940879bd7af6f3c8c23a686560",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-hovered-background.png",
+      "before_sha256": "dac5b251337e8371520623aa3ab8832f6bb7d856c7ba850c310e3a93fcf79e95",
+      "after_sha256": "c2018e20ffbd84645964ce5a85bf7b75bd0101c8270a8824b2b39c70a4754550",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-multiple-idle.png",
+      "before_sha256": "d0481a5e3a5e8d4dc250125ff1d008a7098a2d01a4425a0eb5ee0303e89c80da",
+      "after_sha256": "bac49c47cf11ba10fee23c10850a06d35f272b8731fb8c7b296d087f7afc87bf",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-removal-confirmation-dark.png",
+      "before_sha256": "2cdf4efd4199f367eb2ff2b9a73c404a4cf2b0998cd0e5b0a7d5a6069c27917a",
+      "after_sha256": "07490fdc7a0c35e5112fffcf1526652da8248629cc3ac938a51f118b5b507d89",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-removal-confirmation.png",
+      "before_sha256": "02fe8a185148a22b1eb4be44a8f80b4bb7809ab51a59bf2435e82bf4a21712c4",
+      "after_sha256": "fca701302b63aa3eb24588b651382a055aa017d6165dc719ec3c26dfee7ddd26",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-stack-badge-live.png",
+      "before_sha256": "d3f0f2af5b3886f0e8f78363405454524d182269e8c43a6a65d37acf36826b4d",
+      "after_sha256": "a0472d3ae9abffa6cbdc5c8cd5570daa91d97642dec7163abde15452c3bbf9a4",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-stack-hovered-account.png",
+      "before_sha256": "8635d922a8be09570283f1d5fbfa6cb73a78edaf87e2928ead533380681d4ba1",
+      "after_sha256": "8f0218c55e71360fc46dd6eaf2ef66fbf5a4e89730cc765d43b5e519fa435b0e",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-stack-rest-badge.png",
+      "before_sha256": "5cc5788c1ef031a0b21f64f9144496cbe73799aa4dae1dc13274409fa4637ac8",
+      "after_sha256": "51917a1f7d9b1030aff3f4303da864622d494d2dc40a4af3723206bdf00aa109",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-stack-states.png",
+      "before_sha256": "f2cc09554dc9c630fa2d98d4d31224efcab0cc8ab04a8c9da4d4cf414f8a0e58",
+      "after_sha256": "dc9eb48e3c2dcc89ccb5f2baa17112a03863cc7b3f77255a156b81cc0632a4d7",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-switch-confirmation-restart-hidden-for-new-sessions.png",
+      "before_sha256": "88c8de26c0407075c450beb4bacf45f0439e87c364215c15ee4643ee4a18dc8a",
+      "after_sha256": "5e801089edea0cd217d07a0018d28be06f77db748b2b1242f6f4a27e57548f7c",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-switch-confirmation-restart.png",
+      "before_sha256": "fb2e0910c2d4bee3f4f173ac07bd1a74468827fcd246e7b1fc6ef33e1128a60a",
+      "after_sha256": "934217bcbc61181bc35743ba166399b4af5b096e0e389edcb44fc1a6c76ab06c",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-account-switch-confirmation.png",
+      "before_sha256": "662f4aa596c656a7c4cc4dcf6de7984e86590ff94c189f911389c067db051b52",
+      "after_sha256": "299c14e3bc5b6bf6960bc1a98506d52112900c518677990ea061717a9b561ffd",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-connections-active-login.png",
+      "before_sha256": "ab8cc2abbede423dd4e5ff7d87044c942fb3781eba8cf8c93bbaf4de9948be8d",
+      "after_sha256": "ce5bf069dda9a144bbf071942b8168f173620b33bac5bf38afbb4fe710812f57",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-connections-benign-status.png",
+      "before_sha256": "ab6df1147ddb49a1556bf25515ad45a1cee01a9487a916007f924440ec84bd60",
+      "after_sha256": "35b8b9f110fdd8898331dd4996fb7de77b80021d653d78202d8900a45ebaf400",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-connections-dark.png",
+      "before_sha256": "c288c32dd2176948dee9139998322ba0c5a9969f8986ac3962739149ea0be644",
+      "after_sha256": "145a7dc99d9c5e52fb816febf3544eb5d253fc5a2942d17ecd1d1c9f7dafd5c9",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-connections-failure.png",
+      "before_sha256": "fef8a096e2de878c9376d610d94f2f0c56ae5d32a95242fd9b331ed3cd950851",
+      "after_sha256": "74243469011bc11140cef51bbc3ea327c1055c24117de6492536abb74b4b6520",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-connections.png",
+      "before_sha256": "e8fd259faa2c88ecc36db6e619173d06acf7c2b38bc450bb489b5090de346fac",
+      "after_sha256": "f5736b4ceb14ff51bdece7351b6b9bd9be5db68ed0e9812952ededb639d00d49",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-active-login.png",
+      "before_sha256": "d72a05d47da50c7aeaf9cf2650384e47a1d39cfd48357b91a61a73bddf461fc6",
+      "after_sha256": "ab41cec83bde85996a79fadd2288731cf941c03d510eb49fefd8c49f675bc201",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-browse-all-minimum-size.png",
+      "before_sha256": "7db49a3c7f56ff7ad81a96be38345ac969425de236aaf5f698507a9596eeafec",
+      "after_sha256": "13f3f849c4bab95ecbe97d68cadad5d51f3c90aa1e72d8a0b432577236e4744e",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-browse-all-mixed-rows-minimum-size.png",
+      "before_sha256": "dc9aa8699b73e8b5521320571f3f943da39cadc00276ea6384b848054ce9d51c",
+      "after_sha256": "b7a8f950d0c995f165696aab6bf613b991ff15ad6bfeb4a24a7cbf71511c335d",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-connected.png",
+      "before_sha256": "4058e7e4e8da4c7fca0d38707d879ae5c6257c59fc56e3ee0bd18dc40ca3f692",
+      "after_sha256": "c6091fd744b60eba31bf61637f3f7cf6e23ce98a4d111089b421ebc4c4228c44",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-input-sheet-dark.png",
+      "before_sha256": "18335f3bda15b7ce45b7203548562bea44f281b90b9486bfb8922813c2292bc3",
+      "after_sha256": "a1c1d678c0866cf4b5a39866db1b45c521ab6866f2626726d5936d2891ff39ae",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-input-sheet.png",
+      "before_sha256": "92846da2f366db3179cd815703a33b1390ba1af16c714db452a7f01060ac2ea7",
+      "after_sha256": "6c72cce67257aeb3bc20dca68a0e25f9bd5a56adffcfa660ceec0ba527457532",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-loading.png",
+      "before_sha256": "948edb0ca1165a4be9c7955dbe80591d25f8e701f5fafa967b136cb9dba8cb46",
+      "after_sha256": "711db9a84a65dd6fdd236f8611daed45b057d1f8549da1d8db4f51a4a0022948",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-login-cancelled.png",
+      "before_sha256": "dffd038c453bbcc084705cc18850b890176e2224596bd23382452f060d7bc532",
+      "after_sha256": "3adabbc8d275a224af34054a58cbeb91aeacbf0717598a99c608d9e193bc2916",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-login-failure.png",
+      "before_sha256": "4bae9ee5bbf3771e0c01db5cf27f4d2c433741a46445c7a7434cb958e19dd7d3",
+      "after_sha256": "7b704b5c246cb391f4f49bf21e3b3463d6f87e4e70a2744b1fa3110568763730",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-required-dark.png",
+      "before_sha256": "6d89a50d33ca3b057e9d112c8d6fb1706edc40f4ba3590cf240bbac159b1111f",
+      "after_sha256": "0dc6df9e4e3bfcc60fd8282443d49adff00ddd6f8889ea9e410a7dd1bc8592c2",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-required.png",
+      "before_sha256": "a9afb289e8e7b30bddd66d87e856c5b4edfe1dd323617588c71d94ec12cec511",
+      "after_sha256": "009f4d60f6d56e55c0481070435edfde78dafecabf48515dba06ddc6ce1ccd72",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-starter-chatgpt.png",
+      "before_sha256": "52d57d3e014a54c5290b03fab42afdf34653f29d86a6a682ce482df924773b13",
+      "after_sha256": "b11f922bd469bff7de56c618027555fcf379fd4704619dcffc6866cfa43f4768",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-starter-claude.png",
+      "before_sha256": "0ca7485aa13ce9812b811616d3b4f292bd105ff8671d29b5fb21ffb6b12d98b7",
+      "after_sha256": "af04d57dc3984616756815c8ce6443b81dce4c362eff70b0e3ca524385e88bc4",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-starter-cursor.png",
+      "before_sha256": "dffd038c453bbcc084705cc18850b890176e2224596bd23382452f060d7bc532",
+      "after_sha256": "3adabbc8d275a224af34054a58cbeb91aeacbf0717598a99c608d9e193bc2916",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-setup-starter-google-cloud.png",
+      "before_sha256": "2dc217560b1a327711d8c4ee753434725d4393012e502389077ef893af8e364d",
+      "after_sha256": "3ce4dc6bb65b4b1e05112d7f97311a9ebf6504c327082b2f727306dd370aea3c",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-usage-detail-dark.png",
+      "before_sha256": "c44cb7e0f0d74445852ddb67f44f46419814b636e974abd8a9b255f6860d796c",
+      "after_sha256": "5b30bfe4745f9ca6cae108f63c641a7483029f76c69bb131e14c1bee5226955f",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-usage-detail.png",
+      "before_sha256": "aeed849d93b534b1bc93a038288f78de0cc302e386b466a7579d5e163037a3d3",
+      "after_sha256": "c2e6e509aa8741d9f857563a231052765c22454afe7ab9053b3adb0a5d5fa78a",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-usage-dock-expanded.png",
+      "before_sha256": "459720e58754f2dafdb46ec7496e16846b9e186bbfed488db2ca45a5165b25d6",
+      "after_sha256": "c26394d19630f1717824b66dcdc01d8a8ad77e7ac4c2d33482e0e427a32f42cf",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-usage-dock-idle-dark.png",
+      "before_sha256": "73268a1cfb5d572db3d44f2d4ead88d99a6745fa2011bbff8ebba3afef4a962a",
+      "after_sha256": "5b9f16cdecf17bece0b7b10621e0671baf3535f7e1372335eb73b3f10ba4928c",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-usage-dock-idle.png",
+      "before_sha256": "9c2e17563dea5e36a17a8c3b046b9fa3079b868f0c95ab7986203400a45a402b",
+      "after_sha256": "735f87081be694636256aa14a731476993f5027f2e1a43db007f7d1d4192fab2",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/provider-usage-stale.png",
+      "before_sha256": "bf9a7fdde2a1d6c0b5704a48b841c50f88abf528b21238e34c4c9051838ed1d4",
+      "after_sha256": "4edd0474d42c84a4c08a843d4cad952ee105a40fcbfd87d98ebb9a5fe7ca7b70",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/renderer-pagination-initial.png",
+      "before_sha256": "3c124cf3de5fff8907d9922f26b59213b676d865648278ac256fce41e20e97c7",
+      "after_sha256": "85cce68bbcb293b378e066c2f5ad4ab9c9a88bc0737aec65067c5be49d531f63",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/rich-transcript-compact.png",
+      "before_sha256": "cd1e570ce9b6c82961f4546f6674c6b501661617d4f1f5b6aa4e4d4e18b6de3a",
+      "after_sha256": "9f3036586c0481e3636c41c705af4f2d32a9da0b39b2fb2dfe5bbd7573c26e70",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/rich-transcript-wide-dark.png",
+      "before_sha256": "3ced9fe4d5ca81417a883b6cb58537b4a0a1f2b35cdaa3d1fc4ec657bc2e758e",
+      "after_sha256": "0f41bcdde17f3771a9661cf9de79b07286afcb57496d23a0b76bab7dbf70e8ea",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/rich-transcript-wide.png",
+      "before_sha256": "bc04867e66f1643aa2b7b98011024e02d2a78f879e091128a0c528ac45f57bdc",
+      "after_sha256": "b6a02b51f1765a41e55136b11243eb7b7b199c4a0ed6fb12b5f97171752dc59e",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/runtime-recovery-dark.png",
+      "before_sha256": "98e5b39752c95444068a8a7cbba5db30a092cb2e1339fe0e18a7398fcc86627c",
+      "after_sha256": "78f007047afc1b2e9577b428a883bdf65acda1fc6654afcf161b2136bff846f2",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/runtime-recovery.png",
+      "before_sha256": "4b7d497fefd70eb13b8be9225dc8d4ffa06763d7193b263df5285f63f6fd3241",
+      "after_sha256": "71e346599f3116b53191a4616e354d276f7e23e6ae4e6f146add76a16e59bbf9",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/search-modal-dark.png",
+      "before_sha256": "60293102ef3a2dce6c40f2490ec6d0733bbe6208a2c9590e200483786e09d0fa",
+      "after_sha256": "e9c9a50d0b9200d7d11b97507f71bc03b5b712577f3705e01721c4385b28e358",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/search-modal.png",
+      "before_sha256": "79cd3d3bd7cc90984c7a79ffe25ab43f5a207508403ca3f1036f7d3940be7e21",
+      "after_sha256": "70c05c77a5b73c22fdf99693b620e4f331351d636e4b978749c77cc7373e44ef",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/semantic-tool-surfaces-dark.png",
+      "before_sha256": "762f6372178f3c92bed454796e268d64455e4050f4627f333c8160b69dab725e",
+      "after_sha256": "2ae68367455a224f3b3dd6a68ed1cf4a0a8eb2ab177943c9899b350c1dd4bbba",
+      "review_reason": "Only embedded source-wrapped fixture pixels changed after its reviewed reference refresh."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/semantic-tool-surfaces.png",
+      "before_sha256": "563db886cb72885be3cfb21c1d82997e3d58b1e529ba92dfee61600517caa98c",
+      "after_sha256": "5cd109ca421373c4201a05f0e7b98af2fb8c11b6fe52a73b21c810e7ddcf67d0",
+      "review_reason": "Only embedded source-wrapped fixture pixels changed after its reviewed reference refresh."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/session-attention-pending.png",
+      "before_sha256": "c3ac55c2b05aaef35430342e061278e2222b3bf22d5a63667193352fc948219b",
+      "after_sha256": "ed4b0f7bc3fb9357589a700eb74282467e185f8a04936b1605c7dc43ce8fea7f",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/session-attention-ready.png",
+      "before_sha256": "85ff90a48cfc0e2305a63a69ef0d0be120d3ec4e77413bb36dd5fc2ab14e2584",
+      "after_sha256": "04e334f253c2a15152ff1b5106934f1805a95c74e40683689e17b4833583a687",
+      "review_reason": "Visually reviewed approved inline context and compact footer layout; active fixtures supply session signal."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/session-attention-working.png",
+      "before_sha256": "cbcb245b472a9b0be4400ca9d52ad58278e6eaa9158cfd140132b24399b2682b",
+      "after_sha256": "bc792afaab4906da778f1f0d2879629eb4966f6313e50f24e8d7836a8f836d68",
+      "review_reason": "Working signal frozen with existing ReduceMotion override; byte-identical full and focused captures."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/session-deletion-confirmation-dark.png",
+      "before_sha256": "a7beedebd3ef88df84f79d948e0f43eea2faa17a165a9894296852459201777f",
+      "after_sha256": "2548c136de14bc47ffe53d676e439fc649ed2c349040ed62c2c441509791bd26",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/session-deletion-confirmation.png",
+      "before_sha256": "61a8210ff261f073dd92e4282b93374078f885d756157696381fb1be23f46fa8",
+      "after_sha256": "e4a87c9bb9a7d6e4823e1e15447a927ab7671c5351afc0a5f72bc42e156ec306",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/settings-providers-embedded.png",
+      "before_sha256": "22b5a883a1d3fee2ae8fcd4fabb5623421d51900b0e78563f77cc7b874a5d4b4",
+      "after_sha256": "94fa245890c8d4449961d95f56b239b9dd0520094b41bf151c53cac311b53d67",
+      "review_reason": "low-amplitude/localized raster change; visually reviewed glyph/text delta without meaningful layout change; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/shell-rail-collapsed-dark.png",
+      "before_sha256": "03469b9ee419429b3eed5b8b05f610e8d75d00145444c5f8e40a391e95611e9c",
+      "after_sha256": "d6d8a71880e143ef0a3ff09c179db20b554acb72cd469579c35a0b6e8b2e3138",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/shell-rail-collapsed.png",
+      "before_sha256": "f1bca5b26a1181b4d913ab3d901f5298480375bf99c37ac2624430eae8cd900d",
+      "after_sha256": "2b9341c7a748c52261e35d817ef7bc17a87609b9d44da76c1c4461dc0f31ad56",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/shell-rail-expanded-dark.png",
+      "before_sha256": "5878582695cf2b8a3c8ba3874488d9b9aa43a30b66cda28bfaaa2c6bd9c4048f",
+      "after_sha256": "a2a9d192102b788d28dab2fd93107e9828671ef06a96aa6ad6ccdda7988a9f4f",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/shell-rail-expanded.png",
+      "before_sha256": "6b72d55a778383abfd24c5c68ef393386832711fe7279707932b0975b412a821",
+      "after_sha256": "440fd97e5b4156af6bbc10fe9b196c150ccee4e54b1b8dc7ab37ddc8e9c095b3",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/shell-rail-overflow-expanded.png",
+      "before_sha256": "74be8b220215d7848f827d7798862f2a91353d7fb2d6407d9d95ca285188d9e5",
+      "after_sha256": "cc0ff72876e57d83526131e42731588e15e1b7073e003ef71d0c6e94c67688f7",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/shell-rail-sessionless-project.png",
+      "before_sha256": "7c002e6c4879d3bee46016b02cfe7f54a528cc2bac0adc38ebce02ac34003af9",
+      "after_sha256": "c198c97e3812843368450e8e9a049e5d4c2eae3d5f8384ed8c96b7714101344e",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/source-scrolling.png",
+      "before_sha256": "80d5c466bf29269fc2a286f0109016f3b7b94e68f7da87b0a70c6a210a2b26c3",
+      "after_sha256": "2007d2f54b798df8282941bc1fe3ac7135c09b48808edd8bd3202106b244fc27",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/source-wrapped-dark.png",
+      "before_sha256": "bddca0d5dfe15be0db6c76418e68e7dee8c23f39f523aa99e2fe828e65804770",
+      "after_sha256": "8bbb3b191038492ffd2fd1c10e22d8d4423029f553d6bd9a576706b2671ec0c2",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/source-wrapped.png",
+      "before_sha256": "9f68776547c94d170fe532a8ad573f8e3561c379d6067dd637c8237eb39a1fc7",
+      "after_sha256": "02f5e2ac3ca50aa1d5466f08b31b02f50e1a6af670ce0010baaba180192703e8",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/startup-splash-loading-dark.png",
+      "before_sha256": "5a77e48c40de5303caf27b88a55fb682864a5bcbaef0636ad77a8bc7c0e054a5",
+      "after_sha256": "4a4162a4643d5d891caa7f92f423ee38446f06f6d0a3fe347e9a3a94e504974b",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/startup-splash-loading.png",
+      "before_sha256": "a2ae96edd1191408efaeced4aa0a8c664471f1e8aaafa2e0a1bdf5efdf42ef94",
+      "after_sha256": "b0c13343cbbe74ef1ae5cc8349b7bfacfc67b64ca0094e122f5ceb7420c53c63",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/startup-splash-recovery.png",
+      "before_sha256": "cfec113b96c503b1fb81695ed482c1510c95e72c71f18b5b99fbba0558d7c468",
+      "after_sha256": "c3ab1841d698d01af5fb72fb8a4cc836f5c275a5e941d887b9e7c409502f3a8e",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-call-group-modes.png",
+      "before_sha256": "366fb61a788dbcfc299b1e756c902d7b4a326021e2d32eeaeb63937540b7d2e3",
+      "after_sha256": "32ca58fb8253a090985465a6431b0d7c6eaf35c3aceaa001f54d8e0129f7de0e",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-cards-coordination-dark.png",
+      "before_sha256": "bc614d0d51618654c30b088fb9d967db1c690e3a44ae6715dcb75a7e2a59e4d3",
+      "after_sha256": "79439f7a5dca29621b4a215861c0b2ba594229831b32089eb64cd342d9fc6788",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-cards-coordination.png",
+      "before_sha256": "4d98b1f592b871c75c7a810a5647e9ee2d5f3d3621e837fb391bafb3a39281d4",
+      "after_sha256": "459332966492e1f70564b0ae58888db7e45ca8fe5c39e01a1f115b8a8dda3d29",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-cards-mcp-fallback-dark.png",
+      "before_sha256": "7eb4424c9cd36aaf2493de2f44235a7114286faba4453850ba0d9acad1b9730d",
+      "after_sha256": "9c6b7f46922eca1e2edda1d970b2bc7e74b2ef8ef05ba6b9bfa11631441b6cbd",
+      "review_reason": "Only embedded source-wrapped fixture pixels changed after its reviewed reference refresh."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-cards-mcp-fallback.png",
+      "before_sha256": "6a02896e85ab53721183061d3676fb86f629b437ef0d3dbf2b222e845cec08c3",
+      "after_sha256": "538cfd77705a94f2d7d3ebf2844b18af0ea79c8d188314cfa14c03ad6004a2b1",
+      "review_reason": "Only embedded source-wrapped fixture pixels changed after its reviewed reference refresh."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-cards-media-dark.png",
+      "before_sha256": "15256ff7815a128d31db13b43d19a2bdd9252f7f1abab9a2647766bfa283a842",
+      "after_sha256": "1184bef595fa5b0f831e4369f4cb4de73d2addb5ce24e9b31b5f20d3f54aa2d8",
+      "review_reason": "Only embedded source-wrapped fixture pixels changed after its reviewed reference refresh."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-cards-media.png",
+      "before_sha256": "e37e40ee20acf4ec626a0b605c0f2fea11d7d2d613f62a4186fa477b661dc827",
+      "after_sha256": "906743b2c770ed74549fbf61b8daa4b9023b485e1b64fbe7ba57cc5495358bee",
+      "review_reason": "Only embedded source-wrapped fixture pixels changed after its reviewed reference refresh."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-cards-memory-dark.png",
+      "before_sha256": "5264785cf5e8ecc0b095d1a6afbb99a42b3fa00a2e551b2bba339f0e7882c4b1",
+      "after_sha256": "3a6a679ab3d0237ae1864fafeeee3bba0ec3315c43d5570c58a7881ba2522242",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-cards-memory.png",
+      "before_sha256": "3c9e202e5b9cbe611bf7c22e59180f321703d306900a4bdec7d9e9d10283b5c0",
+      "after_sha256": "4ce8385e5d87813728d06657e5c5b8bb85f8d133d59aba19e097017c8f5db174",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-detail-mode-control.png",
+      "before_sha256": "8cf2b2b50a88eb3d1cbaa73ddea0dc210a74fdfc56d7748173bc51cf56ecd085",
+      "after_sha256": "0ae4fda9a009a9c79537319cf0314b2018f5b2da29930eeea77d8f370e05830c",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/tool-media-loading.png",
+      "before_sha256": "a663400145227e928e4707730d713dd3967239229b5caec691eb9ad4c5f08e1c",
+      "after_sha256": "38678dc6d7cc8b1631644651bbb1d1d49e835014baa30a0fd323da6ef6c988d2",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/transcript-running-tool-single-activity.png",
+      "before_sha256": "ec33dcad797d6a193e7ae536bd2460669258b1dcc4c460a5ce9c0b61f9364dc3",
+      "after_sha256": "9631ae6b1d69592e1b25f6258ba4663315fc67e02eded0c1754513a7eb27f260",
+      "review_reason": "intended main tool/transcript layout shown in visually reviewed capture"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/transcript-working-indicator-dark.png",
+      "before_sha256": "753a371e666c6afb7c40508ec338ad569117ccbabf5c6c53a3be0d761bd0f0fc",
+      "after_sha256": "56dc35b60d06e298a6892dab4b05b25ea5fd5d6a131b7a944c2e992ea75d21a4",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/transcript-working-indicator.png",
+      "before_sha256": "f622f106729d598d86b9a210bd2cb3d839b9074e399997e30ba01ae7a6208e01",
+      "after_sha256": "3667ae8b038029a25190f6b3c4c98815c4972b12f8d069b376584564e3d8a97f",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/turn-status-summary.png",
+      "before_sha256": "71d8f54b4e0425ff0f2d5bf4da0a99fdd55f9955bc265a7191c123374f774c50",
+      "after_sha256": "ff1662f39a2386d0460b2644fdffc48a5983c22a2d44a0bd261b02814d4d6077",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/turn-tool-reported-files.png",
+      "before_sha256": "4bf1bcd1b98b457a140a6bf92f7ac330aa622519068d76f4878fcb80d14f7fba",
+      "after_sha256": "0067f11cd67faa900dca2d52c9846215d2017f5a56d418930986bcb6f2672962",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/update-available-dark.png",
+      "before_sha256": "225de81d6b87afe33e6700564106cbc209c9218c9542da59de53a3da112feb44",
+      "after_sha256": "8e4d7b7a5a3f0d53f5e35b4e7aabca77b9781426d2d09adf2ac1b4da59a6477f",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/update-available.png",
+      "before_sha256": "7ee7cfde3b1652e4f9f1ae1d034c28ff1311505d7e488c795fcffc03780e0bc7",
+      "after_sha256": "c74935bc7c3be0e8e2e4a9970283ed2222197a379b297a6adce95d8be29f8aea",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/update-downloading.png",
+      "before_sha256": "e777fdb47d6bcbfb27e719c4d56567fb70d410c4859b21741694514daaed9e8a",
+      "after_sha256": "b406a96340fee08fc65335a2cf0a281ae48d0abd752b3a80651f42c61c89c222",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/update-failed.png",
+      "before_sha256": "89d44f9df0fb754e51b1bac865f9c66df8de7ad984041ddf03c5fe0e3e2e9f22",
+      "after_sha256": "9f77855a73c7b870e5f62acb4061661185293d70048ca64dc506cd9663a78894",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/user-message-with-image-dark.png",
+      "before_sha256": "53ea992a2a3dae6b905e14b54d663009c1f621d68363913fd633bfa77f59d4ca",
+      "after_sha256": "720c7283f7d5663c82d696c4e1bcf19c0c5b238472d7a1f717d76b1e1d6ce44d",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/user-message-with-image.png",
+      "before_sha256": "d05bb9d6915ad6fce470eae8c4466b361f3edeefadbd7b1a56f69ad92b663612",
+      "after_sha256": "26b209af91c490b80d68d6914c4246637d1196fe9b641d17d8b2691cad29a6e4",
+      "review_reason": "low-amplitude raster change; visually reviewed with no meaningful layout difference; OS/runtime cause unproven"
+    }
+  ]
+}

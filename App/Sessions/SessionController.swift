@@ -422,23 +422,22 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let projectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
         self.projectURL = projectURL
         fallbackThreadStartDate = metadata.created
-        let headerMetadata = await headerMetadataResolver(projectURL)
-        guard pipelineGeneration == openingGeneration else { return }
-        self.headerMetadata = headerMetadata
         runtimeState = .loading
         reportActivity()
 
         let sessionPath = metadata.path
         let cwd = metadata.cwd
+        async let headerMetadata = headerMetadataResolver(projectURL)
         let (openingToken, openTask) = beginOpening { [processManager] in
             try await processManager.open(sessionPath: sessionPath, cwd: cwd)
         }
         do {
             let handle = try await openTask.value
+            guard pipelineGeneration == openingGeneration else { return }
+            let resolvedHeaderMetadata = await headerMetadata
+            guard pipelineGeneration == openingGeneration else { return }
+            self.headerMetadata = resolvedHeaderMetadata
             clearOpeningTask(token: openingToken)
-            guard pipelineGeneration == openingGeneration else {
-                return
-            }
             await finishOpening(handle, failureFunction: "openExisting")
         } catch {
             clearOpeningTask(token: openingToken)
@@ -480,9 +479,6 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.projectURL = projectURL
         fallbackThreadStartDate = Date()
         title = "New session"
-        let headerMetadata = await headerMetadataResolver(projectURL)
-        guard pipelineGeneration == openingGeneration else { return failureOutcome }
-        self.headerMetadata = headerMetadata
         runtimeState = .loading
         reportActivity()
 
@@ -490,6 +486,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let provider = selection?.provider
         let model = selection?.modelID
         let thinking = selection?.thinking
+        async let headerMetadata = headerMetadataResolver(projectURL)
         let (openingToken, openTask) = beginOpening { [processManager] in
             try await processManager.openNew(
                 projectDirectory: projectPath,
@@ -499,10 +496,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
         do {
             let handle = try await openTask.value
+            guard pipelineGeneration == openingGeneration else { return failureOutcome }
+            let resolvedHeaderMetadata = await headerMetadata
+            guard pipelineGeneration == openingGeneration else { return failureOutcome }
+            self.headerMetadata = resolvedHeaderMetadata
             clearOpeningTask(token: openingToken)
-            guard pipelineGeneration == openingGeneration else {
-                return failureOutcome
-            }
             await finishOpening(handle, failureFunction: "openNew")
             guard self.handle?.client === handle.client, isComposerAvailable else {
                 return failureOutcome
