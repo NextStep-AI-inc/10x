@@ -120,6 +120,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private var extensionBlockedRecoveryGeneration: UInt64 = 0
     private(set) var extensionBlockedRecoveryMessage: String?
     private static let extensionBlockedRecoveryDelay: Duration = .seconds(10)
+    private static let extensionBlockedRecoveryNoticeID = "extension-blocked-recovery"
+    private static let extensionBlockedRecoveryNotice =
+        "The session is still waiting after an unsupported request was cancelled. Restart to continue."
 #if DEBUG
     static var testingExtensionBlockedRecoveryDelay: Duration?
     static var testingForceExtensionUICancellationFailure = false
@@ -2044,7 +2047,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 id: "extension-unsupported-\(request.id)",
                 level: "warning",
                 message: Self.boundedExtensionNotice(reason))
-            scheduleExtensionBlockedRecoveryCheck(context: context)
+            scheduleExtensionBlockedRecoveryCheck(processor: processor, context: context)
         } catch {
             cancelledUnsupportedExtensionIDs.remove(request.id)
             guard isCurrent(context) else { return }
@@ -2065,12 +2068,15 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         return Self.extensionBlockedRecoveryDelay
     }
 
-    private func scheduleExtensionBlockedRecoveryCheck(context: PipelineContext) {
+    private func scheduleExtensionBlockedRecoveryCheck(
+        processor: TranscriptEventProcessor,
+        context: PipelineContext
+    ) {
         clearExtensionBlockedRecovery()
         extensionBlockedRecoveryGeneration &+= 1
         let generation = extensionBlockedRecoveryGeneration
         let pipelineGeneration = context.generation
-        extensionBlockedRecoveryTask = Task { [weak self] in
+        extensionBlockedRecoveryTask = Task { @MainActor [weak self, processor] in
             do {
                 try await Task.sleep(for: self?.extensionBlockedRecoveryDelay ?? Self.extensionBlockedRecoveryDelay)
             } catch {
@@ -2081,8 +2087,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                   self.pipelineGeneration == pipelineGeneration,
                   self.runtimeState == .streaming
             else { return }
-            self.extensionBlockedRecoveryMessage =
-                "The session is still waiting after an unsupported request was cancelled. Restart to continue."
+            let notice = Self.boundedExtensionNotice(Self.extensionBlockedRecoveryNotice)
+            self.extensionBlockedRecoveryMessage = notice
+            await processor.appendNotice(
+                id: Self.extensionBlockedRecoveryNoticeID,
+                level: "warning",
+                message: notice)
         }
     }
 

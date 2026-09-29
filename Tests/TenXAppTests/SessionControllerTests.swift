@@ -1666,9 +1666,19 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
         """)
     let handler = try #require(controller.testingCapturedControlConsumer(frame))
     await handler()
+    #expect(await eventually {
+        controller.noticeMessages.contains("Unsupported extension UI request.")
+    })
+    #expect(!controller.noticeMessages.contains {
+        $0.contains("still waiting") && $0.contains("Restart")
+    })
 
     #expect(await eventually { controller.canRestartAfterDismissal })
     #expect(controller.extensionBlockedRecoveryMessage != nil)
+    #expect(await eventually {
+        guard let message = controller.extensionBlockedRecoveryMessage else { return false }
+        return controller.noticeMessages.contains(message)
+    })
 
     let boundary = try controllerEvent(#"{"type":"agent_end","messages":[],"isTerminal":true}"#)
     let finishTurn = try #require(controller.testingCapturedControlConsumer(boundary))
