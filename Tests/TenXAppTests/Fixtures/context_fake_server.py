@@ -33,7 +33,8 @@ for line in sys.stdin:
             open(os.path.join(command_log, 'state-deferred'), 'w').close()
             while not os.path.exists(os.path.join(command_log, 'release-state')):
                 time.sleep(0.01)
-        success = not (mode == "transient" and state_reads == 3)
+        success = not ((mode == "transient" and state_reads == 3)
+                       or (mode == "compact-state-failure" and is_compacted))
         tokens = 32000 if is_compacted else 84000 + (state_reads-1)*1000
         data = {'model':{'id':'fake','provider':'test'},'isStreaming':mode == 'compact-streaming' or is_streaming,
                 'sessionFile':'/tmp/context-fixture.jsonl',

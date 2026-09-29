@@ -311,6 +311,7 @@ struct ComposerView: View {
     @State private var isDropTargeted = false
     @State private var hasEditorScrolled = false
     @State private var editorContentHeight: CGFloat = 20
+    @State private var signalRevealTiming: WorkspaceSignalRevealTiming?
     static let editorHeight: CGFloat = 106
     static let scrollFadeHeight: CGFloat = 24
 
@@ -385,9 +386,14 @@ struct ComposerView: View {
             WorkspaceSignalView(
                 presentation: signalPresentation,
                 compactionPhase: signalCompactionPhase,
-                onRevealComplete: onSignalRevealComplete)
+                onRevealComplete: onSignalRevealComplete,
+                onRevealStart: { signalRevealTiming = $0 })
                 .frame(height: 32)
                 .padding(.top, -12)
+                .onChange(of: signalCompactionPhase) { _, phase in
+                    if case .revealing = phase { return }
+                    signalRevealTiming = nil
+                }
 
             HStack(spacing: 8) {
                 attachButton
@@ -995,6 +1001,8 @@ struct ComposerView: View {
             }
             ContextUsageControl(
                 usage: controller.contextUsage,
+                signalCompactionPhase: signalCompactionPhase,
+                signalRevealTiming: signalRevealTiming,
                 breakdown: controller.contextBreakdown,
                 isLoading: controller.isContextLoading,
                 errorMessage: controller.contextErrorMessage,

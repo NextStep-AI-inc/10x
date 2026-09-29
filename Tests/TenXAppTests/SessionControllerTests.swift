@@ -148,6 +148,162 @@ import Testing
     await manager.closeAll()
 }
 
+@Test func automaticCompactionWaitsForMeasuredStateBeforeReveal() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let manager = contextFakeManager(mode: "delayed-context", commandLog: directory)
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: directory)
+    let oldPercent = try #require(controller.contextPercentage)
+    let start = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_start", payload: .object([:]))))
+    let end = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_end", payload: .object([:]))))
+    await start()
+    #expect(controller.signalCompactionPhase == .sweeping)
+    await end()
+    #expect(controller.signalCompactionPhase == .refreshing)
+    #expect(controller.contextPercentage == oldPercent)
+    #expect(await eventually {
+        FileManager.default.fileExists(atPath: directory.appending(path: "state-deferred").path)
+    })
+    #expect(controller.signalCompactionPhase == .refreshing)
+    try Data().write(to: directory.appending(path: "release-state"))
+    #expect(await eventually {
+        if case .revealing(_, percent: 42) = controller.signalCompactionPhase { return true }
+        return false
+    })
+    await manager.closeAll()
+}
+
+@Test func delayedRefreshCannotCompleteAnOlderCompaction() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let manager = contextFakeManager(mode: "deferred-idle-state", commandLog: directory)
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: directory)
+    let activePath = try #require(controller.sessionPath)
+    let handle = try #require(await manager.handle(for: activePath))
+    let start = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_start", payload: .object([:]))))
+    let end = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_end", payload: .object([:]))))
+    await start()
+    await end()
+    #expect(await eventually {
+        FileManager.default.fileExists(atPath: directory.appending(path: "state-deferred").path)
+    })
+    await start()
+    await end()
+    #expect(await eventually {
+        if case .revealing(_, percent: 42) = controller.signalCompactionPhase { return true }
+        return false
+    })
+    let newerPhase = controller.signalCompactionPhase
+    let newerTokens = controller.contextUsage?.tokens
+    if case .revealing(let generation, _) = newerPhase {
+        controller.completeSignalReveal(generation: generation - 1)
+        #expect(controller.signalCompactionPhase == newerPhase)
+    }
+    _ = try await handle.client.send(RpcCommand(type: "context_test_control", fields: [:]))
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(controller.signalCompactionPhase == newerPhase)
+    #expect(controller.contextUsage?.tokens == newerTokens)
+    if case .revealing(let generation, _) = newerPhase {
+        controller.completeSignalReveal(generation: generation)
+        #expect(controller.signalCompactionPhase == .none)
+    }
+    await manager.closeAll()
+}
+
+@Test func abortedAndSkippedCompactionsDoNotReveal() async throws {
+    let manager = contextFakeManager(mode: "basic")
+    let controller = SessionController(processManager: manager)
+    await controller.openNew(projectURL: try temporaryDirectory())
+    let measured = controller.contextPercentage
+    let start = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_start", payload: .object([:]))))
+    await start()
+    let aborted = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_end", payload: .object([
+            "aborted": .bool(true), "willRetry": .bool(true)]))))
+    await aborted()
+    #expect(controller.signalCompactionPhase == .none)
+    #expect(controller.isSignalRetrying)
+    #expect(controller.contextPercentage == measured)
+    let retryEnded = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_retry_end", payload: .object(["success": .bool(true)]))))
+    await retryEnded()
+    await start()
+    let skipped = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_end", payload: .object(["skipped": .bool(true)]))))
+    await skipped()
+    #expect(controller.signalCompactionPhase == .none)
+    #expect(controller.contextPercentage == measured)
+    await start()
+    let terminalAbort = try #require(controller.testingCapturedControlConsumer(
+        .event(type: "auto_compaction_end", payload: .object([
+            "aborted": .bool(true), "willRetry": .bool(false)]))))
+    await terminalAbort()
+    #expect(controller.signalCompactionPhase == .none)
+    #expect(controller.hasTerminalRetryFailure)
+    #expect(controller.contextPercentage == measured)
+    await manager.closeAll()
+}
+
+@Test func terminalRetryFailureOutranksWorkingUntilNextTurn() async throws {
+    try await withQueueController { controller, _ in
+        controller.draft = "Working turn"
+        await controller.sendPrompt()
+        #expect(controller.runtimeState == .streaming)
+        let failed = try #require(controller.testingCapturedControlConsumer(
+            .event(type: "auto_retry_end", payload: .object(["success": .bool(false)]))))
+        await failed()
+        let status = WorkspaceSignalPresentation.session(
+            runtimeState: controller.runtimeState,
+            contextPercent: controller.contextPercentage,
+            hasPendingUserInput: controller.hasPendingUserInput,
+            isRetrying: controller.isSignalRetrying,
+            hasTerminalRetryFailure: controller.hasTerminalRetryFailure,
+            compactionPhase: controller.signalCompactionPhase,
+            isRecoveryPresented: controller.isRecoveryPresented,
+            isIntentionallyStopped: false).status
+        #expect(status == .failed)
+        let nextTurn = try #require(controller.testingCapturedControlConsumer(
+            .event(type: "agent_start", payload: .object([:]))))
+        await nextTurn()
+        #expect(!controller.hasTerminalRetryFailure)
+    }
+}
+
+@Test func toolErrorDuringOngoingTurnLeavesWorkingSignal() async throws {
+    try await withQueueController { controller, _ in
+        controller.draft = "Run a tool"
+        await controller.sendPrompt()
+        #expect(controller.runtimeState == .streaming)
+        let toolError = try #require(controller.testingCapturedControlConsumer(
+            .event(type: "tool_execution_end", payload: .object([
+                "toolCallId": .string("failed-tool"),
+                "toolName": .string("bash"),
+                "isError": .bool(true)
+            ]))))
+        await toolError()
+        #expect(controller.runtimeState == .streaming)
+        #expect(!controller.hasTerminalRetryFailure)
+        #expect(controller.signalCompactionPhase == .none)
+        let status = WorkspaceSignalPresentation.session(
+            runtimeState: controller.runtimeState,
+            contextPercent: controller.contextPercentage,
+            hasPendingUserInput: controller.hasPendingUserInput,
+            isRetrying: controller.isSignalRetrying,
+            hasTerminalRetryFailure: controller.hasTerminalRetryFailure,
+            compactionPhase: controller.signalCompactionPhase,
+            isRecoveryPresented: controller.isRecoveryPresented,
+            isIntentionallyStopped: false).status
+        #expect(status == .working)
+    }
+}
+
 @Test func retryStartAndEndReachOrderedControls() async throws {
     let manager = contextFakeManager(mode: "basic")
     let controller = SessionController(processManager: manager)
@@ -197,6 +353,7 @@ import Testing
     #expect(controller.runtimeState == .streaming)
     #expect(controller.turnStartedAt == startedAt)
     #expect(controller.queuedMessageCount == 1)
+    #expect(controller.contextUsage?.tokens == 87_000)
     await manager.closeAll()
 }
 
@@ -230,7 +387,9 @@ import Testing
     await boundary()
     #expect(await eventually { controller.contextErrorMessage != nil })
     #expect(controller.runtimeState == .idle)
-    #expect(controller.contextUsage?.tokens == 85_000)
+    #expect(controller.contextUsage == nil)
+    #expect(controller.contextPercentage == nil)
+    #expect(controller.signalCompactionPhase == .none)
     await manager.closeAll()
 }
 
@@ -509,6 +668,29 @@ import Testing
         .split(whereSeparator: \.isNewline).map(String.init)
     #expect(commands.contains("compact"))
     #expect(!commands.contains("prompt"))
+    let stateReadCount = commands.filter { $0 == "get_state" }.count
+    try await Task.sleep(for: .milliseconds(250))
+    let laterCommands = try String(contentsOf: commandLog, encoding: .utf8)
+        .split(whereSeparator: \.isNewline).map(String.init)
+    #expect(laterCommands.filter { $0 == "get_state" }.count == stateReadCount)
+    await manager.closeAll()
+}
+
+@Test func manualCompactionReadFailureStillShowsRecovery() async throws {
+    let manager = contextFakeManager(mode: "compact-state-failure")
+    let loader = CompactionHistoryLoader()
+    let controller = SessionController(
+        processManager: manager,
+        historyLoader: { path in try await loader.load(path: path) })
+    await controller.openNew(projectURL: try temporaryDirectory())
+
+    await controller.compactContext()
+
+    #expect(isStopped(controller.runtimeState))
+    #expect(controller.contextCompactionRecoveryMessage ==
+        "Context was compacted, but refreshed session state couldn’t be loaded. Restart to reload saved history.")
+    #expect(controller.isRecoveryPresented)
+    #expect(controller.signalCompactionPhase == .none)
     await manager.closeAll()
 }
 

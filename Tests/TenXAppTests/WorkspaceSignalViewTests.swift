@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 @testable import TenXApp
 
@@ -33,4 +34,14 @@ import Testing
 @Test func reduceMotionRemovesTravel() {
     #expect(WorkspaceSignalMotion.sweepCoverage(elapsed: 10, reduceMotion: true) == 0)
     #expect(WorkspaceSignalMotion.shimmerRange(status: .needsInput, contextFraction: 0.5) == nil)
+}
+
+@Test func measuredNumberWaitsForCoverThenFadesWithReveal() {
+    let start = Date(timeIntervalSince1970: 1_000)
+    let timing = WorkspaceSignalRevealTiming(generation: 7, start: start, finishDuration: 0.2)
+    #expect(timing.opacity(at: start, reduceMotion: false) == 0)
+    #expect(timing.opacity(at: start.addingTimeInterval(0.2), reduceMotion: false) < 0.001)
+    #expect(abs(timing.opacity(at: start.addingTimeInterval(0.575), reduceMotion: false) - 0.5) < 0.001)
+    #expect(timing.opacity(at: start.addingTimeInterval(0.95), reduceMotion: false) == 1)
+    #expect(timing.opacity(at: start, reduceMotion: true) == 1)
 }

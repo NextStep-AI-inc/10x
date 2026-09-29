@@ -3,6 +3,8 @@ import SwiftUI
 
 struct ContextUsageControl: View {
     let usage: SessionContextUsage?
+    let signalCompactionPhase: SessionCompactionSignalPhase
+    let signalRevealTiming: WorkspaceSignalRevealTiming?
     let breakdown: SessionContextBreakdown?
     let isLoading: Bool
     let errorMessage: String?
@@ -18,6 +20,18 @@ struct ContextUsageControl: View {
     @State private var anchor: FlyoutWindowAnchor?
     @State private var contentHeight: CGFloat?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.workspaceSignalReduceMotionOverride) private var reduceMotionOverride
+
+    private var isRevealing: Bool {
+        if case .revealing = signalCompactionPhase { return true }
+        return false
+    }
+
+    private func triggerOpacity(at date: Date) -> Double {
+        guard case .revealing(let generation, _) = signalCompactionPhase else { return 1 }
+        guard let signalRevealTiming, signalRevealTiming.generation == generation else { return 0 }
+        return signalRevealTiming.opacity(at: date, reduceMotion: reduceMotionOverride ?? reduceMotion)
+    }
 
     private var desiredPanelSize: CGSize {
         CGSize(width: 334, height: contentHeight ?? 470)
@@ -58,11 +72,14 @@ struct ContextUsageControl: View {
                 isPresented = true
             }
         } label: {
-            HStack(spacing: 7) {
-                ContextUsageMiniMeter(fillFraction: summary?.fillFraction ?? 0)
-                Text(triggerLabel)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isRevealing)) { timeline in
+                HStack(spacing: 7) {
+                    ContextUsageMiniMeter(fillFraction: summary?.fillFraction ?? 0)
+                    Text(triggerLabel)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .opacity(triggerOpacity(at: timeline.date))
             }
         }
         .buttonStyle(GhostActionStyle(

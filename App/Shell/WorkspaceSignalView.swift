@@ -29,10 +29,23 @@ enum WorkspaceSignalMotion {
     }
 }
 
+struct WorkspaceSignalRevealTiming {
+    let generation: UInt64
+    let start: Date
+    let finishDuration: TimeInterval
+
+    func opacity(at date: Date, reduceMotion: Bool) -> Double {
+        guard !reduceMotion else { return 1 }
+        return min(max((date.timeIntervalSince(start) - finishDuration)
+            / WorkspaceSignalMotion.revealDuration, 0), 1)
+    }
+}
+
 struct WorkspaceSignalView: View {
     let presentation: WorkspaceSignalPresentation
     let compactionPhase: SessionCompactionSignalPhase
     let onRevealComplete: (UInt64) -> Void
+    var onRevealStart: (WorkspaceSignalRevealTiming) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.workspaceSignalReduceMotionOverride) private var reduceMotionOverride
@@ -134,6 +147,12 @@ struct WorkspaceSignalView: View {
                 finishDuration = WorkspaceSignalMotion.finishDuration * Double(1 - finishFromCoverage)
                 if oldValue == .none {
                     preRevealFraction = CGFloat(presentation.contextFraction ?? 0)
+                }
+                if case .revealing(let generation, _) = newValue {
+                    onRevealStart(WorkspaceSignalRevealTiming(
+                        generation: generation,
+                        start: now,
+                        finishDuration: finishDuration))
                 }
             case .none:
                 break
