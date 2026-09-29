@@ -328,6 +328,48 @@ import Testing
     await manager.closeAll()
 }
 
+@Test func queueingDuringRetryKeepsCurrentTurnRetrySignal() async throws {
+    try await withQueueController { controller, _ in
+        let retry = try #require(controller.testingCapturedControlConsumer(
+            .event(type: "auto_retry_start", payload: .object([:]))))
+        await retry()
+        controller.draft = "Follow up after retry"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        #expect(await eventually { controller.queuedMessageCount == 1 })
+        #expect(controller.isSignalRetrying)
+    }
+}
+
+@Test func queueingDuringSweepKeepsCurrentTurnCompactionSignal() async throws {
+    try await withQueueController { controller, _ in
+        let start = try #require(controller.testingCapturedControlConsumer(
+            .event(type: "auto_compaction_start", payload: .object([:]))))
+        await start()
+        controller.draft = "Steer after compaction"
+        await controller.sendPrompt(behaviorOverride: .steer)
+        #expect(await eventually { controller.queuedMessageCount == 1 })
+        #expect(controller.signalCompactionPhase == .sweeping)
+    }
+}
+
+@Test func queuedFollowUpKeepsMeasuredCompactionReveal() async throws {
+    try await withQueueController { controller, fixture in
+        let end = try #require(controller.testingCapturedControlConsumer(
+            .event(type: "auto_compaction_end", payload: .object([:]))))
+        try await fixture.control("defer-next-state")
+        await end()
+        #expect(await eventually { fixture.isStateDeferred })
+        controller.draft = "After compacting"
+        await controller.sendPrompt(behaviorOverride: .followUp)
+        #expect(controller.signalCompactionPhase == .refreshing)
+        try await fixture.control("release-deferred-state")
+        #expect(await eventually {
+            if case .revealing(_, percent: 1) = controller.signalCompactionPhase { return true }
+            return false
+        })
+    }
+}
+
 @Test func acceptedSendRejectsOlderStateReply() async throws {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }

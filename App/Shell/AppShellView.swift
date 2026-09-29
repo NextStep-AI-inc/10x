@@ -185,6 +185,17 @@ struct AppShellView: View {
         }
     }
 
+    private var hasComposerAttachments: Bool {
+        switch model.route {
+        case .newSession:
+            return !model.newSessionAttachments.isEmpty
+        case .session:
+            return !(model.activeSession?.attachments.isEmpty ?? true)
+        default:
+            return false
+        }
+    }
+
     @ViewBuilder
     private var routeCanvas: some View {
         switch model.route {
@@ -251,7 +262,10 @@ struct AppShellView: View {
                 compactLayout: ProviderUsageDockCompactLayout(
                     wheelDiameter: ProviderUsageDockLayout.inComposer28,
                     trailingOffset: 0,
-                    bottomOffset: hasComposer && placement == .aboveLine ? 168 : 0),
+                    bottomOffset: hasComposer && placement == .aboveLine
+                        ? ProviderUsageDockLayout.aboveLineBottomOffset(
+                            hasAttachments: hasComposerAttachments)
+                        : 0),
                 accountScopeSatisfaction: model.accountScopeSatisfaction(
                     openSessionID: model.activeSessionIdentityToken),
                 accountScopeAvailability: model.accountScopeAvailability(

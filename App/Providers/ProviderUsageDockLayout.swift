@@ -38,6 +38,10 @@ enum ProviderUsageDockLayout {
     static let inComposer28: CGFloat = 28
     static let spacing8: CGFloat = 8
 
+    static func aboveLineBottomOffset(hasAttachments: Bool) -> CGFloat {
+        168 + (hasAttachments ? ComposerAttachmentsView.stripHeight : 0)
+    }
+
     static func placement(
         availableWidth: CGFloat,
         factsMinWidth: CGFloat,

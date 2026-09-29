@@ -4228,6 +4228,49 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
 }
 
 @MainActor
+@Test func narrowComposerAttachmentsClearProviderWheelsSnapshot() throws {
+    let attachments = ["attachment-one.png", "attachment-two-long.png", "attachment-three-longer.png"]
+        .map { snapshotAttachment(name: $0, width: 760, height: 200) }
+    let providers = ["anthropic", "openai", "google"].map {
+        ProviderUsageProvider(id: $0, name: $0, accounts: [])
+    }
+    let content = ComposerView(
+        draft: .constant("Check dense layout"),
+        attachments: .constant(attachments),
+        presentation: .active(controller: awaitingOutputController()),
+        controlsMode: .activeSession,
+        signalPresentation: .session(
+            runtimeState: .streaming, contextPercent: 42,
+            hasPendingUserInput: false, isRetrying: false,
+            hasTerminalRetryFailure: false, compactionPhase: .none,
+            isRecoveryPresented: false, isIntentionallyStopped: false),
+        routeCanvasLeadingInset: 220,
+        providerPlacement: .aboveLine,
+        onSend: {})
+        .environment(\.workspaceSignalReduceMotionOverride, true)
+        .frame(width: 760, height: 300, alignment: .bottom)
+        .overlay(alignment: .bottomTrailing) {
+            ProviderUsageDockView(
+                providers: providers,
+                activeCounts: [:],
+                compactLayout: ProviderUsageDockCompactLayout(
+                    wheelDiameter: 28,
+                    trailingOffset: 0,
+                    bottomOffset: ProviderUsageDockLayout.aboveLineBottomOffset(
+                        hasAttachments: true)),
+                onUseAccount: { _, _ in },
+                onManageAccounts: { _ in })
+                .padding(.trailing, 16)
+                .padding(.bottom, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        }
+    try assertSnapshot(
+        content,
+        name: "narrow-composer-attachments-clear-provider-wheels",
+        size: CGSize(width: 760, height: 300))
+}
+
+@MainActor
 private func awaitingOutputController() -> SessionController {
     let timestamp = Date(timeIntervalSince1970: 1_787_601_600)
     let user = TranscriptMessage(

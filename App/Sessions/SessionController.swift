@@ -761,9 +761,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 awaitingResponse: true)
         }
         runtimeState = .streaming
-        signalCompactionPhase = .none
-        isSignalRetrying = false
-        hasTerminalRetryFailure = false
+        if behavior == nil {
+            signalCompactionPhase = .none
+            isSignalRetrying = false
+            hasTerminalRetryFailure = false
+        }
         contextRevision &+= 1
         reportActivity()
         await context.processor?.setRuntimeState(.streaming)
