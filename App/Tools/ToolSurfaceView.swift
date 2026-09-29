@@ -255,7 +255,7 @@ struct ToolSurfaceView: View {
                     filePath: topFilePath,
                     copyText: source.text,
                     copyLabel: FilePathSurfaceLayout.copyLabel(for: .source),
-                    usesPreviewCopyLabel: false
+                    usesPreviewCopyLabel: true
                 ) {
                     SourceSurface(
                         presentation: source,
@@ -772,7 +772,7 @@ private struct ConsoleSurfaceView: View {
                         isWrapped.toggle()
                     }
                     .buttonStyle(GhostActionStyle())
-                    Button(FilePathSurfaceLayout.copyLabel(for: .console)) { copy(presentation.copyText) }
+                    Button(ToolPayloadSurfaceCopy.previewLabel) { copy(presentation.copyText) }
                         .buttonStyle(GhostActionStyle())
                 }
                 .font(TenXTypography.mono(size: 10, weight: .medium))

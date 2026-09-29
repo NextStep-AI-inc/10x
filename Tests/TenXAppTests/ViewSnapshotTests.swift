@@ -80,30 +80,61 @@ import Testing
             diff --git a/\(alpha) b/\(alpha)
             --- a/\(alpha)
             +++ b/\(alpha)
-            @@ advisor presentation @@
+            @@ -1 +1 @@
             -return rawContent
             +return advisorNotes
             diff --git a/\(beta) b/\(beta)
             --- a/\(beta)
             +++ b/\(beta)
-            @@ guidance routing @@
+            @@ -1 +1 @@
             -append guidance
             +replace guidance
             """),
             "perFileResults": .array([
                 .object([
                     "path": .string(alpha),
-                    "diff": .string("-return rawContent\n+return advisorNotes"),
+                    "diff": .string("""
+                    --- a/\(alpha)
+                    +++ b/\(alpha)
+                    @@ -1 +1 @@
+                    -return rawContent
+                    +return advisorNotes
+                    """),
                 ]),
                 .object([
                     "path": .string(beta),
-                    "diff": .string("-append guidance\n+replace guidance"),
+                    "diff": .string("""
+                    --- a/\(beta)
+                    +++ b/\(beta)
+                    @@ -1 +1 @@
+                    -append guidance
+                    +replace guidance
+                    """),
                 ]),
             ]),
         ])]),
         phase: .complete,
         startDate: timestamp,
         endDate: timestamp.addingTimeInterval(0.7))
+    let editContent = ToolContentExtractor.card(
+        name: edit.name,
+        arguments: edit.arguments,
+        result: edit.result,
+        phase: edit.phase)
+    guard case .diff(let editDiff, _) = editContent.body else {
+        Issue.record("Edit snapshot fixture should produce a diff body")
+        return
+    }
+    #expect(editDiff.files.count == 2)
+    #expect(EditDiffFileSelection.selectedPath(in: editDiff, index: 0) == alpha)
+    #expect(EditDiffFileSelection.selectedPath(in: editDiff, index: 1) == beta)
+    #expect(EditDiffFileSelection.diff(for: editDiff, selectedPath: alpha)?.files.count == 1)
+    #expect(EditDiffFileSelection.diff(for: editDiff, selectedPath: beta)?.files.count == 1)
+    #expect(EditDiffFileSelection.diff(for: editDiff, selectedPath: alpha)?
+        .files.first?.hunks.flatMap(\.lines).contains(where: { $0.kind == .addition }) == true)
+    #expect(EditDiffFileSelection.diff(for: editDiff, selectedPath: beta)?
+        .files.first?.hunks.flatMap(\.lines).contains(where: { $0.kind == .addition }) == true)
+
     let disclosure = ToolDisclosureState()
     disclosure.setExpanded(true, id: edit.id)
 
@@ -217,6 +248,20 @@ import Testing
         phase: .complete,
         startDate: timestamp,
         endDate: timestamp.addingTimeInterval(1.1))
+    let browserContent = ToolContentExtractor.card(
+        name: browser.name,
+        arguments: browser.arguments,
+        result: browser.result,
+        phase: browser.phase)
+    #expect(browserContent.verb == "Browse")
+    guard case .collection(let browserItems) = browserContent.body else {
+        Issue.record("Browser snapshot fixture should use a semantic preview collection")
+        return
+    }
+    #expect(browserItems.first?.state == BrowserComputerSurfaceLayout.browserPreviewState)
+    #expect(browserItems.first?.label == "RPC reference")
+    #expect(browserItems.first?.detail == "https://docs.omp.dev/rpc")
+
     let computer = ToolPresentation(
         id: "task6-computer",
         name: "computer",

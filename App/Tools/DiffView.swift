@@ -100,7 +100,9 @@ struct DiffView: View {
             if usesAttachedPathSurface, let activeFilePath {
                 FileAttachedPathSurface(
                     filePath: activeFilePath,
-                    copyText: activeDiff.raw,
+                    copyText: EditDiffFileSelection.diff(
+                        for: activeDiff,
+                        selectedPath: activeFilePath)?.raw ?? activeDiff.raw,
                     copyLabel: FilePathSurfaceLayout.copyLabel(for: .diff),
                     usesPreviewCopyLabel: false,
                     content: { attachedDiffContent(showsFileHeader: false, showsActions: false) })

@@ -1414,7 +1414,8 @@ private func toolCardVisibleText(_ tool: ToolPresentation) -> String {
         return
     }
     #expect(!readSource.text.isEmpty)
-    #expect(FilePathSurfaceLayout.copyLabel(for: FileSurfaceCopyTarget.source) == "Copy")
+    #expect(FilePathSurfaceLayout.usesPreviewCopyLabel(forBoundedPayload: true))
+    #expect(ToolPayloadSurfaceCopy.previewLabel == "Copy preview")
 
     let write = ToolContentExtractor.card(
         name: "write",
@@ -1498,14 +1499,12 @@ private func toolCardVisibleText(_ tool: ToolPresentation) -> String {
         ]),
         phase: .failed)
     #expect(runFailure.outcome == "Exit 1")
-    guard case .stack(let failureBodies) = runFailure.body,
-          case .console(let command, let output, let exitCode) = failureBodies.last
-    else {
+    guard case .console(let command, let output, let exitCode) = runFailure.body else {
         Issue.record("Failed run should retain a console body")
         return
     }
     #expect(command == "swift test --filter Transcript")
-    #expect(exitCode == 1)
+    #expect(exitCode == nil)
     #expect(output.contains("testAdvisorWrapping"))
     #expect(ConsoleSurfaceLayout.usesCommandOutputHeading(for: runFailure.body))
 
@@ -1540,7 +1539,7 @@ private func toolCardVisibleText(_ tool: ToolPresentation) -> String {
     #expect(groups[0].matches.count == 2)
     #expect(groups[1].path.hasSuffix("SessionController.swift"))
 
-    let browser = ToolContentExtractor.card(
+    let browserPreview = ToolContentExtractor.card(
         name: "browser",
         arguments: .object([
             "action": .string("browse"),
@@ -1552,8 +1551,46 @@ private func toolCardVisibleText(_ tool: ToolPresentation) -> String {
             "url": .string("https://docs.omp.dev/rpc"),
         ])]),
         phase: .complete)
-    #expect(BrowserComputerSurfaceLayout.isBrowserCard(browser))
-    #expect(browser.primary == "https://docs.omp.dev/rpc")
+    #expect(browserPreview.verb == "Browse")
+    #expect(BrowserComputerSurfaceLayout.isBrowserCard(browserPreview))
+    #expect(browserPreview.primary == "https://docs.omp.dev/rpc")
+    #expect(browserPreview.reference == .web(
+        url: "https://docs.omp.dev/rpc",
+        label: "RPC reference"))
+    guard case .collection(let previewItems) = browserPreview.body else {
+        Issue.record("Browser preview payload should use a semantic preview collection")
+        return
+    }
+    #expect(previewItems.first?.state == BrowserComputerSurfaceLayout.browserPreviewState)
+    #expect(previewItems.first?.label == "RPC reference")
+
+    let browser = ToolContentExtractor.card(
+        name: "browser",
+        arguments: .object([
+            "action": .string("open"),
+            "url": .string("https://example.com/guide"),
+        ]),
+        result: .object([
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string("# Guide\n\nReadable page content."),
+            ])]),
+            "details": .object(["links": .array([
+                .object([
+                    "title": .string("API"),
+                    "url": .string("https://example.com/api"),
+                ]),
+            ])]),
+        ]),
+        phase: .complete)
+    #expect(browser.verb == "Browse")
+    guard case .stack(let browserBodies) = browser.body,
+          case .document = browserBodies.first,
+          case .collection = browserBodies.last
+    else {
+        Issue.record("Browser content payload should show readable content followed by links")
+        return
+    }
 
     let computer = ToolContentExtractor.card(
         name: "computer",

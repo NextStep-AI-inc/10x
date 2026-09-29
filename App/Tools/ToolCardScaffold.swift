@@ -9,25 +9,16 @@ struct SelectedToolFilePathPreference: PreferenceKey {
 }
 
 struct ToolCardFileHeaderLabel: View {
-    let path: String
-    let line: Int?
+    private let reference: TranscriptReference
 
     @Environment(\.fileReferenceBaseURL) private var baseURL
 
     init(reference: TranscriptReference) {
-        switch reference {
-        case .file(let path, let line):
-            self.path = path
-            self.line = line
-        case .web(let url, _):
-            path = url
-            line = nil
-        }
+        self.reference = reference
     }
 
     init(path: String, line: Int? = nil) {
-        self.path = path
-        self.line = line
+        reference = .file(path: path, line: line)
     }
 
     static func filename(for reference: TranscriptReference?) -> String? {
@@ -41,8 +32,17 @@ struct ToolCardFileHeaderLabel: View {
     }
 
     var body: some View {
+        switch reference {
+        case .file(let path, let line):
+            fileLabel(path: path, line: line)
+        case .web(let url, let label):
+            webLabel(url: url, label: label)
+        }
+    }
+
+    private func fileLabel(path: String, line: Int?) -> some View {
         let resolved = FileReferenceResolver().resolve(path: path, line: line, relativeTo: baseURL)
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
             FileTypeIcon(path: resolved.originalPath, isAvailable: resolved.exists)
                 .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
             Text(resolved.compactLabel)
@@ -56,6 +56,26 @@ struct ToolCardFileHeaderLabel: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(resolved.fullPathLabel)
+    }
+
+    private func webLabel(url: String, label: String?) -> some View {
+        let display = label
+            ?? URL(string: url)?.host
+            ?? url
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+            Text(display)
+                .font(TenXTypography.body(size: 12, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Web reference, \(display)")
     }
 }
 
