@@ -394,15 +394,12 @@ struct ComposerView: View {
                 onRevealComplete: onSignalRevealComplete,
                 onRevealStart: { signalRevealTiming = $0 })
                 .frame(height: 32)
-                .overlay(alignment: .topLeading) {
-                    GeometryReader { signal in
-                        if case .active(let controller) = presentation {
-                            contextControl(controller)
-                                .padding(.leading, 8)
-                                .offset(y: editorHorizontalEdges(availableWidth: signal.size.width).leading < 145
-                                    ? -38 : -16)
-                                .zIndex(3)
-                        }
+                .overlay(alignment: .leading) {
+                    if case .active(let controller) = presentation {
+                        contextControl(controller)
+                            .background(TenXPalette.color(TenXPalette.canvasHex))
+                            .padding(.leading, 8)
+                            .zIndex(3)
                     }
                 }
                 .padding(.top, -12)
