@@ -5,7 +5,9 @@ enum ToolPayloadBudget {
     enum Limits {
         static let scalarBytes = 8 * 1_024
         static let arrayChildren = 32
-        static let containerDepth = 4
+        // Normal OMP todo snapshots: root → details → phases[] → phase → tasks[] → task
+        // object (depths 0…5). Scalars inside tasks are not container levels.
+        static let containerDepth = 6
         static let totalNodes = 256
         static let inlineMediaBytes = 256 * 1_024
     }

@@ -47,6 +47,20 @@ import Testing
     #expect(card.outcome == "No tasks")
 }
 
+@Test func todoAccessorIgnoresStaleArgumentsWhenSnapshotPhasesAreEmpty() {
+    let presentation = ToolPresentation(
+        id: "todo-empty-phases",
+        name: "todo",
+        arguments: .object([
+            "todos": .array([.object(["content": .string("Removed task")])]),
+        ]),
+        result: .object(["details": .object(["phases": .array([])])]),
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantPast)
+    #expect(ToolContentExtractor.todos(presentation).isEmpty)
+}
+
 @Test func taskCardsShowPendingOMPInitializationBeforeResult() {
     let card = ToolContentExtractor.card(name: "todo", arguments: .object([
         "op": .string("init"), "list": .array([
@@ -365,13 +379,13 @@ import Testing
         result: result(text: "\u{001B}[31mFailed\u{001B}[0m\nNext line"),
         phase: .failed)
 
-    guard case .stack(let bodies) = card.body,
-          case .console(_, let output, _) = bodies.last
-    else {
-        Issue.record("Failed bash should retain a console after its error summary")
+    guard case .console(_, let output, let exitCode) = card.body else {
+        Issue.record("Failed bash with multiline output should keep a console body")
         return
     }
+    #expect(exitCode == nil)
     #expect(output == "Failed\nNext line")
+    #expect(!output.contains("\u{001B}"))
 }
 
 @Test func failedSingleLineConsoleDoesNotRepeatItsErrorAsOutput() {
@@ -1265,10 +1279,12 @@ private func result(text: String) -> JSONValue {
 
     #expect(tool.phase == .failed)
     #expect(tool.content.outcome == "Command failed")
-    guard case .stack = tool.content.body else {
-        Issue.record("Expected error plus partial output stack")
+    guard case .console(_, let output, let exitCode) = tool.content.body else {
+        Issue.record("Expected partial stdout in a console body")
         return
     }
+    #expect(exitCode == nil)
+    #expect(output == partial)
 }
 
 @Test func toolBudgetDataTreeCopyUsesPreviewLabel() {

@@ -14,14 +14,14 @@ import Testing
         #expect(composerMatches == [.composer])
         #expect(ideMatches == [.general])
 
-        let hiddenMatches = TenXSettingsCategory.allCases.filter {
-            $0.matches(query: "hidden", preferredIDEName: nil)
+        let guidanceMatches = TenXSettingsCategory.allCases.filter {
+            $0.matches(query: "agent guidance", preferredIDEName: nil)
         }
-        let noticeMatches = TenXSettingsCategory.allCases.filter {
-            $0.matches(query: "notice", preferredIDEName: nil)
+        let advisorMatches = TenXSettingsCategory.allCases.filter {
+            $0.matches(query: "advisor", preferredIDEName: nil)
         }
-        #expect(hiddenMatches == [.general])
-        #expect(noticeMatches == [.general])
+        #expect(guidanceMatches == [.general])
+        #expect(advisorMatches == [.general])
     }
 
     @Test func preferredIDEFocusClearsSearchForNativeNavigation() {

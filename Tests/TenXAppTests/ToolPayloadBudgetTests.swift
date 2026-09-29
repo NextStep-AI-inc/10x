@@ -28,6 +28,40 @@ import Testing
     }
     let limitedDepth = ToolPayloadBudget.limit(nested)
     #expect(containerDepth(limitedDepth) <= ToolPayloadBudget.Limits.containerDepth)
+    #expect(isTruncationMarked(limitedDepth))
+
+    let ompPhaseSnapshot = ompPhaseOnlyTodoSnapshot()
+    let limitedOMP = ToolPayloadBudget.limit(ompPhaseSnapshot)
+    guard let tasks = limitedOMP["details"]?.objectValue?["phases"]?.arrayValue?.first?
+        .objectValue?["tasks"]?.arrayValue
+    else {
+        Issue.record("OMP phase-only todo snapshot should keep a tasks array at the depth limit")
+        return
+    }
+    #expect(tasks.count == 2)
+    #expect(tasks[0]["content"]?.stringValue == "Repair CLI parsing")
+    #expect(tasks[0]["status"]?.stringValue == "completed")
+    #expect(tasks[1]["content"]?.stringValue == "Verify output file")
+    #expect(tasks[1]["status"]?.stringValue == "blocked")
+    #expect(tasks[1]["blocker"]?.stringValue == "Waiting for fixture")
+    #expect(limitedOMP["details"]?.objectValue?["phases"]?.arrayValue?.first?
+        .objectValue?["name"]?.stringValue == "Implementation")
+
+    let overLimit = JSONValue.object([
+        "details": .object(["phases": .array([
+            .object(["name": .string("Implementation"), "tasks": .array([
+                .object(["payload": .object([
+                    "content": .string("nested too deep"),
+                    "status": .string("pending"),
+                ])]),
+            ])]),
+        ])]),
+    ])
+    let limitedOver = ToolPayloadBudget.limit(overLimit)
+    let nestedPayload = limitedOver["details"]?.objectValue?["phases"]?.arrayValue?.first?
+        .objectValue?["tasks"]?.arrayValue?.first?.objectValue?["payload"]
+    #expect(nestedPayload?.stringValue?.contains("depth limit") == true
+        || isTruncationMarked(limitedOver))
 
     let oversizedMedia = String(repeating: "A", count: ToolPayloadBudget.Limits.inlineMediaBytes + 1)
     let mediaPayload = JSONValue.object([
@@ -182,6 +216,19 @@ import Testing
 }
 
 // MARK: - Helpers
+
+private func ompPhaseOnlyTodoSnapshot() -> JSONValue {
+    .object(["details": .object(["phases": .array([
+        .object(["name": .string("Implementation"), "tasks": .array([
+            .object(["content": .string("Repair CLI parsing"), "status": .string("completed")]),
+            .object([
+                "content": .string("Verify output file"),
+                "status": .string("blocked"),
+                "blocker": .string("Waiting for fixture"),
+            ]),
+        ])]),
+    ])])])
+}
 
 private func isTruncationMarked(_ value: JSONValue) -> Bool {
     if ToolPayloadBudget.isTruncationMarker(value) { return true }

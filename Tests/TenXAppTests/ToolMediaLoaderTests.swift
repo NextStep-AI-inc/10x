@@ -337,6 +337,16 @@ private func testPNGData() -> Data? {
 }
 
 private func presentationMediaItem(in presentation: ToolPresentation) -> ToolMediaItem? {
-    guard case .media(let items, _) = presentation.content.body else { return nil }
-    return items.first
+    mediaItems(in: presentation.content.body).first
+}
+
+private func mediaItems(in body: ToolBody) -> [ToolMediaItem] {
+    switch body {
+    case .media(let items, _):
+        items
+    case .stack(let bodies):
+        bodies.flatMap { mediaItems(in: $0) }
+    default:
+        []
+    }
 }

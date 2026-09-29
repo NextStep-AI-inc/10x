@@ -18,6 +18,10 @@
 - Tanner explicitly approved Composer 2.5 Fast after the authenticated Cursor CLI rejected a high-effort override. These are the user-selected models. If unavailable in the destination harness, report the limitation; do not silently substitute a different model.
 - [Approved interactive UI reference](../designs/2026-09-28-omp-tool-gallery.html) is a design mockup, not evidence of implemented behavior.
 
+## Execution amendment — 2026-09-29
+
+The tool container-depth cap is **6**, counting the root as level 1. The original cap of 4 truncated ordinary OMP `details.phases[].tasks[]` snapshots before their task objects could be retained. Six preserves that supported shape. The 8 KiB scalar, 32-child array, 256-total-node, and 256 KiB media limits remain mandatory. Verify using the original phase-only provider fixture and a payload beyond the new depth cap; do not add invented provider fields to make a test pass.
+
 ## Global Constraints
 
 - Work only in an isolated 10x worktree; leave the main checkout and port 3000 alone. Do not depend on unreleased OMP changes.
@@ -144,7 +148,7 @@ Do not begin checkpoint 2 until checkpoint 1 works in a built app. Each checkpoi
 
 **Interfaces:**
 - Produce `ToolPayloadBudget.limit(_ value: JSONValue) -> JSONValue` and apply it before storing arguments/results or extracting `ToolCardContent`.
-- Limits: **8 KiB per text scalar**, **32 array children**, **4 object/array levels**, **256 total nodes**, and **256 KiB of inline media data**. Over-limit media becomes a labeled placeholder with MIME/size; copy says “Copy preview” unless full persisted content can be fetched deliberately.
+- Limits: **8 KiB per text scalar**, **32 array children**, **6 object/array levels**, **256 total nodes**, and **256 KiB of inline media data**. Over-limit media becomes a labeled placeholder with MIME/size; copy says “Copy preview” unless full persisted content can be fetched deliberately.
 - Preserve enough known keys for `ToolCardRegistry` summaries; mark truncation explicitly. `ToolBody.data` receives only bounded JSON. Expansion enforces the same limits; it never converts an entire original JSON tree to a string.
 - When a session file exists, a separate “Open session file” action can reach the persisted full result; keep the tool call ID copyable for locating it. This uses the existing file-opening service and avoids a second raw-result cache.
 
