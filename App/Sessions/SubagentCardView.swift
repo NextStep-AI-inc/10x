@@ -1,3 +1,4 @@
+import OmpKit
 import SwiftUI
 
 enum SubagentCardStyle: Equatable {
@@ -74,11 +75,12 @@ struct SubagentCardView: View {
                     .buttonStyle(GhostActionStyle(horizontalPadding: 0))
                 }
             }
-            if let activity = workerActivityText {
+            if let activity = boundedWorkerActivityText {
                 Text(activity)
                     .font(TenXTypography.body(size: 11))
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     .padding(.leading, presentation.status.isActive ? 14 : 0)
+                    .lineLimit(6)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -91,8 +93,7 @@ struct SubagentCardView: View {
                 .frame(width: 2)
         }
         .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(workerAccessibilityLabel)
+        .accessibilityElement(children: .contain)
     }
 
     private var binding: Binding<Bool> {
@@ -161,17 +162,8 @@ struct SubagentCardView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var workerActivityText: String? {
-        if let result = presentation.resultText { return result }
-        if let currentTool = presentation.currentTool { return "Working in \(currentTool)" }
-        if let recent = presentation.recentOutput.last { return recent }
-        return presentation.status.isActive ? "Working…" : nil
-    }
-
-    private var workerAccessibilityLabel: String {
-        var parts = [presentation.task, presentation.status.label]
-        if let activity = workerActivityText { parts.append(activity) }
-        return parts.joined(separator: ", ")
+    private var boundedWorkerActivityText: String? {
+        SubagentPresentation.boundedWorkerActivitySummary(for: presentation)
     }
 
     @MainActor
@@ -218,5 +210,46 @@ extension EnvironmentValues {
     var openReportedSession: OpenReportedSessionAction {
         get { self[OpenReportedSessionKey.self] }
         set { self[OpenReportedSessionKey.self] = newValue }
+    }
+}
+
+extension SubagentPresentation {
+    static func boundedWorkerActivitySummary(for presentation: SubagentPresentation) -> String? {
+        if let bounded = boundedResultPreview(from: presentation.result) {
+            return bounded
+        }
+        if let currentTool = presentation.currentTool {
+            return "Working in \(currentTool)"
+        }
+        if let recent = presentation.recentOutput.last {
+            return BoundaryText.preview(recent, byteLimit: 512, lineLimit: 6)
+        }
+        return presentation.status.isActive ? "Working…" : nil
+    }
+
+    private static func boundedResultPreview(from result: JSONValue?) -> String? {
+        guard let result else { return nil }
+        if let text = result.stringValue, !text.isEmpty {
+            return BoundaryText.preview(text, byteLimit: 512, lineLimit: 6)
+        }
+        for key in ["output", "error", "stderr"] {
+            if let text = result[key]?.stringValue, !text.isEmpty {
+                return BoundaryText.preview(text, byteLimit: 512, lineLimit: 6)
+            }
+        }
+        guard let blocks = result["content"]?.arrayValue else { return nil }
+        var assembled = ""
+        for block in blocks {
+            guard let piece = block["text"]?.stringValue, !piece.isEmpty else { continue }
+            let candidate = assembled.isEmpty ? piece : assembled + "\n" + piece
+            let preview = BoundaryText.preview(candidate, byteLimit: 512, lineLimit: 6)
+            if preview.count < candidate.count || Data(candidate.utf8).count > 512 {
+                return preview
+            }
+            assembled = candidate
+        }
+        return assembled.isEmpty
+            ? nil
+            : BoundaryText.preview(assembled, byteLimit: 512, lineLimit: 6)
     }
 }

@@ -134,6 +134,7 @@
 		535A5C281EB24D42B6F4FDE0A55198AD /* TranscriptItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0256F4BEBCCEA41B65D70F361AB00E82 /* TranscriptItem.swift */; };
 		5488E1F2CF78CB353AF4BCA945D477F4 /* SubagentCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4189572ADC0A7941A0F0EEE6AA2F4A5B /* SubagentCardView.swift */; };
 		54F23E423C8EE2A917F16DD1E718B046 /* OnboardingInstallLogBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DBF342A3273EB8D374E590F316C7160 /* OnboardingInstallLogBufferTests.swift */; };
+		54F7A99248521FDB49F78546B29C58CD /* DelegateCardViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAA58CEB0EB140131B72C3903631405E /* DelegateCardViewTests.swift */; };
 		554B3302515CD1DAA8102A70B4040F30 /* ProviderAccountExtensionBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B0322E1325F18FCF109B4220397D11F /* ProviderAccountExtensionBackend.swift */; };
 		566CFAF9B3FC51F49F17828D614F1CD5 /* NewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10501AD41B3A5052F923723AA964D9BA /* NewSessionView.swift */; };
 		586B36675B07BC04D1669E266E80ECD7 /* AppMenuStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5365A56E06B384ED01F176781B986C50 /* AppMenuStateTests.swift */; };
@@ -767,6 +768,7 @@
 		E95317FE231AEB99B29458EDDBC99FFD /* TenXPalette.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TenXPalette.swift; path = App/Design/TenXPalette.swift; sourceTree = "<group>"; };
 		EA3544CF04A50DB1F740F0BA2EE1ADEA /* SourcePresentationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SourcePresentationTests.swift; path = Tests/TenXAppTests/SourcePresentationTests.swift; sourceTree = "<group>"; };
 		EAA1C7F3A7009274C6B9030A52A0247E /* ComposerRecoveryStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ComposerRecoveryStoreTests.swift; path = Tests/TenXAppTests/ComposerRecoveryStoreTests.swift; sourceTree = "<group>"; };
+		EAA58CEB0EB140131B72C3903631405E /* DelegateCardViewTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DelegateCardViewTests.swift; path = Tests/TenXAppTests/DelegateCardViewTests.swift; sourceTree = "<group>"; };
 		EBE8DDF4894696006393C2441C71EF79 /* ModelRoleValueTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ModelRoleValueTests.swift; path = Tests/TenXAppTests/ModelRoleValueTests.swift; sourceTree = "<group>"; };
 		EDB94029C55AC7C805EEBBAF419EBB48 /* SessionContextUsage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = SessionContextUsage.swift; path = App/Sessions/SessionContextUsage.swift; sourceTree = "<group>"; };
 		EDEF3C8E979206D3524D161DB99A960C /* TurnActivityTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TurnActivityTests.swift; path = Tests/TenXAppTests/TurnActivityTests.swift; sourceTree = "<group>"; };
@@ -1100,6 +1102,7 @@
 				12ECD71D809F3BFA5A44D4E666A4D65B /* ComposerInteractionRoutingTests.swift */,
 				EAA1C7F3A7009274C6B9030A52A0247E /* ComposerRecoveryStoreTests.swift */,
 				6AB94F05EBCEEE08C0D83B7B158ABD0E /* ContentRenderSliceTests.swift */,
+				EAA58CEB0EB140131B72C3903631405E /* DelegateCardViewTests.swift */,
 				3A369C82D303CBB255F0027D059D9346 /* DesignSystemTests.swift */,
 				0600D45E9B584B6EFF990A3587946BC8 /* DiffRenderPresentationTests.swift */,
 				8A278874CEA07464A79C917B88441E74 /* EnumPresentationTests.swift */,
@@ -1624,6 +1627,7 @@
 				1CC04B8CE15AEF35DDC20352B831BF42 /* ComposerInteractionRoutingTests.swift in Sources */,
 				405A562B7574FD79512EB718DBD1CC3B /* ComposerRecoveryStoreTests.swift in Sources */,
 				C2B68AE59B3869630C81EAA8C4FACB43 /* ContentRenderSliceTests.swift in Sources */,
+				54F7A99248521FDB49F78546B29C58CD /* DelegateCardViewTests.swift in Sources */,
 				39998F279E7F1091B7F879558AC6283A /* DesignSystemTests.swift in Sources */,
 				7676C2A96AD1D36ECFBDFF1EC012AEEF /* DiffRenderPresentationTests.swift in Sources */,
 				E1FDAD6AC7ACAED361B2EA6311B47575 /* EnumPresentationTests.swift in Sources */,

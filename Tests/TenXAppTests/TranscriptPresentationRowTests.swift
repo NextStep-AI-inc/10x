@@ -308,6 +308,34 @@ import Testing
     #expect(TranscriptTurnSummaryView.label(state: .failed, duration: nil) == "Failed")
 }
 
+@Test func taskDelegateGroupingUsesRegistryKindNotExactSpelling() {
+    let delegate = ToolPresentation(
+        id: "delegate-task",
+        name: "Task",
+        arguments: .object(["description": .string("Review wrappers")]),
+        result: nil,
+        phase: .running,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: nil)
+    let worker = subagent(
+        id: "worker-one",
+        parent: "delegate-task",
+        task: "UI review",
+        status: .running)
+    let rows = TranscriptPresentationRow.rows(from: [
+        .tool(delegate),
+        .subagent(worker),
+    ])
+
+    #expect(rows.contains {
+        if case .delegation(let id, _, let workers) = $0 {
+            return id == "delegation:delegate-task" && workers.count == 1
+        }
+        return false
+    })
+    #expect(!rows.contains { if case .item(.subagent) = $0 { true } else { false } })
+}
+
 @Test func delegateRowsPreserveParentOwnership() {
     let delegateA = delegateTool(id: "delegate-a", assignment: "Review tool wrappers", phase: .running)
     let delegateB = delegateTool(id: "delegate-b", assignment: "Audit providers", phase: .complete)

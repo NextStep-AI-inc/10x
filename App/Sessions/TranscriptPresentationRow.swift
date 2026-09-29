@@ -40,7 +40,9 @@ enum TranscriptPresentationRow: Identifiable, Equatable, Sendable {
 
     static func rows(from items: [TranscriptItem]) -> [Self] {
         let delegateToolIDs = Set(items.compactMap { item -> String? in
-            guard case .tool(let tool) = item, tool.name == "task" else { return nil }
+            guard case .tool(let tool) = item,
+                  ToolCardRegistry.kind(for: tool.name) == .task
+            else { return nil }
             return tool.id
         })
 
@@ -78,7 +80,7 @@ enum TranscriptPresentationRow: Identifiable, Equatable, Sendable {
 
         for item in items {
             switch item {
-            case .tool(let tool) where tool.name == "task":
+            case .tool(let tool) where ToolCardRegistry.kind(for: tool.name) == .task:
                 appendPendingTools()
                 rows.append(.delegation(
                     id: "delegation:\(tool.id)",

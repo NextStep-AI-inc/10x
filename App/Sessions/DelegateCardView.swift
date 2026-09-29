@@ -13,12 +13,8 @@ struct DelegateCardView: View {
                 header
 
                 if isExpanded {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(workers) { worker in
-                            SubagentCardView(presentation: worker, style: .worker)
-                        }
-                    }
-                    .transition(isReduceMotionEnabled ? .identity : .opacity)
+                    expandedBody
+                        .transition(isReduceMotionEnabled ? .identity : .opacity)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -28,6 +24,45 @@ struct DelegateCardView: View {
     }
 
     private var cardContent: ToolCardContent { tool.content }
+
+    private var headerPresentation: ToolCardHeaderPresentation {
+        ToolCardHeaderPresentation(
+            content: cardContent,
+            phase: tool.phase,
+            duration: tool.phase == .running
+                ? nil
+                : tool.durationLabel().map(ToolCardDurationPresentation.label))
+    }
+
+    @ViewBuilder
+    private var expandedBody: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if tool.phase == .failed,
+               !workers.isEmpty,
+               let error = headerPresentation.displayedOutcome {
+                Text(error)
+                    .font(TenXTypography.body(size: 11, weight: .medium))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if workers.isEmpty {
+                ToolSurfaceView(
+                    body: cardContent.body,
+                    phase: tool.phase,
+                    topFilePath: topFilePath)
+            }
+            ForEach(workers) { worker in
+                SubagentCardView(presentation: worker, style: .worker)
+            }
+        }
+    }
+
+    private var topFilePath: String? {
+        if case .file(let path, _) = cardContent.reference {
+            return path
+        }
+        return nil
+    }
 
     private var header: some View {
         ViewThatFits(in: .horizontal) {
@@ -77,6 +112,9 @@ struct DelegateCardView: View {
             }
 
             if showsWorkerCount {
+                if headerPresentation.displayedOutcome != nil {
+                    outcomeContent(includeSeparator: true)
+                }
                 Text("·")
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 Text(workerCountLabel)
@@ -84,6 +122,16 @@ struct DelegateCardView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func outcomeContent(includeSeparator: Bool) -> some View {
+        if let outcome = headerPresentation.displayedOutcome {
+            Text(includeSeparator ? "· \(outcome)" : outcome)
+                .font(TenXTypography.body(size: 10, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -123,6 +171,7 @@ struct DelegateCardView: View {
     private var accessibilityLabel: String {
         var parts = [cardContent.verb]
         if let primary = cardContent.primary, !primary.isEmpty { parts.append(primary) }
+        if let outcome = headerPresentation.displayedOutcome { parts.append(outcome) }
         parts.append(workerCountLabel)
         parts.append(tool.phase.label)
         if let duration = tool.durationLabel() {
