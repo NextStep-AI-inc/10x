@@ -52,3 +52,11 @@ Ignored scratch: `.superpowers/sdd/2026-09-28-omp-event-boundary/`.
 Reports: `task-1-review.md`, `task-2-rereview.md`, `task-3-review.md`, `task-3-rereview.md`.
 Logs: task-prefixed RED/GREEN/review logs and `task-3-release-build.log`; status ledger `progress.md`.
 These local logs do not travel with git; this document preserves their measured outcomes and outstanding work.
+
+## Tool and interaction implementation in progress
+
+- Task 5 initial `bc4dad4`: 14 scoped tests pass after live session-file/call-ID wiring. Runtime RED: 1 test / 9 issues. Independent review ran 19 passing tests but found array schema loss, unbounded keys/MIME labels, node-budget accounting, and duplicate terminal updates. Fix `b751a48` passes 23 tests; independent re-review pending. Only duplicate-terminal runtime RED was captured in this fix round; no runtime RED claimed for the other three fixes.
+- Task 9 initial `adaba87`: 9 tests in 2 suites pass independently, Release build succeeds. Initial RED was blocked by compilation; no runtime RED claimed. Review found the delayed recovery sentence was stored but not rendered; a focused notice fix is in progress. Native UI remains pending.
+- Task 7 Delegate projection and view are in progress. First snapshot showed the intended hierarchy with an invalid fixture timer; correction requested before reference approval. No native proof yet.
+- An implementation worker incorrectly stashed shared WIP while attempting a snapshot baseline check. The root stopped it, restored stash `7d4c7c1` without dropping it, verified Task 5 paths against the saved tree, and committed the fixes. No changes were lost. The worker resumed with all Git mutations prohibited. The stash remains a backup and must not be reapplied.
+- The earlier Task 2 full-suite log attributes 183 of 194 issues to SnapshotHarness, 7 to TranscriptReducerTests, 3 to SessionControllerTests, and 1 to TranscriptEventProcessorTests. This classifies that historical run, not the final branch status or baseline cause.
