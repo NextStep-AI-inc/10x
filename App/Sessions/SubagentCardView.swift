@@ -1,14 +1,32 @@
 import SwiftUI
 
+enum SubagentCardStyle: Equatable {
+    case orphan
+    case worker
+}
+
 struct SubagentCardView: View {
     let presentation: SubagentPresentation
+    var style: SubagentCardStyle = .orphan
     @Environment(\.toolDisclosureState) private var disclosureState
     @Environment(\.openReportedSession) private var openReportedSession
     @State private var localChoice: Bool?
 
-    init(presentation: SubagentPresentation) { self.presentation = presentation }
+    init(presentation: SubagentPresentation, style: SubagentCardStyle = .orphan) {
+        self.presentation = presentation
+        self.style = style
+    }
 
     var body: some View {
+        switch style {
+        case .orphan:
+            orphanBody
+        case .worker:
+            workerBody
+        }
+    }
+
+    private var orphanBody: some View {
         CornerCard(color: accentColor) {
             DisclosureGroup(isExpanded: binding) {
                 detail
@@ -36,6 +54,45 @@ struct SubagentCardView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(presentation.agent) subagent, \(presentation.status.label)")
+    }
+
+    private var workerBody: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                if presentation.status.isActive {
+                    Circle()
+                        .fill(accentColor)
+                        .frame(width: 6, height: 6)
+                }
+                Text(presentation.task)
+                    .font(TenXTypography.body(size: 12, weight: .medium))
+                Spacer(minLength: 8)
+                if presentation.reportedSessionPath != nil {
+                    Button("Open session") {
+                        Task { await openSession() }
+                    }
+                    .buttonStyle(GhostActionStyle(horizontalPadding: 0))
+                }
+            }
+            if let activity = workerActivityText {
+                Text(activity)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .padding(.leading, presentation.status.isActive ? 14 : 0)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, 12)
+        .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(accentColor)
+                .frame(width: 2)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(workerAccessibilityLabel)
     }
 
     private var binding: Binding<Bool> {
@@ -94,14 +151,33 @@ struct SubagentCardView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
-            if let sessionPath = presentation.reportedSessionPath {
+            if presentation.reportedSessionPath != nil {
                 Button("Open session") {
-                    Task { await openReportedSession(sessionPath) }
+                    Task { await openSession() }
                 }
                 .buttonStyle(GhostActionStyle(horizontalPadding: 0))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var workerActivityText: String? {
+        if let result = presentation.resultText { return result }
+        if let currentTool = presentation.currentTool { return "Working in \(currentTool)" }
+        if let recent = presentation.recentOutput.last { return recent }
+        return presentation.status.isActive ? "Working…" : nil
+    }
+
+    private var workerAccessibilityLabel: String {
+        var parts = [presentation.task, presentation.status.label]
+        if let activity = workerActivityText { parts.append(activity) }
+        return parts.joined(separator: ", ")
+    }
+
+    @MainActor
+    private func openSession() async {
+        guard let sessionPath = presentation.reportedSessionPath else { return }
+        await openReportedSession(sessionPath)
     }
 
     private var metadataText: String {

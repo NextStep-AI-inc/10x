@@ -308,6 +308,129 @@ import Testing
     #expect(TranscriptTurnSummaryView.label(state: .failed, duration: nil) == "Failed")
 }
 
+@Test func delegateRowsPreserveParentOwnership() {
+    let delegateA = delegateTool(id: "delegate-a", assignment: "Review tool wrappers", phase: .running)
+    let delegateB = delegateTool(id: "delegate-b", assignment: "Audit providers", phase: .complete)
+    let workerOne = subagent(
+        id: "worker-one",
+        parent: "delegate-a",
+        task: "UI review",
+        status: .running,
+        currentTool: "read")
+    let workerTwo = subagent(
+        id: "worker-two",
+        parent: "delegate-a",
+        task: "Code review",
+        status: .running,
+        currentTool: "grep")
+    let otherParentWorker = subagent(
+        id: "worker-other",
+        parent: "delegate-b",
+        task: "Provider audit",
+        status: .completed,
+        result: .string("Providers verified"))
+    let orphan = subagent(
+        id: "orphan",
+        parent: "missing-parent",
+        task: "Standalone worker",
+        status: .running)
+    let misassigned = subagent(
+        id: "misassigned",
+        parent: "bash-tool",
+        task: "Should stay standalone",
+        status: .running)
+
+    let groupedRows = TranscriptPresentationRow.rows(from: [
+        .tool(delegateA),
+        .subagent(workerOne),
+        .subagent(workerTwo),
+        .tool(delegateB),
+        .subagent(otherParentWorker),
+        .subagent(orphan),
+        .tool(tool(id: "bash-tool", phase: .complete)),
+        .subagent(misassigned),
+    ])
+
+    let delegationA = try! #require(groupedRows.first {
+        if case .delegation(let id, let tool, let workers) = $0 {
+            return id == "delegation:delegate-a" && tool.id == "delegate-a" && workers.count == 2
+        }
+        return false
+    })
+    if case .delegation(_, _, let workers) = delegationA {
+        #expect(workers.map(\.id) == ["worker-one", "worker-two"])
+    }
+
+    let delegationB = try! #require(groupedRows.first {
+        if case .delegation(let id, _, let workers) = $0 {
+            return id == "delegation:delegate-b" && workers.count == 1
+        }
+        return false
+    })
+    if case .delegation(_, _, let workers) = delegationB {
+        #expect(workers.map(\.id) == ["worker-other"])
+    }
+
+    let orphanIDs = groupedRows.compactMap { row -> String? in
+        guard case .item(.subagent(let presentation)) = row else { return nil }
+        return presentation.id
+    }
+    #expect(orphanIDs == ["orphan", "misassigned"])
+    #expect(!groupedRows.contains {
+        if case .item(.subagent(let presentation)) = $0 {
+            return presentation.id == "worker-one" || presentation.id == "worker-two"
+                || presentation.id == "worker-other"
+        }
+        return false
+    })
+
+    let resultBeforeLifecycle = TranscriptPresentationRow.rows(from: [
+        .subagent(subagent(
+            id: "early-worker",
+            parent: "delegate-a",
+            task: "Early worker",
+            status: .running,
+            result: .string("Finished before parent appeared"))),
+        .tool(delegateA),
+    ])
+    let earlyDelegation = try! #require(resultBeforeLifecycle.first {
+        if case .delegation(let id, _, let workers) = $0 {
+            return id == "delegation:delegate-a" && workers.count == 1
+        }
+        return false
+    })
+    if case .delegation(_, _, let workers) = earlyDelegation {
+        #expect(workers.map(\.id) == ["early-worker"])
+        #expect(workers[0].resultText == "Finished before parent appeared")
+    }
+
+    let updatedWorker = subagent(
+        id: "worker-one",
+        parent: "delegate-a",
+        task: "UI review",
+        status: .completed,
+        result: .string("Cards match spec"))
+    let updatedRows = TranscriptPresentationRow.rows(from: [
+        .tool(delegateA),
+        .subagent(workerOne),
+        .subagent(updatedWorker),
+        .subagent(workerTwo),
+    ])
+    let updatedDelegation = try! #require(updatedRows.first {
+        if case .delegation(let id, _, let workers) = $0 { return id == "delegation:delegate-a" }
+        return false
+    })
+    if case .delegation(_, _, let workers) = updatedDelegation {
+        #expect(workers.map(\.id) == ["worker-one", "worker-two"])
+        #expect(workers[0].status == .completed)
+        #expect(workers[0].resultText == "Cards match spec")
+    }
+    #expect(updatedRows.filter {
+        if case .delegation(let id, _, _) = $0 { return id == "delegation:delegate-a" }
+        return false
+    }.count == 1)
+}
+
 private func message(id: String) -> TranscriptMessage {
     TranscriptMessage(
         id: id,
@@ -376,4 +499,57 @@ private func toolPhases(in rows: [TranscriptPresentationRow]) -> [ToolPhase] {
         guard case .toolGroup(let group) = row else { return nil }
         return group.phase
     }
+}
+
+private func delegateTool(
+    id: String,
+    assignment: String,
+    phase: ToolPhase
+) -> ToolPresentation {
+    ToolPresentation(
+        id: id,
+        name: "task",
+        arguments: .object(["description": .string(assignment)]),
+        result: nil,
+        phase: phase,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: phase == .running ? nil : Date(timeIntervalSince1970: 2))
+}
+
+private func subagent(
+    id: String,
+    parent: String?,
+    task: String,
+    status: SubagentStatus = .running,
+    currentTool: String? = nil,
+    result: JSONValue? = nil
+) -> SubagentPresentation {
+    SubagentPresentation(
+        id: id,
+        index: 0,
+        agent: "reviewer",
+        task: task,
+        assignment: "Check disclosure",
+        description: "Full worker detail stays in the session file.",
+        status: status,
+        sessionFile: "/tmp/\(id).jsonl",
+        parentToolCallID: parent,
+        actualModel: "gpt-5.6-sol",
+        thinkingLevel: "high",
+        modelRole: "review",
+        isFallback: false,
+        currentTool: currentTool,
+        recentTools: [
+            SubagentRecentTool(
+                name: "read",
+                arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+                endMilliseconds: 1_000),
+        ],
+        recentOutput: ["Checked transcript mapping"],
+        toolCount: 6,
+        requests: 2,
+        tokens: 1_840,
+        cost: 0.03,
+        durationMilliseconds: 4_200,
+        result: result)
 }

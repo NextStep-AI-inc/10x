@@ -2378,6 +2378,73 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
 }
 
 @MainActor
+@Test func delegateDelegationSnapshot() throws {
+    let tool = ToolPresentation(
+        id: "delegate-task",
+        name: "task",
+        arguments: .object(["description": .string("Review tool wrappers")]),
+        result: nil,
+        phase: .running,
+        startDate: Date(timeIntervalSince1970: 1),
+        endDate: nil,
+        hasReliableStartDate: false)
+    let runningWorker = SubagentPresentation(
+        id: "worker-ui",
+        index: 0,
+        agent: "reviewer",
+        task: "UI review",
+        assignment: "Review tool wrappers",
+        description: nil,
+        status: .running,
+        sessionFile: "/tmp/ui-review.jsonl",
+        parentToolCallID: "delegate-task",
+        actualModel: nil,
+        thinkingLevel: nil,
+        modelRole: nil,
+        isFallback: false,
+        currentTool: nil,
+        recentTools: [],
+        recentOutput: ["Comparing expanded file cards"],
+        toolCount: 0,
+        requests: nil,
+        tokens: nil,
+        cost: nil,
+        durationMilliseconds: 12_000,
+        result: nil)
+    let completedWorker = SubagentPresentation(
+        id: "worker-code",
+        index: 1,
+        agent: "reviewer",
+        task: "Code review",
+        assignment: "Review tool wrappers",
+        description: nil,
+        status: .completed,
+        sessionFile: "/tmp/code-review.jsonl",
+        parentToolCallID: "delegate-task",
+        actualModel: nil,
+        thinkingLevel: nil,
+        modelRole: nil,
+        isFallback: false,
+        currentTool: nil,
+        recentTools: [],
+        recentOutput: [],
+        toolCount: 0,
+        requests: nil,
+        tokens: nil,
+        cost: nil,
+        durationMilliseconds: 8_400,
+        result: .string("Tool cards match the approved hierarchy."))
+    try assertSnapshot(
+        DelegateCardView(
+            tool: tool,
+            workers: [runningWorker, completedWorker])
+            .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
+            .frame(width: 720),
+        name: "delegate-delegation",
+        size: CGSize(width: 800, height: 260))
+}
+
+@MainActor
 @Test func subagentActivitySnapshot() throws {
     let presentation = SubagentPresentation(
         id: "subagent",

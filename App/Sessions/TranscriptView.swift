@@ -440,6 +440,8 @@ struct TranscriptView: View {
         case .groupedTool(_, let tool):
             ToolCardView(presentation: tool)
                 .equatable()
+        case .delegation(_, let tool, let workers):
+            DelegateCardView(tool: tool, workers: workers)
         }
     }
 
