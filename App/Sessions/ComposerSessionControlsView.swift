@@ -36,7 +36,10 @@ struct ComposerSessionControlsView: View {
             Text(ComposerControlsPresentation.triggerTitle(for: model.selectedModel))
                 .lineLimit(1)
         }
-        .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.nearBlackHex)))
+        .buttonStyle(GhostActionStyle(
+            color: TenXPalette.color(TenXPalette.nearBlackHex),
+            horizontalPadding: 5,
+            fontSize: 11))
         .opacity(isPresented ? 0 : 1)
         .accessibilityHidden(isPresented)
         // Never disabled: the panel owns the loading and empty copy, and gating

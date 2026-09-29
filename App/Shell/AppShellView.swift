@@ -286,7 +286,7 @@ struct AppShellView: View {
                     model.manageProviderAccounts(providerID: providerID)
                 })
                 .padding(.trailing, 16)
-                .padding(.bottom, 16)
+                .padding(.bottom, hasComposer && placement == .belowLine ? 0 : 16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
     }

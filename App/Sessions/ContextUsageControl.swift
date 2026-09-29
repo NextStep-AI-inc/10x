@@ -84,7 +84,8 @@ struct ContextUsageControl: View {
         }
         .buttonStyle(GhostActionStyle(
             color: TenXPalette.color(TenXPalette.nearBlackHex),
-            horizontalPadding: 5))
+            horizontalPadding: 5,
+            fontSize: 11))
         .accessibilityLabel("Context window")
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Shows context usage details")

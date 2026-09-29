@@ -395,31 +395,33 @@ struct ComposerView: View {
                 onRevealStart: { signalRevealTiming = $0 })
                 .frame(height: 32)
                 .padding(.top, -12)
+                .padding(.bottom, -8)
                 .onChange(of: signalCompactionPhase) { _, phase in
                     if case .revealing = phase { return }
                     signalRevealTiming = nil
                 }
 
-            HStack(spacing: 8) {
+            GeometryReader { footer in
                 HStack(spacing: 8) {
-                    attachButton
-                    footerControls
-                }
-                .layoutPriority(1)
-                Spacer(minLength: 8)
-                actionControls
+                    HStack(spacing: 6) {
+                        attachButton
+                        footerControls
+                    }
+                    .layoutPriority(1)
+                    Spacer(minLength: 8)
+                    HStack(spacing: 6) {
+                        actionControls
+                    }
                     .fixedSize()
-                Spacer(minLength: 8)
-                if providerPlacement == .belowLine, providerWidth > 0 {
                     Color.clear
-                        .frame(width: providerWidth, height: 28)
+                        .frame(width: actionTrailingSpace(availableWidth: footer.size.width))
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
+                .padding(.horizontal, 24)
+                .frame(width: footer.size.width, height: footer.size.height)
             }
-            .padding(.horizontal, 24)
-            .frame(maxWidth: .infinity)
-            .frame(height: 42)
+            .frame(height: 44)
         }
             .animation(shelfAnimation, value: flyout)
             .onExitCommand {
@@ -458,6 +460,16 @@ struct ComposerView: View {
             .onChange(of: streamingController != nil) { _, isStreaming in
                 if !isStreaming, flyout == .sendAction { setFlyout(nil) }
             }
+    }
+
+    private func actionTrailingSpace(availableWidth: CGFloat) -> CGFloat {
+        let canvasWidth = max(0, availableWidth - routeCanvasLeadingInset)
+        let editorWidth = min(780, max(0, canvasWidth - 40))
+        let editorTrailingEdge = routeCanvasLeadingInset + (canvasWidth + editorWidth) / 2
+        let editorSpace = max(0, availableWidth - editorTrailingEdge - 24)
+        let providerSpace = providerPlacement == .belowLine && providerWidth > 0
+            ? providerWidth + 8 : 0
+        return max(editorSpace, providerSpace)
     }
 
     private var shelfAnimation: Animation? {
@@ -902,10 +914,11 @@ struct ComposerView: View {
                 .foregroundStyle(canSend
                     ? TenXPalette.onEmphasis
                     : TenXPalette.color(TenXPalette.mutedTextHex))
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
                 .background(canSend
                     ? TenXPalette.color(TenXPalette.nearBlackHex)
                     : TenXPalette.color(TenXPalette.hoverNeutralHex))
+                .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -922,8 +935,9 @@ struct ComposerView: View {
             Rectangle()
                 .frame(width: 9, height: 9)
                 .foregroundStyle(TenXPalette.onEmphasis)
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
                 .background(TenXPalette.color(TenXPalette.nearBlackHex))
+                .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -944,7 +958,7 @@ struct ComposerView: View {
         }
         .buttonStyle(GhostActionStyle(
             color: TenXPalette.color(isSelected ? TenXPalette.cyanHex : TenXPalette.nearBlackHex),
-            horizontalPadding: 5))
+            horizontalPadding: 5, fontSize: 11))
         .accessibilityLabel(title)
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
@@ -1040,12 +1054,14 @@ struct ComposerView: View {
             }
         }
 
-        ComposerWarningControl(
-            messages: feedbackMessages,
-            isPresented: Binding(
-                get: { flyout == .warning },
-                set: { setFlyout($0 ? .warning : nil) }),
-            onRestoreFocus: restoreEditorFocus)
+        if !feedbackMessages.isEmpty {
+            ComposerWarningControl(
+                messages: feedbackMessages,
+                isPresented: Binding(
+                    get: { flyout == .warning },
+                    set: { setFlyout($0 ? .warning : nil) }),
+                onRestoreFocus: restoreEditorFocus)
+        }
 
         if signalPresentation.status == .needsInput {
             EmptyView()
