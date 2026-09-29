@@ -39,6 +39,13 @@ enum TranscriptSearchResolver {
                     rowID: row.id,
                     groupID: groupID,
                     messageID: nil, excerpt: match)
+            case .delegation(_, let tool, _) where tool.id == request.entryID:
+                guard let match = excerpt(in: toolText(tool), query: request.query) else { continue }
+                return TranscriptSearchResolution(
+                    rowID: row.id,
+                    groupID: nil,
+                    messageID: nil,
+                    excerpt: match)
             default:
                 continue
             }

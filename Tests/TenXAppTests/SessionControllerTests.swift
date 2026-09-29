@@ -1825,201 +1825,198 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
     await manager.closeAll()
 }
 
-private struct StubHarnessSummarizer: HarnessNoticeSummarizing {
-    let summary: String?
-    func summarize(_ descriptor: HarnessMessageDescriptor) async -> String? {
-        summary
+@Suite(.serialized) @MainActor struct UnsupportedExtensionControllerTests {
+@Test func unsupportedExtensionRequestCancelsOnce() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let responseLog = directory.appending(path: "extension-responses.jsonl")
+    let executable = try makeExtensionUnsupportedExecutable(
+        in: directory,
+        responseLog: responseLog)
+    let manager = SessionProcessManager(executable: executable.path)
+    let controller = SessionController(processManager: manager)
+
+    await controller.openExisting(metadata(path: "/tmp/unsupported-extension.jsonl", cwd: directory.path))
+
+    let consume = { (json: String) async throws -> Void in
+        let frame = try controllerEvent(json)
+        let handler = try #require(controller.testingCapturedControlConsumer(frame))
+        await handler()
     }
-}
 
-@MainActor @Test func droppedHarnessMessagesBecomeNoticesThatUpdateInPlace() async throws {
-    let container = URL(filePath: NSTemporaryDirectory())
-        .appendingPathComponent("controller-notices-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: container) }
-    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
-    let executable = try makeNavigationExecutable(in: container, mode: "activity-lifecycle")
-    let processManager = SessionProcessManager(executable: executable.path)
+    try await consume("""
+        {"type":"extension_ui_request","id":"known-confirm","method":"confirm","title":"Allow?","message":"Run it"}
+        """)
+    #expect(await eventually { controller.extensionUIIDs == ["known-confirm"] })
+    #expect(controller.noticeMessages.isEmpty)
 
-    let suiteName = "harness-notice-controller-\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suiteName)!
-    defer { defaults.removePersistentDomain(forName: suiteName) }
-    let preferences = HarnessNoticePreferenceStore(defaults: defaults)
-    preferences.isEnabled = true
-
-    let descriptor = HarnessMessageDescriptor(
-        role: "developer",
-        customType: nil,
-        byteCount: 13,
-        text: "Plan approved.")
-    let controller = SessionController(
-        processManager: processManager,
-        historyLoader: { _ in TranscriptHistory(items: [], dropped: [descriptor]) },
-        harnessNoticePreferences: preferences,
-        harnessNoticeSummarizer: StubHarnessSummarizer(summary: "A plan-approval gate."))
-    let metadata = SessionMetadata(
-        path: "/tmp/fake.jsonl",
-        sessionId: "fake-session",
-        cwd: "/tmp",
-        title: "Fixture",
-        created: .distantPast,
-        modified: .distantPast,
-        sizeBytes: 0,
-        status: .complete)
-
-    await controller.openExisting(metadata)
-
-    var noticeMessage: String?
-    for _ in 0..<100 {
-        noticeMessage = controller.items.compactMap { item -> String? in
-            guard case .notice(_, _, let message) = item else { return nil }
-            return message
-        }.first
-        if noticeMessage?.contains("A plan-approval gate.") == true { break }
-        try await Task.sleep(for: .milliseconds(20))
-    }
-    #expect(noticeMessage == "Hidden developer message (13 chars): A plan-approval gate.")
-
-    await processManager.closeAll()
-}
-
-@MainActor @Test func droppedHarnessMessagesStaySilentWhenThePreferenceIsOff() async throws {
-    let container = URL(filePath: NSTemporaryDirectory())
-        .appendingPathComponent("controller-notices-off-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: container) }
-    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
-    let executable = try makeNavigationExecutable(in: container, mode: "activity-lifecycle")
-    let processManager = SessionProcessManager(executable: executable.path)
-
-    let suiteName = "harness-notice-off-\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suiteName)!
-    defer { defaults.removePersistentDomain(forName: suiteName) }
-    let preferences = HarnessNoticePreferenceStore(defaults: defaults)
-
-    let descriptor = HarnessMessageDescriptor(
-        role: "developer",
-        customType: nil,
-        byteCount: 13,
-        text: "Plan approved.")
-    let controller = SessionController(
-        processManager: processManager,
-        historyLoader: { _ in TranscriptHistory(items: [], dropped: [descriptor]) },
-        harnessNoticePreferences: preferences,
-        harnessNoticeSummarizer: StubHarnessSummarizer(summary: "unused"))
-    let metadata = SessionMetadata(
-        path: "/tmp/fake.jsonl",
-        sessionId: "fake-session",
-        cwd: "/tmp",
-        title: "Fixture",
-        created: .distantPast,
-        modified: .distantPast,
-        sizeBytes: 0,
-        status: .complete)
-
-    await controller.openExisting(metadata)
-    try await Task.sleep(for: .milliseconds(200))
-
-    #expect(controller.items.allSatisfy {
-        if case .notice = $0 { return false }
-        return true
+    try await consume("""
+        {"type":"extension_ui_request","id":"unknown-1","method":"future_dialog","title":"Future"}
+        """)
+    #expect(await eventually {
+        controller.extensionUIIDs == ["known-confirm"]
+            && controller.noticeMessages.contains("Unsupported extension UI request.")
     })
 
-    await processManager.closeAll()
-}
-
-@MainActor @Test func aFailedSummaryLeavesTheStaticNoticeText() async throws {
-    let container = URL(filePath: NSTemporaryDirectory())
-        .appendingPathComponent("controller-notices-nil-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: container) }
-    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
-    let executable = try makeNavigationExecutable(in: container, mode: "activity-lifecycle")
-    let processManager = SessionProcessManager(executable: executable.path)
-
-    let suiteName = "harness-notice-nil-\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suiteName)!
-    defer { defaults.removePersistentDomain(forName: suiteName) }
-    let preferences = HarnessNoticePreferenceStore(defaults: defaults)
-    preferences.isEnabled = true
-
-    let descriptor = HarnessMessageDescriptor(
-        role: "developer",
-        customType: nil,
-        byteCount: 13,
-        text: "Plan approved.")
-    let controller = SessionController(
-        processManager: processManager,
-        historyLoader: { _ in TranscriptHistory(items: [], dropped: [descriptor]) },
-        harnessNoticePreferences: preferences,
-        harnessNoticeSummarizer: StubHarnessSummarizer(summary: nil))
-    let metadata = SessionMetadata(
-        path: "/tmp/fake.jsonl",
-        sessionId: "fake-session",
-        cwd: "/tmp",
-        title: "Fixture",
-        created: .distantPast,
-        modified: .distantPast,
-        sizeBytes: 0,
-        status: .complete)
-
-    await controller.openExisting(metadata)
-
-    var noticeMessage: String?
-    for _ in 0..<100 {
-        noticeMessage = controller.items.compactMap { item -> String? in
-            guard case .notice(_, _, let message) = item else { return nil }
-            return message
-        }.first
-        if noticeMessage != nil { break }
-        try await Task.sleep(for: .milliseconds(20))
-    }
-    #expect(noticeMessage == "Hidden developer message (13 chars)")
-
-    await processManager.closeAll()
-}
-
-@MainActor @Test func droppedHarnessMessagesBelowTheThresholdStaySilent() async throws {
-    let container = URL(filePath: NSTemporaryDirectory())
-        .appendingPathComponent("controller-notices-threshold-\(UUID().uuidString)")
-    defer { try? FileManager.default.removeItem(at: container) }
-    try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
-    let executable = try makeNavigationExecutable(in: container, mode: "activity-lifecycle")
-    let processManager = SessionProcessManager(executable: executable.path)
-
-    let suiteName = "harness-notice-threshold-\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suiteName)!
-    defer { defaults.removePersistentDomain(forName: suiteName) }
-    let preferences = HarnessNoticePreferenceStore(defaults: defaults)
-    preferences.isEnabled = true
-    preferences.threshold = 1_000
-
-    let descriptor = HarnessMessageDescriptor(
-        role: "developer",
-        customType: nil,
-        byteCount: 13,
-        text: "Plan approved.")
-    let controller = SessionController(
-        processManager: processManager,
-        historyLoader: { _ in TranscriptHistory(items: [], dropped: [descriptor]) },
-        harnessNoticePreferences: preferences,
-        harnessNoticeSummarizer: StubHarnessSummarizer(summary: "unused"))
-    let metadata = SessionMetadata(
-        path: "/tmp/fake.jsonl",
-        sessionId: "fake-session",
-        cwd: "/tmp",
-        title: "Fixture",
-        created: .distantPast,
-        modified: .distantPast,
-        sizeBytes: 0,
-        status: .complete)
-
-    await controller.openExisting(metadata)
-    try await Task.sleep(for: .milliseconds(200))
-
-    #expect(controller.items.allSatisfy {
-        if case .notice = $0 { return false }
-        return true
+    try await consume("""
+        {"type":"extension_ui_request","id":"bad-confirm","method":"confirm","title":"Missing message"}
+        """)
+    #expect(await eventually {
+        controller.noticeMessages.contains("Extension request could not be displayed.")
     })
 
-    await processManager.closeAll()
+    #expect(await eventually { (try? extensionResponseLogEntries(at: responseLog).count) == 2 })
+    let responses = try extensionResponseLogEntries(at: responseLog)
+    #expect(Set(responses.map(\.id)) == ["unknown-1", "bad-confirm"])
+    #expect(responses.allSatisfy { $0.cancelled == true })
+
+    await manager.closeAll()
+}
+
+@Test func duplicateUnsupportedExtensionRequestCancelsOnce() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let responseLog = directory.appending(path: "extension-responses.jsonl")
+    let executable = try makeExtensionUnsupportedExecutable(
+        in: directory,
+        responseLog: responseLog)
+    let manager = SessionProcessManager(executable: executable.path)
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(metadata(path: "/tmp/duplicate-extension.jsonl", cwd: directory.path))
+    #expect(await eventually { controller.runtimeState == .idle && controller.sessionPath != nil })
+
+    let frame = try controllerEvent("""
+        {"type":"extension_ui_request","id":"dup-1","method":"future_dialog","title":"Future"}
+        """)
+    let handler = try #require(controller.testingCapturedControlConsumer(frame))
+    await handler()
+    await handler()
+    try await Task.sleep(for: .milliseconds(50))
+
+    let responses = try extensionResponseLogEntries(at: responseLog)
+    #expect(responses.count == 1)
+    #expect(responses[0].id == "dup-1")
+    #expect(responses[0].cancelled == true)
+    await manager.closeAll()
+}
+
+@Test func unsupportedExtensionSendFailureSurfacesRecovery() async throws {
+    SessionController.testingForceExtensionUICancellationFailure = true
+    defer { SessionController.testingForceExtensionUICancellationFailure = false }
+
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let executable = try makeExtensionUnsupportedExecutable(
+        in: directory,
+        responseLog: directory.appending(path: "unused.jsonl"))
+    let manager = SessionProcessManager(executable: executable.path)
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(metadata(path: "/tmp/failing-extension.jsonl", cwd: directory.path))
+
+    let frame = try controllerEvent("""
+        {"type":"extension_ui_request","id":"fail-1","method":"future_dialog","title":"Future"}
+        """)
+    let handler = try #require(controller.testingCapturedControlConsumer(frame))
+    await handler()
+
+    guard case .failed = controller.runtimeState else {
+        Issue.record("Expected send failure to surface session recovery")
+        return
+    }
+    #expect(controller.isRecoveryPresented)
+    await manager.closeAll()
+}
+
+@Test func restartDuringUnsupportedExtensionCancelDoesNotLeakToReplacement() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let responseLog = directory.appending(path: "extension-responses.jsonl")
+    let executable = try makeExtensionUnsupportedExecutable(
+        in: directory,
+        responseLog: responseLog,
+        delayResponseIDs: ["stale-1"])
+    let manager = SessionProcessManager(executable: executable.path)
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(metadata(path: "/tmp/stale-extension.jsonl", cwd: directory.path))
+
+    let frame = try controllerEvent("""
+        {"type":"extension_ui_request","id":"stale-1","method":"future_dialog","title":"Future"}
+        """)
+    let staleHandler = try #require(controller.testingCapturedControlConsumer(frame))
+    let staleTask = Task { await staleHandler() }
+
+    await controller.restart()
+    await staleTask.value
+
+    try await Task.sleep(for: .milliseconds(500))
+    let responses = try extensionResponseLogEntries(at: responseLog)
+    #expect(responses.isEmpty)
+    await manager.closeAll()
+}
+
+@Test func unsupportedExtensionBlockedRecoveryOffersRestartAfterTimeout() async throws {
+    SessionController.testingExtensionBlockedRecoveryDelay = .milliseconds(50)
+    defer { SessionController.testingExtensionBlockedRecoveryDelay = nil }
+
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let responseLog = directory.appending(path: "extension-responses.jsonl")
+    let executable = try makeExtensionUnsupportedExecutable(
+        in: directory,
+        responseLog: responseLog)
+    let manager = SessionProcessManager(executable: executable.path)
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(metadata(path: "/tmp/blocked-extension.jsonl", cwd: directory.path))
+    controller.draft = "blocked"
+    await controller.sendPrompt()
+    #expect(await eventually { controller.runtimeState == .streaming })
+
+    let frame = try controllerEvent("""
+        {"type":"extension_ui_request","id":"blocked-1","method":"future_dialog","title":"Future"}
+        """)
+    let handler = try #require(controller.testingCapturedControlConsumer(frame))
+    await handler()
+    #expect(await eventually {
+        controller.noticeMessages.contains("Unsupported extension UI request.")
+    })
+    #expect(!controller.noticeMessages.contains {
+        $0.contains("Restart the session")
+    })
+
+    #expect(await eventually { controller.canRestartAfterDismissal })
+    #expect(controller.extensionBlockedRecoveryMessage != nil)
+    #expect(await eventually {
+        guard let notice = controller.noticeMessages.first(where: {
+            $0.contains("Restart") && $0.contains("still waiting")
+        }) else { return false }
+        return Data(notice.utf8).count <= 80
+    })
+
+    let boundary = try controllerEvent(#"{"type":"agent_end","messages":[],"isTerminal":true}"#)
+    let finishTurn = try #require(controller.testingCapturedControlConsumer(boundary))
+    await finishTurn()
+    #expect(await eventually { !controller.canRestartAfterDismissal })
+    #expect(controller.extensionBlockedRecoveryMessage == nil)
+
+    await manager.closeAll()
+}
+}
+
+@MainActor @Test func sessionControllerShowsAgentGuidanceFromStoredPreference() {
+    let suiteName = "harness-guidance-controller-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defaults.set(true, forKey: "tenx.harnessNotices.enabled.v1")
+
+    let preferences = HarnessNoticePreferenceStore(defaults: defaults)
+    let manager = SessionProcessManager(executable: "/usr/bin/false")
+    let controller = SessionController(
+        processManager: manager,
+        harnessNoticePreferences: preferences)
+
+    #expect(controller.showsAgentGuidance)
+    preferences.isEnabled = false
+    #expect(!controller.showsAgentGuidance)
 }
 
 }
@@ -2634,6 +2631,13 @@ private extension SessionController {
         }
     }
 
+    var noticeMessages: [String] {
+        items.compactMap { item in
+            guard case .notice(_, _, let message) = item else { return nil }
+            return message
+        }
+    }
+
     func visibleUserEchoCount(_ text: String) -> Int {
         let committed = items.compactMap { item -> TranscriptMessage? in
             guard case .message(let message) = item,
@@ -3171,4 +3175,75 @@ private actor RecoveryFlushBarrier {
         continuation?.resume()
         continuation = nil
     }
+}
+
+private struct ExtensionResponseLogEntry: Equatable {
+    let id: String
+    let cancelled: Bool
+}
+
+private func extensionResponseLogEntries(at url: URL) throws -> [ExtensionResponseLogEntry] {
+    guard FileManager.default.fileExists(atPath: url.path) else { return [] }
+    let contents = try String(contentsOf: url, encoding: .utf8)
+    guard !contents.isEmpty else { return [] }
+    return contents
+        .split(whereSeparator: \.isNewline)
+        .compactMap { line in
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  let id = object["id"] as? String
+            else { return nil }
+            return ExtensionResponseLogEntry(
+                id: id,
+                cancelled: object["cancelled"] as? Bool == true)
+        }
+}
+
+private func makeExtensionUnsupportedExecutable(
+    in directory: URL,
+    responseLog: URL,
+    delayResponseIDs: [String] = []
+) throws -> URL {
+    let executable = directory.appending(path: "extension-unsupported-server.py")
+    let delayIDs = (try? JSONSerialization.data(withJSONObject: delayResponseIDs))
+        .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    let source = #"""
+    #!/usr/bin/env python3
+    import json
+    import sys
+    import time
+
+    response_log = "\#(responseLog.path)"
+    delay_ids = set(\#(delayIDs))
+
+    def emit(value):
+        print(json.dumps(value, separators=(",", ":")), flush=True)
+
+    emit({"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864})
+    for line in sys.stdin:
+        command = json.loads(line)
+        request_id = command.get("id")
+        command_type = command.get("type")
+        if command_type == "negotiate_protocol":
+            data = {"protocolVersion":2}
+        elif command_type == "get_state":
+            data = {"model":{"id":"gpt-test","provider":"openai-codex"},"isStreaming":False,"sessionFile":"/tmp/unsupported-extension.jsonl"}
+        elif command_type == "get_messages_page":
+            data = {"messages":[],"nextCursor":None}
+        elif command_type == "extension_ui_response":
+            if request_id in delay_ids:
+                time.sleep(0.4)
+            with open(response_log, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(command, separators=(",", ":")) + "\n")
+            continue
+        elif command_type == "prompt":
+            emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":{"agentInvoked":True}})
+            emit({"type":"agent_start"})
+            continue
+        else:
+            data = {}
+        emit({"id":request_id,"type":"response","command":command_type,"success":True,"data":data})
+    """#
+    try Data(source.utf8).write(to: executable)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+    return executable
 }

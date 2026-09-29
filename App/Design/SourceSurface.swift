@@ -371,49 +371,105 @@ struct SourceRenderState: Equatable {
     }
 }
 
+enum SourceSurfaceStyle: Equatable, Sendable {
+    case standalone
+    case embeddedInFileSurface
+}
+
 struct SourceSurface: View {
     let presentation: SourcePresentation
     let previewLineLimit: Int?
     let isInitiallyWrapped: Bool
+    let style: SourceSurfaceStyle
     @State private var renderState: SourceRenderState
 
     init(
         presentation: SourcePresentation,
         previewLineLimit: Int? = nil,
-        isInitiallyWrapped: Bool = true
+        isInitiallyWrapped: Bool = true,
+        style: SourceSurfaceStyle = .standalone
     ) {
         self.presentation = presentation
         self.previewLineLimit = previewLineLimit
         self.isInitiallyWrapped = isInitiallyWrapped
+        self.style = style
         _renderState = State(initialValue: SourceRenderState(
             contentID: presentation.contentID,
             initialLimit: previewLineLimit ?? 200))
     }
 
     var body: some View {
+        switch style {
+        case .standalone:
+            standaloneBody
+        case .embeddedInFileSurface:
+            embeddedBody
+        }
+    }
+
+    private var standaloneBody: some View {
         VStack(alignment: .leading, spacing: 8) {
             SourceCard(
                 presentation: presentation,
                 lines: Array(visibleLines),
                 isInitiallyWrapped: isInitiallyWrapped)
-            ProgressiveRevealButton(
-                reveal: Binding(
-                    get: { effectiveRenderState.reveal },
-                    set: {
-                        renderState.reset(
-                            contentID: presentation.contentID,
-                            initialLimit: initialLimit)
-                        renderState.reveal = $0
-                    }),
-                total: presentation.lines.count,
-                noun: "lines",
-                accessibilityNoun: "source lines")
+            revealButton
         }
         .task(id: presentation.contentID) {
             renderState.reset(
                 contentID: presentation.contentID,
                 initialLimit: initialLimit)
         }
+    }
+
+    private var embeddedBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SourceCard(
+                presentation: presentation,
+                lines: Array(visibleLines),
+                isInitiallyWrapped: isInitiallyWrapped,
+                showsStandaloneChrome: false)
+            Divider()
+                .padding(.vertical, 8)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(footerSummary)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                Spacer(minLength: 8)
+                revealButton
+            }
+        }
+        .task(id: presentation.contentID) {
+            renderState.reset(
+                contentID: presentation.contentID,
+                initialLimit: initialLimit)
+        }
+    }
+
+    var footerSummary: String {
+        let visible = visibleLines.count
+        let total = presentation.lines.count
+        guard total > visible else { return "Showing \(total) \(total == 1 ? "line" : "lines")" }
+        return "Showing \(visible) of \(total) \(total == 1 ? "line" : "lines")"
+    }
+
+    var revealButton: some View {
+        ProgressiveRevealButton(
+            reveal: Binding(
+                get: { effectiveRenderState.reveal },
+                set: {
+                    renderState.reset(
+                        contentID: presentation.contentID,
+                        initialLimit: initialLimit)
+                    renderState.reveal = $0
+                }),
+            total: presentation.lines.count,
+            noun: "lines",
+            accessibilityNoun: "source lines")
+    }
+
+    var canRevealMoreLines: Bool {
+        effectiveRenderState.reveal.canRevealMore(total: presentation.lines.count)
     }
 
     private var visibleLines: ArraySlice<SourceLine> {
@@ -447,6 +503,7 @@ struct SourceCard: View {
     let presentation: SourcePresentation
     let lines: [SourceLine]
     let isInitiallyWrapped: Bool
+    let showsStandaloneChrome: Bool
 
     @State private var isWrapped: Bool
     @StateObject private var pageLoader: SourcePageLoader
@@ -454,11 +511,13 @@ struct SourceCard: View {
     init(
         presentation: SourcePresentation,
         lines: [SourceLine],
-        isInitiallyWrapped: Bool = true
+        isInitiallyWrapped: Bool = true,
+        showsStandaloneChrome: Bool = true
     ) {
         self.presentation = presentation
         self.lines = lines
         self.isInitiallyWrapped = isInitiallyWrapped
+        self.showsStandaloneChrome = showsStandaloneChrome
         _isWrapped = State(initialValue: isInitiallyWrapped)
         _pageLoader = StateObject(wrappedValue: SourcePageLoader(
             contentID: presentation.contentID,
@@ -469,7 +528,7 @@ struct SourceCard: View {
     var body: some View {
         let contentID = presentation.contentID
         VStack(alignment: .leading, spacing: 8) {
-            header
+            if showsStandaloneChrome { header }
             if isWrapped {
                 rows(contentID: contentID)
             } else {
@@ -478,9 +537,11 @@ struct SourceCard: View {
                 }
             }
         }
-        .padding(10)
-        .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .padding(showsStandaloneChrome ? 10 : 0)
+        .background(showsStandaloneChrome
+            ? TenXPalette.color(TenXPalette.hoverNeutralHex)
+            : Color.clear)
+        .clipShape(RoundedRectangle(cornerRadius: showsStandaloneChrome ? 4 : 0))
         .task(id: SourceLoadID(
             contentID: contentID,
             lineNumbers: lines.map(\.number))) {

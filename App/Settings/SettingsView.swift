@@ -362,9 +362,7 @@ struct SettingsView: View {
                         if showsPreferredIDERow {
                             Divider()
                         }
-                        HarnessNoticeSettingRowView(
-                            store: harnessNoticeStore,
-                            availableModels: availableModels)
+                        HarnessNoticeSettingRowView(store: harnessNoticeStore)
                     }
                 case .composer:
                     ComposerInteractionSettingRows(preferences: composerPreferences)

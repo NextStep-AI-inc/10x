@@ -629,7 +629,7 @@ enum ToolContentExtractor {
         case .browser:
             browserCard(
                 title: "Browser",
-                verb: firstString(in: arguments, keys: ["action"]) ?? "Browse",
+                verb: "Browse",
                 primary: firstString(in: arguments, keys: ["url", "title", "target"]),
                 arguments: arguments,
                 result: result,
@@ -690,9 +690,29 @@ enum ToolContentExtractor {
         }
 
         guard phase == .failed, kind != .think else { return base }
-        let fullError = ansiSafe(envelope.error ?? envelope.text ?? "Tool failed")
-        let error = fullError.split(whereSeparator: \.isNewline).first.map(String.init)
-            ?? "Tool failed"
+        let exitCode: Int? = switch kind {
+        case .bash, .eval:
+            firstInt(in: result, paths: [
+                ["details", "exitCode"], ["details", "exit_code"], ["exitCode"], ["exit_code"],
+            ])
+        default:
+            nil
+        }
+        let exitLabel = exitCode.map { "Exit \($0)" }
+        let hasStreamOutput = [
+            nestedString(in: result, paths: [["details", "stdout"], ["stdout"]]),
+            nestedString(in: result, paths: [["details", "stderr"], ["stderr"]]),
+        ].compactMap { $0 }.contains { !$0.isEmpty }
+        let rawError = envelope.error ?? (hasStreamOutput ? nil : envelope.text)
+        let firstLineError = rawError.map(ansiSafe)?
+            .split(whereSeparator: \.isNewline).first.map(String.init)
+        let error = if let firstLineError,
+                       firstLineError != exitLabel,
+                       !isExitOnlyMessage(firstLineError) {
+            firstLineError
+        } else {
+            exitLabel ?? firstLineError ?? "Tool failed"
+        }
         return ToolCardContent(
             title: base.title,
             verb: base.verb,
@@ -1044,10 +1064,10 @@ enum ToolContentExtractor {
             let additions = unified.files.reduce(0) { $0 + $1.additions }
             let removals = unified.files.reduce(0) { $0 + $1.removals }
             outcome = "+\(additions) −\(removals)"
-            primary = path
-                ?? (unified.files.count == 1
-                    ? unified.files.first?.path
-                    : "\(unified.files.count) files")
+            let primaryPath = path ?? unified.files.first?.path
+            primary = unified.files.count == 1
+                ? primaryPath
+                : (primaryPath ?? "\(unified.files.count) files")
         } else if let changedValues, let changedItems {
             let additions = changedValues.reduce(0) { $0 + ($1["additions"]?.intValue ?? 0) }
             let removals = changedValues.reduce(0) { $0 + ($1["removals"]?.intValue ?? 0) }
@@ -1068,13 +1088,16 @@ enum ToolContentExtractor {
             outcome = envelopeOutcome(envelope, phase: phase)
             primary = path
         }
+        let unifiedReference = unified?.files.first.flatMap { reference(forPath: $0.path) }
+        let headerReference = path.flatMap { reference(forPath: $0) }
+            ?? unifiedReference
+            ?? (changedItems?.count == 1 ? changedItems?.first?.reference : nil)
         return ToolCardContent(
             title: title,
             verb: verb,
             primary: primary,
             outcome: outcome,
-            reference: path.flatMap { reference(forPath: $0) }
-                ?? (changedItems?.count == 1 ? changedItems?.first?.reference : nil),
+            reference: headerReference,
             body: body)
     }
 
@@ -1569,6 +1592,15 @@ enum ToolContentExtractor {
                 nil
             }
         }
+        let pageTitle = nestedString(
+            in: result,
+            paths: [["details", "title"], ["title"]])
+            ?? firstString(in: arguments, keys: ["title"])
+        let pageURL = nestedString(
+            in: result,
+            paths: [["details", "url"], ["url"]])
+            ?? firstString(in: arguments, keys: ["url", "target"])
+            ?? primary
         let linkValues = firstArray(in: result, paths: [
             ["details", "links"], ["links"], ["details", "results"], ["results"],
         ])
@@ -1578,9 +1610,30 @@ enum ToolContentExtractor {
         if var remainingDetails = envelope.details {
             remainingDetails.removeValue(forKey: "links")
             remainingDetails.removeValue(forKey: "results")
+            remainingDetails.removeValue(forKey: "title")
+            remainingDetails.removeValue(forKey: "url")
             if !remainingDetails.isEmpty {
                 bodies.append(.data(label: "Page state", value: .object(remainingDetails)))
             }
+        }
+        let hasReadableContent = envelope.blocks.contains {
+            if case .text = $0 { return true }
+            return false
+        }
+        if !hasReadableContent,
+           let pageURL,
+           let url = URL(string: pageURL),
+           url.scheme == "http" || url.scheme == "https",
+           !bodies.contains(where: containsBrowserPreview) {
+            let previewTitle = pageTitle ?? pageURL
+            bodies.insert(.collection([
+                ToolCollectionItem(
+                    id: "browser-\(pageURL)",
+                    label: previewTitle,
+                    detail: pageURL,
+                    reference: .web(url: pageURL, label: previewTitle),
+                    state: BrowserComputerSurfaceLayout.browserPreviewState),
+            ]), at: 0)
         }
         if bodies.isEmpty {
             bodies.append(envelopeBody(
@@ -1589,14 +1642,20 @@ enum ToolContentExtractor {
                 result: result,
                 phase: phase))
         }
+        let browserReference: TranscriptReference? = if let pageURL,
+                                                         pageURL.hasPrefix("http://") || pageURL.hasPrefix("https://") {
+            .web(url: pageURL, label: pageTitle ?? URL(string: pageURL)?.host)
+        } else {
+            primary.flatMap { reference(for: $0) }
+        }
         return ToolCardContent(
             title: title,
             verb: verb,
-            primary: primary,
+            primary: pageURL ?? primary,
             outcome: links.isEmpty
                 ? envelopeOutcome(envelope, phase: phase)
                 : itemCount(links.count, singular: "link", plural: "links"),
-            reference: primary.flatMap { reference(for: $0) },
+            reference: browserReference,
             body: bodies.count == 1 ? bodies[0] : .stack(bodies))
     }
 
@@ -1630,6 +1689,16 @@ enum ToolContentExtractor {
                 arguments: arguments,
                 result: result,
                 phase: phase)
+        } else if title == "Computer" {
+            body = .stack([
+                .media(media, caption: caption),
+                .collection([ToolCollectionItem(
+                    id: "computer-\(primary ?? title)",
+                    label: primary ?? title,
+                    detail: firstString(in: arguments, keys: ["action", "gesture"]),
+                    reference: primary.flatMap { reference(for: $0) },
+                    state: BrowserComputerSurfaceLayout.computerPreviewState)]),
+            ])
         } else {
             var bodies: [ToolBody] = [.media(media, caption: caption)]
             if let details = envelope.details, !details.isEmpty {
@@ -1723,16 +1792,19 @@ enum ToolContentExtractor {
     private static func failedBody(error: String, base: ToolBody) -> ToolBody {
         let errorDocument = ToolBody.document(MessageContentParser.parse(error))
         switch base {
-        case .console(let command, let output, let exitCode):
+        case .console(let command, let output, _):
             let visibleOutput = output.trimmingCharacters(in: .whitespacesAndNewlines) == error
                 ? ""
                 : output
-            guard command != nil || exitCode != nil || !visibleOutput.isEmpty else {
+            guard command != nil || !visibleOutput.isEmpty else {
                 return errorDocument
+            }
+            if !visibleOutput.isEmpty {
+                return .console(command: command, output: visibleOutput, exitCode: nil)
             }
             return .stack([
                 errorDocument,
-                .console(command: command, output: visibleOutput, exitCode: exitCode),
+                .console(command: command, output: "", exitCode: nil),
             ])
         case .document(let document) where document.plainText == error:
             return errorDocument
@@ -1741,6 +1813,16 @@ enum ToolContentExtractor {
         default:
             return .stack([errorDocument, base])
         }
+    }
+
+    private static func isExitOnlyMessage(_ message: String) -> Bool {
+        guard message.hasPrefix("Exit ") else { return false }
+        return Int(message.dropFirst(5)) != nil
+    }
+
+    private static func containsBrowserPreview(_ body: ToolBody) -> Bool {
+        guard case .collection(let items) = body else { return false }
+        return items.contains { $0.state == BrowserComputerSurfaceLayout.browserPreviewState }
     }
 
     private static func completionText(_ phase: ToolPhase) -> String {

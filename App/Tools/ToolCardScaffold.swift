@@ -1,5 +1,84 @@
 import SwiftUI
 
+struct SelectedToolFilePathPreference: PreferenceKey {
+    static let defaultValue: String? = nil
+
+    static func reduce(value: inout String?, nextValue: () -> String?) {
+        value = nextValue() ?? value
+    }
+}
+
+struct ToolCardFileHeaderLabel: View {
+    private let reference: TranscriptReference
+
+    @Environment(\.fileReferenceBaseURL) private var baseURL
+
+    init(reference: TranscriptReference) {
+        self.reference = reference
+    }
+
+    init(path: String, line: Int? = nil) {
+        reference = .file(path: path, line: line)
+    }
+
+    static func filename(for reference: TranscriptReference?) -> String? {
+        guard let reference else { return nil }
+        switch reference {
+        case .file(let path, let line):
+            return URL(filePath: path).lastPathComponent + (line.map { ":\($0)" } ?? "")
+        case .web(_, let label):
+            return label
+        }
+    }
+
+    var body: some View {
+        switch reference {
+        case .file(let path, let line):
+            fileLabel(path: path, line: line)
+        case .web(let url, let label):
+            webLabel(url: url, label: label)
+        }
+    }
+
+    private func fileLabel(path: String, line: Int?) -> some View {
+        let resolved = FileReferenceResolver().resolve(path: path, line: line, relativeTo: baseURL)
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            FileTypeIcon(path: resolved.originalPath, isAvailable: resolved.exists)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 2 }
+            Text(resolved.compactLabel)
+                .font(TenXTypography.body(size: 12, weight: .medium))
+                .foregroundStyle(TenXPalette.color(resolved.exists
+                    ? TenXPalette.nearBlackHex
+                    : TenXPalette.mutedTextHex))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(resolved.fullPathLabel)
+    }
+
+    private func webLabel(url: String, label: String?) -> some View {
+        let display = label
+            ?? URL(string: url)?.host
+            ?? url
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+            Text(display)
+                .font(TenXTypography.body(size: 12, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Web reference, \(display)")
+    }
+}
+
 struct ToolCardDiffTotals: Equatable, Sendable {
     let additions: Int
     let removals: Int
@@ -94,6 +173,7 @@ struct ToolCardScaffold<Content: View>: View {
     @Environment(\.toolDisclosureState) private var disclosureState
     @Environment(\.accessibilityReduceMotion) private var isReduceMotionEnabled
     @State private var localChoice: Bool?
+    @State private var selectedFilePath: String?
 
     init(
         presentation: ToolPresentation,
@@ -112,6 +192,9 @@ struct ToolCardScaffold<Content: View>: View {
 
                 if isExpanded {
                     details
+                        .onPreferenceChange(SelectedToolFilePathPreference.self) {
+                            selectedFilePath = $0
+                        }
                         .transition(isReduceMotionEnabled ? .identity : .opacity)
                 }
             }
@@ -119,6 +202,13 @@ struct ToolCardScaffold<Content: View>: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(headerPresentation.accessibilityLabel)
+    }
+
+    private var headerFileReference: TranscriptReference? {
+        if let selectedFilePath {
+            return .file(path: selectedFilePath, line: nil)
+        }
+        return cardContent.reference
     }
 
     private var headerPresentation: ToolCardHeaderPresentation {
@@ -170,8 +260,8 @@ struct ToolCardScaffold<Content: View>: View {
             .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
             .accessibilityHint(isExpanded ? "Collapses tool details" : "Expands tool details")
 
-            if let reference = cardContent.reference {
-                TranscriptReferenceView(reference: reference)
+            if let reference = headerFileReference {
+                ToolCardFileHeaderLabel(reference: reference)
             } else if let primary = cardContent.primary, !primary.isEmpty {
                 Text(primary)
                     .font(TenXTypography.mono(size: 10))

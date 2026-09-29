@@ -3,6 +3,36 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func terminalEndWithoutResultFailsExactIDAndBlocksRevival() throws {
+    var reducer = ToolEventReducer()
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"tool-1","toolName":"bash","args":{"command":"pwd"}}
+        """))
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"tool-2","toolName":"read","args":{"path":"App.swift"}}
+        """))
+
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"tool-1","toolName":"bash","isError":false}
+        """))
+
+    let failed = try #require(reducer.presentations.first { $0.id == "tool-1" })
+    #expect(failed.phase == .failed)
+    #expect(failed.result?["error"]?.stringValue == EventDiagnosticDisplay.settledUpdateError)
+    #expect(reducer.presentations.first { $0.id == "tool-2" }?.phase == .running)
+
+    reducer.consume(type: "tool_execution_update", payload: try payload("""
+        {"type":"tool_execution_update","toolCallId":"tool-1","toolName":"bash","partialResult":{"content":[{"type":"text","text":"late"}]}}
+        """))
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"tool-1","toolName":"bash","result":{"content":[{"type":"text","text":"too late"}]},"isError":false}
+        """))
+
+    let stillFailed = try #require(reducer.presentations.first { $0.id == "tool-1" })
+    #expect(stillFailed.phase == .failed)
+    #expect(stillFailed.result?["error"]?.stringValue == EventDiagnosticDisplay.settledUpdateError)
+}
+
 @Test func toolUpdatesAndCompletionReplaceResultSnapshots() throws {
     var reducer = ToolEventReducer()
 
@@ -274,4 +304,74 @@ private func onlyDiff(in presentation: ToolPresentation) -> UnifiedDiff? {
 
 private enum TestPayloadError: Error {
     case notAnEvent
+}
+
+@Test func toolBudgetReducerStoresBoundedArgumentsAndResults() throws {
+    var reducer = ToolEventReducer()
+    let huge = String(repeating: "z", count: 1_024 * 1_024)
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"budget-1","toolName":"write","args":{"path":"/tmp/Huge.swift","content":"\(huge)"}}
+        """))
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"budget-1","toolName":"write","result":{"content":[{"type":"text","text":"\(huge)"}]},"isError":false}
+        """))
+
+    let tool = try #require(reducer.presentations.first { $0.id == "budget-1" })
+    #expect(maxStoredScalarBytes(in: tool.arguments) <= ToolPayloadBudget.Limits.scalarBytes)
+    #expect(maxStoredScalarBytes(in: tool.result) <= ToolPayloadBudget.Limits.scalarBytes)
+    #expect(tool.phase == .complete)
+}
+
+@Test func toolBudgetReducerPreservesCallIDAndPhaseForUnknownTool() throws {
+    var reducer = ToolEventReducer()
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"custom-9","toolName":"mystery_plugin","args":{"blob":"\(String(repeating: "q", count: 16_384))"}}
+        """))
+
+    let running = try #require(reducer.presentations.first { $0.id == "custom-9" })
+    #expect(running.name == "mystery_plugin")
+    #expect(running.phase == .running)
+    #expect(running.content.title == "mystery_plugin")
+    #expect(maxStoredScalarBytes(in: running.arguments) <= ToolPayloadBudget.Limits.scalarBytes)
+}
+
+@Test func duplicateOversizedTerminalToolEventDoesNotRepublish() throws {
+    var reducer = ToolEventReducer()
+    let huge = String(repeating: "z", count: 64 * 1_024)
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"dup-huge","toolName":"write","args":{"path":"/tmp/Huge.swift"}}
+        """))
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"dup-huge","toolName":"write","result":{"content":[{"type":"text","text":"\(huge)"}]},"isError":false}
+        """))
+    let firstEnd = try #require(reducer.presentations.first { $0.id == "dup-huge" }?.endDate)
+
+    Thread.sleep(forTimeInterval: 0.01)
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"dup-huge","toolName":"write","result":{"content":[{"type":"text","text":"\(huge)"}]},"isError":false}
+        """))
+
+    let tool = try #require(reducer.presentations.first { $0.id == "dup-huge" })
+    #expect(tool.endDate == firstEnd)
+    #expect(reducer.presentations.count == 1)
+}
+
+private func maxStoredScalarBytes(in value: JSONValue?) -> Int {
+    guard let value else { return 0 }
+    var maxBytes = 0
+    func visit(_ value: JSONValue) {
+        if let text = value.stringValue {
+            maxBytes = max(maxBytes, text.utf8.count)
+        }
+        switch value {
+        case .object(let object):
+            object.values.forEach(visit)
+        case .array(let values):
+            values.forEach(visit)
+        default:
+            break
+        }
+    }
+    visit(value)
+    return maxBytes
 }

@@ -30,6 +30,8 @@ struct TranscriptView: View {
     static let contentMaxWidth: CGFloat = 860
 
     let controller: SessionController
+    @Environment(HarnessNoticePreferenceStore.self) private var harnessNoticeStore:
+        HarnessNoticePreferenceStore?
     @State private var isUserScrolling = false
     @State private var hasRestoredReadingPosition = false
     @State private var searchResolution: TranscriptSearchResolution?
@@ -42,11 +44,15 @@ struct TranscriptView: View {
     var body: some View {
         let viewport = controller.viewport
         let disclosureState = controller.toolDisclosureState
-        let allPresentationRows = Self.followObservation(for: controller.items)
+        let showsAgentGuidance = harnessNoticeStore?.isEnabled ?? controller.showsAgentGuidance
+        let allPresentationRows = Self.followObservation(
+            for: controller.items,
+            showsAgentGuidance: showsAgentGuidance)
         let renderRows = Self.renderRows(
             for: controller.items,
             runtimeState: controller.runtimeState,
-            isGroupExpanded: disclosureState.isGroupExpanded)
+            isGroupExpanded: disclosureState.isGroupExpanded,
+            showsAgentGuidance: showsAgentGuidance)
         let orderedScrollTargetIDs = renderRows.map(\.id)
             + controller.pendingSubmissions.map(\.id)
             + (isAwaitingOutput ? [TurnActivityView.transcriptID] : [])
@@ -116,6 +122,7 @@ struct TranscriptView: View {
                 }
             }
             .environment(\.toolDisclosureState, disclosureState)
+            .environment(\.activeSessionFilePath, controller.sessionPath)
             .scrollIndicators(.hidden)
             .onScrollTargetVisibilityChange(
                 idType: String.self,
@@ -328,9 +335,29 @@ struct TranscriptView: View {
     private static let bottomID = "transcript-bottom"
 
     nonisolated static func followObservation(
-        for items: [TranscriptItem]
+        for items: [TranscriptItem],
+        showsAgentGuidance: Bool = false
     ) -> [TranscriptPresentationRow] {
-        TranscriptPresentationRow.rows(from: items)
+        TranscriptPresentationRow.rows(from: visibleItems(from: items, showsAgentGuidance: showsAgentGuidance))
+    }
+
+    nonisolated static func visibleItems(
+        from items: [TranscriptItem],
+        showsAgentGuidance: Bool
+    ) -> [TranscriptItem] {
+        guard showsAgentGuidance else {
+            return items.filter { item in
+                switch item {
+                case .guidance(let presentation):
+                    return presentation.visibility == .always
+                case .diagnostic:
+                    return false
+                default:
+                    return true
+                }
+            }
+        }
+        return items
     }
 
     nonisolated static func groupID(
@@ -345,9 +372,11 @@ struct TranscriptView: View {
     nonisolated static func renderRows(
         for items: [TranscriptItem],
         runtimeState: SessionRuntimeState,
-        isGroupExpanded: (String) -> Bool
+        isGroupExpanded: (String) -> Bool,
+        showsAgentGuidance: Bool = false
     ) -> [TranscriptRenderRow] {
-        TranscriptTurnProjection.sections(from: items, runtimeState: runtimeState).flatMap { section in
+        let visibleItems = visibleItems(from: items, showsAgentGuidance: showsAgentGuidance)
+        return TranscriptTurnProjection.sections(from: visibleItems, runtimeState: runtimeState).flatMap { section in
             var rows = TranscriptPresentationRow.visibleRows(
                 from: TranscriptPresentationRow.rows(from: section.items),
                 isGroupExpanded: isGroupExpanded)
@@ -411,6 +440,8 @@ struct TranscriptView: View {
         case .groupedTool(_, let tool):
             ToolCardView(presentation: tool)
                 .equatable()
+        case .delegation(_, let tool, let workers):
+            DelegateCardView(tool: tool, workers: workers)
         }
     }
 
@@ -485,6 +516,10 @@ struct TranscriptView: View {
                     controller.copyURL(url, requestID: state.id)
                 })
             }
+        case .guidance(let presentation):
+            GuidanceCardView(presentation: presentation)
+        case .diagnostic(let diagnostic):
+            DiagnosticCardView(diagnostic: diagnostic)
         }
     }
 

@@ -47,6 +47,7 @@ struct AppShellView: View {
                         }
                         .environment(model.idePreferenceStore)
                         .environment(model.toolDetailPreferenceStore)
+                        .environment(model.harnessNoticePreferenceStore)
                         .environment(\.fileOpenService, model.fileOpenService)
                         .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
                             model.openSettings(focus: .preferredIDE)

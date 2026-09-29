@@ -3,6 +3,7 @@ import OmpKit
 
 struct SubagentEventReducer {
     private(set) var presentations: [SubagentPresentation] = []
+    private var displayErrorSettledIDs: Set<String> = []
 
     mutating func consume(type: String, payload: JSONValue) {
         let body = payload["payload"] ?? payload
@@ -14,6 +15,26 @@ struct SubagentEventReducer {
         default:
             break
         }
+    }
+
+    @discardableResult
+    mutating func settleDisplayError(id: String) -> Bool {
+        guard !displayErrorSettledIDs.contains(id) else { return false }
+        guard let index = presentations.firstIndex(where: { $0.id == id }) else { return false }
+        displayErrorSettledIDs.insert(id)
+        presentations[index].status = .failed
+        presentations[index].description = EventDiagnosticDisplay.settledUpdateError
+        return true
+    }
+
+    /// Terminal `subagent_lifecycle` frames require `agent` and `index` per
+    /// `SubagentLifecyclePayload`; optional description/sessionFile may be absent.
+    static func isMalformedTerminalLifecycle(_ body: JSONValue) -> Bool {
+        guard let id = body["id"]?.stringValue, !id.isEmpty else { return false }
+        guard isTerminalStatus(body["status"]?.stringValue) else { return false }
+        let hasAgent = body["agent"]?.stringValue.map { !$0.isEmpty } ?? false
+        let hasIndex = body["index"] != nil
+        return !hasAgent || !hasIndex
     }
 
     mutating func attachResult(parentToolCallID: String, result: JSONValue) {
@@ -111,8 +132,22 @@ struct SubagentEventReducer {
         return .completed
     }
 
+    private static func isTerminalStatus(_ status: String?) -> Bool {
+        switch status?.lowercased() {
+        case "completed", "complete", "failed", "aborted", "done":
+            return true
+        default:
+            return false
+        }
+    }
+
     private mutating func consumeLifecycle(_ body: JSONValue) {
         guard let id = body["id"]?.stringValue else { return }
+        guard !displayErrorSettledIDs.contains(id) else { return }
+        if Self.isMalformedTerminalLifecycle(body) {
+            _ = settleDisplayError(id: id)
+            return
+        }
         let status = status(body["status"]?.stringValue, fallback: .started)
         if let index = presentations.firstIndex(where: { $0.id == id }) {
             presentations[index].agent = body["agent"]?.stringValue ?? presentations[index].agent
@@ -158,6 +193,7 @@ struct SubagentEventReducer {
         let id = progress["id"]?.stringValue
             ?? presentations.first(where: { $0.index == indexValue })?.id
             ?? "subagent-\(indexValue)"
+        guard !displayErrorSettledIDs.contains(id) else { return }
         let duration = progress["durationMs"]?.doubleValue ?? 0
         let index: Int
         if let existing = presentations.firstIndex(where: { $0.id == id }) {

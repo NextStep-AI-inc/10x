@@ -3,29 +3,169 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func diagnosticReconcilePreservesOmissionCountWithoutResurrectingEvictedHistory() throws {
+    var reducer = TranscriptReducer()
+    for index in 0..<129 {
+        _ = reducer.consume(.event(
+            type: "unknown_future_event",
+            payload: .object([
+                "id": .string("live-\(index)"),
+                "index": .int(index),
+            ])))
+    }
+    let liveOmission = try #require(
+        diagnosticItems(from: reducer.items).first { $0.omittedEarlierCount != nil })
+    #expect(liveOmission.omittedEarlierCount == 1)
+    let liveRetainedIDs = Set(
+        diagnosticItems(from: reducer.items).compactMap { $0.omittedEarlierCount == nil ? $0.id : nil })
+
+    let header = SessionHeader(
+        id: "session-diagnostic-reconcile",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    var historyDiagnostics: [SessionEntry] = []
+    for index in 0..<130 {
+        historyDiagnostics.append(.unknown(
+            type: "vendor_telemetry",
+            base: SessionEntryBase(
+                id: "history-\(index)",
+                parentId: index == 0 ? nil : "history-\(index - 1)",
+                timestamp: String(format: "2026-08-24T20:00:%02d.000Z", index + 1)),
+            raw: .object(["index": .int(index)])))
+    }
+    let history = TranscriptHistoryMapper.map(header: header, path: historyDiagnostics)
+    let historyOmission = try #require(
+        diagnosticItems(from: history.items).first { $0.omittedEarlierCount != nil })
+    #expect(historyOmission.omittedEarlierCount == 2)
+    let historyRetainedIDs = Set(
+        diagnosticItems(from: history.items).compactMap { $0.omittedEarlierCount == nil ? $0.id : nil })
+
+    _ = reducer.reconcile(history: history)
+
+    let merged = diagnosticItems(from: reducer.items)
+    let mergedOmission = try #require(merged.first { $0.omittedEarlierCount != nil })
+    let mergedRetainedIDs = Set(merged.compactMap { $0.omittedEarlierCount == nil ? $0.id : nil })
+    #expect(mergedOmission.omittedEarlierCount == 128)
+    #expect(DiagnosticCardView.omissionBody(128) == "At least 128 earlier items omitted")
+    #expect(merged.filter { $0.omittedEarlierCount == nil }.count == 128)
+    #expect(!merged.contains { $0.id == "history-0" })
+    #expect(liveRetainedIDs.isSubset(of: mergedRetainedIDs))
+    let accountedHistoryIDs = mergedRetainedIDs.intersection(historyRetainedIDs)
+    let evictedHistoryCount = historyRetainedIDs.subtracting(mergedRetainedIDs).count
+    #expect(accountedHistoryIDs.count + evictedHistoryCount == historyRetainedIDs.count)
+    #expect(evictedHistoryCount + mergedOmission.omittedEarlierCount! >= historyRetainedIDs.count)
+}
+
+@Test func diagnosticReconcileIsIdempotentWithIdenticalHistory() throws {
+    var reducer = TranscriptReducer()
+    for index in 0..<129 {
+        _ = reducer.consume(.event(
+            type: "unknown_future_event",
+            payload: .object([
+                "id": .string("live-\(index)"),
+                "index": .int(index),
+            ])))
+    }
+
+    let header = SessionHeader(
+        id: "session-diagnostic-reconcile-repeat",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    var historyDiagnostics: [SessionEntry] = []
+    for index in 0..<130 {
+        historyDiagnostics.append(.unknown(
+            type: "vendor_telemetry",
+            base: SessionEntryBase(
+                id: "history-\(index)",
+                parentId: index == 0 ? nil : "history-\(index - 1)",
+                timestamp: String(format: "2026-08-24T20:00:%02d.000Z", index + 1)),
+            raw: .object(["index": .int(index)])))
+    }
+    let history = TranscriptHistoryMapper.map(header: header, path: historyDiagnostics)
+
+    _ = reducer.reconcile(history: history)
+    let firstOmission = try #require(
+        diagnosticItems(from: reducer.items).first { $0.omittedEarlierCount != nil })
+    let firstRetainedCount = diagnosticItems(from: reducer.items)
+        .filter { $0.omittedEarlierCount == nil }.count
+
+    _ = reducer.reconcile(history: history)
+    let secondOmission = try #require(
+        diagnosticItems(from: reducer.items).first { $0.omittedEarlierCount != nil })
+    let secondRetainedCount = diagnosticItems(from: reducer.items)
+        .filter { $0.omittedEarlierCount == nil }.count
+
+    #expect(secondOmission.omittedEarlierCount == firstOmission.omittedEarlierCount)
+    #expect(secondRetainedCount == firstRetainedCount)
+    #expect(secondOmission.omittedEarlierCount == 128)
+}
+
+@Test func diagnosticReconcileDedupesSameIDRows() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(
+        type: "unknown_future_event",
+        payload: .object(["id": .string("shared-diag"), "channel": .string("live")])))
+    let header = SessionHeader(
+        id: "session-diagnostic-dedupe",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .unknown(
+            type: "vendor_telemetry",
+            base: SessionEntryBase(
+                id: "shared-diag",
+                parentId: nil,
+                timestamp: "2026-08-24T20:00:01.000Z"),
+            raw: .object(["channel": .string("saved")])),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    #expect(diagnosticItems(from: reducer.items).filter { $0.id == "shared-diag" }.count == 1)
+}
+
 @Test func unknownEventsAreDiscardedWithoutMutation() throws {
     var reducer = TranscriptReducer()
 
     let nonEvent = try RpcFrame.decode(line: Data(#"{"type":"response","id":"1","command":"get_state","success":true,"data":{}}"#.utf8))
     #expect(reducer.consume(nonEvent) == .none)
     #expect(reducer.consume(try eventFrame("""
-        {"type":"unknown_future_event","payload":{"large":"ignored"}}
-        """)) == .none)
+        {"type":"unknown_future_event","payload":{"id":"unknown-1","large":"ignored"}}
+        """)) == .immediate)
 
-    #expect(reducer.items.isEmpty)
+    #expect(diagnosticItems(from: reducer.items).count == 1)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
 }
 
 @Test func tenThousandUnknownEventsAddNoRows() throws {
     var reducer = TranscriptReducer()
     let frame = try eventFrame("""
-        {"type":"unsupported_progress","index":1,"payload":{"text":"ignored"}}
+        {"type":"unsupported_progress","index":1,"payload":{"id":"progress-1","text":"ignored"}}
         """)
 
-    for _ in 0..<10_000 {
-        #expect(reducer.consume(frame) == .none)
+    for index in 0..<10_000 {
+        let unique = try eventFrame("""
+            {"type":"unsupported_progress","index":\(index),"payload":{"id":"progress-\(index)","text":"ignored"}}
+            """)
+        #expect(reducer.consume(unique) == .immediate)
     }
 
-    #expect(reducer.items.isEmpty)
+    let diagnostics = diagnosticItems(from: reducer.items)
+    #expect(diagnostics.filter { $0.omittedEarlierCount == nil }.count == 128)
+    #expect(diagnostics.first { $0.omittedEarlierCount != nil }?.omittedEarlierCount == 9_872)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
 }
 
 @Test func malformedKnownEventsDoNotPublish() throws {
@@ -33,13 +173,13 @@ import Testing
 
     #expect(reducer.consume(try eventFrame("""
         {"type":"message_start"}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"message_update"}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"message_end"}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"message_start","message":{"role":"toolResult","toolName":"bash","content":[{"type":"text","text":"missing id"}],"isError":false}}
         """)) == .none)
@@ -48,18 +188,19 @@ import Testing
         """)) == .none)
     #expect(reducer.consume(try eventFrame("""
         {"type":"tool_execution_update","toolName":"bash"}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"subagent_progress","payload":{"id":"missing"}}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"subagent_progress","payload":{"progress":{"durationMs":10,"description":"orphan"}}}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"subagent_progress","payload":{"index":0,"progress":{"durationMs":11,"description":"still orphaned"}}}
-        """)) == .none)
+        """)) == .immediate)
 
-    #expect(reducer.items.isEmpty)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
+    #expect(diagnosticItems(from: reducer.items).count >= 4)
     #expect(reducer.runtimeState == .idle)
 }
 
@@ -908,6 +1049,472 @@ import Testing
         contentHeight: 1_050))
 }
 
+@Test func liveAndRestoredGuidanceHaveStableIdentity() throws {
+    var reducer = TranscriptReducer()
+
+    let advisor = JSONValue.object([
+        "id": .string("advisor-1"),
+        "role": .string("custom"),
+        "customType": .string("advisor"),
+        "display": .bool(true),
+        "content": .string("<advisory>Ignored.</advisory>"),
+        "details": .object([
+            "notes": .array([
+                .object(["note": .string("Check the probe window.")]),
+            ]),
+        ]),
+    ])
+    for _ in 0..<2 {
+        _ = reducer.consume(.event(type: "message_start", payload: .object(["message": advisor])))
+        _ = reducer.consume(.event(type: "message_end", payload: .object(["message": advisor])))
+    }
+    let advisorGuidance = guidanceItems(from: reducer.items)
+    #expect(advisorGuidance.count == 1)
+    #expect(advisorGuidance[0].id == "advisor-1")
+    #expect(advisorGuidance[0].kind == .advisor)
+    #expect(advisorGuidance[0].preview == "Check the probe window.")
+
+    let developer = JSONValue.object([
+        "id": .string("developer-1"),
+        "role": .string("developer"),
+        "content": .string("Plan approved.\n\nExecute step by step."),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": developer])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": developer])))
+    let developerGuidance = try #require(guidanceItems(from: reducer.items).first { $0.id == "developer-1" })
+    #expect(developerGuidance.kind == .agentGuidance)
+    #expect(developerGuidance.preview == "Plan approved.\n\nExecute step by step.")
+
+    let displayedSkill = JSONValue.object([
+        "id": .string("skill-1"),
+        "role": .string("custom"),
+        "customType": .string("skill-prompt"),
+        "display": .bool(true),
+        "content": .string("# Skill\n\nFollow these instructions."),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": displayedSkill])))
+    #expect(conversationMessages(from: reducer.items).map(\.id) == ["skill-1"])
+
+    let hiddenCustom = JSONValue.object([
+        "id": .string("hidden-1"),
+        "role": .string("custom"),
+        "customType": .string("prewalk-plan"),
+        "display": .bool(false),
+        "content": .string("STOP: write a plan before exploring."),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": hiddenCustom])))
+    let hiddenGuidance = try #require(guidanceItems(from: reducer.items).first { $0.id == "hidden-1" })
+    #expect(hiddenGuidance.kind == .agentGuidance)
+    #expect(conversationMessages(from: reducer.items).map(\.id) == ["skill-1"])
+
+    let fileMention = JSONValue.object([
+        "id": .string("file-1"),
+        "role": .string("fileMention"),
+        "files": .array([
+            .object([
+                "path": .string("src/Probe.swift"),
+                "content": .string("injected file body"),
+            ]),
+        ]),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": fileMention])))
+    let fileGuidance = try #require(guidanceItems(from: reducer.items).first { $0.id == "file-1" })
+    #expect(fileGuidance.kind == .referencedFile)
+    #expect(fileGuidance.visibility == .always)
+    #expect(!fileGuidance.preview.contains("injected file body"))
+
+    let userTurn = JSONValue.object([
+        "id": .string("user-1"),
+        "role": .string("user"),
+        "content": .string("Ship it"),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": userTurn])))
+    #expect(conversationMessages(from: reducer.items).map(\.visibleText) == [
+        "# Skill\n\nFollow these instructions.",
+        "Ship it",
+    ])
+
+    let header = SessionHeader(
+        id: "session-guidance",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let restored = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("advisor-1", nil, 1),
+            message: advisor),
+        .message(
+            base: guidanceHistoryBase("developer-1", "advisor-1", 2),
+            message: developer),
+        .unknown(
+            type: "custom_message",
+            base: guidanceHistoryBase("skill-1", "developer-1", 3),
+            raw: try message(##"{"type":"custom_message","id":"skill-1","customType":"skill-prompt","display":true,"content":"# Skill\n\nFollow these instructions."}"##)),
+        .message(
+            base: guidanceHistoryBase("hidden-1", "skill-1", 4),
+            message: hiddenCustom),
+        .message(
+            base: guidanceHistoryBase("file-1", "hidden-1", 5),
+            message: fileMention),
+        .message(
+            base: guidanceHistoryBase("user-1", "file-1", 6),
+            message: userTurn),
+    ])
+    let restoredGuidance = guidanceItems(from: restored.items)
+    #expect(restoredGuidance.map(\.id).sorted() == [
+        "advisor-1",
+        "developer-1",
+        "file-1",
+        "hidden-1",
+    ])
+    #expect(restoredGuidance.first { $0.id == "advisor-1" }?.preview == "Check the probe window.")
+    #expect(conversationMessages(from: restored.items).map(\.visibleText) == [
+        "# Skill\n\nFollow these instructions.",
+        "Ship it",
+    ])
+
+    _ = reducer.load(history: restored)
+    #expect(guidanceItems(from: reducer.items).map(\.id).sorted() == restoredGuidance.map(\.id).sorted())
+    _ = reducer.load(history: restored)
+    #expect(guidanceItems(from: reducer.items).map(\.id).sorted() == restoredGuidance.map(\.id).sorted())
+
+    var cappedReducer = TranscriptReducer()
+    for index in 0..<129 {
+        let wall = JSONValue.object([
+            "id": .string("developer-\(index)"),
+            "role": .string("developer"),
+            "content": .string("Guidance wall \(index)"),
+        ])
+        _ = cappedReducer.consume(.event(type: "message_end", payload: .object(["message": wall])))
+    }
+    let cappedGuidance = guidanceItems(from: cappedReducer.items)
+    #expect(cappedGuidance.filter { $0.omittedEarlierCount == nil }.count == 128)
+    let omission = try #require(cappedGuidance.first { $0.omittedEarlierCount != nil })
+    #expect(omission.omittedEarlierCount == 1)
+    #expect(omission.preview.isEmpty)
+    #expect(!cappedGuidance.contains { $0.preview == "Guidance wall 0" })
+}
+
+@Test func guidanceOmissionCountAccumulatesAndSurvivesInPlaceUpdates() throws {
+    var reducer = TranscriptReducer()
+    for index in 0..<129 {
+        let wall = JSONValue.object([
+            "id": .string("developer-\(index)"),
+            "role": .string("developer"),
+            "content": .string("Guidance wall \(index)"),
+        ])
+        _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall])))
+    }
+    let firstOmission = try #require(omissionMarker(from: reducer.items))
+    #expect(firstOmission.omittedEarlierCount == 1)
+
+    let wall130 = JSONValue.object([
+        "id": .string("developer-129"),
+        "role": .string("developer"),
+        "content": .string("Guidance wall 129"),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall130])))
+    let secondOmission = try #require(omissionMarker(from: reducer.items))
+    #expect(secondOmission.omittedEarlierCount == 2)
+
+    let updated = JSONValue.object([
+        "id": .string("developer-128"),
+        "role": .string("developer"),
+        "content": .string("Guidance wall 128 updated preview text"),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": updated])))
+    let afterUpdate = try #require(omissionMarker(from: reducer.items))
+    #expect(afterUpdate.omittedEarlierCount == 2)
+}
+
+@Test func reconcileReplacesIdLessLiveGuidanceWithPersistedEntry() throws {
+    var reducer = TranscriptReducer()
+    let wall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Plan approved. Execute step by step."),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": wall])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall])))
+    let liveSyntheticID = try #require(guidanceItems(from: reducer.items).first?.id)
+    #expect(liveSyntheticID.hasPrefix("message-") || liveSyntheticID.hasPrefix("guidance-"))
+
+    let header = SessionHeader(
+        id: "session-reconcile-guidance",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-developer-1", nil, 1),
+            message: wall),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 1)
+    #expect(guidance[0].id == "persisted-developer-1")
+    #expect(!guidance.map(\.id).contains(liveSyntheticID))
+}
+
+@Test func idLessGuidanceKeepsSeparateInflightIdentityAndPromotesRealID() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object([
+        "message": .object([
+            "id": .string("assistant-1"),
+            "role": .string("assistant"),
+            "content": .array([]),
+        ]),
+    ])))
+    let idLessWall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Hidden wall"),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": idLessWall])))
+    let guidanceBeforeEnd = try #require(guidanceItems(from: reducer.items).first)
+    #expect(guidanceBeforeEnd.id != "assistant-1")
+    #expect(reducer.items.contains { item in
+        guard case .message(let message) = item else { return false }
+        return message.id == "assistant-1" && !message.isFinal
+    })
+
+    let wallWithID = JSONValue.object([
+        "id": .string("persisted-wall-1"),
+        "role": .string("developer"),
+        "content": .string("Hidden wall"),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wallWithID])))
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 1)
+    #expect(guidance[0].id == "persisted-wall-1")
+}
+
+@Test func idLessGuidanceUpdatePromotesInflightBeforeReconcile() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object([
+        "message": .object([
+            "id": .string("assistant-1"),
+            "role": .string("assistant"),
+            "content": .array([]),
+        ]),
+    ])))
+    let idLessWall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Streaming wall"),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": idLessWall])))
+    let syntheticID = try #require(guidanceItems(from: reducer.items).first?.id)
+    #expect(syntheticID.hasPrefix("guidance-"))
+
+    let wallWithID = JSONValue.object([
+        "id": .string("persisted-wall-1"),
+        "role": .string("developer"),
+        "content": .string("Streaming wall"),
+    ])
+    _ = reducer.consume(.event(type: "message_update", payload: .object(["message": wallWithID])))
+    let promoted = try #require(guidanceItems(from: reducer.items).first)
+    #expect(promoted.id == "persisted-wall-1")
+    #expect(reducer.items.contains { item in
+        guard case .message(let message) = item else { return false }
+        return message.id == "assistant-1" && !message.isFinal
+    })
+
+    let header = SessionHeader(
+        id: "session-reconcile-guidance-update",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-wall-1", nil, 1),
+            message: wallWithID),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 2)
+    #expect(guidance.filter { $0.id == "persisted-wall-1" }.count == 2)
+}
+
+@Test func abortedGuidanceEndInterruptsRunningToolsOnLivePath() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "tool_execution_start", payload: .object([
+        "toolCallId": .string("running"),
+        "toolName": .string("bash"),
+        "args": .object(["command": .string("sleep 10")]),
+    ])))
+    let wall = JSONValue.object([
+        "id": .string("aborted-guidance"),
+        "role": .string("developer"),
+        "content": .string("Stop now."),
+        "stopReason": .string("aborted"),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall])))
+
+    guard case .tool(let tool) = try #require(reducer.items.first(where: { item in
+        if case .tool = item { return true }
+        return false
+    })) else {
+        Issue.record("Expected interrupted tool")
+        return
+    }
+    #expect(tool.id == "running")
+    #expect(tool.phase == .interrupted)
+}
+
+@Test func reconcilePreservesDistinctSameLengthGuidanceWithIdenticalPreview() throws {
+    let shared = String(repeating: "a", count: 513)
+    let wallA = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string(shared + "tailA"),
+    ])
+    let wallB = JSONValue.object([
+        "id": .string("live-only-b"),
+        "role": .string("developer"),
+        "content": .string(shared + "tailB"),
+    ])
+    let previewA = try #require(GuidanceClassifier.classify(id: "probe-a", message: wallA)?.preview)
+    let previewB = try #require(GuidanceClassifier.classify(id: "probe-b", message: wallB)?.preview)
+    #expect(previewA == previewB)
+    #expect(previewA != shared + "tailA")
+
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": wallA])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wallA])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wallB])))
+
+    let header = SessionHeader(
+        id: "session-reconcile-distinct-preview",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-a", nil, 1),
+            message: wallA),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 2)
+    #expect(guidance.map(\.id).contains("persisted-a"))
+    #expect(guidance.map(\.id).contains("live-only-b"))
+}
+
+@Test func reconcilePreservesUnmatchedDuplicateLiveGuidanceOccurrence() throws {
+    let wall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Repeat me exactly."),
+    ])
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": wall])))
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": wall])))
+    let second = JSONValue.object([
+        "id": .string("live-second"),
+        "role": .string("developer"),
+        "content": .string("Repeat me exactly."),
+    ])
+    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": second])))
+
+    let header = SessionHeader(
+        id: "session-reconcile-duplicate-live",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-first", nil, 1),
+            message: wall),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 2)
+    #expect(guidance.map(\.id).contains("persisted-first"))
+    #expect(guidance.map(\.id).contains("live-second"))
+}
+
+@Test func reconcilePreservesInflightGuidanceMatchingPersistedNote() throws {
+    let wall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Still streaming context"),
+    ])
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": wall])))
+    let inflightID = try #require(guidanceItems(from: reducer.items).first?.id)
+
+    let header = SessionHeader(
+        id: "session-reconcile-inflight-guidance",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-note", nil, 1),
+            message: wall),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 2)
+    #expect(guidance.map(\.id).contains("persisted-note"))
+    #expect(guidance.map(\.id).contains(inflightID))
+}
+
+private func omissionMarker(from items: [TranscriptItem]) -> GuidancePresentation? {
+    guidanceItems(from: items).first { $0.omittedEarlierCount != nil }
+}
+
+private func guidanceItems(from items: [TranscriptItem]) -> [GuidancePresentation] {
+    items.compactMap { item in
+        guard case .guidance(let presentation) = item else { return nil }
+        return presentation
+    }
+}
+
+private func diagnosticItems(from items: [TranscriptItem]) -> [EventDiagnostic] {
+    items.compactMap { item in
+        guard case .diagnostic(let diagnostic) = item else { return nil }
+        return diagnostic
+    }
+}
+
+private func conversationMessages(from items: [TranscriptItem]) -> [TranscriptMessage] {
+    items.compactMap { item in
+        guard case .message(let message) = item else { return nil }
+        return message
+    }
+}
+
+private func guidanceHistoryBase(_ id: String, _ parentID: String?, _ second: Int) -> SessionEntryBase {
+    SessionEntryBase(
+        id: id,
+        parentId: parentID,
+        timestamp: String(format: "2026-08-24T20:00:%02d.000Z", second))
+}
+
 private func eventFrame(_ json: String) throws -> RpcFrame {
     try RpcFrame.decode(line: Data(json.utf8))
 }
@@ -932,9 +1539,10 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
         "content": .string("STOP: In NEXT reply, before further exploration, write a plan."),
     ])
 
-    #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": hidden]))) == .none)
+    #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": hidden]))) == .immediate)
     #expect(reducer.consume(.event(type: "message_end", payload: .object(["message": hidden]))) == .none)
-    #expect(reducer.items.isEmpty)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
 @Test func aCustomMessageThatAsksToBeShownIsShown() {
@@ -947,10 +1555,11 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
     ])
 
     #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": shown]))) != .none)
-    #expect(reducer.items.count == 1)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
-@Test func anAdvisorMessageShowsItsNoteNotTheAdvisoryEnvelope() {
+@Test func anAdvisorMessageShowsItsNoteNotTheAdvisoryEnvelope() throws {
     var reducer = TranscriptReducer()
     let advisor = JSONValue.object([
         "role": .string("custom"),
@@ -968,15 +1577,13 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
     ])
 
     #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": advisor]))) != .none)
-    #expect(reducer.items.count == 1)
-    guard case .message(let message) = reducer.items[0] else {
-        Issue.record("Expected one message item")
-        return
-    }
-    #expect(message.visibleText == "Check the probe window before reporting.")
+    #expect(conversationMessages(from: reducer.items).isEmpty)
+    let advisorGuidance = try #require(guidanceItems(from: reducer.items).first)
+    #expect(advisorGuidance.kind == .advisor)
+    #expect(advisorGuidance.preview == "Check the probe window before reporting.")
 }
 
-@Test func anAdvisorMessageWithoutStructuredNotesDropsTheEnvelope() {
+@Test func anAdvisorMessageWithoutStructuredNotesDropsTheEnvelope() throws {
     var reducer = TranscriptReducer()
     let advisor = JSONValue.object([
         "role": .string("custom"),
@@ -986,11 +1593,8 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
     ])
 
     _ = reducer.consume(.event(type: "message_start", payload: .object(["message": advisor])))
-    guard case .message(let message) = reducer.items[0] else {
-        Issue.record("Expected one message item")
-        return
-    }
-    #expect(message.visibleText == "First note.\nSecond note.")
+    let advisorGuidance = try #require(guidanceItems(from: reducer.items).first)
+    #expect(advisorGuidance.preview == "First note.\nSecond note.")
 }
 
 @Test func aHistoryLoadKeepsHiddenCustomMessagesOut() {
@@ -1003,7 +1607,8 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
     ])
 
     _ = reducer.load(messages: [hidden])
-    #expect(reducer.items.isEmpty)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
 @Test func developerInstructionWallsNeverReachTheTranscript() {
@@ -1016,12 +1621,14 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
         ])]),
     ])
 
-    #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": wall]))) == .none)
+    #expect(reducer.consume(.event(type: "message_start", payload: .object(["message": wall]))) == .immediate)
     #expect(reducer.consume(.event(type: "message_end", payload: .object(["message": wall]))) == .none)
-    #expect(reducer.items.isEmpty)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 
     _ = reducer.load(messages: [wall])
-    #expect(reducer.items.isEmpty)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
 @Test func toolResultsStillPairWithTheirToolCardThroughTheGate() {
@@ -1260,7 +1867,7 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
     #expect(reducer.items.count == 1)
 }
 
-@Test func droppedHarnessMessagesAreCollectedForTheNoticePipeline() {
+@Test func hiddenDeveloperMessagesBecomeGuidanceItems() {
     var reducer = TranscriptReducer()
     _ = reducer.consume(.event(type: "message_start", payload: .object([
         "message": .object([
@@ -1269,17 +1876,10 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
         ]),
     ])))
 
-    let dropped = reducer.drainDroppedHarnessMessages()
-
-    #expect(dropped.count == 1)
-    #expect(dropped.first?.role == "developer")
-    #expect(dropped.first?.customType == nil)
-    #expect(dropped.first?.text == "You MUST execute this plan step by step.")
-    #expect(dropped.first?.byteCount == "You MUST execute this plan step by step.".count)
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
-@Test func aMessageStartEndPairRecordsOneDescriptor() {
+@Test func aMessageStartEndPairRecordsOneGuidanceItem() {
     var reducer = TranscriptReducer()
     let message = JSONValue.object([
         "role": .string("developer"),
@@ -1289,45 +1889,10 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
     _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
     _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
 
-    #expect(reducer.drainDroppedHarnessMessages().count == 1)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
-@Test func anEmptyHiddenMessageRecordsNothing() {
-    var reducer = TranscriptReducer()
-    _ = reducer.consume(.event(type: "message_start", payload: .object([
-        "message": .object(["role": .string("developer")]),
-    ])))
-
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
-}
-
-@Test func aMessageEndAfterADrainDoesNotReRecord() {
-    var reducer = TranscriptReducer()
-    let message = JSONValue.object([
-        "role": .string("developer"),
-        "content": .string("Same wall"),
-    ])
-
-    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
-    #expect(reducer.drainDroppedHarnessMessages().count == 1)
-    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
-}
-
-@Test func displayableMessagesRecordNothing() {
-    var reducer = TranscriptReducer()
-    _ = reducer.consume(.event(type: "message_start", payload: .object([
-        "message": .object([
-            "id": .string("u1"),
-            "role": .string("user"),
-            "content": .string("Ship it"),
-        ]),
-    ])))
-
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
-}
-
-@Test func repeatedIdenticalHiddenMessagesRecordOneDescriptor() {
+@Test func repeatedIdenticalHiddenMessagesRecordOneGuidanceItem() {
     var reducer = TranscriptReducer()
     let message = JSONValue.object([
         "role": .string("custom"),
@@ -1340,10 +1905,10 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
         _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
     }
 
-    #expect(reducer.drainDroppedHarnessMessages().count == 1)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
-@Test func aHistoryLoadCollectsDroppedDescriptors() {
+@Test func aHistoryLoadRoutesHiddenCustomMessagesToGuidance() {
     var reducer = TranscriptReducer()
 
     _ = reducer.load(messages: [
@@ -1356,43 +1921,8 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
         ]),
     ])
 
-    let dropped = reducer.drainDroppedHarnessMessages()
-    #expect(dropped.map(\.customType) == ["nudge"])
-    #expect(dropped.first?.text == "Steer harder")
-    #expect(reducer.items.count == 1)
-}
-
-@Test func loadingHistoryAdoptsItsDroppedDescriptors() {
-    var reducer = TranscriptReducer()
-    let descriptor = HarnessMessageDescriptor(
-        role: "developer",
-        customType: nil,
-        byteCount: 4,
-        text: "wall")
-
-    _ = reducer.load(history: TranscriptHistory(items: [], dropped: [descriptor]))
-
-    #expect(reducer.drainDroppedHarnessMessages() == [descriptor])
-}
-
-@Test func aLiveDropAfterAHistoryLoadOfTheSameMessageDoesNotReRecord() {
-    var reducer = TranscriptReducer()
-    let message = JSONValue.object([
-        "role": .string("developer"),
-        "content": .string("Same wall"),
-    ])
-    let history = TranscriptHistory(items: [], dropped: [
-        HarnessMessageDescriptor(
-            role: "developer",
-            customType: nil,
-            byteCount: 9,
-            text: "Same wall"),
-    ])
-
-    _ = reducer.load(history: history)
-    #expect(reducer.drainDroppedHarnessMessages().count == 1)
-    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
+    #expect(conversationMessages(from: reducer.items).count == 1)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
 @Test func updateNoticeRewritesTheMessageInPlace() {
