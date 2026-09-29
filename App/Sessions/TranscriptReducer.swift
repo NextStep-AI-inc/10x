@@ -417,7 +417,7 @@ struct TranscriptReducer {
                     transient.append(item)
                     continue
                 }
-            } else {
+            } else if inflightGuidanceID != item.id {
                 guard !persistedIDs.contains(item.id) else { continue }
             }
             switch item {
@@ -844,6 +844,9 @@ struct TranscriptReducer {
             items.removeAll { item in
                 guard case .guidance(let presentation) = item else { return false }
                 return presentation.id == inflightGuidanceID
+            }
+            if !clearsInflight {
+                self.inflightGuidanceID = id
             }
         }
         GuidanceTranscript.upsert(guidance, into: &items)

@@ -1295,6 +1295,57 @@ import Testing
     #expect(guidance[0].id == "persisted-wall-1")
 }
 
+@Test func idLessGuidanceUpdatePromotesInflightBeforeReconcile() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(type: "message_start", payload: .object([
+        "message": .object([
+            "id": .string("assistant-1"),
+            "role": .string("assistant"),
+            "content": .array([]),
+        ]),
+    ])))
+    let idLessWall = JSONValue.object([
+        "role": .string("developer"),
+        "content": .string("Streaming wall"),
+    ])
+    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": idLessWall])))
+    let syntheticID = try #require(guidanceItems(from: reducer.items).first?.id)
+    #expect(syntheticID.hasPrefix("guidance-"))
+
+    let wallWithID = JSONValue.object([
+        "id": .string("persisted-wall-1"),
+        "role": .string("developer"),
+        "content": .string("Streaming wall"),
+    ])
+    _ = reducer.consume(.event(type: "message_update", payload: .object(["message": wallWithID])))
+    let promoted = try #require(guidanceItems(from: reducer.items).first)
+    #expect(promoted.id == "persisted-wall-1")
+    #expect(reducer.items.contains { item in
+        guard case .message(let message) = item else { return false }
+        return message.id == "assistant-1" && !message.isFinal
+    })
+
+    let header = SessionHeader(
+        id: "session-reconcile-guidance-update",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: guidanceHistoryBase("persisted-wall-1", nil, 1),
+            message: wallWithID),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    let guidance = guidanceItems(from: reducer.items)
+    #expect(guidance.count == 2)
+    #expect(guidance.filter { $0.id == "persisted-wall-1" }.count == 2)
+}
+
 @Test func abortedGuidanceEndInterruptsRunningToolsOnLivePath() throws {
     var reducer = TranscriptReducer()
     _ = reducer.consume(.event(type: "tool_execution_start", payload: .object([
