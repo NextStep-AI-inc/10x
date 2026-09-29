@@ -778,7 +778,6 @@ private struct ConsoleSurfaceView: View {
                 .font(TenXTypography.mono(size: 10, weight: .medium))
 
                 outputText(presentation.visibleText)
-                    .accessibilityLabel(presentation.accessibilityText)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(TenXPalette.color(TenXPalette.hoverNeutralHex))
@@ -1344,7 +1343,6 @@ private struct DataScalarRow: View {
                         Button(ToolPayloadSurfaceCopy.previewLabel) { copy(text) }
                     }
                     .accessibilityAction(named: ToolPayloadSurfaceCopy.previewLabel) { copy(text) }
-                    .accessibilityLabel(presentation.accessibilityText)
             }
             ProgressiveRevealButton(
                 reveal: $reveal,
