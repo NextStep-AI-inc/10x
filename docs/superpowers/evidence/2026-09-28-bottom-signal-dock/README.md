@@ -1,6 +1,10 @@
 # Bottom signal dock — native acceptance
 
-## Latest: transparent context label
+## Latest: session-only inline context
+
+At `b291733`, context sits inside a small break at the far-left of the line only while viewing a session. New Session and Archived keep an unbroken line. Five focused checks, Release build, and native context open/close and route checks passed. See [verification](inline-context-verification.md), [session detail](inline-context-session-detail.png), and [new-session detail](inline-context-new-session-detail.png).
+
+## Earlier: transparent context label
 
 At `f73ba4e`, the resting background is removed; spacing and original hover styling remain. Four focused checks, Release build, and native open/close interaction passed. See [verification](context-chip-verification.md) and [native detail](context-no-fill-detail.png).
 

@@ -2,7 +2,7 @@
 
 ## Layout correction approved in chat, 2026-09-29
 
-The attachment control sits immediately below the editor’s left edge. Model and working status/timer follow it in the same row; message actions stay aligned near the editor’s right edge. Measured context is a smaller text-only control above the far-left end of the full-width line, independent of the editor/sidebar, with an 8-point outer inset and 6-point internal horizontal padding. It has no resting background; the original hover appearance remains, and clicking reveals details. Remove the context control’s mini bar icon; retain measured context coloring on the main signal line and the existing context details panel. This correction supersedes earlier placement descriptions below.
+The attachment control sits immediately below the editor’s left edge. Model and working status/timer follow it in the same row; message actions stay aligned near the editor’s right edge. Only while viewing a session, measured context is a smaller text-only control centered vertically within the far-left end of the full-width line, independent of the editor/sidebar, with an 8-point outer inset and 6-point internal horizontal padding. The line breaks around the text, like “— Context 42% —”, using a canvas-matched mask without a visible resting badge. The original hover appearance remains, and clicking reveals details. New-session and other workspace screens show the entire continuous line without this label or break. Remove the context control’s mini bar icon; retain measured context coloring on the main signal line and the existing context details panel. This correction supersedes earlier placement descriptions below.
 
 
 - **Status:** Approved for implementation planning
