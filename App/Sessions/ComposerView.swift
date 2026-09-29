@@ -387,6 +387,7 @@ struct ComposerView: View {
                 .padding(.horizontal, 20)
                 .frame(maxWidth: .infinity)
                 .padding(.leading, routeCanvasLeadingInset)
+                .padding(.trailing, columnTrailingInset)
 
             WorkspaceSignalView(
                 presentation: signalPresentation,
@@ -409,27 +410,22 @@ struct ComposerView: View {
                     signalRevealTiming = nil
                 }
 
-            GeometryReader { footer in
-                HStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        attachButton
-                        footerControls
-                    }
-                    .layoutPriority(1)
-                    Spacer(minLength: 8)
-                    HStack(spacing: 6) {
-                        actionControls
-                    }
-                    .fixedSize()
-                    Color.clear
-                        .frame(width: actionTrailingSpace(availableWidth: footer.size.width))
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    attachButton
+                    footerControls
                 }
-                .padding(.leading, editorHorizontalEdges(availableWidth: footer.size.width).leading)
-                .padding(.trailing, 24)
-                .frame(width: footer.size.width, height: footer.size.height)
+                Spacer(minLength: 8)
+                HStack(spacing: 6) {
+                    actionControls
+                }
+                .fixedSize()
             }
+            .frame(maxWidth: 780)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            .padding(.leading, routeCanvasLeadingInset)
+            .padding(.trailing, columnTrailingInset)
             .frame(height: 44)
         }
             .animation(shelfAnimation, value: flyout)
@@ -471,19 +467,10 @@ struct ComposerView: View {
             }
     }
 
-    private func editorHorizontalEdges(availableWidth: CGFloat) -> (leading: CGFloat, trailing: CGFloat) {
-        let canvasWidth = max(0, availableWidth - routeCanvasLeadingInset)
-        let editorWidth = min(780, max(0, canvasWidth - 40))
-        let leading = routeCanvasLeadingInset + (canvasWidth - editorWidth) / 2
-        return (leading, leading + editorWidth)
-    }
-
-    private func actionTrailingSpace(availableWidth: CGFloat) -> CGFloat {
-        let editorSpace = max(0, availableWidth
-            - editorHorizontalEdges(availableWidth: availableWidth).trailing - 24)
-        let providerSpace = providerPlacement == .belowLine && providerWidth > 0
-            ? providerWidth + 8 : 0
-        return max(editorSpace, providerSpace)
+    private var columnTrailingInset: CGFloat {
+        let providerInset = providerPlacement == .belowLine && providerWidth > 0
+            ? providerWidth + 32 : 0
+        return max(StartupSignalGeometry.waveWidth, providerInset)
     }
 
     private var shelfAnimation: Animation? {
