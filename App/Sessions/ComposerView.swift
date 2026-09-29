@@ -394,6 +394,17 @@ struct ComposerView: View {
                 onRevealComplete: onSignalRevealComplete,
                 onRevealStart: { signalRevealTiming = $0 })
                 .frame(height: 32)
+                .overlay(alignment: .topLeading) {
+                    GeometryReader { signal in
+                        if case .active(let controller) = presentation {
+                            contextControl(controller)
+                                .padding(.leading, 24)
+                                .offset(y: editorHorizontalEdges(availableWidth: signal.size.width).leading < 145
+                                    ? -38 : -16)
+                                .zIndex(3)
+                        }
+                    }
+                }
                 .padding(.top, -12)
                 .padding(.bottom, -8)
                 .onChange(of: signalCompactionPhase) { _, phase in
@@ -418,7 +429,8 @@ struct ComposerView: View {
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
-                .padding(.horizontal, 24)
+                .padding(.leading, editorHorizontalEdges(availableWidth: footer.size.width).leading)
+                .padding(.trailing, 24)
                 .frame(width: footer.size.width, height: footer.size.height)
             }
             .frame(height: 44)
@@ -462,11 +474,16 @@ struct ComposerView: View {
             }
     }
 
-    private func actionTrailingSpace(availableWidth: CGFloat) -> CGFloat {
+    private func editorHorizontalEdges(availableWidth: CGFloat) -> (leading: CGFloat, trailing: CGFloat) {
         let canvasWidth = max(0, availableWidth - routeCanvasLeadingInset)
         let editorWidth = min(780, max(0, canvasWidth - 40))
-        let editorTrailingEdge = routeCanvasLeadingInset + (canvasWidth + editorWidth) / 2
-        let editorSpace = max(0, availableWidth - editorTrailingEdge - 24)
+        let leading = routeCanvasLeadingInset + (canvasWidth - editorWidth) / 2
+        return (leading, leading + editorWidth)
+    }
+
+    private func actionTrailingSpace(availableWidth: CGFloat) -> CGFloat {
+        let editorSpace = max(0, availableWidth
+            - editorHorizontalEdges(availableWidth: availableWidth).trailing - 24)
         let providerSpace = providerPlacement == .belowLine && providerWidth > 0
             ? providerWidth + 8 : 0
         return max(editorSpace, providerSpace)
@@ -988,21 +1005,7 @@ struct ComposerView: View {
     @ViewBuilder
     private var footerControls: some View {
         switch presentation {
-        case .newSession(
-            let projectURL,
-            let projectURLs,
-            let onChooseProject,
-            let onAddExistingFolder):
-            ChooseProjectControl(
-                projectURL: projectURL,
-                projectURLs: projectURLs,
-                onChoose: onChooseProject,
-                onAddExistingFolder: onAddExistingFolder,
-                isPresented: Binding(
-                    get: { flyout == .project },
-                    set: { setFlyout($0 ? .project : nil) }),
-                onRestoreFocus: restoreEditorFocus)
-
+        case .newSession:
             if let controls {
                 ComposerSessionControlsView(
                     model: controls,
@@ -1029,38 +1032,12 @@ struct ComposerView: View {
                 Text(controller.thinkingLevel)
                     .font(TenXTypography.body(size: 10, weight: .medium))
             }
-            ContextUsageControl(
-                usage: controller.contextUsage,
-                signalCompactionPhase: signalCompactionPhase,
-                signalRevealTiming: signalRevealTiming,
-                breakdown: controller.contextBreakdown,
-                isLoading: controller.isContextLoading,
-                errorMessage: controller.contextErrorMessage,
-                canCompact: controller.canCompactContext,
-                compactionDisabledReason: controller.contextCompactionDisabledReason,
-                isCompacting: controller.isContextCompacting,
-                compactionErrorMessage: controller.contextCompactionErrorMessage,
-                onRefresh: { await controller.refreshContextDetails() },
-                onCompact: { await controller.compactContext() },
-                isPresented: Binding(
-                    get: { flyout == .context },
-                    set: { setFlyout($0 ? .context : nil) }),
-                onRestoreFocus: restoreEditorFocus)
             if signalPresentation.status == .needsInput {
                 SessionActivityControl(
                     state: controller.activityState,
                     onActivate: controller.focusPendingRequest,
                     variant: .composer)
             }
-        }
-
-        if !feedbackMessages.isEmpty {
-            ComposerWarningControl(
-                messages: feedbackMessages,
-                isPresented: Binding(
-                    get: { flyout == .warning },
-                    set: { setFlyout($0 ? .warning : nil) }),
-                onRestoreFocus: restoreEditorFocus)
         }
 
         if signalPresentation.status == .needsInput {
@@ -1081,6 +1058,51 @@ struct ComposerView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
             }
         }
+
+        if !feedbackMessages.isEmpty {
+            ComposerWarningControl(
+                messages: feedbackMessages,
+                isPresented: Binding(
+                    get: { flyout == .warning },
+                    set: { setFlyout($0 ? .warning : nil) }),
+                onRestoreFocus: restoreEditorFocus)
+        }
+
+        if case .newSession(
+            let projectURL,
+            let projectURLs,
+            let onChooseProject,
+            let onAddExistingFolder) = presentation {
+            ChooseProjectControl(
+                projectURL: projectURL,
+                projectURLs: projectURLs,
+                onChoose: onChooseProject,
+                onAddExistingFolder: onAddExistingFolder,
+                isPresented: Binding(
+                    get: { flyout == .project },
+                    set: { setFlyout($0 ? .project : nil) }),
+                onRestoreFocus: restoreEditorFocus)
+        }
+    }
+
+    private func contextControl(_ controller: SessionController) -> some View {
+        ContextUsageControl(
+            usage: controller.contextUsage,
+            signalCompactionPhase: signalCompactionPhase,
+            signalRevealTiming: signalRevealTiming,
+            breakdown: controller.contextBreakdown,
+            isLoading: controller.isContextLoading,
+            errorMessage: controller.contextErrorMessage,
+            canCompact: controller.canCompactContext,
+            compactionDisabledReason: controller.contextCompactionDisabledReason,
+            isCompacting: controller.isContextCompacting,
+            compactionErrorMessage: controller.contextCompactionErrorMessage,
+            onRefresh: { await controller.refreshContextDetails() },
+            onCompact: { await controller.compactContext() },
+            isPresented: Binding(
+                get: { flyout == .context },
+                set: { setFlyout($0 ? .context : nil) }),
+            onRestoreFocus: restoreEditorFocus)
     }
 
     private func setFlyout(_ next: ComposerFlyout?) {

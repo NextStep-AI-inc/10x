@@ -73,19 +73,16 @@ struct ContextUsageControl: View {
             }
         } label: {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isRevealing)) { timeline in
-                HStack(spacing: 7) {
-                    ContextUsageMiniMeter(fillFraction: summary?.fillFraction ?? 0)
-                    Text(triggerLabel)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                }
-                .opacity(triggerOpacity(at: timeline.date))
+                Text(triggerLabel)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .opacity(triggerOpacity(at: timeline.date))
             }
         }
         .buttonStyle(GhostActionStyle(
             color: TenXPalette.color(TenXPalette.nearBlackHex),
-            horizontalPadding: 5,
-            fontSize: 11))
+            horizontalPadding: 0,
+            fontSize: 10))
         .accessibilityLabel("Context window")
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Shows context usage details")
@@ -145,14 +142,12 @@ struct ContextUsageControl: View {
 
     private var openTrigger: some View {
         Button(action: closeAndRestoreFocus) {
-            HStack(spacing: 7) {
-                ContextUsageMiniMeter(fillFraction: summary?.fillFraction ?? 0)
-                Text(triggerLabel).lineLimit(1)
-            }
+            Text(triggerLabel).lineLimit(1)
         }
         .buttonStyle(GhostActionStyle(
             color: TenXPalette.color(TenXPalette.nearBlackHex),
-            horizontalPadding: 5))
+            horizontalPadding: 0,
+            fontSize: 10))
         .accessibilityLabel("Context window")
         .accessibilityValue(accessibilityValue)
         .accessibilityHint("Menu open")
@@ -244,30 +239,6 @@ struct ContextUsageSummary {
         } else {
             return nil
         }
-    }
-}
-
-private struct ContextUsageMiniMeter: View {
-    let fillFraction: Double
-
-    private var filledBarCount: Int {
-        guard fillFraction > 0 else { return 0 }
-        return min(4, Int(ceil(min(1, max(0, fillFraction)) * 4)))
-    }
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 2) {
-            ForEach(0..<4, id: \.self) { index in
-                Rectangle()
-                    .fill(TenXPalette.color(
-                        index < filledBarCount
-                            ? TenXPalette.cyanHex
-                            : TenXPalette.separatorHex))
-                    .frame(width: 3, height: 13)
-            }
-        }
-        .frame(width: 18, height: 13, alignment: .leading)
-        .accessibilityHidden(true)
     }
 }
 
