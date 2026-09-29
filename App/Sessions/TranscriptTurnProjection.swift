@@ -172,7 +172,7 @@ enum TranscriptTurnProjection {
         switch item {
         case .message(let message): message.role == .assistant
         case .tool, .subagent, .extensionUI: true
-        case .threadStart, .annotation, .notice, .guidance: false
+        case .threadStart, .annotation, .notice, .guidance, .diagnostic: false
         }
     }
 
@@ -187,7 +187,7 @@ enum TranscriptTurnProjection {
             message.role == .assistant && !message.isFinal && !message.document.blocks.isEmpty
         case .tool(let tool): tool.phase == .running
         case .subagent(let subagent): subagent.status.isActive
-        case .threadStart, .annotation, .notice, .extensionUI, .guidance: false
+        case .threadStart, .annotation, .notice, .extensionUI, .guidance, .diagnostic: false
         }
     }
 
@@ -195,7 +195,7 @@ enum TranscriptTurnProjection {
         switch item {
         case .tool(let tool): tool.phase == .failed
         case .subagent(let subagent): subagent.status == .failed
-        case .threadStart, .message, .annotation, .notice, .extensionUI, .guidance: false
+        case .threadStart, .message, .annotation, .notice, .extensionUI, .guidance, .diagnostic: false
         }
     }
 
@@ -226,7 +226,7 @@ enum TranscriptTurnProjection {
                 lastResponseHasEnd = false
             case .extensionUI:
                 lastResponseHasEnd = false
-            case .threadStart, .message, .annotation, .notice, .guidance:
+            case .threadStart, .message, .annotation, .notice, .guidance, .diagnostic:
                 break
             }
         }

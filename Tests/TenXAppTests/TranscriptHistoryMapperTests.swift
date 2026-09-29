@@ -383,6 +383,36 @@ import Testing
     #expect(messages[0].timestamp == historyDate(1))
 }
 
+@MainActor
+@Test func historyMapperRecordsUnknownSavedEntriesAsDiagnostics() throws {
+    let header = SessionHeader(
+        id: "session-unknown-entry",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .message(
+            base: historyBase("user-1", nil, 1),
+            message: try historyJSON(#"{"role":"user","content":"Continue"}"#)),
+        .unknown(
+            type: "vendor_telemetry",
+            base: historyBase("saved-unknown-1", "user-1", 2),
+            raw: try historyJSON(#"{"channel":"metrics","token":"sk-live-secret-token"}"#)),
+    ])
+
+    let diagnostic = try #require(history.items.compactMap { item -> EventDiagnostic? in
+        guard case .diagnostic(let value) = item else { return nil }
+        return value
+    }.first)
+    #expect(diagnostic.id == "saved-unknown-1")
+    #expect(diagnostic.type == "vendor_telemetry")
+    #expect(diagnostic.preview == nil)
+    #expect(!DiagnosticCardView.accessibilityLabel(for: diagnostic).contains("sk-live-secret-token"))
+}
+
 private func historyBase(_ id: String, _ parentID: String?, _ second: Int) -> SessionEntryBase {
     SessionEntryBase(
         id: id,

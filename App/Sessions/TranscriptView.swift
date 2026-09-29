@@ -346,8 +346,14 @@ struct TranscriptView: View {
     ) -> [TranscriptItem] {
         guard showsAgentGuidance else {
             return items.filter { item in
-                guard case .guidance(let presentation) = item else { return true }
-                return presentation.visibility == .always
+                switch item {
+                case .guidance(let presentation):
+                    return presentation.visibility == .always
+                case .diagnostic:
+                    return false
+                default:
+                    return true
+                }
             }
         }
         return items
@@ -509,6 +515,8 @@ struct TranscriptView: View {
             }
         case .guidance(let presentation):
             GuidanceCardView(presentation: presentation)
+        case .diagnostic(let diagnostic):
+            DiagnosticCardView(diagnostic: diagnostic)
         }
     }
 

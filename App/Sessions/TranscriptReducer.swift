@@ -43,7 +43,9 @@ struct TranscriptReducer {
             runtimeState = .idle
             return .immediate
         case "message_start":
-            guard let message = payload["message"] else { return .none }
+            guard let message = payload["message"] else {
+                return recordMalformedPassiveEvent(type: type, payload: payload)
+            }
             if let mutation = consumeGuidanceMessage(message, at: date, tracksInflight: true) { return mutation }
             guard TranscriptMessage.isDisplayable(message) else { return .none }
             if Self.isMalformedToolResult(message) { return .none }
@@ -58,7 +60,9 @@ struct TranscriptReducer {
             _ = replaceInflightMessage(id: id, raw: message, isFinal: false)
             return .immediate
         case "message_update":
-            guard let message = payload["message"] else { return .none }
+            guard let message = payload["message"] else {
+                return recordMalformedPassiveEvent(type: type, payload: payload)
+            }
             if let mutation = consumeGuidanceMessage(message, at: date) { return mutation }
             guard TranscriptMessage.isDisplayable(message) else { return .none }
             if Self.isCompleteAtStart(message) {
@@ -70,7 +74,9 @@ struct TranscriptReducer {
             inflightMessageID = id
             return replaceInflightMessage(id: id, raw: message, isFinal: false) ? .coalesced : .none
         case "message_end":
-            guard let message = payload["message"] else { return .none }
+            guard let message = payload["message"] else {
+                return recordMalformedPassiveEvent(type: type, payload: payload)
+            }
             if let mutation = consumeGuidanceMessage(message, at: date, clearsInflight: true) {
                 return mutation
             }
@@ -157,7 +163,13 @@ struct TranscriptReducer {
             }
             return .none
         case "tool_execution_start", "tool_execution_update", "tool_execution_end":
-            guard payload["toolCallId"]?.stringValue != nil else { return .none }
+            guard payload["toolCallId"]?.stringValue != nil else {
+                var mutation = recordMalformedPassiveEvent(type: type, payload: payload)
+                if type == "tool_execution_end" {
+                    mutation = settleRunningToolDisplayError(at: date) ? .immediate : mutation
+                }
+                return mutation
+            }
             toolReducer.consume(type: type, payload: payload, at: date)
             guard let id = payload["toolCallId"]?.stringValue,
                   let presentation = toolReducer.presentations.first(where: { $0.id == id })
@@ -179,10 +191,19 @@ struct TranscriptReducer {
             }
             return .immediate
         case "subagent_lifecycle", "subagent_progress":
-            guard let body = payload["payload"] else { return .none }
+            guard let body = payload["payload"] else {
+                return recordMalformedPassiveEvent(type: type, payload: payload)
+            }
+            if type == "subagent_lifecycle",
+               body["id"]?.stringValue == nil,
+               Self.isTerminalSubagentStatus(body["status"]?.stringValue) {
+                var mutation = recordMalformedPassiveEvent(type: type, payload: payload)
+                mutation = settleRunningSubagentDisplayError(body: body, at: date) ? .immediate : mutation
+                return mutation
+            }
             if type == "subagent_progress",
                !canConsumeSubagentProgress(body) {
-                return .none
+                return recordMalformedPassiveEvent(type: type, payload: payload)
             }
             subagentReducer.consume(type: type, payload: payload)
             guard let presentation = Self.subagent(
@@ -195,7 +216,7 @@ struct TranscriptReducer {
             }
             return .immediate
         default:
-            return .none
+            return recordUnknownPassiveEvent(type: type, payload: payload)
         }
     }
 
@@ -384,7 +405,7 @@ struct TranscriptReducer {
                 if !persistedAnnotations.contains(signature) {
                     transient.append(item)
                 }
-            case .notice, .subagent, .extensionUI:
+            case .notice, .subagent, .extensionUI, .diagnostic:
                 transient.append(item)
             case .guidance(let presentation):
                 if Self.shouldKeepGuidanceTransient(
@@ -419,6 +440,7 @@ struct TranscriptReducer {
             return .subagent(persisted)
         } + transient
         GuidanceTranscript.enforceCap(on: &items)
+        EventDiagnosticTranscript.enforceCap(on: &items)
         if !inflightItemIDs.contains(where: { identity in
             items.contains { Self.inflightIdentity(for: $0) == identity }
         }) {
@@ -822,7 +844,7 @@ struct TranscriptReducer {
             return .message(message.id)
         case .tool(let tool):
             return .tool(tool.id)
-        case .threadStart, .annotation, .subagent, .notice, .extensionUI, .guidance:
+        case .threadStart, .annotation, .subagent, .notice, .extensionUI, .guidance, .diagnostic:
             return nil
         }
     }
@@ -844,6 +866,78 @@ struct TranscriptReducer {
             return lhsState.id == rhsState.id
         case (.guidance(let lhsGuidance), .guidance(let rhsGuidance)):
             return lhsGuidance.id == rhsGuidance.id
+        case (.diagnostic(let lhsDiagnostic), .diagnostic(let rhsDiagnostic)):
+            return lhsDiagnostic.id == rhsDiagnostic.id
+        default:
+            return false
+        }
+    }
+
+    private mutating func recordUnknownPassiveEvent(
+        type: String,
+        payload: JSONValue
+    ) -> TranscriptMutation {
+        let id = diagnosticEventID(type: type, payload: payload)
+        let previous = items
+        EventDiagnosticTranscript.upsert(
+            EventDiagnostic.make(id: id, type: type, payload: payload),
+            into: &items)
+        return previous == items ? .none : .immediate
+    }
+
+    private mutating func recordMalformedPassiveEvent(
+        type: String,
+        payload: JSONValue
+    ) -> TranscriptMutation {
+        recordUnknownPassiveEvent(type: type, payload: payload)
+    }
+
+    private mutating func diagnosticEventID(type: String, payload: JSONValue) -> String {
+        if let id = payload["id"]?.stringValue { return id }
+        return syntheticID(prefix: "diagnostic-\(type)")
+    }
+
+    @discardableResult
+    private mutating func settleRunningToolDisplayError(at date: Date) -> Bool {
+        guard let index = items.lastIndex(where: { item in
+            guard case .tool(let tool) = item else { return false }
+            return tool.phase == .running
+        }) else { return false }
+        guard case .tool(var tool) = items[index] else { return false }
+        let errorResult = JSONValue.object([
+            "error": .string(EventDiagnosticDisplay.settledUpdateError),
+        ])
+        tool.update(
+            result: .some(errorResult),
+            phase: .failed,
+            endDate: .some(date))
+        items[index] = .tool(tool)
+        return true
+    }
+
+    @discardableResult
+    private mutating func settleRunningSubagentDisplayError(
+        body: JSONValue,
+        at date: Date
+    ) -> Bool {
+        let indexValue = body["index"]?.intValue
+        guard let index = items.lastIndex(where: { item in
+            guard case .subagent(let presentation) = item else { return false }
+            guard presentation.status.isActive else { return false }
+            if let indexValue { return presentation.index == indexValue }
+            return true
+        }) else { return false }
+        guard case .subagent(var presentation) = items[index] else { return false }
+        presentation.status = .failed
+        presentation.description = EventDiagnosticDisplay.settledUpdateError
+        items[index] = .subagent(presentation)
+        return true
+    }
+
+    private static func isTerminalSubagentStatus(_ status: String?) -> Bool {
+        switch status?.lowercased() {
+        case "completed", "complete", "failed", "aborted", "done":
+            return true
         default:
             return false
         }

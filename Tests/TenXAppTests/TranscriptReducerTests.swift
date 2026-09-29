@@ -9,23 +9,30 @@ import Testing
     let nonEvent = try RpcFrame.decode(line: Data(#"{"type":"response","id":"1","command":"get_state","success":true,"data":{}}"#.utf8))
     #expect(reducer.consume(nonEvent) == .none)
     #expect(reducer.consume(try eventFrame("""
-        {"type":"unknown_future_event","payload":{"large":"ignored"}}
-        """)) == .none)
+        {"type":"unknown_future_event","payload":{"id":"unknown-1","large":"ignored"}}
+        """)) == .immediate)
 
-    #expect(reducer.items.isEmpty)
+    #expect(diagnosticItems(from: reducer.items).count == 1)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
 }
 
 @Test func tenThousandUnknownEventsAddNoRows() throws {
     var reducer = TranscriptReducer()
     let frame = try eventFrame("""
-        {"type":"unsupported_progress","index":1,"payload":{"text":"ignored"}}
+        {"type":"unsupported_progress","index":1,"payload":{"id":"progress-1","text":"ignored"}}
         """)
 
-    for _ in 0..<10_000 {
-        #expect(reducer.consume(frame) == .none)
+    for index in 0..<10_000 {
+        let unique = try eventFrame("""
+            {"type":"unsupported_progress","index":\(index),"payload":{"id":"progress-\(index)","text":"ignored"}}
+            """)
+        #expect(reducer.consume(unique) == .immediate)
     }
 
-    #expect(reducer.items.isEmpty)
+    let diagnostics = diagnosticItems(from: reducer.items)
+    #expect(diagnostics.filter { $0.omittedEarlierCount == nil }.count == 128)
+    #expect(diagnostics.first { $0.omittedEarlierCount != nil }?.omittedEarlierCount == 9_872)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
 }
 
 @Test func malformedKnownEventsDoNotPublish() throws {
@@ -33,13 +40,13 @@ import Testing
 
     #expect(reducer.consume(try eventFrame("""
         {"type":"message_start"}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"message_update"}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"message_end"}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"message_start","message":{"role":"toolResult","toolName":"bash","content":[{"type":"text","text":"missing id"}],"isError":false}}
         """)) == .none)
@@ -48,18 +55,19 @@ import Testing
         """)) == .none)
     #expect(reducer.consume(try eventFrame("""
         {"type":"tool_execution_update","toolName":"bash"}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"subagent_progress","payload":{"id":"missing"}}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"subagent_progress","payload":{"progress":{"durationMs":10,"description":"orphan"}}}
-        """)) == .none)
+        """)) == .immediate)
     #expect(reducer.consume(try eventFrame("""
         {"type":"subagent_progress","payload":{"index":0,"progress":{"durationMs":11,"description":"still orphaned"}}}
-        """)) == .none)
+        """)) == .immediate)
 
-    #expect(reducer.items.isEmpty)
+    #expect(conversationMessages(from: reducer.items).isEmpty)
+    #expect(diagnosticItems(from: reducer.items).count >= 4)
     #expect(reducer.runtimeState == .idle)
 }
 
@@ -1299,6 +1307,13 @@ private func guidanceItems(from items: [TranscriptItem]) -> [GuidancePresentatio
     items.compactMap { item in
         guard case .guidance(let presentation) = item else { return nil }
         return presentation
+    }
+}
+
+private func diagnosticItems(from items: [TranscriptItem]) -> [EventDiagnostic] {
+    items.compactMap { item in
+        guard case .diagnostic(let diagnostic) = item else { return nil }
+        return diagnostic
     }
 }
 

@@ -83,7 +83,11 @@ enum TranscriptHistoryMapper {
             case .unknown("custom_message", let base, .object(var message)):
                 message["role"] = .string("custom")
                 consumeMessage(base: base, message: .object(message))
-            case .labelEntry, .resetBoundary, .unknown:
+            case .unknown(let type, let base, let raw):
+                EventDiagnosticTranscript.upsert(
+                    EventDiagnostic.make(id: base.id, type: type, payload: raw),
+                    into: &items)
+            case .labelEntry, .resetBoundary:
                 break
             }
         }
