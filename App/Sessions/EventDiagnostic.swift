@@ -93,7 +93,38 @@ enum EventDiagnosticTranscript {
             }
         }
 
-        guard totalOmitted > 0 else { return }
+        insertOmissionMarker(into: &items, count: totalOmitted)
+    }
+
+    /// Reconcile cannot union omitted ids from disjoint live/history windows.
+    /// Use a conservative lower bound: max(live, history, rows evicted here).
+    static func enforceCapAfterReconcile(
+        on items: inout [TranscriptItem],
+        liveOmitted: Int,
+        historyOmitted: Int
+    ) {
+        removeOmissionMarker(from: &items)
+
+        var diagnosticIndices: [Int] = []
+        for (index, item) in items.enumerated() {
+            guard case .diagnostic = item else { continue }
+            diagnosticIndices.append(index)
+        }
+
+        let excess = max(0, diagnosticIndices.count - maxRetainedItems)
+        let totalOmitted = max(liveOmitted, historyOmitted, excess)
+
+        if excess > 0 {
+            for index in diagnosticIndices.prefix(excess).sorted(by: >) {
+                items.remove(at: index)
+            }
+        }
+
+        insertOmissionMarker(into: &items, count: totalOmitted)
+    }
+
+    private static func insertOmissionMarker(into items: inout [TranscriptItem], count: Int) {
+        guard count > 0 else { return }
 
         guard let firstDiagnosticIndex = items.firstIndex(where: { item in
             guard case .diagnostic(let diagnostic) = item else { return false }
@@ -101,7 +132,7 @@ enum EventDiagnosticTranscript {
         }) else { return }
 
         items.insert(
-            .diagnostic(.earlierOmitted(count: totalOmitted)),
+            .diagnostic(.earlierOmitted(count: count)),
             at: firstDiagnosticIndex)
     }
 
@@ -217,7 +248,9 @@ struct DiagnosticCardView: View {
     }
 
     nonisolated static func omissionBody(_ count: Int) -> String {
-        count == 1 ? "1 earlier item omitted" : "\(count) earlier items omitted"
+        count == 1
+            ? "At least 1 earlier item omitted"
+            : "At least \(count) earlier items omitted"
     }
 
     nonisolated static func sizeLabel(_ diagnostic: EventDiagnostic) -> String {
@@ -233,7 +266,7 @@ struct DiagnosticCardView: View {
     nonisolated static func accessibilityLabel(for diagnostic: EventDiagnostic) -> String {
         if let omittedCount = diagnostic.omittedEarlierCount {
             let itemCount = omittedCount == 1 ? "1 item" : "\(omittedCount) items"
-            return "Earlier activity omitted, \(itemCount)"
+            return "Earlier activity omitted, at least \(itemCount)"
         }
         var parts = [title(for: diagnostic), diagnostic.type]
         if diagnostic.byteCount > 0 || diagnostic.isByteCountLowerBound {

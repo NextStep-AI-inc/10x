@@ -41,17 +41,99 @@ import Testing
     let historyOmission = try #require(
         diagnosticItems(from: history.items).first { $0.omittedEarlierCount != nil })
     #expect(historyOmission.omittedEarlierCount == 2)
+    let historyRetainedIDs = Set(
+        diagnosticItems(from: history.items).compactMap { $0.omittedEarlierCount == nil ? $0.id : nil })
 
     _ = reducer.reconcile(history: history)
 
     let merged = diagnosticItems(from: reducer.items)
     let mergedOmission = try #require(merged.first { $0.omittedEarlierCount != nil })
-    #expect(mergedOmission.omittedEarlierCount == 2)
+    let mergedRetainedIDs = Set(merged.compactMap { $0.omittedEarlierCount == nil ? $0.id : nil })
+    #expect(mergedOmission.omittedEarlierCount == 128)
+    #expect(DiagnosticCardView.omissionBody(128) == "At least 128 earlier items omitted")
     #expect(merged.filter { $0.omittedEarlierCount == nil }.count == 128)
     #expect(!merged.contains { $0.id == "history-0" })
-    #expect(liveRetainedIDs.isSubset(of: Set(merged.compactMap {
-        $0.omittedEarlierCount == nil ? $0.id : nil
-    })))
+    #expect(liveRetainedIDs.isSubset(of: mergedRetainedIDs))
+    let accountedHistoryIDs = mergedRetainedIDs.intersection(historyRetainedIDs)
+    let evictedHistoryCount = historyRetainedIDs.subtracting(mergedRetainedIDs).count
+    #expect(accountedHistoryIDs.count + evictedHistoryCount == historyRetainedIDs.count)
+    #expect(evictedHistoryCount + mergedOmission.omittedEarlierCount! >= historyRetainedIDs.count)
+}
+
+@Test func diagnosticReconcileIsIdempotentWithIdenticalHistory() throws {
+    var reducer = TranscriptReducer()
+    for index in 0..<129 {
+        _ = reducer.consume(.event(
+            type: "unknown_future_event",
+            payload: .object([
+                "id": .string("live-\(index)"),
+                "index": .int(index),
+            ])))
+    }
+
+    let header = SessionHeader(
+        id: "session-diagnostic-reconcile-repeat",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    var historyDiagnostics: [SessionEntry] = []
+    for index in 0..<130 {
+        historyDiagnostics.append(.unknown(
+            type: "vendor_telemetry",
+            base: SessionEntryBase(
+                id: "history-\(index)",
+                parentId: index == 0 ? nil : "history-\(index - 1)",
+                timestamp: String(format: "2026-08-24T20:00:%02d.000Z", index + 1)),
+            raw: .object(["index": .int(index)])))
+    }
+    let history = TranscriptHistoryMapper.map(header: header, path: historyDiagnostics)
+
+    _ = reducer.reconcile(history: history)
+    let firstOmission = try #require(
+        diagnosticItems(from: reducer.items).first { $0.omittedEarlierCount != nil })
+    let firstRetainedCount = diagnosticItems(from: reducer.items)
+        .filter { $0.omittedEarlierCount == nil }.count
+
+    _ = reducer.reconcile(history: history)
+    let secondOmission = try #require(
+        diagnosticItems(from: reducer.items).first { $0.omittedEarlierCount != nil })
+    let secondRetainedCount = diagnosticItems(from: reducer.items)
+        .filter { $0.omittedEarlierCount == nil }.count
+
+    #expect(secondOmission.omittedEarlierCount == firstOmission.omittedEarlierCount)
+    #expect(secondRetainedCount == firstRetainedCount)
+    #expect(secondOmission.omittedEarlierCount == 128)
+}
+
+@Test func diagnosticReconcileDedupesSameIDRows() throws {
+    var reducer = TranscriptReducer()
+    _ = reducer.consume(.event(
+        type: "unknown_future_event",
+        payload: .object(["id": .string("shared-diag"), "channel": .string("live")])))
+    let header = SessionHeader(
+        id: "session-diagnostic-dedupe",
+        cwd: "/tmp/project",
+        timestamp: "2026-08-24T20:00:00.000Z",
+        version: 3,
+        title: nil,
+        titleSource: nil,
+        parentSession: nil)
+    let history = TranscriptHistoryMapper.map(header: header, path: [
+        .unknown(
+            type: "vendor_telemetry",
+            base: SessionEntryBase(
+                id: "shared-diag",
+                parentId: nil,
+                timestamp: "2026-08-24T20:00:01.000Z"),
+            raw: .object(["channel": .string("saved")])),
+    ])
+
+    _ = reducer.reconcile(history: history)
+
+    #expect(diagnosticItems(from: reducer.items).filter { $0.id == "shared-diag" }.count == 1)
 }
 
 @Test func unknownEventsAreDiscardedWithoutMutation() throws {

@@ -207,9 +207,10 @@ struct TranscriptReducer {
             if type == "subagent_lifecycle",
                let id = body["id"]?.stringValue,
                SubagentEventReducer.isMalformedTerminalLifecycle(body) {
-                _ = subagentReducer.settleDisplayError(id: id)
+                let settled = subagentReducer.settleDisplayError(id: id)
                 let mutation = recordMalformedPassiveEvent(type: type, payload: payload)
-                if let presentation = subagentReducer.presentations.first(where: { $0.id == id }) {
+                if settled,
+                   let presentation = subagentReducer.presentations.first(where: { $0.id == id }) {
                     _ = replaceOrAppend(.subagent(presentation))
                     return .immediate
                 }
@@ -433,7 +434,6 @@ struct TranscriptReducer {
             case .diagnostic(let diagnostic):
                 if Self.shouldKeepDiagnosticTransient(
                     diagnostic,
-                    live: liveDiagnosticState,
                     persistedIDs: persistedIDs) {
                     transient.append(item)
                 }
@@ -457,13 +457,10 @@ struct TranscriptReducer {
             }
         }
         items = history.items.compactMap { item in
-            if case .diagnostic(let diagnostic) = item {
-                if diagnostic.omittedEarlierCount != nil {
-                    if liveDiagnosticState.hasOmissionMarker { return nil }
-                } else if liveDiagnosticState.hasOmissionMarker,
-                          !liveDiagnosticState.retainedIDs.contains(item.id) {
-                    return nil
-                }
+            if case .diagnostic(let diagnostic) = item,
+               diagnostic.omittedEarlierCount != nil,
+               liveDiagnosticState.hasOmissionMarker {
+                return nil
             }
             guard case .subagent(var persisted) = item,
                   case .subagent(let live)? = previous.first(where: { $0.id == item.id })
@@ -478,9 +475,10 @@ struct TranscriptReducer {
             return .subagent(persisted)
         } + transient
         GuidanceTranscript.enforceCap(on: &items)
-        EventDiagnosticTranscript.enforceCap(
+        EventDiagnosticTranscript.enforceCapAfterReconcile(
             on: &items,
-            minimumOmittedCount: max(liveDiagnosticState.omittedCount, historyDiagnosticOmittedCount))
+            liveOmitted: liveDiagnosticState.omittedCount,
+            historyOmitted: historyDiagnosticOmittedCount)
         if !inflightItemIDs.contains(where: { identity in
             items.contains { Self.inflightIdentity(for: $0) == identity }
         }) {
@@ -966,12 +964,10 @@ struct TranscriptReducer {
 
     private static func shouldKeepDiagnosticTransient(
         _ diagnostic: EventDiagnostic,
-        live: DiagnosticReconcileState,
         persistedIDs: Set<String>
     ) -> Bool {
         if diagnostic.omittedEarlierCount != nil { return false }
         if persistedIDs.contains(diagnostic.id) { return false }
-        if live.hasOmissionMarker, !live.retainedIDs.contains(diagnostic.id) { return false }
         return true
     }
 

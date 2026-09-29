@@ -276,6 +276,14 @@ import Testing
     #expect(estimate.byteCount > 0)
 }
 
+@Test func diagnosticOmissionLabelUsesConservativeWording() {
+    #expect(DiagnosticCardView.omissionBody(1) == "At least 1 earlier item omitted")
+    #expect(DiagnosticCardView.omissionBody(128) == "At least 128 earlier items omitted")
+    let marker = EventDiagnostic.earlierOmitted(count: 128)
+    #expect(DiagnosticCardView.accessibilityLabel(for: marker)
+        == "Earlier activity omitted, at least 128 items")
+}
+
 @Test func payloadBoundaryZeroPrimitiveReportsConservativeLowerBound() {
     let estimate = PayloadBoundaryTesting.estimate(.null)
     #expect(estimate.isLowerBound)

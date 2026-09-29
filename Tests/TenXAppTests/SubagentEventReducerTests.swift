@@ -27,6 +27,24 @@ import Testing
     #expect(reducer.presentations.first { $0.id == "worker-2" }?.status == .failed)
 }
 
+@Test func malformedTerminalForUnseenWorkerDoesNotBlockLaterLifecycle() throws {
+    var reducer = SubagentEventReducer()
+
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-new","status":"completed"}}
+        """))
+
+    #expect(reducer.presentations.isEmpty)
+
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-new","agent":"explorer","index":1,"status":"running"}}
+        """))
+
+    let started = try #require(reducer.presentations.first { $0.id == "worker-new" })
+    #expect(started.status == .running)
+    #expect(started.description != EventDiagnosticDisplay.settledUpdateError)
+}
+
 @Test func minimalTerminalLifecycleWithRequiredFieldsRemainsValid() throws {
     var reducer = SubagentEventReducer()
     reducer.consume(type: "subagent_lifecycle", payload: try value("""

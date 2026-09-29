@@ -20,8 +20,8 @@ struct SubagentEventReducer {
     @discardableResult
     mutating func settleDisplayError(id: String) -> Bool {
         guard !displayErrorSettledIDs.contains(id) else { return false }
-        displayErrorSettledIDs.insert(id)
         guard let index = presentations.firstIndex(where: { $0.id == id }) else { return false }
+        displayErrorSettledIDs.insert(id)
         presentations[index].status = .failed
         presentations[index].description = EventDiagnosticDisplay.settledUpdateError
         return true
