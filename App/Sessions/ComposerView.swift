@@ -398,7 +398,6 @@ struct ComposerView: View {
                     GeometryReader { signal in
                         if case .active(let controller) = presentation {
                             contextControl(controller)
-                                .padding(.leading, 24)
                                 .offset(y: editorHorizontalEdges(availableWidth: signal.size.width).leading < 145
                                     ? -38 : -16)
                                 .zIndex(3)
