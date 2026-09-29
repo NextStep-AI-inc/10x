@@ -26,9 +26,6 @@ struct TranscriptReducer {
     private var nextSyntheticID = 1
     private var toolReducer = ToolEventReducer()
     private var subagentReducer = SubagentEventReducer()
-    private var droppedHarnessMessages: [HarnessMessageDescriptor] = []
-    private var droppedHarnessMessageSignatures: Set<String> = []
-
     @discardableResult
     mutating func consume(_ frame: RpcFrame, at date: Date = Date()) -> TranscriptMutation {
         guard case .event(let type, let payload) = frame else { return .none }
@@ -48,12 +45,7 @@ struct TranscriptReducer {
         case "message_start":
             guard let message = payload["message"] else { return .none }
             if let mutation = consumeGuidanceMessage(message, at: date, tracksInflight: true) { return mutation }
-            guard TranscriptMessage.isDisplayable(message) else {
-                if !Self.isGuidanceMessage(message) {
-                    recordDroppedHarnessMessage(message)
-                }
-                return .none
-            }
+            guard TranscriptMessage.isDisplayable(message) else { return .none }
             if Self.isMalformedToolResult(message) { return .none }
             if let mutation = consumeToolResult(message) { return mutation }
             let id = messageID(message)
@@ -82,12 +74,7 @@ struct TranscriptReducer {
             if let mutation = consumeGuidanceMessage(message, at: date, clearsInflight: true) {
                 return mutation
             }
-            guard TranscriptMessage.isDisplayable(message) else {
-                if !Self.isGuidanceMessage(message) {
-                    recordDroppedHarnessMessage(message)
-                }
-                return .none
-            }
+            guard TranscriptMessage.isDisplayable(message) else { return .none }
             if Self.isMalformedToolResult(message) { return .none }
             if let mutation = consumeToolResult(message) { return mutation }
             if Self.isCompleteAtStart(message) {
@@ -258,10 +245,6 @@ struct TranscriptReducer {
                 continue
             }
 
-            if !TranscriptMessage.isDisplayable(message),
-               !Self.isGuidanceMessage(message) {
-                recordDroppedHarnessMessage(message)
-            }
             items.append(contentsOf: TranscriptMessageNormalizer.items(
                 id: messageID,
                 raw: message,
@@ -334,10 +317,6 @@ struct TranscriptReducer {
     mutating func load(history: TranscriptHistory) -> TranscriptMutation {
         let previous = items
         items = history.items
-        for descriptor in history.dropped
-        where droppedHarnessMessageSignatures.insert(descriptor.signature).inserted {
-            droppedHarnessMessages.append(descriptor)
-        }
         inflightMessageID = nil
         inflightGuidanceID = nil
         inflightItemIDs = []
@@ -618,27 +597,6 @@ struct TranscriptReducer {
         return .immediate
     }
 
-    /// Drained by the processor after each consume/load; the controller turns
-    /// descriptors into notices. The reducer stays settings-free.
-    mutating func drainDroppedHarnessMessages() -> [HarnessMessageDescriptor] {
-        let drained = droppedHarnessMessages
-        droppedHarnessMessages = []
-        return drained
-    }
-
-    private mutating func recordDroppedHarnessMessage(_ message: JSONValue) {
-        let text = TranscriptMessage.visibleText(from: message)
-        guard !text.isEmpty else { return }
-        let descriptor = HarnessMessageDescriptor(
-            role: message["role"]?.stringValue,
-            customType: message["customType"]?.stringValue,
-            byteCount: text.count,
-            text: text)
-        guard droppedHarnessMessageSignatures.insert(descriptor.signature).inserted
-        else { return }
-        droppedHarnessMessages.append(descriptor)
-    }
-
     @discardableResult
     private mutating func appendAnnotation(
         kind: TranscriptAnnotation.Kind,
@@ -841,10 +799,6 @@ struct TranscriptReducer {
             changed = interruptRunningTools(at: date) != .none || changed
         }
         return changed ? .immediate : .none
-    }
-
-    private static func isGuidanceMessage(_ message: JSONValue) -> Bool {
-        GuidanceTranscript.classify(id: "guidance-probe", message: message) != nil
     }
 
     private mutating func syntheticID(prefix: String) -> String {

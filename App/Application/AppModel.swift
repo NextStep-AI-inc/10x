@@ -73,7 +73,6 @@ final class AppModel {
     let ideRegistry: IDERegistry
     let idePreferenceStore: IDEPreferenceStore
     let harnessNoticePreferenceStore: HarnessNoticePreferenceStore
-    @ObservationIgnored private var harnessNoticeSummarizer: (any HarnessNoticeSummarizing)?
     let toolDetailPreferenceStore: ToolDetailPreferenceStore
     let fileOpenService: FileOpenService
     private(set) var providerModel: ProviderManagementViewModel?
@@ -1217,24 +1216,6 @@ final class AppModel {
         id: UUID = UUID(),
         recoveryOwner: ComposerRecoveryOwner? = nil
     ) -> SessionController {
-        if harnessNoticeSummarizer == nil, let installation {
-            let executableURL = installation.executableURL
-            let preferences = harnessNoticePreferenceStore
-            let configService = OmpConfigService(
-                runner: OmpConfigProcessRunner(executableURL: executableURL))
-            harnessNoticeSummarizer = HarnessNoticeSummarizer(
-                resolveModel: {
-                    if let override = await preferences.modelOverride { return override }
-                    guard let config = try? await configService.list() else { return nil }
-                    return config["modelRoles"]?["value"]?["smol"]?.stringValue
-                },
-                cacheURL: HarnessNoticeSummarizer.defaultCacheURL(),
-                run: { args in
-                    try await OmpCommandRunner().run(
-                        executableURL: executableURL,
-                        arguments: args)
-                })
-        }
         let controller = SessionController(
             processManager: processManager,
             id: id,
@@ -1246,8 +1227,7 @@ final class AppModel {
             recoveryStore: dependencies.composerRecoveryStore,
             recoveryOwner: recoveryOwner,
             submissionPresentationStore: dependencies.submissionPresentationStore,
-            harnessNoticePreferences: harnessNoticePreferenceStore,
-            harnessNoticeSummarizer: harnessNoticeSummarizer)
+            harnessNoticePreferences: harnessNoticePreferenceStore)
         managedSessions[controller.id] = controller
         if let intendedSessionPath {
             managedSessionPaths[intendedSessionPath] = controller.id
@@ -1663,7 +1643,6 @@ final class AppModel {
             try checkStartupAttempt(attemptID)
             installation = nil
             processManager = nil
-            harnessNoticeSummarizer = nil
             settingsModel = nil
             providerModel = nil
             composerControls = nil
@@ -1711,7 +1690,6 @@ final class AppModel {
         installation = located
         processManager = manager
         if !isSameExecutable {
-            harnessNoticeSummarizer = nil
         }
         settingsModel = settings
         providerModel = provider
@@ -1843,7 +1821,6 @@ final class AppModel {
         guard let located else {
             installation = nil
             processManager = nil
-            harnessNoticeSummarizer = nil
             settingsModel = nil
             providerModel = nil
             composerControls = nil
@@ -1865,7 +1842,6 @@ final class AppModel {
         }
         installation = located
         processManager = manager
-        harnessNoticeSummarizer = nil
         settingsModel = settings
         providerModel = provider
         composerControls = controls

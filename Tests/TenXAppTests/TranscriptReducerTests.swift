@@ -1668,7 +1668,7 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
     #expect(reducer.items.count == 1)
 }
 
-@Test func droppedHarnessMessagesAreCollectedForTheNoticePipeline() {
+@Test func hiddenDeveloperMessagesBecomeGuidanceItems() {
     var reducer = TranscriptReducer()
     _ = reducer.consume(.event(type: "message_start", payload: .object([
         "message": .object([
@@ -1677,14 +1677,10 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
         ]),
     ])))
 
-    let dropped = reducer.drainDroppedHarnessMessages()
-
-    #expect(dropped.isEmpty)
     #expect(guidanceItems(from: reducer.items).count == 1)
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
 }
 
-@Test func aMessageStartEndPairRecordsOneDescriptor() {
+@Test func aMessageStartEndPairRecordsOneGuidanceItem() {
     var reducer = TranscriptReducer()
     let message = JSONValue.object([
         "role": .string("developer"),
@@ -1694,46 +1690,10 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
     _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
     _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
 
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
     #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
-@Test func anEmptyHiddenMessageRecordsNothing() {
-    var reducer = TranscriptReducer()
-    _ = reducer.consume(.event(type: "message_start", payload: .object([
-        "message": .object(["role": .string("developer")]),
-    ])))
-
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
-}
-
-@Test func aMessageEndAfterADrainDoesNotReRecord() {
-    var reducer = TranscriptReducer()
-    let message = JSONValue.object([
-        "role": .string("developer"),
-        "content": .string("Same wall"),
-    ])
-
-    _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
-    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
-}
-
-@Test func displayableMessagesRecordNothing() {
-    var reducer = TranscriptReducer()
-    _ = reducer.consume(.event(type: "message_start", payload: .object([
-        "message": .object([
-            "id": .string("u1"),
-            "role": .string("user"),
-            "content": .string("Ship it"),
-        ]),
-    ])))
-
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
-}
-
-@Test func repeatedIdenticalHiddenMessagesRecordOneDescriptor() {
+@Test func repeatedIdenticalHiddenMessagesRecordOneGuidanceItem() {
     var reducer = TranscriptReducer()
     let message = JSONValue.object([
         "role": .string("custom"),
@@ -1746,11 +1706,10 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
         _ = reducer.consume(.event(type: "message_start", payload: .object(["message": message])))
     }
 
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
     #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
-@Test func aHistoryLoadCollectsDroppedDescriptors() {
+@Test func aHistoryLoadRoutesHiddenCustomMessagesToGuidance() {
     var reducer = TranscriptReducer()
 
     _ = reducer.load(messages: [
@@ -1763,42 +1722,8 @@ private func message(withID id: String, in items: [TranscriptItem]) -> Transcrip
         ]),
     ])
 
-    let dropped = reducer.drainDroppedHarnessMessages()
-    #expect(dropped.isEmpty)
     #expect(conversationMessages(from: reducer.items).count == 1)
-}
-
-@Test func loadingHistoryAdoptsItsDroppedDescriptors() {
-    var reducer = TranscriptReducer()
-    let descriptor = HarnessMessageDescriptor(
-        role: "developer",
-        customType: nil,
-        byteCount: 4,
-        text: "wall")
-
-    _ = reducer.load(history: TranscriptHistory(items: [], dropped: [descriptor]))
-
-    #expect(reducer.drainDroppedHarnessMessages() == [descriptor])
-}
-
-@Test func aLiveDropAfterAHistoryLoadOfTheSameMessageDoesNotReRecord() {
-    var reducer = TranscriptReducer()
-    let message = JSONValue.object([
-        "role": .string("developer"),
-        "content": .string("Same wall"),
-    ])
-    let history = TranscriptHistory(items: [], dropped: [
-        HarnessMessageDescriptor(
-            role: "developer",
-            customType: nil,
-            byteCount: 9,
-            text: "Same wall"),
-    ])
-
-    _ = reducer.load(history: history)
-    #expect(reducer.drainDroppedHarnessMessages().count == 1)
-    _ = reducer.consume(.event(type: "message_end", payload: .object(["message": message])))
-    #expect(reducer.drainDroppedHarnessMessages().isEmpty)
+    #expect(guidanceItems(from: reducer.items).count == 1)
 }
 
 @Test func updateNoticeRewritesTheMessageInPlace() {

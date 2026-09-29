@@ -253,7 +253,7 @@ enum GuidanceClassifier {
         guard !paths.isEmpty else { return nil }
         let previewSource = paths.joined(separator: "\n")
         let byteCount = files.reduce(into: 0) { total, file in
-            total += Data(plainText(from: file["content"]).utf8).count
+            total += fileByteCount(from: file)
         }
         let fingerprintSource = referencedFileSource(from: message)
         return GuidancePresentation(
@@ -340,6 +340,12 @@ enum GuidanceClassifier {
             let content = plainText(from: file["content"])
             return "\(path)\u{1F}\(content)"
         }.sorted().joined(separator: "\n")
+    }
+
+    private static func fileByteCount(from file: JSONValue) -> Int {
+        let contentBytes = Data(plainText(from: file["content"]).utf8).count
+        if contentBytes > 0 { return contentBytes }
+        return file["byteSize"]?.intValue ?? 0
     }
 
     private static func plainText(from content: JSONValue?) -> String {

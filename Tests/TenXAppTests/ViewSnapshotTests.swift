@@ -7,6 +7,21 @@ import Testing
 @testable import TenXApp
 
 @MainActor
+@Test func guidanceCardSnapshot() throws {
+    let presentation = GuidancePresentation(
+        id: "advisor-1",
+        kind: .advisor,
+        visibility: .whenEnabled,
+        byteCount: 512,
+        preview: "Check the probe window before shipping.",
+        reconcileFingerprint: "advisor")
+    try assertSnapshot(
+        GuidanceCardView(presentation: presentation)
+            .frame(width: 720),
+        name: "guidance-card-advisor")
+}
+
+@MainActor
 @Test func genericToolCardSnapshot() throws {
     let presentation = ToolPresentation(
         id: "snapshot-tool",

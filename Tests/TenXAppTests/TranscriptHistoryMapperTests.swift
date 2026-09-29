@@ -295,7 +295,7 @@ import Testing
     #expect(messages.map(\.visibleText) == ["Ship it"])
 }
 
-@Test func historyMapperCollectsDroppedDescriptors() throws {
+@Test func historyMapperRoutesHiddenDeveloperMessagesToGuidance() throws {
     let header = SessionHeader(
         id: "session-dropped",
         cwd: "/tmp/project",
@@ -315,7 +315,6 @@ import Testing
 
     let history = TranscriptHistoryMapper.map(header: header, path: entries)
 
-    #expect(history.dropped.isEmpty)
     #expect(history.items.contains { item in
         if case .guidance(let guidance) = item, guidance.id == "developer-1" { return true }
         return false

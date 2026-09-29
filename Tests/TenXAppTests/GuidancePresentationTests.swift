@@ -196,6 +196,22 @@ import Testing
     #expect(!(projection?.preview.contains("injected file body") ?? true))
 }
 
+@Test func guidanceClassifierUsesFileByteSizeWhenContentOmitted() {
+    let projection = GuidanceClassifier.classify(
+        id: "file-1",
+        message: .object([
+            "role": .string("fileMention"),
+            "files": .array([
+                .object([
+                    "path": .string("src/Large.swift"),
+                    "content": .string(""),
+                    "byteSize": .int(48_000),
+                ]),
+            ]),
+        ]))
+    #expect(projection?.byteCount == 48_000)
+}
+
 @Test func guidanceReconcileFingerprintDistinguishesIdenticalPreviews() {
     let shared = String(repeating: "a", count: 513)
     let first = GuidanceClassifier.classify(

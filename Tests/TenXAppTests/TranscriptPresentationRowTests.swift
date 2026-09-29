@@ -147,6 +147,74 @@ import Testing
         isReduceMotionEnabled: true))
 }
 
+@Test func agentGuidanceToggleUpdatesVisibleRows() {
+    let items: [TranscriptItem] = [
+        .message(userMessage(id: "u1", timestamp: 1)),
+        .guidance(GuidancePresentation(
+            id: "advisor-1",
+            kind: .advisor,
+            visibility: .whenEnabled,
+            byteCount: 18,
+            preview: "Check the probe window.",
+            reconcileFingerprint: "advisor")),
+        .guidance(GuidancePresentation(
+            id: "developer-1",
+            kind: .agentGuidance,
+            visibility: .whenEnabled,
+            byteCount: 42,
+            preview: "Plan approved.",
+            reconcileFingerprint: "developer")),
+        .guidance(GuidancePresentation(
+            id: "file-1",
+            kind: .referencedFile,
+            visibility: .always,
+            byteCount: 120,
+            preview: "src/Probe.swift",
+            reconcileFingerprint: "file")),
+        .message(responseMessage(id: "done", stopReason: "stop", completedAt: 4)),
+    ]
+
+    let hidden = TranscriptView.renderRows(
+        for: items,
+        runtimeState: .idle,
+        isGroupExpanded: { _ in true },
+        showsAgentGuidance: false)
+    #expect(hidden.map(\.id) == [
+        "message:u1",
+        "guidance:file-1",
+        "message:done",
+        "summary:turn:u1",
+    ])
+
+    let shown = TranscriptView.renderRows(
+        for: items,
+        runtimeState: .idle,
+        isGroupExpanded: { _ in true },
+        showsAgentGuidance: true)
+    #expect(shown.map(\.id) == [
+        "message:u1",
+        "guidance:advisor-1",
+        "guidance:developer-1",
+        "guidance:file-1",
+        "message:done",
+        "summary:turn:u1",
+    ])
+
+    let hiddenAgain = TranscriptView.renderRows(
+        for: items,
+        runtimeState: .idle,
+        isGroupExpanded: { _ in true },
+        showsAgentGuidance: false)
+    #expect(hiddenAgain.map(\.id) == hidden.map(\.id))
+
+    let shownAgain = TranscriptView.renderRows(
+        for: items,
+        runtimeState: .idle,
+        isGroupExpanded: { _ in true },
+        showsAgentGuidance: true)
+    #expect(shownAgain.map(\.id) == shown.map(\.id))
+}
+
 @Test func transcriptRenderRowsKeepContentIDsAndAppendOnlyTerminalSummaries() {
     let completed = responseMessage(id: "done", stopReason: "stop", completedAt: 4)
     let failed = responseMessage(id: "failed", stopReason: "error", completedAt: 8)
