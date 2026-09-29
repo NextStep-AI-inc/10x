@@ -122,6 +122,7 @@ struct TranscriptView: View {
                 }
             }
             .environment(\.toolDisclosureState, disclosureState)
+            .environment(\.activeSessionFilePath, controller.sessionPath)
             .scrollIndicators(.hidden)
             .onScrollTargetVisibilityChange(
                 idType: String.self,

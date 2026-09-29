@@ -305,3 +305,52 @@ private func onlyDiff(in presentation: ToolPresentation) -> UnifiedDiff? {
 private enum TestPayloadError: Error {
     case notAnEvent
 }
+
+@Test func toolBudgetReducerStoresBoundedArgumentsAndResults() throws {
+    var reducer = ToolEventReducer()
+    let huge = String(repeating: "z", count: 1_024 * 1_024)
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"budget-1","toolName":"write","args":{"path":"/tmp/Huge.swift","content":"\(huge)"}}
+        """))
+    reducer.consume(type: "tool_execution_end", payload: try payload("""
+        {"type":"tool_execution_end","toolCallId":"budget-1","toolName":"write","result":{"content":[{"type":"text","text":"\(huge)"}]},"isError":false}
+        """))
+
+    let tool = try #require(reducer.presentations.first { $0.id == "budget-1" })
+    #expect(maxStoredScalarBytes(in: tool.arguments) <= ToolPayloadBudget.Limits.scalarBytes)
+    #expect(maxStoredScalarBytes(in: tool.result) <= ToolPayloadBudget.Limits.scalarBytes)
+    #expect(tool.phase == .complete)
+}
+
+@Test func toolBudgetReducerPreservesCallIDAndPhaseForUnknownTool() throws {
+    var reducer = ToolEventReducer()
+    reducer.consume(type: "tool_execution_start", payload: try payload("""
+        {"type":"tool_execution_start","toolCallId":"custom-9","toolName":"mystery_plugin","args":{"blob":"\(String(repeating: "q", count: 16_384))"}}
+        """))
+
+    let running = try #require(reducer.presentations.first { $0.id == "custom-9" })
+    #expect(running.name == "mystery_plugin")
+    #expect(running.phase == .running)
+    #expect(running.content.title == "mystery_plugin")
+    #expect(maxStoredScalarBytes(in: running.arguments) <= ToolPayloadBudget.Limits.scalarBytes)
+}
+
+private func maxStoredScalarBytes(in value: JSONValue?) -> Int {
+    guard let value else { return 0 }
+    var maxBytes = 0
+    func visit(_ value: JSONValue) {
+        if let text = value.stringValue {
+            maxBytes = max(maxBytes, text.utf8.count)
+        }
+        switch value {
+        case .object(let object):
+            object.values.forEach(visit)
+        case .array(let values):
+            values.forEach(visit)
+        default:
+            break
+        }
+    }
+    visit(value)
+    return maxBytes
+}

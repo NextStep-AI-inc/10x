@@ -62,16 +62,18 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
     ) {
         self.id = id
         self.storedName = name
-        self.storedArguments = arguments
-        self.storedResult = result
+        let boundedArguments = ToolPayloadBudget.limit(arguments)
+        let boundedResult = result.map(ToolPayloadBudget.limit)
+        self.storedArguments = boundedArguments
+        self.storedResult = boundedResult
         self.storedPhase = phase
         self.startDate = startDate
         self.hasReliableStartDate = hasReliableStartDate
         self.endDate = endDate
         content = ToolContentExtractor.card(
             name: name,
-            arguments: arguments,
-            result: result,
+            arguments: boundedArguments,
+            result: boundedResult,
             phase: phase)
     }
 
@@ -97,13 +99,19 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
             storedName = name
             hasSemanticChange = true
         }
-        if let arguments, arguments != storedArguments {
-            storedArguments = arguments
-            hasSemanticChange = true
+        if let arguments {
+            let bounded = ToolPayloadBudget.limit(arguments)
+            if bounded != storedArguments {
+                storedArguments = bounded
+                hasSemanticChange = true
+            }
         }
-        if let result, result != storedResult {
-            storedResult = result
-            hasSemanticChange = true
+        if let result {
+            let bounded = result.map(ToolPayloadBudget.limit)
+            if bounded != storedResult {
+                storedResult = bounded
+                hasSemanticChange = true
+            }
         }
         if let phase, phase != storedPhase {
             storedPhase = phase
@@ -120,9 +128,9 @@ struct ToolPresentation: Identifiable, Equatable, Sendable {
     private mutating func refreshContent() {
         let refreshed = ToolContentExtractor.card(
             name: name,
-            arguments: arguments,
-            result: result,
-            phase: phase)
+            arguments: storedArguments,
+            result: storedResult,
+            phase: storedPhase)
         content = refreshed.reusingRenderContentIDs(from: content)
     }
 }

@@ -3,19 +3,64 @@ import OmpKit
 import os
 import SwiftUI
 
+private struct ActiveSessionFilePathKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+private struct ToolCallIDKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var activeSessionFilePath: String? {
+        get { self[ActiveSessionFilePathKey.self] }
+        set { self[ActiveSessionFilePathKey.self] = newValue }
+    }
+
+    var toolCallID: String? {
+        get { self[ToolCallIDKey.self] }
+        set { self[ToolCallIDKey.self] = newValue }
+    }
+}
+
+enum ToolPayloadSurfaceCopy {
+    static let previewLabel = "Copy preview"
+}
+
+enum ToolInspectionAvailability {
+    static func showsFooter(sessionFilePath: String?, toolCallID: String?) -> Bool {
+        sessionFilePath != nil || toolCallID != nil
+    }
+}
+
+enum ToolSessionFileOpening {
+    @MainActor
+    static func open(path: String, fileOpenService: FileOpenService) throws {
+        try fileOpenService.openWithSystemDefault(URL(filePath: path))
+    }
+
+    static func failureMessage(for path: String) -> String {
+        let name = URL(filePath: path).lastPathComponent
+        return "Couldn't open \(name)"
+    }
+}
+
 struct ToolSurfaceView: View {
     let surface: ToolBody
     let phase: ToolPhase
     let topFilePath: String?
+    let showsInspectionFooter: Bool
 
     init(
         body: ToolBody,
         phase: ToolPhase = .complete,
-        topFilePath: String? = nil
+        topFilePath: String? = nil,
+        showsInspectionFooter: Bool = true
     ) {
         surface = body
         self.phase = phase
         self.topFilePath = topFilePath
+        self.showsInspectionFooter = showsInspectionFooter
     }
 
     @ViewBuilder
@@ -50,7 +95,8 @@ struct ToolSurfaceView: View {
                     ToolSurfaceView(
                         body: body,
                         phase: phase,
-                        topFilePath: topFilePath)
+                        topFilePath: topFilePath,
+                        showsInspectionFooter: false)
                 }
             }
         case .empty(let message):
@@ -66,8 +112,84 @@ struct ToolSurfaceView: View {
     }
 
     var body: some View {
-        bodyView
-            .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 10) {
+            bodyView
+            if showsInspectionFooter {
+                ToolInspectionFooter()
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct ToolInspectionFooter: View {
+    @Environment(\.activeSessionFilePath) private var sessionFilePath
+    @Environment(\.toolCallID) private var toolCallID
+    @Environment(\.fileOpenService) private var fileOpenService
+    @Environment(\.accessibilityAnnouncer) private var accessibilityAnnouncer
+    @State private var errorStatus: String?
+    @State private var clearErrorTask: Task<Void, Never>?
+
+    private static let logger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "com.tannerpham.tenx",
+        category: "ToolInspection")
+
+    var body: some View {
+        if ToolInspectionAvailability.showsFooter(
+            sessionFilePath: sessionFilePath,
+            toolCallID: toolCallID)
+        {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    if let sessionFilePath {
+                        Button("Open session file") {
+                            openSessionFile(at: sessionFilePath)
+                        }
+                        .buttonStyle(GhostActionStyle())
+                    }
+                    if let toolCallID {
+                        Button("Copy call ID") { copy(toolCallID) }
+                            .buttonStyle(GhostActionStyle())
+                    }
+                    Spacer(minLength: 8)
+                }
+                if let errorStatus {
+                    Text(errorStatus)
+                        .font(TenXTypography.body(size: 10, weight: .medium))
+                        .foregroundStyle(TenXPalette.color(TenXPalette.signalRedHex))
+                        .accessibilityLabel(errorStatus)
+                }
+            }
+            .font(TenXTypography.mono(size: 10, weight: .medium))
+            .onDisappear { clearErrorTask?.cancel() }
+        }
+    }
+
+    private func openSessionFile(at path: String) {
+        beginInteraction()
+        do {
+            try ToolSessionFileOpening.open(path: path, fileOpenService: fileOpenService)
+        } catch {
+            Self.logger.error(
+                "[ToolInspection:openSessionFile] Could not open session file — path=\(path, privacy: .private(mask: .hash)), error=\(String(describing: error), privacy: .private)")
+            showError(ToolSessionFileOpening.failureMessage(for: path))
+        }
+    }
+
+    private func beginInteraction() {
+        clearErrorTask?.cancel()
+        errorStatus = nil
+    }
+
+    private func showError(_ message: String) {
+        clearErrorTask?.cancel()
+        errorStatus = message
+        accessibilityAnnouncer.announce(message)
+        clearErrorTask = Task {
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            errorStatus = nil
+        }
     }
 }
 
@@ -248,7 +370,7 @@ private struct ConsoleSurfaceView: View {
                         isWrapped.toggle()
                     }
                     .buttonStyle(GhostActionStyle())
-                    Button("Copy") { copy(presentation.copyText) }
+                    Button(ToolPayloadSurfaceCopy.previewLabel) { copy(presentation.copyText) }
                         .buttonStyle(GhostActionStyle())
                 }
                 .font(TenXTypography.mono(size: 10, weight: .medium))
@@ -628,7 +750,7 @@ private struct DataTreeSurfaceView: View {
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 }
                 Spacer(minLength: 8)
-                Button("Copy raw") { copy(prettyJSON(value)) }
+                Button(ToolPayloadSurfaceCopy.previewLabel) { copy(prettyJSON(value)) }
                     .buttonStyle(GhostActionStyle())
             }
             JSONValueNode(label: nil, value: value, depth: 0)
@@ -798,9 +920,9 @@ private struct DataScalarRow: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .contextMenu {
-                        Button("Copy value") { copy(text) }
+                        Button(ToolPayloadSurfaceCopy.previewLabel) { copy(text) }
                     }
-                    .accessibilityAction(named: "Copy value") { copy(text) }
+                    .accessibilityAction(named: ToolPayloadSurfaceCopy.previewLabel) { copy(text) }
                     .accessibilityLabel(presentation.accessibilityText)
             }
             ProgressiveRevealButton(
