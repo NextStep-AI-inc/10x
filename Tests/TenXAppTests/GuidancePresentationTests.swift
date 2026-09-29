@@ -212,6 +212,20 @@ import Testing
     #expect(projection?.byteCount == 48_000)
 }
 
+@Test func guidanceCardLabelsUseSingularFormsForOne() {
+    #expect(GuidanceCardView.sizeLabel(1) == "1 byte")
+    #expect(GuidanceCardView.sizeLabel(2) == "2 bytes")
+    #expect(GuidanceCardView.sizeLabel(512) == "512 bytes")
+
+    #expect(GuidanceCardView.omissionBody(1) == "1 earlier item omitted")
+    #expect(GuidanceCardView.omissionBody(2) == "2 earlier items omitted")
+
+    #expect(GuidanceCardView.accessibilityLabel(for: GuidancePresentation.earlierOmitted(count: 1)) ==
+        "Earlier guidance omitted, 1 item")
+    #expect(GuidanceCardView.accessibilityLabel(for: GuidancePresentation.earlierOmitted(count: 3)) ==
+        "Earlier guidance omitted, 3 items")
+}
+
 @Test func guidanceReconcileFingerprintDistinguishesIdenticalPreviews() {
     let shared = String(repeating: "a", count: 513)
     let first = GuidanceClassifier.classify(

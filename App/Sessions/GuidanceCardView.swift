@@ -11,7 +11,7 @@ struct GuidanceCardView: View {
                     .foregroundStyle(TenXPalette.color(TenXPalette.nearBlackHex))
 
                 if let omittedCount = presentation.omittedEarlierCount {
-                    Text("\(omittedCount) earlier items omitted")
+                    Text(Self.omissionBody(omittedCount))
                         .font(TenXTypography.body(size: 11))
                         .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
                 } else {
@@ -49,15 +49,21 @@ struct GuidanceCardView: View {
         }
     }
 
+    static func omissionBody(_ count: Int) -> String {
+        count == 1 ? "1 earlier item omitted" : "\(count) earlier items omitted"
+    }
+
     static func sizeLabel(_ byteCount: Int) -> String {
-        byteCount < 1_000
-            ? "\(byteCount) bytes"
-            : String(format: "%.1f KB", Double(byteCount) / 1_000)
+        if byteCount < 1_000 {
+            return byteCount == 1 ? "1 byte" : "\(byteCount) bytes"
+        }
+        return String(format: "%.1f KB", Double(byteCount) / 1_000)
     }
 
     static func accessibilityLabel(for presentation: GuidancePresentation) -> String {
         if let omittedCount = presentation.omittedEarlierCount {
-            return "Earlier guidance omitted, \(omittedCount) items"
+            let itemCount = omittedCount == 1 ? "1 item" : "\(omittedCount) items"
+            return "Earlier guidance omitted, \(itemCount)"
         }
         var parts = [title(for: presentation)]
         if !presentation.preview.isEmpty {

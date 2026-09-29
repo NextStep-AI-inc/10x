@@ -1689,8 +1689,6 @@ final class AppModel {
         try checkStartupAttempt(attemptID)
         installation = located
         processManager = manager
-        if !isSameExecutable {
-        }
         settingsModel = settings
         providerModel = provider
         composerControls = controls
