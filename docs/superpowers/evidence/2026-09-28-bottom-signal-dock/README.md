@@ -1,6 +1,10 @@
 # Bottom signal dock — native acceptance
 
-## Latest: italic context label
+## Latest: main integration check
+
+Conflicts with main are resolved at `2670110`. Release build, native send/context/route checks, four focused integration checks, and one isolated context-timing check passed. Full suite remains red: 1,714 tests / 188 issues. See [integration verification](main-integration-verification.md). Merge is pending acceptance of that test limitation.
+
+## Earlier: italic context label
 
 The inline context trigger now uses italics in both closed and open states. Release build and five focused checks passed (`/tmp/10x-context-italic-build.log`, `/tmp/10x-context-italic-tests-green.log`). Native label rendering and details open/close verified in the isolated Release app; see [native detail](italic-context-detail.png). Updated snapshot differences were confined to the context glyphs. No full-suite rerun for this typography change. Native narrow interaction was not repeated.
 
