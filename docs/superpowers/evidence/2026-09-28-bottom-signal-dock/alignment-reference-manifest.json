@@ -1,0 +1,199 @@
+{
+  "source_commit": "773dbe24ff57b4cabe13d4d48f05d2f2e059d9b9",
+  "cherry_pick": "6e430ef",
+  "reference_count": 32,
+  "entries": [
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-stop-control-dark.png",
+      "before_sha256": "08bd45ca164c7a2aed08530f98499417c898808487dbe4cfa37e6c5be51f2617",
+      "after_sha256": "72491e962df6f68a94fe1e2098bdc2c56225b084db9f7abb1be7d3b87a9b7f34",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/session-attention-working.png",
+      "before_sha256": "bc792afaab4906da778f1f0d2879629eb4966f6313e50f24e8d7836a8f836d68",
+      "after_sha256": "9957bac16be2fbf1d0e1e6d54823e62dc865a72aa08945b2d27af22ee3fa29b8",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison. The 420pt standalone preview compresses fallback metadata; the application minimum width is 760pt."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-sends-attachment-mid-run.png",
+      "before_sha256": "b258855a31c108caefb504c762886b9660804a6afdacb912f77503b58d9c8dd9",
+      "after_sha256": "b0c33fef0056bc5126d7acc78f537aa40bd3919402b2eaf7d0f04d624b5e5ee6",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-stop-control.png",
+      "before_sha256": "8467a3086b09748892c279e6b1e56e9915cef56e5ebf4f6926b1cbd09f9cb857",
+      "after_sha256": "cb1b9d325e95c740aae9a17ed20474972c31e9d2d31e681cc695c6f6e2330575",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-placeholder-and-growth.png",
+      "before_sha256": "5ef3716f89cc9bb83afcd4ee0ffc5fcccc2b5107ce07ffa357dfdf7768a6aaa9",
+      "after_sha256": "47544e7e360eb5421af23ffa72d881abc9ebdf580beab70fbb3b7a864b6695b5",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/session-attention-ready.png",
+      "before_sha256": "04e334f253c2a15152ff1b5106934f1805a95c74e40683689e17b4833583a687",
+      "after_sha256": "f53716b985e62c6970434604631402f24034ac2c7d22d5ff9d93c6e0fcfbb222",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-with-attachments-dark.png",
+      "before_sha256": "0a00c87d8d0fcb2d9911f42c30cb40147c6613f751c2662c10c56fee223f5f6e",
+      "after_sha256": "d0d1c1be98e04d6f8b650a597afae32bd8c0ab8eff3c2ca5ea1482687addb73e",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-with-attachments.png",
+      "before_sha256": "0a3129490287e5c93c2eae5e756c475af4be89004ac6698868165c6de75dc101",
+      "after_sha256": "351dcd818a72989f5a388be371d6e7e281cbd9b4896d3e817d051dab7f7982aa",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/session-attention-pending.png",
+      "before_sha256": "ed4b0f7bc3fb9357589a700eb74282467e185f8a04936b1605c7dc43ce8fea7f",
+      "after_sha256": "cfc156ec890afbeec1ebfd0ba14ccec95ad089bc354f81281fd1ce379e219d29",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison. The 420pt standalone preview compresses fallback metadata; the application minimum width is 760pt."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/narrow-composer-attachments-clear-provider-wheels.png",
+      "before_sha256": "6cdb34fa9d8fed896741f14830da74bab15c310a3144f67df54f5df2cd543500",
+      "after_sha256": "1e06a0a85679986fe7b0e82a565732f53c70d81ba6f4707e9fb1216eaa3618fe",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-footer-fast-absent.png",
+      "before_sha256": "6f1e41e4785cb367b4713fdb7ee6c79de92221456582e65f2621c8c165b25142",
+      "after_sha256": "c80c1c43e7255500e2b9981a45285ad880f53085b8439bc4434591433e95ad5b",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-footer-fast-present.png",
+      "before_sha256": "ac39225a9f0d3630572f45fad354d58c0a3cece6e3b788320e94c0ccb830e9a9",
+      "after_sha256": "7d02f56422142196572ad56665a1ae0da14512ad50d8c772ac76ac09d30874c5",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-with-model-flyout-dark.png",
+      "before_sha256": "af3087de22f74d72347f63e6d5c87b763880bcaad222b4c4e3e0a0b70516308b",
+      "after_sha256": "36a9fdabbb141618853685bf76028fc42258f9dd1c2951aaf5b1e310289ee979",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-footer-fast-present-dark.png",
+      "before_sha256": "3569c21763f654703b71abe0f3bb444c571118abb70085fa8d1bd96b7583c8c6",
+      "after_sha256": "05cdc72939f92e8eeb4bb58ccdf868aba92cf45d22865eec14d4dd35d0e6d434",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-with-model-flyout.png",
+      "before_sha256": "682f6a63367fc68a5321bb51ad7f391a32cbc0c2995bb12fc950858eb5479b9c",
+      "after_sha256": "ec224a128c3d455cbc17bfa2fe2d0ae713030ab8a26ef4775908236f41de3daa",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-command-browser-new-session-commands-unavailable.png",
+      "before_sha256": "918d9a4cc83457290400c7ba3dbb658dbf9288cf4b52b967334ca52bb9b6446f",
+      "after_sha256": "82d666abc94f14b86edeb141c2d92fbd4f8bc37077a4c7f7db2474ef1e285031",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-command-browser-streaming-steer.png",
+      "before_sha256": "17bd6c635d966dbb6e36ae7ddd6611ab4ceba01900258b6e44516afb99c30b6e",
+      "after_sha256": "ab0ecca36dfaf3998ada894638a63fd8e52809fae4775f438f829d23fcb715f2",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-command-browser-long-names-minimum-window.png",
+      "before_sha256": "901b21aa85c3abde6c1be86a862c88ae541b73ba81542f0505bd8a50782fe9a2",
+      "after_sha256": "eb534a8247afa57f2837dc9ffcf9b147a3037df41ba51bb6e443e99c255b2254",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-command-browser-active-attachments.png",
+      "before_sha256": "c1415ad372a31c0f63fd65263055374b7e1ffe9edc00a11213f1513371189388",
+      "after_sha256": "ae92f09dd62a70f38b8297872eb416fe2b5fefb56a2408efa4d904767f91ea7a",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/composer-queued-after-streaming.png",
+      "before_sha256": "3a98d235c0ba76d953bbab3423dbcd59ba792e18d6b04e197d869840ab4e6939",
+      "after_sha256": "531cbad637b35cb2c5213e4d17f228be5f99e1b0452e5916d7e72234cd052d6f",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-usage-dock-small-window.png",
+      "before_sha256": "46781cde661b7a36019f977a841d4687a7661ad39f6916c50b025c8763e5b498",
+      "after_sha256": "79694ace25f20ebb89227a678c822dc775ed43de989d1892801bb7924ae3dfc7",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-expanded-rail-overflow.png",
+      "before_sha256": "46781cde661b7a36019f977a841d4687a7661ad39f6916c50b025c8763e5b498",
+      "after_sha256": "79694ace25f20ebb89227a678c822dc775ed43de989d1892801bb7924ae3dfc7",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-dark.png",
+      "before_sha256": "de0096ed66a0a1fd12b8320c503ee99a99a0be880e2f2b26806d8fb867d48639",
+      "after_sha256": "1228bafbbcf1c7477f3dc4043e4d8ffd16cac4b733644540e46d266eb69216aa",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-usage-dock-wide-window.png",
+      "before_sha256": "bbaabab9391c2ac21945db0d7d56b1259d19c9870c6ac813c752cd8ecf471dde",
+      "after_sha256": "f9738f9fe040caf27b2d5aee1783344eddd3b085d830f7fd703e34247b462f90",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-active-opening-dock-wide.png",
+      "before_sha256": "88eacc4590f1b8a51bbbfc73590879dc7621ffae03ffcb492e859257a294a1cc",
+      "after_sha256": "95e8567b7af691188742d6fa4a2312714f9988acb84758b46f88581055d01703",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-active-opening-dock-narrow.png",
+      "before_sha256": "142bc93bbbb92452283097c6f8af2aaf8db0ef5b77e7f9065cf359e519102d59",
+      "after_sha256": "82409766785fdf1c341b790f01306255f0a33f9b04fb23f1a2956a806c51934c",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-new-session-dock-compact.png",
+      "before_sha256": "cb9a12352a266f5f90bd0668f73bb8cdc6a02521a640505238039691c0d696b0",
+      "after_sha256": "8b40acf484d0a29a2ff0ef57ab8d8fc28a11942edb61badaecb9204534f85d0d",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-new-session-dock-wide.png",
+      "before_sha256": "677ef141feae15837a76982bb2f7fe77530438c5eb4f7d0076230ae47f10f8d9",
+      "after_sha256": "f764af3a0b32f7e816870280a4cc7185cd20fca23eeafd57c62755688979487f",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-new-session-dock-short-draft.png",
+      "before_sha256": "1f10415d22ea8f946cd04971f51c2ae7a37c927c209b233c374e20d2c487b764",
+      "after_sha256": "f6d2fc8fbc1910beb0e338ccb89fb758020c2245a4280e4a561df5596fcf45e2",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-wide-window.png",
+      "before_sha256": "8f3dbc7249635cbd618e50b714300330f8363f18ee6f2501ce07cb585b3fcafc",
+      "after_sha256": "5b07dcdf2e08b81d1985ba532446b7912a5bc45f2ee9a045181c2c205476ee4a",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-minimum-window.png",
+      "before_sha256": "7233d7a3a0de12e6a36979d4053d9d89cfbcc1a20a40f033ef7aae7ffd6c4dba",
+      "after_sha256": "95a1689444e80c3b9b2e6fbbcda5f3e7d11e6f9e8b103506d8357fce9bacae4f",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    },
+    {
+      "path": "Tests/TenXAppTests/ReferenceImages/full-shell-account-dock-compact-trigger-window.png",
+      "before_sha256": "ad7ebbec59a9f764aba7cc30b0bb60298eb232f4bb3e02878316932da7f908aa",
+      "after_sha256": "dfc606d75c7746868cfab3d697429d5c53285fb1becd16c4f009db9ef58a7ec0",
+      "review_reason": "Reviewed requested shared editor/footer alignment before the wave; no change to the signal line or exact-image comparison."
+    }
+  ]
+}
