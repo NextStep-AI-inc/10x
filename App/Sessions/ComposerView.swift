@@ -873,14 +873,15 @@ struct ComposerView: View {
 
     @ViewBuilder
     private var actionControls: some View {
+        if case .active(let controller) = presentation,
+           controller.queuedMessageCount > 0 {
+            Text("\(controller.queuedMessageCount) queued")
+                .font(TenXTypography.body(size: 10, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+        }
         if let controller = streamingController {
             behaviorChoice(.steer, controller: controller)
             behaviorChoice(.followUp, controller: controller)
-            if controller.queuedMessageCount > 0 {
-                Text("\(controller.queuedMessageCount) queued")
-                    .font(TenXTypography.body(size: 10, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
-            }
             if canSend { sendButton } else { stopButton(controller) }
         } else {
             sendButton

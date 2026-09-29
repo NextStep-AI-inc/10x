@@ -42,6 +42,12 @@ import Testing
 }
 
 @MainActor
+@Test func flyoutAnchorReaderPassesPointerEventsToTrigger() {
+    let anchor = FlyoutWindowAnchorReaderView(frame: NSRect(x: 0, y: 0, width: 120, height: 28))
+    #expect(anchor.hitTest(NSPoint(x: 60, y: 14)) == nil)
+}
+
+@MainActor
 @Test func fullShellArchivedDockSnapshot() async throws {
     let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-archived-dock-snapshot")
     model.selectedProjectURL = URL(filePath: "/tmp/10x", directoryHint: .isDirectory)
@@ -4150,6 +4156,49 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
             .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "composer-stop-control",
         size: CGSize(width: 700, height: 240))
+}
+
+@MainActor
+@Test func composerKeepsQueuedBadgeAfterStreamingSnapshot() async throws {
+    let projectRoot = URL(filePath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            projectRoot.appending(path: "Tests/TenXAppTests/Fixtures/context_fake_server.py").path,
+            "compact-queued",
+        ]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(SessionMetadata(
+        path: "/tmp/context-fixture.jsonl", sessionId: "queued-idle", cwd: "/tmp",
+        title: "Queued session", created: .distantPast, modified: .distantPast,
+        sizeBytes: 0, status: .complete))
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.queuedMessageCount == 1)
+
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant(""),
+            presentation: .active(controller: controller),
+            controlsMode: .activeSession,
+            signalPresentation: .session(
+                runtimeState: .idle, contextPercent: 42,
+                hasPendingUserInput: false, isRetrying: false,
+                hasTerminalRetryFailure: false, compactionPhase: .none,
+                isRecoveryPresented: false, isIntentionallyStopped: false),
+            onSend: {})
+            .frame(width: 620)
+            .padding(24)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
+        name: "composer-queued-after-streaming",
+        size: CGSize(width: 700, height: 240))
+    await manager.closeAll()
 }
 
 @MainActor
