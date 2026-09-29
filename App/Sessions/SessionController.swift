@@ -122,7 +122,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private static let extensionBlockedRecoveryDelay: Duration = .seconds(10)
     private static let extensionBlockedRecoveryNoticeID = "extension-blocked-recovery"
     private static let extensionBlockedRecoveryNotice =
-        "The session is still waiting after an unsupported request was cancelled. Restart to continue."
+        "This response is still waiting. Restart the session to continue."
 #if DEBUG
     static var testingExtensionBlockedRecoveryDelay: Duration?
     static var testingForceExtensionUICancellationFailure = false

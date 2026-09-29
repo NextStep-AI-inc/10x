@@ -1670,14 +1670,16 @@ private func controllerStateReaches(_ predicate: () -> Bool) async -> Bool {
         controller.noticeMessages.contains("Unsupported extension UI request.")
     })
     #expect(!controller.noticeMessages.contains {
-        $0.contains("still waiting") && $0.contains("Restart")
+        $0.contains("Restart the session")
     })
 
     #expect(await eventually { controller.canRestartAfterDismissal })
     #expect(controller.extensionBlockedRecoveryMessage != nil)
     #expect(await eventually {
-        guard let message = controller.extensionBlockedRecoveryMessage else { return false }
-        return controller.noticeMessages.contains(message)
+        guard let notice = controller.noticeMessages.first(where: {
+            $0.contains("Restart") && $0.contains("still waiting")
+        }) else { return false }
+        return Data(notice.utf8).count <= 80
     })
 
     let boundary = try controllerEvent(#"{"type":"agent_end","messages":[],"isTerminal":true}"#)
