@@ -3,12 +3,9 @@ import OmpKit
 
 struct TranscriptHistory: Equatable, Sendable {
     let items: [TranscriptItem]
-    /// Hidden messages encountered while mapping, for the notice pipeline.
-    let dropped: [HarnessMessageDescriptor]
 
-    init(items: [TranscriptItem], dropped: [HarnessMessageDescriptor] = []) {
+    init(items: [TranscriptItem]) {
         self.items = items
-        self.dropped = dropped
     }
 }
 
@@ -38,7 +35,7 @@ enum TranscriptHistoryMapper {
             mapper.consume(entry)
         }
         try checkCancellation()
-        return TranscriptHistory(items: mapper.items, dropped: mapper.dropped)
+        return TranscriptHistory(items: mapper.items)
     }
 
     private struct Mapper {
@@ -48,23 +45,9 @@ enum TranscriptHistoryMapper {
         var currentMode: String?
         var sessionInit: SessionInitMetadata?
         var hasConversation = false
-        private(set) var dropped: [HarnessMessageDescriptor] = []
-        private var droppedSignatures: Set<String> = []
 
         init(persistedToolStartDates: [String: Date]) {
             self.persistedToolStartDates = persistedToolStartDates
-        }
-
-        private mutating func recordDropped(_ message: JSONValue) {
-            let text = TranscriptMessage.visibleText(from: message)
-            guard !text.isEmpty else { return }
-            let descriptor = HarnessMessageDescriptor(
-                role: message["role"]?.stringValue,
-                customType: message["customType"]?.stringValue,
-                byteCount: text.count,
-                text: text)
-            guard droppedSignatures.insert(descriptor.signature).inserted else { return }
-            dropped.append(descriptor)
         }
 
         mutating func consume(_ entry: SessionEntry) {
@@ -100,7 +83,11 @@ enum TranscriptHistoryMapper {
             case .unknown("custom_message", let base, .object(var message)):
                 message["role"] = .string("custom")
                 consumeMessage(base: base, message: .object(message))
-            case .labelEntry, .resetBoundary, .unknown:
+            case .unknown(let type, let base, let raw):
+                EventDiagnosticTranscript.upsert(
+                    EventDiagnostic.make(id: base.id, type: type, payload: raw),
+                    into: &items)
+            case .labelEntry, .resetBoundary:
                 break
             }
         }
@@ -125,6 +112,17 @@ enum TranscriptHistoryMapper {
             }
 
             let fallbackDate = TranscriptHistoryMapper.date(from: base.timestamp) ?? Date()
+            let messageID = message["id"]?.stringValue ?? base.id
+            if let guidance = GuidanceTranscript.classify(id: messageID, message: message) {
+                GuidanceTranscript.upsert(guidance, into: &items)
+                if message["stopReason"]?.stringValue?.lowercased() == "aborted" {
+                    let stoppedAt = TranscriptHistoryMapper.date(from: base.timestamp)
+                        ?? TranscriptMessage.messageDate(message)
+                        ?? fallbackDate
+                    _ = TranscriptReducer.interruptRunningTools(in: &items, at: stoppedAt)
+                }
+                return
+            }
             let existingTools = Dictionary(items.compactMap { item -> (String, ToolPresentation)? in
                 guard case .tool(let tool) = item else { return nil }
                 return (tool.id, tool)
@@ -138,9 +136,6 @@ enum TranscriptHistoryMapper {
                 existingTools: existingTools,
                 persistedToolStartDates: persistedToolStartDates,
                 fallbackDate: fallbackDate)
-            if !TranscriptMessage.isDisplayable(message) {
-                recordDropped(message)
-            }
             if normalized.contains(where: { item in
                 switch item {
                 case .message, .tool:

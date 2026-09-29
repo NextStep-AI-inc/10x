@@ -3,6 +3,34 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func processorReplayPreservesGuidanceIdentity() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
+
+    let advisor = """
+        {"id":"advisor-1","role":"custom","customType":"advisor","display":true,"content":"<advisory>Ignored.</advisory>","details":{"notes":[{"note":"Check the probe window."}]}}
+        """
+    await processor.consume(try event("""
+        {"type":"message_start","message":\(advisor)}
+        """))
+    await processor.consume(try event("""
+        {"type":"message_end","message":\(advisor)}
+        """))
+    await processor.consume(try event("""
+        {"type":"message_end","message":\(advisor)}
+        """))
+
+    let snapshot = await processor.currentSnapshot()
+    let guidance = snapshot.items.compactMap { item -> GuidancePresentation? in
+        guard case .guidance(let presentation) = item else { return nil }
+        return presentation
+    }
+    #expect(guidance.count == 1)
+    #expect(guidance[0].id == "advisor-1")
+    #expect(guidance[0].preview == "Check the probe window.")
+    await processor.stop()
+}
+
 @Test func burstUpdatesNormalizeOnlyNewestPayloadOnManualFlush() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
     _ = await processor.load(
@@ -415,13 +443,13 @@ import Testing
     #expect(await collector.value == ["event:message_end", "event:message_end"])
 }
 
-@Test func malformedAndUnknownFramesProduceNoSnapshot() async throws {
+@Test func malformedAndUnknownFramesProduceBoundedDiagnostics() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
     let initial = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)
     let collector = Task { await collectControlLabels(from: processor.controlEvents) }
 
     await processor.consume(try event("""
-        {"type":"unknown_future_event","payload":{"large":"ignored"}}
+        {"type":"unknown_future_event","payload":{"id":"unknown-1","token":"sk-live-secret-token"}}
         """))
     await processor.consume(try event("""
         {"type":"message_update"}
@@ -434,7 +462,17 @@ import Testing
         """))
 
     #expect(await processor.flush() == nil)
-    #expect(await processor.currentSnapshot() == initial)
+    let snapshot = await processor.currentSnapshot()
+    #expect(snapshot.revision > initial.revision)
+    #expect(snapshot.items.count == initial.items.count + 4)
+    let diagnostics = snapshot.items.compactMap { item -> EventDiagnostic? in
+        guard case .diagnostic(let diagnostic) = item else { return nil }
+        return diagnostic
+    }
+    #expect(diagnostics.count == 4)
+    #expect(diagnostics.contains { $0.type == "unknown_future_event" })
+    #expect(!diagnostics.contains { $0.preview?.contains("sk-live-secret-token") == true })
+    #expect(!DiagnosticCardView.accessibilityLabel(for: diagnostics[0]).contains("sk-live-secret-token"))
     await processor.stop()
     #expect(await collector.value.isEmpty)
 }
@@ -469,24 +507,6 @@ import Testing
     #expect(latest.visibleText(for: "m1") == "Newest")
     await processor.stop()
     #expect(await snapshots.next() == nil)
-}
-
-@Test func processorForwardsDroppedHarnessMessages() async {
-    let processor = TranscriptEventProcessor()
-    await confirmation(expectedCount: 1) { confirm in
-        await processor.setOnDroppedHarnessMessages { dropped in
-            #expect(dropped.first?.role == "developer")
-            #expect(dropped.first?.text == "wall")
-            confirm()
-        }
-        await processor.consume(.event(type: "message_start", payload: .object([
-            "message": .object([
-                "role": .string("developer"),
-                "content": .string("wall"),
-            ]),
-        ])))
-    }
-    await processor.stop()
 }
 
 private func collectSnapshots(from stream: AsyncStream<TranscriptSnapshot>) async -> [TranscriptSnapshot] {

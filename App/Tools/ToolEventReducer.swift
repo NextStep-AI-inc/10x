@@ -3,6 +3,7 @@ import OmpKit
 
 struct ToolEventReducer {
     private(set) var presentations: [ToolPresentation] = []
+    private var displayErrorSettledIDs: Set<String> = []
 
     @discardableResult
     mutating func interruptRunning(at date: Date) -> Bool {
@@ -18,6 +19,13 @@ struct ToolEventReducer {
         guard let id = payload["toolCallId"]?.stringValue else { return }
         let name = payload["toolName"]?.stringValue
         let arguments = payload["args"]
+
+        if type == "tool_execution_end", Self.isMissingTerminalResult(payload) {
+            if presentations.contains(where: { $0.id == id }) {
+                _ = settleDisplayError(id: id, at: date)
+            }
+            return
+        }
 
         if let index = presentations.firstIndex(where: { $0.id == id }) {
             apply(type: type, payload: payload, date: date, at: index)
@@ -51,12 +59,33 @@ struct ToolEventReducer {
             endDate: endDate))
     }
 
+    @discardableResult
+    mutating func settleDisplayError(id: String, at date: Date) -> Bool {
+        guard !displayErrorSettledIDs.contains(id) else { return false }
+        displayErrorSettledIDs.insert(id)
+        let errorResult = JSONValue.object([
+            "error": .string(EventDiagnosticDisplay.settledUpdateError),
+        ])
+        guard let index = presentations.firstIndex(where: { $0.id == id }) else { return false }
+        presentations[index].update(
+            result: .some(errorResult),
+            phase: .failed,
+            endDate: .some(date))
+        return true
+    }
+
+    static func isMissingTerminalResult(_ payload: JSONValue) -> Bool {
+        payload["result"] == nil || payload["result"] == .null
+    }
+
     private mutating func apply(
         type: String,
         payload: JSONValue,
         date: Date,
         at index: Int
     ) {
+        let id = presentations[index].id
+        guard !displayErrorSettledIDs.contains(id) else { return }
         guard presentations[index].phase != .interrupted else { return }
         let name = payload["toolName"]?.stringValue
         let arguments = payload["args"]
@@ -70,7 +99,8 @@ struct ToolEventReducer {
         case "tool_execution_end":
             let result = payload["result"]
             let phase: ToolPhase = payload["isError"]?.boolValue == true ? .failed : .complete
-            let alreadyApplied = presentations[index].result == result
+            let boundedResult = result.map(ToolPayloadBudget.limit)
+            let alreadyApplied = presentations[index].result == boundedResult
                 && presentations[index].phase == phase
             presentations[index].update(
                 name: name,

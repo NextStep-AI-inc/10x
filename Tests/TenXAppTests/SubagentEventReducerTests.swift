@@ -3,6 +3,62 @@ import OmpKit
 import Testing
 @testable import TenXApp
 
+@Test func terminalLifecycleMissingRequiredFieldsFailsExactIDAndBlocksRevival() throws {
+    var reducer = SubagentEventReducer()
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-1","agent":"explorer","index":1,"status":"running"}}
+        """))
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-2","agent":"reviewer","index":2,"status":"running"}}
+        """))
+
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-2","status":"completed"}}
+        """))
+
+    let failed = try #require(reducer.presentations.first { $0.id == "worker-2" })
+    #expect(failed.status == .failed)
+    #expect(failed.description == EventDiagnosticDisplay.settledUpdateError)
+    #expect(reducer.presentations.first { $0.id == "worker-1" }?.status == .running)
+
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-2","agent":"reviewer","index":2,"status":"running"}}
+        """))
+    #expect(reducer.presentations.first { $0.id == "worker-2" }?.status == .failed)
+}
+
+@Test func malformedTerminalForUnseenWorkerDoesNotBlockLaterLifecycle() throws {
+    var reducer = SubagentEventReducer()
+
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-new","status":"completed"}}
+        """))
+
+    #expect(reducer.presentations.isEmpty)
+
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-new","agent":"explorer","index":1,"status":"running"}}
+        """))
+
+    let started = try #require(reducer.presentations.first { $0.id == "worker-new" })
+    #expect(started.status == .running)
+    #expect(started.description != EventDiagnosticDisplay.settledUpdateError)
+}
+
+@Test func minimalTerminalLifecycleWithRequiredFieldsRemainsValid() throws {
+    var reducer = SubagentEventReducer()
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-1","agent":"explorer","index":1,"status":"running"}}
+        """))
+    reducer.consume(type: "subagent_lifecycle", payload: try value("""
+        {"payload":{"id":"worker-1","agent":"explorer","index":1,"status":"completed"}}
+        """))
+
+    let completed = try #require(reducer.presentations.first)
+    #expect(completed.status == .completed)
+    #expect(completed.description != EventDiagnosticDisplay.settledUpdateError)
+}
+
 @Test func subagentLifecycleAndProgressUpdateOneStablePresentation() throws {
     var reducer = SubagentEventReducer()
     reducer.consume(type: "subagent_lifecycle", payload: try value("""

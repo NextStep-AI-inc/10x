@@ -103,6 +103,85 @@ import Testing
     #expect(blocking.filter(\.isQuestionInput).map(\.id) == ["select", "input", "editor"])
 }
 
+@Test func extensionRouterClassifiesKnownBlockingRequests() throws {
+    let confirm = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"confirm-1","method":"confirm","title":"Allow?","message":"Run it"}
+        """))
+    let select = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"select-1","method":"select","title":"Choose","options":["A"]}
+        """))
+    let input = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"input-1","method":"input","title":"Branch name"}
+        """))
+    let editor = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"editor-1","method":"editor","title":"Explain"}
+        """))
+    let openURL = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"open-1","method":"open_url","launchUrl":"https://example.com/path"}
+        """))
+
+    guard case .known(.confirm(let confirmID, _, _, _)) = confirm else {
+        Issue.record("Expected confirm to classify as known")
+        return
+    }
+    #expect(confirmID == "confirm-1")
+    guard case .known(.select(let selectID, _, _, _)) = select else {
+        Issue.record("Expected select to classify as known")
+        return
+    }
+    #expect(selectID == "select-1")
+    guard case .known(.input(let inputID, _, _, _)) = input else {
+        Issue.record("Expected input to classify as known")
+        return
+    }
+    #expect(inputID == "input-1")
+    guard case .known(.editor(let editorID, _, _, _)) = editor else {
+        Issue.record("Expected editor to classify as known")
+        return
+    }
+    #expect(editorID == "editor-1")
+    guard case .known(.openURL(let openID, _, _)) = openURL else {
+        Issue.record("Expected open_url to classify as known")
+        return
+    }
+    #expect(openID == "open-1")
+}
+
+@Test func extensionRouterClassifiesReservedProviderChannel() throws {
+    let reserved = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"chan-1","method":"input","title":"\(ExtensionUIRouter.providerAccountChannelTitle)"}
+        """))
+    #expect(reserved == .reservedChannel)
+
+    let sessionTitle = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"title-1","method":"setTitle","title":"\(ExtensionUIRouter.providerAccountChannelTitle)"}
+        """))
+    guard case .known(.title(let id, _)) = sessionTitle else {
+        Issue.record("setTitle must not be treated as the reserved provider channel")
+        return
+    }
+    #expect(id == "title-1")
+}
+
+@Test func extensionRouterClassifiesUnknownMethodAsUnsupported() throws {
+    let unknown = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"unknown-1","method":"future_dialog","title":"Future"}
+        """))
+    #expect(unknown == .unsupported(reason: "Unsupported extension UI request."))
+}
+
+@Test func extensionRouterClassifiesMalformedKnownMethodAsUnsupported() throws {
+    let malformedConfirm = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"bad-confirm","method":"confirm","title":"Missing message"}
+        """))
+    #expect(malformedConfirm == .unsupported(reason: "Extension request could not be displayed."))
+
+    let malformedOpenURL = ExtensionUIRouter.classify(try request("""
+        {"type":"extension_ui_request","id":"bad-open","method":"open_url","launchUrl":"not-a-url"}
+        """))
+    #expect(malformedOpenURL == .unsupported(reason: "Extension request could not be displayed."))
+}
+
 private func request(_ json: String) throws -> ExtensionUIRequest {
     guard case .extensionUIRequest(let request) = try RpcFrame.decode(line: Data(json.utf8)) else {
         throw TestRequestError.notAnExtensionRequest

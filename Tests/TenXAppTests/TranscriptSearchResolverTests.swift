@@ -76,6 +76,51 @@ import Testing
     }
 }
 
+@Test func transcriptSearchResolvesDelegationTaskTool() throws {
+    let rows = TranscriptPresentationRow.rows(from: [
+        .tool(ToolPresentation(
+            id: "delegate-a",
+            name: "task",
+            arguments: .object(["description": .string("Review tool wrappers")]),
+            result: nil,
+            phase: .running,
+            startDate: .distantPast,
+            endDate: nil)),
+        .subagent(SubagentPresentation(
+            id: "worker-one",
+            index: 0,
+            agent: "reviewer",
+            task: "UI review",
+            assignment: nil,
+            description: nil,
+            status: .running,
+            sessionFile: nil,
+            parentToolCallID: "delegate-a",
+            actualModel: nil,
+            thinkingLevel: nil,
+            modelRole: nil,
+            isFallback: false,
+            currentTool: "read",
+            recentTools: [],
+            recentOutput: [],
+            toolCount: 0,
+            requests: nil,
+            tokens: nil,
+            cost: nil,
+            durationMilliseconds: 0,
+            result: nil)),
+    ])
+    let request = try #require(TranscriptSearchRequest(
+        entryID: "delegate-a",
+        query: "Review"))
+
+    let resolution = TranscriptSearchResolver.resolve(request, in: rows)
+
+    #expect(resolution?.rowID == "delegation:delegate-a")
+    #expect(resolution?.groupID == nil)
+    #expect(resolution?.messageID == nil)
+}
+
 @Test func transcriptSearchDoesNotFallbackFromMissingTarget() throws {
     let rows = TranscriptPresentationRow.rows(from: [
         .message(message(id: "other", baseID: "other", text: "same needle")),

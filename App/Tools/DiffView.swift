@@ -27,10 +27,10 @@ enum DiffViewLayout {
 struct DiffView: View {
     let diff: UnifiedDiff
     private let topHeaderPath: String?
-    private let presentation: DiffRenderPresentation
+    @State private var selectedFileIndex = 0
     @State private var isWrapped = true
     @State private var renderState = DiffRenderState()
-    @StateObject private var pageLoader: DiffPageLoader
+    @StateObject private var pageLoader = DiffPageLoader()
 
     init(
         diff: UnifiedDiff,
@@ -39,11 +39,30 @@ struct DiffView: View {
     ) {
         self.diff = diff
         self.topHeaderPath = topHeaderPath
-        let presentation = DiffRenderPresentation(diff: diff)
-        self.presentation = presentation
-        _pageLoader = StateObject(wrappedValue: DiffPageLoader(
-            contentID: presentation.contentID,
-            initialRows: presentation.slice(limit: 200).rows))
+    }
+
+    private var activeDiff: UnifiedDiff {
+        if diff.files.count > 1,
+           let path = EditDiffFileSelection.selectedPath(in: diff, index: selectedFileIndex),
+           let selected = EditDiffFileSelection.diff(for: diff, selectedPath: path) {
+            return selected
+        }
+        if diff.files.count == 1, let file = diff.files.first {
+            return UnifiedDiff(raw: diff.raw, files: [file])
+        }
+        return diff
+    }
+
+    private var presentation: DiffRenderPresentation {
+        DiffRenderPresentation(diff: activeDiff)
+    }
+
+    private var activeFilePath: String? {
+        activeDiff.files.first?.path ?? topHeaderPath
+    }
+
+    private var usesAttachedPathSurface: Bool {
+        activeFilePath != nil
     }
 
     private var visibleRows: [DiffRenderRow] {
@@ -77,35 +96,111 @@ struct DiffView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            fileViews
-            ProgressiveRevealButton(
-                reveal: Binding(
-                    get: { effectiveRenderState.reveal },
-                    set: {
-                        renderState.reset(contentID: presentation.contentID)
-                        renderState.reveal = $0
-                    }),
-                total: presentation.lineCount(
-                    revealing: effectiveRenderState.contextReveals.mapValues(\.limit)),
-                noun: "lines",
-                accessibilityNoun: "diff lines")
+        Group {
+            if usesAttachedPathSurface, let activeFilePath {
+                FileAttachedPathSurface(
+                    filePath: activeFilePath,
+                    copyText: EditDiffFileSelection.diff(
+                        for: activeDiff,
+                        selectedPath: activeFilePath)?.raw ?? activeDiff.raw,
+                    copyLabel: FilePathSurfaceLayout.copyLabel(for: .diff),
+                    usesPreviewCopyLabel: false,
+                    content: { attachedDiffContent(showsFileHeader: false, showsActions: false) })
+            } else {
+                attachedDiffContent(
+                    showsFileHeader: showsFileHeader,
+                    showsActions: true)
+            }
         }
-        .task(id: DiffRenderLoadID(contentID: presentation.contentID, lineIDs: visibleLineIDs)) {
+        .preference(
+            key: SelectedToolFilePathPreference.self,
+            value: activeFilePath)
+        .task(id: DiffRenderLoadID(
+            contentID: presentation.contentID,
+            lineIDs: visibleLineIDs,
+            selectedFileIndex: selectedFileIndex)) {
             renderState.reset(contentID: presentation.contentID)
             let rows = presentation.slice(using: renderState).rows
-            pageLoader.reset(contentID: presentation.contentID, initialRows: presentation.slice(limit: 200).rows)
+            pageLoader.reset(
+                contentID: presentation.contentID,
+                initialRows: presentation.slice(limit: 200).rows)
             await pageLoader.load(rows: rows, contentID: presentation.contentID)
         }
     }
 
-    private var fileViews: some View {
+    @ViewBuilder
+    private func attachedDiffContent(showsFileHeader: Bool, showsActions: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            fileViews(showsFileHeader: showsFileHeader, showsActions: showsActions)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(diffFooterSummary)
+                    .font(TenXTypography.body(size: 11))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                Spacer(minLength: 8)
+                ProgressiveRevealButton(
+                    reveal: Binding(
+                        get: { effectiveRenderState.reveal },
+                        set: {
+                            renderState.reset(contentID: presentation.contentID)
+                            renderState.reveal = $0
+                        }),
+                    total: presentation.lineCount(
+                        revealing: effectiveRenderState.contextReveals.mapValues(\.limit)),
+                    noun: "lines",
+                    accessibilityNoun: "diff lines")
+            }
+            if diff.files.count > 1 {
+                alternateFileFooter
+            }
+        }
+    }
+
+    private var diffFooterSummary: String {
+        let total = presentation.lineCount(
+            revealing: effectiveRenderState.contextReveals.mapValues(\.limit))
+        let visible = min(total, effectiveRenderState.reveal.limit)
+        guard total > visible else {
+            return "Showing \(total) \(total == 1 ? "line" : "lines")"
+        }
+        return "Showing \(visible) of \(total) \(total == 1 ? "line" : "lines")"
+    }
+
+    @ViewBuilder
+    private var alternateFileFooter: some View {
+        Divider()
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            ForEach(Array(diff.files.enumerated()), id: \.offset) { index, file in
+                if index != selectedFileIndex {
+                    Button {
+                        selectedFileIndex = index
+                    } label: {
+                        HStack(spacing: 6) {
+                            FileTypeIcon(path: file.path, isAvailable: true)
+                            Text(URL(filePath: file.path).lastPathComponent)
+                                .font(TenXTypography.body(size: 11, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(GhostActionStyle())
+                }
+            }
+            Spacer(minLength: 8)
+            if diff.files.count - 1 > 0, selectedFileIndex == 0, diff.files.count > 1 {
+                Button("Show next diff") {
+                    selectedFileIndex = min(selectedFileIndex + 1, diff.files.count - 1)
+                }
+                .buttonStyle(GhostActionStyle())
+            }
+        }
+        .font(TenXTypography.mono(size: 10, weight: .medium))
+    }
+
+    private func fileViews(showsFileHeader: Bool, showsActions: Bool) -> some View {
         ForEach(fileSections) { file in
             if file.header.fileID > 0 { Divider() }
             fileView(
                 file,
                 showsHeader: showsFileHeader,
-                showsActions: file.header.fileID == fileSections.first?.header.fileID)
+                showsActions: showsActions && file.header.fileID == fileSections.first?.header.fileID)
         }
     }
 
@@ -157,7 +252,7 @@ struct DiffView: View {
             Button(isWrapped ? "Scroll" : "Wrap") { isWrapped.toggle() }
                 .buttonStyle(GhostActionStyle())
                 .accessibilityLabel(isWrapped ? "Use horizontal scrolling for diff" : "Wrap diff lines")
-            Button("Copy patch") { copy(diff.raw) }
+            Button("Copy patch") { copy(activeDiff.raw) }
                 .buttonStyle(GhostActionStyle())
         }
         .font(TenXTypography.mono(size: 10, weight: .semibold))
@@ -229,8 +324,8 @@ struct DiffView: View {
 
     private var showsFileHeader: Bool {
         !DiffViewLayout.shouldHideFileHeader(
-            fileCount: diff.files.count,
-            diffPath: diff.files.first?.path,
+            fileCount: activeDiff.files.count,
+            diffPath: activeDiff.files.first?.path,
             topHeaderPath: topHeaderPath)
     }
 
@@ -297,6 +392,7 @@ private struct DiffRenderHunkSection: Identifiable {
 private struct DiffRenderLoadID: Equatable {
     let contentID: UUID
     let lineIDs: [DiffRenderRow.ID]
+    let selectedFileIndex: Int
 }
 
 private struct DiffLineView: View {

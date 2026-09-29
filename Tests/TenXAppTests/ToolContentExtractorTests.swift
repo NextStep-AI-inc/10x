@@ -47,6 +47,20 @@ import Testing
     #expect(card.outcome == "No tasks")
 }
 
+@Test func todoAccessorIgnoresStaleArgumentsWhenSnapshotPhasesAreEmpty() {
+    let presentation = ToolPresentation(
+        id: "todo-empty-phases",
+        name: "todo",
+        arguments: .object([
+            "todos": .array([.object(["content": .string("Removed task")])]),
+        ]),
+        result: .object(["details": .object(["phases": .array([])])]),
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantPast)
+    #expect(ToolContentExtractor.todos(presentation).isEmpty)
+}
+
 @Test func taskCardsShowPendingOMPInitializationBeforeResult() {
     let card = ToolContentExtractor.card(name: "todo", arguments: .object([
         "op": .string("init"), "list": .array([
@@ -204,7 +218,7 @@ import Testing
         return
     }
     #expect(diff.files.map(\.path) == [alpha, beta])
-    #expect(card.primary == "2 files")
+    #expect(card.primary == alpha)
     #expect(card.outcome == "+2 −2")
 }
 
@@ -365,13 +379,13 @@ import Testing
         result: result(text: "\u{001B}[31mFailed\u{001B}[0m\nNext line"),
         phase: .failed)
 
-    guard case .stack(let bodies) = card.body,
-          case .console(_, let output, _) = bodies.last
-    else {
-        Issue.record("Failed bash should retain a console after its error summary")
+    guard case .console(_, let output, let exitCode) = card.body else {
+        Issue.record("Failed bash with multiline output should keep a console body")
         return
     }
+    #expect(exitCode == nil)
     #expect(output == "Failed\nNext line")
+    #expect(!output.contains("\u{001B}"))
 }
 
 @Test func failedSingleLineConsoleDoesNotRepeatItsErrorAsOutput() {
@@ -487,7 +501,7 @@ import Testing
             arguments: .object([:]),
             result: .object(["details": .object(["diff": .string(patch)])]),
             phase: .complete)
-        #expect(card.primary == "2 files")
+        #expect(card.primary == "App/A.swift")
         #expect(card.outcome == "+2 −2")
         guard case .diff(let diff, _) = card.body else {
             Issue.record("\(name) should use the diff surface")
@@ -1157,4 +1171,479 @@ private func result(text: String) -> JSONValue {
     .object(["content": .array([
         .object(["type": .string("text"), "text": .string(text)]),
     ])])
+}
+
+@Test func toolBudgetBoundsReadCardTextAndAccessibility() throws {
+    let megabyte = String(repeating: "x", count: 1_024 * 1_024)
+    let tool = ToolPresentation(
+        id: "read-huge",
+        name: "read",
+        arguments: .object(["path": .string("/tmp/Huge.swift")]),
+        result: result(text: megabyte),
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantPast)
+
+    guard case .source(let source, _) = tool.content.body else {
+        Issue.record("Expected bounded read source surface")
+        return
+    }
+    #expect(Data(source.text.utf8).count <= ToolPayloadBudget.Limits.scalarBytes)
+    #expect(maxJSONScalarBytes(in: tool.result) < megabyte.utf8.count)
+
+    let header = ToolCardHeaderPresentation(content: tool.content, phase: tool.phase, duration: "1.0s")
+    #expect(Data(header.accessibilityLabel.utf8).count <= 512)
+    #expect(tool.id == "read-huge")
+    #expect(tool.phase == .complete)
+}
+
+@Test func toolBudgetUnknownToolShowsBoundedFallback() {
+    let payload = JSONValue.object([
+        "secret": .string(String(repeating: "s", count: 64 * 1_024)),
+        "items": .array((0..<200).map { .string("entry-\($0)") }),
+    ])
+    let tool = ToolPresentation(
+        id: "unknown-1",
+        name: "future_mcp_tool",
+        arguments: payload,
+        result: payload,
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantPast)
+
+    #expect(tool.content.title == "future_mcp_tool")
+    #expect(tool.id == "unknown-1")
+    #expect(maxJSONScalarBytes(in: tool.arguments) <= ToolPayloadBudget.Limits.scalarBytes)
+    guard case .stack(let bodies) = tool.content.body else {
+        Issue.record("Expected bounded fallback stack")
+        return
+    }
+    #expect(!bodies.isEmpty)
+    #expect(bodies.allSatisfy { bodyJSONNodeCount($0) <= ToolPayloadBudget.Limits.totalNodes })
+}
+
+@Test func toolBudgetMalformedReadRetainsVisibleFallback() {
+    let tool = ToolPresentation(
+        id: "read-missing",
+        name: "read",
+        arguments: .object([:]),
+        result: .null,
+        phase: .failed,
+        startDate: .distantPast,
+        endDate: .distantPast)
+
+    #expect(tool.id == "read-missing")
+    #expect(tool.phase == .failed)
+    #expect(tool.content.verb == "Read")
+    #expect(ToolContentExtractor.file(tool) == nil)
+    #expect(!toolCardVisibleText(tool).isEmpty)
+}
+
+@Test func toolBudgetInterruptedStreamStaysBounded() throws {
+    var reducer = ToolEventReducer()
+    let partial = String(repeating: "p", count: 32 * 1_024)
+    reducer.consume(type: "tool_execution_start", payload: try budgetPayload("""
+        {"type":"tool_execution_start","toolCallId":"stream-1","toolName":"bash","args":{"command":"long-run"}}
+        """))
+    reducer.consume(type: "tool_execution_update", payload: try budgetPayload("""
+        {"type":"tool_execution_update","toolCallId":"stream-1","toolName":"bash","partialResult":{"content":[{"type":"text","text":"\(partial)"}]}}
+        """))
+    reducer.interruptRunning(at: Date())
+
+    let tool = try #require(reducer.presentations.first { $0.id == "stream-1" })
+    #expect(tool.phase == .interrupted)
+    #expect(tool.content.outcome == "Stopped")
+    guard case .console(_, let output, _) = tool.content.body else {
+        Issue.record("Expected bounded console output")
+        return
+    }
+    #expect(Data(output.utf8).count <= ToolPayloadBudget.Limits.scalarBytes)
+}
+
+@Test func toolBudgetFailedToolShowsPartialOutput() throws {
+    let partial = "partial stdout"
+    let tool = ToolPresentation(
+        id: "bash-fail",
+        name: "bash",
+        arguments: .object(["command": .string("false")]),
+        result: .object([
+            "error": .string("Command failed"),
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string(partial),
+            ])]),
+        ]),
+        phase: .failed,
+        startDate: .distantPast,
+        endDate: .distantPast)
+
+    #expect(tool.phase == .failed)
+    #expect(tool.content.outcome == "Command failed")
+    guard case .console(_, let output, let exitCode) = tool.content.body else {
+        Issue.record("Expected partial stdout in a console body")
+        return
+    }
+    #expect(exitCode == nil)
+    #expect(output == partial)
+}
+
+@Test func toolBudgetDataTreeCopyUsesPreviewLabel() {
+    #expect(ToolPayloadSurfaceCopy.previewLabel == "Copy preview")
+}
+
+@Test func toolBudgetThirtyThreeGrepMatchesRetainBoundedCollection() {
+    let matches = (0..<33).map { index in
+        JSONValue.object([
+            "path": .string("App/Match\(index).swift"),
+            "line": .int(index + 1),
+            "text": .string("match \(index)"),
+        ])
+    }
+    let tool = ToolPresentation(
+        id: "grep-33",
+        name: "grep",
+        arguments: .object(["pattern": .string("match")]),
+        result: .object(["details": .object(["matches": .array(matches)])]),
+        phase: .complete,
+        startDate: .distantPast,
+        endDate: .distantPast)
+
+    guard case .collection(let items) = tool.content.body else {
+        Issue.record("Expected bounded grep collection")
+        return
+    }
+    #expect(items.count == 32)
+    #expect(tool.content.outcome == "32 matches")
+    #expect(tool.content.outcome != "No matches")
+}
+
+@Test func toolInspectionIntegrationShowsFooterWhenWired() {
+    #expect(ToolInspectionAvailability.showsFooter(
+        sessionFilePath: "/tmp/session.jsonl",
+        toolCallID: nil))
+    #expect(ToolInspectionAvailability.showsFooter(
+        sessionFilePath: nil,
+        toolCallID: "call-42"))
+    #expect(!ToolInspectionAvailability.showsFooter(
+        sessionFilePath: nil,
+        toolCallID: nil))
+    #expect(ToolSessionFileOpening.failureMessage(for: "/tmp/session.jsonl") == "Couldn't open session.jsonl")
+}
+
+@MainActor
+@Test func toolSessionFileOpenFailureSurfacesBoundedError() {
+    enum TestError: Error { case failed }
+    let service = FileOpenService(
+        openDefault: { _ in throw TestError.failed },
+        openInApplication: { _, _ in },
+        reveal: { _ in },
+        startSecurityScope: { _ in false },
+        stopSecurityScope: { _ in })
+
+    do {
+        try ToolSessionFileOpening.open(
+            path: "/tmp/missing-session.jsonl",
+            fileOpenService: service)
+        Issue.record("Expected open to fail")
+    } catch {
+        #expect(ToolSessionFileOpening.failureMessage(for: "/tmp/missing-session.jsonl")
+            == "Couldn't open missing-session.jsonl")
+    }
+}
+
+private func budgetPayload(_ json: String) throws -> JSONValue {
+    guard case .event(_, let payload) = try RpcFrame.decode(line: Data(json.utf8)) else {
+        throw BudgetPayloadError.notAnEvent
+    }
+    return payload
+}
+
+private enum BudgetPayloadError: Error {
+    case notAnEvent
+}
+
+private func maxJSONScalarBytes(in value: JSONValue?) -> Int {
+    guard let value else { return 0 }
+    var maxBytes = 0
+    func visit(_ value: JSONValue) {
+        if let text = value.stringValue {
+            maxBytes = max(maxBytes, text.utf8.count)
+        }
+        switch value {
+        case .object(let object):
+            object.values.forEach(visit)
+        case .array(let values):
+            values.forEach(visit)
+        default:
+            break
+        }
+    }
+    visit(value)
+    return maxBytes
+}
+
+private func bodyJSONNodeCount(_ body: ToolBody) -> Int {
+    switch body {
+    case .data(_, let value):
+        return jsonNodeCount(value)
+    case .stack(let bodies):
+        return bodies.map(bodyJSONNodeCount).max() ?? 0
+    default:
+        return 1
+    }
+}
+
+private func jsonNodeCount(_ value: JSONValue) -> Int {
+    var count = 0
+    func visit(_ value: JSONValue) {
+        count += 1
+        switch value {
+        case .object(let object):
+            object.values.forEach(visit)
+        case .array(let values):
+            values.forEach(visit)
+        default:
+            break
+        }
+    }
+    visit(value)
+    return count
+}
+
+private func toolCardVisibleText(_ tool: ToolPresentation) -> String {
+    let header = ToolCardHeaderPresentation(content: tool.content, phase: tool.phase, duration: nil)
+    return header.visibleText + header.accessibilityLabel
+}
+
+@Test func fileToolCardsUseAttachedPathSurface() throws {
+    let read = ToolContentExtractor.card(
+        name: "read",
+        arguments: .object(["path": .string("App/Sessions/TranscriptView.swift")]),
+        result: result(text: "struct TranscriptView: View {\n  var body: some View {\n"),
+        phase: .complete)
+    #expect(read.reference == .file(path: "App/Sessions/TranscriptView.swift", line: nil))
+    #expect(ToolCardFileHeaderLabel.filename(for: read.reference) == "TranscriptView.swift")
+    #expect(FilePathSurfaceLayout.directoryPath(for: "App/Sessions/TranscriptView.swift")
+        == "App/Sessions")
+    guard case .source(let readSource, _) = read.body else {
+        Issue.record("Read should use a source body")
+        return
+    }
+    #expect(!readSource.text.isEmpty)
+    #expect(FilePathSurfaceLayout.usesPreviewCopyLabel(forBoundedPayload: true))
+    #expect(ToolPayloadSurfaceCopy.previewLabel == "Copy preview")
+
+    let write = ToolContentExtractor.card(
+        name: "write",
+        arguments: .object([
+            "path": .string("docs/release-notes.md"),
+            "content": .string("# Release notes\n\nImproved transcript stability."),
+        ]),
+        result: nil,
+        phase: .complete)
+    #expect(ToolCardFileHeaderLabel.filename(for: write.reference) == "release-notes.md")
+    #expect(FilePathSurfaceLayout.directoryPath(for: "docs/release-notes.md") == "docs")
+    guard case .source = write.body else {
+        Issue.record("Write should use a source body")
+        return
+    }
+
+    let alpha = "App/Sessions/TranscriptMessage.swift"
+    let beta = "App/Sessions/TranscriptReducer.swift"
+    let edit = ToolContentExtractor.card(
+        name: "edit",
+        arguments: .object(["path": .string(alpha)]),
+        result: .object(["details": .object([
+            "diff": .string("""
+            diff --git a/\(alpha) b/\(alpha)
+            --- a/\(alpha)
+            +++ b/\(alpha)
+            @@ -1 +1 @@
+            -return rawContent
+            +return advisorNotes
+            diff --git a/\(beta) b/\(beta)
+            --- a/\(beta)
+            +++ b/\(beta)
+            @@ -1 +1 @@
+            -append guidance
+            +replace guidance
+            """),
+            "perFileResults": .array([
+                .object([
+                    "path": .string(alpha),
+                    "diff": .string("""
+                    --- a/\(alpha)
+                    +++ b/\(alpha)
+                    @@ -1 +1 @@
+                    -return rawContent
+                    +return advisorNotes
+                    """),
+                ]),
+                .object([
+                    "path": .string(beta),
+                    "diff": .string("""
+                    --- a/\(beta)
+                    +++ b/\(beta)
+                    @@ -1 +1 @@
+                    -append guidance
+                    +replace guidance
+                    """),
+                ]),
+            ]),
+        ])]),
+        phase: .complete)
+    #expect(ToolCardFileHeaderLabel.filename(for: edit.reference) == "TranscriptMessage.swift")
+    guard case .diff(let editDiff, _) = edit.body else {
+        Issue.record("Edit should use a diff body")
+        return
+    }
+    #expect(editDiff.files.count == 2)
+    #expect(EditDiffFileSelection.selectedPath(in: editDiff, index: 0) == alpha)
+    #expect(EditDiffFileSelection.selectedPath(in: editDiff, index: 1) == beta)
+    #expect(EditDiffFileSelection.diff(for: editDiff, selectedPath: beta)?.files.count == 1)
+    #expect(EditDiffFileSelection.diff(for: editDiff, selectedPath: beta)?.files.first?.path == beta)
+    #expect(FilePathSurfaceLayout.copyLabel(for: FileSurfaceCopyTarget.diff) == "Copy patch")
+
+    let runFailure = ToolContentExtractor.card(
+        name: "bash",
+        arguments: .object(["command": .string("swift test --filter Transcript")]),
+        result: .object([
+            "details": .object([
+                "exitCode": .int(1),
+                "stdout": .string("Test Suite 'TranscriptTests' started\n✕ testAdvisorWrapping"),
+            ]),
+        ]),
+        phase: .failed)
+    #expect(runFailure.outcome == "Exit 1")
+    guard case .console(let command, let output, let exitCode) = runFailure.body else {
+        Issue.record("Failed run should retain a console body")
+        return
+    }
+    #expect(command == "swift test --filter Transcript")
+    #expect(exitCode == nil)
+    #expect(output.contains("testAdvisorWrapping"))
+    #expect(ConsoleSurfaceLayout.usesCommandOutputHeading(for: runFailure.body))
+
+    let search = ToolContentExtractor.card(
+        name: "grep",
+        arguments: .object(["pattern": .string("extension_ui_request")]),
+        result: .object(["details": .object(["matches": .array([
+            .object([
+                "path": .string("OmpKit/Sources/OmpKit/Wire/RpcFrame.swift"),
+                "line": .int(142),
+                "text": .string("case extension_ui_request:"),
+            ]),
+            .object([
+                "path": .string("OmpKit/Sources/OmpKit/Wire/RpcFrame.swift"),
+                "line": .int(151),
+                "text": .string("return .extensionUIRequest(request)"),
+            ]),
+            .object([
+                "path": .string("App/Sessions/SessionController.swift"),
+                "line": .int(1990),
+                "text": .string("consumeExtensionUI(request)"),
+            ]),
+        ])])]),
+        phase: .complete)
+    guard case .collection(let searchItems) = search.body else {
+        Issue.record("Search should use a collection body")
+        return
+    }
+    let groups = SearchResultGrouping.groups(from: searchItems)
+    #expect(groups.count == 2)
+    #expect(groups[0].path.hasSuffix("RpcFrame.swift"))
+    #expect(groups[0].matches.count == 2)
+    #expect(groups[1].path.hasSuffix("SessionController.swift"))
+
+    let browserPreview = ToolContentExtractor.card(
+        name: "browser",
+        arguments: .object([
+            "action": .string("browse"),
+            "url": .string("https://docs.omp.dev/rpc"),
+            "title": .string("RPC reference"),
+        ]),
+        result: .object(["details": .object([
+            "title": .string("RPC reference"),
+            "url": .string("https://docs.omp.dev/rpc"),
+        ])]),
+        phase: .complete)
+    #expect(browserPreview.verb == "Browse")
+    #expect(BrowserComputerSurfaceLayout.isBrowserCard(browserPreview))
+    #expect(browserPreview.primary == "https://docs.omp.dev/rpc")
+    #expect(browserPreview.reference == .web(
+        url: "https://docs.omp.dev/rpc",
+        label: "RPC reference"))
+    guard case .collection(let previewItems) = browserPreview.body else {
+        Issue.record("Browser preview payload should use a semantic preview collection")
+        return
+    }
+    #expect(previewItems.first?.state == BrowserComputerSurfaceLayout.browserPreviewState)
+    #expect(previewItems.first?.label == "RPC reference")
+
+    let browser = ToolContentExtractor.card(
+        name: "browser",
+        arguments: .object([
+            "action": .string("open"),
+            "url": .string("https://example.com/guide"),
+        ]),
+        result: .object([
+            "content": .array([.object([
+                "type": .string("text"),
+                "text": .string("# Guide\n\nReadable page content."),
+            ])]),
+            "details": .object(["links": .array([
+                .object([
+                    "title": .string("API"),
+                    "url": .string("https://example.com/api"),
+                ]),
+            ])]),
+        ]),
+        phase: .complete)
+    #expect(browser.verb == "Browse")
+    guard case .stack(let browserBodies) = browser.body,
+          case .document = browserBodies.first,
+          case .collection = browserBodies.last
+    else {
+        Issue.record("Browser content payload should show readable content followed by links")
+        return
+    }
+
+    let computer = ToolContentExtractor.card(
+        name: "computer",
+        arguments: .object([
+            "action": .string("Save in Xcode"),
+            "application": .string("Xcode"),
+        ]),
+        result: .object(["details": .object([
+            "application": .string("Xcode"),
+            "action": .string("Save action"),
+        ])]),
+        phase: .complete)
+    #expect(BrowserComputerSurfaceLayout.isComputerCard(computer))
+
+    #expect(ToolInspectionAvailability.showsFooter(sessionFilePath: nil, toolCallID: "call-1"))
+    #expect(ToolInspectionAvailability.showsFooter(
+        sessionFilePath: "/tmp/session.jsonl",
+        toolCallID: nil))
+    #expect(!ToolInspectionAvailability.showsFooter(sessionFilePath: nil, toolCallID: nil))
+    #expect(ToolInspectionAvailability.showsOpenSessionFile(sessionFilePath: "/tmp/session.jsonl"))
+    #expect(!ToolInspectionAvailability.showsOpenSessionFile(sessionFilePath: nil))
+}
+
+@Test func fileToolCardsDisableMissingPathActions() {
+    let missing = ToolContentExtractor.card(
+        name: "read",
+        arguments: .object(["path": .string("App/Missing.swift")]),
+        result: result(text: "missing"),
+        phase: .complete)
+    let resolved = FileReferenceResolver(fileExists: { _ in false })
+        .resolve(path: "App/Missing.swift", line: nil, relativeTo: nil)
+    #expect(!resolved.exists)
+    #expect(missing.reference == .file(path: "App/Missing.swift", line: nil))
+}
+
+@Test func fileToolCardsKeepCopyPreviewLabelForBoundedPayloads() {
+    #expect(ToolPayloadSurfaceCopy.previewLabel == "Copy preview")
+    #expect(FilePathSurfaceLayout.usesPreviewCopyLabel(forBoundedPayload: true))
+    #expect(!FilePathSurfaceLayout.usesPreviewCopyLabel(forBoundedPayload: false))
 }

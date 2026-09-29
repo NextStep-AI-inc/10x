@@ -22,12 +22,14 @@ enum TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     case item(TranscriptItem)
     case toolGroup(TranscriptToolGroup)
     case groupedTool(groupID: String, tool: ToolPresentation)
+    case delegation(id: String, tool: ToolPresentation, workers: [SubagentPresentation])
 
     var id: String {
         switch self {
         case .item(let item): item.viewID
         case .toolGroup(let group): group.id
         case .groupedTool(_, let tool): "tool:\(tool.id)"
+        case .delegation(let id, _, _): id
         }
     }
 
@@ -37,6 +39,33 @@ enum TranscriptPresentationRow: Identifiable, Equatable, Sendable {
     }
 
     static func rows(from items: [TranscriptItem]) -> [Self] {
+        let delegateToolIDs = Set(items.compactMap { item -> String? in
+            guard case .tool(let tool) = item,
+                  ToolCardRegistry.kind(for: tool.name) == .task
+            else { return nil }
+            return tool.id
+        })
+
+        var workerOrderByParent: [String: [String]] = [:]
+        var latestWorkersByParent: [String: [String: SubagentPresentation]] = [:]
+        var ownedSubagentIDs = Set<String>()
+
+        for item in items {
+            guard case .subagent(let sub) = item,
+                  let parentID = sub.parentToolCallID,
+                  delegateToolIDs.contains(parentID)
+            else { continue }
+            if !(workerOrderByParent[parentID]?.contains(sub.id) ?? false) {
+                workerOrderByParent[parentID, default: []].append(sub.id)
+            }
+            latestWorkersByParent[parentID, default: [:]][sub.id] = sub
+            ownedSubagentIDs.insert(sub.id)
+        }
+
+        func workers(for parentID: String) -> [SubagentPresentation] {
+            (workerOrderByParent[parentID] ?? []).compactMap { latestWorkersByParent[parentID]?[$0] }
+        }
+
         var rows: [Self] = []
         var pendingTools: [ToolPresentation] = []
 
@@ -50,12 +79,21 @@ enum TranscriptPresentationRow: Identifiable, Equatable, Sendable {
         }
 
         for item in items {
-            if case .tool(let tool) = item {
+            switch item {
+            case .tool(let tool) where ToolCardRegistry.kind(for: tool.name) == .task:
+                appendPendingTools()
+                rows.append(.delegation(
+                    id: "delegation:\(tool.id)",
+                    tool: tool,
+                    workers: workers(for: tool.id)))
+            case .tool(let tool):
                 pendingTools.append(tool)
+            case .subagent(let sub) where ownedSubagentIDs.contains(sub.id):
                 continue
+            default:
+                appendPendingTools()
+                rows.append(.item(item))
             }
-            appendPendingTools()
-            rows.append(.item(item))
         }
         appendPendingTools()
         return rows

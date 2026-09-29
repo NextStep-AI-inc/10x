@@ -67,7 +67,6 @@ struct ProgressiveTextView<Content: View>: View {
             characterLimit: reveal.limit)
         VStack(alignment: .leading, spacing: 4) {
             content(presentation.visibleText)
-                .accessibilityLabel(presentation.accessibilityText)
             ProgressiveRevealButton(
                 reveal: $reveal,
                 total: presentation.progressiveTotal,

@@ -41,6 +41,40 @@ let noticeLine = #"{"type":"notice","level":"info","message":"xd://: mounted","s
     #expect(req.payload["widgetKey"]?.stringValue == "autoresearch")
 }
 
+@Test func extensionRequestRequiresUsableID() throws {
+    let invalidLines = [
+        #"{"type":"extension_ui_request","method":"confirm"}"#,
+        #"{"type":"extension_ui_request","id":"","method":"confirm"}"#,
+        #"{"type":"extension_ui_request","id":"   \t\n","method":"confirm"}"#,
+    ]
+    for line in invalidLines {
+        do {
+            _ = try RpcFrame.decode(line: Data(line.utf8))
+            Issue.record("expected malformed extension_ui_request for \(line)")
+        } catch let error as RpcFrameError {
+            guard case .malformedFrame(type: let frameType, underlying: _) = error else {
+                Issue.record("expected malformedFrame, got \(error)"); continue
+            }
+            #expect(frameType == "extension_ui_request")
+        } catch {
+            Issue.record("expected RpcFrameError, got \(error)")
+        }
+    }
+
+    let unknownMethod = #"{"type":"extension_ui_request","id":"req-1","method":"completelyUnknown","title":"Hi"}"#
+    guard case .extensionUIRequest(let req) = try RpcFrame.decode(line: Data(unknownMethod.utf8)) else {
+        Issue.record("unknown method should still decode as extensionUIRequest"); return
+    }
+    #expect(req.id == "req-1")
+    #expect(req.method == "completelyUnknown")
+
+    let spacedID = #"{"type":"extension_ui_request","id":"  req-correlate  ","method":"confirm"}"#
+    guard case .extensionUIRequest(let spaced) = try RpcFrame.decode(line: Data(spacedID.utf8)) else {
+        Issue.record("usable id with surrounding whitespace should decode"); return
+    }
+    #expect(spaced.id == "  req-correlate  ")
+}
+
 @Test func chunkRejectsBooleanIndex() {
     let bad = #"{"type":"rpc_chunk","chunkId":"c1","index":true,"count":2,"byteLength":10,"data":"aGk="}"#
     #expect(throws: (any Error).self) { _ = try RpcFrame.decode(line: Data(bad.utf8)) }

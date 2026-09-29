@@ -13,6 +13,7 @@ struct ToolCardView: View, Equatable {
                 phase: presentation.phase,
                 topFilePath: topFilePath)
         }
+        .environment(\.toolCallID, presentation.id)
     }
 
     private var topFilePath: String? {

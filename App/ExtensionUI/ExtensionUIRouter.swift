@@ -1,6 +1,12 @@
 import Foundation
 import OmpKit
 
+enum ExtensionUIParseResult: Equatable, Sendable {
+    case known(ExtensionUIState)
+    case reservedChannel
+    case unsupported(reason: String)
+}
+
 struct ExtensionUIRouter {
     /// Title of the `tenx.provider-accounts.v1` machine command channel
     /// (`ProviderAccountExtensionChannel`, `App/Providers/ProviderAccountExtensionBackend.swift`).
@@ -69,6 +75,23 @@ struct ExtensionUIRouter {
 
     mutating func clearEditorText() {
         editorText = nil
+    }
+
+    static func classify(_ request: ExtensionUIRequest) -> ExtensionUIParseResult {
+        let payload = request.payload
+        if request.method != "setTitle",
+           payload["title"]?.stringValue == Self.providerAccountChannelTitle {
+            return .reservedChannel
+        }
+        if let state = parse(request) {
+            return .known(state)
+        }
+        switch request.method {
+        case "confirm", "select", "input", "editor", "open_url":
+            return .unsupported(reason: "Extension request could not be displayed.")
+        default:
+            return .unsupported(reason: "Unsupported extension UI request.")
+        }
     }
 
     static func parse(_ request: ExtensionUIRequest) -> ExtensionUIState? {
