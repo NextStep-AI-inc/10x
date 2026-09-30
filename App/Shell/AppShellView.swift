@@ -18,40 +18,52 @@ struct AppShellView: View {
                 if case .onboarding(let step) = model.route {
                     OnboardingView(model: model, step: step)
                 } else {
-                    ZStack(alignment: .leading) {
-                        routeCanvas
-                            .environment(\.composerProviderDockWidth, hasComposer
-                                ? ProviderUsageDockLayout.footerWidth(providers: model.providerModel?.dockProviders ?? [])
-                                : 0)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(.leading, railExpansion.contentLeadingInset)
-                            .environment(model.idePreferenceStore)
-                            .environment(model.toolDetailPreferenceStore)
-                            .environment(model.harnessNoticePreferenceStore)
-                            .environment(\.fileOpenService, model.fileOpenService)
-                            .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
-                                model.openSettings(focus: .preferredIDE)
-                            })
-                            .environment(\.openReportedSession, OpenReportedSessionAction { path in
-                                await model.openReportedChildSession(path: path)
-                            })
-                        FloatingRailView(
-                            model: model,
-                            expansion: railExpansion,
-                            isBrandMenuPresented: $isBrandMenuPresented)
-                    }
-                    .animation(railAnimation, value: railExpansion.isExpanded)
-                    .overlay {
-                        if isBrandMenuPresented {
-                            brandMenuOverlay
-                        }
-                    }
-                    .animation(brandMenuAnimation, value: isBrandMenuPresented)
-                    .overlayPreferenceValue(ComposerProviderDockAnchorKey.self) { anchor in
-                        if hasComposer, let anchor {
-                            GeometryReader { geometry in
-                                usageDock(shellSize: geometry.size, footerFrame: geometry[anchor])
+                    GeometryReader { shell in
+                        let providerWidth = ProviderUsageDockLayout.footerWidth(
+                            providers: model.providerModel?.dockProviders ?? [])
+                        let providerPlacement = hasComposer
+                            ? ProviderUsageDockLayout.placement(
+                                availableWidth: shell.size.width,
+                                factsMinWidth: 380,
+                                actionsMinWidth: 200,
+                                providerWidth: providerWidth)
+                            : .belowLine
+                        VStack(spacing: 0) {
+                            ZStack(alignment: .leading) {
+                                routeCanvas
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .padding(.leading, railExpansion.contentLeadingInset)
+                                FloatingRailView(
+                                    model: model,
+                                    expansion: railExpansion,
+                                    isBrandMenuPresented: $isBrandMenuPresented)
                             }
+                            WorkspaceDockView(
+                                model: model,
+                                isFocusBlocked: isComposerFocusBlocked,
+                                routeCanvasLeadingInset: railExpansion.contentLeadingInset,
+                                providerWidth: providerWidth,
+                                providerPlacement: providerPlacement)
+                        }
+                        .environment(model.idePreferenceStore)
+                        .environment(model.toolDetailPreferenceStore)
+                        .environment(model.harnessNoticePreferenceStore)
+                        .environment(\.fileOpenService, model.fileOpenService)
+                        .environment(\.openIDEPreferences, OpenIDEPreferencesAction {
+                            model.openSettings(focus: .preferredIDE)
+                        })
+                        .environment(\.openReportedSession, OpenReportedSessionAction { path in
+                            await model.openReportedChildSession(path: path)
+                        })
+                        .animation(railAnimation, value: railExpansion.isExpanded)
+                        .overlay {
+                            if isBrandMenuPresented {
+                                brandMenuOverlay
+                            }
+                        }
+                        .animation(brandMenuAnimation, value: isBrandMenuPresented)
+                        .overlay(alignment: .bottomTrailing) {
+                            usageDock(placement: providerPlacement)
                         }
                     }
                     .overlay {
@@ -157,6 +169,11 @@ struct AppShellView: View {
             || model.isSessionMutationInFlight
     }
 
+    private var isComposerFocusBlocked: Bool {
+        isSessionInteractionBlocked || model.isSearchPresented || isBrandMenuPresented
+            || model.sessionActionError != nil
+    }
+
     private var railAnimation: Animation? {
         RailExpansionTransition.animationDuration(reduceMotion: reduceMotion)
             .map { .easeInOut(duration: $0) }
@@ -166,6 +183,17 @@ struct AppShellView: View {
         switch model.route {
         case .newSession, .session:
             return true
+        default:
+            return false
+        }
+    }
+
+    private var hasComposerAttachments: Bool {
+        switch model.route {
+        case .newSession:
+            return !model.newSessionAttachments.isEmpty
+        case .session:
+            return !(model.activeSession?.attachments.isEmpty ?? true)
         default:
             return false
         }
@@ -225,19 +253,23 @@ struct AppShellView: View {
     }
 
     @ViewBuilder
-    private func usageDock(shellSize: CGSize, footerFrame: CGRect) -> some View {
+    private func usageDock(placement: ProviderUsageDockPlacement) -> some View {
         if let providerModel = model.providerModel, !providerModel.dockProviders.isEmpty {
             let dockProviders = providerModel.dockProviders
-            let compactLayout = ProviderUsageDockLayout.compact(
-                shellSize: shellSize,
-                footerFrame: footerFrame)
 
             ProviderUsageDockView(
                 providers: dockProviders,
                 activeCounts: model.providerActivityCounts,
                 generatingCounts: model.accountGeneratingCounts,
                 isForegroundGenerating: model.isForegroundSessionGenerating,
-                compactLayout: compactLayout,
+                compactLayout: ProviderUsageDockCompactLayout(
+                    wheelDiameter: ProviderUsageDockLayout.inComposer28,
+                    trailingOffset: 0,
+                    bottomOffset: hasComposer && placement == .aboveLine
+                        ? ProviderUsageDockLayout.aboveLineBottomOffset(
+                            hasAttachments: hasComposerAttachments)
+                        : 0,
+                    expandedBottomOffset: placement == .belowLine ? 16 : 0),
                 accountScopeSatisfaction: model.accountScopeSatisfaction(
                     openSessionID: model.activeSessionIdentityToken),
                 accountScopeAvailability: model.accountScopeAvailability(
@@ -258,7 +290,7 @@ struct AppShellView: View {
                     model.manageProviderAccounts(providerID: providerID)
                 })
                 .padding(.trailing, 16)
-                .padding(.bottom, 16)
+                .padding(.bottom, placement == .belowLine ? 0 : 16)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
     }

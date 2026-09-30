@@ -281,7 +281,12 @@ import Testing
     fixture.controller.draft = "/compact"
     fixture.controller.attachments = [fixture.firstAttachment]
 
-    await fixture.controller.sendSlashCommand("/compact")
+    let sending = Task { await fixture.controller.sendSlashCommand("/compact") }
+    #expect(await waitUntil("the fixture lifecycle event is consumed") {
+        fixture.controller.thinkingLevel == "High"
+    })
+    try fixture.releasePromptResponse()
+    await sending.value
 
     #expect(fixture.controller.attachments.isEmpty)
     await fixture.cleanup()
@@ -294,7 +299,12 @@ import Testing
     fixture.controller.draft = "/usage"
     fixture.controller.attachments = [fixture.firstAttachment]
 
-    await fixture.controller.sendSlashCommand("/usage")
+    let sending = Task { await fixture.controller.sendSlashCommand("/usage") }
+    #expect(await waitUntil("the fixture lifecycle event is consumed") {
+        fixture.controller.thinkingLevel == "High"
+    })
+    try fixture.releasePromptResponse()
+    await sending.value
 
     #expect(fixture.controller.draft.isEmpty)
     #expect(fixture.controller.attachments.map(\.id) == [fixture.firstAttachment.id])
@@ -455,6 +465,10 @@ private final class SlashControllerFixture {
         await commandEventually({
             (try? String(contentsOf: promptRecordURL, encoding: .utf8).isEmpty) == false
         }, timeout: .seconds(5))
+    }
+
+    func releasePromptResponse() throws {
+        try Data().write(to: promptRecordURL.appendingPathExtension("release-response"))
     }
 
     func recordedPrompt(at index: Int = 0) throws -> RecordedPrompt {

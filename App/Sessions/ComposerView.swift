@@ -205,6 +205,16 @@ enum ComposerInputMethodRouting {
     }
 }
 
+enum ComposerFocusRouting {
+    nonisolated static func shouldFocusEditor(
+        isAvailable: Bool,
+        isFocusBlocked: Bool,
+        hasBlockingSheet: Bool
+    ) -> Bool {
+        isAvailable && !isFocusBlocked && !hasBlockingSheet
+    }
+}
+
 enum ComposerReturnRouting {
     nonisolated static func shortcut(
         for modifiers: EventModifiers,
@@ -284,9 +294,15 @@ struct ComposerView: View {
     let controlsMode: ComposerControlsMode
     let focusRequest: Int
     let interactionPreferences: ComposerInteractionPreferences
+    let signalPresentation: WorkspaceSignalPresentation
+    let signalCompactionPhase: SessionCompactionSignalPhase
+    let onSignalRevealComplete: (UInt64) -> Void
+    let isFocusBlocked: Bool
+    let routeCanvasLeadingInset: CGFloat
+    let providerWidth: CGFloat
+    let providerPlacement: ProviderUsageDockPlacement
     let onSend: () -> Void
 
-    @Environment(\.composerProviderDockWidth) private var providerDockWidth
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var isEditorFocused: Bool
     @State private var editorBridge = ComposerTextEditorBridge()
@@ -294,11 +310,11 @@ struct ComposerView: View {
     @State private var commandQuery = ""
     @State private var suppressedCommandDraft: String?
     @State private var isDropTargeted = false
-    static let editorPadding: CGFloat = 16
-    /// SwiftUI's padding plus the line-fragment padding NSTextView adds inside it.
-    static let textInset: CGFloat = 21
-    static let minEditorHeight: CGFloat = 58
-    static let maxEditorHeight: CGFloat = 220
+    @State private var hasEditorScrolled = false
+    @State private var editorContentHeight: CGFloat = 20
+    @State private var signalRevealTiming: WorkspaceSignalRevealTiming?
+    static let editorHeight: CGFloat = 106
+    static let scrollFadeHeight: CGFloat = 24
 
     init(
         draft: Binding<String>,
@@ -310,6 +326,13 @@ struct ComposerView: View {
         controlsMode: ComposerControlsMode = .newSession,
         focusRequest: Int = 0,
         interactionPreferences: ComposerInteractionPreferences = .shared,
+        signalPresentation: WorkspaceSignalPresentation = .workspace(generatingCount: 0),
+        signalCompactionPhase: SessionCompactionSignalPhase = .none,
+        onSignalRevealComplete: @escaping (UInt64) -> Void = { _ in },
+        isFocusBlocked: Bool = false,
+        routeCanvasLeadingInset: CGFloat = 0,
+        providerWidth: CGFloat = 0,
+        providerPlacement: ProviderUsageDockPlacement = .belowLine,
         onSend: @escaping () -> Void
     ) {
         _draft = draft
@@ -321,6 +344,13 @@ struct ComposerView: View {
         self.controlsMode = controlsMode
         self.focusRequest = focusRequest
         self.interactionPreferences = interactionPreferences
+        self.signalPresentation = signalPresentation
+        self.signalCompactionPhase = signalCompactionPhase
+        self.onSignalRevealComplete = onSignalRevealComplete
+        self.isFocusBlocked = isFocusBlocked
+        self.routeCanvasLeadingInset = routeCanvasLeadingInset
+        self.providerWidth = providerWidth
+        self.providerPlacement = providerPlacement
         self.onSend = onSend
     }
 
@@ -351,9 +381,52 @@ struct ComposerView: View {
     }
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            composerCard
-            providerDockSlot
+        VStack(spacing: 0) {
+            aboveLine
+                .frame(maxWidth: 780)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity)
+                .padding(.leading, routeCanvasLeadingInset)
+                .padding(.trailing, columnTrailingInset)
+
+            WorkspaceSignalView(
+                presentation: signalPresentation,
+                compactionPhase: signalCompactionPhase,
+                onRevealComplete: onSignalRevealComplete,
+                onRevealStart: { signalRevealTiming = $0 })
+                .frame(height: 32)
+                .overlay(alignment: .leading) {
+                    if case .active(let controller) = presentation {
+                        contextControl(controller)
+                            .background(TenXPalette.color(TenXPalette.canvasHex))
+                            .padding(.leading, 8)
+                            .zIndex(3)
+                    }
+                }
+                .padding(.top, -12)
+                .padding(.bottom, -8)
+                .onChange(of: signalCompactionPhase) { _, phase in
+                    if case .revealing = phase { return }
+                    signalRevealTiming = nil
+                }
+
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    attachButton
+                    footerControls
+                }
+                Spacer(minLength: 8)
+                HStack(spacing: 6) {
+                    actionControls
+                }
+                .fixedSize()
+            }
+            .frame(maxWidth: 780)
+            .padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            .padding(.leading, routeCanvasLeadingInset)
+            .padding(.trailing, columnTrailingInset)
+            .frame(height: 44)
         }
             .animation(shelfAnimation, value: flyout)
             .onExitCommand {
@@ -370,16 +443,19 @@ struct ComposerView: View {
             .task(id: focusRequest) {
                 await Task.yield()
                 guard !Task.isCancelled else { return }
-                isEditorFocused = isAvailable
+                restoreEditorFocus()
             }
             .onChange(of: isAvailable) { _, isAvailable in
                 if isAvailable {
-                    isEditorFocused = true
+                    restoreEditorFocus()
                     observeDraftForCommands(draft)
                 } else {
+                    isEditorFocused = false
                     dismissCommands()
                 }
             }
+            .onChange(of: isFocusBlocked) { _, _ in restoreEditorFocus() }
+            .onChange(of: hasBlockingSheet) { _, _ in restoreEditorFocus() }
             .onChange(of: draft) { _, draft in
                 observeDraftForCommands(draft)
             }
@@ -391,50 +467,22 @@ struct ComposerView: View {
             }
     }
 
+    private var columnTrailingInset: CGFloat {
+        let providerInset = providerPlacement == .belowLine && providerWidth > 0
+            ? providerWidth + 32 : 0
+        return max(StartupSignalGeometry.waveWidth, providerInset)
+    }
+
     private var shelfAnimation: Animation? {
         reduceMotion ? nil : .easeOut(duration: 0.16)
     }
 
-    private var composerCard: some View {
+    private var aboveLine: some View {
         VStack(spacing: 0) {
-            editor
-
             if !attachments.isEmpty {
                 ComposerAttachmentsView(attachments: attachments, onRemove: remove)
             }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 4) {
-                    attachButton
-                    footerControls.fixedSize()
-                    Spacer(minLength: 8)
-                    actionControls
-                }
-                VStack(spacing: 6) {
-                    HStack(spacing: 4) {
-                        attachButton
-                        footerControls
-                        Spacer(minLength: 0)
-                    }
-                    HStack(spacing: 4) {
-                        Spacer(minLength: 0)
-                        actionControls
-                    }
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 10)
-
-        }
-        // Fill and border live in one background layer: an overlay border would
-        // paint over card content, and the model flyout is card content.
-        .background {
-            Rectangle()
-                .fill(TenXPalette.surfaceElevated)
-                .overlay {
-                    Rectangle()
-                        .stroke(borderColor, lineWidth: 1)
-                }
+            editor
         }
         .overlay(alignment: .topLeading) {
             commandBrowserOverlay
@@ -460,23 +508,33 @@ struct ComposerView: View {
     @ViewBuilder
     private var commandBrowserOverlay: some View {
         if flyout == .commands, let commands, let controls {
-            CommandBrowserView(
-                model: commands,
-                controls: controls,
-                query: $commandQuery,
-                onEffect: applyCommandEffect,
-                onDismiss: dismissCommands,
-                restoreEditorFocus: restoreEditorFocus)
-            .background {
-                CommandBrowserKeyboardMonitor(route: commands.route) { action in
-                    handleCommandKeyAction(action, model: commands)
-                    return true
+            GeometryReader { geometry in
+                let availableHeight = max(
+                    CommandBrowserMetrics.minimumHeight,
+                    min(320, geometry.frame(in: .global).minY - 42))
+                CommandBrowserView(
+                    model: commands,
+                    controls: controls,
+                    query: $commandQuery,
+                    onEffect: applyCommandEffect,
+                    onDismiss: dismissCommands,
+                    restoreEditorFocus: restoreEditorFocus)
+                .background {
+                    CommandBrowserKeyboardMonitor(route: commands.route) { action in
+                        guard ComposerFocusRouting.shouldFocusEditor(
+                            isAvailable: isAvailable,
+                            isFocusBlocked: isFocusBlocked,
+                            hasBlockingSheet: hasBlockingSheet
+                        ) else { return false }
+                        handleCommandKeyAction(action, model: commands)
+                        return true
+                    }
                 }
+                .frame(height: availableHeight)
+                .offset(y: -availableHeight)
+                .transition(shelfTransition)
+                .zIndex(2)
             }
-            .frame(height: CommandBrowserMetrics.maximumHeight)
-            .offset(y: -CommandBrowserMetrics.maximumHeight)
-            .transition(shelfTransition)
-            .zIndex(2)
         }
     }
 
@@ -487,48 +545,47 @@ struct ComposerView: View {
             removal: .opacity.combined(with: .offset(y: 4)))
     }
 
-    /// Grows with the draft instead of scrolling a fixed two-line window, so a
-    /// paragraph-length prompt stays readable while it is being written.
     private var editor: some View {
-        // A hidden copy of the draft is the only thing in this stack with an
-        // intrinsic height, and the editor rides above it as an overlay so it
-        // cannot push the box taller. Sizing therefore lands in the same layout
-        // pass that draws the text, with no measure-then-resize frame.
-        Text(draft.isEmpty || draft.hasSuffix("\n") ? draft + " " : draft)
-            .font(TenXTypography.body(size: 14))
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, Self.textInset)
-            .padding(.vertical, Self.editorPadding)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .hidden()
-            .overlay(alignment: .topLeading) {
-                if draft.isEmpty {
-                    Text(placeholder)
-                        .font(TenXTypography.body(size: 14))
-                        .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
-                        .padding(.horizontal, Self.textInset)
-                        .padding(.vertical, Self.editorPadding)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
-            .overlay {
-                TextEditor(text: $draft)
+        ZStack(alignment: .bottomLeading) {
+            if draft.isEmpty {
+                Text(placeholder)
                     .font(TenXTypography.body(size: 14))
-                    .scrollContentBackground(.hidden)
-                    .padding(Self.editorPadding)
-                    .focused($isEditorFocused)
-                    .disabled(!isAvailable)
-                    .onKeyPress(keys: ComposerCommandKeyRouting.keys, phases: .down, action: handleEditorKey)
-                    .accessibilityLabel("Session prompt")
-                    .accessibilityHint(composerModeLabel)
-                    .background(ComposerTextViewConfigurator(bridge: editorBridge))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                    .padding(.leading, 6)
+                    .padding(.bottom, 8)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
-            .frame(minHeight: Self.minEditorHeight, maxHeight: Self.maxEditorHeight)
-            // Without this the clamp is a range the parent can fill, and any
-            // spare vertical space in the window inflates the box to its cap.
-            .fixedSize(horizontal: false, vertical: true)
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: draft)
+            TextEditor(text: $draft)
+                .font(TenXTypography.body(size: 14))
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
+                .focused($isEditorFocused)
+                .disabled(!isAvailable)
+                .onKeyPress(keys: ComposerCommandKeyRouting.keys, phases: .down, action: handleEditorKey)
+                .accessibilityLabel("Session prompt")
+                .accessibilityHint(composerModeLabel)
+                .background(ComposerTextViewConfigurator(bridge: editorBridge))
+                .frame(height: min(Self.editorHeight, max(24, editorContentHeight + 4)))
+                .mask(alignment: .top) {
+                    if hasEditorScrolled {
+                        VStack(spacing: 0) {
+                            LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom)
+                                .frame(height: Self.scrollFadeHeight)
+                            Color.black
+                        }
+                    } else {
+                        Color.black
+                    }
+                }
+        }
+        .frame(height: Self.editorHeight, alignment: .bottomLeading)
+        .contentShape(Rectangle())
+        .onTapGesture { restoreEditorFocus() }
+        .onAppear {
+            editorBridge.onScrollStateChange = { hasEditorScrolled = $0 }
+            editorBridge.onContentHeightChange = { editorContentHeight = $0 }
+        }
     }
 
     private var placeholder: String {
@@ -567,7 +624,7 @@ struct ComposerView: View {
         panel.begin { response in
             guard response == .OK else { return }
             add(urls: panel.urls)
-            isEditorFocused = true
+            restoreEditorFocus()
         }
     }
 
@@ -727,7 +784,10 @@ struct ComposerView: View {
     }
 
     private func restoreEditorFocus() {
-        isEditorFocused = isAvailable
+        isEditorFocused = ComposerFocusRouting.shouldFocusEditor(
+            isAvailable: isAvailable,
+            isFocusBlocked: isFocusBlocked,
+            hasBlockingSheet: hasBlockingSheet)
     }
 
     private func syncCommandQuery() {
@@ -777,7 +837,7 @@ struct ComposerView: View {
             if !editorBridge.insertFilePaths(paths) {
                 appendToDraft(paths.joined(separator: "\n"))
             }
-            isEditorFocused = isAvailable
+            restoreEditorFocus()
         }
         report(skipped: skipped)
     }
@@ -826,10 +886,16 @@ struct ComposerView: View {
 
     @ViewBuilder
     private var actionControls: some View {
+        if case .active(let controller) = presentation,
+           controller.queuedMessageCount > 0 {
+            Text("\(controller.queuedMessageCount) queued")
+                .font(TenXTypography.body(size: 10, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+        }
         if let controller = streamingController {
-            behaviorMenu(controller)
-            sendButton
-            stopButton(controller)
+            behaviorChoice(.steer, controller: controller)
+            behaviorChoice(.followUp, controller: controller)
+            if canSend { sendButton } else { stopButton(controller) }
         } else {
             sendButton
             if case .active(let controller) = presentation,
@@ -839,31 +905,21 @@ struct ComposerView: View {
         }
     }
 
-    @ViewBuilder
-    private var providerDockSlot: some View {
-        if providerDockWidth > 0 {
-            Color.clear
-                .frame(width: providerDockWidth, height: ProviderAccountStackGeometry.minimumHitTarget)
-                .anchorPreference(key: ComposerProviderDockAnchorKey.self, value: .bounds) { $0 }
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-    }
-
     private var sendButton: some View {
         Button {
             submit(.primary)
-            isEditorFocused = true
+            restoreEditorFocus()
         } label: {
             Image(systemName: "arrow.up")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(canSend
                     ? TenXPalette.onEmphasis
                     : TenXPalette.color(TenXPalette.mutedTextHex))
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
                 .background(canSend
                     ? TenXPalette.color(TenXPalette.nearBlackHex)
                     : TenXPalette.color(TenXPalette.hoverNeutralHex))
+                .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -875,13 +931,14 @@ struct ComposerView: View {
     private func stopButton(_ controller: SessionController) -> some View {
         Button {
             Task { await controller.abort() }
-            isEditorFocused = true
+            restoreEditorFocus()
         } label: {
             Rectangle()
                 .frame(width: 9, height: 9)
                 .foregroundStyle(TenXPalette.onEmphasis)
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
                 .background(TenXPalette.color(TenXPalette.nearBlackHex))
+                .frame(width: 28, height: 28)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -889,14 +946,22 @@ struct ComposerView: View {
         .accessibilityLabel(controller.isContextCompacting ? "Stop context compaction" : "Stop response")
     }
 
-    private func behaviorMenu(_ controller: SessionController) -> some View {
-        SendActionControl(
-            selection: controller.streamingBehavior ?? .steer,
-            onSelect: controller.selectStreamingBehavior,
-            isPresented: Binding(
-                get: { flyout == .sendAction },
-                set: { setFlyout($0 ? .sendAction : nil) }),
-            onRestoreFocus: restoreEditorFocus)
+    private func behaviorChoice(_ behavior: StreamingBehavior, controller: SessionController) -> some View {
+        let isSelected = (controller.streamingBehavior ?? .steer) == behavior
+        let title = behavior == .steer ? "Steer" : "Follow up"
+        return Button {
+            controller.selectStreamingBehavior(behavior)
+            restoreEditorFocus()
+        } label: {
+            Text(title)
+                .font(TenXTypography.body(size: 11, weight: isSelected ? .semibold : .medium))
+                .lineLimit(1)
+        }
+        .buttonStyle(GhostActionStyle(
+            color: TenXPalette.color(isSelected ? TenXPalette.cyanHex : TenXPalette.nearBlackHex),
+            horizontalPadding: 5, fontSize: 11))
+        .accessibilityLabel(title)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
     }
 
     private var streamingController: SessionController? {
@@ -924,21 +989,7 @@ struct ComposerView: View {
     @ViewBuilder
     private var footerControls: some View {
         switch presentation {
-        case .newSession(
-            let projectURL,
-            let projectURLs,
-            let onChooseProject,
-            let onAddExistingFolder):
-            ChooseProjectControl(
-                projectURL: projectURL,
-                projectURLs: projectURLs,
-                onChoose: onChooseProject,
-                onAddExistingFolder: onAddExistingFolder,
-                isPresented: Binding(
-                    get: { flyout == .project },
-                    set: { setFlyout($0 ? .project : nil) }),
-                onRestoreFocus: restoreEditorFocus)
-
+        case .newSession:
             if let controls {
                 ComposerSessionControlsView(
                     model: controls,
@@ -965,37 +1016,76 @@ struct ComposerView: View {
                 Text(controller.thinkingLevel)
                     .font(TenXTypography.body(size: 10, weight: .medium))
             }
-            ContextUsageControl(
-                usage: controller.contextUsage,
-                breakdown: controller.contextBreakdown,
-                isLoading: controller.isContextLoading,
-                errorMessage: controller.contextErrorMessage,
-                canCompact: controller.canCompactContext,
-                compactionDisabledReason: controller.contextCompactionDisabledReason,
-                isCompacting: controller.isContextCompacting,
-                compactionErrorMessage: controller.contextCompactionErrorMessage,
-                onRefresh: { await controller.refreshContextDetails() },
-                onCompact: { await controller.compactContext() },
-                isPresented: Binding(
-                    get: { flyout == .context },
-                    set: { setFlyout($0 ? .context : nil) }),
-                onRestoreFocus: restoreEditorFocus)
-            SessionActivityControl(
-                state: controller.activityState,
-                onActivate: controller.focusPendingRequest,
-                variant: .composer)
-            if controller.queuedMessageCount > 0 {
-                Text("\(controller.queuedMessageCount) queued")
-                    .font(TenXTypography.body(size: 10, weight: .medium))
-                    .foregroundStyle(TenXPalette.color(TenXPalette.cyanHex))
+            if signalPresentation.status == .needsInput {
+                SessionActivityControl(
+                    state: controller.activityState,
+                    onActivate: controller.focusPendingRequest,
+                    variant: .composer)
             }
         }
 
-        ComposerWarningControl(
-            messages: feedbackMessages,
+        if signalPresentation.status == .needsInput {
+            EmptyView()
+        } else {
+            Text(signalPresentation.label)
+                .font(TenXTypography.body(size: 10, weight: .medium))
+                .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+                .lineLimit(1)
+        }
+
+        if case .active(let controller) = presentation,
+           controller.runtimeState == .streaming,
+           let turnStartedAt = controller.turnStartedAt {
+            TimelineView(.periodic(from: turnStartedAt, by: 1)) { timeline in
+                Text(Duration.seconds(max(0, Int(timeline.date.timeIntervalSince(turnStartedAt)))).formatted(.time(pattern: .minuteSecond)))
+                    .font(TenXTypography.mono(size: 10))
+                    .foregroundStyle(TenXPalette.color(TenXPalette.mutedTextHex))
+            }
+        }
+
+        if !feedbackMessages.isEmpty {
+            ComposerWarningControl(
+                messages: feedbackMessages,
+                isPresented: Binding(
+                    get: { flyout == .warning },
+                    set: { setFlyout($0 ? .warning : nil) }),
+                onRestoreFocus: restoreEditorFocus)
+        }
+
+        if case .newSession(
+            let projectURL,
+            let projectURLs,
+            let onChooseProject,
+            let onAddExistingFolder) = presentation {
+            ChooseProjectControl(
+                projectURL: projectURL,
+                projectURLs: projectURLs,
+                onChoose: onChooseProject,
+                onAddExistingFolder: onAddExistingFolder,
+                isPresented: Binding(
+                    get: { flyout == .project },
+                    set: { setFlyout($0 ? .project : nil) }),
+                onRestoreFocus: restoreEditorFocus)
+        }
+    }
+
+    private func contextControl(_ controller: SessionController) -> some View {
+        ContextUsageControl(
+            usage: controller.contextUsage,
+            signalCompactionPhase: signalCompactionPhase,
+            signalRevealTiming: signalRevealTiming,
+            breakdown: controller.contextBreakdown,
+            isLoading: controller.isContextLoading,
+            errorMessage: controller.contextErrorMessage,
+            canCompact: controller.canCompactContext,
+            compactionDisabledReason: controller.contextCompactionDisabledReason,
+            isCompacting: controller.isContextCompacting,
+            compactionErrorMessage: controller.contextCompactionErrorMessage,
+            onRefresh: { await controller.refreshContextDetails() },
+            onCompact: { await controller.compactContext() },
             isPresented: Binding(
-                get: { flyout == .warning },
-                set: { setFlyout($0 ? .warning : nil) }),
+                get: { flyout == .context },
+                set: { setFlyout($0 ? .context : nil) }),
             onRestoreFocus: restoreEditorFocus)
     }
 
@@ -1022,6 +1112,11 @@ struct ComposerView: View {
         }
     }
 
+    private var hasBlockingSheet: Bool {
+        guard case .active(let controller) = presentation else { return false }
+        return controller.extensionSheetRequest != nil || controller.isLogPresented
+    }
+
     private var sendLabel: String {
         switch presentation {
         case .newSession: return "Start session"
@@ -1041,8 +1136,4 @@ struct ComposerView: View {
         }
     }
 
-    private var borderColor: Color {
-        guard isAvailable else { return TenXPalette.color(TenXPalette.separatorHex) }
-        return TenXPalette.color(TenXPalette.nearBlackHex)
-    }
 }

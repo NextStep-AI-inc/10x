@@ -19,16 +19,46 @@ struct ComposerTextViewConfigurator: NSViewRepresentable {
 final class ComposerTextEditorBridge {
     private weak var textView: NSTextView?
     private weak var owner: ComposerTextViewConfigurationMarker?
+    var onScrollStateChange: ((Bool) -> Void)? {
+        didSet { reportScrollState() }
+    }
+    var onContentHeightChange: ((CGFloat) -> Void)? {
+        didSet { reportContentHeight() }
+    }
 
     func connect(_ textView: NSTextView, owner: ComposerTextViewConfigurationMarker) {
         self.textView = textView
         self.owner = owner
+        owner.observeScrollAndTextChanges(in: textView)
+        reportContentHeight()
+        reportScrollState()
     }
 
     func disconnect(owner: ComposerTextViewConfigurationMarker) {
         guard self.owner === owner else { return }
         textView = nil
         self.owner = nil
+        onScrollStateChange?(false)
+    }
+
+    fileprivate func reportScrollState() {
+        guard let textView,
+              let clipView = textView.enclosingScrollView?.contentView,
+              let textContainer = textView.textContainer,
+              let layoutManager = textView.layoutManager else {
+            onScrollStateChange?(false)
+            return
+        }
+        layoutManager.ensureLayout(for: textContainer)
+        let isOverflowing = layoutManager.usedRect(for: textContainer).height > clipView.bounds.height
+        onScrollStateChange?(isOverflowing && clipView.bounds.minY > 1)
+    }
+
+    fileprivate func reportContentHeight() {
+        guard let textView, let textContainer = textView.textContainer,
+              let layoutManager = textView.layoutManager else { return }
+        layoutManager.ensureLayout(for: textContainer)
+        onContentHeightChange?(layoutManager.usedRect(for: textContainer).height)
     }
 
     var hasMarkedText: Bool {
@@ -71,6 +101,9 @@ final class ComposerTextEditorBridge {
 
 final class ComposerTextViewConfigurationMarker: NSView {
     private let bridge: ComposerTextEditorBridge
+    private var scrollObservation: NSObjectProtocol?
+    private var textObservation: NSObjectProtocol?
+    private weak var observedTextView: NSTextView?
 
     init(bridge: ComposerTextEditorBridge) {
         self.bridge = bridge
@@ -83,6 +116,7 @@ final class ComposerTextViewConfigurationMarker: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else {
+            stopObserving()
             bridge.disconnect(owner: self)
             return
         }
@@ -97,6 +131,44 @@ final class ComposerTextViewConfigurationMarker: NSView {
             textView.isAutomaticTextReplacementEnabled = false
             bridge.connect(textView, owner: self)
         }
+    }
+
+    fileprivate func observeScrollAndTextChanges(in textView: NSTextView) {
+        guard observedTextView !== textView else { return }
+        stopObserving()
+        observedTextView = textView
+        guard let clipView = textView.enclosingScrollView?.contentView else { return }
+        clipView.postsBoundsChangedNotifications = true
+        scrollObservation = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: clipView,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.bridge.reportContentHeight()
+                self.bridge.reportScrollState()
+            }
+        }
+        textObservation = NotificationCenter.default.addObserver(
+            forName: NSText.didChangeNotification,
+            object: textView,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.bridge.reportContentHeight()
+                self.bridge.reportScrollState()
+            }
+        }
+    }
+
+    private func stopObserving() {
+        if let scrollObservation { NotificationCenter.default.removeObserver(scrollObservation) }
+        if let textObservation { NotificationCenter.default.removeObserver(textObservation) }
+        scrollObservation = nil
+        textObservation = nil
+        observedTextView = nil
     }
 
     fileprivate func nearestTextView() -> NSTextView? {

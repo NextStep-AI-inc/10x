@@ -950,10 +950,13 @@ import OmpKit
 
     model.openSession(metadata)
     await model.archiveSession(metadata)
-    try await Task.sleep(for: .milliseconds(500))
 
-    #expect(await manager.handle(for: metadata.path) == nil)
-    #expect(model.providerActivityCounts.isEmpty)
+    #expect(await waitUntil("archived session child to close") {
+        await manager.handle(for: metadata.path) == nil
+    })
+    #expect(await waitUntil("archived session activity to clear") {
+        model.providerActivityCounts.isEmpty
+    })
     await manager.closeAll()
 }
 

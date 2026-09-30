@@ -45,6 +45,12 @@ def log_command(command_type):
         handle.write((command_type or "parse") + "\n")
 
 
+def wait_for_control(path):
+    while not os.path.exists(path):
+        time.sleep(0.005)
+    os.remove(path)
+
+
 if mode == "never-ready":
     time.sleep(30)
     raise SystemExit(0)
@@ -316,15 +322,16 @@ for line in sys.stdin:
         emit({"id": cid, "type": "response", "command": "prompt", "success": True,
               "data": {"agentInvoked": True}})
         if mode == "activity-lifecycle":
+            control_directory = sys.argv[2]
             emit({"type": "agent_start"})
-            time.sleep(0.2)
+            wait_for_control(os.path.join(control_directory, "continue-provider"))
             emit({"type": "config_update", "model": {
                 "id": "updated-model", "provider": "updated-provider"}})
-            time.sleep(0.2)
+            wait_for_control(os.path.join(control_directory, "continue-thinking"))
             emit({"type": "config_update", "thinkingLevel": "medium"})
-            time.sleep(0.2)
+            wait_for_control(os.path.join(control_directory, "continue-providerless"))
             emit({"type": "config_update", "model": {"id": "provider-less-model"}})
-            time.sleep(0.2)
+            wait_for_control(os.path.join(control_directory, "continue-end"))
             emit({"type": "agent_end", "messages": [], "isTerminal": True})
             continue
         if mode == "slow-turn":
@@ -396,9 +403,7 @@ for line in sys.stdin:
                 "content": [{"type": "text", "text": "done"}],
                 "timestamp": 0,
             }})
-            # Well clear of the controller's 50 ms reconciliation debounce, so
-            # the two boundaries stay two loads even when the suite is loaded.
-            time.sleep(0.5)
+            wait_for_control(sys.argv[2])
             emit({"type": "agent_end", "messages": [], "isTerminal": True})
         elif mode == "extension-timeout":
             emit({"type": "extension_ui_request", "id": "timeout-confirm", "method": "confirm",

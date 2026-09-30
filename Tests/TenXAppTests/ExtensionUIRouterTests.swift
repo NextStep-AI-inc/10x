@@ -103,6 +103,16 @@ import Testing
     #expect(blocking.filter(\.isQuestionInput).map(\.id) == ["select", "input", "editor"])
 }
 
+@Test func passiveExtensionNoticeDoesNotBlockComposer() {
+    let notice = ExtensionUIState.notification(
+        id: "notice", message: "Waiting for input", level: "info")
+    #expect(!notice.requiresUserInput)
+    #expect(ComposerFocusRouting.shouldFocusEditor(
+        isAvailable: true,
+        isFocusBlocked: false,
+        hasBlockingSheet: notice.requiresUserInput))
+}
+
 @Test func extensionRouterClassifiesKnownBlockingRequests() throws {
     let confirm = ExtensionUIRouter.classify(try request("""
         {"type":"extension_ui_request","id":"confirm-1","method":"confirm","title":"Allow?","message":"Run it"}

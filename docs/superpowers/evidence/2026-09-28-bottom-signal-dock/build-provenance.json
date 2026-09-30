@@ -1,0 +1,22 @@
+[
+  {
+    "sha": "248d4eea49b1debe86e7b2246fea01a5668d76e5",
+    "bundle": "/Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/NativeQA/DerivedData/Build/Products/Release/10x.app",
+    "bundleID": "com.nextstep.tenx.bottomdockqa",
+    "executableSHA256": "3cf9894c3de0db69035a5085180a434324a216661cefa347b3605c7d8493a6a1"
+  },
+  {
+    "sha": "4d5a6e8da399a89fc1958f0f659750f071bf1fe9",
+    "bundle": "/Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/NativeQA/DerivedData/Build/Products/Release/10x.app",
+    "bundleID": "com.nextstep.tenx.bottomdockqa",
+    "executableSHA256": "7aa95625a4d728961e3fdc959193fe7d508d9fa6f4c0c012a4ad338cb1671176"
+  },
+  {
+    "sha": "538395bbbb1f7ad6c174de4c89ca8e0abd8c9724",
+    "bundle": "/Users/tannerpham/.codex/worktrees/bottom-dock-design/10x/.superpowers/sdd/2026-09-28-bottom-signal-dock/NativeQA/DerivedData/Build/Products/Release/10x.app",
+    "bundleID": "com.nextstep.tenx.bottomdockqa",
+    "executableSHA256": "f855193884207742f41466fc70f48bdda1bce85aa28fbc405401a568edb097c9",
+    "nativeLaunched": false,
+    "reason": "Mac locked; native follow-up checks pending"
+  }
+]

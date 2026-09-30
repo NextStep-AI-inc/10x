@@ -138,7 +138,10 @@ struct ChooseProjectShelf: View {
             Label(triggerTitle, systemImage: "folder")
                 .lineLimit(1)
         }
-        .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
+        .buttonStyle(GhostActionStyle(
+            color: TenXPalette.color(TenXPalette.cyanHex),
+            horizontalPadding: 5,
+            fontSize: 11))
         .accessibilityLabel("Choose project")
         .accessibilityValue(triggerTitle)
         .accessibilityHint("Menu open")
@@ -273,7 +276,10 @@ struct ChooseProjectControl: View {
         } label: {
             Label(triggerTitle, systemImage: "folder").lineLimit(1)
         }
-        .buttonStyle(GhostActionStyle(color: TenXPalette.color(TenXPalette.cyanHex)))
+        .buttonStyle(GhostActionStyle(
+            color: TenXPalette.color(TenXPalette.cyanHex),
+            horizontalPadding: 5,
+            fontSize: 11))
         .opacity(isPresented ? 0 : 1)
         .accessibilityHidden(isPresented)
         .accessibilityLabel("Choose project")

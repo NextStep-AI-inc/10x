@@ -4,12 +4,14 @@ struct GhostActionStyle: ButtonStyle {
     var color = TenXPalette.color(TenXPalette.interactiveCyanHex)
     /// Set to 0 for flush nav controls (e.g. Settings Back) that must align with titles.
     var horizontalPadding: CGFloat = 9
+    var fontSize: CGFloat = 12
 
     func makeBody(configuration: Configuration) -> some View {
         GhostActionBody(
             configuration: configuration,
             color: color,
-            horizontalPadding: horizontalPadding)
+            horizontalPadding: horizontalPadding,
+            fontSize: fontSize)
     }
 }
 
@@ -29,6 +31,7 @@ private struct GhostActionBody: View {
     let configuration: ButtonStyle.Configuration
     let color: Color
     let horizontalPadding: CGFloat
+    let fontSize: CGFloat
 
     @Environment(\.isEnabled) private var isEnabled
     @State private var isHovering = false
@@ -39,7 +42,7 @@ private struct GhostActionBody: View {
             isHovering: isHovering)
 
         configuration.label
-            .font(TenXTypography.body(size: 12, weight: .medium))
+            .font(TenXTypography.body(size: fontSize, weight: .medium))
             .foregroundStyle(visualState.usesMutedForeground
                 ? TenXPalette.color(TenXPalette.mutedTextHex)
                 : color)

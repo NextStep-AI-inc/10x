@@ -6,6 +6,23 @@ import Testing
 @Suite @MainActor struct ProviderAccountCoordinatorTests {
     private let providerID = "openai-codex"
 
+    @Test func backgroundCountIncludesUnknownProvider() throws {
+        let (coordinator, defaults, suiteName) = try makeCoordinator()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let known = FakeProviderAccountSession(
+            providerID: providerID, accountRef: "acct_A", runtimeState: .streaming)
+        let unknown = FakeProviderAccountSession(
+            providerID: nil, accountRef: nil, runtimeState: .streaming)
+        coordinator.register(known)
+        coordinator.register(unknown)
+
+        #expect(coordinator.generatingSessionCount == 2)
+        #expect(coordinator.activeCounts[providerID] == 1)
+
+        coordinator.update(sessionID: unknown.id, providerID: nil, isGenerating: false)
+        #expect(coordinator.generatingSessionCount == 1)
+    }
+
     @Test func scopeAvailabilityTracksManagedAndOpenSessionsForTheProvider() async throws {
         let (coordinator, defaults, suiteName) = try makeCoordinator()
         defer { defaults.removePersistentDomain(forName: suiteName) }

@@ -7,6 +7,97 @@ import Testing
 @testable import TenXApp
 
 @MainActor
+@Test func workspaceSignalHalfContextSnapshot() throws {
+    let presentation = WorkspaceSignalPresentation.session(
+        runtimeState: .idle, contextPercent: 50, hasPendingUserInput: false,
+        isRetrying: false, hasTerminalRetryFailure: false, compactionPhase: .none,
+        isRecoveryPresented: false, isIntentionallyStopped: false)
+    try assertSnapshot(
+        WorkspaceSignalView(presentation: presentation, compactionPhase: .none, onRevealComplete: { _ in })
+            .frame(width: 900, height: 60),
+        name: "workspace-signal-half-context", size: CGSize(width: 900, height: 60))
+}
+
+@MainActor
+@Test func fullShellNewSessionDockSnapshots() async throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-new-session-dock-snapshot")
+    model.selectedProjectURL = URL(filePath: "/tmp/10x", directoryHint: .isDirectory)
+    await model.bootstrap()
+    model.route = .newSession
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-new-session-dock-compact",
+        size: CGSize(width: 760, height: 560))
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-new-session-dock-wide",
+        size: CGSize(width: 1280, height: 760))
+
+    model.newSessionDraft = "Check the bottom alignment."
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-new-session-dock-short-draft",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func flyoutAnchorReaderPassesPointerEventsToTrigger() {
+    let anchor = FlyoutWindowAnchorReaderView(frame: NSRect(x: 0, y: 0, width: 120, height: 28))
+    #expect(anchor.hitTest(NSPoint(x: 60, y: 14)) == nil)
+}
+
+@MainActor
+@Test func fullShellArchivedDockSnapshot() async throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-archived-dock-snapshot")
+    model.selectedProjectURL = URL(filePath: "/tmp/10x", directoryHint: .isDirectory)
+    await model.bootstrap()
+    model.openArchivedSessions()
+
+    try assertSnapshot(
+        AppShellView(model: model),
+        name: "full-shell-archived-dock-compact",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func fullShellActiveDockSnapshot() async throws {
+    let model = isolatedSnapshotAppModel(sessionLibraryPath: "/tmp/10x-active-dock-snapshot")
+    model.selectedProjectURL = URL(filePath: "/tmp/10x", directoryHint: .isDirectory)
+    await model.bootstrap()
+    let session = snapshotSession(
+        path: "/sessions/active-dock.jsonl", cwd: "/tmp/10x",
+        title: "Active dock", modified: 1_787_601_600)
+    model.openSession(session)
+
+    try assertSnapshot(
+        AppShellView(model: model)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
+        name: "full-shell-active-opening-dock-wide",
+        size: CGSize(width: 1280, height: 760))
+
+    let railExpansion = RailExpansionModel()
+    railExpansion.pointerEntered()
+    try assertSnapshot(
+        AppShellView(model: model, railExpansion: railExpansion)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
+        name: "full-shell-active-opening-dock-narrow",
+        size: CGSize(width: 760, height: 560))
+}
+
+@MainActor
+@Test func workspaceSignalNearLimitSnapshot() throws {
+    let presentation = WorkspaceSignalPresentation.session(
+        runtimeState: .idle, contextPercent: 98, hasPendingUserInput: false,
+        isRetrying: false, hasTerminalRetryFailure: false, compactionPhase: .none,
+        isRecoveryPresented: false, isIntentionallyStopped: false)
+    try assertSnapshot(
+        WorkspaceSignalView(presentation: presentation, compactionPhase: .none, onRevealComplete: { _ in })
+            .frame(width: 900, height: 60),
+        name: "workspace-signal-near-limit", size: CGSize(width: 900, height: 60))
+}
+
+@MainActor
 @Test func guidanceCardSnapshot() throws {
     let presentation = GuidancePresentation(
         id: "advisor-1",
@@ -1522,9 +1613,12 @@ private func longestNonWhiteVerticalRun(
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     await model.bootstrap()
     model.sessions = fullShellSessions
+    let railExpansion = RailExpansionModel()
+    railExpansion.pointerEntered()
 
     try assertSnapshot(
-        AppShellView(model: model),
+        AppShellView(model: model, railExpansion: railExpansion)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "full-shell-usage-dock-small-window",
         size: CGSize(width: 760, height: 560))
 }
@@ -1552,9 +1646,12 @@ private func longestNonWhiteVerticalRun(
     model.selectedProjectURL = URL(filePath: "/tmp/full-shell-project", directoryHint: .isDirectory)
     await model.bootstrap()
     model.sessions = fullShellSessions
+    let railExpansion = RailExpansionModel()
+    railExpansion.pointerEntered()
 
     try assertSnapshot(
-        AppShellView(model: model),
+        AppShellView(model: model, railExpansion: railExpansion)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "full-shell-usage-dock-wide-window",
         size: CGSize(width: 1280, height: 760))
 }
@@ -1737,10 +1834,59 @@ private func onboardingProviderAppModel(
         sessionLibrary: SessionLibrary(root: URL(filePath: path, directoryHint: .isDirectory)),
         sessionSearch: SessionSearchService(),
         recentProjectStore: RecentProjectStore(defaults: defaults),
+        startupTiming: snapshotProviderStartupTiming(),
+        makeProcessManager: { executable in
+            SessionProcessManager(executable: executable)
+        },
+        makeSettingsModel: { _ in
+            SettingsViewModel(service: OmpConfigService(runner: SnapshotConfigRunner()))
+        },
         makeProviderModel: { _ in providerModel },
-        makeComposerControls: stubComposerControlsFactory))
+        makeComposerControls: stubComposerControlsFactory,
+        makeProviderAccountCoordinator: {
+            ProviderAccountCoordinator(primaryStore: ProviderPrimaryPreferenceStore(defaults: defaults))
+        },
+        makeUpdateChecker: stubUpdateCheckerFactory),
+        preferenceDefaults: defaults)
     await model.bootstrap()
+    #expect(model.providerModel === providerModel)
     return model
+}
+
+private func snapshotProviderStartupTiming() -> StartupTiming {
+    let timeout = SnapshotStartupTimeout()
+    return StartupTiming(
+        minimumVisibility: .zero,
+        timeout: .seconds(10),
+        updateCheckDeadline: .milliseconds(50),
+        sleep: { duration in
+            guard duration == .seconds(10) else { return }
+            try await timeout.sleepUntilCancelled()
+        })
+}
+
+private actor SnapshotStartupTimeout {
+    private var sleepers: [UUID: CheckedContinuation<Void, any Error>] = [:]
+
+    func sleepUntilCancelled() async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Void, any Error>) in
+                guard !Task.isCancelled else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                sleepers[id] = continuation
+            }
+        } onCancel: {
+            Task { await self.cancel(id) }
+        }
+    }
+
+    private func cancel(_ id: UUID) {
+        sleepers.removeValue(forKey: id)?.resume(throwing: CancellationError())
+    }
 }
 
 private struct SnapshotOmpLocator: OmpLocating {
@@ -2143,9 +2289,10 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             ToolCardView(presentation: running)
             ToolCardView(presentation: failed)
         }
+        .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
         .frame(width: 720),
         name: "activity-running-error",
-        size: CGSize(width: 800, height: 520))
+        size: CGSize(width: 800, height: 640))
 }
 
 @MainActor
@@ -3102,7 +3249,7 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
             controlsMode: .newSession,
             onSend: {}),
         name: "composer-footer-fast-present",
-        size: CGSize(width: 780, height: 140))
+        size: CGSize(width: 780, height: 200))
 }
 
 @MainActor
@@ -3125,6 +3272,12 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
         api: "cursor-agent",
         thinkingEfforts: [],
         requiresEffort: false)
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .idle,
+        modelName: "GPT-5",
+        thinkingLevel: "Auto")
     let controls = await snapshotComposerControls(
         models: [cursor],
         selected: cursor,
@@ -3134,17 +3287,13 @@ private func fullShellUsageSnapshot() throws -> OmpUsageSnapshot {
     try assertSnapshot(
         ComposerView(
             draft: .constant("Hide Fast when the model cannot support it."),
-            presentation: .active(controller: SessionController(
-                processManager: SessionProcessManager(),
-                previewItems: [],
-                runtimeState: .idle,
-                modelName: "GPT-5",
-                thinkingLevel: "Auto")),
+            presentation: .active(controller: controller),
             controls: controls,
             controlsMode: .activeSession,
+            signalPresentation: snapshotSessionSignal(for: controller),
             onSend: {}),
         name: "composer-footer-fast-absent",
-        size: CGSize(width: 780, height: 140))
+        size: CGSize(width: 780, height: 200))
 }
 
 /// Guards the composer border against the open panel: the card's stroke must
@@ -3375,6 +3524,12 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
         runtimeState: .idle)
     _ = session
     #expect(commandModel.updateDraft("/"))
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .idle,
+        modelName: "Claude Opus 4.8",
+        thinkingLevel: "Auto")
 
     try assertSnapshot(
         VStack(spacing: 0) {
@@ -3386,15 +3541,11 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
                     snapshotAttachment(name: "layout-note.png", width: 640, height: 640),
                 ]),
                 flyout: .constant(.commands),
-                presentation: .active(controller: SessionController(
-                    processManager: SessionProcessManager(),
-                    previewItems: [],
-                    runtimeState: .idle,
-                    modelName: "Claude Opus 4.8",
-                    thinkingLevel: "Auto")),
+                presentation: .active(controller: controller),
                 controls: controls,
                 commands: commandModel,
                 controlsMode: .activeSession,
+                signalPresentation: snapshotSessionSignal(for: controller),
                 onSend: {})
             .frame(width: 676)
         }
@@ -3460,11 +3611,14 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
                 controls: controls,
                 commands: commandModel,
                 controlsMode: .activeSession,
+                signalPresentation: snapshotSessionSignal(for: controller),
                 onSend: {})
             .frame(width: 676)
         }
         .padding(.horizontal, 42)
-        .padding(.bottom, 28),
+        .padding(.bottom, 28)
+        .environment(\._accessibilityReduceMotion, true)
+        .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "composer-command-browser-streaming-steer",
         size: CGSize(width: 760, height: 560))
 }
@@ -3492,6 +3646,12 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
         runtimeState: .idle)
     _ = session
     #expect(commandModel.updateDraft("/"))
+    let controller = SessionController(
+        processManager: SessionProcessManager(),
+        previewItems: [],
+        runtimeState: .idle,
+        modelName: "Claude Opus 4.8",
+        thinkingLevel: "Auto")
 
     try assertSnapshot(
         VStack(spacing: 0) {
@@ -3499,15 +3659,11 @@ private let modelPickerOpenRouterOpus = ComposerModelInfo(
             ComposerView(
                 draft: .constant("/"),
                 flyout: .constant(.commands),
-                presentation: .active(controller: SessionController(
-                    processManager: SessionProcessManager(),
-                    previewItems: [],
-                    runtimeState: .idle,
-                    modelName: "Claude Opus 4.8",
-                    thinkingLevel: "Auto")),
+                presentation: .active(controller: controller),
                 controls: controls,
                 commands: commandModel,
                 controlsMode: .activeSession,
+                signalPresentation: snapshotSessionSignal(for: controller),
                 onSend: {})
             .frame(width: 676)
         }
@@ -4405,35 +4561,137 @@ private let stubComposerControlsFactory: @MainActor @Sendable (URL) -> ComposerC
 
 @MainActor
 @Test func composerStopsARunWithNothingToSendSnapshot() throws {
+    let controller = awaitingOutputController()
     try assertSnapshot(
         ComposerView(
             draft: .constant(""),
-            presentation: .active(controller: awaitingOutputController()),
+            presentation: .active(controller: controller),
             controlsMode: .activeSession,
+            signalPresentation: .session(
+                runtimeState: .streaming, contextPercent: nil,
+                hasPendingUserInput: false, isRetrying: false,
+                hasTerminalRetryFailure: false, compactionPhase: .none,
+                isRecoveryPresented: false, isIntentionallyStopped: false),
             onSend: {})
             .frame(width: 620)
-            .padding(24),
+            .padding(24)
+            .environment(\._accessibilityReduceMotion, true)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "composer-stop-control",
-        size: CGSize(width: 700, height: 180))
+        size: CGSize(width: 700, height: 240))
+}
+
+@MainActor
+@Test func composerKeepsQueuedBadgeAfterStreamingSnapshot() async throws {
+    let projectRoot = URL(filePath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let manager = SessionProcessManager(clientFactory: { configuration in
+        var fake = configuration
+        fake.executable = "/usr/bin/env"
+        fake.extraArguments = [
+            "python3",
+            projectRoot.appending(path: "Tests/TenXAppTests/Fixtures/context_fake_server.py").path,
+            "compact-queued",
+        ]
+        fake.rawArgv = true
+        fake.cwd = nil
+        return RpcClient(configuration: fake)
+    })
+    let controller = SessionController(processManager: manager)
+    await controller.openExisting(SessionMetadata(
+        path: "/tmp/context-fixture.jsonl", sessionId: "queued-idle", cwd: "/tmp",
+        title: "Queued session", created: .distantPast, modified: .distantPast,
+        sizeBytes: 0, status: .complete))
+    #expect(controller.runtimeState == .idle)
+    #expect(controller.queuedMessageCount == 1)
+
+    try assertSnapshot(
+        ComposerView(
+            draft: .constant(""),
+            presentation: .active(controller: controller),
+            controlsMode: .activeSession,
+            signalPresentation: .session(
+                runtimeState: .idle, contextPercent: 42,
+                hasPendingUserInput: false, isRetrying: false,
+                hasTerminalRetryFailure: false, compactionPhase: .none,
+                isRecoveryPresented: false, isIntentionallyStopped: false),
+            onSend: {})
+            .frame(width: 620)
+            .padding(24)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
+        name: "composer-queued-after-streaming",
+        size: CGSize(width: 700, height: 240))
+    await manager.closeAll()
 }
 
 @MainActor
 @Test func composerStillSendsAStagedImageMidRunSnapshot() throws {
     // Stop must not take the button while there is something to send, or an
     // image attached mid-run could only be discarded.
+    let controller = awaitingOutputController()
     try assertSnapshot(
         ComposerView(
             draft: .constant(""),
             attachments: .constant([
                 snapshotAttachment(name: "regression.png", width: 800, height: 500),
             ]),
-            presentation: .active(controller: awaitingOutputController()),
+            presentation: .active(controller: controller),
             controlsMode: .activeSession,
+            signalPresentation: .session(
+                runtimeState: .streaming, contextPercent: nil,
+                hasPendingUserInput: false, isRetrying: false,
+                hasTerminalRetryFailure: false, compactionPhase: .none,
+                isRecoveryPresented: false, isIntentionallyStopped: false),
             onSend: {})
             .frame(width: 620)
-            .padding(24),
+            .padding(24)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "composer-sends-attachment-mid-run",
-        size: CGSize(width: 700, height: 240))
+        size: CGSize(width: 700, height: 320))
+}
+
+@MainActor
+@Test func narrowComposerAttachmentsClearProviderWheelsSnapshot() throws {
+    let attachments = ["attachment-one.png", "attachment-two-long.png", "attachment-three-longer.png"]
+        .map { snapshotAttachment(name: $0, width: 760, height: 200) }
+    let providers = ["anthropic", "openai", "google"].map {
+        ProviderUsageProvider(id: $0, name: $0, accounts: [])
+    }
+    let content = ComposerView(
+        draft: .constant("Check dense layout"),
+        attachments: .constant(attachments),
+        presentation: .active(controller: awaitingOutputController()),
+        controlsMode: .activeSession,
+        signalPresentation: .session(
+            runtimeState: .streaming, contextPercent: 42,
+            hasPendingUserInput: false, isRetrying: false,
+            hasTerminalRetryFailure: false, compactionPhase: .none,
+            isRecoveryPresented: false, isIntentionallyStopped: false),
+        routeCanvasLeadingInset: 220,
+        providerPlacement: .aboveLine,
+        onSend: {})
+        .environment(\.workspaceSignalReduceMotionOverride, true)
+        .frame(width: 760, height: 300, alignment: .bottom)
+        .overlay(alignment: .bottomTrailing) {
+            ProviderUsageDockView(
+                providers: providers,
+                activeCounts: [:],
+                compactLayout: ProviderUsageDockCompactLayout(
+                    wheelDiameter: 28,
+                    trailingOffset: 0,
+                    bottomOffset: ProviderUsageDockLayout.aboveLineBottomOffset(
+                        hasAttachments: true),
+                    expandedBottomOffset: 0),
+                onUseAccount: { _, _ in },
+                onManageAccounts: { _ in })
+                .padding(.trailing, 16)
+                .padding(.bottom, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        }
+    try assertSnapshot(
+        content,
+        name: "narrow-composer-attachments-clear-provider-wheels",
+        size: CGSize(width: 760, height: 300))
 }
 
 @MainActor
@@ -4516,7 +4774,7 @@ private func awaitingOutputController() -> SessionController {
             .frame(width: 620)
             .padding(24),
         name: "composer-with-attachments",
-        size: CGSize(width: 700, height: 260))
+        size: CGSize(width: 700, height: 340))
 }
 
 @MainActor
@@ -5546,9 +5804,10 @@ private actor SnapshotMediaGate {
             ToolCardView(presentation: running)
             ToolCardView(presentation: failed)
         }
+        .environment(\.toolDisclosureState, ToolDisclosureState(mode: .expanded))
         .frame(width: 720),
         name: "activity-running-error-dark", appearance: .dark,
-        size: CGSize(width: 800, height: 520))
+        size: CGSize(width: 800, height: 640))
 }
 @MainActor
 @Test func developerToolFlowSnapshotDark() throws {
@@ -5687,20 +5946,28 @@ private actor SnapshotMediaGate {
             .frame(width: 620)
             .padding(24),
         name: "composer-with-attachments-dark", appearance: .dark,
-        size: CGSize(width: 700, height: 260))
+        size: CGSize(width: 700, height: 340))
 }
 @MainActor
 @Test func composerStopsARunWithNothingToSendSnapshotDark() throws {
+    let controller = awaitingOutputController()
     try assertSnapshot(
         ComposerView(
             draft: .constant(""),
-            presentation: .active(controller: awaitingOutputController()),
+            presentation: .active(controller: controller),
             controlsMode: .activeSession,
+            signalPresentation: .session(
+                runtimeState: .streaming, contextPercent: nil,
+                hasPendingUserInput: false, isRetrying: false,
+                hasTerminalRetryFailure: false, compactionPhase: .none,
+                isRecoveryPresented: false, isIntentionallyStopped: false),
             onSend: {})
             .frame(width: 620)
-            .padding(24),
+            .padding(24)
+            .environment(\._accessibilityReduceMotion, true)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "composer-stop-control-dark", appearance: .dark,
-        size: CGSize(width: 700, height: 180))
+        size: CGSize(width: 700, height: 240))
 }
 @MainActor
 @Test func composerFooterFastPresentSnapshotDark() async throws {
@@ -5729,7 +5996,7 @@ private actor SnapshotMediaGate {
             controlsMode: .newSession,
             onSend: {}),
         name: "composer-footer-fast-present-dark", appearance: .dark,
-        size: CGSize(width: 780, height: 140))
+        size: CGSize(width: 780, height: 200))
 }
 @MainActor
 @Test func modelPickerDefaultSnapshotDark() throws {
@@ -6167,7 +6434,9 @@ private var snapshotShelfProjectURLs: [URL] {
         sessionAttentionSurface(controller: sessionAttentionController(
             title: "Working session",
             items: [],
-            runtimeState: .streaming)),
+            runtimeState: .streaming))
+            .environment(\._accessibilityReduceMotion, true)
+            .environment(\.workspaceSignalReduceMotionOverride, true),
         name: "session-attention-working",
         size: CGSize(width: 520, height: 220))
 }
@@ -6207,10 +6476,24 @@ private func sessionAttentionSurface(controller: SessionController) -> some View
         ComposerView(
             draft: .constant(""),
             presentation: .active(controller: controller),
+            signalPresentation: snapshotSessionSignal(for: controller),
             onSend: {})
             .frame(width: 420)
     }
     .padding(20)
+}
+
+@MainActor
+private func snapshotSessionSignal(for controller: SessionController) -> WorkspaceSignalPresentation {
+    .session(
+        runtimeState: controller.runtimeState,
+        contextPercent: controller.contextPercentage,
+        hasPendingUserInput: controller.hasPendingUserInput,
+        isRetrying: controller.isSignalRetrying,
+        hasTerminalRetryFailure: controller.hasTerminalRetryFailure,
+        compactionPhase: controller.signalCompactionPhase,
+        isRecoveryPresented: controller.isRecoveryPresented,
+        isIntentionallyStopped: controller.isIntentionallyStopped)
 }
 
 @MainActor

@@ -47,6 +47,9 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         thinkingLevel: nil,
         fastModeEnabled: false)
     private(set) var contextPercentage: Int?
+    private(set) var signalCompactionPhase: SessionCompactionSignalPhase = .none
+    private(set) var isSignalRetrying = false
+    private(set) var hasTerminalRetryFailure = false
     private(set) var contextUsage: SessionContextUsage?
     private(set) var contextBreakdown: SessionContextBreakdown?
     private(set) var isContextLoading = false
@@ -58,6 +61,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     private var contextEventFence: RpcEventConsumptionFence?
     private var contextReportText: String?
     private var contextRevision: UInt64 = 0
+    private var signalCompactionGeneration: UInt64 = 0
     private(set) var queuedMessageCount = 0
     private(set) var sessionPath: String?
     private(set) var extensionSheetRequest: ExtensionUIState?
@@ -170,6 +174,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         case operationBusy
         case eventFenceClosed
         case compactedHistoryUnavailable
+        case compactedStateUnavailable
     }
 
     static let defaultContextCompactionTimeout: Duration = .seconds(600)
@@ -417,23 +422,22 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let projectURL = URL(filePath: metadata.cwd, directoryHint: .isDirectory)
         self.projectURL = projectURL
         fallbackThreadStartDate = metadata.created
-        let headerMetadata = await headerMetadataResolver(projectURL)
-        guard pipelineGeneration == openingGeneration else { return }
-        self.headerMetadata = headerMetadata
         runtimeState = .loading
         reportActivity()
 
         let sessionPath = metadata.path
         let cwd = metadata.cwd
+        async let headerMetadata = headerMetadataResolver(projectURL)
         let (openingToken, openTask) = beginOpening { [processManager] in
             try await processManager.open(sessionPath: sessionPath, cwd: cwd)
         }
         do {
             let handle = try await openTask.value
+            guard pipelineGeneration == openingGeneration else { return }
+            let resolvedHeaderMetadata = await headerMetadata
+            guard pipelineGeneration == openingGeneration else { return }
+            self.headerMetadata = resolvedHeaderMetadata
             clearOpeningTask(token: openingToken)
-            guard pipelineGeneration == openingGeneration else {
-                return
-            }
             await finishOpening(handle, failureFunction: "openExisting")
         } catch {
             clearOpeningTask(token: openingToken)
@@ -475,9 +479,6 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         self.projectURL = projectURL
         fallbackThreadStartDate = Date()
         title = "New session"
-        let headerMetadata = await headerMetadataResolver(projectURL)
-        guard pipelineGeneration == openingGeneration else { return failureOutcome }
-        self.headerMetadata = headerMetadata
         runtimeState = .loading
         reportActivity()
 
@@ -485,6 +486,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         let provider = selection?.provider
         let model = selection?.modelID
         let thinking = selection?.thinking
+        async let headerMetadata = headerMetadataResolver(projectURL)
         let (openingToken, openTask) = beginOpening { [processManager] in
             try await processManager.openNew(
                 projectDirectory: projectPath,
@@ -494,10 +496,11 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         }
         do {
             let handle = try await openTask.value
+            guard pipelineGeneration == openingGeneration else { return failureOutcome }
+            let resolvedHeaderMetadata = await headerMetadata
+            guard pipelineGeneration == openingGeneration else { return failureOutcome }
+            self.headerMetadata = resolvedHeaderMetadata
             clearOpeningTask(token: openingToken)
-            guard pipelineGeneration == openingGeneration else {
-                return failureOutcome
-            }
             await finishOpening(handle, failureFunction: "openNew")
             guard self.handle?.client === handle.client, isComposerAvailable else {
                 return failureOutcome
@@ -770,6 +773,12 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 awaitingResponse: true)
         }
         runtimeState = .streaming
+        if behavior == nil {
+            signalCompactionPhase = .none
+            isSignalRetrying = false
+            hasTerminalRetryFailure = false
+        }
+        contextRevision &+= 1
         reportActivity()
         await context.processor?.setRuntimeState(.streaming)
         guard isCurrent(context) else { return true }
@@ -1325,6 +1334,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         contextBreakdown = nil
         contextReportText = nil
         contextErrorMessage = nil
+        signalCompactionPhase = .none
+        signalCompactionGeneration &+= 1
+        isSignalRetrying = false
+        hasTerminalRetryFailure = false
         isContextLoading = false
         isContextCompacting = false
         contextCompactionErrorMessage = nil
@@ -1635,13 +1648,43 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
 
     private func applyEventMetadata(_ frame: RpcFrame) {
         guard case .event(let type, let payload) = frame else { return }
-        if ["agent_start", "message_end", "turn_end", "agent_end", "auto_compaction_start",
-            "auto_compaction_end", "model_changed", "config_update"].contains(type) {
+        if ["agent_start", "message_end", "turn_end", "agent_end", "auto_compaction_end",
+            "model_changed", "config_update"].contains(type),
+            type != "auto_compaction_end" ||
+                (!isContextCompacting && payload["aborted"]?.boolValue != true
+                    && payload["skipped"]?.boolValue != true) {
             contextRevision &+= 1
             contextBreakdown = nil
             scheduleContextRefresh()
         }
         switch type {
+        case "auto_compaction_start":
+            guard !isContextCompacting else { break }
+            contextRefreshTask?.cancel()
+            contextRevision &+= 1
+            signalCompactionGeneration &+= 1
+            signalCompactionPhase = .sweeping
+        case "auto_compaction_end":
+            guard !isContextCompacting else { break }
+            if payload["aborted"]?.boolValue == true {
+                signalCompactionPhase = .none
+                if payload["willRetry"]?.boolValue == true {
+                    isSignalRetrying = true
+                } else {
+                    hasTerminalRetryFailure = true
+                }
+            } else if payload["skipped"]?.boolValue == true {
+                signalCompactionPhase = .none
+            } else {
+                signalCompactionPhase = .refreshing
+            }
+        case "auto_retry_start":
+            isSignalRetrying = true
+            hasTerminalRetryFailure = false
+        case "auto_retry_end":
+            isSignalRetrying = false
+            hasTerminalRetryFailure = payload["success"]?.boolValue == false
+            if hasTerminalRetryFailure { signalCompactionPhase = .none }
         case "session_info_update":
             if let name = payload["title"]?.stringValue, !name.isEmpty {
                 title = name
@@ -1674,6 +1717,8 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             }
         case "agent_start", "turn_start":
             wasStoppedByUser = false
+            hasTerminalRetryFailure = false
+            if case .revealing = signalCompactionPhase { signalCompactionPhase = .none }
             guard var pendingSlashAttachments,
                   pendingSlashAttachments.generation == pipelineGeneration
             else { break }
@@ -1706,6 +1751,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
     }
 
     private func scheduleContextRefresh() {
+        guard !isContextCompacting else { return }
         contextRefreshTask?.cancel()
         contextRefreshTask = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(150)) }
@@ -1719,17 +1765,46 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard let handle else { return }
         let context = currentPipelineContext()
         let revision = contextRevision
+        let compactionGeneration: UInt64?
+        if case .refreshing = signalCompactionPhase {
+            compactionGeneration = signalCompactionGeneration
+        } else {
+            compactionGeneration = nil
+        }
         do {
             let response = try await handle.client.send(.getState(), timeout: .seconds(5))
             guard isCurrent(context), revision == contextRevision, !Task.isCancelled else { return }
+            guard response.success else { throw ControllerError.compactedStateUnavailable }
             if !isContextLoading { contextErrorMessage = nil }
             applyContextUsage(response.data?["contextUsage"])
             queuedMessageCount = response.data?["queuedMessageCount"]?.intValue ?? 0
+            if let compactionGeneration,
+               case .refreshing = signalCompactionPhase,
+               compactionGeneration == signalCompactionGeneration {
+                if let contextPercentage {
+                    signalCompactionPhase = .revealing(
+                        generation: compactionGeneration,
+                        percent: contextPercentage)
+                } else {
+                    signalCompactionPhase = .none
+                }
+            }
         } catch {
             // A usage read must not interrupt the session or its working indicator.
-            guard isCurrent(context), !Task.isCancelled else { return }
+            guard isCurrent(context), revision == contextRevision, !Task.isCancelled else { return }
             contextErrorMessage = "Couldn’t refresh context usage."
+            if let compactionGeneration,
+               case .refreshing = signalCompactionPhase,
+               compactionGeneration == signalCompactionGeneration {
+                applyContextUsage(nil)
+                signalCompactionPhase = .none
+            }
         }
+    }
+
+    func completeSignalReveal(generation: UInt64) {
+        guard case .revealing(generation: generation, percent: _) = signalCompactionPhase else { return }
+        signalCompactionPhase = .none
     }
 
     func refreshContextDetails() async {
@@ -1792,6 +1867,10 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         defer { accountCoordinator?.endManagedTurn(sessionID: id) }
 
         let context = currentPipelineContext()
+        contextRefreshTask?.cancel()
+        contextRevision &+= 1
+        signalCompactionGeneration &+= 1
+        signalCompactionPhase = .sweeping
         isContextCompacting = true
         contextCompactionErrorMessage = nil
         contextCompactionRecoveryMessage = nil
@@ -1819,6 +1898,7 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
                 } else {
                     contextCompactionErrorMessage = "Context couldn’t be compacted. Try again."
                 }
+                signalCompactionPhase = .none
                 return
             }
         } catch {
@@ -1848,15 +1928,24 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
             return
         }
 
+        signalCompactionPhase = .refreshing
         do {
             guard !Task.isCancelled else { throw CancellationError() }
             let state = try await handle.client.send(.getState(), timeout: .seconds(5))
             guard isCurrent(context) else { return }
             guard !Task.isCancelled else { throw CancellationError() }
+            guard state.success else { throw ControllerError.compactedStateUnavailable }
             contextRevision &+= 1
             contextBreakdown = nil
             contextErrorMessage = nil
             applyState(state.data)
+            if let contextPercentage {
+                signalCompactionPhase = .revealing(
+                    generation: signalCompactionGeneration,
+                    percent: contextPercentage)
+            } else {
+                signalCompactionPhase = .none
+            }
         } catch {
             guard isCurrent(context) else { return }
             await closeAfterKnownSuccessfulCompactionStateFailure(error: error, context: context)
@@ -1936,12 +2025,14 @@ final class SessionController: ComposerSessionControlling, ComposerCommandSessio
         guard !isContextCompacting else { return }
         guard let handle else { return }
         let context = currentPipelineContext()
+        let revision = contextRevision
         do {
             let data = try await handle.client.send(.getState()).data
-            guard isCurrent(context) else { return }
+            guard isCurrent(context), revision == contextRevision else { return }
             applyState(data)
             await context.processor?.setRuntimeState(runtimeState)
         } catch {
+            guard isCurrent(context), revision == contextRevision else { return }
             fail(error, function: "refreshState", context: context)
         }
     }

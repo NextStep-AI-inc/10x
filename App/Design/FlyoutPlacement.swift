@@ -210,6 +210,10 @@ final class FlyoutWindowAnchorReaderView: NSView {
     var onChange: (@MainActor (FlyoutWindowAnchor) -> Void)?
     private var reportTask: Task<Void, Never>?
 
+    // This view only measures its trigger. Mouse events must reach the SwiftUI
+    // button behind it, including when the trigger is in the full-width footer.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         reportAnchor()

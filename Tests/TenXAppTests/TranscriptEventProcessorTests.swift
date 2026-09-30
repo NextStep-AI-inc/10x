@@ -310,6 +310,19 @@ import Testing
     await processor.stop()
 }
 
+@Test func retryStartAndEndReachOrderedControls() async throws {
+    let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
+    let collector = Task { await collectControlLabels(from: processor.controlEvents) }
+    for type in ["auto_compaction_start", "auto_compaction_end", "auto_retry_start", "auto_retry_end"] {
+        await processor.consume(.event(type: type, payload: .object([:])))
+    }
+    await processor.stop()
+    #expect(await collector.value == [
+        "event:auto_compaction_start", "event:auto_compaction_end",
+        "event:auto_retry_start", "event:auto_retry_end",
+    ])
+}
+
 @Test func staleTimerCompletionDoesNotCancelReplacementTimerOrPublishEarly() async throws {
     let processor = TranscriptEventProcessor(publicationInterval: .seconds(60))
     _ = await processor.load(.messages([]), threadStartDate: nil, hasReconciliationWarning: false, runtimeState: .idle)

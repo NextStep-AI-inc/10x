@@ -25,13 +25,28 @@ import Testing
     #expect(geometry.animationDuration(reduceMotion: true) == nil)
 }
 
-@Test func usageDockTracksTheReservedFooterSlotWhenTheComposerMoves() {
-    let layout = ProviderUsageDockLayout.compact(
-        shellSize: CGSize(width: 900, height: 700),
-        footerFrame: CGRect(x: 620, y: 570, width: 148, height: 60))
-    #expect(layout.wheelDiameter == 28)
-    #expect(layout.trailingOffset + 16 == CGFloat(132))
-    #expect(layout.bottomOffset + 16 == CGFloat(70))
+@Test func narrowDockMovesProviderGroupAboveWithoutCoveringEditor() {
+    #expect(ProviderUsageDockLayout.placement(
+        availableWidth: 760, factsMinWidth: 380, actionsMinWidth: 200,
+        providerWidth: 148) == .aboveLine)
+    #expect(ProviderUsageDockLayout.placement(
+        availableWidth: 1280, factsMinWidth: 380, actionsMinWidth: 200,
+        providerWidth: 148) == .belowLine)
+}
+
+@Test func minimumWidthPreservesSendStatusAndWheelHitTargets() {
+    #expect(ProviderUsageDockLayout.placement(
+        availableWidth: 760, factsMinWidth: 380, actionsMinWidth: 200,
+        providerWidth: 148) == .aboveLine)
+    #expect(ProviderUsageDockWheelHoverGeometry(restingDiameter: 28).hitTargetDiameter >= 44)
+}
+
+@MainActor
+@Test func narrowDockReservesAttachmentStripAboveEditor() {
+    let withoutAttachments = ProviderUsageDockLayout.aboveLineBottomOffset(hasAttachments: false)
+    let withAttachments = ProviderUsageDockLayout.aboveLineBottomOffset(hasAttachments: true)
+    #expect(withoutAttachments == 162)
+    #expect(withAttachments >= withoutAttachments + ComposerAttachmentsView.stripHeight)
 }
 
 @Test func noProvidersReserveNoFooterSpace() {

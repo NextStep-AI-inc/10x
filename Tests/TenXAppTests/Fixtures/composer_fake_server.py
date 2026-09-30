@@ -61,6 +61,14 @@ def record_prompt(cmd):
         handle.write(json.dumps(record, separators=(",", ":")) + "\n")
 
 
+def wait_for_prompt_response_release():
+    if not prompt_record_path:
+        return
+    release_path = prompt_record_path + ".release-response"
+    while not os.path.exists(release_path):
+        time.sleep(0.01)
+
+
 STATE = {
     "model": {"id": "fake", "provider": "test", "name": "Fake"},
     "thinkingLevel": "auto",
@@ -178,12 +186,14 @@ for line in sys.stdin:
             emit({"type": "turn_start"})
         elif mode == "slash-event-before-response":
             emit({"type": "turn_start"})
-            time.sleep(0.2)
+            emit({"type": "thinking_level_changed", "thinkingLevel": "high"})
+            wait_for_prompt_response_release()
             emit({"id": cid, "type": "response", "command": "prompt",
                   "success": True, "data": {}})
         elif mode == "slash-event-before-local":
             emit({"type": "turn_start"})
-            time.sleep(0.2)
+            emit({"type": "thinking_level_changed", "thinkingLevel": "high"})
+            wait_for_prompt_response_release()
             emit({"id": cid, "type": "response", "command": "prompt",
                   "success": True, "data": {"agentInvoked": False}})
         elif mode == "slash-event-before-failure":
