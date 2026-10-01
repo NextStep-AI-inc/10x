@@ -1,0 +1,7 @@
+omp/18.1.10
+Model calls: 0. Fixtures and profiles: isolated temporary directories.
+{"case": "new session", "fixture_bytes_changed": false, "loaded_message_count": 0, "mode": "no-session", "rename_acknowledged": true, "session_file_matches_fixture": false, "session_file_present": false, "session_id_matches_fixture": false}
+{"case": "new session", "fixture_bytes_changed": false, "loaded_message_count": 0, "mode": "persisting control", "rename_acknowledged": true, "session_file_matches_fixture": false, "session_file_present": true, "session_id_matches_fixture": false}
+{"case": "switch existing", "fixture_bytes_changed": false, "mode": "no-session", "switch_error": "switch_session: File not found: <disposable fixture>", "switch_succeeded": false}
+{"case": "switch existing", "fixture_bytes_changed": true, "loaded_message_count": 1, "mode": "persisting control", "rename_acknowledged": true, "session_file_matches_fixture": true, "session_file_present": true, "session_id_matches_fixture": true}
+PASS: ephemeral behavior reproduced; persisting controls passed.

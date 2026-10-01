@@ -1,0 +1,327 @@
+{
+  "tenx_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+  "t3_source_commit": "569a8cd2c3303f55fd869687eb31359b5658cc78",
+  "t3_runtime": "0.0.39",
+  "runtime": "omp/18.1.10",
+  "assets": [
+    {
+      "file": "10x-active-session-header.png",
+      "sha256": "cd47de117a85c1abcf4be6549f25766570dca1e573ce69633aa48c586cac3509",
+      "bytes": 15889,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/active-session-header.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "1bef59acf3a672fd2c0e2560defd7b50c7aa28d7653d6b6c3ea9168166810fbc",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-activity-running-error.png",
+      "sha256": "933048f1ce60e543201d0fac6a29a2a2e0a478930c27fb2ad28921074c541cbc",
+      "bytes": 91990,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/activity-running-error.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "8a84ab6f992d00653d0e83fcddb941e3e21bcbe93348cb0c63a208f4c3f47018",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-activity-structured-diff.png",
+      "sha256": "d801c2f3df079683da6434f63f3d98d4a246e97debe88d82f62b8471c5907345",
+      "bytes": 163579,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/activity-structured-diff.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "d4a69f09221d19433c864f8cb0937aeeb660d28bc4d568ae6b135b2cfad25b84",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-approval-card.png",
+      "sha256": "493d4a8e51412d8bbdc6038ee38ac48238561084001ddcbb5e63dbfedf892837",
+      "bytes": 27526,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/approval-card.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "23d4437f26736fb909c7404825bf724ae2c613493f8d0bed60e4612cab65179a",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-chat-full-1440.png",
+      "sha256": "12ab633029333067f31b611e902f1f3367db5ae77644ff570f60256da01b56ba",
+      "bytes": 81299,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/chat-full-1440.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "d8c3db5e0f3290deb04d334b7612bb2521dd3761b2d46c4273f0cd2971e9e739",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-chat-rich-assistant.png",
+      "sha256": "498cf941fbaf2f72d9d07637048317d44bc81dd364ca89f80dcdd3ea1bebbce0",
+      "bytes": 145133,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/chat-rich-assistant.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "f75b67f3974ae47428a63c39b83b896fb05b48d97b3a8a9412d379637dc47cba",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-composer-stop-control.png",
+      "sha256": "b1407602ecc7d058fa477f14b87e85aa7f676253dfc08820e353b6bfdd671c19",
+      "bytes": 21995,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/composer-stop-control.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "ef8cef1253c61c5ba24692280be018dbbcb5841156763f6623bf69cb93bce3a5",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-composer-with-model-flyout.png",
+      "sha256": "4dcab2312d8553e54785b08ccde1457cd971820e7b410032610e515482c705e2",
+      "bytes": 48473,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/composer-with-model-flyout.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "39a8ef2d0ca8fe0a5ea21e1d83776707091dfa224c5b6c1bec776c4d438c9382",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-developer-tool-flow.png",
+      "sha256": "e07b9d38e304b84ebe9de6fab2b9ff95f75044fffdd616b84c86057df2fff8cf",
+      "bytes": 79599,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/developer-tool-flow.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "1c3a67f734b5f16713f06b9bcc544826e227eabb9971cb3034db3b3fe5386c3d",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-recovered-window-current.png",
+      "sha256": "13800236646c43190f2cff86c2bbc06df8962bf93a652a03eca11b2bf7137581",
+      "bytes": 77348,
+      "evidence_class": "Current capture of recovered Release process",
+      "captured_at_utc": "2026-09-08T01:51:49.219077+00:00",
+      "processing": "None; native CUA screenshot bytes",
+      "state": "Earlier completed audit turns; no new turn sent; no UI mutation"
+    },
+    {
+      "file": "10x-runtime-recovery.png",
+      "sha256": "360da87c967eaf8fe025ee8e844d70d5e3a4b95af02437ae60b624a2ec168f7f",
+      "bytes": 36251,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/runtime-recovery.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "4b7d497fefd70eb13b8be9225dc8d4ffa06763d7193b263df5285f63f6fd3241",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-shell-rail-expanded.png",
+      "sha256": "cd22afd11474c8fe51c6f3a014823cb9633c15a5e3094907fa2a25a59d21fe6d",
+      "bytes": 47682,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/shell-rail-expanded.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "6042b124c72dfa03ddbb904f5d06c58a45b01fe4391795a6974c88a690a80b9b",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-tool-cards-coordination.png",
+      "sha256": "3d5e0b7abc4d6a008ef14275f1d86ee779936e4baf671a856095fabe23d9fb38",
+      "bytes": 91219,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/tool-cards-coordination.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "24b385d635c7bd1b8f080ae0ffc736228f88b81c789c61cdfd68850c26dc4420",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "10x-transcript-working-indicator.png",
+      "sha256": "d41f4be34ab6260efc46180ec0dbbf6c6cd2e0217245b5d2e9b7f804e0ad8e1a",
+      "bytes": 21576,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical synthetic reference render",
+      "source_file": "Tests/TenXAppTests/ReferenceImages/transcript-working-indicator.png",
+      "source_commit": "59a4ae8faaea049bfc2ff540a4f021b3859080b6",
+      "source_sha256": "cfc8b66daf876281e13b333d2a5dd52e27399433915d8bda4e0dfd27372e73d1",
+      "processing": "Historical downscale to max 1000 px; PNG"
+    },
+    {
+      "file": "t3-approval-pending-02.jpg",
+      "sha256": "978200105473ac19f8ddcfb073226e4f78ecfdabc03dbd3becfdb05ce976c220",
+      "bytes": 84441,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-approval-pending-02.png",
+      "source_sha256": "3a9baff2edd000da9ec8e53265299952f096dffa38fddcc2eb3765bcc9c5c5b3",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-model-picker-providers.jpg",
+      "sha256": "40c696b3a147a2ada51a3f02575726d7ad9f554e45c91144315e873b7ba5c04d",
+      "bytes": 66946,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-model-picker-providers.png",
+      "source_sha256": "959216163b2e6f4f50dc83d8e243b2dd5c6b451976533172106176def4b2edfc",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-model-picker.jpg",
+      "sha256": "d4d3e9e4c54637ffed8c852cc861c21290a2140e70aabd769e13d17cfa5c1b1e",
+      "bytes": 61058,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-model-picker.png",
+      "source_sha256": "f3b1c716419c5a953cf6217401ab7b3af81a5f4348a0e6526e09ddc4a745d0b8",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-new-thread.jpg",
+      "sha256": "3ac0f6eda0d8fc2cae9bf9d63acb6963c82e8fd9c8adda7aed34bb91f056087a",
+      "bytes": 58556,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-new-thread.png",
+      "source_sha256": "25a3fa7a7a5a1dcf01cc88b65e2589f2c4b0f0fb0656e694a1d05d4f737a6c2c",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-right-panel-diff.jpg",
+      "sha256": "6cd0300d4d82bc14e1b3caf92f84efa6b4cac24ec453b99029cf914b4087d005",
+      "bytes": 142367,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-right-panel-diff.png",
+      "source_sha256": "608a8fddf5739b35abe4cb064c65d0733eabdaad91c5a0ff390065a226dae44e",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-right-panel.jpg",
+      "sha256": "3e5e38d30252e54fa19dd3d975da7b9656fff7d18abce968def59ba2bb64f7c7",
+      "bytes": 118989,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-right-panel.png",
+      "source_sha256": "e4daf6e49ab32a2e3bd5ebc771cb58befc64d1e52de005e480f8978ff8fa34f6",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-runtime-mode-menu.jpg",
+      "sha256": "e9cd53100edb3b0997a470d4d875b1a33bb3d11207822167c7bf90c76b58e7db",
+      "bytes": 69686,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-runtime-mode-menu.png",
+      "source_sha256": "24a9d7fbb24baeeb3cea32b3043a84b7413af96a89ca6feafe68b4f9dc28584f",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-settings-providers-enabled.jpg",
+      "sha256": "cb4e9a7a96460828b2fc9be4e38c6613de646fe8d900264460df95f48cc9d601",
+      "bytes": 91242,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-settings-providers-enabled.png",
+      "source_sha256": "45bc15eb6e8e31f47a442207f994cefc599048fa66710c839182d70c33d18482",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-terminal-drawer.jpg",
+      "sha256": "89db07e1a6bbddc56eb83a09f8ea1483a70212cfe35c85f6f60c7d8de82d16eb",
+      "bytes": 99652,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-terminal-drawer.png",
+      "source_sha256": "373f788a3eb771b2a5454781137d4499326189e8f1c3316a2ae833abde085d8d",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-thread-claude-auth-failed.jpg",
+      "sha256": "93e31515f17bfb5c60dbf030e453b18aec92215bd8b733abbd8db7bef73b604e",
+      "bytes": 71475,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-thread-claude-auth-failed.png",
+      "source_sha256": "9c7349661b76432a3bcb969396ff672078ab008baa165b9516444eb73326a63f",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-turn-03.jpg",
+      "sha256": "4300fbdbb0b6984c6d076c6f25dc42d0e1654e86f54806bb5434a0ff2d1fbba1",
+      "bytes": 62193,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-turn-03.png",
+      "source_sha256": "9a936ee57bb1a12754b5d04f850855b7bf1947e1a91bb0c01f06d30a0f810c66",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-turn-05.jpg",
+      "sha256": "961a53bc266d8fbea31760160a354219ab426e6ddf2fe172335bf4581cb2319b",
+      "bytes": 66992,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-turn-05.png",
+      "source_sha256": "0d6ed772db730fef97e9cda5ecff09f91b0dbd78637e0b49d83a9198afe8c990",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-turn-06-final.jpg",
+      "sha256": "0dbaef650b3daf831acf28e8fedfcd99df648ffe600930e7ab3b806fd6704e68",
+      "bytes": 85979,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-turn-06-final.png",
+      "source_sha256": "19441aea60d62bdd7bbbba56d592aae20bcadba0b816f1e99803dabbf5fc33bb",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-turn1-worked-expanded.jpg",
+      "sha256": "e7b48b8b39150f02d1e6b882f8ed3b40a4fe773361f3a48e4aab339b1bd5b690",
+      "bytes": 95835,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-turn1-worked-expanded.png",
+      "source_sha256": "6ee471919b2a98b1b6f44a903de499f54896fe5a61c84328be66a9c90569d839",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-turn2-04.jpg",
+      "sha256": "634e6b802dcd9bc8413b7eff741f5591ad4fb92a63675881dae7dcdac6c27f6a",
+      "bytes": 97268,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-turn2-04.png",
+      "source_sha256": "557052109a61e379b2e1f234c33330c2f8a9ec5b6755c0c714a3b326addbe6e8",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    },
+    {
+      "file": "t3-turn2-06-final.jpg",
+      "sha256": "76258f4ee9ecad580c432b29fe46c481b99160016e280d08686dbe9c31bc3bce",
+      "bytes": 108344,
+      "matches_recovered_copy": true,
+      "evidence_class": "Historical app screenshot",
+      "source_file": "originals/t3-turn2-06-final.png",
+      "source_sha256": "801d1514eb8435a0b7c813bb90daa0807c30d4d50328566c6103f37f39dafd8a",
+      "processing": "Historical downscale to max 1200 px; JPEG quality 72"
+    }
+  ],
+  "matched_original_10x_reference_count": 32,
+  "runtime_package_sha256": "fd1a43fb3e298b18b02a7ce933b48755799f91cdded697abcf1bb6a5d9d81727",
+  "runtime_cli_sha256": "935fc62e88b15fac2648fd42dbbf91079eb5ae0b311f65bb768f423bf14db441",
+  "runtime_source_sha256": {
+    "src/session/session-manager.ts": "58bac0e379c726692cd87638dfd73217079eb44f560e96b909d8b4ddcb54b6b3",
+    "src/session/session-storage.ts": "d080d92ec137598fb92029e091284ee4a1862e258d3b5d4f02ca0d9f0ab0a4a6"
+  }
+}
